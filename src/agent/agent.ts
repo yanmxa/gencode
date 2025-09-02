@@ -1,0 +1,282 @@
+/**
+ * Agent - Core agent implementation with tool loop and session support
+ */
+
+import type { LLMProvider, Message, MessageContent, ToolResultContent } from '../providers/types.js';
+import { createProvider } from '../providers/index.js';
+import { ToolRegistry, createDefaultRegistry } from '../tools/index.js';
+import { PermissionManager } from '../permissions/index.js';
+import { SessionManager } from '../session/index.js';
+import type { Session } from '../session/types.js';
+import type { AgentConfig, AgentEvent } from './types.js';
+
+const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI assistant with access to tools for reading, writing, and executing code.
+
+When using tools:
+- Use Read to view file contents before editing
+- Use Glob/Grep to find files
+- Use Edit for precise changes (old_string must be unique)
+- Use Write for new files or full rewrites
+- Use Bash for commands, git operations, etc.
+
+Be concise and focus on completing the user's task.`;
+
+export class Agent {
+  private provider: LLMProvider;
+  private registry: ToolRegistry;
+  private permissions: PermissionManager;
+  private sessionManager: SessionManager;
+  private config: AgentConfig;
+  private messages: Message[] = [];
+  private sessionId: string | null = null;
+
+  constructor(config: AgentConfig) {
+    this.config = {
+      maxTurns: 10,
+      cwd: process.cwd(),
+      ...config,
+    };
+
+    this.provider = createProvider({ provider: config.provider });
+    this.registry = createDefaultRegistry();
+    this.permissions = new PermissionManager(config.permissions);
+    this.sessionManager = new SessionManager();
+  }
+
+  /**
+   * Set permission confirmation callback
+   */
+  setConfirmCallback(callback: (tool: string, input: unknown) => Promise<boolean>): void {
+    this.permissions.setConfirmCallback(callback);
+  }
+
+  /**
+   * Get current session ID
+   */
+  getSessionId(): string | null {
+    return this.sessionId;
+  }
+
+  /**
+   * Get session manager for external access
+   */
+  getSessionManager(): SessionManager {
+    return this.sessionManager;
+  }
+
+  /**
+   * Start a new session
+   */
+  async startSession(title?: string): Promise<string> {
+    const session = await this.sessionManager.create({
+      provider: this.config.provider,
+      model: this.config.model,
+      cwd: this.config.cwd,
+      title,
+    });
+
+    this.sessionId = session.metadata.id;
+    this.messages = [];
+
+    return this.sessionId;
+  }
+
+  /**
+   * Resume an existing session
+   */
+  async resumeSession(sessionId: string): Promise<boolean> {
+    const session = await this.sessionManager.load(sessionId);
+    if (!session) {
+      return false;
+    }
+
+    this.sessionId = session.metadata.id;
+    this.messages = session.messages;
+
+    return true;
+  }
+
+  /**
+   * Resume the most recent session
+   */
+  async resumeLatest(): Promise<boolean> {
+    const session = await this.sessionManager.resumeLatest();
+    if (!session) {
+      return false;
+    }
+
+    this.sessionId = session.metadata.id;
+    this.messages = session.messages;
+
+    return true;
+  }
+
+  /**
+   * Fork current session
+   */
+  async forkSession(title?: string): Promise<string | null> {
+    if (!this.sessionId) {
+      return null;
+    }
+
+    const forked = await this.sessionManager.fork(this.sessionId, title);
+    this.sessionId = forked.metadata.id;
+
+    return this.sessionId;
+  }
+
+  /**
+   * List all sessions
+   */
+  async listSessions() {
+    return this.sessionManager.list();
+  }
+
+  /**
+   * Delete a session
+   */
+  async deleteSession(sessionId: string): Promise<boolean> {
+    return this.sessionManager.delete(sessionId);
+  }
+
+  /**
+   * Save current session
+   */
+  async saveSession(): Promise<void> {
+    const current = this.sessionManager.getCurrent();
+    if (current) {
+      current.messages = this.messages;
+      await this.sessionManager.save(current);
+    }
+  }
+
+  /**
+   * Run a single query through the agent
+   */
+  async *run(prompt: string): AsyncGenerator<AgentEvent, void, unknown> {
+    // Auto-create session if none exists
+    if (!this.sessionId) {
+      await this.startSession();
+    }
+
+    // Add user message
+    const userMessage: Message = { role: 'user', content: prompt };
+    this.messages.push(userMessage);
+    await this.sessionManager.addMessage(userMessage);
+
+    let turns = 0;
+    const maxTurns = this.config.maxTurns ?? 10;
+
+    while (turns < maxTurns) {
+      turns++;
+
+      // Get tool definitions
+      const toolDefs = this.registry.getDefinitions(this.config.tools);
+
+      // Call LLM
+      let response;
+      try {
+        response = await this.provider.complete({
+          model: this.config.model,
+          messages: this.messages,
+          tools: toolDefs,
+          systemPrompt: this.config.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
+          maxTokens: 4096,
+        });
+      } catch (error) {
+        yield { type: 'error', error: error as Error };
+        return;
+      }
+
+      // Collect text content
+      let textContent = '';
+      const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+
+      for (const content of response.content) {
+        if (content.type === 'text') {
+          textContent += content.text;
+          yield { type: 'text', text: content.text };
+        } else if (content.type === 'tool_use') {
+          toolCalls.push({
+            id: content.id,
+            name: content.name,
+            input: content.input,
+          });
+        }
+      }
+
+      // Add assistant message
+      const assistantMessage: Message = { role: 'assistant', content: response.content };
+      this.messages.push(assistantMessage);
+      await this.sessionManager.addMessage(assistantMessage);
+
+      // If no tool calls, we're done
+      if (response.stopReason !== 'tool_use' || toolCalls.length === 0) {
+        yield { type: 'done', text: textContent };
+        return;
+      }
+
+      // Execute tool calls
+      const toolResults: ToolResultContent[] = [];
+
+      for (const call of toolCalls) {
+        yield { type: 'tool_start', id: call.id, name: call.name, input: call.input };
+
+        // Check permission
+        const allowed = await this.permissions.checkPermission(call.name, call.input);
+
+        if (!allowed) {
+          const result = {
+            success: false,
+            output: '',
+            error: 'Permission denied by user',
+          };
+          yield { type: 'tool_result', id: call.id, name: call.name, result };
+          toolResults.push({
+            type: 'tool_result',
+            toolUseId: call.id,
+            content: result.error,
+            isError: true,
+          });
+          continue;
+        }
+
+        // Execute tool
+        const result = await this.registry.execute(call.name, call.input, {
+          cwd: this.config.cwd ?? process.cwd(),
+        });
+
+        yield { type: 'tool_result', id: call.id, name: call.name, result };
+
+        toolResults.push({
+          type: 'tool_result',
+          toolUseId: call.id,
+          content: result.success ? result.output : (result.error ?? 'Unknown error'),
+          isError: !result.success,
+        });
+      }
+
+      // Add tool results as user message
+      const toolResultsMessage: Message = { role: 'user', content: toolResults };
+      this.messages.push(toolResultsMessage);
+      await this.sessionManager.addMessage(toolResultsMessage);
+    }
+
+    yield { type: 'error', error: new Error(`Max turns (${maxTurns}) exceeded`) };
+  }
+
+  /**
+   * Clear conversation history
+   */
+  clearHistory(): void {
+    this.messages = [];
+    this.sessionManager.clearMessages();
+  }
+
+  /**
+   * Get conversation history
+   */
+  getHistory(): Message[] {
+    return [...this.messages];
+  }
+}

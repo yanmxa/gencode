@@ -1,0 +1,50 @@
+{
+  "name": "mycode",
+  "version": "0.1.0",
+  "description": "Multi-LLM Agent SDK supporting OpenAI, Anthropic, and Gemini",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "mycode": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "npx tsx src/cli/index.ts",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "example": "npx tsx examples/basic.ts"
+  },
+  "keywords": [
+    "agent",
+    "llm",
+    "openai",
+    "anthropic",
+    "gemini",
+    "ai"
+  ],
+  "author": "Meng Yan",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
+    "@google/generative-ai": "^0.24.1",
+    "chalk": "^5.6.2",
+    "dotenv": "^17.2.3",
+    "fast-glob": "^3.3.3",
+    "glob": "^13.0.0",
+    "ink": "^6.6.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "openai": "^6.16.0",
+    "ora": "^9.0.0",
+    "react": "^19.2.3",
+    "undici": "^7.18.2",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.8",
+    "@types/react": "^19.2.8",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,172 @@
+/**
+ * Tool System Type Definitions
+ */
+
+import * as path from 'path';
+import { z } from 'zod';
+
+// ============================================================================
+// Tool Definition Types
+// ============================================================================
+
+export interface ToolContext {
+  cwd: string;
+  abortSignal?: AbortSignal;
+}
+
+export interface ToolResult {
+  success: boolean;
+  output: string;
+  error?: string;
+}
+
+export interface Tool<TInput = unknown> {
+  name: string;
+  description: string;
+  parameters: z.ZodSchema<TInput>;
+  execute(input: TInput, context: ToolContext): Promise<ToolResult>;
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Resolve a file path relative to the context's working directory
+ */
+export function resolvePath(filePath: string, cwd: string): string {
+  return path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
+}
+
+/**
+ * Extract error message from unknown error
+ */
+export function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// ============================================================================
+// Built-in Tool Input Types
+// ============================================================================
+
+export const ReadInputSchema = z.object({
+  file_path: z.string().describe('The absolute path to the file to read'),
+  offset: z.number().optional().describe('Line number to start reading from (1-based)'),
+  limit: z.number().optional().describe('Number of lines to read'),
+});
+export type ReadInput = z.infer<typeof ReadInputSchema>;
+
+export const WriteInputSchema = z.object({
+  file_path: z.string().describe('The absolute path to the file to write'),
+  content: z.string().describe('The content to write to the file'),
+});
+export type WriteInput = z.infer<typeof WriteInputSchema>;
+
+export const EditInputSchema = z.object({
+  file_path: z.string().describe('The absolute path to the file to modify'),
+  old_string: z.string().describe('The text to replace'),
+  new_string: z.string().describe('The replacement text'),
+});
+export type EditInput = z.infer<typeof EditInputSchema>;
+
+export const BashInputSchema = z.object({
+  command: z.string().describe('The bash command to execute'),
+  timeout: z.number().optional().describe('Timeout in milliseconds (default: 30000)'),
+});
+export type BashInput = z.infer<typeof BashInputSchema>;
+
+export const GlobInputSchema = z.object({
+  pattern: z.string().describe('The glob pattern to match files'),
+  path: z.string().optional().describe('The directory to search in'),
+});
+export type GlobInput = z.infer<typeof GlobInputSchema>;
+
+export const GrepInputSchema = z.object({
+  pattern: z.string().describe('The regex pattern to search for'),
+  path: z.string().optional().describe('The file or directory to search in'),
+  include: z.string().optional().describe('File pattern to include (e.g., "*.ts")'),
+});
+export type GrepInput = z.infer<typeof GrepInputSchema>;
+
+// ============================================================================
+// JSON Schema Conversion
+// ============================================================================
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function zodToJsonSchema(schema: z.ZodSchema<any>): Record<string, unknown> {
+  // Use Zod's built-in JSON schema support or manual conversion
+  try {
+    // Zod v4 approach - check if toJsonSchema exists
+    if ('toJsonSchema' in z && typeof z.toJsonSchema === 'function') {
+      return z.toJsonSchema(schema) as Record<string, unknown>;
+    }
+  } catch {
+    // Fall through to manual conversion
+  }
+
+  // Manual conversion for object schemas
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const def = (schema as any)._zod ?? (schema as any)._def;
+  if (def?.typeName === 'ZodObject' || def?.def?.typeName === 'object') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const shape = (schema as any).shape ?? (schema as any)._zod?.def?.shape;
+    if (shape) {
+      const properties: Record<string, unknown> = {};
+      const required: string[] = [];
+
+      for (const [key, value] of Object.entries(shape)) {
+        properties[key] = zodFieldToJsonSchema(value);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const valDef = (value as any)._zod ?? (value as any)._def;
+        const isOptional = valDef?.typeName === 'ZodOptional' || valDef?.def?.typeName === 'optional';
+        if (!isOptional) {
+          required.push(key);
+        }
+      }
+
+      return {
+        type: 'object',
+        properties,
+        required: required.length > 0 ? required : undefined,
+      };
+    }
+  }
+
+  return { type: 'object' };
+}
+
+function zodFieldToJsonSchema(field: unknown): Record<string, unknown> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const f = field as any;
+  const def = f._zod ?? f._def;
+  const description = def?.def?.description ?? def?.description;
+
+  // Get the inner type for optionals
+  let typeName = def?.typeName ?? def?.def?.typeName ?? 'string';
+
+  // Unwrap optional
+  if (typeName === 'ZodOptional' || typeName === 'optional') {
+    const inner = def?.def?.innerType ?? def?.innerType;
+    if (inner) {
+      const innerDef = inner._zod ?? inner._def;
+      typeName = innerDef?.typeName ?? innerDef?.def?.typeName ?? 'string';
+    }
+  }
+
+  // Map Zod types to JSON Schema types
+  let type = 'string';
+  if (typeName === 'ZodNumber' || typeName === 'number') {
+    type = 'number';
+  } else if (typeName === 'ZodBoolean' || typeName === 'boolean') {
+    type = 'boolean';
+  } else if (typeName === 'ZodArray' || typeName === 'array') {
+    const items = def?.def?.element ?? def?.element;
+    return {
+      type: 'array',
+      items: items ? zodFieldToJsonSchema(items) : { type: 'string' },
+      description,
+    };
+  }
+
+  return { type, description };
+}
