@@ -3,7 +3,7 @@
  */
 
 import type { Tool, ToolContext, ToolResult } from './types.js';
-import { zodToJsonSchema } from './types.js';
+import { zodToJsonSchema, getErrorMessage } from './types.js';
 import type { ToolDefinition } from '../providers/types.js';
 
 export class ToolRegistry {
@@ -77,12 +77,7 @@ export class ToolRegistry {
 
       return await tool.execute(parsed.data, context);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        success: false,
-        output: '',
-        error: `Tool execution failed: ${message}`,
-      };
+      return { success: false, output: '', error: `Tool execution failed: ${getErrorMessage(error)}` };
     }
   }
 }

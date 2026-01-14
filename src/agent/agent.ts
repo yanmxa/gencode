@@ -2,12 +2,11 @@
  * Agent - Core agent implementation with tool loop and session support
  */
 
-import type { LLMProvider, Message, MessageContent, ToolResultContent } from '../providers/types.js';
+import type { LLMProvider, Message, ToolResultContent } from '../providers/types.js';
 import { createProvider } from '../providers/index.js';
 import { ToolRegistry, createDefaultRegistry } from '../tools/index.js';
 import { PermissionManager } from '../permissions/index.js';
 import { SessionManager } from '../session/index.js';
-import type { Session } from '../session/types.js';
 import type { AgentConfig, AgentEvent } from './types.js';
 
 const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI assistant with access to tools for reading, writing, and executing code.
@@ -188,29 +187,23 @@ export class Agent {
         return;
       }
 
-      // Collect text content
-      let textContent = '';
+      // Process response content
       const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+      let textContent = '';
 
       for (const content of response.content) {
         if (content.type === 'text') {
           textContent += content.text;
           yield { type: 'text', text: content.text };
         } else if (content.type === 'tool_use') {
-          toolCalls.push({
-            id: content.id,
-            name: content.name,
-            input: content.input,
-          });
+          toolCalls.push({ id: content.id, name: content.name, input: content.input });
         }
       }
 
-      // Add assistant message
-      const assistantMessage: Message = { role: 'assistant', content: response.content };
-      this.messages.push(assistantMessage);
-      await this.sessionManager.addMessage(assistantMessage);
+      // Add assistant message and check if done
+      this.messages.push({ role: 'assistant', content: response.content });
+      await this.sessionManager.addMessage({ role: 'assistant', content: response.content });
 
-      // If no tool calls, we're done
       if (response.stopReason !== 'tool_use' || toolCalls.length === 0) {
         yield { type: 'done', text: textContent };
         return;
@@ -218,36 +211,17 @@ export class Agent {
 
       // Execute tool calls
       const toolResults: ToolResultContent[] = [];
+      const cwd = this.config.cwd ?? process.cwd();
 
       for (const call of toolCalls) {
         yield { type: 'tool_start', id: call.id, name: call.name, input: call.input };
 
-        // Check permission
         const allowed = await this.permissions.checkPermission(call.name, call.input);
-
-        if (!allowed) {
-          const result = {
-            success: false,
-            output: '',
-            error: 'Permission denied by user',
-          };
-          yield { type: 'tool_result', id: call.id, name: call.name, result };
-          toolResults.push({
-            type: 'tool_result',
-            toolUseId: call.id,
-            content: result.error,
-            isError: true,
-          });
-          continue;
-        }
-
-        // Execute tool
-        const result = await this.registry.execute(call.name, call.input, {
-          cwd: this.config.cwd ?? process.cwd(),
-        });
+        const result = allowed
+          ? await this.registry.execute(call.name, call.input, { cwd })
+          : { success: false, output: '', error: 'Permission denied by user' };
 
         yield { type: 'tool_result', id: call.id, name: call.name, result };
-
         toolResults.push({
           type: 'tool_result',
           toolUseId: call.id,
@@ -257,9 +231,8 @@ export class Agent {
       }
 
       // Add tool results as user message
-      const toolResultsMessage: Message = { role: 'user', content: toolResults };
-      this.messages.push(toolResultsMessage);
-      await this.sessionManager.addMessage(toolResultsMessage);
+      this.messages.push({ role: 'user', content: toolResults });
+      await this.sessionManager.addMessage({ role: 'user', content: toolResults });
     }
 
     yield { type: 'error', error: new Error(`Max turns (${maxTurns}) exceeded`) };

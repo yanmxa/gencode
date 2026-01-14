@@ -1,12 +1,12 @@
 {
-  "name": "mycode",
+  "name": "codepilot",
   "version": "0.1.0",
-  "description": "Multi-LLM Agent SDK supporting OpenAI, Anthropic, and Gemini",
+  "description": "An open-source, provider-agnostic alternative to Claude Code",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "mycode": "./dist/cli/index.js"
+    "codepilot": "./dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",

@@ -3,22 +3,19 @@
  */
 
 import fastGlob from 'fast-glob';
-import * as path from 'path';
-import type { Tool, ToolContext, ToolResult } from '../types.js';
-import { GlobInputSchema, type GlobInput } from '../types.js';
+import type { Tool, ToolResult } from '../types.js';
+import { GlobInputSchema, type GlobInput, resolvePath, getErrorMessage } from '../types.js';
+
+const MAX_RESULTS = 100;
 
 export const globTool: Tool<GlobInput> = {
   name: 'Glob',
   description: 'Find files matching a glob pattern. Returns a list of matching file paths.',
   parameters: GlobInputSchema,
 
-  async execute(input: GlobInput, context: ToolContext): Promise<ToolResult> {
+  async execute(input, context): Promise<ToolResult> {
     try {
-      const searchPath = input.path
-        ? path.isAbsolute(input.path)
-          ? input.path
-          : path.resolve(context.cwd, input.path)
-        : context.cwd;
+      const searchPath = input.path ? resolvePath(input.path, context.cwd) : context.cwd;
 
       const files = await fastGlob(input.pattern, {
         cwd: searchPath,
@@ -29,26 +26,17 @@ export const globTool: Tool<GlobInput> = {
       });
 
       if (files.length === 0) {
-        return {
-          success: true,
-          output: 'No files found matching the pattern.',
-        };
+        return { success: true, output: 'No files found matching the pattern.' };
       }
 
-      // Sort by modification time (newest first) - simplified version
-      const sortedFiles = files.slice(0, 100); // Limit results
-
+      const truncated = files.length > MAX_RESULTS;
+      const displayFiles = files.slice(0, MAX_RESULTS);
       return {
         success: true,
-        output: `Found ${files.length} file(s):\n${sortedFiles.join('\n')}${files.length > 100 ? '\n... (truncated)' : ''}`,
+        output: `Found ${files.length} file(s):\n${displayFiles.join('\n')}${truncated ? '\n... (truncated)' : ''}`,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        success: false,
-        output: '',
-        error: `Glob search failed: ${message}`,
-      };
+      return { success: false, output: '', error: `Glob search failed: ${getErrorMessage(error)}` };
     }
   },
 };

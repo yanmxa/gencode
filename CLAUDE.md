@@ -4,28 +4,67 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Recode** is an open-source, provider-agnostic alternative to Claude Code.
+**codepilot** is an open-source, provider-agnostic alternative to Claude Code. It brings Claude Code's excellent interactive CLI experience while allowing flexible switching between different LLM providers (OpenAI, Anthropic, Google Gemini).
 
-Claude Code is excellent - its interactive CLI experience, tool integration, and agent loop design are impressive. However, it's locked to Anthropic's Claude models. Recode aims to bring that same great experience while giving users the freedom to switch between different LLM providers freely.
+## Build & Run Commands
 
-### Core Goals
+```bash
+npm install          # Install dependencies
+npm run build        # Compile TypeScript to dist/
+npm run dev          # Watch mode compilation
+npm start            # Run CLI directly via tsx
+npm run example      # Run examples/basic.ts
+```
 
-- **Provider Freedom**: Support OpenAI, Anthropic, Google Gemini, and any OpenAI-compatible API
-- **Same Great Experience**: Replicate Claude Code's intuitive CLI workflow and tool integration
-- **No Vendor Lock-in**: Use any cloud provider or local models
-- **Open & Extensible**: Fully open-source and customizable
+## Architecture
 
-### Key Components
+### Provider Abstraction Layer (`src/providers/`)
 
-- **Agent System**: Multi-turn conversation with tool calling loop
-- **Built-in Tools**: Bash, Read, Write, Edit, Glob, Grep, and more
-- **Provider Abstraction**: Unified interface for multiple LLM providers
-- **Permission System**: Configurable auto/confirm/deny for tool execution
-- **Interactive CLI**: Streaming output with rich terminal interface
+Unified `LLMProvider` interface abstracts API differences:
+- `complete()` - Non-streaming completion
+- `stream()` - Streaming completion (AsyncGenerator)
 
-## Development Approach
+Each provider (OpenAI, Anthropic, Gemini) translates the unified message format to its native API format and back. The `createProvider()` factory instantiates providers by name.
 
-- Analyze Claude Code's patterns and replicate the best aspects
-- Implement provider-agnostic abstractions
-- Maintain compatibility with Claude Code tool schemas where practical
-- Use conventional commit format for commit messages
+### Tool System (`src/tools/`)
+
+Tools are defined with Zod schemas for input validation:
+```typescript
+interface Tool<TInput> {
+  name: string;
+  description: string;
+  parameters: z.ZodSchema<TInput>;
+  execute(input: TInput, context: ToolContext): Promise<ToolResult>;
+}
+```
+
+`ToolRegistry` manages tools and converts Zod schemas to JSON Schema for LLM consumption via `zodToJsonSchema()`.
+
+### Agent Loop (`src/agent/agent.ts`)
+
+The `Agent` class implements the core conversation loop:
+1. User message → LLM with tools
+2. If `stopReason === 'tool_use'`: execute tools, append results, loop back
+3. If `stopReason !== 'tool_use'`: done
+
+Events are yielded as `AgentEvent` (text, tool_start, tool_result, done, error).
+
+### Session Management (`src/session/`)
+
+Sessions persist conversation history to `~/.codepilot/sessions/` as JSON files. Supports resume, fork, list, and delete operations.
+
+## Configuration
+
+Provider/model selection priority:
+1. `CODEPILOT_PROVIDER` / `CODEPILOT_MODEL` env vars
+2. Auto-detect from available API keys (ANTHROPIC_API_KEY → OPENAI_API_KEY → GOOGLE_API_KEY)
+3. Default: Gemini
+
+Proxy: Set `HTTP_PROXY` or `HTTPS_PROXY` for network proxy support.
+
+## Key Patterns
+
+- All file paths in tools should be resolved relative to `ToolContext.cwd`
+- Tool input validation uses Zod; errors returned as `ToolResult.error`
+- Provider implementations handle message format conversion internally
+- CLI commands start with `/` (e.g., `/sessions`, `/resume`, `/help`)

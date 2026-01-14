@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * MyCode CLI - Interactive Agent Interface with Session Management
+ * Codepilot CLI - Interactive Agent Interface with Session Management
  */
 
 import 'dotenv/config';
 import * as readline from 'readline';
 import { Agent } from '../agent/index.js';
 import type { AgentConfig } from '../agent/types.js';
+import type { Message, MessageContent } from '../providers/types.js';
 import {
   printHeader,
   printSeparator,
@@ -22,6 +23,49 @@ import {
   colors,
   printTable,
 } from './ui.js';
+
+// ============================================================================
+// History Display
+// ============================================================================
+
+function printHistory(messages: Message[]): void {
+  if (messages.length === 0) return;
+
+  console.log();
+
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      // User message - could be string or tool results
+      if (typeof msg.content === 'string') {
+        printUserMessage(msg.content);
+      }
+      // Skip tool_result arrays (they're internal)
+    } else if (msg.role === 'assistant') {
+      // Assistant message - extract text content
+      if (typeof msg.content === 'string') {
+        printAssistantMessage(msg.content);
+        console.log();
+      } else if (Array.isArray(msg.content)) {
+        const textParts = (msg.content as MessageContent[])
+          .filter((c) => c.type === 'text')
+          .map((c) => (c as { type: 'text'; text: string }).text)
+          .join('');
+        if (textParts) {
+          printAssistantMessage(textParts);
+          console.log();
+        }
+
+        // Show tool calls briefly
+        const toolCalls = (msg.content as MessageContent[]).filter((c) => c.type === 'tool_use');
+        for (const tc of toolCalls) {
+          const toolCall = tc as { type: 'tool_use'; name: string };
+          console.log(colors.muted(`  ⚙ Used tool: ${toolCall.name}`));
+        }
+      }
+    }
+  }
+}
+import { pickSession } from './session-picker.js';
 
 // ============================================================================
 // Proxy Setup
@@ -55,11 +99,11 @@ function getAgentConfig(): AgentConfig {
     model = 'gemini-2.0-flash';
   }
 
-  if (process.env.MYCODE_PROVIDER) {
-    provider = process.env.MYCODE_PROVIDER as 'openai' | 'anthropic' | 'gemini';
+  if (process.env.CODEPILOT_PROVIDER) {
+    provider = process.env.CODEPILOT_PROVIDER as 'openai' | 'anthropic' | 'gemini';
   }
-  if (process.env.MYCODE_MODEL) {
-    model = process.env.MYCODE_MODEL;
+  if (process.env.CODEPILOT_MODEL) {
+    model = process.env.CODEPILOT_MODEL;
   }
 
   return {
@@ -82,12 +126,13 @@ async function handleSessionCommand(agent: Agent, command: string): Promise<bool
   switch (cmd) {
     case 'sessions':
     case 'list': {
-      const sessions = await agent.listSessions();
+      const showAll = arg === '--all' || arg === '-a';
+      const sessions = await agent.getSessionManager().list({ all: showAll });
       if (sessions.length === 0) {
-        printInfo('No sessions found.');
+        printInfo(showAll ? 'No sessions found.' : 'No sessions found for this project. Use /sessions --all to see all.');
       } else {
         console.log();
-        printInfo(`Found ${sessions.length} session(s):`);
+        printInfo(`Found ${sessions.length} session(s)${showAll ? ' (all projects)' : ' (this project)'}:`);
         console.log();
         printTable(
           ['#', 'ID', 'Title', 'Messages', 'Updated'],
@@ -122,9 +167,7 @@ async function handleSessionCommand(agent: Agent, command: string): Promise<bool
       }
 
       if (success) {
-        const history = agent.getHistory();
-        printSuccess(`Resumed session: ${agent.getSessionId()}`);
-        printInfo(`Loaded ${history.length} message(s)`);
+        printHistory(agent.getHistory());
       } else {
         printError('Failed to resume session. Use /sessions to list available sessions.');
       }
@@ -194,7 +237,7 @@ async function handleSessionCommand(agent: Agent, command: string): Promise<bool
     case 'help': {
       console.log();
       printInfo('Session Commands:');
-      console.log(colors.muted('  /sessions, /list') + '     List all sessions');
+      console.log(colors.muted('  /sessions [--all]') + '   List sessions (current project, or all with --all)');
       console.log(colors.muted('  /resume [id|#]') + '      Resume a session (latest if no arg)');
       console.log(colors.muted('  /new [title]') + '        Start a new session');
       console.log(colors.muted('  /fork [title]') + '       Fork current session');
@@ -218,6 +261,80 @@ async function handleSessionCommand(agent: Agent, command: string): Promise<bool
 
     default:
       return false;
+  }
+}
+
+// ============================================================================
+// CLI Arguments
+// ============================================================================
+
+function parseArgs(): { continue: boolean; resume: boolean; help: boolean } {
+  const args = process.argv.slice(2);
+  return {
+    continue: args.includes('-c') || args.includes('--continue'),
+    resume: args.includes('-r') || args.includes('--resume'),
+    help: args.includes('-h') || args.includes('--help'),
+  };
+}
+
+function printUsage(): void {
+  console.log(`
+${colors.highlight('Usage:')} codepilot [options]
+
+${colors.highlight('Options:')}
+  ${colors.primary('-c, --continue')}    Resume the most recent session
+  ${colors.primary('-r, --resume')}      Select a session to resume interactively
+  ${colors.primary('-h, --help')}        Show this help message
+
+${colors.highlight('Examples:')}
+  codepilot              Start a new session
+  codepilot -c           Continue the last session
+  codepilot -r           Choose from recent sessions
+`);
+}
+
+async function selectSession(agent: Agent, showAll = false): Promise<boolean> {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const sessions = await agent.getSessionManager().list({ all: showAll });
+
+    if (sessions.length === 0) {
+      if (showAll) {
+        printInfo('No sessions found.');
+      } else {
+        printInfo('No sessions found for this project. Press A to show all projects.');
+      }
+      return false;
+    }
+
+    const result = await pickSession({ sessions, showAllProjects: showAll });
+
+    switch (result.action) {
+      case 'select':
+        if (result.sessionId) {
+          const success = await agent.resumeSession(result.sessionId);
+          if (success) {
+            printHistory(agent.getHistory());
+            return true;
+          } else {
+            printError('Failed to resume session.');
+            return false;
+          }
+        }
+        return false;
+
+      case 'toggle-all':
+        showAll = !showAll;
+        continue;
+
+      case 'new':
+        printInfo('Starting new session.');
+        return false;
+
+      case 'cancel':
+        printInfo('Cancelled. Starting new session.');
+        return false;
+    }
   }
 }
 
@@ -279,31 +396,43 @@ async function runAgent(agent: Agent, prompt: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  await setupProxy();
+  const args = parseArgs();
 
+  // Handle --help
+  if (args.help) {
+    printUsage();
+    process.exit(0);
+  }
+
+  await setupProxy();
   printHeader();
 
   const config = getAgentConfig();
   printInfo(`Provider: ${colors.highlight(config.provider)} | Model: ${colors.highlight(config.model)}`);
   printInfo(`Working directory: ${colors.muted(config.cwd)}`);
   printSeparator();
-  console.log();
-  printInfo('Type /help for commands. Sessions auto-saved to ~/.mycode/sessions/');
-  console.log();
 
   const agent = new Agent(config);
 
-  // Check for --resume flag
-  const args = process.argv.slice(2);
-  if (args.includes('--resume') || args.includes('-r')) {
+  // Handle session flags
+  if (args.continue) {
+    // -c: Resume most recent session
     const resumed = await agent.resumeLatest();
     if (resumed) {
-      printSuccess(`Resumed latest session: ${agent.getSessionId()}`);
-      printInfo(`Loaded ${agent.getHistory().length} message(s)`);
+      printHistory(agent.getHistory());
     } else {
+      console.log();
       printInfo('No previous session found. Starting new session.');
     }
+  } else if (args.resume) {
+    // -r: Interactive session selection
+    await selectSession(agent);
+  } else {
+    console.log();
+    printInfo('Type /help for commands. Use -c to continue last session, -r to select.');
   }
+
+  console.log();
 
   // Set up permission confirmation
   agent.setConfirmCallback(async (tool: string, input: unknown) => {

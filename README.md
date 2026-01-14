@@ -1,12 +1,12 @@
-# Recode
+# codepilot
 
 An open-source, provider-agnostic alternative to Claude Code.
 
-## Why Recode?
+## Why codepilot?
 
 Claude Code is excellent - its interactive CLI experience, tool integration, and agent loop design are impressive. However, it's locked to Anthropic's Claude models.
 
-**Recode** aims to bring that same great experience while giving you the freedom to:
+**codepilot** aims to bring that same great experience while giving you the freedom to:
 
 - **Switch providers freely** - Use OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible API
 - **Control your costs** - Choose models that fit your budget and use case
@@ -14,6 +14,16 @@ Claude Code is excellent - its interactive CLI experience, tool integration, and
 - **Keep the experience** - Same intuitive CLI workflow inspired by Claude Code
 
 ## Quick Start
+
+```bash
+# Install globally
+npm install -g codepilot
+
+# Run
+codepilot
+```
+
+Or run from source:
 
 ```bash
 # Install dependencies
@@ -24,8 +34,6 @@ npm run build
 
 # Run CLI
 npm start
-# or
-recode  # after global install
 ```
 
 ## Usage
@@ -34,17 +42,16 @@ recode  # after global install
 
 ```bash
 # Start interactive CLI
-npm start
+codepilot
 
-# Or install globally
-npm install -g .
-recode
+# Resume last session
+codepilot --resume
 ```
 
 ### Programmatic Usage
 
 ```typescript
-import { Agent } from 'recode';
+import { Agent } from 'codepilot';
 
 const agent = new Agent({
   provider: 'gemini',  // 'openai' | 'anthropic' | 'gemini'
@@ -68,6 +75,10 @@ OPENAI_API_KEY=sk-xxx
 ANTHROPIC_API_KEY=sk-ant-xxx
 GOOGLE_API_KEY=xxx
 
+# Optional: override provider/model
+CODEPILOT_PROVIDER=anthropic
+CODEPILOT_MODEL=claude-sonnet-4-20250514
+
 # Optional proxy
 HTTP_PROXY=http://proxy:3128
 HTTPS_PROXY=http://proxy:3128
@@ -83,6 +94,7 @@ HTTPS_PROXY=http://proxy:3128
 | Agent Loop (multi-turn + tool calls) | ✅ |
 | Streaming Output | ✅ |
 | Interactive CLI | ✅ |
+| Session Management | ✅ |
 | Proxy Support | ✅ |
 
 ## Project Structure
@@ -93,6 +105,7 @@ src/
 ├── providers/       # LLM providers (OpenAI, Anthropic, Gemini)
 ├── tools/           # Built-in tools
 ├── permissions/     # Permission management
+├── session/         # Session persistence
 └── cli/             # Interactive CLI
 ```
 

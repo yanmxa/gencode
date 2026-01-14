@@ -169,10 +169,11 @@ export class SessionManager {
   }
 
   /**
-   * List all sessions
+   * List sessions, optionally filtered by project directory
    */
-  async list(): Promise<SessionListItem[]> {
+  async list(options?: { cwd?: string; all?: boolean }): Promise<SessionListItem[]> {
     await this.init();
+    const filterCwd = options?.all ? undefined : (options?.cwd ?? process.cwd());
 
     try {
       const files = await fs.readdir(this.storageDir);
@@ -185,6 +186,11 @@ export class SessionManager {
           const filePath = path.join(this.storageDir, file);
           const content = await fs.readFile(filePath, 'utf-8');
           const session = JSON.parse(content) as Session;
+
+          // Filter by cwd if specified
+          if (filterCwd && session.metadata.cwd !== filterCwd) {
+            continue;
+          }
 
           // Get first user message as preview
           const firstUserMsg = session.messages.find((m) => m.role === 'user');
