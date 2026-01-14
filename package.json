@@ -1,12 +1,12 @@
 {
-  "name": "codepilot",
+  "name": "mycode-cli",
   "version": "0.1.0",
   "description": "An open-source, provider-agnostic alternative to Claude Code",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "codepilot": "./dist/cli/index.js"
+    "mycode": "./dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",

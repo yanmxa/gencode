@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Codepilot CLI - Interactive Agent Interface with Session Management
+ * mycode CLI - Modern Interactive Agent Interface
+ * Beautiful terminal UI with session management
  */
 
 import 'dotenv/config';
@@ -9,8 +10,7 @@ import { Agent } from '../agent/index.js';
 import type { AgentConfig } from '../agent/types.js';
 import type { Message, MessageContent } from '../providers/types.js';
 import {
-  printHeader,
-  printSeparator,
+  printCompactHeader,
   printUserMessage,
   printAssistantMessage,
   printToolCall,
@@ -20,9 +20,15 @@ import {
   printSuccess,
   promptConfirm,
   createSpinner,
-  colors,
   printTable,
+  printHelp,
+  printWelcome,
+  printPermissionRequest,
+  printSessionInfo,
+  getPromptSymbol,
+  theme,
 } from './ui.js';
+import { pickSession } from './session-picker.js';
 
 // ============================================================================
 // History Display
@@ -32,19 +38,17 @@ function printHistory(messages: Message[]): void {
   if (messages.length === 0) return;
 
   console.log();
+  printInfo('Session history restored');
+  console.log();
 
   for (const msg of messages) {
     if (msg.role === 'user') {
-      // User message - could be string or tool results
       if (typeof msg.content === 'string') {
         printUserMessage(msg.content);
       }
-      // Skip tool_result arrays (they're internal)
     } else if (msg.role === 'assistant') {
-      // Assistant message - extract text content
       if (typeof msg.content === 'string') {
         printAssistantMessage(msg.content);
-        console.log();
       } else if (Array.isArray(msg.content)) {
         const textParts = (msg.content as MessageContent[])
           .filter((c) => c.type === 'text')
@@ -52,20 +56,17 @@ function printHistory(messages: Message[]): void {
           .join('');
         if (textParts) {
           printAssistantMessage(textParts);
-          console.log();
         }
 
-        // Show tool calls briefly
         const toolCalls = (msg.content as MessageContent[]).filter((c) => c.type === 'tool_use');
         for (const tc of toolCalls) {
           const toolCall = tc as { type: 'tool_use'; name: string };
-          console.log(colors.muted(`  ⚙ Used tool: ${toolCall.name}`));
+          console.log(theme.textMuted(`  ⚙ ${toolCall.name}`));
         }
       }
     }
   }
 }
-import { pickSession } from './session-picker.js';
 
 // ============================================================================
 // Proxy Setup
@@ -76,7 +77,7 @@ async function setupProxy(): Promise<void> {
   if (proxyUrl) {
     const { setGlobalDispatcher, ProxyAgent } = await import('undici');
     setGlobalDispatcher(new ProxyAgent(proxyUrl));
-    printInfo(`Using proxy: ${proxyUrl}`);
+    printInfo(`Proxy: ${proxyUrl}`);
   }
 }
 
@@ -99,11 +100,11 @@ function getAgentConfig(): AgentConfig {
     model = 'gemini-2.0-flash';
   }
 
-  if (process.env.CODEPILOT_PROVIDER) {
-    provider = process.env.CODEPILOT_PROVIDER as 'openai' | 'anthropic' | 'gemini';
+  if (process.env.MYCODE_PROVIDER) {
+    provider = process.env.MYCODE_PROVIDER as 'openai' | 'anthropic' | 'gemini';
   }
-  if (process.env.CODEPILOT_MODEL) {
-    model = process.env.CODEPILOT_MODEL;
+  if (process.env.MYCODE_MODEL) {
+    model = process.env.MYCODE_MODEL;
   }
 
   return {
@@ -129,19 +130,19 @@ async function handleSessionCommand(agent: Agent, command: string): Promise<bool
       const showAll = arg === '--all' || arg === '-a';
       const sessions = await agent.getSessionManager().list({ all: showAll });
       if (sessions.length === 0) {
-        printInfo(showAll ? 'No sessions found.' : 'No sessions found for this project. Use /sessions --all to see all.');
+        printInfo(showAll ? 'No sessions found.' : 'No sessions for this project. Use --all to see all.');
       } else {
         console.log();
-        printInfo(`Found ${sessions.length} session(s)${showAll ? ' (all projects)' : ' (this project)'}:`);
+        printInfo(`${sessions.length} session${sessions.length > 1 ? 's' : ''} ${showAll ? '(all projects)' : '(this project)'}`);
         console.log();
         printTable(
-          ['#', 'ID', 'Title', 'Messages', 'Updated'],
+          ['#', 'ID', 'Title', 'Msgs', 'Updated'],
           sessions.map((s, i) => [
             String(i + 1),
-            s.id.slice(0, 12),
-            s.title.slice(0, 30),
+            s.id.slice(0, 8),
+            s.title.slice(0, 35),
             String(s.messageCount),
-            new Date(s.updatedAt).toLocaleString(),
+            formatTime(s.updatedAt),
           ])
         );
       }
@@ -151,7 +152,6 @@ async function handleSessionCommand(agent: Agent, command: string): Promise<bool
     case 'resume': {
       let success = false;
       if (arg) {
-        // Resume by ID or index
         const index = parseInt(arg, 10);
         if (!isNaN(index)) {
           const sessions = await agent.listSessions();
@@ -162,14 +162,13 @@ async function handleSessionCommand(agent: Agent, command: string): Promise<bool
           success = await agent.resumeSession(arg);
         }
       } else {
-        // Resume latest
         success = await agent.resumeLatest();
       }
 
       if (success) {
         printHistory(agent.getHistory());
       } else {
-        printError('Failed to resume session. Use /sessions to list available sessions.');
+        printError('Failed to resume. Use /sessions to list available sessions.');
       }
       return true;
     }
@@ -177,7 +176,7 @@ async function handleSessionCommand(agent: Agent, command: string): Promise<bool
     case 'new': {
       const title = parts.slice(1).join(' ') || undefined;
       const sessionId = await agent.startSession(title);
-      printSuccess(`Started new session: ${sessionId}`);
+      printSuccess(`New session: ${sessionId.slice(0, 8)}`);
       return true;
     }
 
@@ -185,7 +184,7 @@ async function handleSessionCommand(agent: Agent, command: string): Promise<bool
       const title = parts.slice(1).join(' ') || undefined;
       const forkedId = await agent.forkSession(title);
       if (forkedId) {
-        printSuccess(`Forked to new session: ${forkedId}`);
+        printSuccess(`Forked session: ${forkedId.slice(0, 8)}`);
       } else {
         printError('No active session to fork.');
       }
@@ -194,7 +193,7 @@ async function handleSessionCommand(agent: Agent, command: string): Promise<bool
 
     case 'delete': {
       if (!arg) {
-        printError('Usage: /delete <session-id or index>');
+        printError('Usage: /delete <session-id or #>');
         return true;
       }
 
@@ -209,44 +208,31 @@ async function handleSessionCommand(agent: Agent, command: string): Promise<bool
 
       const deleted = await agent.deleteSession(sessionId);
       if (deleted) {
-        printSuccess(`Deleted session: ${sessionId}`);
+        printSuccess(`Deleted: ${sessionId.slice(0, 8)}`);
       } else {
-        printError(`Failed to delete session: ${sessionId}`);
+        printError(`Failed to delete: ${sessionId}`);
       }
       return true;
     }
 
     case 'save': {
       await agent.saveSession();
-      printSuccess('Session saved.');
+      printSuccess('Session saved');
       return true;
     }
 
     case 'info': {
       const sessionId = agent.getSessionId();
       if (sessionId) {
-        const history = agent.getHistory();
-        printInfo(`Session ID: ${colors.highlight(sessionId)}`);
-        printInfo(`Messages: ${history.length}`);
+        printSessionInfo(sessionId, agent.getHistory().length);
       } else {
-        printInfo('No active session.');
+        printInfo('No active session');
       }
       return true;
     }
 
     case 'help': {
-      console.log();
-      printInfo('Session Commands:');
-      console.log(colors.muted('  /sessions [--all]') + '   List sessions (current project, or all with --all)');
-      console.log(colors.muted('  /resume [id|#]') + '      Resume a session (latest if no arg)');
-      console.log(colors.muted('  /new [title]') + '        Start a new session');
-      console.log(colors.muted('  /fork [title]') + '       Fork current session');
-      console.log(colors.muted('  /delete <id|#>') + '      Delete a session');
-      console.log(colors.muted('  /save') + '               Save current session');
-      console.log(colors.muted('  /info') + '               Show current session info');
-      console.log(colors.muted('  /clear') + '              Clear current conversation');
-      console.log(colors.muted('  /help') + '               Show this help');
-      console.log(colors.muted('  exit, quit') + '          Exit the CLI');
+      printHelp();
       return true;
     }
 
@@ -254,14 +240,34 @@ async function handleSessionCommand(agent: Agent, command: string): Promise<bool
       agent.clearHistory();
       await agent.startSession();
       console.clear();
-      printHeader();
-      printSuccess('Conversation cleared. Started new session.');
+      const config = getAgentConfig();
+      printCompactHeader(config.provider, config.model, config.cwd ?? process.cwd());
+      printSuccess('Conversation cleared');
       return true;
     }
 
     default:
       return false;
   }
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+function formatTime(dateStr: string): string {
+  const now = Date.now();
+  const date = new Date(dateStr).getTime();
+  const diff = now - date;
+
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h`;
+  if (days < 7) return `${days}d`;
+  return new Date(dateStr).toLocaleDateString();
 }
 
 // ============================================================================
@@ -278,19 +284,21 @@ function parseArgs(): { continue: boolean; resume: boolean; help: boolean } {
 }
 
 function printUsage(): void {
-  console.log(`
-${colors.highlight('Usage:')} codepilot [options]
-
-${colors.highlight('Options:')}
-  ${colors.primary('-c, --continue')}    Resume the most recent session
-  ${colors.primary('-r, --resume')}      Select a session to resume interactively
-  ${colors.primary('-h, --help')}        Show this help message
-
-${colors.highlight('Examples:')}
-  codepilot              Start a new session
-  codepilot -c           Continue the last session
-  codepilot -r           Choose from recent sessions
-`);
+  console.log();
+  console.log(theme.brand.bold('  mycode') + theme.textMuted(' - AI-Powered Coding Assistant'));
+  console.log();
+  console.log(theme.highlight('  Usage:') + theme.textMuted(' mycode [options]'));
+  console.log();
+  console.log(theme.highlight('  Options:'));
+  console.log(`    ${theme.primary('-c, --continue')}    Resume the most recent session`);
+  console.log(`    ${theme.primary('-r, --resume')}      Select a session interactively`);
+  console.log(`    ${theme.primary('-h, --help')}        Show this help`);
+  console.log();
+  console.log(theme.highlight('  Examples:'));
+  console.log(theme.textMuted('    mycode              Start new session'));
+  console.log(theme.textMuted('    mycode -c           Continue last session'));
+  console.log(theme.textMuted('    mycode -r           Pick a session'));
+  console.log();
 }
 
 async function selectSession(agent: Agent, showAll = false): Promise<boolean> {
@@ -300,9 +308,9 @@ async function selectSession(agent: Agent, showAll = false): Promise<boolean> {
 
     if (sessions.length === 0) {
       if (showAll) {
-        printInfo('No sessions found.');
+        printInfo('No sessions found');
       } else {
-        printInfo('No sessions found for this project. Press A to show all projects.');
+        printInfo('No sessions for this project. Press A for all.');
       }
       return false;
     }
@@ -317,7 +325,7 @@ async function selectSession(agent: Agent, showAll = false): Promise<boolean> {
             printHistory(agent.getHistory());
             return true;
           } else {
-            printError('Failed to resume session.');
+            printError('Failed to resume session');
             return false;
           }
         }
@@ -328,11 +336,11 @@ async function selectSession(agent: Agent, showAll = false): Promise<boolean> {
         continue;
 
       case 'new':
-        printInfo('Starting new session.');
+        printInfo('Starting new session');
         return false;
 
       case 'cancel':
-        printInfo('Cancelled. Starting new session.');
+        printInfo('Starting new session');
         return false;
     }
   }
@@ -398,51 +406,37 @@ async function runAgent(agent: Agent, prompt: string): Promise<void> {
 async function main(): Promise<void> {
   const args = parseArgs();
 
-  // Handle --help
   if (args.help) {
     printUsage();
     process.exit(0);
   }
 
   await setupProxy();
-  printHeader();
 
   const config = getAgentConfig();
-  printInfo(`Provider: ${colors.highlight(config.provider)} | Model: ${colors.highlight(config.model)}`);
-  printInfo(`Working directory: ${colors.muted(config.cwd)}`);
-  printSeparator();
+  printCompactHeader(config.provider, config.model, config.cwd ?? process.cwd());
 
   const agent = new Agent(config);
 
   // Handle session flags
   if (args.continue) {
-    // -c: Resume most recent session
     const resumed = await agent.resumeLatest();
     if (resumed) {
       printHistory(agent.getHistory());
     } else {
-      console.log();
-      printInfo('No previous session found. Starting new session.');
+      printInfo('No previous session. Starting new.');
     }
   } else if (args.resume) {
-    // -r: Interactive session selection
     await selectSession(agent);
   } else {
-    console.log();
-    printInfo('Type /help for commands. Use -c to continue last session, -r to select.');
+    printWelcome();
   }
 
   console.log();
 
   // Set up permission confirmation
   agent.setConfirmCallback(async (tool: string, input: unknown) => {
-    console.log();
-    console.log(colors.warning(`Permission required for ${colors.highlight(tool)}`));
-    const inputStr = JSON.stringify(input, null, 2);
-    const lines = inputStr.split('\n').slice(0, 5);
-    for (const line of lines) {
-      console.log(colors.muted('  ' + line));
-    }
+    printPermissionRequest(tool, input);
     return await promptConfirm('Allow this operation?');
   });
 
@@ -452,8 +446,10 @@ async function main(): Promise<void> {
     output: process.stdout,
   });
 
+  const promptSymbol = getPromptSymbol();
+
   const prompt = (): void => {
-    rl.question(colors.primary('❯ '), async (input) => {
+    rl.question(promptSymbol, async (input) => {
       const trimmed = input.trim();
 
       if (!trimmed) {
@@ -474,7 +470,7 @@ async function main(): Promise<void> {
       if (trimmed.startsWith('/')) {
         const handled = await handleSessionCommand(agent, trimmed);
         if (!handled) {
-          printError(`Unknown command: ${trimmed}. Type /help for available commands.`);
+          printError(`Unknown command: ${trimmed}. Type /help for help.`);
         }
         console.log();
         prompt();
@@ -495,7 +491,7 @@ async function main(): Promise<void> {
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
   console.log();
-  printInfo('Interrupted. Session saved. Goodbye!');
+  printInfo('Session saved. Goodbye!');
   process.exit(0);
 });
 

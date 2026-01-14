@@ -1,12 +1,12 @@
-# codepilot
+# mycode
 
 An open-source, provider-agnostic alternative to Claude Code.
 
-## Why codepilot?
+## Why mycode?
 
 Claude Code is excellent - its interactive CLI experience, tool integration, and agent loop design are impressive. However, it's locked to Anthropic's Claude models.
 
-**codepilot** aims to bring that same great experience while giving you the freedom to:
+**mycode** aims to bring that same great experience while giving you the freedom to:
 
 - **Switch providers freely** - Use OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible API
 - **Control your costs** - Choose models that fit your budget and use case
@@ -17,10 +17,10 @@ Claude Code is excellent - its interactive CLI experience, tool integration, and
 
 ```bash
 # Install globally
-npm install -g codepilot
+npm install -g mycode-cli
 
 # Run
-codepilot
+mycode
 ```
 
 Or run from source:
@@ -42,16 +42,19 @@ npm start
 
 ```bash
 # Start interactive CLI
-codepilot
+mycode
 
 # Resume last session
-codepilot --resume
+mycode -c
+
+# Select from recent sessions
+mycode -r
 ```
 
 ### Programmatic Usage
 
 ```typescript
-import { Agent } from 'codepilot';
+import { Agent } from 'mycode-cli';
 
 const agent = new Agent({
   provider: 'gemini',  // 'openai' | 'anthropic' | 'gemini'
@@ -76,8 +79,8 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 GOOGLE_API_KEY=xxx
 
 # Optional: override provider/model
-CODEPILOT_PROVIDER=anthropic
-CODEPILOT_MODEL=claude-sonnet-4-20250514
+MYCODE_PROVIDER=anthropic
+MYCODE_MODEL=claude-sonnet-4-20250514
 
 # Optional proxy
 HTTP_PROXY=http://proxy:3128

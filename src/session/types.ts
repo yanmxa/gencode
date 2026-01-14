@@ -42,7 +42,7 @@ export interface SessionConfig {
 }
 
 export const DEFAULT_SESSION_CONFIG: SessionConfig = {
-  storageDir: '~/.codepilot/sessions',
+  storageDir: '~/.mycode/sessions',
   maxSessions: 50,
   maxAge: 30,
   autoSave: true,

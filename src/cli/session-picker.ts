@@ -1,10 +1,25 @@
 /**
- * Interactive Session Picker with Fuzzy Search
+ * Interactive Session Picker - Modern Terminal UI
+ * Beautiful session selection with fuzzy search
  */
 
-import * as readline from 'readline';
 import type { SessionListItem } from '../session/types.js';
-import { colors } from './ui.js';
+import { theme } from './ui.js';
+
+const icons = {
+  search: '⌕',
+  selected: '▶',
+  session: '◉',
+  message: '◯',
+  clock: '◷',
+  folder: '◇',
+  checkmark: '✓',
+  arrow: '›',
+};
+
+// ============================================================================
+// Types
+// ============================================================================
 
 interface PickerOptions {
   sessions: SessionListItem[];
@@ -16,9 +31,10 @@ interface PickerResult {
   sessionId?: string;
 }
 
-/**
- * Simple fuzzy match - returns true if all chars in query appear in text in order
- */
+// ============================================================================
+// Utilities
+// ============================================================================
+
 function fuzzyMatch(query: string, text: string): { matches: boolean; score: number } {
   const queryLower = query.toLowerCase();
   const textLower = text.toLowerCase();
@@ -31,9 +47,7 @@ function fuzzyMatch(query: string, text: string): { matches: boolean; score: num
 
   for (let i = 0; i < textLower.length && queryIndex < queryLower.length; i++) {
     if (textLower[i] === queryLower[queryIndex]) {
-      // Bonus for consecutive matches
       if (lastMatchIndex === i - 1) score += 2;
-      // Bonus for matching at word start
       if (i === 0 || textLower[i - 1] === ' ' || textLower[i - 1] === '/') score += 3;
       score += 1;
       lastMatchIndex = i;
@@ -47,9 +61,6 @@ function fuzzyMatch(query: string, text: string): { matches: boolean; score: num
   };
 }
 
-/**
- * Format relative time
- */
 function formatRelativeTime(dateStr: string): string {
   const now = Date.now();
   const date = new Date(dateStr).getTime();
@@ -60,16 +71,13 @@ function formatRelativeTime(dateStr: string): string {
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (seconds < 60) return `${seconds} seconds ago`;
-  if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
-  if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-  if (days < 7) return `${days} day${days > 1 ? 's' : ''} ago`;
+  if (seconds < 60) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
   return new Date(dateStr).toLocaleDateString();
 }
 
-/**
- * Highlight matching characters in text
- */
 function highlightMatch(text: string, query: string): string {
   if (!query) return text;
 
@@ -80,7 +88,7 @@ function highlightMatch(text: string, query: string): string {
 
   for (let i = 0; i < text.length; i++) {
     if (queryIndex < queryLower.length && textLower[i] === queryLower[queryIndex]) {
-      result += colors.primary(text[i]);
+      result += theme.brand(text[i]);
       queryIndex++;
     } else {
       result += text[i];
@@ -90,9 +98,15 @@ function highlightMatch(text: string, query: string): string {
   return result;
 }
 
-/**
- * Render the picker UI
- */
+function truncate(str: string, maxLen: number): string {
+  if (str.length <= maxLen) return str;
+  return str.slice(0, maxLen - 1) + '…';
+}
+
+// ============================================================================
+// Rendering
+// ============================================================================
+
 function render(
   query: string,
   sessions: SessionListItem[],
@@ -101,15 +115,22 @@ function render(
   termHeight: number
 ): string[] {
   const lines: string[] = [];
+  const termWidth = process.stdout.columns || 80;
 
   // Header
   lines.push('');
-  lines.push(colors.info('Resume Session') + (showAllProjects ? colors.muted(' (all projects)') : ''));
+  lines.push(
+    theme.brand.bold('  Resume Session') +
+    (showAllProjects ? theme.textMuted(' · all projects') : theme.textMuted(' · this project'))
+  );
   lines.push('');
 
-  // Search box
-  const searchBox = colors.muted('› ') + (query || colors.muted('Search...'));
-  lines.push(searchBox);
+  // Search box with nice styling
+  const searchIcon = theme.textMuted(icons.search);
+  const searchText = query || theme.textMuted('Type to search...');
+  const searchLine = `  ${searchIcon} ${searchText}`;
+  lines.push(searchLine);
+  lines.push(theme.textMuted('  ' + '─'.repeat(Math.min(40, termWidth - 4))));
   lines.push('');
 
   // Filter and sort sessions
@@ -123,56 +144,74 @@ function render(
     .sort((a, b) => b.score - a.score);
 
   // Calculate visible range
-  const maxVisible = Math.min(termHeight - 10, 15);
+  const maxVisible = Math.min(termHeight - 12, 10);
   const startIndex = Math.max(0, selectedIndex - Math.floor(maxVisible / 2));
   const endIndex = Math.min(filtered.length, startIndex + maxVisible);
   const visibleSessions = filtered.slice(startIndex, endIndex);
 
   // Render sessions
   if (filtered.length === 0) {
-    lines.push(colors.muted('  No matching sessions'));
+    lines.push(theme.textMuted('  No matching sessions found'));
+    lines.push('');
   } else {
-    visibleSessions.forEach((item, i) => {
+    for (let i = 0; i < visibleSessions.length; i++) {
       const actualIndex = startIndex + i;
       const isSelected = actualIndex === selectedIndex;
-      const s = item.session;
+      const s = visibleSessions[i].session;
 
-      const prefix = isSelected ? colors.primary('› ▶ ') : '    ';
-      const title = highlightMatch(s.title.slice(0, 60), query);
-      const relTime = formatRelativeTime(s.updatedAt);
-      const meta = colors.muted(` · ${s.messageCount} messages · ${relTime}`);
+      // Session item with selection indicator
+      const prefix = isSelected
+        ? theme.brand(`  ${icons.selected} `)
+        : theme.textMuted('    ');
 
-      lines.push(prefix + (isSelected ? colors.highlight(s.title.slice(0, 60)) : title) + meta);
+      const titleText = truncate(s.title, 45);
+      const title = isSelected
+        ? theme.highlight(titleText)
+        : highlightMatch(titleText, query);
 
-      if (s.preview) {
-        const previewText = s.preview.slice(0, 80);
-        const preview = isSelected
-          ? colors.muted('    ' + previewText)
-          : colors.muted('    ' + highlightMatch(previewText, query));
-        lines.push(preview);
+      // Meta info
+      const time = formatRelativeTime(s.updatedAt);
+      const msgCount = s.messageCount;
+      const meta = theme.textMuted(` · ${msgCount} msgs · ${time}`);
+
+      lines.push(prefix + title + meta);
+
+      // Preview on second line (only for selected item)
+      if (isSelected && s.preview) {
+        const previewText = truncate(s.preview, Math.min(60, termWidth - 10));
+        lines.push(theme.textMuted(`      ${previewText}`));
       }
-    });
-
-    if (filtered.length > maxVisible) {
-      lines.push(colors.muted(`    ... and ${filtered.length - maxVisible} more sessions`));
     }
+
+    // Show "more" indicator if needed
+    if (filtered.length > maxVisible) {
+      const remaining = filtered.length - visibleSessions.length;
+      if (remaining > 0) {
+        lines.push(theme.textMuted(`      … ${remaining} more session${remaining > 1 ? 's' : ''}`));
+      }
+    }
+    lines.push('');
   }
 
-  // Footer with keybindings
+  // Footer with keybindings - cleaner styling
+  lines.push(theme.textMuted('  ─'.repeat(Math.floor(Math.min(40, termWidth - 4) / 2))));
   lines.push('');
-  lines.push(
-    colors.muted('A') + ' to show all projects · ' +
-    colors.muted('↑↓') + ' to navigate · ' +
-    colors.muted('Enter') + ' to select · ' +
-    colors.muted('Esc') + ' to cancel'
-  );
+
+  const keys = [
+    `${theme.textSecondary('↑↓')} ${theme.textMuted('navigate')}`,
+    `${theme.textSecondary('⏎')} ${theme.textMuted('select')}`,
+    `${theme.textSecondary('a')} ${theme.textMuted('toggle all')}`,
+    `${theme.textSecondary('esc')} ${theme.textMuted('cancel')}`,
+  ];
+  lines.push('  ' + keys.join(theme.textMuted(' · ')));
 
   return lines;
 }
 
-/**
- * Interactive session picker
- */
+// ============================================================================
+// Session Picker
+// ============================================================================
+
 export async function pickSession(options: PickerOptions): Promise<PickerResult> {
   const { sessions } = options;
   let showAllProjects = options.showAllProjects ?? false;
@@ -188,7 +227,7 @@ export async function pickSession(options: PickerOptions): Promise<PickerResult>
 
     const termHeight = process.stdout.rows || 24;
 
-    // Enable raw mode
+    // Enable raw mode for keyboard input
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(true);
     }
@@ -201,15 +240,17 @@ export async function pickSession(options: PickerOptions): Promise<PickerResult>
       process.stdin.pause();
       process.stdin.removeListener('data', onKeypress);
       // Clear the picker UI
-      process.stdout.write('\x1b[' + lastRenderedLines + 'A'); // Move up
-      process.stdout.write('\x1b[J'); // Clear to end
+      if (lastRenderedLines > 0) {
+        process.stdout.write('\x1b[' + lastRenderedLines + 'A');
+        process.stdout.write('\x1b[J');
+      }
     };
 
     const draw = () => {
       // Clear previous output
       if (lastRenderedLines > 0) {
-        process.stdout.write('\x1b[' + lastRenderedLines + 'A'); // Move up
-        process.stdout.write('\x1b[J'); // Clear to end
+        process.stdout.write('\x1b[' + lastRenderedLines + 'A');
+        process.stdout.write('\x1b[J');
       }
 
       const lines = render(query, sessions, selectedIndex, showAllProjects, termHeight);
@@ -231,7 +272,7 @@ export async function pickSession(options: PickerOptions): Promise<PickerResult>
     const onKeypress = (data: Buffer) => {
       const key = data.toString();
 
-      // Escape
+      // Escape or Ctrl+C
       if (key === '\x1b' || key === '\x03') {
         cleanup();
         resolve({ action: 'cancel' });
@@ -248,16 +289,15 @@ export async function pickSession(options: PickerOptions): Promise<PickerResult>
         return;
       }
 
-      // Arrow up
-      if (key === '\x1b[A') {
-        const filtered = getFilteredSessions();
+      // Arrow up or Ctrl+P
+      if (key === '\x1b[A' || key === '\x10') {
         selectedIndex = Math.max(0, selectedIndex - 1);
         draw();
         return;
       }
 
-      // Arrow down
-      if (key === '\x1b[B') {
+      // Arrow down or Ctrl+N
+      if (key === '\x1b[B' || key === '\x0e') {
         const filtered = getFilteredSessions();
         selectedIndex = Math.min(filtered.length - 1, selectedIndex + 1);
         draw();
@@ -274,10 +314,17 @@ export async function pickSession(options: PickerOptions): Promise<PickerResult>
         return;
       }
 
-      // 'A' or 'a' to toggle all projects
+      // 'A' or 'a' to toggle all projects (only when no query)
       if ((key === 'A' || key === 'a') && query === '') {
         cleanup();
         resolve({ action: 'toggle-all' });
+        return;
+      }
+
+      // 'N' or 'n' to start new session (only when no query)
+      if ((key === 'N' || key === 'n') && query === '') {
+        cleanup();
+        resolve({ action: 'new' });
         return;
       }
 
