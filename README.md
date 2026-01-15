@@ -17,7 +17,7 @@ Claude Code is excellent - its interactive CLI experience, tool integration, and
 
 ```bash
 # Install globally
-npm install -g gencode
+npm install -g gencode-ai
 
 # Run
 gencode
@@ -54,7 +54,7 @@ gencode -r
 ### Programmatic Usage
 
 ```typescript
-import { Agent } from 'gencode';
+import { Agent } from 'gencode-ai';
 
 const agent = new Agent({
   provider: 'gemini',  // 'openai' | 'anthropic' | 'gemini'

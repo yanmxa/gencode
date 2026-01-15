@@ -1,5 +1,5 @@
 {
-  "name": "gencode",
+  "name": "gencode-ai",
   "version": "0.1.0",
   "description": "GenCode - An open-source, provider-agnostic AI coding assistant",
   "type": "module",
