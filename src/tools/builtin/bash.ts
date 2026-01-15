@@ -5,10 +5,11 @@
 import { spawn } from 'child_process';
 import type { Tool, ToolContext, ToolResult } from '../types.js';
 import { BashInputSchema, type BashInput } from '../types.js';
+import { loadToolDescription } from '../../prompts/index.js';
 
 export const bashTool: Tool<BashInput> = {
   name: 'Bash',
-  description: 'Execute a bash command and return its output. Use for running scripts, git commands, npm, etc.',
+  description: loadToolDescription('bash'),
   parameters: BashInputSchema,
 
   async execute(input: BashInput, context: ToolContext): Promise<ToolResult> {

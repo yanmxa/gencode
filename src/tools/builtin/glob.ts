@@ -5,12 +5,13 @@
 import fastGlob from 'fast-glob';
 import type { Tool, ToolResult } from '../types.js';
 import { GlobInputSchema, type GlobInput, resolvePath, getErrorMessage } from '../types.js';
+import { loadToolDescription } from '../../prompts/index.js';
 
 const MAX_RESULTS = 100;
 
 export const globTool: Tool<GlobInput> = {
   name: 'Glob',
-  description: 'Find files matching a glob pattern. Returns a list of matching file paths.',
+  description: loadToolDescription('glob'),
   parameters: GlobInputSchema,
 
   async execute(input, context): Promise<ToolResult> {

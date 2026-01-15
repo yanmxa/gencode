@@ -9,6 +9,8 @@ interface Command {
 export const COMMANDS: Command[] = [
   { name: '/model', description: 'Switch model' },
   { name: '/provider', description: 'Manage providers' },
+  { name: '/permissions', description: 'View permission rules' },
+  { name: '/permissions audit', description: 'View permission audit log' },
   { name: '/sessions', description: 'List sessions' },
   { name: '/resume', description: 'Resume session' },
   { name: '/new', description: 'New session' },

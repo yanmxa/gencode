@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { Tool, ToolContext, ToolResult } from '../types.js';
 import { getErrorMessage } from '../types.js';
 import { validateUrl } from '../utils/ssrf.js';
+import { loadToolDescription } from '../../prompts/index.js';
 
 // Constants
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -148,11 +149,7 @@ function truncateOutput(output: string): string {
  */
 export const webfetchTool: Tool<WebFetchInput> = {
   name: 'WebFetch',
-  description: `Fetch content from a URL and return it in the specified format.
-- Converts HTML to Markdown by default for easier reading
-- Supports text, markdown, and html output formats
-- Maximum response size: 5MB
-- Timeout: 30 seconds (configurable up to 120 seconds)`,
+  description: loadToolDescription('webfetch'),
   parameters: WebFetchInputSchema,
 
   async execute(input: WebFetchInput, context: ToolContext): Promise<ToolResult> {

@@ -108,6 +108,18 @@ export const WebFetchInputSchema = z.object({
 });
 export type WebFetchInput = z.infer<typeof WebFetchInputSchema>;
 
+export const TodoItemSchema = z.object({
+  content: z.string().min(1).describe('The task description in imperative form (e.g., "Run tests")'),
+  status: z.enum(['pending', 'in_progress', 'completed']).describe('Current status of the task'),
+  activeForm: z.string().min(1).describe('Present continuous form (e.g., "Running tests")'),
+});
+export type TodoItem = z.infer<typeof TodoItemSchema>;
+
+export const TodoWriteInputSchema = z.object({
+  todos: z.array(TodoItemSchema).describe('The complete todo list to write'),
+});
+export type TodoWriteInput = z.infer<typeof TodoWriteInputSchema>;
+
 // ============================================================================
 // JSON Schema Conversion
 // ============================================================================

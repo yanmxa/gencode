@@ -5,10 +5,11 @@
 import * as fs from 'fs/promises';
 import type { Tool, ToolResult } from '../types.js';
 import { EditInputSchema, type EditInput, resolvePath, getErrorMessage } from '../types.js';
+import { loadToolDescription } from '../../prompts/index.js';
 
 export const editTool: Tool<EditInput> = {
   name: 'Edit',
-  description: 'Edit a file by replacing a specific string with another. The old_string must be unique in the file.',
+  description: loadToolDescription('edit'),
   parameters: EditInputSchema,
 
   async execute(input, context): Promise<ToolResult> {

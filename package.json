@@ -1,6 +1,6 @@
 {
   "name": "gencode-ai",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "GenCode - An open-source, provider-agnostic AI coding assistant",
   "type": "module",
   "main": "dist/index.js",
@@ -47,8 +47,11 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^25.0.8",
     "@types/react": "^19.2.8",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.6",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

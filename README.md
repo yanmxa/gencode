@@ -29,6 +29,11 @@ gencode
 - **Agent Loop** - Multi-turn conversations with tool calls
 - **Session Management** - Persist and resume conversations
 - **Interactive CLI** - Fuzzy search, command suggestions, streaming output
+- [**Permission System**](./docs/permissions.md) - Claude Code compatible permission management
+  - Pattern-based rules (`Bash(git add:*)`)
+  - Prompt-based permissions ("run tests", "install dependencies")
+  - Session/project/global scopes
+  - Persistent allowlists and audit logging
 
 ## License
 

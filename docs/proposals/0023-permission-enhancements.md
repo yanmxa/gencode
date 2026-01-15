@@ -2,9 +2,10 @@
 
 - **Proposal ID**: 0023
 - **Author**: mycode team
-- **Status**: Draft
+- **Status**: Implemented
 - **Created**: 2025-01-15
-- **Updated**: 2025-01-15
+- **Updated**: 2026-01-15
+- **Implemented**: 2026-01-15
 
 ## Summary
 
@@ -462,6 +463,64 @@ Only allow explicitly approved operations.
 5. **Phase 5**: CLI management
 
 Backward compatible with existing rules.
+
+## Implementation Notes
+
+### Files Created/Modified
+
+| File | Action | Description |
+|------|--------|-------------|
+| `src/permissions/types.ts` | Modified | Enhanced types with ApprovalAction, PromptPermission, audit types, persistence types |
+| `src/permissions/manager.ts` | Modified | Enhanced PermissionManager with pattern matching, prompt matching, persistence, audit |
+| `src/permissions/prompt-matcher.ts` | Created | Semantic prompt matching for Claude Code style permissions |
+| `src/permissions/persistence.ts` | Created | Persistence layer for storing rules to disk |
+| `src/permissions/audit.ts` | Created | Audit logging for permission decisions |
+| `src/permissions/index.ts` | Modified | Export all new modules |
+| `src/cli/components/PermissionPrompt.tsx` | Created | Enhanced permission prompt UI with approval options |
+| `src/cli/components/CommandSuggestions.tsx` | Modified | Added /permissions command |
+| `src/cli/components/App.tsx` | Modified | Integrated permission system, added /permissions command |
+| `src/cli/components/index.ts` | Modified | Export new components |
+| `src/cli/index.tsx` | Modified | Pass permission settings to App |
+| `src/agent/agent.ts` | Modified | Enhanced permission integration with new API |
+
+### Key Implementation Details
+
+1. **Pattern-Based Rules**: Supports Claude Code format like `Bash(git add:*)` with glob-style wildcards
+2. **Prompt-Based Permissions**: ExitPlanMode style with semantic matching for common operations (run tests, install dependencies, etc.)
+3. **Multi-Scope Permissions**: Session (in-memory), Project (.gencode/permissions.json), Global (~/.gencode/permissions.json)
+4. **Approval Options**: Allow once, Allow for session, Always allow (persistent), Deny
+5. **Audit Logging**: In-memory audit trail with optional file persistence
+6. **CLI Commands**: `/permissions` shows rules, `/permissions audit` shows decision history, `/permissions stats` shows statistics
+
+### Usage Examples
+
+```bash
+# View current permission rules
+/permissions
+
+# View audit log
+/permissions audit
+
+# View statistics
+/permissions stats
+```
+
+### Settings Configuration
+
+Add to `~/.gencode/settings.json`:
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(npm install:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)"
+    ]
+  }
+}
+```
 
 ## References
 

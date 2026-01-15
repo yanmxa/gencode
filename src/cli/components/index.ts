@@ -19,3 +19,9 @@ export { PromptInput, ConfirmPrompt } from './Input.js';
 export { colors, icons } from './theme.js';
 export { ModelSelector } from './ModelSelector.js';
 export { CommandSuggestions, COMMANDS, getFilteredCommands } from './CommandSuggestions.js';
+export {
+  PermissionPrompt,
+  SimpleConfirmPrompt,
+  PermissionRulesDisplay,
+  PermissionAuditDisplay,
+} from './PermissionPrompt.js';

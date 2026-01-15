@@ -13,6 +13,7 @@ export interface Settings {
   provider?: ProviderName;
   permissions?: {
     allow?: string[];
+    ask?: string[];    // Claude Code compatible: require confirmation
     deny?: string[];
   };
 }
@@ -21,8 +22,16 @@ export interface SettingsManagerOptions {
   settingsDir?: string;
 }
 
-export const DEFAULT_SETTINGS_DIR = '~/.gencode';
+// Primary config directories (Claude Code compatible)
+export const DEFAULT_SETTINGS_DIR = '~/.claude';
+export const PROJECT_SETTINGS_DIR = '.claude';
+
+// Fallback to GenCode directories
+export const FALLBACK_SETTINGS_DIR = '~/.gencode';
+export const FALLBACK_PROJECT_DIR = '.gencode';
+
 export const SETTINGS_FILE_NAME = 'settings.json';
+export const SETTINGS_LOCAL_FILE_NAME = 'settings.local.json';
 export const PROVIDERS_FILE_NAME = 'providers.json';
 
 /**

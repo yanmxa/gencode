@@ -141,6 +141,7 @@ async function main() {
       config={config}
       settingsManager={settingsManager}
       resumeLatest={args.continue}
+      permissionSettings={settings.permissions}
     />
   );
 }

@@ -7,12 +7,13 @@ import * as path from 'path';
 import fastGlob from 'fast-glob';
 import type { Tool, ToolResult } from '../types.js';
 import { GrepInputSchema, type GrepInput, resolvePath, getErrorMessage } from '../types.js';
+import { loadToolDescription } from '../../prompts/index.js';
 
 const MAX_MATCHES = 50;
 
 export const grepTool: Tool<GrepInput> = {
   name: 'Grep',
-  description: 'Search for a regex pattern in files. Returns matching lines with file paths and line numbers.',
+  description: loadToolDescription('grep'),
   parameters: GrepInputSchema,
 
   async execute(input, context): Promise<ToolResult> {

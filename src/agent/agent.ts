@@ -5,20 +5,16 @@
 import type { LLMProvider, Message, ToolResultContent } from '../providers/types.js';
 import { createProvider, inferProvider } from '../providers/index.js';
 import { ToolRegistry, createDefaultRegistry } from '../tools/index.js';
-import { PermissionManager } from '../permissions/index.js';
+import {
+  PermissionManager,
+  type ApprovalAction,
+  type ApprovalSuggestion,
+  type PromptPermission,
+  type PermissionSettings,
+} from '../permissions/index.js';
 import { SessionManager } from '../session/index.js';
 import type { AgentConfig, AgentEvent } from './types.js';
-
-const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI assistant with access to tools for reading, writing, and executing code.
-
-When using tools:
-- Use Read to view file contents before editing
-- Use Glob/Grep to find files
-- Use Edit for precise changes (old_string must be unique)
-- Use Write for new files or full rewrites
-- Use Bash for commands, git operations, etc.
-
-Be concise and focus on completing the user's task.`;
+import { buildSystemPrompt, mapProviderToPromptType } from '../prompts/index.js';
 
 export class Agent {
   private provider: LLMProvider;
@@ -38,15 +34,67 @@ export class Agent {
 
     this.provider = createProvider({ provider: config.provider });
     this.registry = createDefaultRegistry();
-    this.permissions = new PermissionManager(config.permissions);
+    this.permissions = new PermissionManager({
+      config: config.permissions,
+      projectPath: config.cwd,
+    });
     this.sessionManager = new SessionManager();
   }
 
   /**
-   * Set permission confirmation callback
+   * Initialize permission system (load persisted rules)
+   */
+  async initializePermissions(settings?: PermissionSettings): Promise<void> {
+    await this.permissions.initialize(settings);
+  }
+
+  /**
+   * Set simple permission confirmation callback (backward compatible)
    */
   setConfirmCallback(callback: (tool: string, input: unknown) => Promise<boolean>): void {
+    this.permissions.setSimpleConfirmCallback(callback);
+  }
+
+  /**
+   * Set enhanced permission confirmation callback with approval options
+   */
+  setEnhancedConfirmCallback(
+    callback: (
+      tool: string,
+      input: unknown,
+      suggestions: ApprovalSuggestion[]
+    ) => Promise<ApprovalAction>
+  ): void {
     this.permissions.setConfirmCallback(callback);
+  }
+
+  /**
+   * Add prompt-based permissions (Claude Code ExitPlanMode style)
+   */
+  addAllowedPrompts(prompts: PromptPermission[]): void {
+    this.permissions.addAllowedPrompts(prompts);
+  }
+
+  /**
+   * Clear prompt-based permissions
+   */
+  clearAllowedPrompts(): void {
+    this.permissions.clearAllowedPrompts();
+  }
+
+  /**
+   * Set callback to save permission rules to settings
+   * This enables saving rules to settings.local.json instead of permissions.json
+   */
+  setSaveRuleCallback(callback: (tool: string, pattern?: string) => Promise<void>): void {
+    this.permissions.setSaveRuleCallback(callback);
+  }
+
+  /**
+   * Get permission manager for direct access
+   */
+  getPermissionManager(): PermissionManager {
+    return this.permissions;
   }
 
   /**
@@ -203,11 +251,20 @@ export class Agent {
       // Call LLM
       let response;
       try {
+        // Build provider-specific system prompt if not overridden
+        const systemPrompt =
+          this.config.systemPrompt ??
+          buildSystemPrompt(
+            mapProviderToPromptType(this.config.provider),
+            this.config.cwd ?? process.cwd(),
+            true // Assume git repo for now
+          );
+
         response = await this.provider.complete({
           model: this.config.model,
           messages: this.messages,
           tools: toolDefs,
-          systemPrompt: this.config.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
+          systemPrompt,
           maxTokens: 4096,
         });
       } catch (error) {
@@ -244,7 +301,7 @@ export class Agent {
       for (const call of toolCalls) {
         yield { type: 'tool_start', id: call.id, name: call.name, input: call.input };
 
-        const allowed = await this.permissions.checkPermission(call.name, call.input);
+        const allowed = await this.permissions.requestPermission(call.name, call.input);
         const result = allowed
           ? await this.registry.execute(call.name, call.input, { cwd })
           : { success: false, output: '', error: 'Permission denied by user' };

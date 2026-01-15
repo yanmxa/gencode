@@ -10,6 +10,7 @@ import {
   getCurrentSearchProviderName,
   type SearchResult,
 } from '../../providers/search/index.js';
+import { loadToolDescription } from '../../prompts/index.js';
 
 // Constants
 const DEFAULT_NUM_RESULTS = 10;
@@ -62,22 +63,7 @@ function formatResults(results: SearchResult[], query: string): string {
  */
 export const websearchTool: Tool<WebSearchInput> = {
   name: 'WebSearch',
-  description: `Search the web for current information.
-
-Use this tool when you need:
-- Up-to-date information beyond your knowledge cutoff
-- Current documentation or release notes
-- Recent solutions to technical problems
-- Current best practices
-
-IMPORTANT: After answering, include a "Sources:" section with all relevant URLs as markdown hyperlinks.
-
-Example:
-  [Your answer]
-
-  Sources:
-  - [Title 1](https://url1)
-  - [Title 2](https://url2)`,
+  description: loadToolDescription('websearch'),
   parameters: WebSearchInputSchema,
 
   async execute(input: WebSearchInput, context: ToolContext): Promise<ToolResult> {

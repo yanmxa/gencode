@@ -5,10 +5,11 @@
 import * as fs from 'fs/promises';
 import type { Tool, ToolResult } from '../types.js';
 import { ReadInputSchema, type ReadInput, resolvePath, getErrorMessage } from '../types.js';
+import { loadToolDescription } from '../../prompts/index.js';
 
 export const readTool: Tool<ReadInput> = {
   name: 'Read',
-  description: 'Read the contents of a file. Returns the file content with line numbers.',
+  description: loadToolDescription('read'),
   parameters: ReadInputSchema,
 
   async execute(input, context): Promise<ToolResult> {

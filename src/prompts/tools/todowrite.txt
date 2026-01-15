@@ -1,0 +1,71 @@
+Use this tool to create and manage a structured task list for your current session.
+
+This helps you:
+- Track progress and demonstrate thoroughness to the user
+- Organize complex tasks into manageable steps
+- Show the user what you're working on
+
+## When to Use This Tool
+
+Use proactively in these scenarios:
+
+1. Complex multi-step tasks - When a task requires 3 or more distinct steps
+2. Non-trivial tasks - Tasks requiring careful planning or multiple operations
+3. User provides multiple tasks - Numbered or comma-separated lists
+4. After receiving instructions - Immediately capture requirements as todos
+5. When starting a task - Mark it as in_progress BEFORE beginning work
+6. After completing a task - Mark as completed and add any follow-up tasks discovered
+
+## When NOT to Use This Tool
+
+Skip for:
+- Single, straightforward tasks
+- Trivial tasks that can be completed in under 3 steps
+- Purely conversational or informational requests
+
+## Task States
+
+- pending: Task not yet started
+- in_progress: Currently working on (limit to ONE task at a time)
+- completed: Task finished successfully
+
+IMPORTANT: Each task needs two forms:
+- content: Imperative form (e.g., "Run tests", "Build the project")
+- activeForm: Present continuous (e.g., "Running tests", "Building the project")
+
+## Task Management Rules
+
+- Update task status in real-time as you work
+- Mark tasks complete IMMEDIATELY after finishing (don't batch completions)
+- Exactly ONE task should be in_progress at any time
+- Complete current tasks before starting new ones
+- Remove tasks that are no longer relevant
+
+## Completion Requirements
+
+ONLY mark a task as completed when you have FULLY accomplished it.
+
+Never mark completed if:
+- Tests are failing
+- Implementation is partial
+- You encountered unresolved errors
+- You couldn't find necessary files
+
+If blocked, create a new task describing what needs to be resolved.
+
+<example>
+user: Run the build and fix any errors
+assistant: Creating todo list:
+1. Run the build [in_progress]
+2. Fix any errors [pending]
+
+Running build...
+
+Found 3 errors. Updating todos:
+1. Run the build [completed]
+2. Fix error in auth.ts [in_progress]
+3. Fix error in api.ts [pending]
+4. Fix error in utils.ts [pending]
+
+Starting with first error...
+</example>

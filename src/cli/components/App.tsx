@@ -22,8 +22,14 @@ import { PromptInput, ConfirmPrompt } from './Input.js';
 import { ModelSelector } from './ModelSelector.js';
 import { ProviderManager } from './ProviderManager.js';
 import { CommandSuggestions, getFilteredCommands } from './CommandSuggestions.js';
+import {
+  PermissionPrompt,
+  PermissionRulesDisplay,
+  PermissionAuditDisplay,
+} from './PermissionPrompt.js';
 import { colors, icons } from './theme.js';
 import type { ProviderName } from '../../providers/index.js';
+import type { ApprovalAction, ApprovalSuggestion } from '../../permissions/types.js';
 
 // Types
 interface HistoryItem {
@@ -36,11 +42,14 @@ interface HistoryItem {
 interface ConfirmState {
   tool: string;
   input: Record<string, unknown>;
-  resolve: (confirmed: boolean) => void;
+  suggestions: ApprovalSuggestion[];
+  resolve: (action: ApprovalAction) => void;
 }
 
 interface SettingsManager {
   save: (settings: { model?: string }) => Promise<void>;
+  getCwd?: () => string;
+  addPermissionRule?: (pattern: string, type: 'allow' | 'deny', level?: 'global' | 'project' | 'local') => Promise<void>;
 }
 
 interface Session {
@@ -49,10 +58,16 @@ interface Session {
   updatedAt: string;
 }
 
+interface PermissionSettings {
+  allow?: string[];
+  deny?: string[];
+}
+
 interface AppProps {
   config: AgentConfig;
   settingsManager?: SettingsManager;
   resumeLatest?: boolean;
+  permissionSettings?: PermissionSettings;
 }
 
 // ============================================================================
@@ -128,7 +143,7 @@ function SessionsTable({ sessions }: SessionsTableProps) {
 // ============================================================================
 // Main App
 // ============================================================================
-export function App({ config, settingsManager, resumeLatest }: AppProps) {
+export function App({ config, settingsManager, resumeLatest, permissionSettings }: AppProps) {
   const { exit } = useApp();
   const agent = useAgent(config);
 
@@ -186,11 +201,29 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
   // Initialize
   useEffect(() => {
     const init = async () => {
-      agent.setConfirmCallback(async (tool: string, toolInput: unknown) => {
-        return new Promise<boolean>((resolve) => {
-          setConfirmState({ tool, input: toolInput as Record<string, unknown>, resolve });
+      // Initialize permission system with settings
+      await agent.initializePermissions(permissionSettings);
+
+      // Set enhanced confirm callback with approval options
+      agent.setEnhancedConfirmCallback(async (tool, toolInput, suggestions) => {
+        return new Promise<ApprovalAction>((resolve) => {
+          setConfirmState({
+            tool,
+            input: toolInput as Record<string, unknown>,
+            suggestions,
+            resolve,
+          });
         });
       });
+
+      // Set callback to save permission rules to settings.local.json
+      if (settingsManager?.addPermissionRule) {
+        agent.setSaveRuleCallback(async (tool, pattern) => {
+          // Format as Claude Code style pattern: Tool(pattern) or just Tool
+          const rulePattern = pattern ? `${tool}(${pattern})` : tool;
+          await settingsManager.addPermissionRule!(rulePattern, 'allow', 'local');
+        });
+      }
 
       if (resumeLatest) {
         const resumed = await agent.resumeLatest();
@@ -200,12 +233,12 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
       }
     };
     init();
-  }, [agent, resumeLatest, addHistory]);
+  }, [agent, resumeLatest, addHistory, permissionSettings, settingsManager]);
 
-  // Handle confirm
-  const handleConfirm = (confirmed: boolean) => {
+  // Handle permission decision
+  const handlePermissionDecision = (action: ApprovalAction) => {
     if (confirmState) {
-      confirmState.resolve(confirmed);
+      confirmState.resolve(action);
       setConfirmState(null);
     }
   };
@@ -318,6 +351,55 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
 
       case 'provider': {
         setShowProviderManager(true);
+        return true;
+      }
+
+      case 'permissions': {
+        const permManager = agent.getPermissionManager();
+
+        if (arg === 'audit') {
+          // Show audit log
+          const auditLog = permManager.getAuditLog(20);
+          if (auditLog.length === 0) {
+            addHistory({ type: 'info', content: 'No permission decisions recorded yet' });
+          } else {
+            const entries = auditLog.map((e) => ({
+              time: e.timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+              tool: e.tool,
+              input: e.inputSummary,
+              decision: e.decision,
+              rule: e.matchedRule,
+            }));
+            addHistory({
+              type: 'info',
+              content: '__PERMISSION_AUDIT__',
+              meta: { entries },
+            });
+          }
+        } else if (arg === 'stats') {
+          // Show statistics
+          const stats = permManager.getAuditStats();
+          addHistory({
+            type: 'info',
+            content: `Permissions: ${stats.allowed + stats.confirmed} allowed, ${stats.denied + stats.rejected} denied`,
+          });
+        } else {
+          // Show rules
+          const rules = permManager.getRules();
+          const prompts = permManager.getAllowedPrompts();
+          const displayRules = rules.map((r) => ({
+            type: r.scope === 'session' ? 'Session' : r.description?.startsWith('Settings') ? 'Settings' : 'Built-in',
+            tool: typeof r.tool === 'string' ? r.tool : r.tool.toString(),
+            pattern: typeof r.pattern === 'string' ? r.pattern : r.pattern?.toString(),
+            scope: r.scope ?? 'session',
+            mode: r.mode,
+          }));
+          addHistory({
+            type: 'info',
+            content: '__PERMISSIONS__',
+            meta: { rules: displayRules, prompts },
+          });
+        }
         return true;
       }
 
@@ -537,6 +619,21 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
         if (item.content === '__SESSIONS__' && item.meta?.input) {
           return <SessionsTable sessions={item.meta.input as Session[]} />;
         }
+        if (item.content === '__PERMISSIONS__' && item.meta?.rules) {
+          return (
+            <PermissionRulesDisplay
+              rules={item.meta.rules as { type: string; tool: string; pattern?: string; scope: string; mode: string }[]}
+              allowedPrompts={item.meta.prompts as { tool: string; prompt: string }[] | undefined}
+            />
+          );
+        }
+        if (item.content === '__PERMISSION_AUDIT__' && item.meta?.entries) {
+          return (
+            <PermissionAuditDisplay
+              entries={item.meta.entries as { time: string; tool: string; input: string; decision: string; rule?: string }[]}
+            />
+          );
+        }
         return <InfoMessage text={item.content} />;
       case 'completion':
         return <CompletionMessage durationMs={(item.meta?.durationMs as number) || 0} />;
@@ -556,12 +653,13 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
       {streamingText && <AssistantMessage text={streamingText} streaming />}
 
       {confirmState && (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color={colors.warning}>
-            {icons.warning} {confirmState.tool}
-          </Text>
-          <ConfirmPrompt message="Allow?" onConfirm={handleConfirm} />
-        </Box>
+        <PermissionPrompt
+          tool={confirmState.tool}
+          input={confirmState.input}
+          suggestions={confirmState.suggestions}
+          onDecision={handlePermissionDecision}
+          projectPath={settingsManager?.getCwd?.() ?? process.cwd()}
+        />
       )}
 
       {showModelSelector && (
@@ -602,7 +700,7 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
         </Box>
       )}
 
-      {isProcessing ? (
+      {isProcessing && !confirmState ? (
         <ProgressBar />
       ) : showCmdSuggestions && cmdSuggestions.length > 0 ? (
         <Box marginTop={1}>

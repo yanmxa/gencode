@@ -14,6 +14,7 @@ export { globTool } from './builtin/glob.js';
 export { grepTool } from './builtin/grep.js';
 export { webfetchTool } from './builtin/webfetch.js';
 export { websearchTool } from './builtin/websearch.js';
+export { todowriteTool, getTodos, clearTodos } from './builtin/todowrite.js';
 
 import { ToolRegistry } from './registry.js';
 import { readTool } from './builtin/read.js';
@@ -24,6 +25,7 @@ import { globTool } from './builtin/glob.js';
 import { grepTool } from './builtin/grep.js';
 import { webfetchTool } from './builtin/webfetch.js';
 import { websearchTool } from './builtin/websearch.js';
+import { todowriteTool } from './builtin/todowrite.js';
 
 /**
  * Create a registry with all built-in tools
@@ -39,6 +41,7 @@ export function createDefaultRegistry(): ToolRegistry {
     grepTool,
     webfetchTool,
     websearchTool,
+    todowriteTool,
   ]);
   return registry;
 }
@@ -55,4 +58,5 @@ export const builtinTools = [
   grepTool,
   webfetchTool,
   websearchTool,
+  todowriteTool,
 ];
