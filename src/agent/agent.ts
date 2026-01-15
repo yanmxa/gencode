@@ -64,6 +64,47 @@ export class Agent {
   }
 
   /**
+   * Set the model to use
+   */
+  setModel(model: string): void {
+    this.config.model = model;
+  }
+
+  /**
+   * Get current model
+   */
+  getModel(): string {
+    return this.config.model;
+  }
+
+  /**
+   * List available models
+   */
+  async listModels(): Promise<{ id: string; name: string }[]> {
+    // Return common models based on provider
+    const models: Record<string, { id: string; name: string }[]> = {
+      openai: [
+        { id: 'gpt-4o', name: 'GPT-4o' },
+        { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+        { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
+        { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' },
+      ],
+      anthropic: [
+        { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
+        { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' },
+        { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' },
+        { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' },
+      ],
+      gemini: [
+        { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
+        { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
+        { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
+      ],
+    };
+    return models[this.config.provider] || [];
+  }
+
+  /**
    * Start a new session
    */
   async startSession(title?: string): Promise<string> {

@@ -1,17 +1,17 @@
 {
-  "name": "mycode-cli",
+  "name": "gencode",
   "version": "0.1.0",
-  "description": "An open-source, provider-agnostic alternative to Claude Code",
+  "description": "GenCode - An open-source, provider-agnostic AI coding assistant",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "mycode": "./dist/cli/index.js"
+    "gencode": "./dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "npx tsx src/cli/index.ts",
+    "start": "npx tsx src/cli/index.tsx",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "example": "npx tsx examples/basic.ts"
   },

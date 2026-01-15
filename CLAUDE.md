@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**mycode** (npm: `mycode-cli`) is an open-source, provider-agnostic alternative to Claude Code. It brings Claude Code's excellent interactive CLI experience while allowing flexible switching between different LLM providers (OpenAI, Anthropic, Google Gemini).
+**GenCode** (npm: `gencode`) is an open-source, provider-agnostic AI coding assistant. It brings Claude Code's excellent interactive CLI experience while allowing flexible switching between different LLM providers (OpenAI, Anthropic, Google Gemini).
 
 ## Build & Run Commands
 
@@ -51,12 +51,12 @@ Events are yielded as `AgentEvent` (text, tool_start, tool_result, done, error).
 
 ### Session Management (`src/session/`)
 
-Sessions persist conversation history to `~/.mycode/sessions/` as JSON files. Supports resume, fork, list, and delete operations.
+Sessions persist conversation history to `~/.gencode/sessions/` as JSON files. Supports resume, fork, list, and delete operations.
 
 ## Configuration
 
 Provider/model selection priority:
-1. `MYCODE_PROVIDER` / `MYCODE_MODEL` env vars
+1. `GENCODE_PROVIDER` / `GENCODE_MODEL` env vars
 2. Auto-detect from available API keys (ANTHROPIC_API_KEY → OPENAI_API_KEY → GOOGLE_API_KEY)
 3. Default: Gemini
 

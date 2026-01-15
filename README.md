@@ -1,12 +1,12 @@
-# mycode
+# GenCode
 
-An open-source, provider-agnostic alternative to Claude Code.
+An open-source, provider-agnostic AI coding assistant.
 
-## Why mycode?
+## Why GenCode?
 
 Claude Code is excellent - its interactive CLI experience, tool integration, and agent loop design are impressive. However, it's locked to Anthropic's Claude models.
 
-**mycode** aims to bring that same great experience while giving you the freedom to:
+**GenCode** brings that same great experience while giving you the freedom to:
 
 - **Switch providers freely** - Use OpenAI, Anthropic, Google Gemini, or any OpenAI-compatible API
 - **Control your costs** - Choose models that fit your budget and use case
@@ -17,10 +17,10 @@ Claude Code is excellent - its interactive CLI experience, tool integration, and
 
 ```bash
 # Install globally
-npm install -g mycode-cli
+npm install -g gencode
 
 # Run
-mycode
+gencode
 ```
 
 Or run from source:
@@ -42,19 +42,19 @@ npm start
 
 ```bash
 # Start interactive CLI
-mycode
+gencode
 
 # Resume last session
-mycode -c
+gencode -c
 
 # Select from recent sessions
-mycode -r
+gencode -r
 ```
 
 ### Programmatic Usage
 
 ```typescript
-import { Agent } from 'mycode-cli';
+import { Agent } from 'gencode';
 
 const agent = new Agent({
   provider: 'gemini',  // 'openai' | 'anthropic' | 'gemini'
@@ -79,8 +79,8 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 GOOGLE_API_KEY=xxx
 
 # Optional: override provider/model
-MYCODE_PROVIDER=anthropic
-MYCODE_MODEL=claude-sonnet-4-20250514
+GENCODE_PROVIDER=anthropic
+GENCODE_MODEL=claude-sonnet-4-20250514
 
 # Optional proxy
 HTTP_PROXY=http://proxy:3128
