@@ -84,6 +84,21 @@ interface ToolCallProps {
 }
 
 export function ToolCall({ name, input }: ToolCallProps) {
+  // WebFetch: Show "Fetch(url)" instead of JSON (Claude Code style)
+  if (name === 'WebFetch' && input?.url) {
+    const url = input.url as string;
+    const shortUrl = url.length > 60 ? url.slice(0, 57) + '...' : url;
+    return (
+      <Box marginLeft={2}>
+        <Text color={colors.tool}>{icons.fetch}</Text>
+        <Text> Fetch(</Text>
+        <Text color={colors.info}>{shortUrl}</Text>
+        <Text>)</Text>
+      </Box>
+    );
+  }
+
+  // Default: Show tool name with JSON input
   const inputStr = JSON.stringify(input);
   const shortInput = inputStr.length > 50 ? inputStr.slice(0, 47) + '...' : inputStr;
 
@@ -97,17 +112,41 @@ export function ToolCall({ name, input }: ToolCallProps) {
   );
 }
 
+interface ToolResultMetadata {
+  title?: string;
+  subtitle?: string;
+  size?: number;
+  statusCode?: number;
+  contentType?: string;
+  duration?: number;
+}
+
 interface ToolResultProps {
   name: string;
   success: boolean;
   output: string;
+  metadata?: ToolResultMetadata;
 }
 
-export function ToolResult({ name, success, output }: ToolResultProps) {
-  const firstLine = output.split('\n')[0]?.trim() || '';
-  const displayOutput = firstLine.length > 50 ? firstLine.slice(0, 47) + '...' : firstLine;
+export function ToolResult({ name, success, output, metadata }: ToolResultProps) {
   const statusColor = success ? colors.success : colors.error;
   const statusIcon = success ? icons.success : icons.error;
+
+  // If metadata has subtitle (e.g., "Received 540.3KB (200 OK)"), show it
+  if (metadata?.subtitle) {
+    return (
+      <Box marginLeft={2}>
+        <Text dimColor>
+          <Text color={statusColor}>{statusIcon}</Text>{' '}
+          <Text>{metadata.subtitle}</Text>
+        </Text>
+      </Box>
+    );
+  }
+
+  // Default: Show first line of output
+  const firstLine = output.split('\n')[0]?.trim() || '';
+  const displayOutput = firstLine.length > 50 ? firstLine.slice(0, 47) + '...' : firstLine;
 
   return (
     <Box marginLeft={2}>

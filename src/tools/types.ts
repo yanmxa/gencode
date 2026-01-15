@@ -14,10 +14,20 @@ export interface ToolContext {
   abortSignal?: AbortSignal;
 }
 
+export interface ToolResultMetadata {
+  title?: string; // Short title, e.g., "Fetch(url)"
+  subtitle?: string; // Subtitle, e.g., "Received 540.3KB (200 OK)"
+  size?: number; // Response size in bytes
+  statusCode?: number; // HTTP status code
+  contentType?: string; // Content-Type header
+  duration?: number; // Duration in milliseconds
+}
+
 export interface ToolResult {
   success: boolean;
   output: string;
   error?: string;
+  metadata?: ToolResultMetadata;
 }
 
 export interface Tool<TInput = unknown> {

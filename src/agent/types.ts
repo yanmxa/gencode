@@ -35,6 +35,14 @@ export interface AgentEventToolResult {
     success: boolean;
     output: string;
     error?: string;
+    metadata?: {
+      title?: string;
+      subtitle?: string;
+      size?: number;
+      statusCode?: number;
+      contentType?: string;
+      duration?: number;
+    };
   };
 }
 

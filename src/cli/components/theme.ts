@@ -29,6 +29,7 @@ export const icons = {
   info: 'ℹ',
   // Tools
   tool: '⚡', // Lightning for tools
+  fetch: '●', // Filled circle for fetch (Claude Code style)
   arrow: '→',
   // UI
   thinking: '✱', // Star for thinking state

@@ -375,7 +375,11 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
             addHistory({
               type: 'tool_result',
               content: event.result.output,
-              meta: { toolName: event.name, success: event.result.success },
+              meta: {
+                toolName: event.name,
+                success: event.result.success,
+                metadata: event.result.metadata,
+              },
             });
             setIsThinking(true);
             break;
@@ -510,6 +514,7 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
             name={(item.meta?.toolName as string) || ''}
             success={(item.meta?.success as boolean) ?? true}
             output={item.content}
+            metadata={item.meta?.metadata as Record<string, unknown> | undefined}
           />
         );
       case 'info':

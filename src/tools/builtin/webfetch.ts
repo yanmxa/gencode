@@ -113,6 +113,15 @@ function processContent(content: string, contentType: string, format: string): s
 }
 
 /**
+ * Format bytes to human-readable size
+ */
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+/**
  * Truncate output to prevent excessive content
  */
 function truncateOutput(output: string): string {
@@ -147,6 +156,8 @@ export const webfetchTool: Tool<WebFetchInput> = {
   parameters: WebFetchInputSchema,
 
   async execute(input: WebFetchInput, context: ToolContext): Promise<ToolResult> {
+    const startTime = Date.now();
+
     try {
       // Validate URL (SSRF protection)
       validateUrl(input.url);
@@ -216,12 +227,21 @@ export const webfetchTool: Tool<WebFetchInput> = {
         // Truncate long lines and overall output
         output = truncateOutput(output);
 
-        // Add metadata header
-        const header = `URL: ${input.url}\nContent-Type: ${contentType}\n\n`;
+        // Build result with metadata for improved display
+        const size = arrayBuffer.byteLength;
+        const duration = Date.now() - startTime;
 
         return {
           success: true,
-          output: header + output,
+          output: output,
+          metadata: {
+            title: `Fetch(${input.url})`,
+            subtitle: `Received ${formatSize(size)} (${response.status} ${response.statusText})`,
+            size,
+            statusCode: response.status,
+            contentType: contentType,
+            duration,
+          },
         };
       } finally {
         clearTimeout(timeoutId);
