@@ -1,8 +1,8 @@
-# Providers & Models
+# Providers
 
-GenCode supports multiple LLM providers. Use the `/provider` command to manage provider connections.
+GenCode supports multiple LLM providers and Search providers. Use the `/provider` command to manage all provider connections.
 
-## Supported Providers
+## LLM Providers
 
 ### Anthropic (Claude)
 
@@ -30,21 +30,85 @@ Gemini models from Google:
 |-------------------|----------------------|-------------|
 | API Key | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Direct API access |
 
+## Search Providers
+
+GenCode includes a WebSearch tool that can search the web for current information. Multiple search providers are supported:
+
+### Exa AI (Default)
+
+AI-native search engine using Exa's public MCP endpoint. Works out of the box without any configuration.
+
+| Connection Method | Environment Variables | Description |
+|-------------------|----------------------|-------------|
+| Public MCP | (none required) | Uses public `mcp.exa.ai` endpoint |
+
+**Features:**
+- No configuration required - works immediately
+- AI-optimized search results
+- Live crawl support for fresh content
+
+**Note:** Uses Exa's public MCP endpoint. For heavy usage, consider using Serper or Brave with your own API key.
+
+### Serper.dev
+
+Google Search results via Serper API.
+
+| Connection Method | Environment Variables | Description |
+|-------------------|----------------------|-------------|
+| API Key | `SERPER_API_KEY` | Google Search via Serper |
+
+**Features:**
+- 2,500 free queries (no credit card required)
+- Google Search quality results
+- Fast response times
+
+**Get API Key:** https://serper.dev
+
+### Brave Search
+
+Privacy-focused search from Brave.
+
+| Connection Method | Environment Variables | Description |
+|-------------------|----------------------|-------------|
+| API Key | `BRAVE_API_KEY` | Privacy-focused search |
+
+**Features:**
+- 2,000 free queries per month
+- Privacy-first approach
+- Independent search index
+
+**Get API Key:** https://brave.com/search/api
+
+### Search Provider Priority
+
+When multiple search providers are configured, the priority is:
+
+1. **Configured in `/provider`** - Explicitly selected provider
+2. **Environment variables** - `SERPER_API_KEY` > `BRAVE_API_KEY`
+3. **Default** - Exa AI (no configuration needed)
+
 ## Commands
 
 ### `/provider` - Provider Management
 
-Opens the provider management interface where you can:
+Opens the provider management interface with two tabs:
 
-- View connected and available providers
+**[L] LLM Providers Tab:**
+- View connected and available LLM providers
 - Connect to new providers
 - Refresh model lists for connected providers
 - Remove provider connections
 
+**[S] Search Providers Tab:**
+- View available search providers
+- Select which search provider to use for WebSearch
+- See configuration status (configured/not configured)
+
 **Keyboard shortcuts:**
+- `Tab` or `L`/`S` - Switch between tabs
 - `↑↓` - Navigate between providers
-- `Enter` - Connect (available) or Refresh (connected)
-- `r` - Remove a connected provider
+- `Enter` - Connect/Select provider
+- `r` - Remove a connected LLM provider
 - `Esc` - Exit
 
 ### `/model` - Model Selection
@@ -132,9 +196,12 @@ Provider connections and cached models are stored in:
         { "id": "claude-sonnet-4-5@20250929", "name": "Claude Sonnet 4.5" }
       ]
     }
-  }
+  },
+  "searchProvider": "exa"
 }
 ```
+
+The `searchProvider` field stores the selected search provider. Valid values: `exa`, `serper`, `brave`. If not set, defaults to `exa`.
 
 ## Troubleshooting
 

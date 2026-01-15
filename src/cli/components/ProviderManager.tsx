@@ -10,18 +10,22 @@ import {
   getProvidersSorted,
   getAvailableConnections,
   isConnectionReady,
+  getSearchProvidersSorted,
   type ProviderDefinition,
   type ConnectionOption,
+  type SearchProviderDefinition,
 } from '../../providers/registry.js';
 import { getProviderStore, type ModelInfo } from '../../providers/store.js';
 import { createProvider, type ProviderName } from '../../providers/index.js';
+import { isSearchProviderAvailable, type SearchProviderName } from '../../providers/search/index.js';
 
 interface ProviderManagerProps {
   onClose: () => void;
   onProviderChange?: (providerId: ProviderName, model: string) => void;
 }
 
-type View = 'list' | 'select-connection' | 'confirm-remove';
+type View = 'list' | 'select-connection' | 'confirm-remove' | 'search-list';
+type Tab = 'llm' | 'search';
 
 interface ProviderItem {
   provider: ProviderDefinition;
@@ -31,16 +35,24 @@ interface ProviderItem {
   readyConnections: ConnectionOption[];
 }
 
+interface SearchProviderItem {
+  provider: SearchProviderDefinition;
+  isSelected: boolean;
+  isAvailable: boolean;
+}
+
 export function ProviderManager({ onClose }: ProviderManagerProps) {
   const store = getProviderStore();
 
   const [view, setView] = useState<View>('list');
+  const [tab, setTab] = useState<Tab>('llm');
   const [filter, setFilter] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [connectionIndex, setConnectionIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<ProviderDefinition | null>(null);
+  const [searchSelectedIndex, setSearchSelectedIndex] = useState(0);
 
   // Build provider list
   const buildProviderList = useCallback((): ProviderItem[] => {
@@ -65,6 +77,29 @@ export function ProviderManager({ onClose }: ProviderManagerProps) {
   const refreshList = useCallback(() => {
     setProviderList(buildProviderList());
   }, [buildProviderList]);
+
+  // Build search provider list
+  const buildSearchProviderList = useCallback((): SearchProviderItem[] => {
+    const currentSearch = store.getSearchProvider();
+    return getSearchProvidersSorted().map((provider) => ({
+      provider,
+      isSelected: provider.id === currentSearch || (!currentSearch && provider.id === 'exa'),
+      isAvailable: isSearchProviderAvailable(provider.id),
+    }));
+  }, [store]);
+
+  const searchProviders = buildSearchProviderList();
+
+  // Select search provider
+  const selectSearchProvider = (id: SearchProviderName) => {
+    if (id === 'exa') {
+      store.clearSearchProvider(); // Use default
+    } else {
+      store.setSearchProvider(id);
+    }
+    setMessage(`Search provider set to ${id}`);
+    setTimeout(() => setMessage(null), 2000);
+  };
 
   // Filter providers
   const filterLower = filter.toLowerCase();
@@ -173,10 +208,14 @@ export function ProviderManager({ onClose }: ProviderManagerProps) {
     setConnectionIndex(0);
   };
 
-  // Keyboard navigation for list view
+  // Keyboard navigation for list view (LLM providers)
   useInput(
     (input, key) => {
-      if (key.upArrow) {
+      if (key.tab || input === 's') {
+        // Switch to search tab
+        setTab('search');
+        setSearchSelectedIndex(0);
+      } else if (key.upArrow) {
         setSelectedIndex((i) => Math.max(0, i - 1));
       } else if (key.downArrow) {
         setSelectedIndex((i) => Math.min(allItems.length - 1, i + 1));
@@ -188,7 +227,30 @@ export function ProviderManager({ onClose }: ProviderManagerProps) {
         onClose();
       }
     },
-    { isActive: view === 'list' && !loading }
+    { isActive: view === 'list' && tab === 'llm' && !loading }
+  );
+
+  // Keyboard navigation for search providers tab
+  useInput(
+    (input, key) => {
+      if (key.tab || input === 'l') {
+        // Switch to LLM tab
+        setTab('llm');
+        setSelectedIndex(0);
+      } else if (key.upArrow) {
+        setSearchSelectedIndex((i) => Math.max(0, i - 1));
+      } else if (key.downArrow) {
+        setSearchSelectedIndex((i) => Math.min(searchProviders.length - 1, i + 1));
+      } else if (key.return && searchProviders.length > 0) {
+        const selected = searchProviders[searchSelectedIndex];
+        if (selected.isAvailable) {
+          selectSearchProvider(selected.provider.id);
+        }
+      } else if (key.escape) {
+        onClose();
+      }
+    },
+    { isActive: view === 'list' && tab === 'search' && !loading }
   );
 
   // Keyboard for select-connection view
@@ -316,9 +378,21 @@ export function ProviderManager({ onClose }: ProviderManagerProps) {
         Provider Management
       </Text>
 
+      {/* Tabs */}
       <Box marginTop={1}>
-        <Text color={colors.textMuted}>{icons.prompt} </Text>
-        <TextInput value={filter} onChange={setFilter} placeholder="Filter providers..." />
+        <Text
+          color={tab === 'llm' ? colors.primary : colors.textMuted}
+          bold={tab === 'llm'}
+        >
+          [L] LLM Providers
+        </Text>
+        <Text color={colors.textMuted}> | </Text>
+        <Text
+          color={tab === 'search' ? colors.primary : colors.textMuted}
+          bold={tab === 'search'}
+        >
+          [S] Search Providers
+        </Text>
       </Box>
 
       {message && (
@@ -327,78 +401,134 @@ export function ProviderManager({ onClose }: ProviderManagerProps) {
         </Box>
       )}
 
-      <Box flexDirection="column" marginTop={1}>
-        {/* Connected section */}
-        {connected.length > 0 && (
-          <>
-            <Text color={colors.textMuted}>Connected:</Text>
-            {connected.map((item, idx) => {
-              const isSelected = idx === selectedIndex;
-              // Find connection name
-              const connOption = item.provider.connections.find(
-                (c) => c.method === item.connectionMethod
-              );
-              const connName = connOption?.name || item.connectionMethod;
-              return (
-                <Box key={item.provider.id} paddingLeft={2}>
-                  <Text color={isSelected ? colors.primary : colors.textMuted}>
-                    {isSelected ? icons.arrow : ' '}
-                  </Text>
-                  <Text color={colors.success}>{icons.success} </Text>
-                  <Text color={isSelected ? colors.text : colors.textSecondary} bold={isSelected}>
-                    {item.provider.name}
-                  </Text>
-                  <Text color={colors.textMuted}>
-                    {' '}({connName}) · {item.modelCount} models
-                  </Text>
-                </Box>
-              );
-            })}
-          </>
-        )}
+      {/* LLM Providers Tab */}
+      {tab === 'llm' && (
+        <>
+          <Box marginTop={1}>
+            <Text color={colors.textMuted}>{icons.prompt} </Text>
+            <TextInput value={filter} onChange={setFilter} placeholder="Filter providers..." />
+          </Box>
 
-        {/* Available section */}
-        {available.length > 0 && (
-          <>
-            <Text color={colors.textMuted} dimColor={connected.length > 0}>
-              {connected.length > 0 ? '\n' : ''}Available:
+          <Box flexDirection="column" marginTop={1}>
+            {/* Connected section */}
+            {connected.length > 0 && (
+              <>
+                <Text color={colors.textMuted}>Connected:</Text>
+                {connected.map((item, idx) => {
+                  const isSelected = idx === selectedIndex;
+                  // Find connection name
+                  const connOption = item.provider.connections.find(
+                    (c) => c.method === item.connectionMethod
+                  );
+                  const connName = connOption?.name || item.connectionMethod;
+                  return (
+                    <Box key={item.provider.id} paddingLeft={2}>
+                      <Text color={isSelected ? colors.primary : colors.textMuted}>
+                        {isSelected ? icons.arrow : ' '}
+                      </Text>
+                      <Text color={colors.success}>{icons.success} </Text>
+                      <Text color={isSelected ? colors.text : colors.textSecondary} bold={isSelected}>
+                        {item.provider.name}
+                      </Text>
+                      <Text color={colors.textMuted}>
+                        {' '}({connName}) · {item.modelCount} models
+                      </Text>
+                    </Box>
+                  );
+                })}
+              </>
+            )}
+
+            {/* Available section */}
+            {available.length > 0 && (
+              <>
+                <Text color={colors.textMuted} dimColor={connected.length > 0}>
+                  {connected.length > 0 ? '\n' : ''}Available:
+                </Text>
+                {available.map((item, idx) => {
+                  const actualIndex = connected.length + idx;
+                  const isSelected = actualIndex === selectedIndex;
+                  const hasReady = item.readyConnections.length > 0;
+
+                  // Show which connection methods are ready
+                  const readyNames = item.readyConnections.map((c) => c.name);
+
+                  return (
+                    <Box key={item.provider.id} paddingLeft={2}>
+                      <Text color={isSelected ? colors.primary : colors.textMuted}>
+                        {isSelected ? icons.arrow : ' '}
+                      </Text>
+                      <Text color={isSelected ? colors.text : colors.textSecondary} bold={isSelected}>
+                        {item.provider.name}
+                      </Text>
+                      {hasReady && (
+                        <Text color={colors.success}> ({readyNames.join(', ')})</Text>
+                      )}
+                    </Box>
+                  );
+                })}
+              </>
+            )}
+
+            {allItems.length === 0 && (
+              <Text color={colors.textMuted}>No providers match "{filter}"</Text>
+            )}
+          </Box>
+
+          <Box marginTop={1}>
+            <Text color={colors.textMuted}>
+              ↑↓ navigate · Enter connect · r remove · Tab/s search · Esc exit
             </Text>
-            {available.map((item, idx) => {
-              const actualIndex = connected.length + idx;
-              const isSelected = actualIndex === selectedIndex;
-              const hasReady = item.readyConnections.length > 0;
+          </Box>
+        </>
+      )}
 
-              // Show which connection methods are ready
-              const readyNames = item.readyConnections.map((c) => c.name);
+      {/* Search Providers Tab */}
+      {tab === 'search' && (
+        <>
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={colors.textMuted}>Select search provider:</Text>
+            {searchProviders.map((item, idx) => {
+              const isSelected = idx === searchSelectedIndex;
+              const envVars = item.provider.connections[0]?.envVars || [];
 
               return (
-                <Box key={item.provider.id} paddingLeft={2}>
-                  <Text color={isSelected ? colors.primary : colors.textMuted}>
-                    {isSelected ? icons.arrow : ' '}
-                  </Text>
-                  <Text color={isSelected ? colors.text : colors.textSecondary} bold={isSelected}>
-                    {item.provider.name}
-                  </Text>
-                  {hasReady && (
-                    <Text color={colors.success}> ({readyNames.join(', ')})</Text>
+                <Box key={item.provider.id} paddingLeft={2} flexDirection="column">
+                  <Box>
+                    <Text color={isSelected ? colors.primary : colors.textMuted}>
+                      {isSelected ? icons.arrow : ' '}
+                    </Text>
+                    {item.isSelected && <Text color={colors.success}>{icons.success} </Text>}
+                    <Text color={isSelected ? colors.text : colors.textSecondary} bold={isSelected}>
+                      {item.provider.name}
+                    </Text>
+                    {!item.provider.requiresKey && (
+                      <Text color={colors.success}> (no key required)</Text>
+                    )}
+                    {item.provider.requiresKey && item.isAvailable && (
+                      <Text color={colors.success}> (configured)</Text>
+                    )}
+                    {item.provider.requiresKey && !item.isAvailable && (
+                      <Text color={colors.textMuted}> (not configured)</Text>
+                    )}
+                  </Box>
+                  {isSelected && item.provider.requiresKey && !item.isAvailable && (
+                    <Text color={colors.textMuted} dimColor>
+                      {'    '}Set: {envVars.join(' or ')}
+                    </Text>
                   )}
                 </Box>
               );
             })}
-          </>
-        )}
+          </Box>
 
-        {allItems.length === 0 && (
-          <Text color={colors.textMuted}>No providers match "{filter}"</Text>
-        )}
-      </Box>
-
-      <Box marginTop={1}>
-        <Text color={colors.textMuted}>
-          {connected.length} connected · {available.length} available · ↑↓ navigate · Enter
-          connect/refresh · r remove · Esc exit
-        </Text>
-      </Box>
+          <Box marginTop={1}>
+            <Text color={colors.textMuted}>
+              ↑↓ navigate · Enter select · Tab/l LLM providers · Esc exit
+            </Text>
+          </Box>
+        </>
+      )}
     </Box>
   );
 }

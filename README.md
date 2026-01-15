@@ -22,8 +22,10 @@ gencode
 
 ## Features
 
-- [**Multi-Provider Support**](./docs/providers-and-models.md) - OpenAI, Anthropic, Google Gemini, Vertex AI
-- **Built-in Tools** - Read, Write, Edit, Bash, Glob, Grep, WebFetch
+- [**Multi-Provider Support**](./docs/providers.md) - Flexible provider configuration via `/provider` command
+  - [LLM Providers](./docs/providers.md#llm-providers) - OpenAI, Anthropic, Google Gemini, Vertex AI
+  - [Search Providers](./docs/providers.md#search-providers) - Exa AI (default), Serper.dev, Brave Search
+- **Built-in Tools** - Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 - **Agent Loop** - Multi-turn conversations with tool calls
 - **Session Management** - Persist and resume conversations
 - **Interactive CLI** - Fuzzy search, command suggestions, streaming output

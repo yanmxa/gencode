@@ -321,6 +321,7 @@ Configuration required: User must provide search API key.
 | `src/providers/store.ts` | Modified | Added search provider selection methods |
 | `src/tools/builtin/websearch.ts` | Created | WebSearch tool implementation |
 | `src/tools/index.ts` | Modified | Registered websearchTool |
+| `src/cli/components/ProviderManager.tsx` | Modified | Added Search Providers tab to `/provider` command |
 
 ### Key Implementation Details
 
@@ -330,8 +331,23 @@ Configuration required: User must provide search API key.
 4. **Provider Priority**: Configured in store > Environment variables > Default (Exa)
 5. **Domain Filtering**: Supports `allowed_domains` and `blocked_domains` parameters
 6. **Display**: Claude Code style with metadata (`Search("query")`, `Found N results via provider`)
+7. **CLI Configuration**: Search providers can be configured via `/provider` command
 
 ### Configuration
+
+**Method 1: Via `/provider` Command (Recommended)**
+
+```
+/provider
+```
+
+The Provider Management UI now has two tabs:
+- `[L] LLM Providers` - Configure LLM providers (Anthropic, OpenAI, Gemini, etc.)
+- `[S] Search Providers` - Configure search providers (Exa, Serper, Brave)
+
+Use `Tab` or `S` to switch to Search Providers tab, then use arrow keys to select and `Enter` to confirm.
+
+**Method 2: Via Environment Variables**
 
 | Variable | Provider | Notes |
 |----------|----------|-------|
