@@ -11,6 +11,7 @@ import {
   AssistantMessage,
   ToolCall,
   ToolResult,
+  PendingToolCall,
   InfoMessage,
   WelcomeMessage,
   CompletionMessage,
@@ -63,6 +64,21 @@ function useAgent(config: AgentConfig) {
 }
 
 // ============================================================================
+// Utils
+// ============================================================================
+const genId = () => Math.random().toString(36).slice(2);
+
+const formatRelativeTime = (dateStr: string) => {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  const hrs = Math.floor(mins / 60);
+  const days = Math.floor(hrs / 24);
+  if (mins < 60) return `${mins}m`;
+  if (hrs < 24) return `${hrs}h`;
+  return `${days}d`;
+};
+
+// ============================================================================
 // Help Component
 // ============================================================================
 function HelpPanel() {
@@ -95,16 +111,6 @@ interface SessionsTableProps {
 }
 
 function SessionsTable({ sessions }: SessionsTableProps) {
-  const formatTime = (dateStr: string) => {
-    const diff = Date.now() - new Date(dateStr).getTime();
-    const mins = Math.floor(diff / 60000);
-    const hrs = Math.floor(mins / 60);
-    const days = Math.floor(hrs / 24);
-    if (mins < 60) return `${mins}m`;
-    if (hrs < 24) return `${hrs}h`;
-    return `${days}d`;
-  };
-
   return (
     <Box flexDirection="column">
       {sessions.slice(0, 6).map((s, i) => (
@@ -112,7 +118,7 @@ function SessionsTable({ sessions }: SessionsTableProps) {
           <Text color={colors.textMuted}>{String(i + 1).padEnd(2)}</Text>
           <Text color={colors.primary}>{s.id.slice(0, 7).padEnd(8)}</Text>
           <Text>{s.title.slice(0, 25).padEnd(26)}</Text>
-          <Text color={colors.textMuted}>{formatTime(s.updatedAt)}</Text>
+          <Text color={colors.textMuted}>{formatRelativeTime(s.updatedAt)}</Text>
         </Text>
       ))}
     </Box>
@@ -125,9 +131,6 @@ function SessionsTable({ sessions }: SessionsTableProps) {
 export function App({ config, settingsManager, resumeLatest }: AppProps) {
   const { exit } = useApp();
   const agent = useAgent(config);
-
-  // Generate unique ID
-  const genId = () => Math.random().toString(36).slice(2);
 
   // Initial header item
   const cwd = config.cwd || process.cwd();
@@ -163,6 +166,8 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
   const [currentModel, setCurrentModel] = useState(config.model);
   const [cmdSuggestionIndex, setCmdSuggestionIndex] = useState(0);
   const [inputKey, setInputKey] = useState(0); // Force cursor to end after autocomplete
+  const [pendingTool, setPendingTool] = useState<{ name: string; input: Record<string, unknown> } | null>(null);
+  const pendingToolRef = useRef<{ name: string; input: Record<string, unknown> } | null>(null);
 
   // Check if showing command suggestions
   const showCmdSuggestions = input.startsWith('/') && !isProcessing;
@@ -364,14 +369,22 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
               streamingTextRef.current = '';
               setStreamingText('');
             }
-            addHistory({
-              type: 'tool_call',
-              content: event.name,
-              meta: { toolName: event.name, input: event.input },
-            });
+            // Set pending tool for spinner animation (use both state and ref)
+            const toolInfo = { name: event.name, input: event.input as Record<string, unknown> };
+            pendingToolRef.current = toolInfo;
+            setPendingTool(toolInfo);
             break;
 
           case 'tool_result':
+            // Add tool_call to history (now completed) - use ref for correct value
+            if (pendingToolRef.current) {
+              addHistory({
+                type: 'tool_call',
+                content: pendingToolRef.current.name,
+                meta: { toolName: pendingToolRef.current.name, input: pendingToolRef.current.input },
+              });
+            }
+            // Add tool_result to history
             addHistory({
               type: 'tool_result',
               content: event.result.output,
@@ -381,6 +394,8 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
                 metadata: event.result.metadata,
               },
             });
+            pendingToolRef.current = null;
+            setPendingTool(null);
             setIsThinking(true);
             break;
 
@@ -535,6 +550,8 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
       <Static items={history}>
         {(item) => <Box key={item.id}>{renderHistoryItem(item)}</Box>}
       </Static>
+
+      {pendingTool && <PendingToolCall name={pendingTool.name} input={pendingTool.input} />}
 
       {streamingText && <AssistantMessage text={streamingText} streaming />}
 

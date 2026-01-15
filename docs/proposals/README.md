@@ -1,6 +1,6 @@
-# mycode Enhancement Proposals
+# gencode Enhancement Proposals
 
-This directory contains enhancement proposals for the mycode project. Each proposal describes a feature inspired by Claude Code that we plan to implement.
+This directory contains enhancement proposals for the gencode project. Each proposal describes a feature inspired by Claude Code that we plan to implement.
 
 ## Proposal Process
 
@@ -28,6 +28,7 @@ This directory contains enhancement proposals for the mycode project. Each propo
 | [0010](./0010-mcp-integration.md) | MCP Integration | Draft |
 | [0011](./0011-custom-commands.md) | Custom Commands | Draft |
 | [0012](./0012-ask-user-question.md) | AskUserQuestion Tool | Draft |
+| [0041](./0041-configuration-system.md) | Configuration System | Draft |
 
 ### P2 Priority - Enhanced Features
 

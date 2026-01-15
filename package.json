@@ -11,7 +11,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "npx tsx src/cli/index.tsx",
+    "start": "node dist/cli/index.js",
+    "start:dev": "npx tsx src/cli/index.tsx",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "example": "npx tsx examples/basic.ts"
   },
@@ -37,6 +38,7 @@
     "ink": "^6.6.0",
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
+    "marked": "^17.0.1",
     "openai": "^6.16.0",
     "ora": "^9.0.0",
     "react": "^19.2.3",

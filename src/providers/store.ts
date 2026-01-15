@@ -8,6 +8,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import type { ProviderName } from './index.js';
+import type { SearchProviderName } from './search/types.js';
 
 export interface ModelInfo {
   id: string;
@@ -27,6 +28,7 @@ export interface ModelCache {
 export interface ProvidersConfig {
   connections: Record<string, ProviderConnection>;
   models: Record<string, ModelCache>;
+  searchProvider?: SearchProviderName;
 }
 
 const CONFIG_DIR = join(homedir(), '.gencode');
@@ -174,6 +176,29 @@ export class ProviderStore {
    */
   getModelCount(providerId: ProviderName): number {
     return this.config.models[providerId]?.list.length ?? 0;
+  }
+
+  /**
+   * Get the configured search provider
+   */
+  getSearchProvider(): SearchProviderName | undefined {
+    return this.config.searchProvider;
+  }
+
+  /**
+   * Set the search provider
+   */
+  setSearchProvider(id: SearchProviderName): void {
+    this.config.searchProvider = id;
+    this.save();
+  }
+
+  /**
+   * Clear the search provider (use default)
+   */
+  clearSearchProvider(): void {
+    delete this.config.searchProvider;
+    this.save();
   }
 }
 

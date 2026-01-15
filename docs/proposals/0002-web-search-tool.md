@@ -1,10 +1,11 @@
 # Proposal: WebSearch Tool
 
 - **Proposal ID**: 0002
-- **Author**: mycode team
-- **Status**: Draft
+- **Author**: Meng Yan
+- **Status**: Implemented
 - **Created**: 2025-01-15
 - **Updated**: 2025-01-15
+- **Implemented**: 2025-01-15
 
 ## Summary
 
@@ -304,3 +305,43 @@ Configuration required: User must provide search API key.
 - [Serper API](https://serper.dev/)
 - [Google Custom Search API](https://developers.google.com/custom-search)
 - [Bing Web Search API](https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)
+
+## Implementation Notes
+
+### Files Created/Modified
+
+| File | Action | Description |
+|------|--------|-------------|
+| `src/providers/search/types.ts` | Created | Search provider interface and types |
+| `src/providers/search/exa.ts` | Created | Exa AI provider (default, no API key required) |
+| `src/providers/search/serper.ts` | Created | Serper.dev provider |
+| `src/providers/search/brave.ts` | Created | Brave Search provider |
+| `src/providers/search/index.ts` | Created | Factory function and exports |
+| `src/providers/registry.ts` | Modified | Added SEARCH_PROVIDERS definitions |
+| `src/providers/store.ts` | Modified | Added search provider selection methods |
+| `src/tools/builtin/websearch.ts` | Created | WebSearch tool implementation |
+| `src/tools/index.ts` | Modified | Registered websearchTool |
+
+### Key Implementation Details
+
+1. **Multi-Provider Support**: Integrated into the existing provider system (`src/providers/`)
+2. **Default Provider**: Exa AI - no API key required, works out of the box (like OpenCode)
+3. **Optional Providers**: Serper.dev and Brave Search (require API keys)
+4. **Provider Priority**: Configured in store > Environment variables > Default (Exa)
+5. **Domain Filtering**: Supports `allowed_domains` and `blocked_domains` parameters
+6. **Display**: Claude Code style with metadata (`Search("query")`, `Found N results via provider`)
+
+### Configuration
+
+| Variable | Provider | Notes |
+|----------|----------|-------|
+| (none) | Exa AI | Default, no config needed |
+| `SERPER_API_KEY` | Serper.dev | 2,500 free queries |
+| `BRAVE_API_KEY` | Brave Search | 2,000 free/month |
+
+### Display Example
+
+```
+● Search("TypeScript 5.4 features")
+  └ Found 10 results via exa
+```

@@ -13,6 +13,7 @@ export { bashTool } from './builtin/bash.js';
 export { globTool } from './builtin/glob.js';
 export { grepTool } from './builtin/grep.js';
 export { webfetchTool } from './builtin/webfetch.js';
+export { websearchTool } from './builtin/websearch.js';
 
 import { ToolRegistry } from './registry.js';
 import { readTool } from './builtin/read.js';
@@ -22,17 +23,36 @@ import { bashTool } from './builtin/bash.js';
 import { globTool } from './builtin/glob.js';
 import { grepTool } from './builtin/grep.js';
 import { webfetchTool } from './builtin/webfetch.js';
+import { websearchTool } from './builtin/websearch.js';
 
 /**
  * Create a registry with all built-in tools
  */
 export function createDefaultRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
-  registry.registerAll([readTool, writeTool, editTool, bashTool, globTool, grepTool, webfetchTool]);
+  registry.registerAll([
+    readTool,
+    writeTool,
+    editTool,
+    bashTool,
+    globTool,
+    grepTool,
+    webfetchTool,
+    websearchTool,
+  ]);
   return registry;
 }
 
 /**
  * All built-in tools
  */
-export const builtinTools = [readTool, writeTool, editTool, bashTool, globTool, grepTool, webfetchTool];
+export const builtinTools = [
+  readTool,
+  writeTool,
+  editTool,
+  bashTool,
+  globTool,
+  grepTool,
+  webfetchTool,
+  websearchTool,
+];

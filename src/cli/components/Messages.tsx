@@ -1,5 +1,12 @@
+import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
+import InkSpinner from 'ink-spinner';
 import { colors, icons } from './theme.js';
+import { renderMarkdown } from './markdown.js';
+
+// Truncate string with ellipsis
+const truncate = (str: string, maxLen: number) =>
+  str.length > maxLen ? str.slice(0, maxLen - 3) + '...' : str;
 
 // Word wrap text to terminal width
 function wrapText(text: string, width: number): string[] {
@@ -36,7 +43,7 @@ export function UserMessage({ text }: UserMessageProps) {
       {lines.map((line, i) => (
         <Box key={i}>
           <Text color={colors.brand}>{icons.userPrompt} </Text>
-          <Text backgroundColor="#1E293B" color={colors.text}> {line} </Text>
+          <Text backgroundColor={colors.inputBg} color={colors.text}> {line} </Text>
         </Box>
       ))}
     </Box>
@@ -51,29 +58,39 @@ interface AssistantMessageProps {
 export function AssistantMessage({ text, streaming }: AssistantMessageProps) {
   if (!text) return null;
 
-  // Get terminal width for wrapping
-  const termWidth = process.stdout.columns || 80;
-  const contentWidth = termWidth - 4; // Account for prefix
+  // Streaming: use simple text display (markdown incomplete during stream)
+  if (streaming) {
+    const termWidth = process.stdout.columns || 80;
+    const contentWidth = termWidth - 4;
+    const lines = wrapText(text.trimEnd(), contentWidth);
 
-  // Wrap text to terminal width
-  const lines = wrapText(text.trimEnd(), contentWidth);
+    return (
+      <Box flexDirection="column" marginTop={1} marginBottom={0}>
+        {lines.map((line, i) => (
+          <Box key={i}>
+            {i === 0 && <Text color={colors.success}>{icons.assistant} </Text>}
+            {i > 0 && <Text>  </Text>}
+            <Text>
+              {line}
+              {i === lines.length - 1 && (
+                <Text color={colors.brandLight}>{icons.cursor}</Text>
+              )}
+            </Text>
+          </Box>
+        ))}
+      </Box>
+    );
+  }
+
+  // Completed: render with markdown
+  const rendered = renderMarkdown(text);
 
   return (
     <Box flexDirection="column" marginTop={1} marginBottom={0}>
-      {lines.map((line, i) => (
-        <Box key={i}>
-          {i === 0 && <Text color={colors.success}>{icons.assistant} </Text>}
-          {i > 0 && <Text>  </Text>}
-          <Text>
-            {line}
-            {streaming && i === lines.length - 1 ? (
-              <Text color={colors.brandLight}>{icons.cursor}</Text>
-            ) : (
-              ''
-            )}
-          </Text>
-        </Box>
-      ))}
+      <Box>
+        <Text color={colors.success}>{icons.assistant} </Text>
+        <Text>{rendered}</Text>
+      </Box>
     </Box>
   );
 }
@@ -86,10 +103,9 @@ interface ToolCallProps {
 export function ToolCall({ name, input }: ToolCallProps) {
   // WebFetch: Show "Fetch(url)" instead of JSON (Claude Code style)
   if (name === 'WebFetch' && input?.url) {
-    const url = input.url as string;
-    const shortUrl = url.length > 60 ? url.slice(0, 57) + '...' : url;
+    const shortUrl = truncate(input.url as string, 60);
     return (
-      <Box marginLeft={2}>
+      <Box marginTop={1}>
         <Text color={colors.tool}>{icons.fetch}</Text>
         <Text> Fetch(</Text>
         <Text color={colors.info}>{shortUrl}</Text>
@@ -99,15 +115,50 @@ export function ToolCall({ name, input }: ToolCallProps) {
   }
 
   // Default: Show tool name with JSON input
-  const inputStr = JSON.stringify(input);
-  const shortInput = inputStr.length > 50 ? inputStr.slice(0, 47) + '...' : inputStr;
+  const shortInput = truncate(JSON.stringify(input), 50);
 
   return (
-    <Box marginLeft={2}>
+    <Box marginTop={1}>
       <Text dimColor>
         <Text color={colors.tool}>{icons.tool}</Text> {name}{' '}
         <Text color={colors.textMuted}>{shortInput}</Text>
       </Text>
+    </Box>
+  );
+}
+
+// Pending tool call with spinning indicator
+interface PendingToolCallProps {
+  name: string;
+  input: Record<string, unknown>;
+}
+
+export function PendingToolCall({ name, input }: PendingToolCallProps) {
+  // WebFetch: Show "Fetch(url)" with spinner
+  if (name === 'WebFetch' && input?.url) {
+    const shortUrl = truncate(input.url as string, 60);
+    return (
+      <Box marginTop={1}>
+        <Text color={colors.tool}>
+          <InkSpinner type="dots" />
+        </Text>
+        <Text> Fetch(</Text>
+        <Text color={colors.info}>{shortUrl}</Text>
+        <Text>)</Text>
+      </Box>
+    );
+  }
+
+  // Default: Show tool name with spinner
+  const shortInput = truncate(JSON.stringify(input), 50);
+
+  return (
+    <Box marginTop={1}>
+      <Text color={colors.tool}>
+        <InkSpinner type="dots" />
+      </Text>
+      <Text> {name} </Text>
+      <Text color={colors.textMuted}>{shortInput}</Text>
     </Box>
   );
 }
@@ -130,29 +181,27 @@ interface ToolResultProps {
 
 export function ToolResult({ name, success, output, metadata }: ToolResultProps) {
   const statusColor = success ? colors.success : colors.error;
-  const statusIcon = success ? icons.success : icons.error;
 
   // If metadata has subtitle (e.g., "Received 540.3KB (200 OK)"), show it
   if (metadata?.subtitle) {
     return (
       <Box marginLeft={2}>
         <Text dimColor>
-          <Text color={statusColor}>{statusIcon}</Text>{' '}
-          <Text>{metadata.subtitle}</Text>
+          <Text>{icons.treeEnd}</Text>{' '}
+          <Text color={statusColor}>{metadata.subtitle}</Text>
         </Text>
       </Box>
     );
   }
 
   // Default: Show first line of output
-  const firstLine = output.split('\n')[0]?.trim() || '';
-  const displayOutput = firstLine.length > 50 ? firstLine.slice(0, 47) + '...' : firstLine;
+  const displayOutput = truncate(output.split('\n')[0]?.trim() || '', 50);
 
   return (
     <Box marginLeft={2}>
       <Text dimColor>
-        <Text color={statusColor}>{statusIcon}</Text> {name}{' '}
-        <Text color={colors.textMuted}>{displayOutput}</Text>
+        <Text>{icons.treeEnd}</Text> {name}{' '}
+        <Text color={statusColor}>{displayOutput}</Text>
       </Text>
     </Box>
   );

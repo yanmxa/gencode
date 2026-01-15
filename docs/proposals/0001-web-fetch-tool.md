@@ -1,10 +1,11 @@
 # Proposal: WebFetch Tool
 
 - **Proposal ID**: 0001
-- **Author**: mycode team
-- **Status**: Draft
+- **Author**: Meng Yan
+- **Status**: Implemented
 - **Created**: 2025-01-15
 - **Updated**: 2025-01-15
+- **Implemented**: 2025-01-15
 
 ## Summary
 
@@ -285,6 +286,35 @@ const BLOCKED_HOSTS = [
 4. **Phase 4**: Domain restrictions and security hardening
 
 No breaking changes to existing functionality.
+
+## Implementation Notes
+
+### Files Created/Modified
+
+| File | Action | Description |
+|------|--------|-------------|
+| `src/tools/utils/ssrf.ts` | Created | SSRF protection utilities |
+| `src/tools/builtin/webfetch.ts` | Created | WebFetch tool implementation |
+| `src/tools/types.ts` | Modified | Added ToolResultMetadata interface |
+| `src/tools/index.ts` | Modified | Registered webfetchTool |
+| `src/cli/components/Messages.tsx` | Modified | Improved tool display (Claude Code style) |
+| `src/cli/components/theme.ts` | Modified | Added fetch icon |
+| `package.json` | Modified | Added turndown dependency |
+
+### Key Implementation Details
+
+1. **HTML to Markdown**: Uses `turndown` library for conversion
+2. **SSRF Protection**: Blocks localhost, private IPs (10.x, 172.16-31.x, 192.168.x), cloud metadata (169.254.169.254)
+3. **Size Limits**: 5MB max response size
+4. **Timeout**: 30s default, 120s max
+5. **Display**: Claude Code style (`● Fetch(url)` with `└ Received 540.3KB (200 OK)`)
+
+### Display Example
+
+```
+● Fetch(https://example.com/docs)
+  └ Received 540.3KB (200 OK)
+```
 
 ## References
 

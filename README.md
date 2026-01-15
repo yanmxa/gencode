@@ -23,7 +23,7 @@ gencode
 ## Features
 
 - [**Multi-Provider Support**](./docs/providers-and-models.md) - OpenAI, Anthropic, Google Gemini, Vertex AI
-- **Built-in Tools** - Read, Write, Edit, Bash, Glob, Grep
+- **Built-in Tools** - Read, Write, Edit, Bash, Glob, Grep, WebFetch
 - **Agent Loop** - Multi-turn conversations with tool calls
 - **Session Management** - Persist and resume conversations
 - **Interactive CLI** - Fuzzy search, command suggestions, streaming output

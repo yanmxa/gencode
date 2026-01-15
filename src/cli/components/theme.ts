@@ -14,6 +14,7 @@ export const colors = {
   textMuted: '#64748B', // Slate 500
   tool: '#C084FC', // Purple 400
   separator: '#1E293B', // Slate 800
+  inputBg: '#111827', // Gray 900 - subtle background for user input
 };
 
 export const icons = {
@@ -37,4 +38,6 @@ export const icons = {
   // Selection
   radio: '●', // Filled radio for selected
   radioEmpty: '○', // Empty radio for unselected
+  // Tree connectors
+  treeEnd: '└', // Tree end connector for tool results
 };
