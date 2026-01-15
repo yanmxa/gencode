@@ -65,7 +65,12 @@ export class GeminiProvider implements LLMProvider {
     const result = await model.generateContentStream({ contents });
 
     let textContent = '';
-    const functionCalls: Array<{ id: string; name: string; args: Record<string, unknown> }> = [];
+    const functionCalls: Array<{
+      id: string;
+      name: string;
+      args: Record<string, unknown>;
+      thoughtSignature?: string;
+    }> = [];
     let callIndex = 0;
 
     for await (const chunk of result.stream) {
@@ -78,10 +83,13 @@ export class GeminiProvider implements LLMProvider {
         } else if ('functionCall' in part && part.functionCall) {
           const fc = part.functionCall;
           const id = `call_${callIndex++}`;
+          // Capture thoughtSignature for Gemini 3+ models
+          const partAny = part as { thoughtSignature?: string };
           functionCalls.push({
             id,
             name: fc.name,
             args: (fc.args as Record<string, unknown>) ?? {},
+            thoughtSignature: partAny.thoughtSignature,
           });
           yield { type: 'tool_start', id, name: fc.name };
           yield { type: 'tool_input', id, input: JSON.stringify(fc.args) };
@@ -100,6 +108,7 @@ export class GeminiProvider implements LLMProvider {
         id: fc.id,
         name: fc.name,
         input: fc.args,
+        thoughtSignature: fc.thoughtSignature,
       });
     }
 
@@ -152,13 +161,17 @@ export class GeminiProvider implements LLMProvider {
       if (item.type === 'text') {
         parts.push({ text: item.text });
       } else if (item.type === 'tool_use' && role === 'model') {
-        // Function call from model
-        parts.push({
+        // Function call from model - include thoughtSignature for Gemini 3+
+        const fcPart: Part & { thoughtSignature?: string } = {
           functionCall: {
             name: item.name,
             args: item.input,
           },
-        });
+        };
+        if (item.thoughtSignature) {
+          fcPart.thoughtSignature = item.thoughtSignature;
+        }
+        parts.push(fcPart as Part);
       } else if (item.type === 'tool_result' && role === 'user') {
         // Function response
         parts.push({
@@ -234,11 +247,14 @@ export class GeminiProvider implements LLMProvider {
       if ('text' in part && part.text) {
         content.push({ type: 'text', text: part.text });
       } else if ('functionCall' in part && part.functionCall) {
+        // Capture thoughtSignature for Gemini 3+ models
+        const partAny = part as { thoughtSignature?: string };
         content.push({
           type: 'tool_use',
           id: `call_${callIndex++}`,
           name: part.functionCall.name,
           input: (part.functionCall.args as Record<string, unknown>) ?? {},
+          thoughtSignature: partAny.thoughtSignature,
         });
       }
     }

@@ -5,7 +5,7 @@
 import type { PermissionConfig } from '../permissions/types.js';
 
 export interface AgentConfig {
-  provider: 'openai' | 'anthropic' | 'gemini';
+  provider: 'openai' | 'anthropic' | 'gemini' | 'vertex-ai';
   model: string;
   systemPrompt?: string;
   tools?: string[];

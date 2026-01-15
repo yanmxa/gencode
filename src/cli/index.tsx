@@ -9,7 +9,7 @@ import { render } from 'ink';
 import React from 'react';
 import { App } from './components/App.js';
 import type { AgentConfig } from '../agent/types.js';
-import { SettingsManager, type Settings } from '../config/index.js';
+import { SettingsManager, ProvidersConfigManager, type Settings, type ProviderName } from '../config/index.js';
 
 // ============================================================================
 // Proxy Setup
@@ -31,12 +31,17 @@ async function setupProxy(): Promise<void> {
 // ============================================================================
 // Configuration
 // ============================================================================
-function detectConfig(settings: Settings): AgentConfig {
-  let provider: 'openai' | 'anthropic' | 'gemini' = 'gemini';
+function detectConfig(settings: Settings, providersConfig: ProvidersConfigManager): AgentConfig {
+  let provider: ProviderName = 'gemini';
   let model = 'gemini-2.0-flash';
 
+  // Check for explicit Vertex AI enablement first (highest priority for auto-detect)
+  if (process.env.GENCODE_USE_VERTEX === '1' || process.env.CLAUDE_CODE_USE_VERTEX === '1') {
+    provider = 'vertex-ai';
+    model = process.env.VERTEX_AI_MODEL ?? 'claude-sonnet-4-5@20250929';
+  }
   // Auto-detect from API keys
-  if (process.env.ANTHROPIC_API_KEY) {
+  else if (process.env.ANTHROPIC_API_KEY) {
     provider = 'anthropic';
     model = 'claude-sonnet-4-20250514';
   } else if (process.env.OPENAI_API_KEY) {
@@ -49,7 +54,7 @@ function detectConfig(settings: Settings): AgentConfig {
 
   // Override from env vars
   if (process.env.GENCODE_PROVIDER) {
-    provider = process.env.GENCODE_PROVIDER as 'openai' | 'anthropic' | 'gemini';
+    provider = process.env.GENCODE_PROVIDER as ProviderName;
   }
   if (process.env.GENCODE_MODEL) {
     model = process.env.GENCODE_MODEL;
@@ -61,6 +66,13 @@ function detectConfig(settings: Settings): AgentConfig {
   }
   if (settings.model) {
     model = settings.model;
+    // Auto-infer provider from model using providers.json (if not explicitly set)
+    if (!settings.provider) {
+      const inferredProvider = providersConfig.inferProvider(model);
+      if (inferredProvider) {
+        provider = inferredProvider;
+      }
+    }
   }
 
   return {
@@ -114,11 +126,14 @@ async function main() {
 
   await setupProxy();
 
-  // Load saved settings
+  // Load saved settings and providers config
   const settingsManager = new SettingsManager();
   const settings = await settingsManager.load();
 
-  const config = detectConfig(settings);
+  const providersConfig = new ProvidersConfigManager();
+  await providersConfig.load();
+
+  const config = detectConfig(settings, providersConfig);
 
   // Render the Ink app
   render(

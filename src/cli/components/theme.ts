@@ -33,4 +33,7 @@ export const icons = {
   // UI
   thinking: '✱', // Star for thinking state
   cursor: '▋',
+  // Selection
+  radio: '●', // Filled radio for selected
+  radioEmpty: '○', // Empty radio for unselected
 };

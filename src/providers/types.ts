@@ -19,6 +19,8 @@ export interface ToolUseContent {
   id: string;
   name: string;
   input: Record<string, unknown>;
+  // Gemini 3+ thought signature for maintaining reasoning chain
+  thoughtSignature?: string;
 }
 
 export interface ToolResultContent {
@@ -178,4 +180,10 @@ export interface GeminiConfig {
   apiKey?: string;
 }
 
-export type ProviderConfig = OpenAIConfig | AnthropicConfig | GeminiConfig;
+export interface VertexAIConfig {
+  projectId?: string;
+  region?: string;
+  accessToken?: string;
+}
+
+export type ProviderConfig = OpenAIConfig | AnthropicConfig | GeminiConfig | VertexAIConfig;

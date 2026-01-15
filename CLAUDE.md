@@ -68,3 +68,19 @@ Proxy: Set `HTTP_PROXY` or `HTTPS_PROXY` for network proxy support.
 - Tool input validation uses Zod; errors returned as `ToolResult.error`
 - Provider implementations handle message format conversion internally
 - CLI commands start with `/` (e.g., `/sessions`, `/resume`, `/help`)
+
+## Reference Projects
+
+Similar projects for learning and reference:
+
+| Project | Path | Description |
+|---------|------|-------------|
+| OpenCode | `/Users/myan/Workspace/opencode` | Go-based AI coding assistant with TUI, multi-provider support |
+| System Prompts Collection | `/Users/myan/Workspace/ideas/system-prompts-and-models-of-ai-tools` | Collection of system prompts from various AI tools (Claude Code, Cursor, etc.) |
+| Learn Claude Code | `/Users/myan/Workspace/ideas/learn-claude-code` | Educational resources for understanding Claude Code internals |
+
+### Key Learnings from References
+
+- **OpenCode**: Go implementation with Ink-based TUI, LSP integration, conversation sessions
+- **System Prompts**: Study prompt engineering patterns used by production AI tools
+- **Learn Claude Code**: Understand Claude Code's tool system, agent loop, and UX patterns

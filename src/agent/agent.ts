@@ -3,7 +3,7 @@
  */
 
 import type { LLMProvider, Message, ToolResultContent } from '../providers/types.js';
-import { createProvider } from '../providers/index.js';
+import { createProvider, inferProvider } from '../providers/index.js';
 import { ToolRegistry, createDefaultRegistry } from '../tools/index.js';
 import { PermissionManager } from '../permissions/index.js';
 import { SessionManager } from '../session/index.js';
@@ -64,10 +64,17 @@ export class Agent {
   }
 
   /**
-   * Set the model to use
+   * Set the model to use (auto-switches provider if needed)
    */
   setModel(model: string): void {
     this.config.model = model;
+
+    // Auto-switch provider based on model name
+    const newProvider = inferProvider(model);
+    if (newProvider !== this.config.provider) {
+      this.config.provider = newProvider;
+      this.provider = createProvider({ provider: newProvider });
+    }
   }
 
   /**

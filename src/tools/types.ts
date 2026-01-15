@@ -88,6 +88,16 @@ export const GrepInputSchema = z.object({
 });
 export type GrepInput = z.infer<typeof GrepInputSchema>;
 
+export const WebFetchInputSchema = z.object({
+  url: z.string().describe('The URL to fetch content from (http:// or https://)'),
+  format: z
+    .enum(['text', 'markdown', 'html'])
+    .optional()
+    .describe('Output format: markdown (default), text, or html'),
+  timeout: z.number().optional().describe('Timeout in seconds (default: 30, max: 120)'),
+});
+export type WebFetchInput = z.infer<typeof WebFetchInputSchema>;
+
 // ============================================================================
 // JSON Schema Conversion
 // ============================================================================

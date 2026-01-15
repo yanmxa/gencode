@@ -19,8 +19,10 @@ import { Header } from './Header.js';
 import { ProgressBar } from './Spinner.js';
 import { PromptInput, ConfirmPrompt } from './Input.js';
 import { ModelSelector } from './ModelSelector.js';
+import { ProviderManager } from './ProviderManager.js';
 import { CommandSuggestions, getFilteredCommands } from './CommandSuggestions.js';
 import { colors, icons } from './theme.js';
+import type { ProviderName } from '../../providers/index.js';
 
 // Types
 interface HistoryItem {
@@ -66,6 +68,7 @@ function useAgent(config: AgentConfig) {
 function HelpPanel() {
   const commands: [string, string][] = [
     ['/model [name]', 'Switch model'],
+    ['/provider', 'Manage providers'],
     ['/sessions', 'List sessions'],
     ['/resume [n]', 'Resume session'],
     ['/new', 'New session'],
@@ -156,6 +159,7 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
   const streamingTextRef = useRef(''); // Track current streaming text for closure
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [showModelSelector, setShowModelSelector] = useState(false);
+  const [showProviderManager, setShowProviderManager] = useState(false);
   const [currentModel, setCurrentModel] = useState(config.model);
   const [cmdSuggestionIndex, setCmdSuggestionIndex] = useState(0);
   const [inputKey, setInputKey] = useState(0); // Force cursor to end after autocomplete
@@ -202,11 +206,16 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
   };
 
   // Handle model selection
-  const handleModelSelect = async (model: string) => {
+  const handleModelSelect = async (model: string, providerId?: ProviderName) => {
     agent.setModel(model);
     setCurrentModel(model);
     setShowModelSelector(false);
-    addHistory({ type: 'info', content: `Model: ${model}` });
+
+    if (providerId) {
+      addHistory({ type: 'info', content: `${providerId}: ${model}` });
+    } else {
+      addHistory({ type: 'info', content: `Model: ${model}` });
+    }
 
     // Save to settings for next startup
     if (settingsManager) {
@@ -299,6 +308,11 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
           // Show interactive model selector
           setShowModelSelector(true);
         }
+        return true;
+      }
+
+      case 'provider': {
+        setShowProviderManager(true);
         return true;
       }
 
@@ -539,7 +553,20 @@ export function App({ config, settingsManager, resumeLatest }: AppProps) {
         </Box>
       )}
 
-      {!confirmState && !showModelSelector && (
+      {showProviderManager && (
+        <Box marginTop={1}>
+          <ProviderManager
+            onClose={() => setShowProviderManager(false)}
+            onProviderChange={(providerId, model) => {
+              agent.setModel(model);
+              setCurrentModel(model);
+              addHistory({ type: 'info', content: `Switched to ${providerId}: ${model}` });
+            }}
+          />
+        </Box>
+      )}
+
+      {!confirmState && !showModelSelector && !showProviderManager && (
         <Box flexDirection="column" marginTop={1}>
           <PromptInput
             key={inputKey}

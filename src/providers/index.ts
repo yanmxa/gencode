@@ -1,22 +1,25 @@
 /**
- * LLM Providers - Unified interface for OpenAI, Anthropic, and Gemini
+ * LLM Providers - Unified interface for OpenAI, Anthropic, Gemini, and Vertex AI
  */
 
 export * from './types.js';
 export { OpenAIProvider } from './openai.js';
 export { AnthropicProvider } from './anthropic.js';
 export { GeminiProvider } from './gemini.js';
+export { VertexAIProvider } from './vertex-ai.js';
 
-import type { LLMProvider, OpenAIConfig, AnthropicConfig, GeminiConfig } from './types.js';
+import type { LLMProvider, OpenAIConfig, AnthropicConfig, GeminiConfig, VertexAIConfig } from './types.js';
 import { OpenAIProvider } from './openai.js';
 import { AnthropicProvider } from './anthropic.js';
 import { GeminiProvider } from './gemini.js';
+import { VertexAIProvider } from './vertex-ai.js';
 
-export type ProviderName = 'openai' | 'anthropic' | 'gemini';
+export type ProviderName = 'openai' | 'anthropic' | 'gemini' | 'vertex-ai';
 export type ProviderConfigMap = {
   openai: OpenAIConfig;
   anthropic: AnthropicConfig;
   gemini: GeminiConfig;
+  'vertex-ai': VertexAIConfig;
 };
 
 export interface CreateProviderOptions<T extends ProviderName = ProviderName> {
@@ -35,6 +38,8 @@ export function createProvider(options: CreateProviderOptions): LLMProvider {
       return new AnthropicProvider(options.config as AnthropicConfig);
     case 'gemini':
       return new GeminiProvider(options.config as GeminiConfig);
+    case 'vertex-ai':
+      return new VertexAIProvider(options.config as VertexAIConfig);
     default:
       throw new Error(`Unknown provider: ${options.provider}`);
   }
@@ -45,6 +50,11 @@ export function createProvider(options: CreateProviderOptions): LLMProvider {
  */
 export function inferProvider(model: string): ProviderName {
   const modelLower = model.toLowerCase();
+
+  // Vertex AI models (Claude models with @ version suffix like claude-sonnet-4-5@20250929)
+  if (modelLower.includes('claude') && modelLower.includes('@')) {
+    return 'vertex-ai';
+  }
 
   // OpenAI models
   if (
@@ -94,4 +104,9 @@ export const ModelAliases: Record<string, { provider: ProviderName; model: strin
   'gemini-2.0-flash': { provider: 'gemini', model: 'gemini-2.0-flash' },
   'gemini-1.5-pro': { provider: 'gemini', model: 'gemini-1.5-pro' },
   'gemini-1.5-flash': { provider: 'gemini', model: 'gemini-1.5-flash' },
+
+  // Vertex AI (Claude on GCP)
+  'vertex-sonnet': { provider: 'vertex-ai', model: 'claude-sonnet-4-5@20250929' },
+  'vertex-haiku': { provider: 'vertex-ai', model: 'claude-haiku-4-5@20251001' },
+  'vertex-opus': { provider: 'vertex-ai', model: 'claude-opus-4-1@20250805' },
 };
