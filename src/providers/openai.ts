@@ -14,6 +14,7 @@ import type {
   ToolDefinition,
   StopReason,
   OpenAIConfig,
+  ModelInfo,
 } from './types.js';
 
 type OpenAIMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
@@ -247,5 +248,14 @@ export class OpenAIProvider implements LLMProvider {
       .filter((c) => c.type === 'text')
       .map((c) => (c as { text: string }).text)
       .join('');
+  }
+
+  async listModels(): Promise<ModelInfo[]> {
+    const list = await this.client.models.list();
+    const models: ModelInfo[] = [];
+    for await (const model of list) {
+      models.push({ id: model.id, name: model.id });
+    }
+    return models.sort((a, b) => a.id.localeCompare(b.id));
   }
 }

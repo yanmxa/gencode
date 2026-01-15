@@ -14,6 +14,7 @@ import type {
   ToolDefinition,
   StopReason,
   AnthropicConfig,
+  ModelInfo,
 } from './types.js';
 
 type AnthropicMessage = Anthropic.MessageParam;
@@ -208,5 +209,16 @@ export class AnthropicProvider implements LLMProvider {
       default:
         return 'end_turn';
     }
+  }
+
+  async listModels(): Promise<ModelInfo[]> {
+    const models: ModelInfo[] = [];
+    for await (const model of this.client.models.list()) {
+      models.push({
+        id: model.id,
+        name: model.display_name || model.id,
+      });
+    }
+    return models;
   }
 }

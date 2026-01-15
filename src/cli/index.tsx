@@ -9,6 +9,7 @@ import { render } from 'ink';
 import React from 'react';
 import { App } from './components/App.js';
 import type { AgentConfig } from '../agent/types.js';
+import { SettingsManager, type Settings } from '../config/index.js';
 
 // ============================================================================
 // Proxy Setup
@@ -30,7 +31,7 @@ async function setupProxy(): Promise<void> {
 // ============================================================================
 // Configuration
 // ============================================================================
-function detectConfig(): AgentConfig {
+function detectConfig(settings: Settings): AgentConfig {
   let provider: 'openai' | 'anthropic' | 'gemini' = 'gemini';
   let model = 'gemini-2.0-flash';
 
@@ -52,6 +53,14 @@ function detectConfig(): AgentConfig {
   }
   if (process.env.GENCODE_MODEL) {
     model = process.env.GENCODE_MODEL;
+  }
+
+  // Override from saved settings (highest priority)
+  if (settings.provider) {
+    provider = settings.provider;
+  }
+  if (settings.model) {
+    model = settings.model;
   }
 
   return {
@@ -105,12 +114,17 @@ async function main() {
 
   await setupProxy();
 
-  const config = detectConfig();
+  // Load saved settings
+  const settingsManager = new SettingsManager();
+  const settings = await settingsManager.load();
+
+  const config = detectConfig(settings);
 
   // Render the Ink app
   render(
     <App
       config={config}
+      settingsManager={settingsManager}
       resumeLatest={args.continue}
     />
   );

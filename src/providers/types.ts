@@ -134,6 +134,12 @@ export type StreamChunk =
 // Provider Interface
 // ============================================================================
 
+export interface ModelInfo {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 export interface LLMProvider {
   readonly name: string;
 
@@ -146,6 +152,11 @@ export interface LLMProvider {
    * Generate a streaming completion
    */
   stream(options: CompletionOptions): AsyncGenerator<StreamChunk, void, unknown>;
+
+  /**
+   * List available models from the provider
+   */
+  listModels(): Promise<ModelInfo[]>;
 }
 
 // ============================================================================

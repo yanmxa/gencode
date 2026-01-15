@@ -16,17 +16,20 @@ import type {
   StopReason,
   GeminiConfig,
   JSONSchema,
+  ModelInfo,
 } from './types.js';
 
 export class GeminiProvider implements LLMProvider {
   readonly name = 'gemini';
   private client: GoogleGenerativeAI;
+  private apiKey: string;
 
   constructor(config: GeminiConfig = {}) {
     const apiKey = config.apiKey ?? process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
     if (!apiKey) {
       throw new Error('Gemini API key is required. Set GOOGLE_API_KEY or GEMINI_API_KEY.');
     }
+    this.apiKey = apiKey;
     this.client = new GoogleGenerativeAI(apiKey);
   }
 
@@ -267,5 +270,26 @@ export class GeminiProvider implements LLMProvider {
       default:
         return 'end_turn';
     }
+  }
+
+  async listModels(): Promise<ModelInfo[]> {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${this.apiKey}`
+    );
+    const data = (await response.json()) as {
+      models?: Array<{
+        name: string;
+        displayName: string;
+        description?: string;
+        supportedGenerationMethods?: string[];
+      }>;
+    };
+    return (data.models || [])
+      .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
+      .map((m) => ({
+        id: m.name.replace('models/', ''),
+        name: m.displayName,
+        description: m.description,
+      }));
   }
 }

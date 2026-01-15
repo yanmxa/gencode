@@ -21,3 +21,5 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+.claude
+package-lock.json
