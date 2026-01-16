@@ -20,7 +20,7 @@ gencode
 
 ## Features
 
-- [**Multi-Provider**](./docs/providers.md) - OpenAI, Anthropic, Gemini, Vertex AI, or any OpenAI-compatible API
+- [**Providers**](./docs/providers.md) - LLM (OpenAI, Anthropic, Gemini, Vertex AI) and Search (Exa, Serper, Brave)
 - **Built-in Tools** - Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, TodoWrite, AskUserQuestion
 - **Agent Loop** - Multi-turn conversations with tool calls
 - **Session Management** - Persist and resume conversations
