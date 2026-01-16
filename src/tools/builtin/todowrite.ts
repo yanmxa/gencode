@@ -39,8 +39,7 @@ function formatTodos(todos: TodoItem[]): string {
 
   const lines = todos.map((todo, index) => {
     const icon = statusIcons[todo.status] || '[ ]';
-    const status = todo.status === 'in_progress' ? ` (${todo.activeForm})` : '';
-    return `${index + 1}. ${icon} ${todo.content}${status}`;
+    return `${index + 1}. ${icon} ${todo.content}`;
   });
 
   return lines.join('\n');
@@ -74,8 +73,11 @@ export const todowriteTool: Tool<TodoWriteInput> = {
         };
       }
 
-      // Update the global todo state
-      currentTodos = input.todos.map((todo) => ({ ...todo }));
+      // Update the global todo state (auto-generate id if missing)
+      currentTodos = input.todos.map((todo, index) => ({
+        ...todo,
+        id: todo.id || `todo-${index + 1}`,
+      }));
 
       // Count statistics
       const pending = currentTodos.filter((t) => t.status === 'pending').length;

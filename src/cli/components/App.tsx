@@ -27,7 +27,9 @@ import {
   PermissionRulesDisplay,
   PermissionAuditDisplay,
 } from './PermissionPrompt.js';
+import { TodoList } from './TodoList.js';
 import { colors, icons } from './theme.js';
+import { getTodos } from '../../tools/index.js';
 import type { ProviderName } from '../../providers/index.js';
 import type { ApprovalAction, ApprovalSuggestion } from '../../permissions/types.js';
 import { gatherContextFiles, buildInitPrompt, getContextSummary } from '../../memory/index.js';
@@ -35,7 +37,7 @@ import { gatherContextFiles, buildInitPrompt, getContextSummary } from '../../me
 // Types
 interface HistoryItem {
   id: string;
-  type: 'header' | 'welcome' | 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'info' | 'completion';
+  type: 'header' | 'welcome' | 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'info' | 'completion' | 'todos';
   content: string;
   meta?: Record<string, unknown>;
 }
@@ -230,6 +232,8 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
   const [isThinking, setIsThinking] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const streamingTextRef = useRef(''); // Track current streaming text for closure
+  const [processingStartTime, setProcessingStartTime] = useState<number | undefined>(undefined);
+  const [tokenCount, setTokenCount] = useState(0);
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [showProviderManager, setShowProviderManager] = useState(false);
@@ -238,6 +242,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
   const [inputKey, setInputKey] = useState(0); // Force cursor to end after autocomplete
   const [pendingTool, setPendingTool] = useState<{ name: string; input: Record<string, unknown> } | null>(null);
   const pendingToolRef = useRef<{ name: string; input: Record<string, unknown> } | null>(null);
+  const [todos, setTodos] = useState<ReturnType<typeof getTodos>>([]);
 
   // Check if showing command suggestions
   const showCmdSuggestions = input.startsWith('/') && !isProcessing;
@@ -535,6 +540,8 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
     streamingTextRef.current = '';
     interruptFlagRef.current = false;
     const startTime = Date.now();
+    setProcessingStartTime(startTime);
+    setTokenCount(0);
 
     try {
       for await (const event of agent.run(prompt)) {
@@ -548,6 +555,8 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
             setIsThinking(false);
             streamingTextRef.current += event.text;
             setStreamingText(streamingTextRef.current);
+            // Estimate token count (roughly 4 chars per token)
+            setTokenCount((prev) => prev + Math.max(1, Math.ceil(event.text.length / 4)));
             break;
 
           case 'tool_start':
@@ -564,24 +573,37 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
             break;
 
           case 'tool_result':
-            // Add tool_call to history (now completed) - use ref for correct value
-            if (pendingToolRef.current) {
+            // For TodoWrite: add todos first, then hide tool_call/tool_result
+            if (event.name === 'TodoWrite') {
+              const currentTodos = getTodos();
+              setTodos(currentTodos);
+              if (currentTodos.length > 0) {
+                addHistory({
+                  type: 'todos',
+                  content: '',
+                  meta: { todos: currentTodos },
+                });
+              }
+            } else {
+              // Add tool_call to history (now completed) - use ref for correct value
+              if (pendingToolRef.current) {
+                addHistory({
+                  type: 'tool_call',
+                  content: pendingToolRef.current.name,
+                  meta: { toolName: pendingToolRef.current.name, input: pendingToolRef.current.input },
+                });
+              }
+              // Add tool_result to history
               addHistory({
-                type: 'tool_call',
-                content: pendingToolRef.current.name,
-                meta: { toolName: pendingToolRef.current.name, input: pendingToolRef.current.input },
+                type: 'tool_result',
+                content: event.result.output,
+                meta: {
+                  toolName: event.name,
+                  success: event.result.success,
+                  metadata: event.result.metadata,
+                },
               });
             }
-            // Add tool_result to history
-            addHistory({
-              type: 'tool_result',
-              content: event.result.output,
-              meta: {
-                toolName: event.name,
-                success: event.result.success,
-                metadata: event.result.metadata,
-              },
-            });
             pendingToolRef.current = null;
             setPendingTool(null);
             setIsThinking(true);
@@ -601,6 +623,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
             // Add completion message with duration
             const durationMs = Date.now() - startTime;
             addHistory({ type: 'completion', content: '', meta: { durationMs } });
+            setProcessingStartTime(undefined);
             break;
         }
       }
@@ -787,6 +810,8 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         return <InfoMessage text={item.content} />;
       case 'completion':
         return <CompletionMessage durationMs={(item.meta?.durationMs as number) || 0} />;
+      case 'todos':
+        return <TodoList todos={item.meta?.todos as ReturnType<typeof getTodos>} />;
       default:
         return null;
     }
@@ -798,7 +823,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         {(item) => <Box key={item.id}>{renderHistoryItem(item)}</Box>}
       </Static>
 
-      {pendingTool && <PendingToolCall name={pendingTool.name} input={pendingTool.input} />}
+      {pendingTool && !confirmState && <PendingToolCall name={pendingTool.name} input={pendingTool.input} />}
 
       {streamingText && <AssistantMessage text={streamingText} streaming />}
 
@@ -851,7 +876,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
       )}
 
       {isProcessing && !confirmState ? (
-        <ProgressBar />
+        <ProgressBar startTime={processingStartTime} tokenCount={tokenCount} isThinking={isThinking} />
       ) : showCmdSuggestions && cmdSuggestions.length > 0 ? (
         <Box marginTop={1}>
           <Text color={colors.textMuted}>  Tab to complete · ↑↓ navigate</Text>

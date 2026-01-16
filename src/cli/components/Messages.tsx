@@ -38,12 +38,15 @@ interface UserMessageProps {
 
 export function UserMessage({ text }: UserMessageProps) {
   const lines = text.trimEnd().split('\n');
+  // Subtle gray - ~8% darker than pure white
+  const inputBg = '#EFEFEF';
+
   return (
     <Box flexDirection="column" marginTop={1} marginBottom={0}>
       {lines.map((line, i) => (
-        <Box key={i}>
+        <Box key={i} backgroundColor={inputBg}>
           <Text color={colors.brand}>{icons.userPrompt} </Text>
-          <Text backgroundColor={colors.inputBg} color={colors.text}> {line} </Text>
+          <Text>{line}</Text>
         </Box>
       ))}
     </Box>
@@ -88,8 +91,9 @@ export function AssistantMessage({ text, streaming }: AssistantMessageProps) {
   return (
     <Box flexDirection="column" marginTop={1} marginBottom={0}>
       <Box>
-        <Text color={colors.success}>{icons.assistant} </Text>
-        <Text>{rendered}</Text>
+        <Text color={colors.success}>{icons.assistant}</Text>
+        <Text> </Text>
+        <Text wrap="wrap">{rendered}</Text>
       </Box>
     </Box>
   );
@@ -100,29 +104,50 @@ interface ToolCallProps {
   input: Record<string, unknown>;
 }
 
-export function ToolCall({ name, input }: ToolCallProps) {
-  // WebFetch: Show "Fetch(url)" instead of JSON (Claude Code style)
-  if (name === 'WebFetch' && input?.url) {
-    const shortUrl = truncate(input.url as string, 60);
-    return (
-      <Box marginTop={1}>
-        <Text color={colors.tool}>{icons.fetch}</Text>
-        <Text> Fetch(</Text>
-        <Text color={colors.info}>{shortUrl}</Text>
-        <Text>)</Text>
-      </Box>
-    );
+// Format tool input for display
+function formatToolInput(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case 'Read':
+      return input.file_path as string || '';
+    case 'Write':
+    case 'Edit':
+      return input.file_path as string || '';
+    case 'Glob':
+      return input.pattern as string || '';
+    case 'Grep':
+      return `"${input.pattern}"` + (input.path ? ` in ${input.path}` : '');
+    case 'Bash':
+      return truncate(input.command as string || '', 50);
+    case 'WebFetch':
+      return input.url as string || '';
+    case 'WebSearch':
+      return `"${input.query}"` || '';
+    case 'TodoWrite': {
+      const todos = input.todos as Array<{ content: string; status: string }> || [];
+      return `${todos.length} task${todos.length !== 1 ? 's' : ''}`;
+    }
+    default:
+      return truncate(JSON.stringify(input), 40);
   }
+}
 
-  // Default: Show tool name with JSON input
-  const shortInput = truncate(JSON.stringify(input), 50);
+export function ToolCall({ name, input }: ToolCallProps) {
+  // Hide TodoWrite (shown in TodoList component)
+  if (name === 'TodoWrite') return null;
+
+  const displayInput = formatToolInput(name, input);
 
   return (
     <Box marginTop={1}>
-      <Text dimColor>
-        <Text color={colors.tool}>{icons.tool}</Text> {name}{' '}
-        <Text color={colors.textMuted}>{shortInput}</Text>
-      </Text>
+      <Text color={colors.tool}>{icons.tool}</Text>
+      <Text> </Text>
+      <Text bold>{name}</Text>
+      {displayInput && (
+        <>
+          <Text color={colors.textMuted}> </Text>
+          <Text color={colors.textSecondary}>{truncate(displayInput, 60)}</Text>
+        </>
+      )}
     </Box>
   );
 }
@@ -134,31 +159,24 @@ interface PendingToolCallProps {
 }
 
 export function PendingToolCall({ name, input }: PendingToolCallProps) {
-  // WebFetch: Show "Fetch(url)" with spinner
-  if (name === 'WebFetch' && input?.url) {
-    const shortUrl = truncate(input.url as string, 60);
-    return (
-      <Box marginTop={1}>
-        <Text color={colors.tool}>
-          <InkSpinner type="dots" />
-        </Text>
-        <Text> Fetch(</Text>
-        <Text color={colors.info}>{shortUrl}</Text>
-        <Text>)</Text>
-      </Box>
-    );
-  }
+  // Hide TodoWrite (shown in TodoList component)
+  if (name === 'TodoWrite') return null;
 
-  // Default: Show tool name with spinner
-  const shortInput = truncate(JSON.stringify(input), 50);
+  const displayInput = formatToolInput(name, input);
 
   return (
     <Box marginTop={1}>
       <Text color={colors.tool}>
         <InkSpinner type="dots" />
       </Text>
-      <Text> {name} </Text>
-      <Text color={colors.textMuted}>{shortInput}</Text>
+      <Text> </Text>
+      <Text bold>{name}</Text>
+      {displayInput && (
+        <>
+          <Text> </Text>
+          <Text color={colors.textSecondary}>{truncate(displayInput, 60)}</Text>
+        </>
+      )}
     </Box>
   );
 }
@@ -186,23 +204,26 @@ export function ToolResult({ name, success, output, metadata }: ToolResultProps)
   if (metadata?.subtitle) {
     return (
       <Box marginLeft={2}>
-        <Text dimColor>
-          <Text>{icons.treeEnd}</Text>{' '}
-          <Text color={statusColor}>{metadata.subtitle}</Text>
-        </Text>
+        <Text color={colors.textMuted}>{icons.treeEnd}</Text>
+        <Text> </Text>
+        <Text color={statusColor}>{metadata.subtitle}</Text>
       </Box>
     );
   }
 
-  // Default: Show first line of output
-  const displayOutput = truncate(output.split('\n')[0]?.trim() || '', 50);
+  // TodoWrite: Don't show result (TodoList component shows the full list)
+  if (name === 'TodoWrite') {
+    return null;
+  }
+
+  // Default: Show first line of output with status icon
+  const displayOutput = truncate(output.split('\n')[0]?.trim() || '', 60);
 
   return (
     <Box marginLeft={2}>
-      <Text dimColor>
-        <Text>{icons.treeEnd}</Text> {name}{' '}
-        <Text color={statusColor}>{displayOutput}</Text>
-      </Text>
+      <Text color={colors.textMuted}>{icons.treeEnd}</Text>
+      <Text> </Text>
+      <Text color={statusColor}>{displayOutput || (success ? 'Done' : 'Failed')}</Text>
     </Box>
   );
 }
@@ -238,11 +259,10 @@ interface WelcomeMessageProps {
   model: string;
 }
 
-export function WelcomeMessage({ model }: WelcomeMessageProps) {
+export function WelcomeMessage({ model: _model }: WelcomeMessageProps) {
   return (
     <Box marginTop={1} marginBottom={0}>
-      <Text color={colors.textMuted}>Welcome to </Text>
-      <Text color={colors.brand}>{model}</Text>
+      <Text color={colors.textMuted}>? for help · Ctrl+C to exit</Text>
     </Box>
   );
 }

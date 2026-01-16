@@ -1,9 +1,13 @@
 Use this tool to create and manage a structured task list for your current session.
 
+This tool serves TWO purposes:
+1. User visibility: Shows task progress in CLI so users understand what you're doing
+2. Your external memory: The rendered result helps YOU remember your plan across turns
+
 This helps you:
 - Track progress and demonstrate thoroughness to the user
 - Organize complex tasks into manageable steps
-- Show the user what you're working on
+- Avoid forgetting tasks in long conversations
 
 ## When to Use This Tool
 
@@ -28,10 +32,6 @@ Skip for:
 - pending: Task not yet started
 - in_progress: Currently working on (limit to ONE task at a time)
 - completed: Task finished successfully
-
-IMPORTANT: Each task needs two forms:
-- content: Imperative form (e.g., "Run tests", "Build the project")
-- activeForm: Present continuous (e.g., "Running tests", "Building the project")
 
 ## Task Management Rules
 

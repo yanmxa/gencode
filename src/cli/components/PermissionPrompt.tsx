@@ -71,19 +71,34 @@ function formatInput(tool: string, input: Record<string, unknown>): string {
     case 'WebSearch':
       return (input.query as string) ?? '';
 
+    case 'TodoWrite': {
+      const todos = input.todos as Array<{ content: string; status: string }> || [];
+      const inProgress = todos.filter(t => t.status === 'in_progress');
+      const pending = todos.filter(t => t.status === 'pending');
+      return `${todos.length} tasks: ${inProgress.length} active, ${pending.length} pending`;
+    }
+
     default:
       const str = JSON.stringify(input);
-      return str.length > 200 ? str.slice(0, 197) + '...' : str;
+      return str.length > 80 ? str.slice(0, 77) + '...' : str;
   }
 }
 
 /**
  * Format tool call in Claude Code style: Tool("input")
+ * Returns an array of lines for proper wrapping
  */
-function formatToolCall(tool: string, input: Record<string, unknown>): string {
+function formatToolCall(tool: string, input: Record<string, unknown>): { name: string; input: string } {
   const displayName = formatToolName(tool);
-  const inputStr = formatInput(tool, input);
-  return `${displayName}("${inputStr}")`;
+  let inputStr = formatInput(tool, input);
+
+  // Truncate very long inputs
+  const maxLen = 60;
+  if (inputStr.length > maxLen) {
+    inputStr = inputStr.slice(0, maxLen - 3) + '...';
+  }
+
+  return { name: displayName, input: inputStr };
 }
 
 /**
@@ -103,6 +118,8 @@ function getToolIcon(tool: string): string {
     case 'WebFetch':
     case 'WebSearch':
       return '🌐';
+    case 'TodoWrite':
+      return '📋';
     default:
       return icons.tool;
   }
@@ -129,6 +146,7 @@ export function PermissionPrompt({
   projectPath,
 }: PermissionPromptProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [expanded, setExpanded] = useState(false);
 
   // Handle keyboard input
   useInput((inputChar, key) => {
@@ -152,6 +170,11 @@ export function PermissionPrompt({
       onDecision('deny');
     }
 
+    // Tab to toggle expand
+    if (key.tab) {
+      setExpanded((e) => !e);
+    }
+
     // Number shortcuts (1-3)
     const num = parseInt(inputChar, 10);
     if (num >= 1 && num <= suggestions.length) {
@@ -166,36 +189,48 @@ export function PermissionPrompt({
     }
   });
 
-  const toolCall = formatToolCall(tool, input);
+  const toolInfo = formatToolCall(tool, input);
   const displayToolName = formatToolName(tool);
+  const fullInput = formatInput(tool, input);
+  const isLongInput = fullInput.length > 60;
 
   // Get dynamic label for "don't ask again" option
   const getDynamicLabel = (suggestion: ApprovalSuggestion): string => {
     if (suggestion.action === 'allow_always' && projectPath) {
-      return `Yes, and don't ask again for ${displayToolName} in ${projectPath}`;
+      // Shorten project path for display
+      const shortPath = projectPath.replace(process.env.HOME || '', '~');
+      return `Yes, don't ask again for ${displayToolName} in ${shortPath}`;
     }
     return suggestion.label;
   };
 
   return (
-    <Box flexDirection="column" marginTop={1}>
-      {/* Header - Claude Code style */}
+    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={colors.warning} paddingX={1}>
+      {/* Header */}
       <Box>
-        <Text color={colors.textMuted}>Tool use</Text>
+        <Text color={colors.warning}>⚡ </Text>
+        <Text bold>{toolInfo.name}</Text>
       </Box>
 
-      {/* Tool call display */}
-      <Box marginTop={0}>
-        <Text color={colors.tool}>{toolCall}</Text>
+      {/* Tool input - collapsible for long content */}
+      <Box flexDirection="column" marginLeft={2}>
+        {expanded || !isLongInput ? (
+          <Text color={colors.textSecondary}>{fullInput}</Text>
+        ) : (
+          <Box>
+            <Text color={colors.textSecondary}>{toolInfo.input}</Text>
+            <Text color={colors.textMuted}>{' [-> expand]'}</Text>
+          </Box>
+        )}
       </Box>
 
       {/* Question */}
       <Box marginTop={1}>
-        <Text>Do you want to proceed?</Text>
+        <Text>Allow this action?</Text>
       </Box>
 
-      {/* Options - Claude Code style */}
-      <Box flexDirection="column" marginTop={1} paddingLeft={2}>
+      {/* Options */}
+      <Box flexDirection="column" marginTop={0} marginLeft={2}>
         {suggestions.map((suggestion, index) => {
           const isSelected = index === selectedIndex;
           const shortcut = getShortcutDisplay(suggestion.shortcut);
@@ -204,10 +239,9 @@ export function PermissionPrompt({
           return (
             <Box key={suggestion.action}>
               <Text color={isSelected ? colors.primary : colors.textMuted}>
-                {isSelected ? '>' : ' '}
+                {isSelected ? '▶' : ' '}
               </Text>
-              <Text> </Text>
-              <Text color={colors.textMuted}>[{shortcut}] </Text>
+              <Text color={colors.textMuted}> [{shortcut}] </Text>
               <Text color={isSelected ? colors.text : colors.textSecondary}>
                 {label}
               </Text>
