@@ -1,261 +1,215 @@
 /**
- * SettingsManager Tests
+ * ConfigManager Tests
  */
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import * as os from 'os';
-import { SettingsManager } from './manager.js';
-import type { Settings } from './types.js';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { ConfigManager } from './manager.js';
+import { createTestProject, writeSettings, type TestProject } from './test-utils.js';
 
-describe('SettingsManager', () => {
-  let tempDir: string;
-  let globalDir: string;
-  let projectDir: string;
+describe('ConfigManager', () => {
+  let test: TestProject;
 
   beforeEach(async () => {
-    // Create temp directories for testing
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gencode-test-'));
-    globalDir = path.join(tempDir, 'global');
-    projectDir = path.join(tempDir, 'project');
-
-    await fs.mkdir(globalDir, { recursive: true });
-    await fs.mkdir(projectDir, { recursive: true });
+    test = await createTestProject('gencode-config-');
   });
 
-  afterEach(async () => {
-    // Cleanup temp directories
-    await fs.rm(tempDir, { recursive: true, force: true });
-  });
+  afterEach(() => test.cleanup());
 
   describe('load', () => {
-    it('should load settings from a single file', async () => {
-      const settingsPath = path.join(globalDir, 'settings.json');
-      await fs.writeFile(settingsPath, JSON.stringify({
-        model: 'gpt-4o',
-        provider: 'openai',
-      }));
+    it('should load settings from .gencode directory', async () => {
+      await writeSettings(test.projectDir, 'gencode', { provider: 'anthropic', model: 'claude-sonnet' });
 
-      const manager = new SettingsManager({
-        settingsDir: globalDir,
-        cwd: projectDir,
-      });
-      const settings = await manager.load();
+      const config = await new ConfigManager({ cwd: test.projectDir }).load();
 
-      expect(settings.model).toBe('gpt-4o');
-      expect(settings.provider).toBe('openai');
+      expect(config.settings.provider).toBe('anthropic');
+      expect(config.settings.model).toBe('claude-sonnet');
     });
 
-    it('should merge settings from multiple levels', async () => {
-      // Global settings
-      const globalSettings = path.join(globalDir, 'settings.json');
-      await fs.writeFile(globalSettings, JSON.stringify({
-        model: 'gpt-4o',
-        provider: 'openai',
-      }));
+    it('should load settings from .claude directory', async () => {
+      await writeSettings(test.projectDir, 'claude', { provider: 'openai', model: 'gpt-4' });
 
-      // Project settings directory
-      const projectSettingsDir = path.join(projectDir, '.claude');
-      await fs.mkdir(projectSettingsDir, { recursive: true });
+      const config = await new ConfigManager({ cwd: test.projectDir }).load();
 
-      // Project settings
-      const projectSettings = path.join(projectSettingsDir, 'settings.json');
-      await fs.writeFile(projectSettings, JSON.stringify({
-        model: 'claude-sonnet',
-      }));
-
-      const manager = new SettingsManager({
-        settingsDir: globalDir,
-        cwd: projectDir,
-      });
-      const settings = await manager.load();
-
-      // Model should be overridden by project
-      expect(settings.model).toBe('claude-sonnet');
-      // Provider should be inherited from global
-      expect(settings.provider).toBe('openai');
+      expect(config.settings.provider).toBe('openai');
+      expect(config.settings.model).toBe('gpt-4');
     });
 
-    it('should concatenate array fields (permissions)', async () => {
-      // Global settings
-      const globalSettings = path.join(globalDir, 'settings.json');
-      await fs.writeFile(globalSettings, JSON.stringify({
-        permissions: {
-          allow: ['Bash(git:*)'],
-        },
-      }));
+    it('should merge both .claude and .gencode with gencode winning', async () => {
+      await writeSettings(test.projectDir, 'claude', { provider: 'openai', model: 'gpt-4', theme: 'dark' });
+      await writeSettings(test.projectDir, 'gencode', { provider: 'anthropic' });
 
-      // Project settings directory
-      const projectSettingsDir = path.join(projectDir, '.claude');
-      await fs.mkdir(projectSettingsDir, { recursive: true });
+      const config = await new ConfigManager({ cwd: test.projectDir }).load();
 
-      // Project local settings
-      const projectLocal = path.join(projectSettingsDir, 'settings.local.json');
-      await fs.writeFile(projectLocal, JSON.stringify({
-        permissions: {
-          allow: ['WebSearch'],
-        },
-      }));
+      expect(config.settings.provider).toBe('anthropic'); // gencode wins
+      expect(config.settings.model).toBe('gpt-4'); // preserved from claude
+      expect(config.settings.theme).toBe('dark'); // preserved from claude
+    });
 
-      const manager = new SettingsManager({
-        settingsDir: globalDir,
-        cwd: projectDir,
+    it('should concatenate permission arrays from both namespaces', async () => {
+      await writeSettings(test.projectDir, 'claude', {
+        permissions: { allow: ['Bash(git:*)'], deny: ['WebFetch'] },
       });
-      const settings = await manager.load();
+      await writeSettings(test.projectDir, 'gencode', {
+        permissions: { allow: ['Bash(npm:*)'], deny: ['Bash(rm -rf:*)'] },
+      });
 
-      // Arrays should be concatenated
+      const { settings } = await new ConfigManager({ cwd: test.projectDir }).load();
+
       expect(settings.permissions?.allow).toContain('Bash(git:*)');
-      expect(settings.permissions?.allow).toContain('WebSearch');
-      expect(settings.permissions?.allow?.length).toBe(2);
+      expect(settings.permissions?.allow).toContain('Bash(npm:*)');
+      expect(settings.permissions?.deny).toContain('WebFetch');
+      expect(settings.permissions?.deny).toContain('Bash(rm -rf:*)');
+    });
+
+    it('should load local settings with higher priority', async () => {
+      await writeSettings(test.projectDir, 'gencode', { model: 'claude-sonnet', theme: 'light' });
+      await writeSettings(test.projectDir, 'gencode', { model: 'claude-opus' }, true);
+
+      const { settings } = await new ConfigManager({ cwd: test.projectDir }).load();
+
+      expect(settings.model).toBe('claude-opus'); // local wins
+      expect(settings.theme).toBe('light'); // preserved
+    });
+
+    it('should load from extra config dirs', async () => {
+      const extraDir = path.join(test.tempDir, 'team-config');
+      await fs.mkdir(extraDir, { recursive: true });
+      await fs.writeFile(path.join(extraDir, 'settings.json'), JSON.stringify({ teamSetting: 'enabled' }));
+      process.env.GENCODE_CONFIG_DIRS = extraDir;
+
+      const { settings } = await new ConfigManager({ cwd: test.projectDir }).load();
+
+      expect(settings.teamSetting).toBe('enabled');
+    });
+  });
+
+  describe('setCliArgs', () => {
+    it('should apply CLI args with highest priority', async () => {
+      await writeSettings(test.projectDir, 'gencode', { model: 'claude-sonnet', provider: 'anthropic' });
+
+      const manager = new ConfigManager({ cwd: test.projectDir });
+      manager.setCliArgs({ model: 'gpt-4o' });
+      const { settings } = await manager.load();
+
+      expect(settings.model).toBe('gpt-4o'); // CLI wins
+      expect(settings.provider).toBe('anthropic'); // unchanged
     });
   });
 
   describe('saveToLevel', () => {
-    it('should save to global level', async () => {
-      const manager = new SettingsManager({
-        settingsDir: globalDir,
-        cwd: projectDir,
-      });
+    it('should save to project and local levels', async () => {
+      const manager = new ConfigManager({ cwd: test.projectDir });
+      await manager.load();
 
-      await manager.saveToLevel({ model: 'test-model' }, 'global');
+      await manager.saveToLevel({ model: 'project-model' }, 'project');
+      await manager.saveToLevel({ debug: true }, 'local');
 
-      const content = await fs.readFile(
-        path.join(globalDir, 'settings.json'),
-        'utf-8'
-      );
-      const saved = JSON.parse(content);
-      expect(saved.model).toBe('test-model');
+      const projectContent = JSON.parse(await fs.readFile(
+        path.join(test.projectDir, '.gencode', 'settings.json'), 'utf-8'
+      ));
+      const localContent = JSON.parse(await fs.readFile(
+        path.join(test.projectDir, '.gencode', 'settings.local.json'), 'utf-8'
+      ));
+
+      expect(projectContent.model).toBe('project-model');
+      expect(localContent.debug).toBe(true);
     });
 
-    it('should save to project local level', async () => {
-      // Create project settings directory
-      const projectSettingsDir = path.join(projectDir, '.claude');
-      await fs.mkdir(projectSettingsDir, { recursive: true });
+    it('should merge with existing settings', async () => {
+      await writeSettings(test.projectDir, 'gencode', { model: 'old', theme: 'dark' });
 
-      const manager = new SettingsManager({
-        settingsDir: globalDir,
-        cwd: projectDir,
-      });
+      const manager = new ConfigManager({ cwd: test.projectDir });
+      await manager.load();
+      await manager.saveToLevel({ model: 'new' }, 'project');
 
-      await manager.saveToLevel({ model: 'local-model' }, 'local');
+      const saved = JSON.parse(await fs.readFile(
+        path.join(test.projectDir, '.gencode', 'settings.json'), 'utf-8'
+      ));
 
-      const content = await fs.readFile(
-        path.join(projectSettingsDir, 'settings.local.json'),
-        'utf-8'
-      );
-      const saved = JSON.parse(content);
-      expect(saved.model).toBe('local-model');
+      expect(saved.model).toBe('new');
+      expect(saved.theme).toBe('dark'); // preserved
     });
   });
 
   describe('addPermissionRule', () => {
-    it('should add allow rule to local level', async () => {
-      // Create project settings directory
-      const projectSettingsDir = path.join(projectDir, '.claude');
-      await fs.mkdir(projectSettingsDir, { recursive: true });
+    it('should add allow and deny rules', async () => {
+      const manager = new ConfigManager({ cwd: test.projectDir });
+      await manager.load();
 
-      const manager = new SettingsManager({
-        settingsDir: globalDir,
-        cwd: projectDir,
-      });
+      await manager.addPermissionRule('Bash(npm:*)', 'allow', 'project');
+      await manager.addPermissionRule('Bash(rm:*)', 'deny', 'project');
 
-      await manager.addPermissionRule('Bash(npm test:*)', 'allow', 'local');
+      const saved = JSON.parse(await fs.readFile(
+        path.join(test.projectDir, '.gencode', 'settings.json'), 'utf-8'
+      ));
 
-      const content = await fs.readFile(
-        path.join(projectSettingsDir, 'settings.local.json'),
-        'utf-8'
-      );
-      const saved = JSON.parse(content);
-      expect(saved.permissions?.allow).toContain('Bash(npm test:*)');
-    });
-
-    it('should add deny rule', async () => {
-      const manager = new SettingsManager({
-        settingsDir: globalDir,
-        cwd: projectDir,
-      });
-
-      await manager.addPermissionRule('Bash(rm -rf:*)', 'deny', 'global');
-
-      const content = await fs.readFile(
-        path.join(globalDir, 'settings.json'),
-        'utf-8'
-      );
-      const saved = JSON.parse(content);
-      expect(saved.permissions?.deny).toContain('Bash(rm -rf:*)');
+      expect(saved.permissions?.allow).toContain('Bash(npm:*)');
+      expect(saved.permissions?.deny).toContain('Bash(rm:*)');
     });
   });
 
-  describe('directory fallback', () => {
-    it('should use .claude as primary directory', async () => {
-      // Create .claude directory (primary)
-      const claudeDir = path.join(projectDir, '.claude');
-      await fs.mkdir(claudeDir, { recursive: true });
-
-      // Create settings in .claude
-      await fs.writeFile(
-        path.join(claudeDir, 'settings.json'),
-        JSON.stringify({ model: 'claude-model' })
-      );
-
-      // Also create .gencode directory (fallback)
-      const gencodeDir = path.join(projectDir, '.gencode');
-      await fs.mkdir(gencodeDir, { recursive: true });
-      await fs.writeFile(
-        path.join(gencodeDir, 'settings.json'),
-        JSON.stringify({ model: 'gencode-model' })
-      );
-
-      const manager = new SettingsManager({
-        settingsDir: globalDir,
-        cwd: projectDir,
-      });
-      const settings = await manager.load();
-
-      // Should use .claude (primary)
-      expect(settings.model).toBe('claude-model');
-    });
-
-    it('should use .gencode when explicitly created first', async () => {
-      // Create .gencode directory first, then .claude (to test priority)
-      const gencodeDir = path.join(projectDir, '.gencode');
-      await fs.mkdir(gencodeDir, { recursive: true });
-      await fs.writeFile(
-        path.join(gencodeDir, 'settings.json'),
-        JSON.stringify({ model: 'gencode-model' })
-      );
-
-      // Now create .claude (primary) with different model
-      const claudeDir = path.join(projectDir, '.claude');
-      await fs.mkdir(claudeDir, { recursive: true });
-      await fs.writeFile(
-        path.join(claudeDir, 'settings.json'),
-        JSON.stringify({ model: 'claude-model' })
-      );
-
-      const manager = new SettingsManager({
-        settingsDir: globalDir,
-        cwd: projectDir,
+  describe('getEffectivePermissions', () => {
+    it('should return all permission lists', async () => {
+      await writeSettings(test.projectDir, 'gencode', {
+        permissions: { allow: ['A'], ask: ['B'], deny: ['C'] },
       });
 
-      // .claude is primary, so it should be used
-      expect(manager.getProjectDir()).toContain('.claude');
+      const manager = new ConfigManager({ cwd: test.projectDir });
+      await manager.load();
+      const perms = manager.getEffectivePermissions();
 
-      const settings = await manager.load();
-
-      // Should use .claude (primary) over .gencode
-      expect(settings.model).toBe('claude-model');
+      expect(perms.allow).toContain('A');
+      expect(perms.ask).toContain('B');
+      expect(perms.deny).toContain('C');
     });
   });
 
-  describe('getCwd', () => {
-    it('should return the working directory', () => {
-      const manager = new SettingsManager({
-        settingsDir: globalDir,
-        cwd: projectDir,
+  describe('isAllowed and shouldAsk', () => {
+    it('should check permissions correctly', async () => {
+      await writeSettings(test.projectDir, 'gencode', {
+        permissions: { allow: ['Bash(git:*)'], deny: ['Bash(rm:*)'], ask: ['WebFetch'] },
       });
 
-      expect(manager.getCwd()).toBe(projectDir);
+      const manager = new ConfigManager({ cwd: test.projectDir });
+      await manager.load();
+
+      expect(manager.isAllowed('Bash(git:status)')).toBe(true);
+      expect(manager.isAllowed('Bash(rm:file)')).toBe(false);
+      expect(manager.isAllowed('Unknown')).toBe(false);
+
+      expect(manager.shouldAsk('Bash(git:status)')).toBe(false); // allowed
+      expect(manager.shouldAsk('Bash(rm:file)')).toBe(false); // denied
+      expect(manager.shouldAsk('WebFetch')).toBe(true);
+      expect(manager.shouldAsk('Unknown')).toBe(true); // default ask
+    });
+  });
+
+  describe('getSources', () => {
+    it('should return all loaded sources', async () => {
+      await writeSettings(test.projectDir, 'claude', { model: 'gpt-4' });
+      await writeSettings(test.projectDir, 'gencode', { provider: 'anthropic' });
+
+      const manager = new ConfigManager({ cwd: test.projectDir });
+      await manager.load();
+      const sources = manager.getSources();
+
+      expect(sources.find((s) => s.namespace === 'claude')).toBeDefined();
+      expect(sources.find((s) => s.namespace === 'gencode')).toBeDefined();
+    });
+  });
+
+  describe('getDebugSummary', () => {
+    it('should return summary or indicate not loaded', async () => {
+      const manager = new ConfigManager({ cwd: test.projectDir });
+
+      expect(manager.getDebugSummary()).toBe('Configuration not loaded');
+
+      await writeSettings(test.projectDir, 'gencode', { model: 'test' });
+      await manager.load();
+
+      expect(manager.getDebugSummary()).toContain('Configuration Sources');
     });
   });
 });

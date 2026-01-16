@@ -1,155 +1,100 @@
 /**
- * Settings Manager - Multi-level configuration loading (Claude Code style)
+ * Configuration Manager - Unified multi-level configuration (Claude Code compatible)
  *
- * Configuration hierarchy (later overrides earlier):
- * 1. ~/.gencode/settings.json (global) - fallback: ~/.claude/settings.json
- * 2. .gencode/settings.json (project - tracked in git) - fallback: .claude/settings.json
- * 3. .gencode/settings.local.json (project local - gitignored) - fallback: .claude/settings.local.json
+ * Configuration hierarchy (merged in order, later overrides earlier):
+ * 1. User: ~/.claude/ + ~/.gencode/ (gencode wins within level)
+ * 2. Extra: GENCODE_CONFIG_DIRS directories
+ * 3. Project: .claude/ + .gencode/ (gencode wins within level)
+ * 4. Local: *.local.* files (gencode wins within level)
+ * 5. CLI: Command line arguments
+ * 6. Managed: System-wide enforced settings (cannot be overridden)
+ *
+ * Within each level, both .claude and .gencode directories are loaded and merged,
+ * with .gencode taking higher priority.
  */
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import * as os from 'os';
-import type { Settings, SettingsManagerOptions } from './types.js';
-import {
-  DEFAULT_SETTINGS_DIR,
-  PROJECT_SETTINGS_DIR,
-  FALLBACK_SETTINGS_DIR,
-  FALLBACK_PROJECT_DIR,
-  SETTINGS_FILE_NAME,
-  SETTINGS_LOCAL_FILE_NAME,
-} from './types.js';
+import type { Settings, MergedConfig, ConfigSource, SettingsManagerOptions } from './types.js';
+import { SETTINGS_FILE_NAME, SETTINGS_LOCAL_FILE_NAME } from './types.js';
+import { loadAllSources, getExistingConfigFiles } from './loader.js';
+import { mergeAllSources, mergeWithCliArgs, deepMerge, createMergeSummary } from './merger.js';
+import { findProjectRoot, getPrimarySettingsDir, getSettingsFilePath } from './levels.js';
 
 /**
- * Deep merge two objects
+ * Configuration Manager
+ *
+ * Manages multi-level configuration loading, merging, and persistence.
+ * Compatible with both GenCode (.gencode/) and Claude Code (.claude/) directories.
  */
-function deepMerge<T extends object>(base: T, override: Partial<T>): T {
-  const result = { ...base };
-
-  for (const key in override) {
-    const baseValue = result[key];
-    const overrideValue = override[key];
-
-    if (
-      baseValue &&
-      overrideValue &&
-      typeof baseValue === 'object' &&
-      typeof overrideValue === 'object' &&
-      !Array.isArray(baseValue) &&
-      !Array.isArray(overrideValue)
-    ) {
-      // Recursively merge objects
-      result[key] = deepMerge(
-        baseValue as Record<string, unknown>,
-        overrideValue as Record<string, unknown>
-      ) as T[Extract<keyof T, string>];
-    } else if (Array.isArray(baseValue) && Array.isArray(overrideValue)) {
-      // Concatenate arrays (permissions.allow, permissions.deny)
-      result[key] = [...baseValue, ...overrideValue] as T[Extract<keyof T, string>];
-    } else if (overrideValue !== undefined) {
-      result[key] = overrideValue as T[Extract<keyof T, string>];
-    }
-  }
-
-  return result;
-}
-
-/**
- * Check if a directory exists synchronously
- */
-function directoryExistsSync(dirPath: string): boolean {
-  try {
-    const resolvedPath = dirPath.replace('~', os.homedir());
-    const stats = require('fs').statSync(resolvedPath);
-    return stats.isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-export class SettingsManager {
-  private globalDir: string;
-  private projectDir: string;
+export class ConfigManager {
   private cwd: string;
-  private settings: Settings = {};
+  private projectRoot: string | null = null;
+  private mergedConfig: MergedConfig | null = null;
+  private cliArgs: Partial<Settings> = {};
 
-  constructor(options: SettingsManagerOptions & { cwd?: string } = {}) {
+  constructor(options: { cwd?: string } = {}) {
     this.cwd = options.cwd ?? process.cwd();
+  }
 
-    // Determine global directory with fallback
-    if (options.settingsDir) {
-      this.globalDir = options.settingsDir.replace('~', os.homedir());
-    } else {
-      // Check if ~/.gencode exists, otherwise fallback to ~/.claude
-      const primaryGlobal = DEFAULT_SETTINGS_DIR.replace('~', os.homedir());
-      const fallbackGlobal = FALLBACK_SETTINGS_DIR.replace('~', os.homedir());
-      this.globalDir = directoryExistsSync(primaryGlobal) ? primaryGlobal :
-                       directoryExistsSync(fallbackGlobal) ? fallbackGlobal : primaryGlobal;
+  /**
+   * Load and merge all configuration sources
+   */
+  async load(): Promise<MergedConfig> {
+    // Find project root
+    this.projectRoot = await findProjectRoot(this.cwd);
+
+    // Load all sources
+    const sources = await loadAllSources(this.cwd);
+
+    // Merge all sources
+    let merged = mergeAllSources(sources);
+
+    // Apply CLI arguments if any
+    if (Object.keys(this.cliArgs).length > 0) {
+      merged = mergeWithCliArgs(merged, this.cliArgs);
     }
 
-    // Determine project directory with fallback
-    const primaryProject = path.join(this.cwd, PROJECT_SETTINGS_DIR);
-    const fallbackProject = path.join(this.cwd, FALLBACK_PROJECT_DIR);
-    this.projectDir = directoryExistsSync(primaryProject) ? primaryProject :
-                      directoryExistsSync(fallbackProject) ? fallbackProject : primaryProject;
+    this.mergedConfig = merged;
+    return merged;
   }
 
   /**
-   * Get all configuration file paths in load order
+   * Set CLI argument overrides
    */
-  private getConfigPaths(): { path: string; level: string }[] {
-    return [
-      { path: path.join(this.globalDir, SETTINGS_FILE_NAME), level: 'global' },
-      { path: path.join(this.projectDir, SETTINGS_FILE_NAME), level: 'project' },
-      { path: path.join(this.projectDir, SETTINGS_LOCAL_FILE_NAME), level: 'local' },
-    ];
+  setCliArgs(args: Partial<Settings>): void {
+    this.cliArgs = args;
   }
 
   /**
-   * Load a single settings file
+   * Get the current merged settings
    */
-  private async loadFile(filePath: string): Promise<Settings | null> {
-    try {
-      const content = await fs.readFile(filePath, 'utf-8');
-      return JSON.parse(content);
-    } catch {
-      return null;
+  get(): Settings {
+    if (!this.mergedConfig) {
+      return {};
     }
+    return { ...this.mergedConfig.settings };
   }
 
   /**
-   * Ensure directory exists
+   * Get the full merged config with sources info
    */
-  private async ensureDir(dir: string): Promise<void> {
-    try {
-      await fs.mkdir(dir, { recursive: true });
-    } catch {
-      // Directory may already exist
-    }
+  getMergedConfig(): MergedConfig | null {
+    return this.mergedConfig;
   }
 
   /**
-   * Load settings from all levels and merge
+   * Get all loaded sources
    */
-  async load(): Promise<Settings> {
-    let merged: Settings = {};
-
-    for (const config of this.getConfigPaths()) {
-      const settings = await this.loadFile(config.path);
-      if (settings) {
-        merged = deepMerge(merged, settings);
-      }
-    }
-
-    this.settings = merged;
-    return this.settings;
+  getSources(): ConfigSource[] {
+    return this.mergedConfig?.sources ?? [];
   }
 
   /**
-   * Save settings to global config
+   * Get managed deny rules
    */
-  async save(updates: Partial<Settings>): Promise<void> {
-    await this.saveToLevel(updates, 'global');
+  getManagedDeny(): string[] {
+    return this.mergedConfig?.managedDeny ?? [];
   }
 
   /**
@@ -157,39 +102,43 @@ export class SettingsManager {
    */
   async saveToLevel(
     updates: Partial<Settings>,
-    level: 'global' | 'project' | 'local'
+    level: 'user' | 'project' | 'local'
   ): Promise<void> {
-    let dir: string;
-    let fileName: string;
-
-    switch (level) {
-      case 'global':
-        dir = this.globalDir;
-        fileName = SETTINGS_FILE_NAME;
-        break;
-      case 'project':
-        dir = this.projectDir;
-        fileName = SETTINGS_FILE_NAME;
-        break;
-      case 'local':
-        dir = this.projectDir;
-        fileName = SETTINGS_LOCAL_FILE_NAME;
-        break;
+    if (!this.projectRoot) {
+      this.projectRoot = await findProjectRoot(this.cwd);
     }
 
-    await this.ensureDir(dir);
+    const dir = getPrimarySettingsDir(level, this.projectRoot);
+    const fileName = level === 'local' ? SETTINGS_LOCAL_FILE_NAME : SETTINGS_FILE_NAME;
     const filePath = path.join(dir, fileName);
 
-    // Load existing settings for this level
-    const existing = (await this.loadFile(filePath)) ?? {};
+    // Ensure directory exists
+    await fs.mkdir(dir, { recursive: true });
 
-    // Merge updates
+    // Load existing settings for this level
+    let existing: Settings = {};
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      existing = JSON.parse(content);
+    } catch {
+      // File doesn't exist, start fresh
+    }
+
+    // Merge updates into existing
     const merged = deepMerge(existing, updates);
 
+    // Write back
     await fs.writeFile(filePath, JSON.stringify(merged, null, 2), 'utf-8');
 
-    // Reload all settings
+    // Reload configuration
     await this.load();
+  }
+
+  /**
+   * Save to global user settings (default)
+   */
+  async save(updates: Partial<Settings>): Promise<void> {
+    await this.saveToLevel(updates, 'user');
   }
 
   /**
@@ -197,8 +146,8 @@ export class SettingsManager {
    */
   async addPermissionRule(
     pattern: string,
-    type: 'allow' | 'deny',
-    level: 'global' | 'project' | 'local' = 'project'
+    type: 'allow' | 'deny' | 'ask',
+    level: 'user' | 'project' | 'local' = 'project'
   ): Promise<void> {
     const updates: Settings = {
       permissions: {
@@ -209,43 +158,207 @@ export class SettingsManager {
   }
 
   /**
-   * Get current settings
+   * Get existing config files
    */
-  get(): Settings {
-    return { ...this.settings };
+  async getExistingFiles(): Promise<string[]> {
+    return getExistingConfigFiles(this.cwd);
   }
 
   /**
-   * Get global settings file path
+   * Get debug summary of configuration
    */
-  getPath(): string {
-    return path.join(this.globalDir, SETTINGS_FILE_NAME);
+  getDebugSummary(): string {
+    if (!this.mergedConfig) {
+      return 'Configuration not loaded';
+    }
+    return createMergeSummary(this.mergedConfig);
   }
 
   /**
-   * Get project settings file path
+   * Get the project root directory
    */
-  getProjectPath(): string {
-    return path.join(this.projectDir, SETTINGS_FILE_NAME);
+  getProjectRoot(): string {
+    return this.projectRoot ?? this.cwd;
   }
 
   /**
-   * Get project local settings file path
-   */
-  getLocalPath(): string {
-    return path.join(this.projectDir, SETTINGS_LOCAL_FILE_NAME);
-  }
-
-  /**
-   * Get current working directory
+   * Get the current working directory
    */
   getCwd(): string {
     return this.cwd;
   }
 
   /**
-   * Get project settings directory
+   * Get the primary settings file path for a level
    */
+  getSettingsPath(level: 'user' | 'project' | 'local' = 'user'): string {
+    const projectRoot = this.projectRoot ?? this.cwd;
+    return getSettingsFilePath(level, projectRoot);
+  }
+
+  /**
+   * Get effective permissions (merged from all sources)
+   */
+  getEffectivePermissions(): {
+    allow: string[];
+    ask: string[];
+    deny: string[];
+    managedDeny: string[];
+  } {
+    const settings = this.get();
+    const permissions = settings.permissions ?? {};
+
+    return {
+      allow: permissions.allow ?? [],
+      ask: permissions.ask ?? [],
+      deny: permissions.deny ?? [],
+      managedDeny: this.getManagedDeny(),
+    };
+  }
+
+  /**
+   * Check if a permission pattern is allowed
+   */
+  isAllowed(pattern: string): boolean {
+    const { allow, deny, managedDeny } = this.getEffectivePermissions();
+
+    // Managed deny always wins
+    if (managedDeny.some((p) => this.matchPattern(pattern, p))) {
+      return false;
+    }
+
+    // Check deny list
+    if (deny.some((p) => this.matchPattern(pattern, p))) {
+      return false;
+    }
+
+    // Check allow list
+    return allow.some((p) => this.matchPattern(pattern, p));
+  }
+
+  /**
+   * Check if a permission pattern requires asking
+   */
+  shouldAsk(pattern: string): boolean {
+    const { ask, allow, deny, managedDeny } = this.getEffectivePermissions();
+
+    // Managed deny always wins
+    if (managedDeny.some((p) => this.matchPattern(pattern, p))) {
+      return false; // Don't ask, just deny
+    }
+
+    // If explicitly allowed, don't ask
+    if (allow.some((p) => this.matchPattern(pattern, p))) {
+      return false;
+    }
+
+    // If explicitly denied, don't ask
+    if (deny.some((p) => this.matchPattern(pattern, p))) {
+      return false;
+    }
+
+    // Check ask list
+    if (ask.some((p) => this.matchPattern(pattern, p))) {
+      return true;
+    }
+
+    // Default: ask for unknown patterns
+    return true;
+  }
+
+  /**
+   * Simple pattern matching (supports * and :* wildcards)
+   */
+  private matchPattern(value: string, pattern: string): boolean {
+    // Exact match
+    if (value === pattern) return true;
+
+    // Handle :* suffix (e.g., "Bash(git:*)" matches "Bash(git:status)")
+    if (pattern.endsWith(':*)')) {
+      const prefix = pattern.slice(0, -3); // Remove ":*)"
+      const valuePrefix = value.slice(0, value.lastIndexOf(':'));
+      return valuePrefix.startsWith(prefix);
+    }
+
+    // Handle * wildcards
+    if (pattern.includes('*')) {
+      const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+      return regex.test(value);
+    }
+
+    return false;
+  }
+}
+
+// =============================================================================
+// Legacy SettingsManager (backward compatibility)
+// =============================================================================
+
+/**
+ * Legacy SettingsManager for backward compatibility
+ *
+ * @deprecated Use ConfigManager instead
+ */
+export class SettingsManager {
+  private configManager: ConfigManager;
+  private globalDir: string;
+  private projectDir: string;
+
+  constructor(options: SettingsManagerOptions & { cwd?: string } = {}) {
+    this.configManager = new ConfigManager({ cwd: options.cwd });
+
+    // For legacy compatibility
+    const cwd = options.cwd ?? process.cwd();
+    this.globalDir = options.settingsDir ?? getPrimarySettingsDir('user', cwd);
+    this.projectDir = getPrimarySettingsDir('project', cwd);
+  }
+
+  async load(): Promise<Settings> {
+    const merged = await this.configManager.load();
+    return merged.settings;
+  }
+
+  async save(updates: Partial<Settings>): Promise<void> {
+    await this.configManager.save(updates);
+  }
+
+  async saveToLevel(
+    updates: Partial<Settings>,
+    level: 'global' | 'project' | 'local'
+  ): Promise<void> {
+    const mappedLevel = level === 'global' ? 'user' : level;
+    await this.configManager.saveToLevel(updates, mappedLevel);
+  }
+
+  async addPermissionRule(
+    pattern: string,
+    type: 'allow' | 'deny',
+    level: 'global' | 'project' | 'local' = 'project'
+  ): Promise<void> {
+    const mappedLevel = level === 'global' ? 'user' : level;
+    await this.configManager.addPermissionRule(pattern, type, mappedLevel);
+  }
+
+  get(): Settings {
+    return this.configManager.get();
+  }
+
+  getPath(): string {
+    return this.configManager.getSettingsPath('user');
+  }
+
+  getProjectPath(): string {
+    return this.configManager.getSettingsPath('project');
+  }
+
+  getLocalPath(): string {
+    return this.configManager.getSettingsPath('local');
+  }
+
+  getCwd(): string {
+    return this.configManager.getCwd();
+  }
+
   getProjectDir(): string {
     return this.projectDir;
   }

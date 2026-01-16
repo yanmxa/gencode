@@ -15,7 +15,7 @@ import {
 import { SessionManager } from '../session/index.js';
 import { MemoryManager, type LoadedMemory } from '../memory/index.js';
 import type { AgentConfig, AgentEvent } from './types.js';
-import { buildSystemPromptWithMemory, mapProviderToPromptType } from '../prompts/index.js';
+import { buildSystemPromptForModel } from '../prompts/index.js';
 
 export class Agent {
   private provider: LLMProvider;
@@ -283,14 +283,16 @@ export class Agent {
       // Call LLM
       let response;
       try {
-        // Build provider-specific system prompt with memory context
+        // Build system prompt based on model → provider → prompt flow
+        // Looks up provider from ~/.gencode/providers.json, falls back to config.provider
         const systemPrompt =
           this.config.systemPrompt ??
-          buildSystemPromptWithMemory(
-            mapProviderToPromptType(this.config.provider),
+          buildSystemPromptForModel(
+            this.config.model,
             this.config.cwd ?? process.cwd(),
             true, // Assume git repo for now
-            this.loadedMemory?.context
+            this.loadedMemory?.context,
+            this.config.provider // Fallback provider if model lookup fails
           );
 
         response = await this.provider.complete({
