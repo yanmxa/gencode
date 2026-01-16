@@ -61,10 +61,22 @@ export interface AgentEventDone {
   text: string;
 }
 
+export interface AgentEventAskUser {
+  type: 'ask_user';
+  id: string;
+  questions: Array<{
+    question: string;
+    header: string;
+    options: Array<{ label: string; description: string }>;
+    multiSelect: boolean;
+  }>;
+}
+
 export type AgentEvent =
   | AgentEventText
   | AgentEventToolStart
   | AgentEventToolResult
   | AgentEventThinking
   | AgentEventError
-  | AgentEventDone;
+  | AgentEventDone
+  | AgentEventAskUser;

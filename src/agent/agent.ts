@@ -16,6 +16,10 @@ import { SessionManager } from '../session/index.js';
 import { MemoryManager, type LoadedMemory } from '../memory/index.js';
 import type { AgentConfig, AgentEvent } from './types.js';
 import { buildSystemPromptForModel, debugPromptLoading } from '../prompts/index.js';
+import type { Question, QuestionAnswer } from '../tools/types.js';
+
+// Type for askUser callback
+export type AskUserCallback = (questions: Question[]) => Promise<QuestionAnswer[]>;
 
 export class Agent {
   private provider: LLMProvider;
@@ -27,6 +31,7 @@ export class Agent {
   private messages: Message[] = [];
   private sessionId: string | null = null;
   private loadedMemory: LoadedMemory | null = null;
+  private askUserCallback: AskUserCallback | null = null;
 
   constructor(config: AgentConfig) {
     this.config = {
@@ -99,6 +104,14 @@ export class Agent {
    */
   getPermissionManager(): PermissionManager {
     return this.permissions;
+  }
+
+  /**
+   * Set callback for AskUserQuestion tool
+   * This allows the CLI to handle user questioning
+   */
+  setAskUserCallback(callback: AskUserCallback): void {
+    this.askUserCallback = callback;
   }
 
   /**
@@ -336,12 +349,18 @@ export class Agent {
       const toolResults: ToolResultContent[] = [];
       const cwd = this.config.cwd ?? process.cwd();
 
+      // Build tool context with askUser callback
+      const toolContext = {
+        cwd,
+        askUser: this.askUserCallback ?? undefined,
+      };
+
       for (const call of toolCalls) {
         yield { type: 'tool_start', id: call.id, name: call.name, input: call.input };
 
         const allowed = await this.permissions.requestPermission(call.name, call.input);
         const result = allowed
-          ? await this.registry.execute(call.name, call.input, { cwd })
+          ? await this.registry.execute(call.name, call.input, toolContext)
           : { success: false, output: '', error: 'Permission denied by user' };
 
         yield { type: 'tool_result', id: call.id, name: call.name, result };

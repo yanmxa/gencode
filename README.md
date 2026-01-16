@@ -21,7 +21,7 @@ gencode
 ## Features
 
 - [**Multi-Provider**](./docs/providers.md) - OpenAI, Anthropic, Gemini, Vertex AI, or any OpenAI-compatible API
-- **Built-in Tools** - Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
+- **Built-in Tools** - Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, TodoWrite, AskUserQuestion
 - **Agent Loop** - Multi-turn conversations with tool calls
 - **Session Management** - Persist and resume conversations
 - **Interactive CLI** - Fuzzy search, command suggestions

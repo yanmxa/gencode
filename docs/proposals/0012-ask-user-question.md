@@ -2,9 +2,10 @@
 
 - **Proposal ID**: 0012
 - **Author**: gencode team
-- **Status**: Draft
+- **Status**: Implemented
 - **Created**: 2025-01-15
 - **Updated**: 2025-01-16
+- **Implemented**: 2025-01-16
 
 ## Summary
 
@@ -1013,6 +1014,70 @@ describe('AskUserQuestion Integration', () => {
 4. **Phase 4**: Keyboard shortcuts and accessibility
 
 No breaking changes to existing functionality.
+
+## Implementation Notes
+
+### Files Created/Modified
+
+| File | Action | Description |
+|------|--------|-------------|
+| `src/tools/builtin/ask-user.ts` | Created | Tool implementation with Zod schemas |
+| `src/tools/types.ts` | Modified | Added Question/QuestionAnswer interfaces to ToolContext |
+| `src/tools/index.ts` | Modified | Registered and exported askUserQuestionTool |
+| `src/agent/types.ts` | Modified | Added AgentEventAskUser type |
+| `src/agent/agent.ts` | Modified | Added askUserCallback and toolContext integration |
+| `src/agent/index.ts` | Modified | Exported AskUserCallback type |
+| `src/cli/components/QuestionPrompt.tsx` | Created | Question UI component with Claude Code style |
+| `src/cli/components/App.tsx` | Modified | Integrated QuestionPrompt and state management |
+| `src/cli/components/theme.ts` | Modified | Added new icons for checkboxes and chips |
+| `src/cli/components/index.ts` | Modified | Exported QuestionPrompt and AnswerDisplay |
+| `src/prompts/tools/ask-user.txt` | Created | Tool description for LLM |
+
+### Key Implementation Details
+
+1. **Callback-based architecture**: The tool uses a callback (`askUser`) injected via `ToolContext` to communicate with the CLI layer
+2. **Promise-based async flow**: Questions block agent execution until user responds
+3. **Claude Code UI alignment**: Uses radio buttons (○/●), checkboxes (☐/☑), chip headers, and matching color scheme
+4. **Auto-added "Other" option**: Every question automatically includes an "Other" option for custom input
+5. **Multi-select support**: Full support for both single-select and multi-select modes
+
+### Prompt Guidance (Critical for LLM Tool Usage)
+
+The system prompt in `src/prompts/system/base.txt` includes explicit guidance with bad examples to ensure the LLM uses the tool instead of plain text:
+
+```
+CRITICAL: You MUST use the AskUserQuestion tool for ALL questions with choices.
+NEVER write numbered lists, bullet points, or "which do you prefer" questions as plain text.
+
+## Wrong - Plain Text Questions (DO NOT DO THIS)
+
+<bad-example>
+user: Set up a new database
+assistant: I can set up a database for you. Which one would you prefer?
+1. PostgreSQL - relational database
+2. MongoDB - document database
+3. SQLite - embedded database
+</bad-example>
+
+## Correct - Use AskUserQuestion Tool
+
+<example>
+user: Set up a new database
+assistant: [uses AskUserQuestion tool with structured options]
+</example>
+```
+
+The tool description in `src/prompts/tools/ask-user.txt` reinforces this with explicit "WRONG" examples:
+
+```
+CRITICAL: You MUST use this tool for ANY question with 2+ choices.
+NEVER present options as plain text, numbered lists, or bullet points.
+
+WRONG (never do this):
+- "Which do you prefer? 1. Option A 2. Option B"
+- "What type? - Web - CLI - API"
+- Writing any numbered or bulleted choices in your response
+```
 
 ## Theme Extensions
 

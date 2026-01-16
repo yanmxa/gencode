@@ -27,7 +27,7 @@ This directory contains enhancement proposals for the gencode project. Each prop
 | [0009](./0009-hooks-system.md) | Hooks System | Draft |
 | [0010](./0010-mcp-integration.md) | MCP Integration | Draft |
 | [0011](./0011-custom-commands.md) | Custom Commands | Draft |
-| [0012](./0012-ask-user-question.md) | AskUserQuestion Tool | Draft |
+| [0012](./0012-ask-user-question.md) | AskUserQuestion Tool | Implemented |
 | [0041](./0041-configuration-system.md) | Configuration System | Implemented |
 | [0042](./0042-prompt-optimization.md) | Prompt System Optimization | Implemented |
 

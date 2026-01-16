@@ -227,6 +227,8 @@ export const DEFAULT_PERMISSION_CONFIG: PermissionConfig = {
     { tool: 'LSP', mode: 'auto', description: 'Language server' },
     // Internal state management - auto-approve (no side effects)
     { tool: 'TodoWrite', mode: 'auto', description: 'Task tracking' },
+    // User interaction - auto-approve (asking user questions, not dangerous)
+    { tool: 'AskUserQuestion', mode: 'auto', description: 'User questioning' },
   ],
   allowedPrompts: [],
 };

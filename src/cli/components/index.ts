@@ -25,3 +25,4 @@ export {
   PermissionRulesDisplay,
   PermissionAuditDisplay,
 } from './PermissionPrompt.js';
+export { QuestionPrompt, AnswerDisplay } from './QuestionPrompt.js';

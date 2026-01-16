@@ -28,8 +28,10 @@ import {
   PermissionAuditDisplay,
 } from './PermissionPrompt.js';
 import { TodoList } from './TodoList.js';
+import { QuestionPrompt, AnswerDisplay } from './QuestionPrompt.js';
 import { colors, icons } from './theme.js';
-import { getTodos } from '../../tools/index.js';
+import { getTodos, formatAnswersForDisplay } from '../../tools/index.js';
+import type { Question, QuestionAnswer } from '../../tools/types.js';
 import type { ProviderName } from '../../providers/index.js';
 import type { ApprovalAction, ApprovalSuggestion } from '../../permissions/types.js';
 import { gatherContextFiles, buildInitPrompt, getContextSummary } from '../../memory/index.js';
@@ -47,6 +49,11 @@ interface ConfirmState {
   input: Record<string, unknown>;
   suggestions: ApprovalSuggestion[];
   resolve: (action: ApprovalAction) => void;
+}
+
+interface QuestionState {
+  questions: Question[];
+  resolve: (answers: QuestionAnswer[]) => void;
 }
 
 interface SettingsManager {
@@ -235,6 +242,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
   const [processingStartTime, setProcessingStartTime] = useState<number | undefined>(undefined);
   const [tokenCount, setTokenCount] = useState(0);
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
+  const [questionState, setQuestionState] = useState<QuestionState | null>(null);
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [showProviderManager, setShowProviderManager] = useState(false);
   const [currentModel, setCurrentModel] = useState(config.model);
@@ -276,6 +284,13 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         });
       });
 
+      // Set askUser callback for AskUserQuestion tool
+      agent.setAskUserCallback(async (questions) => {
+        return new Promise<QuestionAnswer[]>((resolve) => {
+          setQuestionState({ questions, resolve });
+        });
+      });
+
       // Set callback to save permission rules to settings.local.json
       if (settingsManager?.addPermissionRule) {
         agent.setSaveRuleCallback(async (tool, pattern) => {
@@ -294,6 +309,32 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
     };
     init();
   }, [agent, resumeLatest, addHistory, permissionSettings, settingsManager]);
+
+  // Handle question answers (AskUserQuestion)
+  const handleQuestionComplete = useCallback((answers: QuestionAnswer[]) => {
+    if (questionState) {
+      // Show confirmation in history
+      addHistory({
+        type: 'info',
+        content: formatAnswersForDisplay(answers),
+      });
+      questionState.resolve(answers);
+      setQuestionState(null);
+    }
+  }, [questionState, addHistory]);
+
+  // Handle question cancel
+  const handleQuestionCancel = useCallback(() => {
+    if (questionState) {
+      // Clear pending tool display (no more spinner)
+      pendingToolRef.current = null;
+      setPendingTool(null);
+      // Add canceled message to history
+      addHistory({ type: 'info', content: 'Question canceled' });
+      questionState.resolve([]); // Return empty answers on cancel
+      setQuestionState(null);
+    }
+  }, [questionState, addHistory]);
 
   // Handle permission decision
   const handlePermissionDecision = (action: ApprovalAction) => {
@@ -730,6 +771,9 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
       setIsProcessing(false);
       setStreamingText('');
       streamingTextRef.current = '';
+      // Clear pending tool (stop spinner)
+      pendingToolRef.current = null;
+      setPendingTool(null);
       addHistory({ type: 'info', content: 'Interrupted' });
     }
 
@@ -837,6 +881,14 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         />
       )}
 
+      {questionState && (
+        <QuestionPrompt
+          questions={questionState.questions}
+          onComplete={handleQuestionComplete}
+          onCancel={handleQuestionCancel}
+        />
+      )}
+
       {showModelSelector && (
         <Box marginTop={1}>
           <ModelSelector
@@ -861,7 +913,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         </Box>
       )}
 
-      {!confirmState && !showModelSelector && !showProviderManager && (
+      {!confirmState && !questionState && !showModelSelector && !showProviderManager && (
         <Box flexDirection="column" marginTop={1}>
           <PromptInput
             key={inputKey}
@@ -875,7 +927,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         </Box>
       )}
 
-      {isProcessing && !confirmState ? (
+      {isProcessing && !confirmState && !questionState ? (
         <ProgressBar startTime={processingStartTime} tokenCount={tokenCount} isThinking={isThinking} />
       ) : showCmdSuggestions && cmdSuggestions.length > 0 ? (
         <Box marginTop={1}>

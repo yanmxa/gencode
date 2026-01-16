@@ -126,6 +126,11 @@ function formatToolInput(name: string, input: Record<string, unknown>): string {
       const todos = input.todos as Array<{ content: string; status: string }> || [];
       return `${todos.length} task${todos.length !== 1 ? 's' : ''}`;
     }
+    case 'AskUserQuestion': {
+      // Show collapsed JSON preview
+      const json = JSON.stringify(input);
+      return truncate(json, 60);
+    }
     default:
       return truncate(JSON.stringify(input), 40);
   }
@@ -134,6 +139,25 @@ function formatToolInput(name: string, input: Record<string, unknown>): string {
 export function ToolCall({ name, input }: ToolCallProps) {
   // Hide TodoWrite (shown in TodoList component)
   if (name === 'TodoWrite') return null;
+
+  // Special display for AskUserQuestion (Claude Code style with expand hint)
+  if (name === 'AskUserQuestion') {
+    const json = JSON.stringify(input);
+    const displayJson = truncate(json, 70);
+
+    return (
+      <Box marginTop={1} flexDirection="column">
+        <Box>
+          <Text color={colors.tool}>{icons.tool}</Text>
+          <Text> </Text>
+          <Text bold>{name}</Text>
+          <Text color={colors.textMuted}>  </Text>
+          <Text color={colors.textSecondary}>{displayJson}</Text>
+          <Text color={colors.textMuted}>  ctrl+o</Text>
+        </Box>
+      </Box>
+    );
+  }
 
   const displayInput = formatToolInput(name, input);
 
@@ -161,6 +185,25 @@ interface PendingToolCallProps {
 export function PendingToolCall({ name, input }: PendingToolCallProps) {
   // Hide TodoWrite (shown in TodoList component)
   if (name === 'TodoWrite') return null;
+
+  // Special display for AskUserQuestion
+  if (name === 'AskUserQuestion') {
+    const json = JSON.stringify(input);
+    const displayJson = truncate(json, 70);
+
+    return (
+      <Box marginTop={1}>
+        <Text color={colors.tool}>
+          <InkSpinner type="dots" />
+        </Text>
+        <Text> </Text>
+        <Text bold>{name}</Text>
+        <Text color={colors.textMuted}>  </Text>
+        <Text color={colors.textSecondary}>{displayJson}</Text>
+        <Text color={colors.textMuted}>  ctrl+o</Text>
+      </Box>
+    );
+  }
 
   const displayInput = formatToolInput(name, input);
 

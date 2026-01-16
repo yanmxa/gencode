@@ -15,6 +15,18 @@ export { grepTool } from './builtin/grep.js';
 export { webfetchTool } from './builtin/webfetch.js';
 export { websearchTool } from './builtin/websearch.js';
 export { todowriteTool, getTodos, clearTodos } from './builtin/todowrite.js';
+export {
+  askUserQuestionTool,
+  formatAnswersForAgent,
+  formatAnswersForDisplay,
+} from './builtin/ask-user.js';
+export type {
+  Question as AskUserQuestion,
+  QuestionOption as AskUserQuestionOption,
+  QuestionAnswer as AskUserQuestionAnswer,
+  AskUserQuestionInput,
+  AskUserQuestionResult,
+} from './builtin/ask-user.js';
 
 import { ToolRegistry } from './registry.js';
 import { readTool } from './builtin/read.js';
@@ -26,6 +38,7 @@ import { grepTool } from './builtin/grep.js';
 import { webfetchTool } from './builtin/webfetch.js';
 import { websearchTool } from './builtin/websearch.js';
 import { todowriteTool } from './builtin/todowrite.js';
+import { askUserQuestionTool } from './builtin/ask-user.js';
 
 /**
  * Create a registry with all built-in tools
@@ -42,6 +55,7 @@ export function createDefaultRegistry(): ToolRegistry {
     webfetchTool,
     websearchTool,
     todowriteTool,
+    askUserQuestionTool,
   ]);
   return registry;
 }
@@ -59,4 +73,5 @@ export const builtinTools = [
   webfetchTool,
   websearchTool,
   todowriteTool,
+  askUserQuestionTool,
 ];

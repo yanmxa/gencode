@@ -35,9 +35,19 @@ export const icons = {
   // UI
   thinking: '✱', // Star for thinking state
   cursor: '▋',
-  // Selection
+  // Selection (single-select)
   radio: '●', // Filled radio for selected
   radioEmpty: '○', // Empty radio for unselected
+  // Selection (multi-select)
+  checkbox: '☑', // Checked checkbox
+  checkboxEmpty: '☐', // Empty checkbox
+  // Chip/tag borders (Claude Code style headers)
+  chipLeft: '╭─',
+  chipRight: '─╮',
+  // Box drawing
+  boxTop: '╭',
+  boxBottom: '╰',
+  boxVertical: '│',
   // Tree connectors
   treeEnd: '└', // Tree end connector for tool results
 };

@@ -9,9 +9,27 @@ import { z } from 'zod';
 // Tool Definition Types
 // ============================================================================
 
+// Forward declaration for Question type (used by AskUserQuestion tool)
+export interface Question {
+  question: string;
+  header: string;
+  options: Array<{ label: string; description: string }>;
+  multiSelect: boolean;
+}
+
+// Forward declaration for QuestionAnswer type (used by AskUserQuestion tool)
+export interface QuestionAnswer {
+  question: string;
+  header: string;
+  selectedOptions: string[];
+  customInput?: string;
+}
+
 export interface ToolContext {
   cwd: string;
   abortSignal?: AbortSignal;
+  /** Callback for AskUserQuestion tool to interact with user */
+  askUser?: (questions: Question[]) => Promise<QuestionAnswer[]>;
 }
 
 export interface ToolResultMetadata {
