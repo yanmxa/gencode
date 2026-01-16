@@ -24,7 +24,7 @@ gencode
 - **Built-in Tools** - Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 - **Agent Loop** - Multi-turn conversations with tool calls
 - **Session Management** - Persist and resume conversations
-- **Interactive CLI** - Fuzzy search, command suggestions, streaming output
+- **Interactive CLI** - Fuzzy search, command suggestions
 - [**Permission System**](./docs/permissions.md) - Pattern-based rules, prompt-based permissions, audit logging
 
 ## License
