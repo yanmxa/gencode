@@ -1,7 +1,7 @@
 {
   "name": "gencode-ai",
   "version": "0.1.1",
-  "description": "GenCode - An open-source, provider-agnostic AI coding assistant",
+  "description": "An open-source AI assistant for your terminal",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**GenCode** (npm: `gencode`) is an open-source, provider-agnostic AI coding assistant. It brings Claude Code's excellent interactive CLI experience while allowing flexible switching between different LLM providers (OpenAI, Anthropic, Google Gemini).
+**GenCode** (npm: `gencode-ai`) is an open-source AI assistant for the terminal. Extensible tools, customizable prompts, multi-provider support.
 
 ## Build & Run Commands
 
