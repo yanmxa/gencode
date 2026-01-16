@@ -1,7 +1,7 @@
 /**
- * Spinner Component - Compact thinking animation (Claude Code style)
+ * Spinner Component - Vivid thinking animation
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Box, Text } from 'ink';
 import InkSpinner from 'ink-spinner';
 import { colors } from './theme.js';
@@ -33,40 +33,153 @@ export function LoadingSpinner({ text = 'Loading...' }: SpinnerProps) {
   );
 }
 
+// Thinking phrases that rotate during processing
+const thinkingPhrases = [
+  'Thinking',
+  'Pondering',
+  'Analyzing',
+  'Processing',
+  'Reasoning',
+  'Contemplating',
+  'Figuring out',
+  'Working on it',
+  'Almost there',
+  'Crafting response',
+];
+
+// Animation frames for different styles
+const animations = {
+  // Brainwave animation
+  brainwave: ['🧠 ∿∿∿', '🧠∿ ∿∿', '🧠∿∿ ∿', '🧠∿∿∿ ', '🧠 ∿∿∿', '🧠∿ ∿∿'],
+  // Sparkle animation
+  sparkle: ['✨    ', ' ✨   ', '  ✨  ', '   ✨ ', '    ✨', '   ✨ ', '  ✨  ', ' ✨   '],
+  // DNA helix
+  dna: ['🔬 ⌬⌬⌬', '🔬⌬ ⌬⌬', '🔬⌬⌬ ⌬', '🔬⌬⌬⌬ ', '🔬 ⌬⌬⌬'],
+  // Pulse dots
+  pulse: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
+  // Wave animation
+  wave: ['≋≈∼∽', '∽≋≈∼', '∼∽≋≈', '≈∼∽≋'],
+  // Bounce bar with gradient
+  bounceGradient: [
+    '█▓▒░    ',
+    ' █▓▒░   ',
+    '  █▓▒░  ',
+    '   █▓▒░ ',
+    '    █▓▒░',
+    '   ░▒▓█ ',
+    '  ░▒▓█  ',
+    ' ░▒▓█   ',
+    '░▒▓█    ',
+  ],
+  // Orbit animation
+  orbit: ['◐', '◓', '◑', '◒'],
+  // Loading bar with shimmer
+  shimmer: [
+    '▓▓▓▓▓░░░',
+    '░▓▓▓▓▓░░',
+    '░░▓▓▓▓▓░',
+    '░░░▓▓▓▓▓',
+    '░░░░▓▓▓▓',
+    '░░░▓▓▓▓▓',
+    '░░▓▓▓▓▓░',
+    '░▓▓▓▓▓░░',
+  ],
+};
+
+type AnimationType = keyof typeof animations;
+const animationTypes = Object.keys(animations) as AnimationType[];
+
+// Format elapsed time
+function formatElapsed(ms: number): string {
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const remainSecs = secs % 60;
+  return `${mins}m ${remainSecs}s`;
+}
+
+// Format token count
+function formatTokens(count: number): string {
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(1)}k`;
+  }
+  return `${count}`;
+}
+
+interface ProgressBarProps {
+  startTime?: number;
+  tokenCount?: number;
+  isThinking?: boolean;
+}
+
 /**
  * Progress bar animation for processing state
- * Bouncing ball with trail effect
+ * Claude Code style with time, tokens, and thinking status
  */
-export function ProgressBar() {
+export function ProgressBar({ startTime, tokenCount = 0, isThinking = false }: ProgressBarProps) {
   const [frame, setFrame] = useState(0);
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setFrame((f) => (f + 1) % 14);
-    }, 100);
-    return () => clearInterval(timer);
+  // Pick a random animation style on mount
+  const animStyle = useMemo(() => {
+    const randomIndex = Math.floor(Math.random() * animationTypes.length);
+    return animationTypes[randomIndex];
   }, []);
 
-  // Bouncing ball animation: ball moves left-right with trail
-  const width = 7;
-  // Frame 0-6: left to right, 7-13: right to left
-  const pos = frame < 7 ? frame : 13 - frame;
+  const currentAnim = animations[animStyle];
 
-  let bar = '';
-  for (let i = 0; i < width; i++) {
-    if (i === pos) {
-      bar += '●';
-    } else if (i === pos - 1 || i === pos + 1) {
-      bar += '○';
-    } else {
-      bar += '·';
-    }
+  useEffect(() => {
+    // Fast animation update
+    const animTimer = setInterval(() => {
+      setFrame((f) => (f + 1) % currentAnim.length);
+    }, 120);
+
+    // Slower phrase rotation (every 2.5 seconds)
+    const phraseTimer = setInterval(() => {
+      setPhraseIndex((p) => (p + 1) % thinkingPhrases.length);
+    }, 2500);
+
+    // Update elapsed time every second
+    const elapsedTimer = setInterval(() => {
+      if (startTime) {
+        setElapsed(Date.now() - startTime);
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(animTimer);
+      clearInterval(phraseTimer);
+      clearInterval(elapsedTimer);
+    };
+  }, [currentAnim.length, startTime]);
+
+  const animFrame = currentAnim[frame];
+  const phrase = thinkingPhrases[phraseIndex];
+
+  // Animated ellipsis
+  const ellipsis = '.'.repeat((frame % 3) + 1).padEnd(3, ' ');
+
+  // Build status parts
+  const parts: string[] = [];
+  if (startTime && elapsed > 0) {
+    parts.push(formatElapsed(elapsed));
   }
+  if (tokenCount > 0) {
+    parts.push(`↓ ${formatTokens(tokenCount)} tokens`);
+  }
+  if (isThinking) {
+    parts.push('thinking');
+  }
+
+  const statusText = parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
 
   return (
     <Box>
-      <Text color={colors.brand}>{bar}</Text>
-      <Text color={colors.textMuted}> esc to stop</Text>
+      <Text color={colors.brand}>{animFrame}</Text>
+      <Text color={colors.textSecondary}> {phrase}</Text>
+      <Text color={colors.textMuted}>{ellipsis}</Text>
+      <Text color={colors.textMuted}>(esc to stop{statusText})</Text>
     </Box>
   );
 }

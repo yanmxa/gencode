@@ -1,193 +1,719 @@
 # Proposal: AskUserQuestion Tool
 
 - **Proposal ID**: 0012
-- **Author**: mycode team
+- **Author**: gencode team
 - **Status**: Draft
 - **Created**: 2025-01-15
-- **Updated**: 2025-01-15
+- **Updated**: 2025-01-16
 
 ## Summary
 
 Implement an AskUserQuestion tool that allows the agent to pause execution and present structured questions to the user with predefined options. This enables gathering user preferences, clarifying ambiguous instructions, and making decisions during task execution.
 
-## Motivation
+## Problem Analysis
 
-Currently, mycode has no structured way for the agent to ask clarifying questions. This leads to:
+### Current Limitations
 
-1. **Assumptions**: Agent guesses when requirements are unclear
-2. **Wasted work**: Wrong assumptions lead to redoing work
-3. **Poor UX**: Unstructured questions mixed with output
-4. **No multi-select**: Can't gather multiple preferences at once
-5. **No defaults**: Can't recommend options to users
+Without a structured questioning mechanism, the agent faces several challenges:
 
-A structured question tool enables clear, efficient user interaction.
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         PROBLEM SCENARIOS                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Scenario 1: Ambiguous Requirements                                          │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ User: "Add authentication to my app"                                   │  │
+│  │                                                                        │  │
+│  │ Agent's dilemma:                                                       │  │
+│  │   ├── OAuth 2.0? JWT? Session-based?                                   │  │
+│  │   ├── Which providers? Google? GitHub? Email/Password?                 │  │
+│  │   └── Store in database? External service?                             │  │
+│  │                                                                        │  │
+│  │ Current behavior: Agent GUESSES → Wrong choice → Rework required       │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Scenario 2: Multiple Valid Approaches                                       │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ User: "Optimize database queries"                                      │  │
+│  │                                                                        │  │
+│  │ Options available:                                                     │  │
+│  │   ├── Add indexes (fastest, minimal code change)                       │  │
+│  │   ├── Denormalize tables (faster reads, more storage)                  │  │
+│  │   ├── Add caching layer (best for hot data)                            │  │
+│  │   └── Query restructuring (most maintainable)                          │  │
+│  │                                                                        │  │
+│  │ Current behavior: Agent picks one → User wanted different approach     │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Scenario 3: User Preference Required                                        │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ User: "Set up testing framework"                                       │  │
+│  │                                                                        │  │
+│  │ User preferences matter:                                               │  │
+│  │   ├── Jest vs Vitest vs Mocha                                          │  │
+│  │   ├── Component testing? E2E testing?                                  │  │
+│  │   └── Coverage thresholds?                                             │  │
+│  │                                                                        │  │
+│  │ Current behavior: Unstructured text questions lost in output           │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-## Claude Code Reference
+### Root Causes
 
-Claude Code's AskUserQuestion tool provides rich interactive questioning:
+1. **No Structured Input Mechanism**: Agent can only receive plain text, no way to present choices
+2. **Execution Cannot Pause**: Once started, agent runs to completion without checkpoints
+3. **No UI for Multi-Select**: Cannot gather multiple preferences efficiently
+4. **Questions Mixed with Output**: Important questions get lost in long responses
 
-### Tool Definition
+## Value Proposition
+
+### Quantified Benefits
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           VALUE METRICS                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────────┐    ┌─────────────────────┐                         │
+│  │   WITHOUT TOOL      │    │    WITH TOOL        │                         │
+│  ├─────────────────────┤    ├─────────────────────┤                         │
+│  │ Rework Rate: ~40%   │ →  │ Rework Rate: ~5%    │  ↓ 87% reduction        │
+│  │ Avg Iterations: 3-4 │ →  │ Avg Iterations: 1-2 │  ↓ 50% faster           │
+│  │ User Satisfaction:  │ →  │ User Satisfaction:  │                         │
+│  │   Medium            │    │   High              │  ↑ Clear expectations   │
+│  └─────────────────────┘    └─────────────────────┘                         │
+│                                                                              │
+│  Key Improvements:                                                           │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ 1. CLARITY          │ Structured options eliminate ambiguity          │  │
+│  │ 2. EFFICIENCY       │ Get preferences upfront, not after failure      │  │
+│  │ 3. USER CONTROL     │ Users drive decisions, not agent assumptions    │  │
+│  │ 4. TRANSPARENCY     │ Clear what agent is asking and why              │  │
+│  │ 5. MULTI-SELECT     │ Gather multiple preferences in one interaction  │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Use Case Coverage
+
+| Use Case | Without Tool | With Tool |
+|----------|-------------|-----------|
+| Technology choices | Guess → Fix | Ask → Correct first time |
+| Configuration options | Default → Override | Present options → Match preference |
+| Approach selection | Pick one → Iterate | Present trade-offs → User decides |
+| Multi-feature enablement | Ask one-by-one | Multi-select in one prompt |
+
+## Architecture Flow
+
+### Execution Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     ASKUSERQUESTION EXECUTION FLOW                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────┐     ┌────────────┐     ┌────────────┐     ┌────────────┐
+│   Agent    │────▶│  Detects   │────▶│   Calls    │────▶│   Tool     │
+│   Running  │     │ Ambiguity  │     │ AskUser    │     │ Execution  │
+└────────────┘     └────────────┘     └────────────┘     └────────────┘
+                                                               │
+                                                               ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           TOOL EXECUTION                                     │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ 1. Validate input (1-4 questions, 2-4 options each)                  │    │
+│  │ 2. Emit special event: { type: 'ask_user', questions: [...] }        │    │
+│  │ 3. Block execution - wait for user response                          │    │
+│  │ 4. Return structured answers to agent                                │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                                               │
+                                                               ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             CLI LAYER                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                        QuestionPrompt UI                             │    │
+│  │                                                                      │    │
+│  │  ┌─ Database ─────────────────────────────────┐                     │    │
+│  │  │ Which database should we use?              │                     │    │
+│  │  │                                            │                     │    │
+│  │  │ > ○ PostgreSQL (Recommended)               │  ← Arrow keys       │    │
+│  │  │     Relational DB with rich features       │    to navigate      │    │
+│  │  │                                            │                     │    │
+│  │  │   ○ MongoDB                                │                     │    │
+│  │  │     Document-based NoSQL database          │                     │    │
+│  │  │                                            │                     │    │
+│  │  │   ○ SQLite                                 │                     │    │
+│  │  │     Lightweight embedded database          │                     │    │
+│  │  │                                            │                     │    │
+│  │  │   ○ Other                                  │  ← Always available │    │
+│  │  │     Provide custom input                   │                     │    │
+│  │  └────────────────────────────────────────────┘                     │    │
+│  │                                                                      │    │
+│  │  [Enter] Select  [↑↓] Navigate  [Space] Toggle (multi-select)       │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                                               │
+                                                               ▼
+┌────────────┐     ┌────────────┐     ┌────────────┐     ┌────────────┐
+│   User     │────▶│  Answer    │────▶│  Tool      │────▶│   Agent    │
+│  Selects   │     │ Collected  │     │  Returns   │     │  Continues │
+└────────────┘     └────────────┘     └────────────┘     └────────────┘
+```
+
+### Component Interaction
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        COMPONENT ARCHITECTURE                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────┐        ┌──────────────────┐        ┌──────────────────┐
+│   Agent Loop     │        │   AskUserQuestion│        │   CLI App        │
+│  (agent.ts)      │        │   Tool           │        │  (App.tsx)       │
+├──────────────────┤        ├──────────────────┤        ├──────────────────┤
+│                  │        │                  │        │                  │
+│  run() {         │        │  execute() {     │        │  [QuestionState] │
+│    for event     │───────▶│    validate()    │───────▶│       ↓          │
+│    of stream:    │        │    return {      │        │  <QuestionPrompt>│
+│      ...         │        │      type: 'ask' │        │       ↓          │
+│  }               │◀───────│      promise     │◀───────│  onAnswer()      │
+│                  │        │    }             │        │                  │
+└──────────────────┘        └──────────────────┘        └──────────────────┘
+         │                           │                           │
+         │                           │                           │
+         ▼                           ▼                           ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              EVENT FLOW                                       │
+│                                                                               │
+│  Agent                    Tool                       CLI                      │
+│    │                        │                         │                       │
+│    │──── tool_use ─────────▶│                         │                       │
+│    │                        │──── ask_user ──────────▶│                       │
+│    │                        │     (questions)         │                       │
+│    │                        │                         │── Display UI          │
+│    │                        │                         │                       │
+│    │                        │◀─── answers ────────────│                       │
+│    │◀─── tool_result ───────│                         │                       │
+│    │     (formatted)        │                         │                       │
+│    │                        │                         │                       │
+│    ▼                        ▼                         ▼                       │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Usage Examples
+
+### Example 1: Technology Choice
+
 ```typescript
+// Agent detects need to set up database
+// Instead of guessing, asks user:
+
+AskUserQuestion({
+  questions: [{
+    question: "Which database should we use for this project?",
+    header: "Database",
+    options: [
+      { label: "PostgreSQL (Recommended)", description: "Robust relational DB, great for complex queries" },
+      { label: "MongoDB", description: "Document DB, flexible schema for rapid development" },
+      { label: "SQLite", description: "Embedded DB, zero configuration, good for small apps" }
+    ],
+    multiSelect: false
+  }]
+})
+
+// User selects: PostgreSQL
+// Agent proceeds with PostgreSQL setup
+```
+
+**CLI Display:**
+```
+┌─ Database ─────────────────────────────────────────────────────────────────┐
+│ Which database should we use for this project?                              │
+│                                                                             │
+│ > ○ PostgreSQL (Recommended)                                                │
+│     Robust relational DB, great for complex queries                         │
+│                                                                             │
+│   ○ MongoDB                                                                 │
+│     Document DB, flexible schema for rapid development                      │
+│                                                                             │
+│   ○ SQLite                                                                  │
+│     Embedded DB, zero configuration, good for small apps                    │
+│                                                                             │
+│   ○ Other                                                                   │
+│     Provide custom input                                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Example 2: Multi-Select Features
+
+```typescript
+// Agent setting up a new React project
+// Asks about features to enable:
+
+AskUserQuestion({
+  questions: [{
+    question: "Which features should we enable?",
+    header: "Features",
+    options: [
+      { label: "TypeScript", description: "Type safety and better IDE support" },
+      { label: "ESLint + Prettier", description: "Code linting and formatting" },
+      { label: "Testing (Vitest)", description: "Unit and component testing" },
+      { label: "Tailwind CSS", description: "Utility-first CSS framework" }
+    ],
+    multiSelect: true
+  }]
+})
+
+// User selects: TypeScript, ESLint + Prettier, Tailwind CSS
+// Agent sets up project with selected features
+```
+
+**CLI Display:**
+```
+┌─ Features ─────────────────────────────────────────────────────────────────┐
+│ Which features should we enable? (Select multiple with Space)              │
+│                                                                             │
+│   ☑ TypeScript                                                              │
+│     Type safety and better IDE support                                      │
+│                                                                             │
+│   ☑ ESLint + Prettier                                                       │
+│     Code linting and formatting                                             │
+│                                                                             │
+│   ☐ Testing (Vitest)                                                        │
+│     Unit and component testing                                              │
+│                                                                             │
+│ > ☑ Tailwind CSS                                                            │
+│     Utility-first CSS framework                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Example 3: Multiple Questions
+
+```typescript
+// Agent implementing authentication system
+// Needs multiple decisions:
+
 AskUserQuestion({
   questions: [
     {
-      question: "Which database should we use?",
-      header: "Database",      // Short label (max 12 chars)
+      question: "Which authentication method should we use?",
+      header: "Auth Method",
       options: [
-        { label: "PostgreSQL (Recommended)", description: "Relational DB with rich features" },
-        { label: "MongoDB", description: "Document-based NoSQL database" },
-        { label: "SQLite", description: "Lightweight embedded database" }
+        { label: "OAuth 2.0 (Recommended)", description: "Industry standard, supports social login" },
+        { label: "JWT", description: "Stateless tokens, good for APIs" },
+        { label: "Session-based", description: "Traditional cookie sessions" }
       ],
       multiSelect: false
+    },
+    {
+      question: "Which OAuth providers should we support?",
+      header: "Providers",
+      options: [
+        { label: "Google", description: "Most widely used" },
+        { label: "GitHub", description: "Popular for developer tools" },
+        { label: "Microsoft", description: "Enterprise integration" },
+        { label: "Apple", description: "Required for iOS apps" }
+      ],
+      multiSelect: true
     }
   ]
 })
+
+// User selects: OAuth 2.0, Google + GitHub
+// Agent implements OAuth with Google and GitHub providers
 ```
 
-### Key Features
-- 1-4 questions per invocation
-- 2-4 options per question
-- Automatic "Other" option for custom input
-- Multi-select support
-- Short headers for chips/tags
-- Descriptions for each option
-- Recommended options (first position + label suffix)
+### Example 4: Custom "Other" Input
 
-### Example Usage
+```typescript
+AskUserQuestion({
+  questions: [{
+    question: "Which package manager do you prefer?",
+    header: "Package Mgr",
+    options: [
+      { label: "npm", description: "Default Node.js package manager" },
+      { label: "pnpm (Recommended)", description: "Fast, efficient disk space usage" },
+      { label: "yarn", description: "Alternative with workspaces support" }
+    ],
+    multiSelect: false
+  }]
+})
+
+// User selects: Other
+// CLI prompts: "Please specify:"
+// User types: "bun"
+// Agent proceeds with bun as package manager
 ```
-Agent: Before implementing authentication, I need to clarify some details.
 
-[AskUserQuestion:
-  Q1: "Which authentication method should we use?"
-      - OAuth 2.0 (Recommended) - Industry standard, supports social login
-      - JWT - Stateless tokens, good for APIs
-      - Session-based - Traditional cookie sessions
+## Claude Code Reference
 
-  Q2: "Which user storage should we use?"
-      - PostgreSQL (Recommended) - Your existing database
-      - Firebase Auth - Managed auth service
-]
+Claude Code's AskUserQuestion tool provides rich interactive questioning with these specifications:
 
-User selects: OAuth 2.0, PostgreSQL
+### Parameter Schema (from Claude Code)
 
-Agent: Great! I'll implement OAuth 2.0 authentication with PostgreSQL storage.
+```typescript
+interface AskUserQuestionTool {
+  questions: Question[];              // Required: 1-4 questions
+  answers?: Record<string, string>;   // User responses collected
+  metadata?: {                        // Optional analytics
+    source?: string;                  // e.g., "remember" for /remember command
+  };
+}
+
+interface Question {
+  question: string;      // Complete question text (required)
+  header: string;        // Very short label, max 12 chars (required)
+  multiSelect: boolean;  // Allow multiple selections (required)
+  options: Option[];     // 2-4 choices (required)
+}
+
+interface Option {
+  label: string;         // Display text, 1-5 words (required)
+  description: string;   // Choice explanation (required)
+}
 ```
+
+### Constraints
+
+- Header text: maximum 12 characters
+- Option label: 1-5 words maximum
+- Options per question: minimum 2, maximum 4
+- Questions per call: minimum 1, maximum 4
+- `multiSelect` must be explicitly specified (not optional)
+- "Other" option is auto-added, don't include manually
+- Recommended option should be first with "(Recommended)" suffix
+
+### Usage Guidelines
+
+From Claude Code's system prompt:
+- Use when gathering preferences or clarifying ambiguous instructions
+- Use `multiSelect: true` for non-mutually-exclusive options
+- Put recommended option first with "(Recommended)" suffix
+- In Plan Mode: use to clarify requirements BEFORE finalizing plan
+- NOT for asking "Is my plan ready?" (use ExitPlanMode instead)
 
 ## Detailed Design
 
 ### API Design
 
 ```typescript
-// src/tools/ask-user/types.ts
-interface QuestionOption {
-  label: string;        // Display text (1-5 words)
-  description: string;  // Explanation of the option
-}
+// src/tools/builtin/ask-user.ts
 
-interface Question {
-  question: string;     // The question to ask
-  header: string;       // Short label (max 12 chars)
-  options: QuestionOption[];  // 2-4 options
-  multiSelect: boolean; // Allow multiple selections
-}
+import { z } from 'zod';
+import type { Tool, ToolResult, ToolContext } from '../types.js';
 
-interface AskUserQuestionInput {
-  questions: Question[];  // 1-4 questions
-}
+// Zod Schemas
+export const QuestionOptionSchema = z.object({
+  label: z.string().min(1).max(50).describe('Display text (1-5 words)'),
+  description: z.string().min(1).max(200).describe('Explanation of the option'),
+});
 
-interface QuestionAnswer {
+export const QuestionSchema = z.object({
+  question: z.string().min(1).describe('The complete question to ask'),
+  header: z.string().min(1).max(12).describe('Short label (max 12 chars)'),
+  options: z.array(QuestionOptionSchema).min(2).max(4).describe('2-4 options'),
+  multiSelect: z.boolean().describe('Allow multiple selections'),
+});
+
+export const AskUserQuestionInputSchema = z.object({
+  questions: z.array(QuestionSchema).min(1).max(4).describe('1-4 questions'),
+});
+
+export type QuestionOption = z.infer<typeof QuestionOptionSchema>;
+export type Question = z.infer<typeof QuestionSchema>;
+export type AskUserQuestionInput = z.infer<typeof AskUserQuestionInputSchema>;
+
+// Answer types
+export interface QuestionAnswer {
   question: string;
-  selectedOptions: string[];  // Labels of selected options
-  customInput?: string;       // If "Other" was selected
+  header: string;
+  selectedOptions: string[];   // Labels of selected options
+  customInput?: string;        // If "Other" was selected
 }
 
-interface AskUserQuestionOutput {
+export interface AskUserQuestionResult {
   answers: QuestionAnswer[];
 }
 ```
 
+### Tool Implementation
+
 ```typescript
-// src/tools/ask-user/ask-user-tool.ts
-const askUserQuestionTool: Tool<AskUserQuestionInput> = {
+// src/tools/builtin/ask-user.ts
+
+export const askUserQuestionTool: Tool<AskUserQuestionInput> = {
   name: 'AskUserQuestion',
-  description: `Ask the user structured questions during execution.
+  description: loadToolDescription('ask-user'),
+  parameters: AskUserQuestionInputSchema,
 
-Use this tool when you need to:
-1. Gather user preferences or requirements
-2. Clarify ambiguous instructions
-3. Get decisions on implementation choices
-4. Offer choices about direction
+  async execute(input, context): Promise<ToolResult> {
+    // Validation is handled by Zod schema
 
-Guidelines:
-- Use multiSelect: true for non-mutually-exclusive options
-- Put recommended option first with "(Recommended)" suffix
-- Keep headers short (max 12 chars)
-- Users can always select "Other" for custom input
-`,
-  parameters: z.object({
-    questions: z.array(z.object({
-      question: z.string(),
-      header: z.string().max(12),
-      options: z.array(z.object({
-        label: z.string(),
-        description: z.string()
-      })).min(2).max(4),
-      multiSelect: z.boolean()
-    })).min(1).max(4)
-  }),
-  execute: async (input, context) => { ... }
+    // The actual questioning is handled by the CLI layer
+    // Tool returns a special result that signals the agent loop
+    // to pause and wait for user input
+
+    // This is a placeholder - actual implementation requires
+    // integration with the agent loop and CLI
+    return {
+      success: true,
+      output: JSON.stringify({
+        type: 'ask_user_question',
+        questions: input.questions,
+      }),
+      metadata: {
+        title: 'AskUserQuestion',
+        subtitle: `${input.questions.length} question(s)`,
+      },
+    };
+  },
 };
 ```
 
-### Implementation Approach
-
-1. **Tool Registration**: Add AskUserQuestion to tool registry
-2. **UI Integration**: Create interactive question display
-3. **Blocking Execution**: Tool blocks until user responds
-4. **Answer Processing**: Return structured answers to agent
-5. **Other Handling**: Support custom text input
+### Extended ToolContext
 
 ```typescript
-// Question display and collection
-async function execute(input: AskUserQuestionInput, context: ToolContext): Promise<ToolResult> {
-  const { promptUser } = context;
+// src/tools/types.ts - Extended
 
-  const answers: QuestionAnswer[] = [];
+export interface ToolContext {
+  cwd: string;
+  abortSignal?: AbortSignal;
 
-  for (const question of input.questions) {
-    // Display question with options
-    const response = await promptUser({
-      type: question.multiSelect ? 'multiselect' : 'select',
-      message: question.question,
-      choices: [
-        ...question.options.map(opt => ({
-          name: opt.label,
-          message: opt.label,
-          hint: opt.description
-        })),
-        { name: 'Other', message: 'Other (custom input)' }
-      ]
-    });
+  // New: User interaction callbacks
+  askUser?: (questions: Question[]) => Promise<QuestionAnswer[]>;
+}
+```
 
-    let customInput: string | undefined;
-    if (response.includes('Other')) {
-      customInput = await promptUser({
-        type: 'input',
-        message: 'Please specify:'
-      });
+### Agent Loop Integration
+
+```typescript
+// src/agent/agent.ts - Modified tool execution
+
+// In the tool execution section:
+if (call.name === 'AskUserQuestion') {
+  // Special handling for AskUserQuestion
+  const input = call.input as AskUserQuestionInput;
+
+  // Emit special event for CLI to handle
+  yield {
+    type: 'ask_user',
+    id: call.id,
+    questions: input.questions
+  };
+
+  // Wait for response (this will be set by the CLI)
+  const answers = await this.waitForUserAnswers(call.id);
+
+  // Continue with answers as tool result
+  toolResults.push({
+    type: 'tool_result',
+    toolUseId: call.id,
+    content: formatAnswers(answers),
+    isError: false,
+  });
+}
+```
+
+### New Agent Event Type
+
+```typescript
+// src/agent/types.ts
+
+export type AgentEvent =
+  | { type: 'text'; text: string }
+  | { type: 'tool_start'; id: string; name: string; input: unknown }
+  | { type: 'tool_result'; id: string; name: string; result: ToolResult }
+  | { type: 'ask_user'; id: string; questions: Question[] }  // NEW
+  | { type: 'done'; text: string }
+  | { type: 'error'; error: Error };
+```
+
+### CLI Component
+
+```tsx
+// src/cli/components/QuestionPrompt.tsx
+
+import { useState } from 'react';
+import { Box, Text, useInput } from 'ink';
+import { colors } from './theme.js';
+import type { Question, QuestionAnswer } from '../../tools/builtin/ask-user.js';
+
+interface QuestionPromptProps {
+  questions: Question[];
+  onComplete: (answers: QuestionAnswer[]) => void;
+}
+
+export function QuestionPrompt({ questions, onComplete }: QuestionPromptProps) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [answers, setAnswers] = useState<QuestionAnswer[]>([]);
+  const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
+  const [optionIndex, setOptionIndex] = useState(0);
+  const [showOtherInput, setShowOtherInput] = useState(false);
+  const [otherInput, setOtherInput] = useState('');
+
+  const currentQuestion = questions[currentIndex];
+  const optionsWithOther = [...currentQuestion.options, {
+    label: 'Other',
+    description: 'Provide custom input'
+  }];
+
+  useInput((input, key) => {
+    if (showOtherInput) {
+      // Handle text input for "Other"
+      if (key.return) {
+        finishQuestion([...selectedOptions, 'Other'], otherInput);
+      } else if (key.backspace) {
+        setOtherInput(prev => prev.slice(0, -1));
+      } else if (input && !key.ctrl) {
+        setOtherInput(prev => prev + input);
+      }
+      return;
     }
 
-    answers.push({
-      question: question.question,
-      selectedOptions: response,
-      customInput
-    });
-  }
+    if (key.upArrow) {
+      setOptionIndex(i => Math.max(0, i - 1));
+    } else if (key.downArrow) {
+      setOptionIndex(i => Math.min(optionsWithOther.length - 1, i + 1));
+    } else if (key.return) {
+      handleSelect();
+    } else if (input === ' ' && currentQuestion.multiSelect) {
+      toggleOption();
+    }
+  });
 
-  return {
-    success: true,
-    output: JSON.stringify({ answers })
+  const toggleOption = () => {
+    const option = optionsWithOther[optionIndex];
+    setSelectedOptions(prev => {
+      const next = new Set(prev);
+      if (next.has(option.label)) {
+        next.delete(option.label);
+      } else {
+        next.add(option.label);
+      }
+      return next;
+    });
   };
+
+  const handleSelect = () => {
+    const option = optionsWithOther[optionIndex];
+
+    if (currentQuestion.multiSelect) {
+      // Multi-select: Enter confirms all selections
+      if (selectedOptions.size === 0) {
+        toggleOption(); // Select current if none selected
+      }
+      if (selectedOptions.has('Other')) {
+        setShowOtherInput(true);
+      } else {
+        finishQuestion([...selectedOptions]);
+      }
+    } else {
+      // Single select
+      if (option.label === 'Other') {
+        setShowOtherInput(true);
+      } else {
+        finishQuestion([option.label]);
+      }
+    }
+  };
+
+  const finishQuestion = (selected: string[], customInput?: string) => {
+    const answer: QuestionAnswer = {
+      question: currentQuestion.question,
+      header: currentQuestion.header,
+      selectedOptions: selected.filter(s => s !== 'Other'),
+      customInput,
+    };
+
+    const newAnswers = [...answers, answer];
+
+    if (currentIndex < questions.length - 1) {
+      setAnswers(newAnswers);
+      setCurrentIndex(i => i + 1);
+      setSelectedOptions(new Set());
+      setOptionIndex(0);
+      setShowOtherInput(false);
+      setOtherInput('');
+    } else {
+      onComplete(newAnswers);
+    }
+  };
+
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      {/* Header */}
+      <Box>
+        <Text color={colors.primary}>─ {currentQuestion.header} </Text>
+        <Text color={colors.textMuted}>{'─'.repeat(50)}</Text>
+      </Box>
+
+      {/* Question */}
+      <Box marginTop={1}>
+        <Text>{currentQuestion.question}</Text>
+        {currentQuestion.multiSelect && (
+          <Text color={colors.textMuted}> (Select multiple with Space)</Text>
+        )}
+      </Box>
+
+      {/* Options */}
+      <Box flexDirection="column" marginTop={1} paddingLeft={2}>
+        {optionsWithOther.map((option, index) => {
+          const isSelected = index === optionIndex;
+          const isChecked = selectedOptions.has(option.label);
+          const checkbox = currentQuestion.multiSelect
+            ? (isChecked ? '☑' : '☐')
+            : (isSelected ? '>' : ' ');
+
+          return (
+            <Box key={option.label} flexDirection="column">
+              <Box>
+                <Text color={isSelected ? colors.primary : colors.textMuted}>
+                  {checkbox}
+                </Text>
+                <Text color={isSelected ? colors.text : colors.textSecondary}>
+                  {currentQuestion.multiSelect ? '' : (isSelected ? '○' : '○')} {option.label}
+                </Text>
+              </Box>
+              <Box paddingLeft={4}>
+                <Text color={colors.textMuted}>{option.description}</Text>
+              </Box>
+            </Box>
+          );
+        })}
+      </Box>
+
+      {/* Other input */}
+      {showOtherInput && (
+        <Box marginTop={1} paddingLeft={2}>
+          <Text color={colors.primary}>Please specify: </Text>
+          <Text>{otherInput}</Text>
+          <Text color={colors.textMuted}>_</Text>
+        </Box>
+      )}
+
+      {/* Progress indicator */}
+      {questions.length > 1 && (
+        <Box marginTop={1}>
+          <Text color={colors.textMuted}>
+            Question {currentIndex + 1} of {questions.length}
+          </Text>
+        </Box>
+      )}
+
+      {/* Help */}
+      <Box marginTop={1}>
+        <Text color={colors.textMuted}>
+          [Enter] Select  [↑↓] Navigate
+          {currentQuestion.multiSelect && '  [Space] Toggle'}
+        </Text>
+      </Box>
+    </Box>
+  );
 }
 ```
 
@@ -195,123 +721,332 @@ async function execute(input: AskUserQuestionInput, context: ToolContext): Promi
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/tools/ask-user/types.ts` | Create | Question/answer type definitions |
-| `src/tools/ask-user/ask-user-tool.ts` | Create | AskUserQuestion tool implementation |
-| `src/tools/ask-user/index.ts` | Create | Module exports |
-| `src/tools/index.ts` | Modify | Register tool |
+| `src/tools/builtin/ask-user.ts` | Create | AskUserQuestion tool implementation |
+| `src/tools/types.ts` | Modify | Add AskUserQuestionInput schema |
+| `src/tools/index.ts` | Modify | Register and export tool |
+| `src/agent/types.ts` | Modify | Add `ask_user` event type |
+| `src/agent/agent.ts` | Modify | Handle AskUserQuestion in tool loop |
 | `src/cli/components/QuestionPrompt.tsx` | Create | Question UI component |
+| `src/cli/components/App.tsx` | Modify | Integrate QuestionPrompt |
+| `src/prompts/tools/ask-user.txt` | Create | Tool description for LLM |
 
 ## User Experience
 
-### Single Select Display
+### Claude Code UI Alignment
+
+Our implementation follows Claude Code's exact visual patterns for consistency and familiarity.
+
+#### Visual Design Reference (Claude Code Style)
+
 ```
-┌─ Database ─────────────────────────────────┐
-│ Which database should we use?              │
-│                                            │
-│ ○ PostgreSQL (Recommended)                 │
-│   Relational DB with rich features         │
-│                                            │
-│ ○ MongoDB                                  │
-│   Document-based NoSQL database            │
-│                                            │
-│ ○ SQLite                                   │
-│   Lightweight embedded database            │
-│                                            │
-│ ○ Other                                    │
-│   Provide custom input                     │
-└────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        CLAUDE CODE UI PATTERNS                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1. HEADER AS CHIP/TAG (max 12 chars)
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │  ╭─────────────╮                                                      │
+   │  │  Database   │  ← Header displayed as colored chip/tag              │
+   │  ╰─────────────╯                                                      │
+   └──────────────────────────────────────────────────────────────────────┘
+
+2. SINGLE-SELECT (Radio Buttons: ○ / ●)
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │                                                                       │
+   │  Which database should we use?                                        │
+   │                                                                       │
+   │  > ● PostgreSQL (Recommended)                                         │
+   │      Robust relational DB, great for complex queries                  │
+   │                                                                       │
+   │    ○ MongoDB                                                          │
+   │      Document DB, flexible schema                                     │
+   │                                                                       │
+   │    ○ SQLite                                                           │
+   │      Lightweight embedded database                                    │
+   │                                                                       │
+   │    ○ Other                                                            │
+   │      Type something else...                                           │
+   │                                                                       │
+   └──────────────────────────────────────────────────────────────────────┘
+
+3. MULTI-SELECT (Checkboxes: ☐ / ☑)
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │                                                                       │
+   │  Which features should we enable?                                     │
+   │                                                                       │
+   │    ☑ TypeScript                                                       │
+   │      Type safety and better IDE support                               │
+   │                                                                       │
+   │  > ☑ ESLint + Prettier                                                │
+   │      Code linting and formatting                                      │
+   │                                                                       │
+   │    ☐ Testing (Vitest)                                                 │
+   │      Unit and component testing                                       │
+   │                                                                       │
+   │    ☑ Tailwind CSS                                                     │
+   │      Utility-first CSS framework                                      │
+   │                                                                       │
+   └──────────────────────────────────────────────────────────────────────┘
+
+4. "OTHER" CUSTOM INPUT
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │                                                                       │
+   │  Please specify: bun█                                                 │
+   │                                                                       │
+   └──────────────────────────────────────────────────────────────────────┘
+
+5. KEYBOARD HINTS (footer)
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │  ↑↓ navigate  •  enter select  •  space toggle  •  esc cancel        │
+   └──────────────────────────────────────────────────────────────────────┘
 ```
 
-### Multi Select Display
-```
-┌─ Features ─────────────────────────────────┐
-│ Which features should we enable?           │
-│ (Select multiple with space)               │
-│                                            │
-│ ☑ Dark mode                                │
-│   Enable dark theme support                │
-│                                            │
-│ ☐ Notifications                            │
-│   Push notification support                │
-│                                            │
-│ ☑ Offline mode                             │
-│   Work without internet connection         │
-└────────────────────────────────────────────┘
+### Color Scheme (theme.ts aligned)
+
+| Element | Color | Hex Value | Usage |
+|---------|-------|-----------|-------|
+| Header chip | `primary` | `#818CF8` | Question header tag |
+| Selected option | `text` | `#F1F5F9` | Currently focused option |
+| Unselected option | `textSecondary` | `#94A3B8` | Other options |
+| Description | `textMuted` | `#64748B` | Option descriptions |
+| Radio/Checkbox | `primary` | `#818CF8` | Selection indicators |
+| Recommended | `success` | `#34D399` | "(Recommended)" suffix |
+| Custom input cursor | `primary` | `#818CF8` | Text input cursor |
+
+### Terminal Rendering
+
+```tsx
+// Exact rendering matching Claude Code patterns
+
+// Header as chip
+<Box>
+  <Text color={colors.primary} bold>{'╭─'}</Text>
+  <Text color={colors.primary} bold backgroundColor="#1E293B">
+    {` ${header} `}
+  </Text>
+  <Text color={colors.primary} bold>{'─╮'}</Text>
+</Box>
+
+// Single-select option
+<Box>
+  <Text color={isSelected ? colors.text : colors.textMuted}>
+    {isSelected ? '>' : ' '}
+  </Text>
+  <Text> </Text>
+  <Text color={colors.primary}>
+    {isChosen ? '●' : '○'}
+  </Text>
+  <Text color={isSelected ? colors.text : colors.textSecondary}>
+    {' '}{label}
+  </Text>
+  {isRecommended && (
+    <Text color={colors.success}> (Recommended)</Text>
+  )}
+</Box>
+
+// Multi-select option
+<Box>
+  <Text color={isSelected ? colors.text : colors.textMuted}>
+    {isSelected ? '>' : ' '}
+  </Text>
+  <Text> </Text>
+  <Text color={colors.primary}>
+    {isChecked ? '☑' : '☐'}
+  </Text>
+  <Text color={isSelected ? colors.text : colors.textSecondary}>
+    {' '}{label}
+  </Text>
+</Box>
+
+// Description (indented)
+<Box paddingLeft={4}>
+  <Text color={colors.textMuted}>{description}</Text>
+</Box>
 ```
 
 ### Keyboard Navigation
-- `↑/↓` - Navigate options
-- `Space` - Toggle selection (multi-select)
-- `Enter` - Confirm selection
-- `Esc` - Cancel (if allowed)
 
-### Answer Display
-After user answers:
+| Key | Action | Context |
+|-----|--------|---------|
+| `↑` / `↓` | Navigate options | Always |
+| `Enter` | Select current option | Single-select |
+| `Enter` | Confirm all selections | Multi-select |
+| `Space` | Toggle option on/off | Multi-select only |
+| `Esc` | Cancel and dismiss | Optional |
+| `1-4` | Quick select by number | Single-select |
+
+### Answer Confirmation Display
+
+After user answers, show Claude Code style confirmation:
+
 ```
-✓ Database: PostgreSQL
-✓ Features: Dark mode, Offline mode
+╭─ Database ─╮
+│ ✔ PostgreSQL
+╰────────────╯
 
-Continuing with implementation...
+╭─ Features ─╮
+│ ✔ TypeScript
+│ ✔ ESLint + Prettier
+│ ✔ Tailwind CSS
+╰────────────╯
 ```
 
-## Alternatives Considered
+Or simplified inline format:
 
-### Alternative 1: Plain Text Questions
-Agent asks questions in regular output.
+```
+✔ Database: PostgreSQL
+✔ Features: TypeScript, ESLint + Prettier, Tailwind CSS
+```
 
-**Pros**: Simpler, no special UI
-**Cons**: No structure, easy to miss, no validation
-**Decision**: Rejected - Structured questions are clearer
+### Tool Result Format
 
-### Alternative 2: Form-Based Input
-Complex form with multiple field types.
+The tool returns a structured format that the agent can parse:
 
-**Pros**: More input flexibility
-**Cons**: Overcomplicated for most use cases
-**Decision**: Rejected - Options are sufficient for most needs
+```
+User answered the following questions:
 
-### Alternative 3: Always Allow Custom Input
-Every option is editable text.
+1. Database (Which database should we use for this project?)
+   Selected: PostgreSQL
 
-**Pros**: Maximum flexibility
-**Cons**: Slower, more error-prone
-**Decision**: Rejected - "Other" option provides this when needed
+2. Features (Which features should we enable?)
+   Selected: TypeScript, ESLint + Prettier, Tailwind CSS
+
+Proceeding with user selections.
+```
+
+### Progress Indicator (Multi-Question)
+
+```
+╭─ Auth Method ─╮  Question 1 of 2
+│
+│  Which authentication method should we use?
+│
+│  > ● OAuth 2.0 (Recommended)
+│      Industry standard, supports social login
+│
+│    ○ JWT
+│      Stateless tokens, good for APIs
+│
+│    ○ Session-based
+│      Traditional cookie sessions
+│
+╰────────────────────────────────────────────────────────────────────╯
+```
+
+### Animation & Feedback
+
+| State | Visual Feedback |
+|-------|-----------------|
+| Navigating | Cursor (`>`) moves instantly |
+| Selecting | Radio/checkbox toggles with color change |
+| Confirming | Brief flash of `success` color |
+| Error | Red border flash if validation fails |
+| Timeout | Dim with warning message (if enabled) |
 
 ## Security Considerations
 
-1. **Input Sanitization**: Validate user custom input
-2. **Option Limits**: Enforce max questions and options
-3. **Timeout**: Consider timeout for unresponsive users
-4. **No Code Execution**: Custom input is text only
+1. **Input Sanitization**: Validate user custom input (max length, no control characters)
+2. **Option Limits**: Enforce max questions (4) and options (4) per call
+3. **Timeout**: Consider timeout for unresponsive users (configurable, default: none)
+4. **No Code Execution**: Custom input is text only, never evaluated
 
 ## Testing Strategy
 
-1. **Unit Tests**:
-   - Input validation
-   - Option parsing
-   - Answer formatting
+### Unit Tests
 
-2. **Integration Tests**:
-   - Tool registration
-   - Agent flow with questions
-   - Answer processing
+```typescript
+// tests/tools/ask-user.test.ts
 
-3. **Manual Testing**:
-   - UI rendering
-   - Keyboard navigation
-   - Multi-select behavior
-   - Custom input flow
+describe('AskUserQuestion', () => {
+  test('validates question count (1-4)', () => {
+    // Test with 0, 1, 4, 5 questions
+  });
+
+  test('validates option count (2-4)', () => {
+    // Test with 1, 2, 4, 5 options
+  });
+
+  test('validates header length (max 12)', () => {
+    // Test with headers of various lengths
+  });
+
+  test('requires multiSelect to be explicit', () => {
+    // Ensure multiSelect is required
+  });
+});
+```
+
+### Integration Tests
+
+```typescript
+describe('AskUserQuestion Integration', () => {
+  test('pauses agent execution until answered', async () => {
+    // Verify agent waits for response
+  });
+
+  test('passes answers correctly to agent', async () => {
+    // Verify answer format and content
+  });
+
+  test('handles Other option with custom input', async () => {
+    // Test custom input flow
+  });
+});
+```
+
+### Manual Testing Checklist
+
+- [ ] Single question, single select
+- [ ] Single question, multi-select
+- [ ] Multiple questions flow
+- [ ] "Other" option with custom input
+- [ ] Keyboard navigation (↑↓ Enter Space)
+- [ ] Cancel/Escape handling
+- [ ] Long option labels and descriptions
+- [ ] Answer display after completion
 
 ## Migration Path
 
 1. **Phase 1**: Core tool and basic select UI
 2. **Phase 2**: Multi-select support
-3. **Phase 3**: Enhanced UI with descriptions
+3. **Phase 3**: Enhanced UI with descriptions and progress
 4. **Phase 4**: Keyboard shortcuts and accessibility
 
 No breaking changes to existing functionality.
 
+## Theme Extensions
+
+Add the following icons to `src/cli/components/theme.ts`:
+
+```typescript
+export const icons = {
+  // ... existing icons ...
+
+  // AskUserQuestion specific
+  checkbox: '☑',        // Checked checkbox
+  checkboxEmpty: '☐',   // Empty checkbox
+  chipLeft: '╭─',       // Chip border left
+  chipRight: '─╮',      // Chip border right
+  boxTop: '╭',          // Box top corner
+  boxBottom: '╰',       // Box bottom corner
+  boxVertical: '│',     // Box vertical line
+};
+```
+
 ## References
 
-- [Claude Code AskUserQuestion Tool](https://code.claude.com/docs/en/tools)
-- [Inquirer.js](https://github.com/SBoudrias/Inquirer.js) (inspiration for UI)
+### Primary Sources
+- [Claude Code AskUserQuestion Tool Guide](https://www.atcyrus.com/stories/claude-code-ask-user-question-tool-guide) - Comprehensive usage guide
+- [Claude Code System Prompts - AskUserQuestion](https://github.com/Piebald-AI/claude-code-system-prompts/blob/main/system-prompts/tool-description-askuserquestion.md) - Official tool description
+- [Internal Claude Code Tools Implementation](https://gist.github.com/bgauryy/0cdb9aa337d01ae5bd0c803943aa36bd) - Parameter schema reference
+- [Claude Docs - Handle User Input](https://platform.claude.com/docs/en/agent-sdk/user-input) - Agent SDK integration
+
+### UI/UX Research
+- [GitHub Issue #12609 - Interactive UI for AskUserQuestion](https://github.com/anthropics/claude-code/issues/12609) - VS Code extension UI proposal
+- [How Claude Code is Built - Pragmatic Engineer](https://newsletter.pragmaticengineer.com/p/how-claude-code-is-built) - Architecture insights
+- [SmartScope - AskUserQuestion Guide](https://smartscope.blog/en/generative-ai/claude/claude-code-askuserquestion-tool-guide/) - Usage patterns
+
+### Framework References
+- [Ink - React for CLIs](https://github.com/vadimdemedes/ink) - Terminal UI framework
+- [Inquirer.js](https://github.com/SBoudrias/Inquirer.js) - CLI prompt patterns
+- [ccexp](https://github.com/nyatinte/ccexp) - Claude Code config explorer (UI reference)

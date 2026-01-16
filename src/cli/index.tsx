@@ -88,10 +88,21 @@ function detectConfig(settings: Settings, providersConfig: ProvidersConfigManage
 // ============================================================================
 function parseArgs() {
   const args = process.argv.slice(2);
+
+  // Extract prompt value from -p "message" or --prompt "message"
+  let prompt: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    if ((args[i] === '-p' || args[i] === '--prompt') && args[i + 1]) {
+      prompt = args[i + 1];
+      break;
+    }
+  }
+
   return {
     continue: args.includes('-c') || args.includes('--continue'),
     resume: args.includes('-r') || args.includes('--resume'),
     help: args.includes('-h') || args.includes('--help'),
+    prompt,
   };
 }
 
@@ -102,15 +113,45 @@ function printUsage(): void {
   console.log('  Usage: gencode [options]');
   console.log();
   console.log('  Options:');
-  console.log('    -c, --continue    Resume the most recent session');
-  console.log('    -r, --resume      Select a session interactively');
-  console.log('    -h, --help        Show this help');
+  console.log('    -c, --continue       Resume the most recent session');
+  console.log('    -r, --resume         Select a session interactively');
+  console.log('    -p, --prompt <msg>   Run a single prompt (non-interactive)');
+  console.log('    -h, --help           Show this help');
   console.log();
   console.log('  Examples:');
-  console.log('    gencode              Start new session');
-  console.log('    gencode -c           Continue last session');
-  console.log('    gencode -r           Pick a session');
+  console.log('    gencode                    Start new session');
+  console.log('    gencode -c                 Continue last session');
+  console.log('    gencode -r                 Pick a session');
+  console.log('    gencode -p "2+2"           Run single prompt');
   console.log();
+}
+
+// ============================================================================
+// Non-interactive mode
+// ============================================================================
+async function runNonInteractive(prompt: string, config: AgentConfig): Promise<void> {
+  const { Agent } = await import('../agent/agent.js');
+
+  const agent = new Agent(config);
+
+  let response = '';
+  for await (const event of agent.run(prompt)) {
+    switch (event.type) {
+      case 'text':
+        response += event.text;
+        break;
+      case 'tool_start':
+        console.error(`[tool] ${event.name}`);
+        break;
+      case 'error':
+        console.error(`[error] ${event.error.message}`);
+        break;
+      case 'done':
+        break;
+    }
+  }
+
+  console.log(response);
 }
 
 // ============================================================================
@@ -134,6 +175,12 @@ async function main() {
   await providersConfig.load();
 
   const config = detectConfig(settings, providersConfig);
+
+  // Non-interactive mode with -p flag
+  if (args.prompt) {
+    await runNonInteractive(args.prompt, config);
+    return;
+  }
 
   // Render the Ink app
   render(

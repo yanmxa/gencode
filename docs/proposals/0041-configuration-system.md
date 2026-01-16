@@ -2,9 +2,10 @@
 
 - **Proposal ID**: 0041
 - **Author**: gencode team
-- **Status**: Draft
+- **Status**: Implemented
 - **Created**: 2026-01-15
-- **Updated**: 2026-01-15
+- **Updated**: 2026-01-16
+- **Implemented**: 2026-01-16
 
 ## Summary
 
@@ -554,3 +555,33 @@ Simpler implementation but:
 - [settings.json in Claude Code Guide](https://www.eesel.ai/blog/settings-json-claude-code)
 - [OpenCode Config Docs](https://opencode.ai/docs/config/)
 - [OpenCode Configuration System | DeepWiki](https://deepwiki.com/sst/opencode/3-configuration-system)
+
+## Implementation Notes
+
+### Files Created/Modified
+
+| File | Action | Description |
+|------|--------|-------------|
+| `src/config/types.ts` | Created | Configuration type definitions with Zod schemas |
+| `src/config/loader.ts` | Created | Multi-level config loading with deep merge |
+| `src/config/env.ts` | Created | Environment variable handling and provider auto-detection |
+| `src/config/index.ts` | Created | Public API exports |
+| `src/agent/agent.ts` | Modified | Integrated config system |
+
+### Key Implementation Details
+
+1. **Multi-level Loading**: User (`~/.gencode/`) → Project (`./.gencode/`) with proper merge
+2. **Claude Code Compatibility**: Supports both `GENCODE.md` and `CLAUDE.md` for memory files
+3. **Environment Variables**: `GENCODE_PROVIDER`, `GENCODE_MODEL`, and provider API key auto-detection
+4. **Deep Merge**: Arrays concatenate, objects merge recursively
+5. **JSONC Support**: Configuration files support comments and trailing commas
+
+### Configuration Priority (High → Low)
+
+1. Environment variables (`GENCODE_*`)
+2. CLI arguments
+3. Project local (`./.gencode/settings.local.json`)
+4. Project shared (`./gencode.json`)
+5. User local (`~/.gencode/settings.local.json`)
+6. User global (`~/.gencode/settings.json`)
+7. Defaults

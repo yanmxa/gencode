@@ -8,9 +8,13 @@
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { homedir } from 'os';
 import * as os from 'os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Path to providers.json config
+const PROVIDERS_CONFIG_PATH = join(homedir(), '.gencode', 'providers.json');
 
 // Resolve prompts directory - check both src and dist locations
 function getPromptsDir(): string {
@@ -26,24 +30,93 @@ function getPromptsDir(): string {
 
 const promptsDir = getPromptsDir();
 
-export type ProviderType = 'anthropic' | 'openai' | 'gemini';
+export type ProviderType = 'anthropic' | 'openai' | 'gemini' | 'generic';
+
+/**
+ * Providers config structure from ~/.gencode/providers.json
+ */
+interface ProvidersConfig {
+  connections: Record<string, unknown>;
+  models: Record<string, { list: Array<{ id: string }> }>;
+}
+
+/**
+ * Load providers config from ~/.gencode/providers.json
+ */
+function loadProvidersConfig(): ProvidersConfig | null {
+  try {
+    if (existsSync(PROVIDERS_CONFIG_PATH)) {
+      const data = readFileSync(PROVIDERS_CONFIG_PATH, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return null;
+}
+
+/**
+ * Look up which provider owns a given model ID
+ * Searches through ~/.gencode/providers.json to find the provider
+ *
+ * @param model - The model ID (e.g., "claude-sonnet-4-5@20250929")
+ * @returns The provider name (e.g., "anthropic") or null if not found
+ */
+export function getProviderForModel(model: string): string | null {
+  const config = loadProvidersConfig();
+  if (!config?.models) {
+    return null;
+  }
+
+  for (const [provider, cache] of Object.entries(config.models)) {
+    if (cache.list?.some((m) => m.id === model)) {
+      return provider;
+    }
+  }
+
+  return null;
+}
 
 /**
  * Map provider names to prompt types
- * vertex-ai uses anthropic prompts since it's Claude on GCP
+ * Falls back to 'generic' for unknown providers
  */
 export function mapProviderToPromptType(provider: string): ProviderType {
   switch (provider) {
     case 'anthropic':
-    case 'vertex-ai':
       return 'anthropic';
     case 'openai':
       return 'openai';
     case 'gemini':
       return 'gemini';
     default:
-      return 'openai'; // Default to openai prompts
+      return 'generic';
   }
+}
+
+/**
+ * Get prompt type for a model
+ * Flow: model → provider (from providers.json) → prompt type
+ *
+ * @param model - The model ID
+ * @param fallbackProvider - Provider to use if model lookup fails
+ * @returns The prompt type to use
+ */
+export function getPromptTypeForModel(model: string, fallbackProvider?: string): ProviderType {
+  // First, try to look up the provider for this model
+  const provider = getProviderForModel(model);
+
+  if (provider) {
+    return mapProviderToPromptType(provider);
+  }
+
+  // Fall back to the provided provider if model lookup fails
+  if (fallbackProvider) {
+    return mapProviderToPromptType(fallbackProvider);
+  }
+
+  // Default to generic
+  return 'generic';
 }
 
 /**
@@ -160,4 +233,74 @@ export function buildSystemPromptWithMemory(
   }
 
   return prompt;
+}
+
+/**
+ * Build system prompt for a model
+ * Flow: model → provider (from providers.json) → prompt
+ *
+ * This is the recommended way to build system prompts as it automatically
+ * looks up the provider for the given model from ~/.gencode/providers.json
+ *
+ * @param model - The model ID (e.g., "claude-sonnet-4-5@20250929")
+ * @param cwd - Current working directory
+ * @param isGitRepo - Whether the cwd is a git repository
+ * @param memoryContext - Optional memory context to include
+ * @param fallbackProvider - Provider to use if model lookup fails
+ */
+export function buildSystemPromptForModel(
+  model: string,
+  cwd: string,
+  isGitRepo: boolean = false,
+  memoryContext?: string,
+  fallbackProvider?: string
+): string {
+  const promptType = getPromptTypeForModel(model, fallbackProvider);
+  return buildSystemPromptWithMemory(promptType, cwd, isGitRepo, memoryContext);
+}
+
+/**
+ * Debug utility to verify prompt loading at runtime
+ * Set GENCODE_DEBUG_PROMPTS=1 for summary, GENCODE_DEBUG_PROMPTS=2 for full content
+ */
+export function debugPromptLoading(model: string, fallbackProvider?: string): void {
+  const debugLevel = process.env.GENCODE_DEBUG_PROMPTS;
+  if (!debugLevel || debugLevel === '0') {
+    return;
+  }
+
+  const promptType = getPromptTypeForModel(model, fallbackProvider);
+  const basePrompt = loadPrompt('system', 'base');
+  const providerPrompt = loadPrompt('system', promptType);
+
+  console.error('[PROMPT DEBUG] ================================');
+  console.error(`[PROMPT DEBUG] Model: ${model}`);
+  console.error(`[PROMPT DEBUG] Fallback Provider: ${fallbackProvider || 'none'}`);
+  console.error(`[PROMPT DEBUG] Resolved Prompt Type: ${promptType}`);
+  console.error(`[PROMPT DEBUG] base.txt lines: ${basePrompt.split('\n').length}`);
+  console.error(`[PROMPT DEBUG] ${promptType}.txt lines: ${providerPrompt.split('\n').length}`);
+  console.error(`[PROMPT DEBUG] Total chars: ${basePrompt.length + providerPrompt.length}`);
+
+  // Verify key content
+  const checks = [
+    { name: 'Token minimization', pattern: /minimize output tokens/i },
+    { name: 'CommonMark', pattern: /CommonMark/i },
+    { name: 'Examples', pattern: /<example>/ },
+    { name: 'Environment placeholder', pattern: /\{\{ENVIRONMENT\}\}/ },
+  ];
+
+  for (const check of checks) {
+    const found = check.pattern.test(basePrompt);
+    console.error(`[PROMPT DEBUG] ✓ ${check.name}: ${found ? 'OK' : 'MISSING'}`);
+  }
+  console.error('[PROMPT DEBUG] ================================');
+
+  // Print full content if level >= 2
+  if (debugLevel === '2') {
+    console.error('\n[PROMPT DEBUG] === base.txt ===\n');
+    console.error(basePrompt);
+    console.error(`\n[PROMPT DEBUG] === ${promptType}.txt ===\n`);
+    console.error(providerPrompt);
+    console.error('\n[PROMPT DEBUG] === END ===\n');
+  }
 }

@@ -16,19 +16,20 @@ This directory contains enhancement proposals for the gencode project. Each prop
 
 | ID | Title | Status |
 |----|-------|--------|
-| [0001](./0001-web-fetch-tool.md) | WebFetch Tool | Draft |
-| [0002](./0002-web-search-tool.md) | WebSearch Tool | Draft |
+| [0001](./0001-web-fetch-tool.md) | WebFetch Tool | Implemented |
+| [0002](./0002-web-search-tool.md) | WebSearch Tool | Implemented |
 | [0003](./0003-task-subagents.md) | Task Tool & Subagents | Draft |
 | [0004](./0004-plan-mode.md) | Plan Mode | Draft |
-| [0005](./0005-todo-system.md) | Todo System | Draft |
-| [0006](./0006-memory-system.md) | Memory System (MYCODE.md) | Draft |
+| [0005](./0005-todo-system.md) | Todo System | Implemented |
+| [0006](./0006-memory-system.md) | Memory System (MYCODE.md) | Implemented |
 | [0007](./0007-context-management.md) | Context Management | Draft |
 | [0008](./0008-checkpointing.md) | Checkpointing | Draft |
 | [0009](./0009-hooks-system.md) | Hooks System | Draft |
 | [0010](./0010-mcp-integration.md) | MCP Integration | Draft |
 | [0011](./0011-custom-commands.md) | Custom Commands | Draft |
 | [0012](./0012-ask-user-question.md) | AskUserQuestion Tool | Draft |
-| [0041](./0041-configuration-system.md) | Configuration System | Draft |
+| [0041](./0041-configuration-system.md) | Configuration System | Implemented |
+| [0042](./0042-prompt-optimization.md) | Prompt System Optimization | Implemented |
 
 ### P2 Priority - Enhanced Features
 

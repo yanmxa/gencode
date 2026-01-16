@@ -2,9 +2,10 @@
 
 - **Proposal ID**: 0005
 - **Author**: mycode team
-- **Status**: Draft
+- **Status**: Implemented
 - **Created**: 2025-01-15
-- **Updated**: 2025-01-15
+- **Updated**: 2025-01-16
+- **Implemented**: 2025-01-16
 
 ## Summary
 
@@ -12,7 +13,7 @@ Implement a TodoWrite tool that enables the agent to create, track, and manage s
 
 ## Motivation
 
-Currently, mycode has no built-in task tracking. This leads to:
+Currently, gencode has no built-in task tracking. This leads to:
 
 1. **Lost tasks**: Agent may forget steps in complex operations
 2. **No visibility**: Users can't see what the agent plans to do
@@ -22,29 +23,83 @@ Currently, mycode has no built-in task tracking. This leads to:
 
 A todo system provides structured task management visible to both agent and user.
 
+## Core Design Insight: Dual Purpose
+
+TodoWrite serves **two critical purposes**:
+
+### 1. User Visibility (UI Update)
+- Show task progress in CLI
+- Let users understand what agent is doing
+- Display completion percentage
+
+### 2. Model's External Memory (More Important)
+
+LLMs have no persistent memory across turns. In long conversations:
+
+```
+Turn 1:  "I'll do A, B, then C"     ← In model's context
+Turn 5:  [many tool calls...]
+Turn 10: "Wait, what was I doing?"  ← Context faded, forgot the plan
+```
+
+TodoWrite solves this by **externalizing the plan**:
+
+```
+Turn 1:  TodoWrite([A, B, C])
+         ↓
+         Returns: "[>] A  [ ] B  [ ] C  (0/3)"
+
+Turn 10: Model sees previous tool result in context:
+         "[x] A  [>] B  [ ] C  (1/3)"
+         ↓
+         "I completed A, now working on B"
+```
+
+The rendered todo list in tool results acts as a **structured self-reminder** that persists across conversation turns.
+
+> "Structure constrains AND enables." - The todo constraints (max items, one in_progress) enable reliable plan tracking.
+
 ## Claude Code Reference
 
 Claude Code's TodoWrite tool provides structured task management:
 
-### Tool Definition
+### Tool Definition (from Claude Code Tools.json)
 ```typescript
 TodoWrite({
   todos: [
     {
-      content: "Run the build",           // Task description
-      status: "pending" | "in_progress" | "completed",
-      activeForm: "Running the build"     // Present tense for display
+      content: "Run the build",           // Task description (required)
+      status: "pending" | "in_progress" | "completed",  // Task status (required)
+      id: "unique-id"                     // Unique identifier (required)
     }
   ]
 })
 ```
 
+### Key Design Principles (from learn-claude-code)
+
+| Rule | Why |
+|------|-----|
+| Max 20 items | Prevents infinite task lists |
+| One in_progress | Forces focus on one thing at a time |
+| Required fields | Ensures structured output |
+
+> "Structure constrains AND enables." - Todo constraints enable visible plans and tracked progress.
+
 ### Key Behaviors
-- Agent creates todos when starting complex tasks
+- Agent creates todos when starting complex tasks (3+ steps)
 - Exactly one task should be `in_progress` at a time
 - Tasks marked complete immediately after finishing
 - Todo list displayed to user in UI
-- Agent uses todos for planning before execution
+- Model sends complete new list each time (not a diff)
+- System returns rendered view for model to see its own plan
+
+### System Reminders (Soft Prompts)
+Claude Code uses reminder injection to encourage todo usage:
+```
+INITIAL_REMINDER = "<reminder>Use TodoWrite for multi-step tasks.</reminder>"
+NAG_REMINDER = "<reminder>10+ turns without todo update. Please update todos.</reminder>"
+```
 
 ### Example Usage
 ```
@@ -64,46 +119,163 @@ Agent: Let me run the tests first...
 ]
 ```
 
+## Architecture Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         TodoWrite System Flow                            │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   User       │     │    Agent     │     │  TodoManager │
+│   Input      │────▶│    Loop      │────▶│   (State)    │
+└──────────────┘     └──────────────┘     └──────────────┘
+                            │                    │
+                            ▼                    ▼
+                     ┌──────────────┐     ┌──────────────┐
+                     │  TodoWrite   │────▶│   Validate   │
+                     │    Tool      │     │   & Store    │
+                     └──────────────┘     └──────────────┘
+                            │                    │
+                            ▼                    ▼
+                     ┌──────────────┐     ┌──────────────┐
+                     │   Return     │◀────│   Render     │
+                     │   Result     │     │   Todos      │
+                     └──────────────┘     └──────────────┘
+                            │
+                            ▼
+                     ┌──────────────┐
+                     │    CLI UI    │
+                     │   Display    │
+                     └──────────────┘
+
+Detailed Flow:
+==============
+
+1. USER INPUT
+   │
+   ▼
+2. AGENT DECIDES (complex task? 3+ steps?)
+   │
+   ├─ No  ──▶ Execute directly without todos
+   │
+   └─ Yes ──▶ Call TodoWrite to create task list
+               │
+               ▼
+3. TODOWRITE TOOL EXECUTION
+   │
+   ├─ Validate input schema (Zod)
+   ├─ Check constraints:
+   │   ├─ Max 20 items
+   │   ├─ Only 1 in_progress
+   │   └─ Required fields present
+   │
+   ├─ Store in TodoManager
+   │
+   └─ Return rendered text:
+       "[>] Fix tests <- Fixing failing tests
+        [ ] Update docs
+        (0/2 completed)"
+               │
+               ▼
+4. AGENT SEES RESULT (its own plan visible)
+   │
+   ▼
+5. AGENT WORKS ON TASK
+   │
+   ├─ Execute tools (Bash, Edit, etc.)
+   │
+   └─ Update todo status via TodoWrite
+               │
+               ▼
+6. CLI DISPLAYS PROGRESS
+   │
+   ├─ Show todo box in UI
+   └─ Update in real-time
+
+7. REPEAT until all tasks completed
+```
+
+## State Management Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Todo State Lifecycle                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Session Start                          Session End
+     │                                      │
+     ▼                                      ▼
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│  Empty   │───▶│  Active  │───▶│ Complete │───▶│  Saved   │
+│  State   │    │  Todos   │    │   All    │    │ (Session)│
+└──────────┘    └──────────┘    └──────────┘    └──────────┘
+                     │
+                     │ TodoWrite calls
+                     ▼
+              ┌──────────────┐
+              │   Replace    │
+              │  All Todos   │  (Not incremental - full replacement)
+              └──────────────┘
+
+Todo Item States:
+=================
+  ┌─────────┐     ┌─────────────┐     ┌───────────┐
+  │ pending │────▶│ in_progress │────▶│ completed │
+  └─────────┘     └─────────────┘     └───────────┘
+       ○                ▶                   ✓
+```
+
 ## Detailed Design
 
 ### API Design
 
 ```typescript
-// src/tools/todo/types.ts
+// src/tools/builtin/todo.ts - Types
 type TodoStatus = 'pending' | 'in_progress' | 'completed';
 
 interface TodoItem {
-  id: string;
-  content: string;
-  activeForm: string;
-  status: TodoStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-interface TodoList {
-  items: TodoItem[];
-  sessionId: string;
-  createdAt: Date;
-  updatedAt: Date;
+  content: string;      // Task description (imperative form)
+  status: TodoStatus;   // Current state
+  activeForm: string;   // Present tense for display (e.g., "Running tests")
 }
 
 interface TodoWriteInput {
-  todos: Array<{
-    content: string;
-    status: TodoStatus;
-    activeForm: string;
-  }>;
+  todos: TodoItem[];    // Complete list (replaces existing)
+}
+
+interface TodoState {
+  items: TodoItem[];
+  updatedAt: Date;
 }
 ```
 
-```typescript
-// src/tools/todo/todo-tool.ts
-const todoWriteTool: Tool<TodoWriteInput> = {
-  name: 'TodoWrite',
-  description: `Create and manage a structured task list for your current coding session.
+### Tool Implementation
 
-Use this tool when:
+```typescript
+// src/tools/builtin/todo.ts
+import { z } from 'zod';
+import type { Tool, ToolContext, ToolResult } from '../types.js';
+
+// Validation constraints (matching Claude Code)
+const MAX_TODOS = 20;
+const MAX_CONTENT_LENGTH = 500;
+
+const TodoItemSchema = z.object({
+  content: z.string().min(1).max(MAX_CONTENT_LENGTH),
+  status: z.enum(['pending', 'in_progress', 'completed']),
+  activeForm: z.string().min(1).max(MAX_CONTENT_LENGTH),
+});
+
+const TodoWriteInputSchema = z.object({
+  todos: z.array(TodoItemSchema).max(MAX_TODOS),
+});
+
+export const todoWriteTool: Tool = {
+  name: 'TodoWrite',
+  description: `Create and manage a structured task list for your coding session.
+
+Use when:
 - Complex multi-step tasks (3+ steps)
 - User provides multiple tasks
 - Non-trivial work requiring planning
@@ -116,71 +288,87 @@ Do NOT use for:
 Guidelines:
 - Only ONE task should be in_progress at a time
 - Mark tasks completed IMMEDIATELY after finishing
-- Include both content (imperative) and activeForm (present continuous)
-`,
-  parameters: z.object({
-    todos: z.array(z.object({
-      content: z.string().min(1),
-      status: z.enum(['pending', 'in_progress', 'completed']),
-      activeForm: z.string().min(1),
-    }))
-  }),
-  execute: async (input, context) => { ... }
+- Include both content (imperative) and activeForm (present continuous)`,
+
+  parameters: TodoWriteInputSchema,
+
+  execute: async (input: TodoWriteInput, context: ToolContext): Promise<ToolResult> => {
+    // Validate: only one in_progress
+    const inProgress = input.todos.filter(t => t.status === 'in_progress');
+    if (inProgress.length > 1) {
+      return {
+        success: false,
+        output: '',
+        error: 'Only one task can be in_progress at a time',
+      };
+    }
+
+    // Store in context (will be managed by TodoManager)
+    context.setTodos(input.todos);
+
+    // Render for model to see its own plan
+    const rendered = renderTodos(input.todos);
+
+    return {
+      success: true,
+      output: rendered,
+    };
+  },
 };
-```
 
-```typescript
-// src/tools/todo/todo-manager.ts
-class TodoManager {
-  private list: TodoList;
+// Render todos as text (returned to model)
+function renderTodos(todos: TodoItem[]): string {
+  if (todos.length === 0) {
+    return 'No todos.';
+  }
 
-  constructor(sessionId: string);
+  const lines = todos.map(item => {
+    switch (item.status) {
+      case 'completed':
+        return `[x] ${item.content}`;
+      case 'in_progress':
+        return `[>] ${item.content} <- ${item.activeForm}`;
+      default:
+        return `[ ] ${item.content}`;
+    }
+  });
 
-  // Replace entire todo list
-  setTodos(todos: TodoWriteInput['todos']): void;
+  const completed = todos.filter(t => t.status === 'completed').length;
+  lines.push(`\n(${completed}/${todos.length} completed)`);
 
-  // Get current todo list
-  getTodos(): TodoItem[];
-
-  // Get in-progress task (should be exactly one)
-  getInProgress(): TodoItem | null;
-
-  // Get completion percentage
-  getProgress(): { completed: number; total: number; percent: number };
-
-  // Serialize for display
-  format(): string;
+  return lines.join('\n');
 }
 ```
 
-### Implementation Approach
-
-1. **Tool Registration**: Add TodoWrite to the tool registry
-2. **State Management**: Store todo list in session state
-3. **UI Integration**: Display todo list in CLI interface
-4. **Validation**: Ensure exactly one in_progress task
-5. **Persistence**: Save todo state with session
+### TodoManager (State Management)
 
 ```typescript
-// Example tool execution
-async function execute(input: TodoWriteInput, context: ToolContext): Promise<ToolResult> {
-  const manager = context.getTodoManager();
+// src/todo/todo-manager.ts
+export class TodoManager {
+  private items: TodoItem[] = [];
 
-  // Validate: exactly one in_progress
-  const inProgress = input.todos.filter(t => t.status === 'in_progress');
-  if (inProgress.length > 1) {
-    return {
-      success: false,
-      error: 'Only one task can be in_progress at a time'
-    };
+  setTodos(todos: TodoItem[]): void {
+    this.items = [...todos];
   }
 
-  manager.setTodos(input.todos);
+  getTodos(): TodoItem[] {
+    return [...this.items];
+  }
 
-  return {
-    success: true,
-    output: `Updated todo list (${manager.getProgress().percent}% complete)`
-  };
+  getInProgress(): TodoItem | null {
+    return this.items.find(t => t.status === 'in_progress') ?? null;
+  }
+
+  getProgress(): { completed: number; total: number; percent: number } {
+    const completed = this.items.filter(t => t.status === 'completed').length;
+    const total = this.items.length;
+    const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { completed, total, percent };
+  }
+
+  clear(): void {
+    this.items = [];
+  }
 }
 ```
 
@@ -188,13 +376,14 @@ async function execute(input: TodoWriteInput, context: ToolContext): Promise<Too
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/tools/todo/types.ts` | Create | Todo type definitions |
-| `src/tools/todo/todo-tool.ts` | Create | TodoWrite tool implementation |
-| `src/tools/todo/todo-manager.ts` | Create | Todo state management |
-| `src/tools/todo/index.ts` | Create | Module exports |
+| `src/tools/builtin/todo.ts` | Create | TodoWrite tool + types |
+| `src/todo/todo-manager.ts` | Create | Todo state management |
+| `src/todo/index.ts` | Create | Module exports |
 | `src/tools/index.ts` | Modify | Register TodoWrite tool |
-| `src/session/types.ts` | Modify | Add todo list to session state |
+| `src/tools/types.ts` | Modify | Add setTodos to ToolContext |
+| `src/agent/agent.ts` | Modify | Integrate TodoManager |
 | `src/cli/components/TodoList.tsx` | Create | Todo list UI component |
+| `src/cli/components/Messages.tsx` | Modify | Display todos in UI |
 
 ## User Experience
 
@@ -284,6 +473,61 @@ Keep todos across multiple sessions.
    - Agent todo behavior
    - UI display across terminal sizes
 
+## Implementation Steps
+
+### Step 1: Create TodoManager (State Management)
+
+Create `src/todo/` directory with:
+- `types.ts` - Type definitions
+- `todo-manager.ts` - State management class
+- `index.ts` - Module exports
+
+### Step 2: Create TodoWrite Tool
+
+Create `src/tools/builtin/todo.ts`:
+- Zod schema for input validation
+- Tool definition with description
+- Execute function with validation
+- Render function for text output
+
+### Step 3: Extend ToolContext
+
+Modify `src/tools/types.ts`:
+- Add `setTodos()` method to ToolContext
+- Add `getTodos()` method to ToolContext
+
+### Step 4: Integrate with Agent
+
+Modify `src/agent/agent.ts`:
+- Create TodoManager instance
+- Pass to ToolContext
+- Expose getTodos for CLI
+
+### Step 5: Register Tool
+
+Modify `src/tools/index.ts`:
+- Import todoWriteTool
+- Add to default registry
+
+### Step 6: Create CLI Component
+
+Create `src/cli/components/TodoList.tsx`:
+- Display current todos
+- Show progress bar
+- Status icons (○ ▶ ✓)
+
+### Step 7: Integrate with Messages
+
+Modify `src/cli/components/Messages.tsx` or `App.tsx`:
+- Show TodoList component when todos exist
+- Update on todo changes
+
+### Step 8: Add System Prompt Guidance
+
+Modify `src/prompts/system/`:
+- Add TodoWrite usage guidance
+- Include when to use / not use
+
 ## Migration Path
 
 1. **Phase 1**: Core TodoWrite tool implementation
@@ -292,6 +536,27 @@ Keep todos across multiple sessions.
 4. **Phase 4**: Agent prompting to encourage todo usage
 
 No breaking changes; existing sessions work without todos.
+
+## Implementation Notes
+
+### Files Created/Modified
+
+| File | Action | Description |
+|------|--------|-------------|
+| `src/tools/builtin/todowrite.ts` | Existed | Core tool + state management |
+| `src/tools/types.ts` | Existed | TodoItem, TodoWriteInput schemas |
+| `src/tools/index.ts` | Existed | Tool registration |
+| `src/prompts/tools/todowrite.txt` | Modified | Added dual purpose explanation |
+| `src/cli/components/TodoList.tsx` | Created | CLI display component |
+| `src/cli/components/App.tsx` | Modified | Integrated TodoList display |
+
+### Key Implementation Details
+
+1. **Global State**: Todos stored in module-level variable, accessed via `getTodos()`
+2. **Dual Purpose**: Tool description explains both UI visibility and model memory
+3. **Constraints**: Max 20 items, only 1 in_progress at a time
+4. **Rendering**: Returns formatted text for model to see its own plan
+5. **CLI Integration**: TodoList component displays with progress bar
 
 ## References
 

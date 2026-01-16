@@ -225,6 +225,8 @@ export const DEFAULT_PERMISSION_CONFIG: PermissionConfig = {
     { tool: 'Glob', mode: 'auto', description: 'Pattern matching' },
     { tool: 'Grep', mode: 'auto', description: 'Content search' },
     { tool: 'LSP', mode: 'auto', description: 'Language server' },
+    // Internal state management - auto-approve (no side effects)
+    { tool: 'TodoWrite', mode: 'auto', description: 'Task tracking' },
   ],
   allowedPrompts: [],
 };

@@ -15,7 +15,7 @@ import {
 import { SessionManager } from '../session/index.js';
 import { MemoryManager, type LoadedMemory } from '../memory/index.js';
 import type { AgentConfig, AgentEvent } from './types.js';
-import { buildSystemPromptForModel } from '../prompts/index.js';
+import { buildSystemPromptForModel, debugPromptLoading } from '../prompts/index.js';
 
 export class Agent {
   private provider: LLMProvider;
@@ -283,6 +283,9 @@ export class Agent {
       // Call LLM
       let response;
       try {
+        // Debug prompt loading (enabled with GENCODE_DEBUG_PROMPTS=1)
+        debugPromptLoading(this.config.model, this.config.provider);
+
         // Build system prompt based on model → provider → prompt flow
         // Looks up provider from ~/.gencode/providers.json, falls back to config.provider
         const systemPrompt =
