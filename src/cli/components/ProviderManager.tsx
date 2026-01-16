@@ -424,15 +424,15 @@ export function ProviderManager({ onClose }: ProviderManagerProps) {
                   return (
                     <Box key={item.provider.id} paddingLeft={2}>
                       <Text color={isSelected ? colors.primary : colors.textMuted}>
-                        {isSelected ? icons.arrow : ' '}
+                        {isSelected ? icons.arrow : ' '}{' '}
                       </Text>
-                      <Text color={colors.success}>{icons.success} </Text>
                       <Text color={isSelected ? colors.text : colors.textSecondary} bold={isSelected}>
                         {item.provider.name}
                       </Text>
                       <Text color={colors.textMuted}>
                         {' '}({connName}) · {item.modelCount} models
                       </Text>
+                      <Text color={colors.success}> {icons.success}</Text>
                     </Box>
                   );
                 })}
@@ -456,7 +456,7 @@ export function ProviderManager({ onClose }: ProviderManagerProps) {
                   return (
                     <Box key={item.provider.id} paddingLeft={2}>
                       <Text color={isSelected ? colors.primary : colors.textMuted}>
-                        {isSelected ? icons.arrow : ' '}
+                        {isSelected ? icons.arrow : ' '}{' '}
                       </Text>
                       <Text color={isSelected ? colors.text : colors.textSecondary} bold={isSelected}>
                         {item.provider.name}
@@ -496,9 +496,8 @@ export function ProviderManager({ onClose }: ProviderManagerProps) {
                 <Box key={item.provider.id} paddingLeft={2} flexDirection="column">
                   <Box>
                     <Text color={isSelected ? colors.primary : colors.textMuted}>
-                      {isSelected ? icons.arrow : ' '}
+                      {isSelected ? icons.arrow : ' '}{' '}
                     </Text>
-                    {item.isSelected && <Text color={colors.success}>{icons.success} </Text>}
                     <Text color={isSelected ? colors.text : colors.textSecondary} bold={isSelected}>
                       {item.provider.name}
                     </Text>
@@ -511,6 +510,7 @@ export function ProviderManager({ onClose }: ProviderManagerProps) {
                     {item.provider.requiresKey && !item.isAvailable && (
                       <Text color={colors.textMuted}> (not configured)</Text>
                     )}
+                    {item.isSelected && <Text color={colors.success}> {icons.success}</Text>}
                   </Box>
                   {isSelected && item.provider.requiresKey && !item.isAvailable && (
                     <Text color={colors.textMuted} dimColor>
