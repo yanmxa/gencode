@@ -124,3 +124,40 @@ export function buildSystemPrompt(
   const envInfo = formatEnvironmentInfo(getEnvironmentInfo(cwd, isGitRepo));
   return prompt.replace('{{ENVIRONMENT}}', envInfo);
 }
+
+/**
+ * Format memory context for injection into system prompt
+ * Uses <claudeMd> tag for Claude Code compatibility
+ */
+export function formatMemoryContext(memoryContext: string): string {
+  if (!memoryContext) {
+    return '';
+  }
+
+  return `
+<claudeMd>
+Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.
+
+${memoryContext}
+
+IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.
+</claudeMd>`;
+}
+
+/**
+ * Build the complete system prompt with environment info and memory context
+ */
+export function buildSystemPromptWithMemory(
+  provider: ProviderType,
+  cwd: string,
+  isGitRepo: boolean = false,
+  memoryContext?: string
+): string {
+  let prompt = buildSystemPrompt(provider, cwd, isGitRepo);
+
+  if (memoryContext) {
+    prompt += formatMemoryContext(memoryContext);
+  }
+
+  return prompt;
+}

@@ -1,21 +1,22 @@
-# Proposal: Memory System (MYCODE.md) with /init Command
+# Proposal: Memory System (AGENT.md) with /init Command
 
 - **Proposal ID**: 0006
 - **Author**: mycode team
-- **Status**: Draft
+- **Status**: Implemented
 - **Created**: 2025-01-15
-- **Updated**: 2025-01-15
+- **Updated**: 2025-01-16
+- **Implemented**: 2025-01-16
 
 ## Summary
 
 Implement a comprehensive memory system inspired by Claude Code, including:
-1. **MYCODE.md files** - Project-specific context that persists across sessions
-2. **Hierarchical memory loading** - User → Project → Directory-specific rules
-3. **/init command** - Automatic project analysis and MYCODE.md generation
-4. **# prefix** - Quick memory adds during sessions
-5. **/memory command** - Edit memory files
-6. **@import syntax** - Include other files into memory
-7. **.mycode/rules/ directory** - Modular, path-scoped rules
+1. **AGENT.md files** - Project-specific context that persists across sessions (with CLAUDE.md fallback for compatibility)
+2. **Hierarchical memory loading** - User → Project → Local with rules directories
+3. **/init command** - Automatic project analysis and AGENT.md generation
+4. **# prefix** - Quick memory adds during sessions (`# note` for project, `## note` for user)
+5. **/memory command** - View loaded memory files
+6. **@import syntax** - Include other files into memory (max 5 levels)
+7. **.gencode/rules/ directory** - Modular, path-scoped rules with frontmatter
 
 ## Motivation
 

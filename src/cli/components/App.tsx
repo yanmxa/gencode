@@ -30,6 +30,7 @@ import {
 import { colors, icons } from './theme.js';
 import type { ProviderName } from '../../providers/index.js';
 import type { ApprovalAction, ApprovalSuggestion } from '../../permissions/types.js';
+import { gatherContextFiles, buildInitPrompt, getContextSummary } from '../../memory/index.js';
 
 // Types
 interface HistoryItem {
@@ -136,6 +137,60 @@ function SessionsTable({ sessions }: SessionsTableProps) {
           <Text color={colors.textMuted}>{formatRelativeTime(s.updatedAt)}</Text>
         </Text>
       ))}
+    </Box>
+  );
+}
+
+// ============================================================================
+// Memory Files Display Component
+// ============================================================================
+interface MemoryFileInfo {
+  path: string;
+  level: string;
+  size: number;
+  type: 'file' | 'rule';
+}
+
+function MemoryFilesDisplay({ files }: { files: MemoryFileInfo[] }) {
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes}B`;
+    return `${(bytes / 1024).toFixed(1)}KB`;
+  };
+
+  const memoryFiles = files.filter((f) => f.type === 'file');
+  const ruleFiles = files.filter((f) => f.type === 'rule');
+
+  return (
+    <Box flexDirection="column">
+      {memoryFiles.length > 0 && (
+        <>
+          <Text color={colors.info}>Loaded Memory Files:</Text>
+          {memoryFiles.map((f, i) => (
+            <Text key={f.path}>
+              <Text color={colors.textMuted}>  [{i + 1}] </Text>
+              <Text color={colors.primary}>{f.path} </Text>
+              <Text color={colors.textMuted}>({f.level}, {formatSize(f.size)})</Text>
+            </Text>
+          ))}
+        </>
+      )}
+      {ruleFiles.length > 0 && (
+        <Box flexDirection="column" marginTop={memoryFiles.length > 0 ? 1 : 0}>
+          <Text color={colors.info}>
+            Loaded Rules:
+          </Text>
+          {ruleFiles.map((f, i) => (
+            <Text key={f.path}>
+              <Text color={colors.textMuted}>  [{i + 1}] </Text>
+              <Text color={colors.warning}>{f.path} </Text>
+              <Text color={colors.textMuted}>({f.level}, {formatSize(f.size)})</Text>
+            </Text>
+          ))}
+        </Box>
+      )}
+      {files.length === 0 && (
+        <Text color={colors.textMuted}>No memory files loaded</Text>
+      )}
     </Box>
   );
 }
@@ -404,12 +459,63 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
       }
 
       case 'init': {
-        addHistory({ type: 'info', content: '/init command not available in this version' });
+        // Gather context files and generate AGENT.md
+        addHistory({ type: 'info', content: 'Analyzing codebase...' });
+
+        const contextFiles = await gatherContextFiles(cwd);
+        addHistory({ type: 'info', content: getContextSummary(contextFiles) });
+
+        // Check if AGENT.md already exists
+        const memoryManager = agent.getMemoryManager();
+        const existingPath = await memoryManager.getExistingProjectMemoryPath(cwd);
+        let existingContent: string | undefined;
+
+        if (existingPath) {
+          try {
+            const fs = await import('fs/promises');
+            existingContent = await fs.readFile(existingPath, 'utf-8');
+            addHistory({
+              type: 'info',
+              content: `Found existing: ${existingPath.replace(cwd, '.')}`,
+            });
+          } catch {
+            // File doesn't exist or can't be read
+          }
+        }
+
+        // Build init prompt and run through agent
+        const initPrompt = buildInitPrompt(contextFiles, existingContent);
+        addHistory({ type: 'info', content: 'Generating AGENT.md...' });
+        addHistory({ type: 'user', content: '/init' });
+        await runAgent(initPrompt);
         return true;
       }
 
       case 'memory': {
-        addHistory({ type: 'info', content: '/memory command not available in this version' });
+        // Show loaded memory files
+        const memoryManager = agent.getMemoryManager();
+        const loadedFiles = memoryManager.getLoadedFileList();
+
+        if (loadedFiles.length === 0) {
+          // Try to load memory first
+          await agent.loadMemory();
+          const filesAfterLoad = memoryManager.getLoadedFileList();
+          if (filesAfterLoad.length === 0) {
+            addHistory({ type: 'info', content: 'No memory files found' });
+          } else {
+            addHistory({
+              type: 'info',
+              content: '__MEMORY__',
+              meta: { files: filesAfterLoad },
+            });
+          }
+        } else {
+          addHistory({
+            type: 'info',
+            content: '__MEMORY__',
+            meta: { files: loadedFiles },
+          });
+        }
         return true;
       }
 
@@ -536,6 +642,47 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
       return;
     }
 
+    // Handle # prefix for quick memory adds
+    // ## note -> user memory (~/.gencode/AGENT.md)
+    // # note -> project memory (./AGENT.md)
+    if (trimmed.startsWith('#') && !trimmed.startsWith('#!/')) {
+      const memoryManager = agent.getMemoryManager();
+      let level: 'user' | 'project';
+      let content: string;
+
+      if (trimmed.startsWith('## ')) {
+        level = 'user';
+        content = trimmed.slice(3).trim();
+      } else if (trimmed.startsWith('# ')) {
+        level = 'project';
+        content = trimmed.slice(2).trim();
+      } else {
+        // Just # with no space, treat as project
+        level = 'project';
+        content = trimmed.slice(1).trim();
+      }
+
+      if (!content) {
+        addHistory({ type: 'info', content: 'Empty memory entry ignored' });
+        return;
+      }
+
+      try {
+        const savedPath = await memoryManager.quickAdd(content, level, cwd);
+        const displayPath = savedPath.replace(process.env.HOME || '', '~');
+        addHistory({
+          type: 'info',
+          content: `Added to ${level} memory: ${displayPath}`,
+        });
+      } catch (error) {
+        addHistory({
+          type: 'info',
+          content: `Failed to add to memory: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+      return;
+    }
+
     if (trimmed.startsWith('/')) {
       const handled = await handleCommand(trimmed);
       if (!handled) {
@@ -633,6 +780,9 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
               entries={item.meta.entries as { time: string; tool: string; input: string; decision: string; rule?: string }[]}
             />
           );
+        }
+        if (item.content === '__MEMORY__' && item.meta?.files) {
+          return <MemoryFilesDisplay files={item.meta.files as MemoryFileInfo[]} />;
         }
         return <InfoMessage text={item.content} />;
       case 'completion':

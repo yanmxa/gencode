@@ -13,17 +13,20 @@ import {
   type PermissionSettings,
 } from '../permissions/index.js';
 import { SessionManager } from '../session/index.js';
+import { MemoryManager, type LoadedMemory } from '../memory/index.js';
 import type { AgentConfig, AgentEvent } from './types.js';
-import { buildSystemPrompt, mapProviderToPromptType } from '../prompts/index.js';
+import { buildSystemPromptWithMemory, mapProviderToPromptType } from '../prompts/index.js';
 
 export class Agent {
   private provider: LLMProvider;
   private registry: ToolRegistry;
   private permissions: PermissionManager;
   private sessionManager: SessionManager;
+  private memoryManager: MemoryManager;
   private config: AgentConfig;
   private messages: Message[] = [];
   private sessionId: string | null = null;
+  private loadedMemory: LoadedMemory | null = null;
 
   constructor(config: AgentConfig) {
     this.config = {
@@ -39,6 +42,7 @@ export class Agent {
       projectPath: config.cwd,
     });
     this.sessionManager = new SessionManager();
+    this.memoryManager = new MemoryManager();
   }
 
   /**
@@ -95,6 +99,29 @@ export class Agent {
    */
   getPermissionManager(): PermissionManager {
     return this.permissions;
+  }
+
+  /**
+   * Get memory manager for direct access
+   */
+  getMemoryManager(): MemoryManager {
+    return this.memoryManager;
+  }
+
+  /**
+   * Get loaded memory (null if not loaded yet)
+   */
+  getLoadedMemory(): LoadedMemory | null {
+    return this.loadedMemory;
+  }
+
+  /**
+   * Load memory for the current working directory
+   */
+  async loadMemory(): Promise<LoadedMemory> {
+    const cwd = this.config.cwd ?? process.cwd();
+    this.loadedMemory = await this.memoryManager.load({ cwd });
+    return this.loadedMemory;
   }
 
   /**
@@ -234,6 +261,11 @@ export class Agent {
       await this.startSession();
     }
 
+    // Load memory if not already loaded
+    if (!this.loadedMemory) {
+      await this.loadMemory();
+    }
+
     // Add user message
     const userMessage: Message = { role: 'user', content: prompt };
     this.messages.push(userMessage);
@@ -251,13 +283,14 @@ export class Agent {
       // Call LLM
       let response;
       try {
-        // Build provider-specific system prompt if not overridden
+        // Build provider-specific system prompt with memory context
         const systemPrompt =
           this.config.systemPrompt ??
-          buildSystemPrompt(
+          buildSystemPromptWithMemory(
             mapProviderToPromptType(this.config.provider),
             this.config.cwd ?? process.cwd(),
-            true // Assume git repo for now
+            true, // Assume git repo for now
+            this.loadedMemory?.context
           );
 
         response = await this.provider.complete({
