@@ -327,6 +327,15 @@ export class SessionManager {
   }
 
   /**
+   * Remove the last message from current session
+   */
+  removeLastMessage(): void {
+    if (this.currentSession && this.currentSession.messages.length > 0) {
+      this.currentSession.messages.pop();
+    }
+  }
+
+  /**
    * Export session to JSON
    */
   async export(id: string): Promise<string> {

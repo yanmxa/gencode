@@ -3,6 +3,8 @@ import { Box, Text } from 'ink';
 import InkSpinner from 'ink-spinner';
 import { colors, icons } from './theme.js';
 import { renderMarkdown } from './markdown.js';
+import { formatTokens, formatCost } from '../../pricing/calculator.js';
+import type { CostEstimate } from '../../pricing/types.js';
 
 // Truncate string with ellipsis
 const truncate = (str: string, maxLen: number) =>
@@ -346,16 +348,33 @@ function formatDuration(ms: number): string {
 
 interface CompletionMessageProps {
   durationMs: number;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+  cost?: CostEstimate;
 }
 
-export function CompletionMessage({ durationMs }: CompletionMessageProps) {
+export function CompletionMessage({ durationMs, usage, cost }: CompletionMessageProps) {
   // Pick a random verb (stable per render via useMemo would be better, but keep simple)
   const verb = COMPLETION_VERBS[Math.floor(Math.random() * COMPLETION_VERBS.length)];
+
+  // Build the message parts
+  const parts = [`✻ ${verb} for ${formatDuration(durationMs)}`];
+
+  if (usage) {
+    parts.push(
+      `Tokens: ${formatTokens(usage.inputTokens)} in / ${formatTokens(usage.outputTokens)} out`
+    );
+  }
+
+  if (cost) {
+    parts.push(`(~${formatCost(cost.totalCost)})`);
+  }
+
   return (
     <Box marginTop={1}>
-      <Text color={colors.textMuted}>
-        ✻ {verb} for {formatDuration(durationMs)}
-      </Text>
+      <Text color={colors.textMuted}>{parts.join(' • ')}</Text>
     </Box>
   );
 }

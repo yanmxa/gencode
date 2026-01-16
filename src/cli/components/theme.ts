@@ -50,4 +50,7 @@ export const icons = {
   boxVertical: '│',
   // Tree connectors
   treeEnd: '└', // Tree end connector for tool results
+  // Mode indicators
+  modePlan: '⏸', // Pause for plan mode
+  modeAccept: '⏵⏵', // Double play for accept mode
 };

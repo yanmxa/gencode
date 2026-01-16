@@ -47,7 +47,7 @@ This directory contains enhancement proposals for the gencode project. Each prop
 | [0022](./0022-plugin-system.md) | Plugin System | Draft |
 | [0023](./0023-permission-enhancements.md) | Permission Enhancements | Draft |
 | [0024](./0024-keyboard-shortcuts.md) | Keyboard Shortcuts | Draft |
-| [0025](./0025-cost-tracking.md) | Cost Tracking | Draft |
+| [0025](./0025-cost-tracking.md) | Cost Tracking | Implemented |
 | [0026](./0026-git-integration.md) | Git Integration | Draft |
 | [0027](./0027-enhanced-read-tool.md) | Enhanced Read Tool | Draft |
 | [0028](./0028-enhanced-bash-tool.md) | Enhanced Bash Tool | Draft |

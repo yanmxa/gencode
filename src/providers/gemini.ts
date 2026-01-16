@@ -5,6 +5,7 @@
 
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import type { Content, Part, Tool, GenerateContentResult } from '@google/generative-ai';
+import { calculateCost } from '../pricing/calculator.js';
 import type {
   LLMProvider,
   CompletionOptions,
@@ -47,7 +48,7 @@ export class GeminiProvider implements LLMProvider {
     const contents = this.convertMessages(options.messages);
     const result = await model.generateContent({ contents });
 
-    return this.convertResponse(result);
+    return this.convertResponse(result, options.model);
   }
 
   async *stream(options: CompletionOptions): AsyncGenerator<StreamChunk, void, unknown> {
@@ -115,17 +116,22 @@ export class GeminiProvider implements LLMProvider {
     const finalResponse = await result.response;
     const stopReason = this.getStopReason(finalResponse, functionCalls.length > 0);
 
+    const usage = finalResponse.usageMetadata
+      ? {
+          inputTokens: finalResponse.usageMetadata.promptTokenCount ?? 0,
+          outputTokens: finalResponse.usageMetadata.candidatesTokenCount ?? 0,
+        }
+      : undefined;
+
+    const cost = usage ? calculateCost(this.name, options.model, usage) : undefined;
+
     yield {
       type: 'done',
       response: {
         content,
         stopReason,
-        usage: finalResponse.usageMetadata
-          ? {
-              inputTokens: finalResponse.usageMetadata.promptTokenCount ?? 0,
-              outputTokens: finalResponse.usageMetadata.candidatesTokenCount ?? 0,
-            }
-          : undefined,
+        usage,
+        cost,
       },
     };
   }
@@ -237,7 +243,7 @@ export class GeminiProvider implements LLMProvider {
     return result;
   }
 
-  private convertResponse(result: GenerateContentResult): CompletionResponse {
+  private convertResponse(result: GenerateContentResult, model: string): CompletionResponse {
     const response = result.response;
     const parts = response.candidates?.[0]?.content?.parts ?? [];
     const content: MessageContent[] = [];
@@ -261,15 +267,20 @@ export class GeminiProvider implements LLMProvider {
 
     const hasFunctionCalls = parts.some((p) => 'functionCall' in p);
 
+    const usage = response.usageMetadata
+      ? {
+          inputTokens: response.usageMetadata.promptTokenCount ?? 0,
+          outputTokens: response.usageMetadata.candidatesTokenCount ?? 0,
+        }
+      : undefined;
+
+    const cost = usage ? calculateCost(this.name, model, usage) : undefined;
+
     return {
       content,
       stopReason: this.getStopReason(response, hasFunctionCalls),
-      usage: response.usageMetadata
-        ? {
-            inputTokens: response.usageMetadata.promptTokenCount ?? 0,
-            outputTokens: response.usageMetadata.candidatesTokenCount ?? 0,
-          }
-        : undefined,
+      usage,
+      cost,
     };
   }
 

@@ -6,6 +6,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Text, useApp, useInput, Static } from 'ink';
 import { Agent } from '../../agent/index.js';
 import type { AgentConfig } from '../../agent/types.js';
+import { formatTokens, formatCost } from '../../pricing/calculator.js';
+import type { CostEstimate } from '../../pricing/types.js';
 import {
   UserMessage,
   AssistantMessage,
@@ -35,6 +37,11 @@ import type { Question, QuestionAnswer } from '../../tools/types.js';
 import type { ProviderName } from '../../providers/index.js';
 import type { ApprovalAction, ApprovalSuggestion } from '../../permissions/types.js';
 import { gatherContextFiles, buildInitPrompt, getContextSummary } from '../../memory/index.js';
+// ModeIndicator kept for potential future use
+import { PlanApproval } from './PlanApproval.js';
+import type { ModeType, PlanApprovalOption, AllowedPrompt } from '../../planning/types.js';
+// Planning utilities kept for potential future use
+import { getCheckpointManager } from '../../checkpointing/index.js';
 
 // Types
 interface HistoryItem {
@@ -54,6 +61,14 @@ interface ConfirmState {
 interface QuestionState {
   questions: Question[];
   resolve: (answers: QuestionAnswer[]) => void;
+}
+
+interface PlanApprovalState {
+  planSummary: string;
+  requestedPermissions: AllowedPrompt[];
+  filesToChange: Array<{ path: string; action: 'create' | 'modify' | 'delete' }>;
+  planFilePath: string;
+  resolve: (option: PlanApprovalOption, customInput?: string) => void;
 }
 
 interface SettingsManager {
@@ -108,6 +123,9 @@ const formatRelativeTime = (dateStr: string) => {
 // ============================================================================
 function HelpPanel() {
   const commands: [string, string][] = [
+    ['/plan [desc]', 'Enter plan mode'],
+    ['/normal', 'Exit to normal mode'],
+    ['/accept', 'Enter auto-accept mode'],
     ['/model [name]', 'Switch model'],
     ['/provider', 'Manage providers'],
     ['/sessions', 'List sessions'],
@@ -117,6 +135,8 @@ function HelpPanel() {
     ['/clear', 'Clear chat'],
     ['/init', 'Generate AGENT.md'],
     ['/memory', 'Show memory files'],
+    ['/changes', 'List file changes'],
+    ['/rewind [n|all]', 'Undo file changes'],
   ];
 
   return (
@@ -252,6 +272,16 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
   const pendingToolRef = useRef<{ name: string; input: Record<string, unknown> } | null>(null);
   const [todos, setTodos] = useState<ReturnType<typeof getTodos>>([]);
 
+  // Operating mode state (normal → plan → accept → normal)
+  const [currentMode, setCurrentMode] = useState<ModeType>('normal');
+  const currentModeRef = useRef<ModeType>('normal'); // Track mode for confirm callback
+  const [planApprovalState, setPlanApprovalState] = useState<PlanApprovalState | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    currentModeRef.current = currentMode;
+  }, [currentMode]);
+
   // Check if showing command suggestions
   const showCmdSuggestions = input.startsWith('/') && !isProcessing;
   const cmdSuggestions = showCmdSuggestions ? getFilteredCommands(input) : [];
@@ -274,6 +304,11 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
 
       // Set enhanced confirm callback with approval options
       agent.setEnhancedConfirmCallback(async (tool, toolInput, suggestions) => {
+        // Auto-approve in accept mode
+        if (currentModeRef.current === 'accept') {
+          return 'allow_once';
+        }
+
         return new Promise<ApprovalAction>((resolve) => {
           setConfirmState({
             tool,
@@ -565,6 +600,110 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         return true;
       }
 
+      case 'plan': {
+        // Enter plan mode
+        await agent.enterPlanMode(arg);
+        setCurrentMode('plan');
+        return true;
+      }
+
+      case 'normal': {
+        // Exit to normal mode
+        if (agent.isPlanModeActive()) {
+          agent.exitPlanMode(false);
+        }
+        setCurrentMode('normal');
+        return true;
+      }
+
+      case 'accept': {
+        // Enter auto-accept mode
+        if (agent.isPlanModeActive()) {
+          agent.exitPlanMode(false);
+        }
+        setCurrentMode('accept');
+        return true;
+      }
+
+      case 'changes': {
+        // List file changes (checkpoints)
+        const checkpointManager = getCheckpointManager();
+        if (!checkpointManager.hasCheckpoints()) {
+          addHistory({ type: 'info', content: '\nNo file changes in this session' });
+        } else {
+          addHistory({ type: 'info', content: '\n' + checkpointManager.formatCheckpointList(false) });
+        }
+        return true;
+      }
+
+      case 'rewind': {
+        // Rewind file changes
+        const checkpointManager = getCheckpointManager();
+
+        if (!checkpointManager.hasCheckpoints()) {
+          addHistory({ type: 'info', content: 'No file changes to rewind' });
+          return true;
+        }
+
+        if (arg === 'all') {
+          // Rewind all changes
+          const result = await checkpointManager.rewind({ all: true });
+
+          // Build output message showing both successes and failures
+          const messages: string[] = [''];  // Start with empty line for spacing
+
+          if (result.revertedFiles.length > 0) {
+            const files = result.revertedFiles.map((f) => {
+              const fileName = f.path.split('/').pop() || f.path;
+              return `  • ${fileName} (${f.action})`;
+            }).join('\n');
+            messages.push(`Reverted ${result.revertedFiles.length} file(s):\n${files}`);
+          }
+
+          if (result.errors.length > 0) {
+            const errors = result.errors.map((e) => {
+              const fileName = e.path.split('/').pop() || e.path;
+              return `  • ${fileName}: ${e.error}`;
+            }).join('\n');
+            messages.push(`\nFailed to revert ${result.errors.length} file(s):\n${errors}`);
+          }
+
+          if (messages.length > 1) {
+            addHistory({ type: 'info', content: messages.join('\n') });
+          } else {
+            addHistory({ type: 'info', content: '\nNo changes to rewind' });
+          }
+        } else if (arg) {
+          // Rewind specific checkpoint by index
+          const index = parseInt(arg, 10);
+          if (!isNaN(index) && index >= 1) {
+            const checkpoints = checkpointManager.getCheckpoints();
+            if (index <= checkpoints.length) {
+              const checkpoint = checkpoints[index - 1];
+              const result = await checkpointManager.rewind({ checkpointId: checkpoint.id });
+              if (result.success && result.revertedFiles.length > 0) {
+                const f = result.revertedFiles[0];
+                const fileName = f.path.split('/').pop() || f.path;
+                addHistory({ type: 'info', content: `\nReverted: ${fileName} (${f.action})` });
+              } else if (result.errors.length > 0) {
+                const fileName = result.errors[0].path.split('/').pop() || result.errors[0].path;
+                addHistory({ type: 'info', content: `\nFailed: ${fileName} - ${result.errors[0].error}` });
+              } else {
+                addHistory({ type: 'info', content: '\nFailed to rewind change' });
+              }
+            } else {
+              addHistory({ type: 'info', content: '\nInvalid index: ${index}' });
+            }
+          } else {
+            addHistory({ type: 'info', content: '\nUsage: /rewind [n|all]' });
+          }
+        } else {
+          // Show changes and usage in one message
+          addHistory({ type: 'info', content: '\n' + checkpointManager.formatCheckpointList(true) });
+        }
+        return true;
+      }
+
       default:
         return false;
     }
@@ -661,9 +800,13 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
               streamingTextRef.current = '';
               setStreamingText('');
             }
-            // Add completion message with duration
+            // Add completion message with duration and cost info
             const durationMs = Date.now() - startTime;
-            addHistory({ type: 'completion', content: '', meta: { durationMs } });
+            addHistory({
+              type: 'completion',
+              content: '',
+              meta: { durationMs, usage: event.usage, cost: event.cost },
+            });
             setProcessingStartTime(undefined);
             break;
         }
@@ -774,7 +917,31 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
       // Clear pending tool (stop spinner)
       pendingToolRef.current = null;
       setPendingTool(null);
+      // Clean up incomplete tool_use messages to prevent API errors
+      agent.cleanupIncompleteMessages();
       addHistory({ type: 'info', content: 'Interrupted' });
+    }
+
+    // Shift+Tab to cycle modes: normal → plan → accept → normal
+    if (key.shift && key.tab && !isProcessing && !confirmState && !questionState && !planApprovalState) {
+      const cycleMode = async () => {
+        const nextMode: Record<ModeType, ModeType> = {
+          normal: 'plan',
+          plan: 'accept',
+          accept: 'normal',
+        };
+        const newMode = nextMode[currentMode];
+
+        // Handle plan mode transitions
+        if (newMode === 'plan') {
+          await agent.enterPlanMode();
+        } else if (currentMode === 'plan') {
+          agent.exitPlanMode(false);
+        }
+
+        setCurrentMode(newMode);
+      };
+      cycleMode();
     }
 
     // Command suggestion navigation
@@ -853,7 +1020,13 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         }
         return <InfoMessage text={item.content} />;
       case 'completion':
-        return <CompletionMessage durationMs={(item.meta?.durationMs as number) || 0} />;
+        return (
+          <CompletionMessage
+            durationMs={(item.meta?.durationMs as number) || 0}
+            usage={item.meta?.usage as { inputTokens: number; outputTokens: number } | undefined}
+            cost={item.meta?.cost as CostEstimate | undefined}
+          />
+        );
       case 'todos':
         return <TodoList todos={item.meta?.todos as ReturnType<typeof getTodos>} />;
       default:
@@ -862,7 +1035,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
   };
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" paddingBottom={2}>
       <Static items={history}>
         {(item) => <Box key={item.id}>{renderHistoryItem(item)}</Box>}
       </Static>
@@ -887,6 +1060,22 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
           onComplete={handleQuestionComplete}
           onCancel={handleQuestionCancel}
         />
+      )}
+
+      {/* Plan approval UI */}
+      {planApprovalState && (
+        <Box marginTop={1}>
+          <PlanApproval
+            planSummary={planApprovalState.planSummary}
+            requestedPermissions={planApprovalState.requestedPermissions}
+            filesToChange={planApprovalState.filesToChange}
+            planFilePath={planApprovalState.planFilePath}
+            onDecision={(option, customInput) => {
+              planApprovalState.resolve(option, customInput);
+              setPlanApprovalState(null);
+            }}
+          />
+        </Box>
       )}
 
       {showModelSelector && (
@@ -914,7 +1103,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
       )}
 
       {!confirmState && !questionState && !showModelSelector && !showProviderManager && (
-        <Box flexDirection="column" marginTop={1}>
+        <Box flexDirection="column" marginTop={2}>
           <PromptInput
             key={inputKey}
             value={input}
@@ -923,6 +1112,16 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
           />
           {showCmdSuggestions && cmdSuggestions.length > 0 && (
             <CommandSuggestions input={input} selectedIndex={cmdSuggestionIndex} />
+          )}
+          {currentMode === 'plan' && !isProcessing && (
+            <Text color={colors.warning} dimColor>
+              {icons.modePlan} plan mode on (shift+tab to cycle)
+            </Text>
+          )}
+          {currentMode === 'accept' && !isProcessing && (
+            <Text color={colors.success} dimColor>
+              {icons.modeAccept} accept edits on (shift+tab to cycle)
+            </Text>
           )}
         </Box>
       )}

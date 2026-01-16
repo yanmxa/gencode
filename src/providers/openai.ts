@@ -4,6 +4,7 @@
  */
 
 import OpenAI from 'openai';
+import { calculateCost } from '../pricing/calculator.js';
 import type {
   LLMProvider,
   CompletionOptions,
@@ -44,7 +45,7 @@ export class OpenAIProvider implements LLMProvider {
       temperature: options.temperature,
     });
 
-    return this.convertResponse(response);
+    return this.convertResponse(response, options.model);
   }
 
   async *stream(options: CompletionOptions): AsyncGenerator<StreamChunk, void, unknown> {
@@ -195,7 +196,10 @@ export class OpenAIProvider implements LLMProvider {
     }));
   }
 
-  private convertResponse(response: OpenAI.Chat.Completions.ChatCompletion): CompletionResponse {
+  private convertResponse(
+    response: OpenAI.Chat.Completions.ChatCompletion,
+    model: string
+  ): CompletionResponse {
     const choice = response.choices[0];
     const content: MessageContent[] = [];
 
@@ -216,15 +220,20 @@ export class OpenAIProvider implements LLMProvider {
       }
     }
 
+    const usage = response.usage
+      ? {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+        }
+      : undefined;
+
+    const cost = usage ? calculateCost(this.name, model, usage) : undefined;
+
     return {
       content,
       stopReason: this.convertStopReason(choice.finish_reason),
-      usage: response.usage
-        ? {
-            inputTokens: response.usage.prompt_tokens,
-            outputTokens: response.usage.completion_tokens,
-          }
-        : undefined,
+      usage,
+      cost,
     };
   }
 

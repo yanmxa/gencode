@@ -7,6 +7,9 @@ interface Command {
 }
 
 export const COMMANDS: Command[] = [
+  { name: '/plan', description: 'Enter plan mode (Shift+Tab to cycle)' },
+  { name: '/normal', description: 'Exit to normal mode' },
+  { name: '/accept', description: 'Enter auto-accept mode' },
   { name: '/model', description: 'Switch model' },
   { name: '/provider', description: 'Manage providers' },
   { name: '/permissions', description: 'View permission rules' },
@@ -20,6 +23,8 @@ export const COMMANDS: Command[] = [
   { name: '/help', description: 'Show help' },
   { name: '/init', description: 'Generate AGENT.md' },
   { name: '/memory', description: 'Show memory files' },
+  { name: '/changes', description: 'List file changes' },
+  { name: '/rewind', description: 'Undo file changes' },
 ];
 
 interface CommandSuggestionsProps {

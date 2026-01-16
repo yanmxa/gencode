@@ -28,6 +28,9 @@ export type {
   AskUserQuestionResult,
 } from './builtin/ask-user.js';
 
+// Plan mode tools
+export { enterPlanModeTool, exitPlanModeTool } from '../planning/index.js';
+
 import { ToolRegistry } from './registry.js';
 import { readTool } from './builtin/read.js';
 import { writeTool } from './builtin/write.js';
@@ -39,6 +42,7 @@ import { webfetchTool } from './builtin/webfetch.js';
 import { websearchTool } from './builtin/websearch.js';
 import { todowriteTool } from './builtin/todowrite.js';
 import { askUserQuestionTool } from './builtin/ask-user.js';
+import { enterPlanModeTool, exitPlanModeTool } from '../planning/index.js';
 
 /**
  * Create a registry with all built-in tools
@@ -56,6 +60,8 @@ export function createDefaultRegistry(): ToolRegistry {
     websearchTool,
     todowriteTool,
     askUserQuestionTool,
+    enterPlanModeTool,
+    exitPlanModeTool,
   ]);
   return registry;
 }
@@ -74,4 +80,6 @@ export const builtinTools = [
   websearchTool,
   todowriteTool,
   askUserQuestionTool,
+  enterPlanModeTool,
+  exitPlanModeTool,
 ];

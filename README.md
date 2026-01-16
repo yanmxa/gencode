@@ -26,6 +26,7 @@ gencode
 - **Session Management** - Persist and resume conversations
 - **Interactive CLI** - Fuzzy search, command suggestions
 - [**Permission System**](./docs/permissions.md) - Pattern-based rules, prompt-based permissions, audit logging
+- **Cost Tracking** - Real-time token usage and cost estimates for all providers
 
 ## License
 

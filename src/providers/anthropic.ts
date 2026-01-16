@@ -4,6 +4,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { calculateCost } from '../pricing/calculator.js';
 import type {
   LLMProvider,
   CompletionOptions,
@@ -45,7 +46,7 @@ export class AnthropicProvider implements LLMProvider {
       temperature: options.temperature,
     });
 
-    return this.convertResponse(response);
+    return this.convertResponse(response, options.model);
   }
 
   async *stream(options: CompletionOptions): AsyncGenerator<StreamChunk, void, unknown> {
@@ -94,15 +95,20 @@ export class AnthropicProvider implements LLMProvider {
     const finalMessage = await stream.finalMessage();
     const content = this.convertContent(finalMessage.content);
 
+    const usage = {
+      inputTokens: finalMessage.usage.input_tokens,
+      outputTokens: finalMessage.usage.output_tokens,
+    };
+
+    const cost = calculateCost(this.name, options.model, usage);
+
     yield {
       type: 'done',
       response: {
         content,
         stopReason: this.convertStopReason(finalMessage.stop_reason),
-        usage: {
-          inputTokens: finalMessage.usage.input_tokens,
-          outputTokens: finalMessage.usage.output_tokens,
-        },
+        usage,
+        cost,
       },
     };
   }
@@ -169,14 +175,19 @@ export class AnthropicProvider implements LLMProvider {
     }));
   }
 
-  private convertResponse(response: Anthropic.Message): CompletionResponse {
+  private convertResponse(response: Anthropic.Message, model: string): CompletionResponse {
+    const usage = {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+    };
+
+    const cost = calculateCost(this.name, model, usage);
+
     return {
       content: this.convertContent(response.content),
       stopReason: this.convertStopReason(response.stop_reason),
-      usage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
-      },
+      usage,
+      cost,
     };
   }
 

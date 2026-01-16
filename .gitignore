@@ -22,4 +22,6 @@ Thumbs.db
 *.log
 npm-debug.log*
 .claude
-CLAUDE.md.gencode/
+CLAUDE.md
+.gencode/
+

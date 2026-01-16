@@ -3,6 +3,8 @@
  * Abstracts differences between OpenAI, Anthropic, and Gemini APIs
  */
 
+import type { CostEstimate } from '../pricing/types.js';
+
 // ============================================================================
 // Message Types
 // ============================================================================
@@ -92,6 +94,7 @@ export interface CompletionResponse {
     inputTokens: number;
     outputTokens: number;
   };
+  cost?: CostEstimate;
 }
 
 // ============================================================================

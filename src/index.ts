@@ -84,3 +84,18 @@ export {
   SessionManager,
   DEFAULT_SESSION_CONFIG,
 } from './session/index.js';
+
+// Checkpointing
+export {
+  type ChangeType,
+  type FileCheckpoint,
+  type CheckpointSession,
+  type RewindOptions,
+  type RewindResult,
+  type CheckpointSummary,
+  type RecordChangeInput,
+  CheckpointManager,
+  getCheckpointManager,
+  initCheckpointManager,
+  resetCheckpointManager,
+} from './checkpointing/index.js';

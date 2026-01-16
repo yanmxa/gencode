@@ -17,6 +17,12 @@ import { MemoryManager, type LoadedMemory } from '../memory/index.js';
 import type { AgentConfig, AgentEvent } from './types.js';
 import { buildSystemPromptForModel, debugPromptLoading } from '../prompts/index.js';
 import type { Question, QuestionAnswer } from '../tools/types.js';
+import {
+  getPlanModeManager,
+  type PlanModeManager,
+  type ModeType,
+  type AllowedPrompt,
+} from '../planning/index.js';
 
 // Type for askUser callback
 export type AskUserCallback = (questions: Question[]) => Promise<QuestionAnswer[]>;
@@ -27,6 +33,7 @@ export class Agent {
   private permissions: PermissionManager;
   private sessionManager: SessionManager;
   private memoryManager: MemoryManager;
+  private planModeManager: PlanModeManager;
   private config: AgentConfig;
   private messages: Message[] = [];
   private sessionId: string | null = null;
@@ -48,6 +55,7 @@ export class Agent {
     });
     this.sessionManager = new SessionManager();
     this.memoryManager = new MemoryManager();
+    this.planModeManager = getPlanModeManager();
   }
 
   /**
@@ -136,6 +144,78 @@ export class Agent {
     this.loadedMemory = await this.memoryManager.load({ cwd });
     return this.loadedMemory;
   }
+
+  // ============================================================================
+  // Plan Mode
+  // ============================================================================
+
+  /**
+   * Get plan mode manager for external access
+   */
+  getPlanModeManager(): PlanModeManager {
+    return this.planModeManager;
+  }
+
+  /**
+   * Check if plan mode is active
+   */
+  isPlanModeActive(): boolean {
+    return this.planModeManager.isActive();
+  }
+
+  /**
+   * Get current mode (build or plan)
+   */
+  getCurrentMode(): ModeType {
+    return this.planModeManager.getCurrentMode();
+  }
+
+  /**
+   * Enter plan mode programmatically
+   */
+  async enterPlanMode(taskDescription?: string): Promise<string> {
+    const { createPlanFile } = await import('../planning/index.js');
+    const cwd = this.config.cwd ?? process.cwd();
+    const planFile = await createPlanFile(cwd, taskDescription);
+    this.planModeManager.enter(planFile.path, taskDescription);
+    return planFile.path;
+  }
+
+  /**
+   * Exit plan mode
+   */
+  exitPlanMode(approved: boolean = false): void {
+    if (approved) {
+      // Add allowed prompts from plan mode to permissions
+      const allowedPrompts = this.planModeManager.getRequestedPermissions();
+      if (allowedPrompts.length > 0) {
+        this.permissions.addAllowedPrompts(allowedPrompts);
+      }
+    }
+    this.planModeManager.exit(approved);
+  }
+
+  /**
+   * Toggle plan mode
+   */
+  async togglePlanMode(): Promise<void> {
+    if (this.planModeManager.isActive()) {
+      this.planModeManager.exit(false);
+    } else {
+      await this.enterPlanMode();
+    }
+  }
+
+  /**
+   * Get plan mode requested permissions
+   */
+  getPlanModePermissions(): AllowedPrompt[] {
+    return this.planModeManager.getRequestedPermissions();
+  }
+
+  // ============================================================================
+  // Session Management
+  // ============================================================================
 
   /**
    * Get current session ID
@@ -290,8 +370,8 @@ export class Agent {
     while (turns < maxTurns) {
       turns++;
 
-      // Get tool definitions
-      const toolDefs = this.registry.getDefinitions(this.config.tools);
+      // Get tool definitions (filtered by plan mode if active)
+      const toolDefs = this.registry.getFilteredDefinitions(this.config.tools);
 
       // Call LLM
       let response;
@@ -341,7 +421,7 @@ export class Agent {
       await this.sessionManager.addMessage({ role: 'assistant', content: response.content });
 
       if (response.stopReason !== 'tool_use' || toolCalls.length === 0) {
-        yield { type: 'done', text: textContent };
+        yield { type: 'done', text: textContent, usage: response.usage, cost: response.cost };
         return;
       }
 
@@ -386,6 +466,33 @@ export class Agent {
   clearHistory(): void {
     this.messages = [];
     this.sessionManager.clearMessages();
+  }
+
+  /**
+   * Clean up incomplete tool use messages (after interruption)
+   * Removes the last assistant message if it contains tool_use without corresponding tool_result
+   */
+  cleanupIncompleteMessages(): void {
+    if (this.messages.length === 0) return;
+
+    const lastMessage = this.messages[this.messages.length - 1];
+
+    // Check if last message is an assistant message with tool_use
+    if (lastMessage.role === 'assistant' && Array.isArray(lastMessage.content)) {
+      const hasToolUse = lastMessage.content.some((c) => c.type === 'tool_use');
+
+      if (hasToolUse) {
+        // Remove the incomplete assistant message
+        this.messages.pop();
+
+        // Also remove from session manager
+        // Note: SessionManager should have corresponding cleanup method
+        const messages = this.sessionManager.getMessages();
+        if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+          this.sessionManager.removeLastMessage();
+        }
+      }
+    }
   }
 
   /**

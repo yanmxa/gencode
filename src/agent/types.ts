@@ -3,6 +3,7 @@
  */
 
 import type { PermissionConfig } from '../permissions/types.js';
+import type { CostEstimate } from '../pricing/types.js';
 
 export interface AgentConfig {
   provider: 'openai' | 'anthropic' | 'gemini' | 'vertex-ai';
@@ -59,6 +60,11 @@ export interface AgentEventError {
 export interface AgentEventDone {
   type: 'done';
   text: string;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+  cost?: CostEstimate;
 }
 
 export interface AgentEventAskUser {

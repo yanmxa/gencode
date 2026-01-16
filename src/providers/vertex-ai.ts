@@ -9,6 +9,7 @@
  */
 
 import { GoogleAuth } from 'google-auth-library';
+import { calculateCost } from '../pricing/calculator.js';
 import type {
   LLMProvider,
   CompletionOptions,
@@ -210,7 +211,7 @@ export class VertexAIProvider implements LLMProvider {
     }
 
     const data = (await response.json()) as VertexAIResponse;
-    return this.convertResponse(data);
+    return this.convertResponse(data, options.model);
   }
 
   async *stream(options: CompletionOptions): AsyncGenerator<StreamChunk, void, unknown> {
@@ -337,15 +338,20 @@ export class VertexAIProvider implements LLMProvider {
     // Build final response
     const content = this.buildFinalContent(contentBlocks, toolInputBuffers);
 
+    const usage = {
+      inputTokens,
+      outputTokens,
+    };
+
+    const cost = calculateCost(this.name, options.model, usage);
+
     yield {
       type: 'done',
       response: {
         content,
         stopReason,
-        usage: {
-          inputTokens,
-          outputTokens,
-        },
+        usage,
+        cost,
       },
     };
   }
@@ -449,14 +455,19 @@ export class VertexAIProvider implements LLMProvider {
     }));
   }
 
-  private convertResponse(response: VertexAIResponse): CompletionResponse {
+  private convertResponse(response: VertexAIResponse, model: string): CompletionResponse {
+    const usage = {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+    };
+
+    const cost = calculateCost(this.name, model, usage);
+
     return {
       content: this.convertContent(response.content),
       stopReason: this.convertStopReason(response.stop_reason),
-      usage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
-      },
+      usage,
+      cost,
     };
   }
 

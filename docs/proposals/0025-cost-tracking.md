@@ -2,9 +2,10 @@
 
 - **Proposal ID**: 0025
 - **Author**: mycode team
-- **Status**: Draft
+- **Status**: Implemented
 - **Created**: 2025-01-15
-- **Updated**: 2025-01-15
+- **Updated**: 2026-01-16
+- **Implemented**: 2026-01-16
 
 ## Summary
 
@@ -438,6 +439,63 @@ Only show costs after session ends.
 5. **Phase 5**: Cost optimization suggestions
 
 No breaking changes.
+
+## Implementation Notes
+
+### Phase 1 Complete (2026-01-16)
+
+Implemented core cost tracking functionality with real-time display in CLI.
+
+### Files Created
+
+| File | Description |
+|------|-------------|
+| `src/pricing/types.ts` | Type definitions for pricing and costs |
+| `src/pricing/models.ts` | Model pricing database (updated Jan 2025) |
+| `src/pricing/calculator.ts` | Cost calculation and formatting utilities |
+| `src/pricing/index.ts` | Module exports |
+| `examples/test-cost-tracking.ts` | Test script for cost tracking |
+| `docs/cost-tracking-comparison.md` | Detailed comparison with OpenCode |
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `src/providers/types.ts` | Added `cost?: CostEstimate` to `CompletionResponse` |
+| `src/providers/anthropic.ts` | Calculate and return cost in responses |
+| `src/providers/openai.ts` | Calculate and return cost in responses |
+| `src/providers/gemini.ts` | Calculate and return cost in responses |
+| `src/providers/vertex-ai.ts` | Calculate and return cost in responses |
+| `src/agent/types.ts` | Added `usage` and `cost` to `AgentEventDone` |
+| `src/agent/agent.ts` | Pass usage and cost to done event |
+| `src/cli/components/App.tsx` | Pass cost data to CompletionMessage |
+| `src/cli/components/Messages.tsx` | Display cost and token usage |
+
+### Key Implementation Details
+
+1. **Pricing Database**: Comprehensive pricing for all major models (Anthropic, OpenAI, Google Gemini/Vertex AI) as of January 2025
+
+2. **Cost Calculation**: Simple formula `(tokens / 1M) * pricePerMillion` for each token type
+
+3. **CLI Display Format**: `✻ Done for 2.3s • Tokens: 1.2K in / 567 out • (~$0.02)`
+
+4. **Provider Integration**: All 4 providers (Anthropic, OpenAI, Gemini, Vertex AI) calculate cost when usage data is available
+
+5. **Graceful Degradation**: Cost displays only when provider returns usage data (some stream modes may not include it)
+
+### Testing
+
+- Tested cost calculation with sample data
+- Verified correct pricing for all providers
+- Confirmed CLI display formatting
+
+### Future Enhancements (Phase 2+)
+
+- Session cost aggregation
+- Budget system with alerts
+- Cost reporting (`/costs` command)
+- Multi-provider cost comparison
+- Advanced token types (reasoning, cache)
 
 ## References
 
