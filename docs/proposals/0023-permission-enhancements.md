@@ -487,7 +487,7 @@ Backward compatible with existing rules.
 
 1. **Pattern-Based Rules**: Supports Claude Code format like `Bash(git add:*)` with glob-style wildcards
 2. **Prompt-Based Permissions**: ExitPlanMode style with semantic matching for common operations (run tests, install dependencies, etc.)
-3. **Multi-Scope Permissions**: Session (in-memory), Project (.gencode/permissions.json), Global (~/.gencode/permissions.json)
+3. **Multi-Scope Permissions**: Session (in-memory), Project (.gen/permissions.json), Global (~/.gen/permissions.json)
 4. **Approval Options**: Allow once, Allow for session, Always allow (persistent), Deny
 5. **Audit Logging**: In-memory audit trail with optional file persistence
 6. **CLI Commands**: `/permissions` shows rules, `/permissions audit` shows decision history, `/permissions stats` shows statistics
@@ -507,7 +507,7 @@ Backward compatible with existing rules.
 
 ### Settings Configuration
 
-Add to `~/.gencode/settings.json`:
+Add to `~/.gen/settings.json`:
 ```json
 {
   "permissions": {

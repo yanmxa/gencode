@@ -165,7 +165,7 @@ GenCode uses a multi-level configuration system (Claude Code compatible):
 | Project | `.claude/settings.json` | Project settings (tracked in git) |
 | Project local | `.claude/settings.local.json` | Project settings (gitignored) |
 
-**Fallback**: If `.claude/` doesn't exist, GenCode falls back to `.gencode/` directories.
+**Fallback**: If `.claude/` doesn't exist, GenCode falls back to `.gen/` directories.
 
 **Loading order**: User → Project → Project local (later overrides earlier for scalar values, arrays are concatenated)
 
@@ -231,7 +231,7 @@ When a tool requires confirmation, you can choose:
 2. **Yes, and don't ask again** - Add a persistent rule to project settings
 3. **No** - Block this operation
 
-When you select "don't ask again", the rule is saved to `.claude/settings.local.json` (or `.gencode/settings.local.json` if using GenCode directories).
+When you select "don't ask again", the rule is saved to `.claude/settings.local.json` (or `.gen/settings.local.json` if using GenCode directories).
 
 ## Prompt-Based Permissions
 

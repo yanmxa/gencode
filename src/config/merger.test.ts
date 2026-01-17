@@ -92,14 +92,14 @@ describe('mergeSettings', () => {
       },
       {
         level: 'user',
-        path: '~/.gencode/settings.json',
-        namespace: 'gencode',
+        path: '~/.gen/settings.json',
+        namespace: 'gen',
         settings: { provider: 'anthropic' }, // Override provider
       },
       {
         level: 'project',
-        path: '.gencode/settings.json',
-        namespace: 'gencode',
+        path: '.gen/settings.json',
+        namespace: 'gen',
         settings: { model: 'claude-sonnet' }, // Override model
       },
     ];
@@ -122,8 +122,8 @@ describe('mergeSettings', () => {
       },
       {
         level: 'project',
-        path: '.gencode/settings.json',
-        namespace: 'gencode',
+        path: '.gen/settings.json',
+        namespace: 'gen',
         settings: {
           permissions: { allow: ['Bash(npm:*)'], deny: ['WebFetch'] },
         },
@@ -148,8 +148,8 @@ describe('extractManagedDeny', () => {
     const sources: ConfigSource[] = [
       {
         level: 'user',
-        path: '~/.gencode/settings.json',
-        namespace: 'gencode',
+        path: '~/.gen/settings.json',
+        namespace: 'gen',
         settings: {
           permissions: { deny: ['WebFetch'] },
         },
@@ -157,7 +157,7 @@ describe('extractManagedDeny', () => {
       {
         level: 'managed',
         path: '/etc/gencode/managed-settings.json',
-        namespace: 'gencode',
+        namespace: 'gen',
         settings: {
           permissions: { deny: ['Bash(curl:*)'] },
         },
@@ -184,7 +184,7 @@ describe('extractManagedDeny', () => {
       {
         level: 'managed',
         path: '/Library/.../GenCode/managed-settings.json',
-        namespace: 'gencode',
+        namespace: 'gen',
         settings: {
           permissions: { deny: ['Bash(curl:*)', 'WebFetch'] },
         },
@@ -200,8 +200,8 @@ describe('extractManagedDeny', () => {
     const sources: ConfigSource[] = [
       {
         level: 'user',
-        path: '~/.gencode/settings.json',
-        namespace: 'gencode',
+        path: '~/.gen/settings.json',
+        namespace: 'gen',
         settings: {
           permissions: { deny: ['WebFetch'] },
         },
@@ -262,14 +262,14 @@ describe('mergeAllSources', () => {
     const sources: ConfigSource[] = [
       {
         level: 'user',
-        path: '~/.gencode/settings.json',
-        namespace: 'gencode',
+        path: '~/.gen/settings.json',
+        namespace: 'gen',
         settings: { provider: 'anthropic' },
       },
       {
         level: 'managed',
         path: '/etc/gencode/managed-settings.json',
-        namespace: 'gencode',
+        namespace: 'gen',
         settings: {
           permissions: { deny: ['Bash(curl:*)'] },
         },
@@ -289,8 +289,8 @@ describe('mergeWithCliArgs', () => {
     const sources: ConfigSource[] = [
       {
         level: 'user',
-        path: '~/.gencode/settings.json',
-        namespace: 'gencode',
+        path: '~/.gen/settings.json',
+        namespace: 'gen',
         settings: { provider: 'openai', model: 'gpt-4' },
       },
     ];
@@ -309,7 +309,7 @@ describe('mergeWithCliArgs', () => {
       {
         level: 'managed',
         path: '/etc/gencode/managed-settings.json',
-        namespace: 'gencode',
+        namespace: 'gen',
         settings: {
           permissions: { deny: ['Bash(curl:*)'] },
         },
@@ -333,14 +333,14 @@ describe('createMergeSummary', () => {
     const sources: ConfigSource[] = [
       {
         level: 'user',
-        path: '~/.gencode/settings.json',
-        namespace: 'gencode',
+        path: '~/.gen/settings.json',
+        namespace: 'gen',
         settings: { provider: 'anthropic' },
       },
       {
         level: 'managed',
         path: '/etc/gencode/managed-settings.json',
-        namespace: 'gencode',
+        namespace: 'gen',
         settings: {
           permissions: { deny: ['Bash(curl:*)'] },
         },
@@ -351,8 +351,8 @@ describe('createMergeSummary', () => {
     const summary = createMergeSummary(merged);
 
     expect(summary).toContain('Configuration Sources');
-    expect(summary).toContain('user:gencode');
-    expect(summary).toContain('managed:gencode');
+    expect(summary).toContain('user:gen');
+    expect(summary).toContain('managed:gen');
     expect(summary).toContain('[enforced]');
     expect(summary).toContain('Managed Deny Rules');
     expect(summary).toContain('Bash(curl:*)');

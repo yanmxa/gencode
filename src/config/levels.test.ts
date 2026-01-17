@@ -31,10 +31,10 @@ describe('findProjectRoot', () => {
     expect(await findProjectRoot(subDir)).toBe(test.projectDir);
   });
 
-  it('should find .gencode directory as project root', async () => {
-    // Remove .git, add .gencode
+  it('should find .gen directory as project root', async () => {
+    // Remove .git, add .gen
     await fs.rm(path.join(test.projectDir, '.git'), { recursive: true });
-    await fs.mkdir(path.join(test.projectDir, '.gencode'));
+    await fs.mkdir(path.join(test.projectDir, '.gen'));
     const subDir = path.join(test.projectDir, 'src');
     await fs.mkdir(subDir, { recursive: true });
 
@@ -59,38 +59,38 @@ describe('findProjectRoot', () => {
 });
 
 describe('parseExtraConfigDirs', () => {
-  const originalEnv = process.env.GENCODE_CONFIG_DIRS;
+  const originalEnv = process.env.GEN_CONFIG;
 
   afterEach(() => {
     if (originalEnv === undefined) {
-      delete process.env.GENCODE_CONFIG_DIRS;
+      delete process.env.GEN_CONFIG;
     } else {
-      process.env.GENCODE_CONFIG_DIRS = originalEnv;
+      process.env.GEN_CONFIG = originalEnv;
     }
   });
 
   it('should return empty array when env var not set', () => {
-    delete process.env.GENCODE_CONFIG_DIRS;
+    delete process.env.GEN_CONFIG;
     expect(parseExtraConfigDirs()).toEqual([]);
   });
 
   it('should parse single directory', () => {
-    process.env.GENCODE_CONFIG_DIRS = '/team/config';
+    process.env.GEN_CONFIG = '/team/config';
     expect(parseExtraConfigDirs()).toEqual(['/team/config']);
   });
 
   it('should parse multiple directories', () => {
-    process.env.GENCODE_CONFIG_DIRS = '/team/config:/shared/rules';
+    process.env.GEN_CONFIG = '/team/config:/shared/rules';
     expect(parseExtraConfigDirs()).toEqual(['/team/config', '/shared/rules']);
   });
 
   it('should expand tilde to home directory', () => {
-    process.env.GENCODE_CONFIG_DIRS = '~/my-config';
+    process.env.GEN_CONFIG = '~/my-config';
     expect(parseExtraConfigDirs()[0]).toBe(path.join(os.homedir(), 'my-config'));
   });
 
   it('should trim whitespace and filter empty strings', () => {
-    process.env.GENCODE_CONFIG_DIRS = '  /path/one  : : /path/two  ';
+    process.env.GEN_CONFIG = '  /path/one  : : /path/two  ';
     expect(parseExtraConfigDirs()).toEqual(['/path/one', '/path/two']);
   });
 });
@@ -117,11 +117,11 @@ describe('getConfigLevels', () => {
 
     expect(userLevel?.paths.length).toBe(2);
     expect(userLevel?.paths.some((p) => p.namespace === 'claude')).toBe(true);
-    expect(userLevel?.paths.some((p) => p.namespace === 'gencode')).toBe(true);
+    expect(userLevel?.paths.some((p) => p.namespace === 'gen')).toBe(true);
   });
 
   it('should include extra dirs when env var is set', async () => {
-    process.env.GENCODE_CONFIG_DIRS = '/team/config';
+    process.env.GEN_CONFIG = '/team/config';
     const extraLevels = (await getConfigLevels(test.projectDir)).filter((l) => l.type === 'extra');
 
     expect(extraLevels.length).toBeGreaterThan(0);
@@ -131,7 +131,7 @@ describe('getConfigLevels', () => {
     for (const level of await getConfigLevels(test.projectDir)) {
       if (level.paths.length >= 2) {
         const claudeIdx = level.paths.findIndex((p) => p.namespace === 'claude');
-        const gencodeIdx = level.paths.findIndex((p) => p.namespace === 'gencode');
+        const gencodeIdx = level.paths.findIndex((p) => p.namespace === 'gen');
         if (claudeIdx !== -1 && gencodeIdx !== -1) {
           expect(claudeIdx).toBeLessThan(gencodeIdx);
         }
@@ -141,23 +141,23 @@ describe('getConfigLevels', () => {
 });
 
 describe('getPrimarySettingsDir', () => {
-  it('should return ~/.gencode for user level', () => {
-    expect(getPrimarySettingsDir('user', '/project')).toBe(path.join(os.homedir(), '.gencode'));
+  it('should return ~/.gen for user level', () => {
+    expect(getPrimarySettingsDir('user', '/project')).toBe(path.join(os.homedir(), '.gen'));
   });
 
-  it('should return project/.gencode for project and local levels', () => {
-    expect(getPrimarySettingsDir('project', '/my/project')).toBe('/my/project/.gencode');
-    expect(getPrimarySettingsDir('local', '/my/project')).toBe('/my/project/.gencode');
+  it('should return project/.gen for project and local levels', () => {
+    expect(getPrimarySettingsDir('project', '/my/project')).toBe('/my/project/.gen');
+    expect(getPrimarySettingsDir('local', '/my/project')).toBe('/my/project/.gen');
   });
 });
 
 describe('getSettingsFilePath', () => {
   it('should return correct paths for each level', () => {
     expect(getSettingsFilePath('user', '/project'))
-      .toBe(path.join(os.homedir(), '.gencode', 'settings.json'));
+      .toBe(path.join(os.homedir(), '.gen', 'settings.json'));
     expect(getSettingsFilePath('project', '/my/project'))
-      .toBe('/my/project/.gencode/settings.json');
+      .toBe('/my/project/.gen/settings.json');
     expect(getSettingsFilePath('local', '/my/project'))
-      .toBe('/my/project/.gencode/settings.local.json');
+      .toBe('/my/project/.gen/settings.local.json');
   });
 });

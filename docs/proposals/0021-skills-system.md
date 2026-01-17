@@ -3,8 +3,9 @@
 - **Proposal ID**: 0021
 - **Author**: mycode team
 - **Status**: Draft
+- **Priority**: P1 (Core Feature)
 - **Created**: 2025-01-15
-- **Updated**: 2025-01-15
+- **Updated**: 2025-01-17
 
 ## Summary
 

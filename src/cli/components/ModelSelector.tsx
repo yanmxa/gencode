@@ -7,24 +7,27 @@ import TextInput from 'ink-text-input';
 import { colors, icons } from './theme.js';
 import { LoadingSpinner } from './Spinner.js';
 import { getProviderStore, type ModelInfo } from '../../providers/store.js';
-import { getProvider } from '../../providers/registry.js';
-import type { ProviderName } from '../../providers/index.js';
+import { getProviderMeta } from '../../providers/registry.js';
+import type { Provider, AuthMethod } from '../../providers/index.js';
 
 interface ModelItem {
-  providerId: ProviderName;
+  providerId: Provider;
   providerName: string;
+  authMethod: AuthMethod;
   model: ModelInfo;
 }
 
 interface ModelSelectorProps {
   currentModel: string;
-  onSelect: (modelId: string, providerId: ProviderName) => void;
+  currentProvider?: Provider; // Current provider for adding missing model placeholder
+  onSelect: (modelId: string, providerId: Provider, authMethod?: AuthMethod) => void;
   onCancel: () => void;
   listModels: () => Promise<{ id: string; name: string }[]>; // Fallback for current provider
 }
 
 export function ModelSelector({
   currentModel,
+  currentProvider,
   onSelect,
   onCancel,
   listModels,
@@ -42,14 +45,17 @@ export function ModelSelector({
       const items: ModelItem[] = [];
 
       for (const providerId of connectedProviders) {
+        const connection = store.getConnection(providerId);
+        const authMethod = connection?.authMethod || 'api_key';
         const cachedModels = store.getModels(providerId);
-        const providerDef = getProvider(providerId);
-        const providerName = providerDef?.name || providerId;
+        const providerMeta = getProviderMeta(providerId);
+        const providerName = providerMeta?.name || providerId;
 
         for (const model of cachedModels) {
           items.push({
             providerId,
             providerName,
+            authMethod,
             model,
           });
         }
@@ -61,8 +67,9 @@ export function ModelSelector({
           const models = await listModels();
           for (const model of models) {
             items.push({
-              providerId: 'anthropic' as ProviderName, // Default, will be overridden
+              providerId: 'anthropic' as Provider, // Default, will be overridden
               providerName: 'Current Provider',
+              authMethod: 'api_key', // Default
               model,
             });
           }
@@ -71,12 +78,32 @@ export function ModelSelector({
         }
       }
 
+      // Add current model if not in list (e.g., experimental models not cached)
+      const hasCurrentModel = items.some((item) => item.model.id === currentModel);
+
+      if (!hasCurrentModel && currentModel && currentProvider) {
+        const connection = store.getConnection(currentProvider);
+        const authMethod = connection?.authMethod || 'api_key';
+        const providerMeta = getProviderMeta(currentProvider);
+        const providerName = providerMeta?.name || currentProvider;
+
+        items.unshift({
+          providerId: currentProvider,
+          providerName,
+          authMethod,
+          model: {
+            id: currentModel,
+            name: currentModel, // Display logic will add "(current)" marker
+          },
+        });
+      }
+
       setAllModels(items);
       setLoading(false);
     };
 
     loadModels();
-  }, [store, listModels]);
+  }, [store, listModels, currentModel, currentProvider]);
 
   // Filter models
   const filterLower = filter.toLowerCase();
@@ -101,14 +128,21 @@ export function ModelSelector({
     return groups;
   }, [filtered]);
 
-  // Flat list for navigation
+  // Flat list for navigation - sort to put current model first
   const flatList = useMemo(() => {
     const items: ModelItem[] = [];
     for (const providerId of Object.keys(groupedModels)) {
       items.push(...groupedModels[providerId]);
     }
-    return items;
-  }, [groupedModels]);
+    // Sort: current model first, then alphabetically
+    return items.sort((a, b) => {
+      const aIsCurrent = a.model.id === currentModel;
+      const bIsCurrent = b.model.id === currentModel;
+      if (aIsCurrent && !bIsCurrent) return -1;
+      if (!aIsCurrent && bIsCurrent) return 1;
+      return (a.model.name || a.model.id).localeCompare(b.model.name || b.model.id);
+    });
+  }, [groupedModels, currentModel]);
 
   // Reset selection when filter changes
   useEffect(() => {
@@ -124,7 +158,7 @@ export function ModelSelector({
     } else if (key.return) {
       if (flatList.length > 0) {
         const selected = flatList[selectedIndex];
-        onSelect(selected.model.id, selected.providerId);
+        onSelect(selected.model.id, selected.providerId, selected.authMethod);
       }
     } else if (key.escape) {
       onCancel();
@@ -152,41 +186,24 @@ export function ModelSelector({
   );
   const endIndex = Math.min(startIndex + maxVisible, flatList.length);
 
-  // Build visible items with provider headers
-  let currentIdx = 0;
+  // Build visible items with provider headers from sorted flatList
   const renderItems: Array<{ type: 'header' | 'model'; content: string; item?: ModelItem }> = [];
+  let lastProviderId: string | null = null;
 
-  for (const providerId of Object.keys(groupedModels)) {
-    const models = groupedModels[providerId];
-    const firstIdx = currentIdx;
-    const lastIdx = currentIdx + models.length - 1;
+  for (let i = startIndex; i < endIndex; i++) {
+    const item = flatList[i];
+    if (!item) continue;
 
-    // Check if any model from this provider is in visible range
-    if (lastIdx >= startIndex && firstIdx < endIndex) {
-      // Add header if first visible item is from this provider
-      const providerDef = getProvider(providerId as ProviderName);
-      const connection = store.getConnection(providerId as ProviderName);
-      const headerText = `${providerDef?.name || providerId}${connection ? ` (${connection.method})` : ''}:`;
-
-      // Only add header if we're showing models from this provider
-      const visibleModelsFromProvider = models.filter((_, i) => {
-        const globalIdx = currentIdx + i;
-        return globalIdx >= startIndex && globalIdx < endIndex;
-      });
-
-      if (visibleModelsFromProvider.length > 0 && (firstIdx >= startIndex || renderItems.length === 0)) {
-        renderItems.push({ type: 'header', content: headerText });
-      }
-
-      for (let i = 0; i < models.length; i++) {
-        const globalIdx = currentIdx + i;
-        if (globalIdx >= startIndex && globalIdx < endIndex) {
-          renderItems.push({ type: 'model', content: '', item: models[i] });
-        }
-      }
+    // Add provider header when provider changes
+    const providerKey = `${item.providerId}:${item.authMethod}`;
+    if (providerKey !== lastProviderId) {
+      const providerMeta = getProviderMeta(item.providerId);
+      const headerText = `${providerMeta?.name || item.providerId} (${item.authMethod}):`;
+      renderItems.push({ type: 'header', content: headerText });
+      lastProviderId = providerKey;
     }
 
-    currentIdx += models.length;
+    renderItems.push({ type: 'model', content: '', item });
   }
 
   return (
@@ -228,11 +245,13 @@ export function ModelSelector({
                 <Text color={isSelected ? colors.primary : colors.textMuted}>
                   {isSelected ? icons.arrow : ' '}
                 </Text>
+                <Text> </Text>
                 <Text color={isCurrent ? colors.primary : colors.textMuted}>
                   {isCurrent ? icons.radio : icons.radioEmpty}
                 </Text>
+                <Text> </Text>
                 <Text color={isSelected ? colors.text : colors.textSecondary} bold={isSelected}>
-                  {' '}{item.model.name || item.model.id}
+                  {item.model.name || item.model.id}
                 </Text>
                 {isCurrent && <Text color={colors.success}> (current)</Text>}
               </Box>

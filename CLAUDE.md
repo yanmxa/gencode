@@ -51,12 +51,12 @@ Events are yielded as `AgentEvent` (text, tool_start, tool_result, done, error).
 
 ### Session Management (`src/session/`)
 
-Sessions persist conversation history to `~/.gencode/sessions/` as JSON files. Supports resume, fork, list, and delete operations.
+Sessions persist conversation history to `~/.gen/sessions/` as JSON files. Supports resume, fork, list, and delete operations.
 
 ## Configuration
 
 Provider/model selection priority:
-1. `GENCODE_PROVIDER` / `GENCODE_MODEL` env vars
+1. `GEN_PROVIDER` / `GEN_MODEL` env vars
 2. Auto-detect from available API keys (ANTHROPIC_API_KEY → OPENAI_API_KEY → GOOGLE_API_KEY)
 3. Default: Gemini
 
@@ -75,9 +75,9 @@ Similar projects for learning and reference:
 
 | Project | Path | Description |
 |---------|------|-------------|
-| OpenCode | `/Users/myan/Workspace/opencode` | Go-based AI coding assistant with TUI, multi-provider support |
-| System Prompts Collection | `/Users/myan/Workspace/ideas/system-prompts-and-models-of-ai-tools` | Collection of system prompts from various AI tools (Claude Code, Cursor, etc.) |
-| Learn Claude Code | `/Users/myan/Workspace/ideas/learn-claude-code` | Educational resources for understanding Claude Code internals |
+| OpenCode | `<path-to-opencode>` | Go-based AI coding assistant with TUI, multi-provider support |
+| System Prompts Collection | `<path-to-system-prompts>` | Collection of system prompts from various AI tools (Claude Code, Cursor, etc.) |
+| Learn Claude Code | `<path-to-learn-claude-code>` | Educational resources for understanding Claude Code internals |
 
 ### Key Learnings from References
 

@@ -133,7 +133,7 @@ function HelpPanel() {
     ['/new', 'New session'],
     ['/save', 'Save session'],
     ['/clear', 'Clear chat'],
-    ['/init', 'Generate AGENT.md'],
+    ['/init', 'Generate GEN.md'],
     ['/memory', 'Show memory files'],
     ['/changes', 'List file changes'],
     ['/rewind [n|all]', 'Undo file changes'],
@@ -266,6 +266,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [showProviderManager, setShowProviderManager] = useState(false);
   const [currentModel, setCurrentModel] = useState(config.model);
+  const [currentProvider, setCurrentProvider] = useState(config.provider);
   const [cmdSuggestionIndex, setCmdSuggestionIndex] = useState(0);
   const [inputKey, setInputKey] = useState(0); // Force cursor to end after autocomplete
   const [pendingTool, setPendingTool] = useState<{ name: string; input: Record<string, unknown> } | null>(null);
@@ -380,9 +381,14 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
   };
 
   // Handle model selection
-  const handleModelSelect = async (model: string, providerId?: ProviderName) => {
-    agent.setModel(model);
+  const handleModelSelect = async (model: string, providerId?: ProviderName, authMethod?: string) => {
+    agent.setModel(model, providerId, authMethod);
     setCurrentModel(model);
+
+    // Update provider state to keep UI in sync
+    const newProvider = agent.getProvider();
+    setCurrentProvider(newProvider);
+
     setShowModelSelector(false);
 
     if (providerId) {
@@ -477,6 +483,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
           // Direct model switch: /model gpt-4o
           agent.setModel(arg);
           setCurrentModel(arg);
+          setCurrentProvider(agent.getProvider());
           addHistory({ type: 'info', content: `Model: ${arg}` });
         } else {
           // Show interactive model selector
@@ -540,13 +547,13 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
       }
 
       case 'init': {
-        // Gather context files and generate AGENT.md
+        // Gather context files and generate GEN.md
         addHistory({ type: 'info', content: 'Analyzing codebase...' });
 
         const contextFiles = await gatherContextFiles(cwd);
         addHistory({ type: 'info', content: getContextSummary(contextFiles) });
 
-        // Check if AGENT.md already exists
+        // Check if GEN.md already exists
         const memoryManager = agent.getMemoryManager();
         const existingPath = await memoryManager.getExistingProjectMemoryPath(cwd);
         let existingContent: string | undefined;
@@ -566,7 +573,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
 
         // Build init prompt and run through agent
         const initPrompt = buildInitPrompt(contextFiles, existingContent);
-        addHistory({ type: 'info', content: 'Generating AGENT.md...' });
+        addHistory({ type: 'info', content: 'Generating GEN.md...' });
         addHistory({ type: 'user', content: '/init' });
         await runAgent(initPrompt);
         return true;
@@ -850,8 +857,8 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
     }
 
     // Handle # prefix for quick memory adds
-    // ## note -> user memory (~/.gencode/AGENT.md)
-    // # note -> project memory (./AGENT.md)
+    // ## note -> user memory (~/.gen/GEN.md)
+    // # note -> project memory (./GEN.md)
     if (trimmed.startsWith('#') && !trimmed.startsWith('#!/')) {
       const memoryManager = agent.getMemoryManager();
       let level: 'user' | 'project';
@@ -1082,6 +1089,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         <Box marginTop={1}>
           <ModelSelector
             currentModel={currentModel}
+            currentProvider={currentProvider}
             onSelect={handleModelSelect}
             onCancel={handleModelCancel}
             listModels={() => agent.listModels()}
@@ -1096,6 +1104,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
             onProviderChange={(providerId, model) => {
               agent.setModel(model);
               setCurrentModel(model);
+              setCurrentProvider(agent.getProvider());
               addHistory({ type: 'info', content: `Switched to ${providerId}: ${model}` });
             }}
           />

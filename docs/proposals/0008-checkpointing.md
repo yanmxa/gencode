@@ -2,9 +2,9 @@
 
 - **Proposal ID**: 0008
 - **Author**: mycode team
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Created**: 2025-01-15
-- **Updated**: 2025-01-15
+- **Updated**: 2025-01-17
 
 ## Summary
 
@@ -325,3 +325,110 @@ No breaking changes to existing functionality.
 
 - [Claude Code Checkpointing](https://code.claude.com/docs/en/checkpointing)
 - [Git Reset and Revert](https://git-scm.com/docs/git-reset)
+
+## Implementation Status
+
+### ✅ Implemented (Phase 1-2)
+
+**Core Checkpointing System**:
+- ✅ `CheckpointManager` class with full API
+  - `recordChange()` - Record file changes
+  - `getCheckpoints()` - Get all checkpoints
+  - `getFileHistory()` - Get file-specific history
+  - `rewind()` - Rewind with multiple options (checkpointId, path, all, count)
+  - `getSummary()` - Get change summary
+  - `clearCheckpoints()` - Clear checkpoints
+  - `formatCheckpointList()` - Format for display
+
+**Tool Integration**:
+- ✅ Automatic tracking in `ToolRegistry`
+  - Pre-execution file state capture
+  - Post-execution checkpoint recording
+  - Support for Write and Edit tools
+  - Automatic detection of create/modify/delete operations
+
+**CLI Commands**:
+- ✅ `/changes` - List all file changes in session
+- ✅ `/rewind [n]` - Rewind specific checkpoint by index
+- ✅ `/rewind all` - Rewind all changes
+- ✅ `/rewind` - Show changes list with usage info
+
+**Type System**:
+- ✅ Complete type definitions (`src/checkpointing/types.ts`)
+- ✅ All interfaces from the proposal
+
+**Testing**:
+- ✅ Test example (`examples/test-checkpointing.ts`)
+
+### ❌ Not Implemented (Phase 3-5)
+
+**Session Persistence**:
+- ❌ Checkpoints not saved to session files
+- ❌ No checkpoint restoration when resuming sessions
+- ❌ Session type doesn't include checkpoint data
+- **Impact**: Checkpoints are lost when the session ends
+
+**User Experience Enhancements**:
+- ❌ Confirmation prompt for `/rewind all`
+  - Currently executes immediately without confirmation
+  - Proposal shows interactive confirmation UI
+- ❌ Inline change indicators
+  - Proposal shows checkpoint saved message after each file modification
+  - Currently no visual feedback when checkpoint is created
+- ❌ Formatted change list UI with boxes/borders
+  - Current implementation uses simple text list
+  - Proposal shows fancy bordered display
+
+**Git Integration** (Phase 3):
+- ❌ Optional git-based versioning
+- ❌ Git commits as checkpoints
+- ❌ Integration with git workflow
+
+**Advanced Features** (Phase 4-5):
+- ❌ Selective rewind by time range
+- ❌ Checkpoint browsing UI
+- ❌ Diff viewing between checkpoints
+- ❌ Storage limits and cleanup policies
+- ❌ Large file optimization
+
+### 📋 Remaining Work
+
+To complete this proposal, the following tasks are needed:
+
+1. **Session Persistence** (High Priority):
+   - Add `checkpoints` field to `SessionMetadata` or `Session` type
+   - Save/load checkpoints in `SessionManager`
+   - Restore checkpoint manager state when resuming sessions
+
+2. **Confirmation UI** (Medium Priority):
+   - Add confirmation prompt for `/rewind all` command
+   - Show list of files that will be affected
+   - Allow user to confirm or cancel
+
+3. **Visual Feedback** (Medium Priority):
+   - Show checkpoint saved message after Write/Edit operations
+   - Improve `/changes` display with better formatting
+   - Add color coding for different change types
+
+4. **Git Integration** (Low Priority):
+   - Optional: Use git for checkpoint storage
+   - Optional: Create git commits as checkpoints
+   - Optional: Integrate with existing git workflow
+
+5. **Advanced Features** (Future):
+   - Time-based rewind
+   - Diff viewing
+   - Storage optimization
+
+### 📁 Implementation Files
+
+| File | Status | Notes |
+|------|--------|-------|
+| `src/checkpointing/types.ts` | ✅ Complete | All types defined |
+| `src/checkpointing/checkpoint-manager.ts` | ✅ Complete | Core logic implemented |
+| `src/checkpointing/index.ts` | ✅ Complete | Module exports |
+| `src/tools/registry.ts` | ✅ Modified | Checkpoint tracking added |
+| `src/cli/components/App.tsx` | ✅ Modified | `/changes` and `/rewind` commands |
+| `examples/test-checkpointing.ts` | ✅ Complete | Test coverage |
+| `src/session/types.ts` | ❌ Not Modified | Missing checkpoint fields |
+| `src/session/manager.ts` | ❌ Not Modified | No persistence logic |

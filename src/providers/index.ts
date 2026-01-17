@@ -6,55 +6,79 @@ export * from './types.js';
 export { OpenAIProvider } from './openai.js';
 export { AnthropicProvider } from './anthropic.js';
 export { GeminiProvider } from './gemini.js';
-export { VertexAIProvider } from './vertex-ai.js';
+export { AnthropicVertexProvider } from './vertex-ai.js';
 
-import type { LLMProvider, OpenAIConfig, AnthropicConfig, GeminiConfig, VertexAIConfig } from './types.js';
+import type {
+  LLMProvider,
+  Provider,
+  AuthMethod,
+  OpenAIConfig,
+  AnthropicConfig,
+  GeminiConfig,
+  VertexAIConfig,
+} from './types.js';
 import { OpenAIProvider } from './openai.js';
 import { AnthropicProvider } from './anthropic.js';
 import { GeminiProvider } from './gemini.js';
-import { VertexAIProvider } from './vertex-ai.js';
+import { AnthropicVertexProvider } from './vertex-ai.js';
 
-export type ProviderName = 'openai' | 'anthropic' | 'gemini' | 'vertex-ai';
+// Legacy type alias for backward compatibility
+/** @deprecated Use Provider instead */
+export type ProviderName = Provider;
+
 export type ProviderConfigMap = {
   openai: OpenAIConfig;
   anthropic: AnthropicConfig;
   gemini: GeminiConfig;
-  'vertex-ai': VertexAIConfig;
 };
 
-export interface CreateProviderOptions<T extends ProviderName = ProviderName> {
-  provider: T;
-  config?: ProviderConfigMap[T];
+export interface CreateProviderOptions {
+  provider: Provider;
+  authMethod?: AuthMethod;
+  config?: OpenAIConfig | AnthropicConfig | GeminiConfig | VertexAIConfig;
 }
 
 /**
- * Create a provider instance by name
+ * Create a provider instance by provider and auth method
+ * If authMethod is not provided, defaults to 'api_key'
  */
 export function createProvider(options: CreateProviderOptions): LLMProvider {
-  switch (options.provider) {
-    case 'openai':
-      return new OpenAIProvider(options.config as OpenAIConfig);
-    case 'anthropic':
-      return new AnthropicProvider(options.config as AnthropicConfig);
-    case 'gemini':
-      return new GeminiProvider(options.config as GeminiConfig);
-    case 'vertex-ai':
-      return new VertexAIProvider(options.config as VertexAIConfig);
-    default:
-      throw new Error(`Unknown provider: ${options.provider}`);
+  const { provider, authMethod = 'api_key', config } = options;
+
+  // Map provider + authMethod to the correct implementation
+  if (provider === 'anthropic') {
+    if (authMethod === 'vertex') {
+      return new AnthropicVertexProvider(config as VertexAIConfig);
+    } else if (authMethod === 'api_key') {
+      return new AnthropicProvider(config as AnthropicConfig);
+    }
+    throw new Error(`Unsupported auth method for anthropic: ${authMethod}`);
   }
+
+  if (provider === 'openai') {
+    if (authMethod === 'api_key') {
+      return new OpenAIProvider(config as OpenAIConfig);
+    }
+    throw new Error(`Unsupported auth method for openai: ${authMethod}`);
+  }
+
+  if (provider === 'gemini') {
+    if (authMethod === 'api_key') {
+      return new GeminiProvider(config as GeminiConfig);
+    }
+    throw new Error(`Unsupported auth method for gemini: ${authMethod}`);
+  }
+
+  throw new Error(`Unknown provider: ${provider}`);
 }
 
 /**
  * Infer provider from model name
+ * Note: This only returns the provider, not the auth method
+ * For Vertex AI models (claude-*@version), this returns 'anthropic'
  */
-export function inferProvider(model: string): ProviderName {
+export function inferProvider(model: string): Provider {
   const modelLower = model.toLowerCase();
-
-  // Vertex AI models (Claude models with @ version suffix like claude-sonnet-4-5@20250929)
-  if (modelLower.includes('claude') && modelLower.includes('@')) {
-    return 'vertex-ai';
-  }
 
   // OpenAI models
   if (
@@ -68,7 +92,7 @@ export function inferProvider(model: string): ProviderName {
     return 'openai';
   }
 
-  // Anthropic models
+  // Anthropic models (including Vertex AI format with @)
   if (modelLower.includes('claude')) {
     return 'anthropic';
   }
@@ -83,9 +107,28 @@ export function inferProvider(model: string): ProviderName {
 }
 
 /**
+ * Infer auth method from model name
+ * Returns undefined if auth method cannot be inferred
+ */
+export function inferAuthMethod(model: string): AuthMethod | undefined {
+  const modelLower = model.toLowerCase();
+
+  // Vertex AI models (Claude models with @ version suffix like claude-sonnet-4-5@20250929)
+  if (modelLower.includes('claude') && modelLower.includes('@')) {
+    return 'vertex';
+  }
+
+  // For other models, we can't reliably infer auth method
+  return undefined;
+}
+
+/**
  * Common model aliases
  */
-export const ModelAliases: Record<string, { provider: ProviderName; model: string }> = {
+export const ModelAliases: Record<
+  string,
+  { provider: Provider; authMethod?: AuthMethod; model: string }
+> = {
   // OpenAI
   'gpt-4o': { provider: 'openai', model: 'gpt-4o' },
   'gpt-4o-mini': { provider: 'openai', model: 'gpt-4o-mini' },
@@ -94,7 +137,7 @@ export const ModelAliases: Record<string, { provider: ProviderName; model: strin
   'o1-mini': { provider: 'openai', model: 'o1-mini' },
   'o3-mini': { provider: 'openai', model: 'o3-mini' },
 
-  // Anthropic
+  // Anthropic (Direct API)
   'claude-opus': { provider: 'anthropic', model: 'claude-opus-4-5-20251101' },
   'claude-sonnet': { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
   'claude-haiku': { provider: 'anthropic', model: 'claude-haiku-4-20250514' },
@@ -105,8 +148,8 @@ export const ModelAliases: Record<string, { provider: ProviderName; model: strin
   'gemini-1.5-pro': { provider: 'gemini', model: 'gemini-1.5-pro' },
   'gemini-1.5-flash': { provider: 'gemini', model: 'gemini-1.5-flash' },
 
-  // Vertex AI (Claude on GCP)
-  'vertex-sonnet': { provider: 'vertex-ai', model: 'claude-sonnet-4-5@20250929' },
-  'vertex-haiku': { provider: 'vertex-ai', model: 'claude-haiku-4-5@20251001' },
-  'vertex-opus': { provider: 'vertex-ai', model: 'claude-opus-4-1@20250805' },
+  // Anthropic via Vertex AI
+  'vertex-sonnet': { provider: 'anthropic', authMethod: 'vertex', model: 'claude-sonnet-4-5@20250929' },
+  'vertex-haiku': { provider: 'anthropic', authMethod: 'vertex', model: 'claude-haiku-4-5@20251001' },
+  'vertex-opus': { provider: 'anthropic', authMethod: 'vertex', model: 'claude-opus-4-1@20250805' },
 };

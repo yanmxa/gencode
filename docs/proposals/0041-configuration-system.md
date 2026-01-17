@@ -49,9 +49,7 @@ Claude Code supports extensive environment variables:
 
 **Cloud Providers:**
 - `CLAUDE_CODE_USE_BEDROCK` - Enable AWS Bedrock
-- `CLAUDE_CODE_USE_VERTEX` - Enable Google Vertex AI
 - `CLAUDE_CODE_SKIP_BEDROCK_AUTH` - Bypass AWS auth
-- `CLAUDE_CODE_SKIP_VERTEX_AUTH` - Bypass Vertex auth
 
 **Operational:**
 - `CLAUDE_CODE_MAX_OUTPUT_TOKENS` - Token limit
@@ -121,7 +119,7 @@ OpenCode provides additional patterns worth adopting:
 ### Directory Structure
 
 ```
-~/.gencode/                          # User-level configuration
+~/.gen/                          # User-level configuration
 ├── settings.json                    # Main user config
 ├── settings.local.json              # User local overrides (gitignored pattern)
 ├── GENCODE.md                       # User context (like CLAUDE.md)
@@ -135,7 +133,7 @@ OpenCode provides additional patterns worth adopting:
 └── sessions/                        # Session data
 
 ./gencode.json                       # Project config (like opencode.json)
-./.gencode/                          # Project directory
+./.gen/                          # Project directory
 ├── settings.local.json              # Project local overrides (gitignored)
 ├── GENCODE.md                       # Project context
 ├── rules/                           # Path-scoped rules
@@ -146,10 +144,10 @@ OpenCode provides additional patterns worth adopting:
 
 1. **Environment variables** (`GENCODE_*`, provider API keys)
 2. **CLI arguments** (`--model`, `--provider`)
-3. **Project local** (`./.gencode/settings.local.json`)
+3. **Project local** (`./.gen/settings.local.json`)
 4. **Project shared** (`./gencode.json`)
-5. **User local** (`~/.gencode/settings.local.json`)
-6. **User global** (`~/.gencode/settings.json`)
+5. **User local** (`~/.gen/settings.local.json`)
+6. **User global** (`~/.gen/settings.json`)
 7. **Defaults**
 
 ### API Design
@@ -227,8 +225,8 @@ interface EnvHandler {
 ### Environment Variables
 
 **Provider Selection:**
-- `GENCODE_PROVIDER` - Provider name (anthropic, openai, gemini, bedrock, vertex)
-- `GENCODE_MODEL` - Model ID
+- `GEN_PROVIDER` - Provider name (anthropic, openai, gemini, bedrock, vertex)
+- `GEN_MODEL` - Model ID
 - `GENCODE_CONFIG` - Custom config file path
 
 **Provider API Keys (Auto-detect):**
@@ -300,7 +298,7 @@ const ConfigSchema = z.object({
 });
 
 export class ConfigLoader {
-  private userConfigDir = path.join(os.homedir(), '.gencode');
+  private userConfigDir = path.join(os.homedir(), '.gen');
 
   async load(): Promise<GencodeConfig> {
     const configs = await Promise.all([
@@ -349,7 +347,7 @@ export class EnvHandler {
   };
 
   getProviderFromEnv(): string | undefined {
-    return process.env.GENCODE_PROVIDER;
+    return process.env.GEN_PROVIDER;
   }
 
   getApiKey(provider: string): string | undefined {
@@ -442,7 +440,7 @@ $ gencode
 # Uses OpenAI automatically
 
 # Or specify explicitly
-$ export GENCODE_PROVIDER=anthropic
+$ export GEN_PROVIDER=anthropic
 $ export ANTHROPIC_API_KEY=sk-ant-...
 $ gencode
 ```
@@ -480,7 +478,7 @@ $ gencode config deny "Read(.env)"
 
 ### Single Config File
 
-A single `~/.gencoderc` file would be simpler but lacks:
+A single `~/.genrc` file would be simpler but lacks:
 - Project-specific overrides
 - Team-shareable settings
 - Local-only sensitive settings
@@ -526,7 +524,7 @@ Simpler implementation but:
 
 ## Migration Path
 
-1. **From mycode**: Migrate `~/.mycode/` to `~/.gencode/`
+1. **From mycode**: Migrate `~/.mycode/` to `~/.gen/`
 2. **Version Detection**: Check for legacy config locations and prompt migration
 3. **Backward Compatibility**: Support reading old config format for one major version
 
@@ -570,9 +568,9 @@ Simpler implementation but:
 
 ### Key Implementation Details
 
-1. **Multi-level Loading**: User (`~/.gencode/`) → Project (`./.gencode/`) with proper merge
+1. **Multi-level Loading**: User (`~/.gen/`) → Project (`./.gen/`) with proper merge
 2. **Claude Code Compatibility**: Supports both `GENCODE.md` and `CLAUDE.md` for memory files
-3. **Environment Variables**: `GENCODE_PROVIDER`, `GENCODE_MODEL`, and provider API key auto-detection
+3. **Environment Variables**: `GEN_PROVIDER`, `GEN_MODEL`, and provider API key auto-detection
 4. **Deep Merge**: Arrays concatenate, objects merge recursively
 5. **JSONC Support**: Configuration files support comments and trailing commas
 
@@ -580,8 +578,8 @@ Simpler implementation but:
 
 1. Environment variables (`GENCODE_*`)
 2. CLI arguments
-3. Project local (`./.gencode/settings.local.json`)
+3. Project local (`./.gen/settings.local.json`)
 4. Project shared (`./gencode.json`)
-5. User local (`~/.gencode/settings.local.json`)
-6. User global (`~/.gencode/settings.json`)
+5. User local (`~/.gen/settings.local.json`)
+6. User global (`~/.gen/settings.json`)
 7. Defaults

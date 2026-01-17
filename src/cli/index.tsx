@@ -9,7 +9,9 @@ import { render } from 'ink';
 import React from 'react';
 import { App } from './components/App.js';
 import type { AgentConfig } from '../agent/types.js';
-import { SettingsManager, ProvidersConfigManager, type Settings, type ProviderName } from '../config/index.js';
+import { SettingsManager, ProvidersConfigManager, type Settings, type Provider } from '../config/index.js';
+import type { AuthMethod } from '../providers/types.js';
+import { inferProvider, inferAuthMethod } from '../providers/index.js';
 
 // ============================================================================
 // Proxy Setup
@@ -32,32 +34,43 @@ async function setupProxy(): Promise<void> {
 // Configuration
 // ============================================================================
 function detectConfig(settings: Settings, providersConfig: ProvidersConfigManager): AgentConfig {
-  let provider: ProviderName = 'gemini';
+  let provider: Provider = 'gemini';
+  let authMethod: AuthMethod | undefined;
   let model = 'gemini-2.0-flash';
 
-  // Check for explicit Vertex AI enablement first (highest priority for auto-detect)
-  if (process.env.GENCODE_USE_VERTEX === '1' || process.env.CLAUDE_CODE_USE_VERTEX === '1') {
-    provider = 'vertex-ai';
-    model = process.env.VERTEX_AI_MODEL ?? 'claude-sonnet-4-5@20250929';
-  }
-  // Auto-detect from API keys
-  else if (process.env.ANTHROPIC_API_KEY) {
+  // Auto-detect from environment variables
+  // Check Vertex AI first (requires explicit opt-in)
+  const useVertex = process.env.CLAUDE_CODE_USE_VERTEX === '1' || process.env.CLAUDE_CODE_USE_VERTEX === 'true';
+  const hasVertexProject = !!(
+    process.env.ANTHROPIC_VERTEX_PROJECT_ID ||
+    process.env.GCLOUD_PROJECT ||
+    process.env.GOOGLE_CLOUD_PROJECT
+  );
+
+  if (useVertex && hasVertexProject) {
     provider = 'anthropic';
+    authMethod = 'vertex';
+    model = 'claude-sonnet-4-5@20250929';
+  } else if (process.env.ANTHROPIC_API_KEY) {
+    provider = 'anthropic';
+    authMethod = 'api_key';
     model = 'claude-sonnet-4-20250514';
   } else if (process.env.OPENAI_API_KEY) {
     provider = 'openai';
+    authMethod = 'api_key';
     model = 'gpt-4o';
   } else if (process.env.GOOGLE_API_KEY) {
     provider = 'gemini';
+    authMethod = 'api_key';
     model = 'gemini-2.0-flash';
   }
 
   // Override from env vars
-  if (process.env.GENCODE_PROVIDER) {
-    provider = process.env.GENCODE_PROVIDER as ProviderName;
+  if (process.env.GEN_PROVIDER) {
+    provider = process.env.GEN_PROVIDER as Provider;
   }
-  if (process.env.GENCODE_MODEL) {
-    model = process.env.GENCODE_MODEL;
+  if (process.env.GEN_MODEL) {
+    model = process.env.GEN_MODEL;
   }
 
   // Override from saved settings (highest priority)
@@ -66,17 +79,23 @@ function detectConfig(settings: Settings, providersConfig: ProvidersConfigManage
   }
   if (settings.model) {
     model = settings.model;
-    // Auto-infer provider from model using providers.json (if not explicitly set)
+    // Try to infer provider and authMethod from cached models first
     if (!settings.provider) {
-      const inferredProvider = providersConfig.inferProvider(model);
-      if (inferredProvider) {
-        provider = inferredProvider;
+      const cached = providersConfig.inferProviderFromCache(model);
+      if (cached) {
+        provider = cached.provider;
+        authMethod = cached.authMethod;
+      } else {
+        // Fall back to model name inference
+        provider = inferProvider(model);
+        authMethod = inferAuthMethod(model);
       }
     }
   }
 
   return {
     provider,
+    authMethod,
     model,
     cwd: process.cwd(),
     maxTurns: 20,

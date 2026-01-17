@@ -2,8 +2,8 @@
  * Agent - Core agent implementation with tool loop and session support
  */
 
-import type { LLMProvider, Message, ToolResultContent } from '../providers/types.js';
-import { createProvider, inferProvider } from '../providers/index.js';
+import type { LLMProvider, Message, ToolResultContent, Provider, AuthMethod } from '../providers/types.js';
+import { createProvider, inferProvider, inferAuthMethod } from '../providers/index.js';
 import { ToolRegistry, createDefaultRegistry } from '../tools/index.js';
 import {
   PermissionManager,
@@ -47,7 +47,10 @@ export class Agent {
       ...config,
     };
 
-    this.provider = createProvider({ provider: config.provider });
+    this.provider = createProvider({
+      provider: config.provider,
+      authMethod: config.authMethod,
+    });
     this.registry = createDefaultRegistry();
     this.permissions = new PermissionManager({
       config: config.permissions,
@@ -141,7 +144,24 @@ export class Agent {
    */
   async loadMemory(): Promise<LoadedMemory> {
     const cwd = this.config.cwd ?? process.cwd();
-    this.loadedMemory = await this.memoryManager.load({ cwd });
+
+    // Determine memory merge strategy (priority: env var > config > default)
+    const envStrategy = process.env.GEN_MEMORY_STRATEGY as
+      | 'fallback'
+      | 'both'
+      | 'gen-only'
+      | 'claude-only'
+      | undefined;
+    const strategy =
+      envStrategy ?? this.config.memoryMergeStrategy ?? 'fallback';
+
+    this.loadedMemory = await this.memoryManager.load({ cwd, strategy });
+
+    // Log verbose summary if verbose mode is enabled
+    if (this.config.verbose) {
+      console.log(this.memoryManager.getVerboseSummary(strategy));
+    }
+
     return this.loadedMemory;
   }
 
@@ -233,15 +253,30 @@ export class Agent {
 
   /**
    * Set the model to use (auto-switches provider if needed)
+   * @param model Model ID to use
+   * @param provider Optional: explicit provider (otherwise inferred from model name)
+   * @param authMethod Optional: explicit auth method (otherwise inferred or use current)
    */
-  setModel(model: string): void {
+  setModel(model: string, provider?: string, authMethod?: string): void {
     this.config.model = model;
 
-    // Auto-switch provider based on model name
-    const newProvider = inferProvider(model);
-    if (newProvider !== this.config.provider) {
+    // Determine new provider and authMethod
+    const newProvider = (provider as Provider | undefined) ?? inferProvider(model);
+    const newAuthMethod = (authMethod as AuthMethod | undefined) ??
+                         inferAuthMethod(model) ??
+                         this.config.authMethod;
+
+    // Recreate provider if either provider or authMethod changed
+    const providerChanged = newProvider !== this.config.provider;
+    const authMethodChanged = newAuthMethod !== this.config.authMethod;
+
+    if (providerChanged || authMethodChanged) {
       this.config.provider = newProvider;
-      this.provider = createProvider({ provider: newProvider });
+      this.config.authMethod = newAuthMethod;
+      this.provider = createProvider({
+        provider: newProvider,
+        authMethod: newAuthMethod,
+      });
     }
   }
 
@@ -250,6 +285,13 @@ export class Agent {
    */
   getModel(): string {
     return this.config.model;
+  }
+
+  /**
+   * Get current provider
+   */
+  getProvider(): Provider {
+    return this.config.provider;
   }
 
   /**

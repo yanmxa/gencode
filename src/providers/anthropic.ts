@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { calculateCost } from '../pricing/calculator.js';
 import type {
   LLMProvider,
+  ProviderClassMeta,
   CompletionOptions,
   CompletionResponse,
   StreamChunk,
@@ -23,6 +24,14 @@ type AnthropicTool = Anthropic.Tool;
 type AnthropicContent = Anthropic.ContentBlockParam;
 
 export class AnthropicProvider implements LLMProvider {
+  static readonly meta: ProviderClassMeta = {
+    provider: 'anthropic',
+    authMethod: 'api_key',
+    envVars: ['ANTHROPIC_API_KEY'],
+    displayName: 'Direct API',
+    description: 'Direct API access',
+  };
+
   readonly name = 'anthropic';
   private client: Anthropic;
 

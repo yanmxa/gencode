@@ -7,6 +7,7 @@ import OpenAI from 'openai';
 import { calculateCost } from '../pricing/calculator.js';
 import type {
   LLMProvider,
+  ProviderClassMeta,
   CompletionOptions,
   CompletionResponse,
   StreamChunk,
@@ -22,6 +23,14 @@ type OpenAIMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 type OpenAITool = OpenAI.Chat.Completions.ChatCompletionTool;
 
 export class OpenAIProvider implements LLMProvider {
+  static readonly meta: ProviderClassMeta = {
+    provider: 'openai',
+    authMethod: 'api_key',
+    envVars: ['OPENAI_API_KEY'],
+    displayName: 'Direct API',
+    description: 'Direct API access',
+  };
+
   readonly name = 'openai';
   private client: OpenAI;
 

@@ -391,7 +391,7 @@ interface CostConfig {
 │ │   output: session.tokenUsage.output + 567,                   │    │
 │ │ }                                                              │    │
 │ │                                                               │    │
-│ │ 存储到: ~/.gencode/sessions/{id}.json                         │    │
+│ │ 存储到: ~/.gen/sessions/{id}.json                         │    │
 │ └─────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────┘
                                 ↓
@@ -495,7 +495,7 @@ interface CostConfig {
 │ │ session.totalCost = (session.totalCost || 0) +               │    │
 │ │                      response.cost.totalCost;                 │    │
 │ │                                                               │    │
-│ │ 存储到: ~/.gencode/sessions/{id}.json                         │    │
+│ │ 存储到: ~/.gen/sessions/{id}.json                         │    │
 │ │   {                                                           │    │
 │ │     "id": "...",                                              │    │
 │ │     "tokenUsage": { "input": 1234, "output": 567 },          │    │

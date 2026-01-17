@@ -131,16 +131,25 @@ To use Claude models via Google Vertex AI:
 ### 1. Set Environment Variables
 
 ```bash
+# Required: Enable Vertex AI
+export CLAUDE_CODE_USE_VERTEX=1
+
 # Required: Your GCP project ID
 export ANTHROPIC_VERTEX_PROJECT_ID="your-project-id"
 
-# Optional: Region (defaults to us-east5)
-export ANTHROPIC_VERTEX_REGION="us-east5"
+# Required: Region (use 'global' or specific region)
+export CLOUD_ML_REGION=global
 ```
 
-Alternative variables also supported:
-- `GOOGLE_CLOUD_PROJECT` - GCP project ID
-- `CLOUD_ML_REGION` - GCP region
+**Environment Variable Details:**
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `CLAUDE_CODE_USE_VERTEX` | Yes | - | Set to `1` to enable Vertex AI |
+| `ANTHROPIC_VERTEX_PROJECT_ID` | Yes | - | Your GCP project ID (also accepts `GCLOUD_PROJECT` or `GOOGLE_CLOUD_PROJECT`) |
+| `CLOUD_ML_REGION` | Yes | `us-east5` | Region (use `global` or specific region like `us-east5`) |
+
+**Documentation:** https://code.claude.com/docs/en/google-vertex-ai
 
 ### 2. Authenticate with Google Cloud
 
@@ -169,12 +178,24 @@ gcloud services enable aiplatform.googleapis.com
 # Press Enter to connect
 ```
 
+## Architecture
+
+GenCode uses a two-layer provider architecture:
+
+- **Layer 1: Provider** (Semantic layer) - `anthropic` | `openai` | `gemini`
+- **Layer 2: AuthMethod** (Implementation layer) - `api_key` | `vertex` | `bedrock` | `azure`
+
+Each provider can support multiple authentication methods. For example, Anthropic supports:
+- `api_key` - Direct API access
+- `vertex` - Google Vertex AI
+- `bedrock` - Amazon Bedrock (coming soon)
+
 ## Configuration Storage
 
 Provider connections and cached models are stored in:
 
 ```
-~/.gencode/
+~/.gen/
 ├── settings.json      # Current model and provider settings
 └── providers.json     # Provider connections and model cache
 ```
@@ -185,15 +206,33 @@ Provider connections and cached models are stored in:
 {
   "connections": {
     "anthropic": {
-      "method": "vertex",
+      "authMethod": "vertex",
+      "method": "Google Vertex AI",
       "connectedAt": "2025-01-15T10:00:00Z"
+    },
+    "openai": {
+      "authMethod": "api_key",
+      "method": "Direct API",
+      "connectedAt": "2025-01-15T09:00:00Z"
     }
   },
   "models": {
-    "anthropic": {
+    "anthropic:vertex": {
       "cachedAt": "2025-01-15T10:00:00Z",
       "list": [
+        { "id": "claude-3-5-sonnet@20241022", "name": "Claude 3.5 Sonnet" }
+      ]
+    },
+    "anthropic:api_key": {
+      "cachedAt": "2025-01-15T11:00:00Z",
+      "list": [
         { "id": "claude-sonnet-4-5@20250929", "name": "Claude Sonnet 4.5" }
+      ]
+    },
+    "openai:api_key": {
+      "cachedAt": "2025-01-15T09:00:00Z",
+      "list": [
+        { "id": "gpt-4", "name": "GPT-4" }
       ]
     }
   },
@@ -201,7 +240,53 @@ Provider connections and cached models are stored in:
 }
 ```
 
-The `searchProvider` field stores the selected search provider. Valid values: `exa`, `serper`, `brave`. If not set, defaults to `exa`.
+**Key points:**
+- `connections` stores the active connection for each provider
+  - `authMethod` - Authentication method being used
+  - `method` - Display name (optional, legacy field)
+- `models` uses `"provider:authMethod"` as the key
+  - Supports multiple auth methods for the same provider
+  - Each auth method has its own cached model list
+- `searchProvider` - Selected search provider (`exa`, `serper`, `brave`)
+
+### Migration from Old Format
+
+If you're upgrading from an older version, run the migration script to update your configuration:
+
+```bash
+npm run migrate
+```
+
+The script will:
+1. Convert old format models keys (e.g., `"anthropic"`) to new format (e.g., `"anthropic:vertex"`)
+2. Add `authMethod` field to connections
+3. Create a backup of your old configuration
+
+**Old format:**
+```json
+{
+  "models": {
+    "anthropic": {
+      "provider": "anthropic",
+      "authMethod": "vertex",
+      "cachedAt": "...",
+      "list": [...]
+    }
+  }
+}
+```
+
+**New format:**
+```json
+{
+  "models": {
+    "anthropic:vertex": {
+      "cachedAt": "...",
+      "list": [...]
+    }
+  }
+}
+```
 
 ## Troubleshooting
 

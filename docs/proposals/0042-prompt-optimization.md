@@ -199,7 +199,7 @@ src/prompts/
 
 ### 4.2 Prompt Loading Strategy
 
-The prompt loading system uses a **model → provider → prompt** flow, leveraging the `~/.gencode/providers.json` configuration to automatically determine which prompt to use.
+The prompt loading system uses a **model → provider → prompt** flow, leveraging the `~/.gen/providers.json` configuration to automatically determine which prompt to use.
 
 #### 4.2.1 Loading Flow
 
@@ -209,7 +209,7 @@ model ID (e.g., "claude-sonnet-4-5@20250929")
     ▼
 ┌─────────────────────────────────────┐
 │ Look up provider in providers.json  │
-│ (search models.{provider}.list)     │
+│ (search models[provider:*].list)    │
 └──────────────┬──────────────────────┘
                │
     ┌──────────┴──────────┐
@@ -242,18 +242,26 @@ model ID (e.g., "claude-sonnet-4-5@20250929")
 
 #### 4.2.2 Provider Lookup from providers.json
 
-The `~/.gencode/providers.json` file stores cached models for each connected provider:
+The `~/.gen/providers.json` file stores cached models for each provider using `"provider:authMethod"` keys:
 
 ```json
 {
   "models": {
-    "anthropic": {
+    "anthropic:api_key": {
+      "cachedAt": "2025-01-17T10:00:00Z",
       "list": [
         { "id": "claude-sonnet-4-5@20250929", "name": "Claude Sonnet 4.5" },
         { "id": "claude-opus-4-1@20250805", "name": "Claude Opus 4.1" }
       ]
     },
-    "gemini": {
+    "anthropic:vertex": {
+      "cachedAt": "2025-01-17T09:00:00Z",
+      "list": [
+        { "id": "claude-3-5-sonnet@20241022", "name": "Claude 3.5 Sonnet" }
+      ]
+    },
+    "gemini:api_key": {
+      "cachedAt": "2025-01-17T08:00:00Z",
       "list": [
         { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro" }
       ]
@@ -262,7 +270,7 @@ The `~/.gencode/providers.json` file stores cached models for each connected pro
 }
 ```
 
-Given a model ID, the system searches through each provider's model list to find the owning provider.
+Given a model ID, the system searches through each provider's model list to find the owning provider. The key format is `"provider:authMethod"` to support multiple authentication methods for the same provider.
 
 #### 4.2.3 Provider to Prompt Type Mapping
 
@@ -293,7 +301,7 @@ This ensures the system always has a valid prompt to use.
 // 5.1.1 Provider Type Definition
 export type ProviderType = 'anthropic' | 'openai' | 'gemini' | 'generic';
 
-// 5.1.2 Look up provider for a model from ~/.gencode/providers.json
+// 5.1.2 Look up provider for a model from ~/.gen/providers.json
 export function getProviderForModel(model: string): string | null {
   const config = loadProvidersConfig();
   if (!config?.models) return null;
@@ -462,7 +470,7 @@ User starts GenCode CLI
            │
            ▼
 ┌─────────────────────┐     ┌─────────────────────────────┐
-│ 3. Memory Loading    │────▶│ Load ~/.gencode/GENCODE.md  │
+│ 3. Memory Loading    │────▶│ Load ~/.gen/GENCODE.md  │
 │    (if exists)       │     │ Load ./CLAUDE.md (fallback) │
 └──────────┬──────────┘     └─────────────────────────────┘
            │
@@ -480,7 +488,7 @@ User starts GenCode CLI
 │                                                         │
 │    ┌─────────────────────────────────────────────────┐  │
 │    │ a. getPromptTypeForModel(model, fallback)       │  │
-│    │    - Look up provider in ~/.gencode/providers.json│
+│    │    - Look up provider in ~/.gen/providers.json│
 │    │    - Map provider → prompt type                  │  │
 │    │    - Fallback to 'generic' if not found         │  │
 │    └─────────────────────────────────────────────────┘  │

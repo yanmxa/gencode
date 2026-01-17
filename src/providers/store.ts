@@ -1,13 +1,13 @@
 /**
  * Provider Store - Manages provider connections and model cache
  *
- * Storage location: ~/.gencode/providers.json
+ * Storage location: ~/.gen/providers.json
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import type { ProviderName } from './index.js';
+import type { Provider, AuthMethod } from './types.js';
 import type { SearchProviderName } from './search/types.js';
 
 export interface ModelInfo {
@@ -16,7 +16,8 @@ export interface ModelInfo {
 }
 
 export interface ProviderConnection {
-  method: string;
+  authMethod: AuthMethod; // Authentication method
+  method?: string; // Legacy: Connection name (e.g., "Direct API", "Google Vertex AI")
   connectedAt: string;
 }
 
@@ -31,8 +32,27 @@ export interface ProvidersConfig {
   searchProvider?: SearchProviderName;
 }
 
-const CONFIG_DIR = join(homedir(), '.gencode');
+const CONFIG_DIR = join(homedir(), '.gen');
 const CONFIG_FILE = join(CONFIG_DIR, 'providers.json');
+
+/**
+ * Generate model cache key from provider and authMethod
+ */
+export function getModelCacheKey(provider: Provider, authMethod: AuthMethod): string {
+  return `${provider}:${authMethod}`;
+}
+
+/**
+ * Parse model cache key to extract provider and authMethod
+ */
+export function parseModelCacheKey(key: string): { provider: Provider; authMethod: AuthMethod } | null {
+  const parts = key.split(':');
+  if (parts.length !== 2) return null;
+  return {
+    provider: parts[0] as Provider,
+    authMethod: parts[1] as AuthMethod,
+  };
+}
 
 /**
  * Provider Store - manages connection state and model cache
@@ -76,67 +96,93 @@ export class ProviderStore {
   /**
    * Check if a provider is connected
    */
-  isConnected(providerId: ProviderName): boolean {
+  isConnected(providerId: Provider): boolean {
     return !!this.config.connections[providerId];
   }
 
   /**
    * Get connection info for a provider
    */
-  getConnection(providerId: ProviderName): ProviderConnection | undefined {
+  getConnection(providerId: Provider): ProviderConnection | undefined {
     return this.config.connections[providerId];
   }
 
   /**
    * Get all connected provider IDs
    */
-  getConnectedProviders(): ProviderName[] {
-    return Object.keys(this.config.connections) as ProviderName[];
+  getConnectedProviders(): Provider[] {
+    return Object.keys(this.config.connections) as Provider[];
   }
 
   /**
-   * Connect a provider
+   * Connect a provider with auth method
    */
-  connect(providerId: ProviderName, method: string): void {
+  connect(providerId: Provider, authMethod: AuthMethod, displayName?: string): void {
     this.config.connections[providerId] = {
-      method,
+      authMethod,
+      method: displayName, // Optional legacy field for display
       connectedAt: new Date().toISOString(),
     };
     this.save();
   }
 
   /**
-   * Disconnect a provider
+   * Disconnect a provider and clear all its model caches
    */
-  disconnect(providerId: ProviderName): void {
+  disconnect(providerId: Provider): void {
     delete this.config.connections[providerId];
-    delete this.config.models[providerId];
+
+    // Remove all model caches for this provider (across all authMethods)
+    for (const key of Object.keys(this.config.models)) {
+      const parsed = parseModelCacheKey(key);
+      if (parsed && parsed.provider === providerId) {
+        delete this.config.models[key];
+      }
+    }
+
     this.save();
   }
 
   /**
    * Get cached models for a provider
+   * @param providerId Provider ID
+   * @param authMethod Optional: specific auth method. If not provided, returns all models for the provider
    */
-  getModels(providerId: ProviderName): ModelInfo[] {
-    return this.config.models[providerId]?.list ?? [];
+  getModels(providerId: Provider, authMethod?: AuthMethod): ModelInfo[] {
+    if (authMethod) {
+      // Get models for specific authMethod
+      const key = getModelCacheKey(providerId, authMethod);
+      return this.config.models[key]?.list ?? [];
+    }
+
+    // Get all models for this provider (across all authMethods)
+    const allModels: ModelInfo[] = [];
+    for (const [key, cache] of Object.entries(this.config.models)) {
+      const parsed = parseModelCacheKey(key);
+      if (parsed && parsed.provider === providerId) {
+        allModels.push(...cache.list);
+      }
+    }
+    return allModels;
   }
 
   /**
    * Get all cached models grouped by provider
    */
-  getAllModels(): Record<ProviderName, ModelInfo[]> {
+  getAllModels(): Record<Provider, ModelInfo[]> {
     const result: Record<string, ModelInfo[]> = {};
     for (const [providerId, cache] of Object.entries(this.config.models)) {
       result[providerId] = cache.list;
     }
-    return result as Record<ProviderName, ModelInfo[]>;
+    return result as Record<Provider, ModelInfo[]>;
   }
 
   /**
-   * Cache models for a provider
+   * Cache models for a provider with auth method
    */
-  cacheModels(providerId: ProviderName, models: ModelInfo[]): void {
-    this.config.models[providerId] = {
+  cacheModels(providerId: Provider, authMethod: AuthMethod, models: ModelInfo[]): void {
+    const key = getModelCacheKey(providerId, authMethod);
+    this.config.models[key] = {
       cachedAt: new Date().toISOString(),
       list: models,
     };
@@ -145,17 +191,37 @@ export class ProviderStore {
 
   /**
    * Get cache timestamp for a provider
+   * @param providerId Provider ID
+   * @param authMethod Optional: specific auth method. If not provided, returns latest cache time
    */
-  getCacheTime(providerId: ProviderName): Date | undefined {
-    const cache = this.config.models[providerId];
-    return cache ? new Date(cache.cachedAt) : undefined;
+  getCacheTime(providerId: Provider, authMethod?: AuthMethod): Date | undefined {
+    if (authMethod) {
+      const key = getModelCacheKey(providerId, authMethod);
+      const cache = this.config.models[key];
+      return cache ? new Date(cache.cachedAt) : undefined;
+    }
+
+    // Get latest cache time across all authMethods for this provider
+    let latestTime: Date | undefined;
+    for (const [key, cache] of Object.entries(this.config.models)) {
+      const parsed = parseModelCacheKey(key);
+      if (parsed && parsed.provider === providerId) {
+        const cacheTime = new Date(cache.cachedAt);
+        if (!latestTime || cacheTime > latestTime) {
+          latestTime = cacheTime;
+        }
+      }
+    }
+    return latestTime;
   }
 
   /**
    * Check if model cache is stale (older than 24 hours)
+   * @param providerId Provider ID
+   * @param authMethod Optional: specific auth method. If not provided, checks if any cache is fresh
    */
-  isCacheStale(providerId: ProviderName): boolean {
-    const cacheTime = this.getCacheTime(providerId);
+  isCacheStale(providerId: Provider, authMethod?: AuthMethod): boolean {
+    const cacheTime = this.getCacheTime(providerId, authMethod);
     if (!cacheTime) return true;
     const hoursSinceCache = (Date.now() - cacheTime.getTime()) / (1000 * 60 * 60);
     return hoursSinceCache > 24;
@@ -173,9 +239,45 @@ export class ProviderStore {
 
   /**
    * Get model count for a specific provider
+   * @param providerId Provider ID
+   * @param authMethod Optional: specific auth method. If not provided, counts all models for the provider
    */
-  getModelCount(providerId: ProviderName): number {
-    return this.config.models[providerId]?.list.length ?? 0;
+  getModelCount(providerId: Provider, authMethod?: AuthMethod): number {
+    if (authMethod) {
+      const key = getModelCacheKey(providerId, authMethod);
+      return this.config.models[key]?.list.length ?? 0;
+    }
+
+    // Count all models for this provider (across all authMethods)
+    let count = 0;
+    for (const [key, cache] of Object.entries(this.config.models)) {
+      const parsed = parseModelCacheKey(key);
+      if (parsed && parsed.provider === providerId) {
+        count += cache.list.length;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Get the model cache info
+   * @param providerId Provider ID
+   * @param authMethod Optional: specific auth method
+   */
+  getModelCache(providerId: Provider, authMethod?: AuthMethod): ModelCache | undefined {
+    if (authMethod) {
+      const key = getModelCacheKey(providerId, authMethod);
+      return this.config.models[key];
+    }
+
+    // If no authMethod specified, try to find any cache for this provider
+    for (const [key, cache] of Object.entries(this.config.models)) {
+      const parsed = parseModelCacheKey(key);
+      if (parsed && parsed.provider === providerId) {
+        return cache;
+      }
+    }
+    return undefined;
   }
 
   /**

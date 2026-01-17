@@ -27,7 +27,7 @@ export async function createTestProject(prefix = 'gencode-test-'): Promise<TestP
     projectDir,
     cleanup: async () => {
       await fs.rm(tempDir, { recursive: true, force: true });
-      delete process.env.GENCODE_CONFIG_DIRS;
+      delete process.env.GEN_CONFIG;
     },
   };
 }
@@ -37,11 +37,11 @@ export async function createTestProject(prefix = 'gencode-test-'): Promise<TestP
  */
 export async function writeSettings(
   projectDir: string,
-  namespace: 'claude' | 'gencode',
+  namespace: 'claude' | 'gen',
   settings: Record<string, unknown>,
   local = false
 ): Promise<string> {
-  const dir = path.join(projectDir, namespace === 'claude' ? '.claude' : '.gencode');
+  const dir = path.join(projectDir, namespace === 'claude' ? '.claude' : '.gen');
   await fs.mkdir(dir, { recursive: true });
 
   const filename = local ? 'settings.local.json' : 'settings.json';
@@ -56,18 +56,18 @@ export async function writeSettings(
  */
 export async function writeMemory(
   projectDir: string,
-  namespace: 'claude' | 'gencode',
+  namespace: 'claude' | 'gen',
   content: string,
   options: { local?: boolean; inDir?: boolean } = {}
 ): Promise<string> {
   const { local = false, inDir = true } = options;
   const filename = namespace === 'claude'
     ? (local ? 'CLAUDE.local.md' : 'CLAUDE.md')
-    : (local ? 'AGENT.local.md' : 'AGENT.md');
+    : (local ? 'GEN.local.md' : 'GEN.md');
 
   let filePath: string;
   if (inDir) {
-    const dir = path.join(projectDir, namespace === 'claude' ? '.claude' : '.gencode');
+    const dir = path.join(projectDir, namespace === 'claude' ? '.claude' : '.gen');
     await fs.mkdir(dir, { recursive: true });
     filePath = path.join(dir, filename);
   } else {

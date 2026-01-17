@@ -19,15 +19,14 @@ This directory contains enhancement proposals for the gencode project. Each prop
 | [0001](./0001-web-fetch-tool.md) | WebFetch Tool | Implemented |
 | [0002](./0002-web-search-tool.md) | WebSearch Tool | Implemented |
 | [0003](./0003-task-subagents.md) | Task Tool & Subagents | Draft |
-| [0004](./0004-plan-mode.md) | Plan Mode | Draft |
+| [0004](./0004-plan-mode.md) | Plan Mode | Implemented |
 | [0005](./0005-todo-system.md) | Todo System | Implemented |
 | [0006](./0006-memory-system.md) | Memory System (MYCODE.md) | Implemented |
 | [0007](./0007-context-management.md) | Context Management | Draft |
-| [0008](./0008-checkpointing.md) | Checkpointing | Draft |
+| [0008](./0008-checkpointing.md) | Checkpointing | Partially Implemented |
 | [0009](./0009-hooks-system.md) | Hooks System | Draft |
 | [0010](./0010-mcp-integration.md) | MCP Integration | Draft |
-| [0011](./0011-custom-commands.md) | Custom Commands | Draft |
-| [0012](./0012-ask-user-question.md) | AskUserQuestion Tool | Implemented |
+| [0021](./0021-skills-system.md) | Skills System | Draft |
 | [0041](./0041-configuration-system.md) | Configuration System | Implemented |
 | [0042](./0042-prompt-optimization.md) | Prompt System Optimization | Implemented |
 
@@ -35,6 +34,8 @@ This directory contains enhancement proposals for the gencode project. Each prop
 
 | ID | Title | Status |
 |----|-------|--------|
+| [0011](./0011-custom-commands.md) | Custom Commands | Draft |
+| [0012](./0012-ask-user-question.md) | AskUserQuestion Tool | Implemented |
 | [0013](./0013-multi-edit-tool.md) | MultiEdit Tool | Draft |
 | [0014](./0014-lsp-tool.md) | LSP Tool | Draft |
 | [0015](./0015-ls-tool.md) | LS Tool | Draft |
@@ -43,7 +44,6 @@ This directory contains enhancement proposals for the gencode project. Each prop
 | [0018](./0018-parallel-tool-execution.md) | Parallel Tool Execution | Draft |
 | [0019](./0019-session-enhancements.md) | Session Enhancements | Draft |
 | [0020](./0020-session-summarization.md) | Session Summarization | Draft |
-| [0021](./0021-skills-system.md) | Skills System | Draft |
 | [0022](./0022-plugin-system.md) | Plugin System | Draft |
 | [0023](./0023-permission-enhancements.md) | Permission Enhancements | Draft |
 | [0024](./0024-keyboard-shortcuts.md) | Keyboard Shortcuts | Draft |

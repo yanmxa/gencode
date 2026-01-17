@@ -2,7 +2,7 @@
 
 ## Overview
 
-GenCode implements a multi-level configuration system compatible with Claude Code, while also supporting OpenCode-style flexibility through the `GENCODE_CONFIG_DIRS` environment variable.
+GenCode implements a multi-level configuration system compatible with Claude Code, while also supporting OpenCode-style flexibility through the `GEN_CONFIG` environment variable.
 
 ## Table of Contents
 
@@ -29,19 +29,19 @@ Priority (High → Low):
 │  Scope: Current session only                                        │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Level 4: Local (Personal)                                          │
-│  Location: .gencode/*.local.* + .claude/*.local.*                   │
+│  Location: .gen/*.local.* + .claude/*.local.*                   │
 │  Scope: Current user, current project only (gitignored)             │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Level 3: Project (Shared)                                          │
-│  Location: .gencode/ + .claude/ (MERGED)                            │
+│  Location: .gen/ + .claude/ (MERGED)                            │
 │  Scope: All collaborators (committed to git)                        │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Level 2: Extra Dirs (GENCODE_CONFIG_DIRS)                          │
+│  Level 2: Extra Dirs (GEN_CONFIG)                          │
 │  Location: Colon-separated paths from environment variable          │
 │  Scope: Team/organization shared configs                            │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Level 1: User (Global) - LOWEST PRIORITY                           │
-│  Location: ~/.gencode/ + ~/.claude/ (MERGED)                        │
+│  Location: ~/.gen/ + ~/.claude/ (MERGED)                        │
 │  Scope: Current user, all projects                                  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -69,7 +69,7 @@ Priority (High → Low):
     ║   同层级内合并 (claude 先加载，gencode 后加载覆盖):                            ║
     ║   ┌─────────────────────────────────────────────────────────────────────┐   ║
     ║   │  claude  = load("~/.claude/settings.json")    // 低优先级           │   ║
-    ║   │  gencode = load("~/.gencode/settings.json")   // 高优先级           │   ║
+    ║   │  gencode = load("~/.gen/settings.json")   // 高优先级           │   ║
     ║   │  user    = deepMerge(claude, gencode)         // gencode 覆盖       │   ║
     ║   └─────────────────────────────────────────────────────────────────────┘   ║
     ║                                                                             ║
@@ -80,12 +80,12 @@ Priority (High → Low):
                     └──────────────────┬──────────────────┘
                                        │
     ╔══════════════════════════════════▼══════════════════════════════════════════╗
-    ║  STEP 2: Load EXTRA Config Dirs (可选，GENCODE_CONFIG_DIRS)                 ║
+    ║  STEP 2: Load EXTRA Config Dirs (可选，GEN_CONFIG)                 ║
     ╠═════════════════════════════════════════════════════════════════════════════╣
     ║                                                                             ║
-    ║   环境变量: GENCODE_CONFIG_DIRS="/team/config:~/shared-rules"               ║
+    ║   环境变量: GEN_CONFIG="/team/config:~/shared-rules"               ║
     ║                                                                             ║
-    ║   For each dir in GENCODE_CONFIG_DIRS.split(':'):                          ║
+    ║   For each dir in GEN_CONFIG.split(':'):                          ║
     ║   ┌─────────────────────────────────────────────────────────────────────┐   ║
     ║   │  extra = load("{dir}/settings.json")                                │   ║
     ║   │  settings = deepMerge(settings, extra)                              │   ║
@@ -100,7 +100,7 @@ Priority (High → Low):
     ║   同层级内合并:                                                              ║
     ║   ┌─────────────────────────────────────────────────────────────────────┐   ║
     ║   │  claude  = load(".claude/settings.json")      // 低优先级           │   ║
-    ║   │  gencode = load(".gencode/settings.json")     // 高优先级           │   ║
+    ║   │  gencode = load(".gen/settings.json")     // 高优先级           │   ║
     ║   │  project = deepMerge(claude, gencode)         // gencode 覆盖       │   ║
     ║   └─────────────────────────────────────────────────────────────────────┘   ║
     ║                                                                             ║
@@ -118,7 +118,7 @@ Priority (High → Low):
     ║   同层级内合并:                                                              ║
     ║   ┌─────────────────────────────────────────────────────────────────────┐   ║
     ║   │  claude  = load(".claude/settings.local.json")  // 低优先级         │   ║
-    ║   │  gencode = load(".gencode/settings.local.json") // 高优先级         │   ║
+    ║   │  gencode = load(".gen/settings.local.json") // 高优先级         │   ║
     ║   │  local   = deepMerge(claude, gencode)           // gencode 覆盖     │   ║
     ║   └─────────────────────────────────────────────────────────────────────┘   ║
     ║                                                                             ║
@@ -181,7 +181,7 @@ Priority (High → Low):
     ║   │      namespace: "claude", enforced: true                            │   ║
     ║   │    })                                                               │   ║
     ║   │    if exists: memories.push({                                       │   ║
-    ║   │      content: load("/Library/.../GenCode/AGENT.md"),                │   ║
+    ║   │      content: load("/Library/.../GenCode/GEN.md"),                │   ║
     ║   │      namespace: "gencode", enforced: true                           │   ║
     ║   │    })                                                               │   ║
     ║   └─────────────────────────────────────────────────────────────────────┘   ║
@@ -195,13 +195,13 @@ Priority (High → Low):
     ║   都加载 (先 claude 后 gencode):                                              ║
     ║   ┌─────────────────────────────────────────────────────────────────────┐   ║
     ║   │  if exists: memories.push(load("~/.claude/CLAUDE.md"))              │   ║
-    ║   │  if exists: memories.push(load("~/.gencode/AGENT.md"))              │   ║
+    ║   │  if exists: memories.push(load("~/.gen/GEN.md"))              │   ║
     ║   └─────────────────────────────────────────────────────────────────────┘   ║
     ║                                                                             ║
     ║   同样加载 rules:                                                            ║
     ║   ┌─────────────────────────────────────────────────────────────────────┐   ║
     ║   │  ~/.claude/rules/*.md  → memories.push(each)                        │   ║
-    ║   │  ~/.gencode/rules/*.md → memories.push(each)                        │   ║
+    ║   │  ~/.gen/rules/*.md → memories.push(each)                        │   ║
     ║   └─────────────────────────────────────────────────────────────────────┘   ║
     ║                                                                             ║
     ╚══════════════════════════════════╤══════════════════════════════════════════╝
@@ -210,10 +210,10 @@ Priority (High → Low):
     ║  STEP 3: Load EXTRA Config Dirs Memory (可选)                               ║
     ╠═════════════════════════════════════════════════════════════════════════════╣
     ║                                                                             ║
-    ║   For each dir in GENCODE_CONFIG_DIRS:                                      ║
+    ║   For each dir in GEN_CONFIG:                                      ║
     ║   ┌─────────────────────────────────────────────────────────────────────┐   ║
     ║   │  if exists: memories.push(load("{dir}/CLAUDE.md"))                  │   ║
-    ║   │  if exists: memories.push(load("{dir}/AGENT.md"))                   │   ║
+    ║   │  if exists: memories.push(load("{dir}/GEN.md"))                   │   ║
     ║   │  for each: memories.push(load("{dir}/rules/*.md"))                  │   ║
     ║   └─────────────────────────────────────────────────────────────────────┘   ║
     ║                                                                             ║
@@ -230,8 +230,8 @@ Priority (High → Low):
     ║   │  else if exists: memories.push(load("./.claude/CLAUDE.md"))         │   ║
     ║   │                                                                     │   ║
     ║   │  # GenCode files (pick first found)                                 │   ║
-    ║   │  if exists: memories.push(load("./AGENT.md"))                       │   ║
-    ║   │  else if exists: memories.push(load("./.gencode/AGENT.md"))         │   ║
+    ║   │  if exists: memories.push(load("./GEN.md"))                       │   ║
+    ║   │  else if exists: memories.push(load("./.gen/GEN.md"))         │   ║
     ║   └─────────────────────────────────────────────────────────────────────┘   ║
     ║                                                                             ║
     ╚══════════════════════════════════╤══════════════════════════════════════════╝
@@ -243,7 +243,7 @@ Priority (High → Low):
     ║   加载规则目录 (都加载):                                                      ║
     ║   ┌─────────────────────────────────────────────────────────────────────┐   ║
     ║   │  .claude/rules/*.md  → memories.push(each, namespace: "claude")     │   ║
-    ║   │  .gencode/rules/*.md → memories.push(each, namespace: "gencode")    │   ║
+    ║   │  .gen/rules/*.md → memories.push(each, namespace: "gencode")    │   ║
     ║   │                                                                     │   ║
     ║   │  支持 paths frontmatter 条件加载:                                    │   ║
     ║   │  ---                                                                │   ║
@@ -262,8 +262,8 @@ Priority (High → Low):
     ║   ┌─────────────────────────────────────────────────────────────────────┐   ║
     ║   │  if exists: memories.push(load("./CLAUDE.local.md"))                │   ║
     ║   │  if exists: memories.push(load("./.claude/CLAUDE.local.md"))        │   ║
-    ║   │  if exists: memories.push(load("./AGENT.local.md"))                 │   ║
-    ║   │  if exists: memories.push(load("./.gencode/AGENT.local.md"))        │   ║
+    ║   │  if exists: memories.push(load("./GEN.local.md"))                 │   ║
+    ║   │  if exists: memories.push(load("./.gen/GEN.local.md"))        │   ║
     ║   └─────────────────────────────────────────────────────────────────────┘   ║
     ║                                                                             ║
     ╚══════════════════════════════════╤══════════════════════════════════════════╝
@@ -365,10 +365,10 @@ src/memory/
 
 | Aspect | GenCode | OpenCode | Claude Code |
 |--------|---------|----------|-------------|
-| **User Config Dir** | `~/.gencode/` + `~/.claude/` (merge) | `~/.config/opencode/` (XDG) | `~/.claude/` |
-| **Project Config Dir** | `.gencode/` + `.claude/` (merge) | `.opencode/` | `.claude/` |
+| **User Config Dir** | `~/.gen/` + `~/.claude/` (merge) | `~/.config/opencode/` (XDG) | `~/.claude/` |
+| **Project Config Dir** | `.gen/` + `.claude/` (merge) | `.opencode/` | `.claude/` |
 | **Config File Format** | JSON | JSON/JSONC/TOML | JSON |
-| **Memory File** | `AGENT.md` / `CLAUDE.md` | N/A (uses instructions) | `CLAUDE.md` |
+| **Memory File** | `GEN.md` / `CLAUDE.md` | N/A (uses instructions) | `CLAUDE.md` |
 | **Rules Dir** | `rules/*.md` | N/A | `rules/*.md` |
 
 ### Loading Semantics
@@ -390,10 +390,10 @@ src/memory/
 │  GenCode (6 levels):                 OpenCode (6 levels):    Claude Code (5):  │
 │  ─────────────────                   ────────────────────    ───────────────   │
 │  1. User                             1. Remote (well-known)  1. User           │
-│     ~/.claude/ + ~/.gencode/         2. Global (~/.config/)  2. Project        │
-│  2. Extra (GENCODE_CONFIG_DIRS)      3. OPENCODE_CONFIG      3. Local          │
+│     ~/.claude/ + ~/.gen/         2. Global (~/.config/)  2. Project        │
+│  2. Extra (GEN_CONFIG)      3. OPENCODE_CONFIG      3. Local          │
 │  3. Project                          4. Project              4. CLI            │
-│     .claude/ + .gencode/             5. .opencode/           5. Managed        │
+│     .claude/ + .gen/             5. .opencode/           5. Managed        │
 │  4. Local                            6. OPENCODE_CONFIG_CONTENT                │
 │     *.local.json                                                               │
 │  5. CLI                                                                        │
@@ -406,12 +406,12 @@ src/memory/
 
 #### 1. Dual Namespace Merge (GenCode Unique)
 
-GenCode loads **both** `.gencode/` and `.claude/` directories at each level and merges them:
+GenCode loads **both** `.gen/` and `.claude/` directories at each level and merges them:
 
 ```typescript
 // At User level:
 claude  = load("~/.claude/settings.json")     // lower priority
-gencode = load("~/.gencode/settings.json")    // higher priority
+gencode = load("~/.gen/settings.json")    // higher priority
 result  = deepMerge(claude, gencode)          // gencode wins on conflicts
 ```
 
@@ -419,10 +419,10 @@ OpenCode and Claude Code only use their own namespace.
 
 #### 2. Extra Config Dirs (GenCode Feature)
 
-GenCode supports `GENCODE_CONFIG_DIRS` for team/organization config:
+GenCode supports `GEN_CONFIG` for team/organization config:
 
 ```bash
-export GENCODE_CONFIG_DIRS="/team/shared-config:~/my-custom-rules"
+export GEN_CONFIG="/team/shared-config:~/my-custom-rules"
 ```
 
 OpenCode has `OPENCODE_CONFIG` for single file and `OPENCODE_CONFIG_CONTENT` for inline JSON.
@@ -430,7 +430,7 @@ OpenCode has `OPENCODE_CONFIG` for single file and `OPENCODE_CONFIG_CONTENT` for
 #### 3. Memory System (GenCode/Claude Code Feature)
 
 GenCode implements a full memory system like Claude Code:
-- `AGENT.md` / `CLAUDE.md` files
+- `GEN.md` / `CLAUDE.md` files
 - `rules/*.md` with path-scoped activation
 - `@import` syntax for file references
 
@@ -512,9 +512,9 @@ console.log(config.getDebugSummary());
 // Output:
 // Configuration Sources (in priority order):
 //   user:claude - ~/.claude/settings.json
-//   user:gencode - ~/.gencode/settings.json
+//   user:gencode - ~/.gen/settings.json
 //   project:claude - .claude/settings.json
-//   project:gencode - .gencode/settings.json
+//   project:gencode - .gen/settings.json
 ```
 
 ### Loading Memory
@@ -533,20 +533,20 @@ console.log(memory.getDebugSummary());
 // Output:
 // Memory Sources (in load order):
 //   user:claude - ~/.claude/CLAUDE.md (1024 bytes)
-//   user:gencode - ~/.gencode/AGENT.md (512 bytes)
+//   user:gencode - ~/.gen/GEN.md (512 bytes)
 //   project:claude - ./CLAUDE.md (2048 bytes)
-//   project:gencode - ./AGENT.md (1024 bytes)
+//   project:gencode - ./GEN.md (1024 bytes)
 ```
 
 ### Using Extra Config Dirs
 
 ```bash
 # Set up team config
-export GENCODE_CONFIG_DIRS="/team/shared-config"
+export GEN_CONFIG="/team/shared-config"
 
 # Create team settings
 echo '{"provider": "anthropic"}' > /team/shared-config/settings.json
-echo '# Team Guidelines' > /team/shared-config/AGENT.md
+echo '# Team Guidelines' > /team/shared-config/GEN.md
 
 # Run GenCode - it will merge team config
 npx gencode
@@ -557,12 +557,12 @@ npx gencode
 GenCode is fully backward compatible with Claude Code:
 
 1. Existing `.claude/` directories work automatically
-2. `CLAUDE.md` files are loaded alongside `AGENT.md`
+2. `CLAUDE.md` files are loaded alongside `GEN.md`
 3. No changes needed for existing Claude Code users
 
 To migrate:
-1. Optionally rename `.claude/` to `.gencode/`
-2. Optionally rename `CLAUDE.md` to `AGENT.md`
+1. Optionally rename `.claude/` to `.gen/`
+2. Optionally rename `CLAUDE.md` to `GEN.md`
 3. Or keep both - GenCode will merge them
 
 ## API Reference
@@ -626,19 +626,19 @@ class MemoryManager {
     ║  LEVEL 1: USER Settings                                                     ║
     ╠═════════════════════════════════════════════════════════════════════════════╣
     ║   claude  = load("~/.claude/settings.json")    // lower priority            ║
-    ║   gencode = load("~/.gencode/settings.json")   // higher priority           ║
+    ║   gencode = load("~/.gen/settings.json")   // higher priority           ║
     ║   user    = deepMerge(claude, gencode)                                      ║
     ╚══════════════════════════════════╤══════════════════════════════════════════╝
                                        │
     ╔══════════════════════════════════▼══════════════════════════════════════════╗
-    ║  LEVEL 2: EXTRA Config Dirs (GENCODE_CONFIG_DIRS)                           ║
+    ║  LEVEL 2: EXTRA Config Dirs (GEN_CONFIG)                           ║
     ╚══════════════════════════════════╤══════════════════════════════════════════╝
                                        │
     ╔══════════════════════════════════▼══════════════════════════════════════════╗
     ║  LEVEL 3: PROJECT Settings                                                  ║
     ╠═════════════════════════════════════════════════════════════════════════════╣
     ║   claude  = load(".claude/settings.json")      // lower priority            ║
-    ║   gencode = load(".gencode/settings.json")     // higher priority           ║
+    ║   gencode = load(".gen/settings.json")     // higher priority           ║
     ║   project = deepMerge(claude, gencode)                                      ║
     ╚══════════════════════════════════╤══════════════════════════════════════════╝
                                        │
@@ -671,33 +671,33 @@ class MemoryManager {
     ╔══════════════════════════════════▼══════════════════════════════════════════╗
     ║  1. ENTERPRISE Memory (enforced)                                            ║
     ║     /Library/.../ClaudeCode/CLAUDE.md  →  push                              ║
-    ║     /Library/.../GenCode/AGENT.md      →  push                              ║
+    ║     /Library/.../GenCode/GEN.md      →  push                              ║
     ╚══════════════════════════════════╤══════════════════════════════════════════╝
                                        │
     ╔══════════════════════════════════▼══════════════════════════════════════════╗
     ║  2. USER Memory                                                             ║
     ║     ~/.claude/CLAUDE.md  →  push                                            ║
-    ║     ~/.gencode/AGENT.md  →  push                                            ║
+    ║     ~/.gen/GEN.md  →  push                                            ║
     ╚══════════════════════════════════╤══════════════════════════════════════════╝
                                        │
     ╔══════════════════════════════════▼══════════════════════════════════════════╗
-    ║  3. EXTRA Memory (GENCODE_CONFIG_DIRS)                                      ║
+    ║  3. EXTRA Memory (GEN_CONFIG)                                      ║
     ╚══════════════════════════════════╤══════════════════════════════════════════╝
                                        │
     ╔══════════════════════════════════▼══════════════════════════════════════════╗
     ║  4. PROJECT Memory                                                          ║
     ║     ./CLAUDE.md or .claude/CLAUDE.md  →  push                               ║
-    ║     ./AGENT.md or .gencode/AGENT.md   →  push                               ║
+    ║     ./GEN.md or .gen/GEN.md   →  push                               ║
     ╚══════════════════════════════════╤══════════════════════════════════════════╝
                                        │
     ╔══════════════════════════════════▼══════════════════════════════════════════╗
-    ║  5. RULES (.claude/rules/ + .gencode/rules/)                                ║
+    ║  5. RULES (.claude/rules/ + .gen/rules/)                                ║
     ╚══════════════════════════════════╤══════════════════════════════════════════╝
                                        │
     ╔══════════════════════════════════▼══════════════════════════════════════════╗
     ║  6. LOCAL Memory (*.local.md)                                               ║
     ║     ./CLAUDE.local.md  →  push                                              ║
-    ║     ./AGENT.local.md   →  push                                              ║
+    ║     ./GEN.local.md   →  push                                              ║
     ╚══════════════════════════════════╤══════════════════════════════════════════╝
                                        │
                               ┌────────▼────────┐

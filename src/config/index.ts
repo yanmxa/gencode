@@ -12,6 +12,8 @@
 export type {
   Settings,
   SettingsManagerOptions,
+  Provider,
+  AuthMethod,
   ProviderName,
   PermissionRules,
   ConfigLevelType,
@@ -34,11 +36,11 @@ export {
   SETTINGS_LOCAL_FILE_NAME,
   MANAGED_SETTINGS_FILE_NAME,
   PROVIDERS_FILE_NAME,
-  GENCODE_DIR,
+  GEN_DIR,
   CLAUDE_DIR,
-  USER_GENCODE_DIR,
+  USER_GEN_DIR,
   USER_CLAUDE_DIR,
-  GENCODE_CONFIG_DIRS_ENV,
+  GEN_CONFIG_ENV,
   getManagedPaths,
 } from './types.js';
 

@@ -6,6 +6,36 @@
 import type { CostEstimate } from '../pricing/types.js';
 
 // ============================================================================
+// Provider Types
+// ============================================================================
+
+/**
+ * Provider - Semantic layer (only 3 providers)
+ */
+export type Provider = 'anthropic' | 'openai' | 'gemini';
+
+/**
+ * Authentication method for providers
+ */
+export type AuthMethod = 'api_key' | 'vertex' | 'bedrock' | 'azure' | 'oauth';
+
+/**
+ * Provider class metadata (static property on each provider implementation)
+ */
+export interface ProviderClassMeta {
+  /** Which provider this class implements */
+  provider: Provider;
+  /** Authentication method */
+  authMethod: AuthMethod;
+  /** Environment variables required for this auth method */
+  envVars: string[];
+  /** Display name for UI */
+  displayName: string;
+  /** Optional description */
+  description?: string;
+}
+
+// ============================================================================
 // Message Types
 // ============================================================================
 
@@ -104,7 +134,9 @@ export interface CompletionResponse {
 export interface StreamChunkText {
   type: 'text';
   text: string;
-}
+}/* The above code appears to be a comment block in TypeScript. It includes a placeholder
+text "ANTHROPIC_VERTEX_PROJECT_ID" and " */
+
 
 export interface StreamChunkToolStart {
   type: 'tool_start';

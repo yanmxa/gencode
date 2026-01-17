@@ -8,6 +8,7 @@ import type { Content, Part, Tool, GenerateContentResult } from '@google/generat
 import { calculateCost } from '../pricing/calculator.js';
 import type {
   LLMProvider,
+  ProviderClassMeta,
   CompletionOptions,
   CompletionResponse,
   StreamChunk,
@@ -21,6 +22,14 @@ import type {
 } from './types.js';
 
 export class GeminiProvider implements LLMProvider {
+  static readonly meta: ProviderClassMeta = {
+    provider: 'gemini',
+    authMethod: 'api_key',
+    envVars: ['GOOGLE_API_KEY', 'GEMINI_API_KEY'],
+    displayName: 'Direct API',
+    description: 'Direct API access',
+  };
+
   readonly name = 'gemini';
   private client: GoogleGenerativeAI;
   private apiKey: string;

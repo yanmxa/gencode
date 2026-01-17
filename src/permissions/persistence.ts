@@ -2,8 +2,8 @@
  * Permission Persistence - Store and load permission rules
  *
  * Handles persistent storage of permission rules at:
- * - Global: ~/.gencode/permissions.json
- * - Project: .gencode/permissions.json
+ * - Global: ~/.gen/permissions.json
+ * - Project: .gen/permissions.json
  */
 
 import * as fs from 'fs/promises';
@@ -21,7 +21,7 @@ import { parsePatternString } from './prompt-matcher.js';
 
 const PERMISSIONS_VERSION = 1;
 const PERMISSIONS_FILE = 'permissions.json';
-const GLOBAL_DIR = path.join(os.homedir(), '.gencode');
+const GLOBAL_DIR = path.join(os.homedir(), '.gen');
 
 /**
  * Permission Persistence Manager
@@ -32,7 +32,7 @@ export class PermissionPersistence {
 
   constructor(projectPath?: string) {
     this.globalDir = GLOBAL_DIR;
-    this.projectDir = projectPath ? path.join(projectPath, '.gencode') : null;
+    this.projectDir = projectPath ? path.join(projectPath, '.gen') : null;
   }
 
   /**

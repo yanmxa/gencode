@@ -179,7 +179,7 @@ Enterprise Mode: Acme Corp
 Authenticating via SSO...
 
 Opening browser for authentication...
-✓ Authenticated as john.doe@acme.com
+✓ Authenticated as user@company.com
 
 Session policies:
 - Allowed providers: anthropic, openai

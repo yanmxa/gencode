@@ -14,7 +14,7 @@ import * as os from 'os';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Path to providers.json config
-const PROVIDERS_CONFIG_PATH = join(homedir(), '.gencode', 'providers.json');
+const PROVIDERS_CONFIG_PATH = join(homedir(), '.gen', 'providers.json');
 
 // Resolve prompts directory - check both src and dist locations
 function getPromptsDir(): string {
@@ -33,7 +33,7 @@ const promptsDir = getPromptsDir();
 export type ProviderType = 'anthropic' | 'openai' | 'gemini' | 'generic';
 
 /**
- * Providers config structure from ~/.gencode/providers.json
+ * Providers config structure from ~/.gen/providers.json
  */
 interface ProvidersConfig {
   connections: Record<string, unknown>;
@@ -41,7 +41,7 @@ interface ProvidersConfig {
 }
 
 /**
- * Load providers config from ~/.gencode/providers.json
+ * Load providers config from ~/.gen/providers.json
  */
 function loadProvidersConfig(): ProvidersConfig | null {
   try {
@@ -57,7 +57,7 @@ function loadProvidersConfig(): ProvidersConfig | null {
 
 /**
  * Look up which provider owns a given model ID
- * Searches through ~/.gencode/providers.json to find the provider
+ * Searches through ~/.gen/providers.json to find the provider
  *
  * @param model - The model ID (e.g., "claude-sonnet-4-5@20250929")
  * @returns The provider name (e.g., "anthropic") or null if not found
@@ -80,9 +80,13 @@ export function getProviderForModel(model: string): string | null {
 /**
  * Map provider names to prompt types
  * Falls back to 'generic' for unknown providers
+ * Handles both "provider" and "provider:authMethod" formats
  */
 export function mapProviderToPromptType(provider: string): ProviderType {
-  switch (provider) {
+  // Extract provider prefix (e.g., "gemini:api_key" → "gemini")
+  const providerPrefix = provider.split(':')[0];
+
+  switch (providerPrefix) {
     case 'anthropic':
       return 'anthropic';
     case 'openai':
@@ -200,7 +204,7 @@ export function buildSystemPrompt(
 
 /**
  * Format memory context for injection into system prompt
- * Uses <claudeMd> tag for Claude Code compatibility
+ * Uses <claudeMd> tag for optimal compatibility with Claude models
  */
 export function formatMemoryContext(memoryContext: string): string {
   if (!memoryContext) {
@@ -240,7 +244,7 @@ export function buildSystemPromptWithMemory(
  * Flow: model → provider (from providers.json) → prompt
  *
  * This is the recommended way to build system prompts as it automatically
- * looks up the provider for the given model from ~/.gencode/providers.json
+ * looks up the provider for the given model from ~/.gen/providers.json
  *
  * @param model - The model ID (e.g., "claude-sonnet-4-5@20250929")
  * @param cwd - Current working directory
@@ -261,10 +265,10 @@ export function buildSystemPromptForModel(
 
 /**
  * Debug utility to verify prompt loading at runtime
- * Set GENCODE_DEBUG_PROMPTS=1 for summary, GENCODE_DEBUG_PROMPTS=2 for full content
+ * Set GEN_DEBUG_PROMPTS=1 for summary, GEN_DEBUG_PROMPTS=2 for full content
  */
 export function debugPromptLoading(model: string, fallbackProvider?: string): void {
-  const debugLevel = process.env.GENCODE_DEBUG_PROMPTS;
+  const debugLevel = process.env.GEN_DEBUG_PROMPTS;
   if (!debugLevel || debugLevel === '0') {
     return;
   }

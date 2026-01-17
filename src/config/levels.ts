@@ -2,8 +2,8 @@
  * Configuration Levels - Path resolution for multi-level config
  *
  * Defines the configuration hierarchy and resolves paths for each level.
- * At each level, both .gencode and .claude directories are loaded and merged,
- * with .gencode taking higher priority.
+ * At each level, both .gen and .claude directories are loaded and merged,
+ * with .gen taking higher priority.
  */
 
 import * as path from 'path';
@@ -11,12 +11,12 @@ import * as os from 'os';
 import * as fs from 'fs/promises';
 import {
   ConfigLevelType,
-  GENCODE_DIR,
+  GEN_DIR,
   CLAUDE_DIR,
   SETTINGS_FILE_NAME,
   SETTINGS_LOCAL_FILE_NAME,
   MANAGED_SETTINGS_FILE_NAME,
-  GENCODE_CONFIG_DIRS_ENV,
+  GEN_CONFIG_ENV,
   getManagedPaths,
 } from './types.js';
 
@@ -27,7 +27,7 @@ export interface ConfigPathInfo {
   settingsPath: string;
   localSettingsPath?: string;
   dir: string;
-  namespace: 'gencode' | 'claude' | 'extra';
+  namespace: 'gen' | 'claude' | 'extra';
   exists: boolean;
 }
 
@@ -57,9 +57,9 @@ export async function findProjectRoot(cwd: string): Promise<string> {
       // Not a git root, continue
     }
 
-    // Check for .gencode or .claude directories
+    // Check for .gen or .claude directories
     try {
-      await fs.access(path.join(current, GENCODE_DIR));
+      await fs.access(path.join(current, GEN_DIR));
       return current;
     } catch {
       // Continue
@@ -93,10 +93,10 @@ async function pathExists(filePath: string): Promise<boolean> {
 }
 
 /**
- * Parse GENCODE_CONFIG_DIRS environment variable
+ * Parse GEN_CONFIG environment variable
  */
 export function parseExtraConfigDirs(): string[] {
-  const value = process.env[GENCODE_CONFIG_DIRS_ENV];
+  const value = process.env[GEN_CONFIG_ENV];
   if (!value) return [];
 
   return value
@@ -130,11 +130,11 @@ export async function getConfigLevels(cwd: string): Promise<ResolvedLevel[]> {
   });
 
   // GenCode second (higher priority within level)
-  const userGencodeDir = path.join(home, GENCODE_DIR);
+  const userGencodeDir = path.join(home, GEN_DIR);
   userPaths.push({
     settingsPath: path.join(userGencodeDir, SETTINGS_FILE_NAME),
     dir: userGencodeDir,
-    namespace: 'gencode',
+    namespace: 'gen',
     exists: await pathExists(path.join(userGencodeDir, SETTINGS_FILE_NAME)),
   });
 
@@ -180,11 +180,11 @@ export async function getConfigLevels(cwd: string): Promise<ResolvedLevel[]> {
   });
 
   // GenCode second (higher priority within level)
-  const projectGencodeDir = path.join(projectRoot, GENCODE_DIR);
+  const projectGencodeDir = path.join(projectRoot, GEN_DIR);
   projectPaths.push({
     settingsPath: path.join(projectGencodeDir, SETTINGS_FILE_NAME),
     dir: projectGencodeDir,
-    namespace: 'gencode',
+    namespace: 'gen',
     exists: await pathExists(path.join(projectGencodeDir, SETTINGS_FILE_NAME)),
   });
 
@@ -210,7 +210,7 @@ export async function getConfigLevels(cwd: string): Promise<ResolvedLevel[]> {
   localPaths.push({
     settingsPath: path.join(projectGencodeDir, SETTINGS_LOCAL_FILE_NAME),
     dir: projectGencodeDir,
-    namespace: 'gencode',
+    namespace: 'gen',
     exists: await pathExists(path.join(projectGencodeDir, SETTINGS_LOCAL_FILE_NAME)),
   });
 
@@ -234,10 +234,10 @@ export async function getConfigLevels(cwd: string): Promise<ResolvedLevel[]> {
 
   // GenCode second (higher priority within level)
   managedPathsList.push({
-    settingsPath: path.join(managedPaths.gencode, MANAGED_SETTINGS_FILE_NAME),
-    dir: managedPaths.gencode,
-    namespace: 'gencode',
-    exists: await pathExists(path.join(managedPaths.gencode, MANAGED_SETTINGS_FILE_NAME)),
+    settingsPath: path.join(managedPaths.gen, MANAGED_SETTINGS_FILE_NAME),
+    dir: managedPaths.gen,
+    namespace: 'gen',
+    exists: await pathExists(path.join(managedPaths.gen, MANAGED_SETTINGS_FILE_NAME)),
   });
 
   levels.push({
@@ -253,7 +253,7 @@ export async function getConfigLevels(cwd: string): Promise<ResolvedLevel[]> {
 
 /**
  * Get the primary settings directory for saving
- * Prefers .gencode if it exists, otherwise creates it
+ * Prefers .gen if it exists, otherwise creates it
  */
 export function getPrimarySettingsDir(
   level: 'user' | 'project' | 'local',
@@ -263,12 +263,12 @@ export function getPrimarySettingsDir(
 
   switch (level) {
     case 'user':
-      return path.join(home, GENCODE_DIR);
+      return path.join(home, GEN_DIR);
     case 'project':
     case 'local':
-      return path.join(projectRoot, GENCODE_DIR);
+      return path.join(projectRoot, GEN_DIR);
     default:
-      return path.join(home, GENCODE_DIR);
+      return path.join(home, GEN_DIR);
   }
 }
 

@@ -5,8 +5,9 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import type { ProvidersConfig, ProviderName } from './types.js';
+import type { ProvidersConfig, Provider, AuthMethod } from './types.js';
 import { DEFAULT_SETTINGS_DIR, PROVIDERS_FILE_NAME } from './types.js';
+import { parseModelCacheKey } from '../providers/store.js';
 
 export class ProvidersConfigManager {
   private settingsDir: string;
@@ -42,30 +43,23 @@ export class ProvidersConfigManager {
   }
 
   /**
-   * Infer provider from model ID using cached models in providers.json
-   * Returns undefined if model not found in any provider's cached list
+   * Infer provider and auth method from model ID using cached models
+   * Returns { provider, authMethod } if found, undefined if not in cache
    */
-  inferProvider(modelId: string): ProviderName | undefined {
+  inferProviderFromCache(
+    modelId: string
+  ): { provider: Provider; authMethod: AuthMethod } | undefined {
     if (!this.config?.models) {
       return undefined;
     }
 
-    for (const [providerKey, providerModels] of Object.entries(this.config.models)) {
+    for (const [key, providerModels] of Object.entries(this.config.models)) {
       const found = providerModels.list?.some((m) => m.id === modelId);
       if (found) {
-        // Map provider key to ProviderName
-        // Note: 'anthropic' in providers.json might use vertex connection
-        if (providerKey === 'gemini') {
-          return 'gemini';
-        } else if (providerKey === 'anthropic') {
-          // Check connection method to determine if vertex or direct
-          const connection = this.config.connections?.[providerKey];
-          if (connection?.method === 'vertex') {
-            return 'vertex-ai';
-          }
-          return 'anthropic';
-        } else if (providerKey === 'openai') {
-          return 'openai';
+        // Parse key to get provider and authMethod
+        const parsed = parseModelCacheKey(key);
+        if (parsed) {
+          return parsed;
         }
       }
     }
@@ -74,12 +68,20 @@ export class ProvidersConfigManager {
   }
 
   /**
-   * Get all model IDs for a provider
+   * Get all model IDs for a provider (across all authMethods)
    */
   getModelIds(provider: string): string[] {
-    if (!this.config?.models?.[provider]) {
+    if (!this.config?.models) {
       return [];
     }
-    return this.config.models[provider].list?.map((m) => m.id) ?? [];
+
+    const modelIds: string[] = [];
+    for (const [key, cache] of Object.entries(this.config.models)) {
+      const parsed = parseModelCacheKey(key);
+      if (parsed && parsed.provider === provider) {
+        modelIds.push(...(cache.list?.map((m) => m.id) ?? []));
+      }
+    }
+    return modelIds;
   }
 }

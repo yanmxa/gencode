@@ -2,18 +2,18 @@
  * Memory Manager - Core memory system implementation
  *
  * Implements Claude Code compatible memory loading with merge semantics:
- * At each level, both .gencode and .claude directories are loaded.
- * Content from .gencode appears later in the context (higher priority for LLM).
+ * At each level, both .gen and .claude directories are loaded.
+ * Content from .gen appears later in the context (higher priority for LLM).
  *
  * Loading order within each level:
  * 1. .claude files first (lower priority - LLM sees earlier)
- * 2. .gencode files second (higher priority - LLM sees later)
+ * 2. .gen files second (higher priority - LLM sees later)
  *
  * Level loading order:
  * 1. Enterprise (system-wide managed, enforced)
- * 2. User (~/.gencode/ + ~/.claude/)
+ * 2. User (~/.gen/ + ~/.claude/)
  * 3. User Rules
- * 4. Extra (GENCODE_CONFIG_DIRS)
+ * 4. Extra (GEN_CONFIG)
  * 5. Project (recursive upward search)
  * 6. Project Rules
  * 7. Local (*.local.md files)
@@ -34,9 +34,18 @@ import type {
   MemoryLevel,
   MemoryNamespace,
   MemorySource,
+  MemoryMergeStrategy,
 } from './types.js';
 import { DEFAULT_MEMORY_CONFIG } from './types.js';
-import { getManagedPaths, GENCODE_CONFIG_DIRS_ENV } from '../config/types.js';
+import { getManagedPaths, GEN_CONFIG_ENV } from '../config/types.js';
+
+/**
+ * Result of loading files at a level with merge strategy
+ */
+interface LevelLoadResult {
+  files: MemoryFile[];
+  skipped: string[];
+}
 
 export class MemoryManager {
   private config: MemoryConfig;
@@ -53,11 +62,12 @@ export class MemoryManager {
    * Load all memory files for the given working directory
    */
   async load(options: MemoryLoadOptions): Promise<LoadedMemory> {
-    const { cwd, currentFile } = options;
+    const { cwd, currentFile, strategy = 'fallback' } = options;
     const files: MemoryFile[] = [];
     const rules: MemoryRule[] = [];
     const errors: string[] = [];
     const sources: MemorySource[] = [];
+    const skippedFiles: string[] = [];
     let totalSize = 0;
 
     this.importResolver.reset();
@@ -65,8 +75,8 @@ export class MemoryManager {
     this.importResolver.setProjectRoot(projectRoot);
 
     // 1. Load enterprise memory (system-wide, enforced)
-    const enterpriseFiles = await this.loadEnterpriseMemory();
-    for (const file of enterpriseFiles) {
+    const enterpriseResult = await this.loadEnterpriseMemory(strategy);
+    for (const file of enterpriseResult.files) {
       files.push(file);
       totalSize += file.content.length;
       sources.push({
@@ -77,9 +87,11 @@ export class MemoryManager {
         size: file.content.length,
       });
     }
+    skippedFiles.push(...enterpriseResult.skipped);
 
-    // 2. Load user-level memory (both claude and gencode)
-    const userFiles = await this.loadUserMemory();
+    // 2. Load user-level memory (both claude and gen)
+    const userResult = await this.loadUserMemory(strategy);
+    const userFiles = userResult.files;
     for (const file of userFiles) {
       if (totalSize + file.content.length <= this.config.maxTotalSize) {
         files.push(file);
@@ -95,8 +107,9 @@ export class MemoryManager {
         errors.push(`Skipped ${file.path}: would exceed max total size`);
       }
     }
+    skippedFiles.push(...userResult.skipped);
 
-    // 3. Load user-level rules (both claude and gencode)
+    // 3. Load user-level rules (both claude and gen)
     const userRules = await this.loadUserRules();
     for (const rule of userRules) {
       rules.push(rule);
@@ -110,7 +123,8 @@ export class MemoryManager {
     }
 
     // 4. Load extra config dirs memory
-    const extraFiles = await this.loadExtraMemory();
+    const extraResult = await this.loadExtraMemory(strategy);
+    const extraFiles = extraResult.files;
     for (const file of extraFiles) {
       if (totalSize + file.content.length <= this.config.maxTotalSize) {
         files.push(file);
@@ -126,9 +140,11 @@ export class MemoryManager {
         errors.push(`Skipped ${file.path}: would exceed max total size`);
       }
     }
+    skippedFiles.push(...extraResult.skipped);
 
-    // 5. Load project-level memory (both claude and gencode, recursive upward)
-    const projectFiles = await this.loadProjectMemory(cwd, projectRoot);
+    // 5. Load project-level memory (both claude and gen, recursive upward)
+    const projectResult = await this.loadProjectMemory(cwd, projectRoot, strategy);
+    const projectFiles = projectResult.files;
     for (const file of projectFiles) {
       if (totalSize + file.content.length <= this.config.maxTotalSize) {
         files.push(file);
@@ -144,8 +160,9 @@ export class MemoryManager {
         errors.push(`Skipped ${file.path}: would exceed max total size`);
       }
     }
+    skippedFiles.push(...projectResult.skipped);
 
-    // 6. Load project-level rules (both claude and gencode)
+    // 6. Load project-level rules (both claude and gen)
     const projectRules = await this.loadProjectRules(projectRoot);
     for (const rule of projectRules) {
       rules.push(rule);
@@ -158,8 +175,9 @@ export class MemoryManager {
       });
     }
 
-    // 7. Load local memory (both claude and gencode)
-    const localFiles = await this.loadLocalMemory(projectRoot);
+    // 7. Load local memory (both claude and gen)
+    const localResult = await this.loadLocalMemory(projectRoot, strategy);
+    const localFiles = localResult.files;
     for (const file of localFiles) {
       if (totalSize + file.content.length <= this.config.maxTotalSize) {
         files.push(file);
@@ -175,6 +193,7 @@ export class MemoryManager {
         errors.push(`Skipped ${file.path}: would exceed max total size`);
       }
     }
+    skippedFiles.push(...localResult.skipped);
 
     // Activate rules based on current file
     const activatedRules = activateRules(rules, currentFile);
@@ -189,6 +208,7 @@ export class MemoryManager {
       context,
       errors,
       sources,
+      skippedFiles,
     };
 
     return this.loadedMemory;
@@ -249,70 +269,125 @@ export class MemoryManager {
       'project-rules': 'project rules',
       local: 'local personal notes',
     };
-    const namespaceLabel = namespace === 'gencode' ? 'gencode' : namespace === 'claude' ? 'claude' : 'extra';
+    const namespaceLabel = namespace === 'gen' ? 'gen' : namespace === 'claude' ? 'claude' : 'extra';
     return `${levelLabels[level]} - ${namespaceLabel}`;
+  }
+
+  /**
+   * Apply merge strategy to decide which files to load
+   * Returns the files to load and the files to skip
+   */
+  private async applyMergeStrategy(
+    claudeFilePath: string,
+    genFilePath: string,
+    level: MemoryLevel,
+    strategy: MemoryMergeStrategy
+  ): Promise<LevelLoadResult> {
+    const files: MemoryFile[] = [];
+    const skipped: string[] = [];
+
+    switch (strategy) {
+      case 'fallback': {
+        // Try gen first, fallback to claude
+        const genFile = await this.loadFile(genFilePath, level, 'gen');
+        if (genFile) {
+          files.push(genFile);
+          // Only skip claude file if it exists
+          const claudeExists = await this.fileExists(claudeFilePath);
+          if (claudeExists) {
+            skipped.push(claudeFilePath);
+          }
+        } else {
+          const claudeFile = await this.loadFile(claudeFilePath, level, 'claude');
+          if (claudeFile) {
+            files.push(claudeFile);
+          }
+        }
+        break;
+      }
+      case 'both': {
+        // Load both (claude first for lower priority)
+        const claudeFile = await this.loadFile(claudeFilePath, level, 'claude');
+        if (claudeFile) files.push(claudeFile);
+
+        const genFile = await this.loadFile(genFilePath, level, 'gen');
+        if (genFile) files.push(genFile);
+        break;
+      }
+      case 'gen-only': {
+        // Only load gen
+        const genFile = await this.loadFile(genFilePath, level, 'gen');
+        if (genFile) {
+          files.push(genFile);
+        }
+        // Only mark as skipped if claude file exists
+        const claudeExists = await this.fileExists(claudeFilePath);
+        if (claudeExists) {
+          skipped.push(claudeFilePath);
+        }
+        break;
+      }
+      case 'claude-only': {
+        // Only load claude
+        const claudeFile = await this.loadFile(claudeFilePath, level, 'claude');
+        if (claudeFile) {
+          files.push(claudeFile);
+        }
+        // Only mark as skipped if gen file exists
+        const genExists = await this.fileExists(genFilePath);
+        if (genExists) {
+          skipped.push(genFilePath);
+        }
+        break;
+      }
+    }
+
+    return { files, skipped };
+  }
+
+  /**
+   * Check if a file exists
+   */
+  private async fileExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.stat(filePath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
    * Load enterprise-level memory files
    */
-  private async loadEnterpriseMemory(): Promise<MemoryFile[]> {
-    const files: MemoryFile[] = [];
+  private async loadEnterpriseMemory(strategy: MemoryMergeStrategy): Promise<LevelLoadResult> {
     const managedPaths = getManagedPaths();
+    const claudePath = path.join(managedPaths.claude, this.config.claudeFilename);
+    const genPath = path.join(managedPaths.gen, this.config.genFilename);
 
-    // Load Claude first (lower priority)
-    const claudeFile = await this.loadFile(
-      path.join(managedPaths.claude, this.config.claudeFilename),
-      'enterprise',
-      'claude'
-    );
-    if (claudeFile) {
-      claudeFile.enforced = true;
-      files.push(claudeFile);
+    const result = await this.applyMergeStrategy(claudePath, genPath, 'enterprise', strategy);
+
+    // Mark all enterprise files as enforced
+    for (const file of result.files) {
+      file.enforced = true;
     }
 
-    // Load GenCode second (higher priority)
-    const gencodeFile = await this.loadFile(
-      path.join(managedPaths.gencode, this.config.gencodeFilename),
-      'enterprise',
-      'gencode'
-    );
-    if (gencodeFile) {
-      gencodeFile.enforced = true;
-      files.push(gencodeFile);
-    }
-
-    return files;
+    return result;
   }
 
   /**
-   * Load user-level memory files (both claude and gencode)
+   * Load user-level memory files (both claude and gen)
    */
-  private async loadUserMemory(): Promise<MemoryFile[]> {
+  private async loadUserMemory(strategy: MemoryMergeStrategy): Promise<LevelLoadResult> {
     const home = os.homedir();
-    const files: MemoryFile[] = [];
+    const claudePath = path.join(home, this.config.claudeDir, this.config.claudeFilename);
+    const genPath = path.join(home, this.config.genDir, this.config.genFilename);
 
-    // Load Claude first (lower priority)
-    const claudeFile = await this.loadFile(
-      path.join(home, this.config.claudeDir, this.config.claudeFilename),
-      'user',
-      'claude'
-    );
-    if (claudeFile) files.push(claudeFile);
-
-    // Load GenCode second (higher priority)
-    const gencodeFile = await this.loadFile(
-      path.join(home, this.config.gencodeDir, this.config.gencodeFilename),
-      'user',
-      'gencode'
-    );
-    if (gencodeFile) files.push(gencodeFile);
-
-    return files;
+    return await this.applyMergeStrategy(claudePath, genPath, 'user', strategy);
   }
 
   /**
-   * Load user-level rules (both claude and gencode)
+   * Load user-level rules (both claude and gen)
    */
   private async loadUserRules(): Promise<MemoryRule[]> {
     const home = os.homedir();
@@ -324,9 +399,9 @@ export class MemoryManager {
     rules.push(...claudeRules);
 
     // Load GenCode rules second (higher priority)
-    const gencodeRulesDir = path.join(home, this.config.gencodeDir, this.config.rulesDir);
-    const gencodeRules = await this.loadRulesFromDir(gencodeRulesDir, 'user-rules', 'gencode');
-    rules.push(...gencodeRules);
+    const genRulesDir = path.join(home, this.config.genDir, this.config.rulesDir);
+    const genRules = await this.loadRulesFromDir(genRulesDir, 'user-rules', 'gen');
+    rules.push(...genRules);
 
     return rules;
   }
@@ -334,36 +409,28 @@ export class MemoryManager {
   /**
    * Load extra config dirs memory
    */
-  private async loadExtraMemory(): Promise<MemoryFile[]> {
+  private async loadExtraMemory(strategy: MemoryMergeStrategy): Promise<LevelLoadResult> {
     const extraDirs = this.parseExtraConfigDirs();
     const files: MemoryFile[] = [];
+    const skipped: string[] = [];
 
     for (const dir of extraDirs) {
-      // Try CLAUDE.md
-      const claudeFile = await this.loadFile(
-        path.join(dir, this.config.claudeFilename),
-        'extra',
-        'extra'
-      );
-      if (claudeFile) files.push(claudeFile);
+      const claudePath = path.join(dir, this.config.claudeFilename);
+      const genPath = path.join(dir, this.config.genFilename);
+      const result = await this.applyMergeStrategy(claudePath, genPath, 'extra', strategy);
 
-      // Try AGENT.md
-      const gencodeFile = await this.loadFile(
-        path.join(dir, this.config.gencodeFilename),
-        'extra',
-        'extra'
-      );
-      if (gencodeFile) files.push(gencodeFile);
+      files.push(...result.files);
+      skipped.push(...result.skipped);
     }
 
-    return files;
+    return { files, skipped };
   }
 
   /**
-   * Parse GENCODE_CONFIG_DIRS environment variable
+   * Parse GEN_CONFIG environment variable
    */
   private parseExtraConfigDirs(): string[] {
-    const value = process.env[GENCODE_CONFIG_DIRS_ENV];
+    const value = process.env[GEN_CONFIG_ENV];
     if (!value) return [];
 
     return value
@@ -374,44 +441,50 @@ export class MemoryManager {
   }
 
   /**
-   * Load project-level memory files (both claude and gencode)
+   * Load project-level memory files (both claude and gen)
    */
-  private async loadProjectMemory(cwd: string, projectRoot: string): Promise<MemoryFile[]> {
-    const files: MemoryFile[] = [];
-
-    // Load from project root - Claude files first
+  private async loadProjectMemory(
+    cwd: string,
+    projectRoot: string,
+    strategy: MemoryMergeStrategy
+  ): Promise<LevelLoadResult> {
+    // Find first existing claude file
     const claudeCandidates = [
       path.join(projectRoot, this.config.claudeFilename),
       path.join(projectRoot, this.config.claudeDir, this.config.claudeFilename),
     ];
-
-    for (const filePath of claudeCandidates) {
-      const file = await this.loadFile(filePath, 'project', 'claude');
-      if (file) {
-        files.push(file);
-        break; // Only load one claude file
+    let claudePath = claudeCandidates[0]; // Default for skipped tracking
+    for (const candidate of claudeCandidates) {
+      try {
+        await fs.stat(candidate);
+        claudePath = candidate;
+        break;
+      } catch {
+        continue;
       }
     }
 
-    // Load from project root - GenCode files second
-    const gencodeCandidates = [
-      path.join(projectRoot, this.config.gencodeFilename),
-      path.join(projectRoot, this.config.gencodeDir, this.config.gencodeFilename),
+    // Find first existing gen file
+    const genCandidates = [
+      path.join(projectRoot, this.config.genFilename),
+      path.join(projectRoot, this.config.genDir, this.config.genFilename),
     ];
-
-    for (const filePath of gencodeCandidates) {
-      const file = await this.loadFile(filePath, 'project', 'gencode');
-      if (file) {
-        files.push(file);
-        break; // Only load one gencode file
+    let genPath = genCandidates[0]; // Default for skipped tracking
+    for (const candidate of genCandidates) {
+      try {
+        await fs.stat(candidate);
+        genPath = candidate;
+        break;
+      } catch {
+        continue;
       }
     }
 
-    return files;
+    return await this.applyMergeStrategy(claudePath, genPath, 'project', strategy);
   }
 
   /**
-   * Load project-level rules (both claude and gencode)
+   * Load project-level rules (both claude and gen)
    */
   private async loadProjectRules(projectRoot: string): Promise<MemoryRule[]> {
     const rules: MemoryRule[] = [];
@@ -422,48 +495,53 @@ export class MemoryManager {
     rules.push(...claudeRules);
 
     // Load GenCode rules second (higher priority)
-    const gencodeRulesDir = path.join(projectRoot, this.config.gencodeDir, this.config.rulesDir);
-    const gencodeRules = await this.loadRulesFromDir(gencodeRulesDir, 'project-rules', 'gencode');
-    rules.push(...gencodeRules);
+    const genRulesDir = path.join(projectRoot, this.config.genDir, this.config.rulesDir);
+    const genRules = await this.loadRulesFromDir(genRulesDir, 'project-rules', 'gen');
+    rules.push(...genRules);
 
     return rules;
   }
 
   /**
-   * Load local memory files (both claude and gencode)
+   * Load local memory files (both claude and gen)
    */
-  private async loadLocalMemory(projectRoot: string): Promise<MemoryFile[]> {
-    const files: MemoryFile[] = [];
-
-    // Load Claude local files first
+  private async loadLocalMemory(
+    projectRoot: string,
+    strategy: MemoryMergeStrategy
+  ): Promise<LevelLoadResult> {
+    // Find first existing claude local file
     const claudeCandidates = [
       path.join(projectRoot, this.config.claudeLocalFilename),
       path.join(projectRoot, this.config.claudeDir, this.config.claudeLocalFilename),
     ];
-
-    for (const filePath of claudeCandidates) {
-      const file = await this.loadFile(filePath, 'local', 'claude');
-      if (file) {
-        files.push(file);
+    let claudePath = claudeCandidates[0];
+    for (const candidate of claudeCandidates) {
+      try {
+        await fs.stat(candidate);
+        claudePath = candidate;
         break;
+      } catch {
+        continue;
       }
     }
 
-    // Load GenCode local files second
-    const gencodeCandidates = [
-      path.join(projectRoot, this.config.gencodeLocalFilename),
-      path.join(projectRoot, this.config.gencodeDir, this.config.gencodeLocalFilename),
+    // Find first existing gen local file
+    const genCandidates = [
+      path.join(projectRoot, this.config.genLocalFilename),
+      path.join(projectRoot, this.config.genDir, this.config.genLocalFilename),
     ];
-
-    for (const filePath of gencodeCandidates) {
-      const file = await this.loadFile(filePath, 'local', 'gencode');
-      if (file) {
-        files.push(file);
+    let genPath = genCandidates[0];
+    for (const candidate of genCandidates) {
+      try {
+        await fs.stat(candidate);
+        genPath = candidate;
         break;
+      } catch {
+        continue;
       }
     }
 
-    return files;
+    return await this.applyMergeStrategy(claudePath, genPath, 'local', strategy);
   }
 
   /**
@@ -568,12 +646,12 @@ export class MemoryManager {
     const home = os.homedir();
 
     if (level === 'user') {
-      const dir = path.join(home, this.config.gencodeDir);
+      const dir = path.join(home, this.config.genDir);
       await fs.mkdir(dir, { recursive: true });
-      filePath = path.join(dir, this.config.gencodeFilename);
+      filePath = path.join(dir, this.config.genFilename);
     } else {
       const projectRoot = await this.findProjectRoot(cwd);
-      filePath = path.join(projectRoot, this.config.gencodeFilename);
+      filePath = path.join(projectRoot, this.config.genFilename);
     }
 
     // Read existing content
@@ -582,7 +660,7 @@ export class MemoryManager {
       existing = await fs.readFile(filePath, 'utf-8');
     } catch {
       // File doesn't exist, create with header
-      existing = `# ${this.config.gencodeFilename.replace('.md', '')}\n\nThis file provides guidance when working with code in this repository.\n\n`;
+      existing = `# ${this.config.genFilename.replace('.md', '')}\n\nThis file provides guidance when working with code in this repository.\n\n`;
     }
 
     // Append new content
@@ -639,7 +717,7 @@ export class MemoryManager {
    * Get the path where /init would create a file
    */
   getInitFilePath(cwd: string): string {
-    return path.join(cwd, this.config.gencodeFilename);
+    return path.join(cwd, this.config.genFilename);
   }
 
   /**
@@ -648,8 +726,8 @@ export class MemoryManager {
   async hasProjectMemory(cwd: string): Promise<boolean> {
     const projectRoot = await this.findProjectRoot(cwd);
     const candidates = [
-      path.join(projectRoot, this.config.gencodeFilename),
-      path.join(projectRoot, this.config.gencodeDir, this.config.gencodeFilename),
+      path.join(projectRoot, this.config.genFilename),
+      path.join(projectRoot, this.config.genDir, this.config.genFilename),
       path.join(projectRoot, this.config.claudeFilename),
       path.join(projectRoot, this.config.claudeDir, this.config.claudeFilename),
     ];
@@ -672,8 +750,8 @@ export class MemoryManager {
   async getExistingProjectMemoryPath(cwd: string): Promise<string | null> {
     const projectRoot = await this.findProjectRoot(cwd);
     const candidates = [
-      path.join(projectRoot, this.config.gencodeFilename),
-      path.join(projectRoot, this.config.gencodeDir, this.config.gencodeFilename),
+      path.join(projectRoot, this.config.genFilename),
+      path.join(projectRoot, this.config.genDir, this.config.genFilename),
       path.join(projectRoot, this.config.claudeFilename),
       path.join(projectRoot, this.config.claudeDir, this.config.claudeFilename),
     ];
@@ -706,6 +784,57 @@ export class MemoryManager {
     if (this.loadedMemory.errors.length > 0) {
       lines.push('');
       lines.push('Errors:');
+      for (const error of this.loadedMemory.errors) {
+        lines.push(`  - ${error}`);
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * Get verbose loading summary with strategy info
+   */
+  getVerboseSummary(strategy: MemoryMergeStrategy): string {
+    if (!this.loadedMemory) return 'Memory not loaded';
+
+    const lines: string[] = [];
+    const kbLoaded = (this.loadedMemory.totalSize / 1024).toFixed(1);
+
+    lines.push(`[Memory] Strategy: ${strategy}`);
+
+    // Group sources by level
+    const byLevel = new Map<string, typeof this.loadedMemory.sources>();
+    for (const source of this.loadedMemory.sources) {
+      const key = source.level;
+      if (!byLevel.has(key)) {
+        byLevel.set(key, []);
+      }
+      byLevel.get(key)!.push(source);
+    }
+
+    // Show what was loaded per level
+    for (const [level, sources] of byLevel) {
+      for (const source of sources) {
+        const sizeKb = (source.size / 1024).toFixed(1);
+        const marker = source.level === 'enterprise' ? ' [enforced]' : '';
+        lines.push(`[Memory] ${level}: ${source.path} (${sizeKb} KB)${marker}`);
+      }
+    }
+
+    // Show what was skipped
+    if (this.loadedMemory.skippedFiles.length > 0) {
+      for (const skipped of this.loadedMemory.skippedFiles) {
+        lines.push(`[Memory] Skipped: ${skipped}`);
+      }
+    }
+
+    lines.push(
+      `[Memory] Total: ${kbLoaded} KB (${this.loadedMemory.files.length} files loaded, ${this.loadedMemory.skippedFiles.length} skipped)`
+    );
+
+    if (this.loadedMemory.errors.length > 0) {
+      lines.push('[Memory] Errors:');
       for (const error of this.loadedMemory.errors) {
         lines.push(`  - ${error}`);
       }

@@ -31,28 +31,28 @@ describe('Config Loader', () => {
       expect(source?.settings.provider).toBe('openai');
     });
 
-    it('should load settings from project .gencode directory', async () => {
-      await writeSettings(test.projectDir, 'gencode', { provider: 'anthropic' });
+    it('should load settings from project .gen directory', async () => {
+      await writeSettings(test.projectDir, 'gen', { provider: 'anthropic' });
       const sources = await loadAllSources(test.projectDir);
 
-      const source = sources.find((s) => s.level === 'project' && s.namespace === 'gencode');
+      const source = sources.find((s) => s.level === 'project' && s.namespace === 'gen');
       expect(source?.settings.provider).toBe('anthropic');
     });
 
-    it('should load both .claude and .gencode settings at same level', async () => {
+    it('should load both .claude and .gen settings at same level', async () => {
       await writeSettings(test.projectDir, 'claude', { provider: 'openai', model: 'gpt-4' });
-      await writeSettings(test.projectDir, 'gencode', { provider: 'anthropic' });
+      await writeSettings(test.projectDir, 'gen', { provider: 'anthropic' });
 
       const sources = await loadAllSources(test.projectDir);
       const claude = sources.find((s) => s.level === 'project' && s.namespace === 'claude');
-      const gencode = sources.find((s) => s.level === 'project' && s.namespace === 'gencode');
+      const gencode = sources.find((s) => s.level === 'project' && s.namespace === 'gen');
 
       expect(claude?.settings.provider).toBe('openai');
       expect(gencode?.settings.provider).toBe('anthropic');
     });
 
     it('should load local settings', async () => {
-      await writeSettings(test.projectDir, 'gencode', { alwaysThinkingEnabled: true }, true);
+      await writeSettings(test.projectDir, 'gen', { alwaysThinkingEnabled: true }, true);
       const sources = await loadAllSources(test.projectDir);
 
       const local = sources.find((s) => s.level === 'local');
@@ -63,7 +63,7 @@ describe('Config Loader', () => {
       const extraDir = path.join(test.tempDir, 'extra-config');
       await fs.mkdir(extraDir, { recursive: true });
       await fs.writeFile(path.join(extraDir, 'settings.json'), JSON.stringify({ theme: 'dark' }));
-      process.env.GENCODE_CONFIG_DIRS = extraDir;
+      process.env.GEN_CONFIG = extraDir;
 
       const sources = await loadAllSources(test.projectDir);
       const extra = sources.find((s) => s.level === 'extra');
@@ -74,7 +74,7 @@ describe('Config Loader', () => {
   describe('loadSourcesByLevel', () => {
     it('should group sources by level', async () => {
       await writeSettings(test.projectDir, 'claude', { model: 'gpt-4' });
-      await writeSettings(test.projectDir, 'gencode', { model: 'claude-sonnet' });
+      await writeSettings(test.projectDir, 'gen', { model: 'claude-sonnet' });
 
       const sourcesByLevel = await loadSourcesByLevel(test.projectDir);
 
@@ -85,8 +85,8 @@ describe('Config Loader', () => {
 
   describe('loadProjectSettings', () => {
     it('should only load project-level settings', async () => {
-      await writeSettings(test.projectDir, 'gencode', { model: 'claude-sonnet' });
-      await writeSettings(test.projectDir, 'gencode', { theme: 'dark' }, true);
+      await writeSettings(test.projectDir, 'gen', { model: 'claude-sonnet' });
+      await writeSettings(test.projectDir, 'gen', { theme: 'dark' }, true);
 
       const sources = await loadProjectSettings(test.projectDir);
 
@@ -99,14 +99,14 @@ describe('Config Loader', () => {
   describe('getExistingConfigFiles', () => {
     it('should list all existing config files', async () => {
       await writeSettings(test.projectDir, 'claude', {});
-      await writeSettings(test.projectDir, 'gencode', {});
-      await writeSettings(test.projectDir, 'gencode', {}, true);
+      await writeSettings(test.projectDir, 'gen', {});
+      await writeSettings(test.projectDir, 'gen', {}, true);
 
       const files = await getExistingConfigFiles(test.projectDir);
 
       expect(files.length).toBeGreaterThanOrEqual(3);
       expect(files.some((f) => f.includes('.claude/settings.json'))).toBe(true);
-      expect(files.some((f) => f.includes('.gencode/settings.json'))).toBe(true);
+      expect(files.some((f) => f.includes('.gen/settings.json'))).toBe(true);
       expect(files.some((f) => f.includes('settings.local.json'))).toBe(true);
     });
 

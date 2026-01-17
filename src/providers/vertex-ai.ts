@@ -1,10 +1,17 @@
 /**
- * Google Vertex AI Provider Implementation
- * Supports Claude models deployed on Google Cloud Vertex AI
+ * Anthropic Vertex AI Provider
+ * Supports Claude models via Google Cloud Vertex AI
+ *
+ * Documentation: https://code.claude.com/docs/en/google-vertex-ai
+ *
+ * Required environment variables:
+ * - CLAUDE_CODE_USE_VERTEX=1
+ * - ANTHROPIC_VERTEX_PROJECT_ID=your-project-id
+ * - CLOUD_ML_REGION=global (or specific region like us-east5)
  *
  * Authentication uses Google Cloud's default credential chain:
- * 1. GOOGLE_APPLICATION_CREDENTIALS (service account JSON)
- * 2. gcloud auth application-default login (ADC)
+ * 1. gcloud auth application-default login (recommended)
+ * 2. GOOGLE_APPLICATION_CREDENTIALS (service account JSON)
  * 3. GCE/GKE metadata service (when running on GCP)
  */
 
@@ -12,6 +19,7 @@ import { GoogleAuth } from 'google-auth-library';
 import { calculateCost } from '../pricing/calculator.js';
 import type {
   LLMProvider,
+  ProviderClassMeta,
   CompletionOptions,
   CompletionResponse,
   StreamChunk,
@@ -129,23 +137,40 @@ type StreamEvent =
   | { type: 'message_stop' }
   | { type: 'ping' };
 
-export class VertexAIProvider implements LLMProvider {
-  readonly name = 'vertex-ai';
+export class AnthropicVertexProvider implements LLMProvider {
+  static readonly meta: ProviderClassMeta = {
+    provider: 'anthropic',
+    authMethod: 'vertex',
+    envVars: [
+      'CLAUDE_CODE_USE_VERTEX',
+      'ANTHROPIC_VERTEX_PROJECT_ID',
+      'CLOUD_ML_REGION',
+    ],
+    displayName: 'Google Vertex AI',
+    description: 'Claude via Google Cloud Platform',
+  };
+
+  readonly name = 'anthropic-vertex';
   private projectId: string;
   private region: string;
   private auth: GoogleAuth;
   private accessToken?: string;
 
   constructor(config: VertexAIConfig = {}) {
+    // Project ID priority (per Claude Code docs):
+    // 1. config.projectId
+    // 2. ANTHROPIC_VERTEX_PROJECT_ID
+    // 3. GCLOUD_PROJECT
+    // 4. GOOGLE_CLOUD_PROJECT
     this.projectId =
       config.projectId ??
       process.env.ANTHROPIC_VERTEX_PROJECT_ID ??
+      process.env.GCLOUD_PROJECT ??
       process.env.GOOGLE_CLOUD_PROJECT ??
       '';
 
     this.region =
       config.region ??
-      process.env.ANTHROPIC_VERTEX_REGION ??
       process.env.CLOUD_ML_REGION ??
       'us-east5';
 
@@ -153,7 +178,7 @@ export class VertexAIProvider implements LLMProvider {
 
     if (!this.projectId) {
       throw new Error(
-        'Vertex AI requires a project ID. Set ANTHROPIC_VERTEX_PROJECT_ID environment variable.'
+        'Vertex AI requires a project ID. Set one of: ANTHROPIC_VERTEX_PROJECT_ID, GCLOUD_PROJECT, or GOOGLE_CLOUD_PROJECT'
       );
     }
 
@@ -167,12 +192,23 @@ export class VertexAIProvider implements LLMProvider {
       return this.accessToken;
     }
 
-    const client = await this.auth.getClient();
-    const tokenResponse = await client.getAccessToken();
-    if (!tokenResponse.token) {
-      throw new Error('Failed to get access token from Google Cloud');
+    try {
+      const client = await this.auth.getClient();
+      const tokenResponse = await client.getAccessToken();
+      if (!tokenResponse.token) {
+        throw new Error('Failed to get access token from Google Cloud');
+      }
+      return tokenResponse.token;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to authenticate with Google Cloud. Please ensure you have:\n` +
+        `1. Run: gcloud auth application-default login\n` +
+        `2. Set ANTHROPIC_VERTEX_PROJECT_ID or GOOGLE_CLOUD_PROJECT\n` +
+        `3. Enabled Vertex AI API in your GCP project\n` +
+        `Original error: ${message}`
+      );
     }
-    return tokenResponse.token;
   }
 
   private getEndpoint(model: string, stream: boolean = false): string {

@@ -191,7 +191,7 @@ export function mergeWithCliArgs(
       {
         level: 'cli',
         path: '<cli>',
-        namespace: 'gencode',
+        namespace: 'gen',
         settings: cliArgs,
       },
     ],

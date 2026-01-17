@@ -288,7 +288,7 @@ export function InfoMessage({ text, type = 'info' }: InfoMessageProps) {
   const { color, icon } = config[type];
 
   return (
-    <Box>
+    <Box marginTop={1}>
       <Text color={color}>{icon} </Text>
       <Text color={colors.textSecondary}>{text}</Text>
     </Box>

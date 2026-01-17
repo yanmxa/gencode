@@ -34,11 +34,11 @@ describe('MemoryManager Integration', () => {
   afterEach(() => test.cleanup());
 
   describe('load', () => {
-    it('should load AGENT.md from .gencode directory', async () => {
-      await writeMemory(test.projectDir, 'gencode', '# GenCode\n\nTest content - MARKER_123');
+    it('should load GEN.md from .gen directory', async () => {
+      await writeMemory(test.projectDir, 'gen', '# GenCode\n\nTest content - MARKER_123');
 
       const memory = await new MemoryManager().load({ cwd: test.projectDir });
-      const file = memory.files.find((f) => f.namespace === 'gencode' && f.level === 'project');
+      const file = memory.files.find((f) => f.namespace === 'gen' && f.level === 'project');
 
       expect(file?.content).toContain('MARKER_123');
     });
@@ -54,29 +54,29 @@ describe('MemoryManager Integration', () => {
 
     it('should load from both namespaces with correct order (claude first, gencode second)', async () => {
       await writeMemory(test.projectDir, 'claude', '# Claude - ORDER_TEST');
-      await writeMemory(test.projectDir, 'gencode', '# GenCode - ORDER_TEST');
+      await writeMemory(test.projectDir, 'gen', '# GenCode - ORDER_TEST');
 
       const memory = await new MemoryManager().load({ cwd: test.projectDir });
       const projectFiles = memory.files.filter((f) => f.level === 'project');
 
       const claudeIdx = projectFiles.findIndex((f) => f.namespace === 'claude');
-      const gencodeIdx = projectFiles.findIndex((f) => f.namespace === 'gencode');
+      const gencodeIdx = projectFiles.findIndex((f) => f.namespace === 'gen');
 
       expect(claudeIdx).toBeLessThan(gencodeIdx); // gencode appears later = higher priority
     });
 
-    it('should load root-level AGENT.md and CLAUDE.md', async () => {
+    it('should load root-level GEN.md and CLAUDE.md', async () => {
       await writeMemory(test.projectDir, 'claude', '# Root Claude', { inDir: false });
-      await writeMemory(test.projectDir, 'gencode', '# Root GenCode', { inDir: false });
+      await writeMemory(test.projectDir, 'gen', '# Root GenCode', { inDir: false });
 
-      const memory = await new MemoryManager().load({ cwd: test.projectDir });
+      const memory = await new MemoryManager().load({ cwd: test.projectDir, strategy: 'both' });
 
       expect(memory.context).toContain('Root Claude');
       expect(memory.context).toContain('Root GenCode');
     });
 
     it('should load local memory files', async () => {
-      await writeMemory(test.projectDir, 'gencode', '# Local Notes\n\nPersonal content', { local: true });
+      await writeMemory(test.projectDir, 'gen', '# Local Notes\n\nPersonal content', { local: true });
 
       const memory = await new MemoryManager().load({ cwd: test.projectDir });
       const localFile = memory.files.find((f) => f.level === 'local');
@@ -87,8 +87,8 @@ describe('MemoryManager Integration', () => {
     it('should load from extra config dirs', async () => {
       const extraDir = path.join(test.tempDir, 'extra-config');
       await fs.mkdir(extraDir, { recursive: true });
-      await fs.writeFile(path.join(extraDir, 'AGENT.md'), '# Extra\n\nShared team content');
-      process.env.GENCODE_CONFIG_DIRS = extraDir;
+      await fs.writeFile(path.join(extraDir, 'GEN.md'), '# Extra\n\nShared team content');
+      process.env.GEN_CONFIG = extraDir;
 
       const memory = await new MemoryManager().load({ cwd: test.projectDir });
       const extraFile = memory.files.find((f) => f.level === 'extra');
@@ -100,14 +100,14 @@ describe('MemoryManager Integration', () => {
   describe('getLoadedFileList', () => {
     it('should return list with namespace information', async () => {
       await writeMemory(test.projectDir, 'claude', '# Claude');
-      await writeMemory(test.projectDir, 'gencode', '# GenCode');
+      await writeMemory(test.projectDir, 'gen', '# GenCode');
 
       const manager = new MemoryManager();
-      await manager.load({ cwd: test.projectDir });
+      await manager.load({ cwd: test.projectDir, strategy: 'both' });
       const list = manager.getLoadedFileList().filter((f) => f.level === 'project');
 
       expect(list.find((f) => f.namespace === 'claude')).toBeDefined();
-      expect(list.find((f) => f.namespace === 'gencode')).toBeDefined();
+      expect(list.find((f) => f.namespace === 'gen')).toBeDefined();
     });
   });
 
@@ -117,7 +117,7 @@ describe('MemoryManager Integration', () => {
 
       expect(manager.getDebugSummary()).toBe('Memory not loaded');
 
-      await writeMemory(test.projectDir, 'gencode', '# Test');
+      await writeMemory(test.projectDir, 'gen', '# Test');
       await manager.load({ cwd: test.projectDir });
 
       expect(manager.getDebugSummary()).toContain('Memory Sources');
@@ -126,7 +126,7 @@ describe('MemoryManager Integration', () => {
 
   describe('hasMemory', () => {
     it('should return true when memory files exist', async () => {
-      await writeMemory(test.projectDir, 'gencode', '# Test', { inDir: false });
+      await writeMemory(test.projectDir, 'gen', '# Test', { inDir: false });
 
       const manager = new MemoryManager();
       await manager.load({ cwd: test.projectDir });
@@ -146,12 +146,12 @@ describe('MemoryManager Integration', () => {
       // No memory initially
       expect(await manager.hasProjectMemory(test.projectDir)).toBe(false);
 
-      // Root AGENT.md
-      await writeMemory(test.projectDir, 'gencode', '# Test', { inDir: false });
+      // Root GEN.md
+      await writeMemory(test.projectDir, 'gen', '# Test', { inDir: false });
       expect(await manager.hasProjectMemory(test.projectDir)).toBe(true);
     });
 
-    it('should detect CLAUDE.md and .gencode/AGENT.md', async () => {
+    it('should detect CLAUDE.md and .gen/GEN.md', async () => {
       const manager = new MemoryManager();
 
       await writeMemory(test.projectDir, 'claude', '# Claude', { inDir: false });
@@ -160,12 +160,12 @@ describe('MemoryManager Integration', () => {
   });
 
   describe('quickAdd', () => {
-    it('should create or append to AGENT.md', async () => {
+    it('should create or append to GEN.md', async () => {
       const manager = new MemoryManager();
 
       // Create new
       const filePath = await manager.quickAdd('First content', 'project', test.projectDir);
-      expect(filePath).toBe(path.join(test.projectDir, 'AGENT.md'));
+      expect(filePath).toBe(path.join(test.projectDir, 'GEN.md'));
       expect(await fs.readFile(filePath, 'utf-8')).toContain('First content');
 
       // Append
@@ -180,11 +180,11 @@ describe('MemoryManager Integration', () => {
 describe('MemoryConfig', () => {
   describe('DEFAULT_MEMORY_CONFIG', () => {
     it('should have correct filenames and directories', () => {
-      expect(DEFAULT_MEMORY_CONFIG.gencodeFilename).toBe('AGENT.md');
+      expect(DEFAULT_MEMORY_CONFIG.genFilename).toBe('GEN.md');
       expect(DEFAULT_MEMORY_CONFIG.claudeFilename).toBe('CLAUDE.md');
-      expect(DEFAULT_MEMORY_CONFIG.gencodeLocalFilename).toBe('AGENT.local.md');
+      expect(DEFAULT_MEMORY_CONFIG.genLocalFilename).toBe('GEN.local.md');
       expect(DEFAULT_MEMORY_CONFIG.claudeLocalFilename).toBe('CLAUDE.local.md');
-      expect(DEFAULT_MEMORY_CONFIG.gencodeDir).toBe('.gencode');
+      expect(DEFAULT_MEMORY_CONFIG.genDir).toBe('.gen');
       expect(DEFAULT_MEMORY_CONFIG.claudeDir).toBe('.claude');
       expect(DEFAULT_MEMORY_CONFIG.rulesDir).toBe('rules');
     });
@@ -193,6 +193,224 @@ describe('MemoryConfig', () => {
       expect(DEFAULT_MEMORY_CONFIG.maxFileSize).toBe(100 * 1024);
       expect(DEFAULT_MEMORY_CONFIG.maxTotalSize).toBe(500 * 1024);
       expect(DEFAULT_MEMORY_CONFIG.maxImportDepth).toBe(5);
+    });
+  });
+});
+
+describe('Memory Merge Strategies', () => {
+  let test: TestProject;
+
+  beforeEach(async () => {
+    test = await createTestProject('gencode-strategy-');
+  });
+
+  afterEach(() => test.cleanup());
+
+  describe('fallback strategy', () => {
+    it('should load only GEN.md when both files exist', async () => {
+      await writeMemory(test.projectDir, 'claude', '# Claude Content');
+      await writeMemory(test.projectDir, 'gen', '# GenCode Content');
+
+      const memory = await new MemoryManager().load({
+        cwd: test.projectDir,
+        strategy: 'fallback',
+      });
+
+      const projectFiles = memory.files.filter((f) => f.level === 'project');
+      expect(projectFiles.length).toBe(1);
+      expect(projectFiles[0].namespace).toBe('gen');
+      expect(projectFiles[0].content).toContain('GenCode Content');
+
+      // Check that CLAUDE.md was skipped
+      expect(memory.skippedFiles.some((f) => f.includes('CLAUDE.md'))).toBe(true);
+    });
+
+    it('should load CLAUDE.md when only CLAUDE.md exists', async () => {
+      await writeMemory(test.projectDir, 'claude', '# Only Claude');
+
+      const memory = await new MemoryManager().load({
+        cwd: test.projectDir,
+        strategy: 'fallback',
+      });
+
+      const projectFiles = memory.files.filter((f) => f.level === 'project');
+      expect(projectFiles.length).toBe(1);
+      expect(projectFiles[0].namespace).toBe('claude');
+      expect(projectFiles[0].content).toContain('Only Claude');
+
+      // No project-level files should be skipped (GEN.md doesn't exist at project level)
+      const projectSkipped = memory.skippedFiles.filter((f) => f.includes(test.projectDir));
+      expect(projectSkipped.length).toBe(0);
+    });
+
+    it('should load GEN.md when only GEN.md exists', async () => {
+      await writeMemory(test.projectDir, 'gen', '# Only GenCode');
+
+      const memory = await new MemoryManager().load({
+        cwd: test.projectDir,
+        strategy: 'fallback',
+      });
+
+      const projectFiles = memory.files.filter((f) => f.level === 'project');
+      expect(projectFiles.length).toBe(1);
+      expect(projectFiles[0].namespace).toBe('gen');
+      expect(projectFiles[0].content).toContain('Only GenCode');
+    });
+
+    it('should load nothing when neither file exists', async () => {
+      const memory = await new MemoryManager().load({
+        cwd: test.projectDir,
+        strategy: 'fallback',
+      });
+
+      const projectFiles = memory.files.filter((f) => f.level === 'project');
+      expect(projectFiles.length).toBe(0);
+    });
+  });
+
+  describe('both strategy', () => {
+    it('should load both CLAUDE.md and GEN.md when they exist', async () => {
+      await writeMemory(test.projectDir, 'claude', '# Claude Content');
+      await writeMemory(test.projectDir, 'gen', '# GenCode Content');
+
+      const memory = await new MemoryManager().load({
+        cwd: test.projectDir,
+        strategy: 'both',
+      });
+
+      const projectFiles = memory.files.filter((f) => f.level === 'project');
+      expect(projectFiles.length).toBe(2);
+
+      const claudeFile = projectFiles.find((f) => f.namespace === 'claude');
+      const gencodeFile = projectFiles.find((f) => f.namespace === 'gen');
+
+      expect(claudeFile?.content).toContain('Claude Content');
+      expect(gencodeFile?.content).toContain('GenCode Content');
+
+      // No files should be skipped in 'both' mode
+      expect(memory.skippedFiles.length).toBe(0);
+    });
+
+    it('should load whatever exists when only one file exists', async () => {
+      await writeMemory(test.projectDir, 'gen', '# Only GenCode');
+
+      const memory = await new MemoryManager().load({
+        cwd: test.projectDir,
+        strategy: 'both',
+      });
+
+      const projectFiles = memory.files.filter((f) => f.level === 'project');
+      expect(projectFiles.length).toBe(1);
+      expect(projectFiles[0].content).toContain('Only GenCode');
+    });
+  });
+
+  describe('gen-only strategy', () => {
+    it('should load only GEN.md even when both exist', async () => {
+      await writeMemory(test.projectDir, 'claude', '# Claude Content');
+      await writeMemory(test.projectDir, 'gen', '# GenCode Content');
+
+      const memory = await new MemoryManager().load({
+        cwd: test.projectDir,
+        strategy: 'gen-only',
+      });
+
+      const projectFiles = memory.files.filter((f) => f.level === 'project');
+      expect(projectFiles.length).toBe(1);
+      expect(projectFiles[0].namespace).toBe('gen');
+      expect(projectFiles[0].content).toContain('GenCode Content');
+
+      // CLAUDE.md should be marked as skipped
+      expect(memory.skippedFiles.some((f) => f.includes('CLAUDE.md'))).toBe(true);
+    });
+
+    it('should load nothing when only CLAUDE.md exists', async () => {
+      await writeMemory(test.projectDir, 'claude', '# Only Claude');
+
+      const memory = await new MemoryManager().load({
+        cwd: test.projectDir,
+        strategy: 'gen-only',
+      });
+
+      const projectFiles = memory.files.filter((f) => f.level === 'project');
+      expect(projectFiles.length).toBe(0);
+    });
+  });
+
+  describe('claude-only strategy', () => {
+    it('should load only CLAUDE.md even when both exist', async () => {
+      await writeMemory(test.projectDir, 'claude', '# Claude Content');
+      await writeMemory(test.projectDir, 'gen', '# GenCode Content');
+
+      const memory = await new MemoryManager().load({
+        cwd: test.projectDir,
+        strategy: 'claude-only',
+      });
+
+      const projectFiles = memory.files.filter((f) => f.level === 'project');
+      expect(projectFiles.length).toBe(1);
+      expect(projectFiles[0].namespace).toBe('claude');
+      expect(projectFiles[0].content).toContain('Claude Content');
+
+      // GEN.md should be marked as skipped
+      expect(memory.skippedFiles.some((f) => f.includes('GEN.md'))).toBe(true);
+    });
+
+    it('should load nothing when only GEN.md exists', async () => {
+      await writeMemory(test.projectDir, 'gen', '# Only GenCode');
+
+      const memory = await new MemoryManager().load({
+        cwd: test.projectDir,
+        strategy: 'claude-only',
+      });
+
+      const projectFiles = memory.files.filter((f) => f.level === 'project');
+      expect(projectFiles.length).toBe(0);
+    });
+  });
+
+  describe('default strategy', () => {
+    it('should default to fallback when no strategy specified', async () => {
+      await writeMemory(test.projectDir, 'claude', '# Claude Content');
+      await writeMemory(test.projectDir, 'gen', '# GenCode Content');
+
+      const memory = await new MemoryManager().load({
+        cwd: test.projectDir,
+        // No strategy specified
+      });
+
+      const projectFiles = memory.files.filter((f) => f.level === 'project');
+      expect(projectFiles.length).toBe(1);
+      expect(projectFiles[0].namespace).toBe('gen');
+      expect(memory.skippedFiles.some((f) => f.includes('CLAUDE.md'))).toBe(true);
+    });
+  });
+
+  describe('getVerboseSummary', () => {
+    it('should show strategy and skipped files', async () => {
+      await writeMemory(test.projectDir, 'claude', '# Claude');
+      await writeMemory(test.projectDir, 'gen', '# GenCode');
+
+      const manager = new MemoryManager();
+      await manager.load({ cwd: test.projectDir, strategy: 'fallback' });
+
+      const summary = manager.getVerboseSummary('fallback');
+      expect(summary).toContain('[Memory] Strategy: fallback');
+      expect(summary).toContain('Skipped:');
+      expect(summary).toContain('CLAUDE.md');
+      expect(summary).toContain('skipped)');
+    });
+
+    it('should show no skipped files in both mode', async () => {
+      await writeMemory(test.projectDir, 'claude', '# Claude');
+      await writeMemory(test.projectDir, 'gen', '# GenCode');
+
+      const manager = new MemoryManager();
+      await manager.load({ cwd: test.projectDir, strategy: 'both' });
+
+      const summary = manager.getVerboseSummary('both');
+      expect(summary).toContain('[Memory] Strategy: both');
+      expect(summary).toContain('files loaded, 0 skipped');
     });
   });
 });

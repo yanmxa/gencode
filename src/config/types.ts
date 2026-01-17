@@ -2,10 +2,10 @@
  * Configuration Types - Multi-level configuration system (Claude Code compatible)
  *
  * Configuration hierarchy (priority from low to high):
- * 1. User Level: ~/.gencode/ + ~/.claude/ (merged, gencode wins)
- * 2. Extra Dirs: GENCODE_CONFIG_DIRS environment variable
- * 3. Project Level: .gencode/ + .claude/ (merged, gencode wins)
- * 4. Local Level: .gencode/*.local.* + .claude/*.local.* (merged, gencode wins)
+ * 1. User Level: ~/.gen/ + ~/.claude/ (merged, gen wins)
+ * 2. Extra Dirs: GEN_CONFIG environment variable
+ * 3. Project Level: .gen/ + .claude/ (merged, gen wins)
+ * 4. Local Level: .gen/*.local.* + .claude/*.local.* (merged, gen wins)
  * 5. CLI Arguments: Command line overrides
  * 6. Managed Level: System-wide enforced settings (cannot be overridden)
  */
@@ -17,7 +17,12 @@ import * as path from 'path';
 // Provider Types
 // =============================================================================
 
-export type ProviderName = 'openai' | 'anthropic' | 'gemini' | 'vertex-ai';
+export type Provider = 'openai' | 'anthropic' | 'gemini';
+export type AuthMethod = 'api_key' | 'vertex' | 'bedrock' | 'azure' | 'oauth';
+
+// Legacy type alias for backward compatibility
+/** @deprecated Use Provider instead */
+export type ProviderName = Provider;
 
 // =============================================================================
 // Settings Types
@@ -39,7 +44,7 @@ export interface PermissionRules {
 export interface Settings {
   // Provider configuration
   model?: string;
-  provider?: ProviderName;
+  provider?: Provider;
 
   // Permissions
   permissions?: PermissionRules;
@@ -61,6 +66,9 @@ export interface Settings {
   // Plugin configuration
   enabledPlugins?: Record<string, boolean>;
   extraKnownMarketplaces?: Record<string, unknown>;
+
+  // Memory configuration
+  memoryMergeStrategy?: 'fallback' | 'both' | 'gen-only' | 'claude-only';
 
   // Managed-only fields (cannot be overridden by lower levels)
   strictKnownMarketplaces?: unknown[];
@@ -94,7 +102,7 @@ export interface ConfigLevel {
 export interface ConfigSource {
   level: ConfigLevelType;
   path: string;
-  namespace: 'gencode' | 'claude' | 'extra';
+  namespace: 'gen' | 'claude' | 'extra';
   settings: Settings;
 }
 
@@ -111,7 +119,7 @@ export interface MergedConfig {
 // Constants
 // =============================================================================
 
-export const GENCODE_CONFIG_DIRS_ENV = 'GENCODE_CONFIG_DIRS';
+export const GEN_CONFIG_ENV = 'GEN_CONFIG';
 
 // File names
 export const SETTINGS_FILE_NAME = 'settings.json';
@@ -120,31 +128,31 @@ export const MANAGED_SETTINGS_FILE_NAME = 'managed-settings.json';
 export const PROVIDERS_FILE_NAME = 'providers.json';
 
 // Directory names
-export const GENCODE_DIR = '.gencode';
+export const GEN_DIR = '.gen';
 export const CLAUDE_DIR = '.claude';
 
 // User directory paths
-export const USER_GENCODE_DIR = path.join(os.homedir(), GENCODE_DIR);
+export const USER_GEN_DIR = path.join(os.homedir(), GEN_DIR);
 export const USER_CLAUDE_DIR = path.join(os.homedir(), CLAUDE_DIR);
 
 // Managed settings locations by platform
-export function getManagedPaths(): { gencode: string; claude: string } {
+export function getManagedPaths(): { gen: string; claude: string } {
   const platform = os.platform();
 
   if (platform === 'darwin') {
     return {
-      gencode: '/Library/Application Support/GenCode',
+      gen: '/Library/Application Support/GenCode',
       claude: '/Library/Application Support/ClaudeCode',
     };
   } else if (platform === 'win32') {
     return {
-      gencode: 'C:\\Program Files\\GenCode',
+      gen: 'C:\\Program Files\\GenCode',
       claude: 'C:\\Program Files\\ClaudeCode',
     };
   } else {
     // Linux and other Unix-like systems
     return {
-      gencode: '/etc/gencode',
+      gen: '/etc/gencode',
       claude: '/etc/claude-code',
     };
   }
@@ -159,10 +167,10 @@ export interface SettingsManagerOptions {
 }
 
 // Legacy exports
-export const DEFAULT_SETTINGS_DIR = '~/.claude';
-export const PROJECT_SETTINGS_DIR = '.claude';
-export const FALLBACK_SETTINGS_DIR = '~/.gencode';
-export const FALLBACK_PROJECT_DIR = '.gencode';
+export const DEFAULT_SETTINGS_DIR = '~/.gen';
+export const PROJECT_SETTINGS_DIR = '.gen';
+export const FALLBACK_SETTINGS_DIR = '~/.claude';
+export const FALLBACK_PROJECT_DIR = '.claude';
 
 // =============================================================================
 // Provider Connection Types
@@ -172,7 +180,8 @@ export const FALLBACK_PROJECT_DIR = '.gencode';
  * Provider connection info
  */
 export interface ProviderConnection {
-  method: 'api_key' | 'vertex' | 'oauth';
+  authMethod: AuthMethod; // Authentication method
+  method?: string; // Legacy: Connection name (e.g., "Direct API", "Google Vertex AI")
   connectedAt: string;
 }
 
@@ -187,6 +196,7 @@ export interface CachedModel {
 
 /**
  * Cached models for a provider
+ * Note: provider and authMethod are encoded in the key as "provider:authMethod"
  */
 export interface ProviderModels {
   cachedAt: string;
@@ -194,7 +204,7 @@ export interface ProviderModels {
 }
 
 /**
- * Providers config file structure (~/.gencode/providers.json)
+ * Providers config file structure (~/.gen/providers.json)
  */
 export interface ProvidersConfig {
   connections: Record<string, ProviderConnection>;

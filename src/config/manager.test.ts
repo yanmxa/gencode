@@ -18,8 +18,8 @@ describe('ConfigManager', () => {
   afterEach(() => test.cleanup());
 
   describe('load', () => {
-    it('should load settings from .gencode directory', async () => {
-      await writeSettings(test.projectDir, 'gencode', { provider: 'anthropic', model: 'claude-sonnet' });
+    it('should load settings from .gen directory', async () => {
+      await writeSettings(test.projectDir, 'gen', { provider: 'anthropic', model: 'claude-sonnet' });
 
       const config = await new ConfigManager({ cwd: test.projectDir }).load();
 
@@ -36,9 +36,9 @@ describe('ConfigManager', () => {
       expect(config.settings.model).toBe('gpt-4');
     });
 
-    it('should merge both .claude and .gencode with gencode winning', async () => {
+    it('should merge both .claude and .gen with gencode winning', async () => {
       await writeSettings(test.projectDir, 'claude', { provider: 'openai', model: 'gpt-4', theme: 'dark' });
-      await writeSettings(test.projectDir, 'gencode', { provider: 'anthropic' });
+      await writeSettings(test.projectDir, 'gen', { provider: 'anthropic' });
 
       const config = await new ConfigManager({ cwd: test.projectDir }).load();
 
@@ -51,7 +51,7 @@ describe('ConfigManager', () => {
       await writeSettings(test.projectDir, 'claude', {
         permissions: { allow: ['Bash(git:*)'], deny: ['WebFetch'] },
       });
-      await writeSettings(test.projectDir, 'gencode', {
+      await writeSettings(test.projectDir, 'gen', {
         permissions: { allow: ['Bash(npm:*)'], deny: ['Bash(rm -rf:*)'] },
       });
 
@@ -64,8 +64,8 @@ describe('ConfigManager', () => {
     });
 
     it('should load local settings with higher priority', async () => {
-      await writeSettings(test.projectDir, 'gencode', { model: 'claude-sonnet', theme: 'light' });
-      await writeSettings(test.projectDir, 'gencode', { model: 'claude-opus' }, true);
+      await writeSettings(test.projectDir, 'gen', { model: 'claude-sonnet', theme: 'light' });
+      await writeSettings(test.projectDir, 'gen', { model: 'claude-opus' }, true);
 
       const { settings } = await new ConfigManager({ cwd: test.projectDir }).load();
 
@@ -77,7 +77,7 @@ describe('ConfigManager', () => {
       const extraDir = path.join(test.tempDir, 'team-config');
       await fs.mkdir(extraDir, { recursive: true });
       await fs.writeFile(path.join(extraDir, 'settings.json'), JSON.stringify({ teamSetting: 'enabled' }));
-      process.env.GENCODE_CONFIG_DIRS = extraDir;
+      process.env.GEN_CONFIG = extraDir;
 
       const { settings } = await new ConfigManager({ cwd: test.projectDir }).load();
 
@@ -87,7 +87,7 @@ describe('ConfigManager', () => {
 
   describe('setCliArgs', () => {
     it('should apply CLI args with highest priority', async () => {
-      await writeSettings(test.projectDir, 'gencode', { model: 'claude-sonnet', provider: 'anthropic' });
+      await writeSettings(test.projectDir, 'gen', { model: 'claude-sonnet', provider: 'anthropic' });
 
       const manager = new ConfigManager({ cwd: test.projectDir });
       manager.setCliArgs({ model: 'gpt-4o' });
@@ -107,10 +107,10 @@ describe('ConfigManager', () => {
       await manager.saveToLevel({ debug: true }, 'local');
 
       const projectContent = JSON.parse(await fs.readFile(
-        path.join(test.projectDir, '.gencode', 'settings.json'), 'utf-8'
+        path.join(test.projectDir, '.gen', 'settings.json'), 'utf-8'
       ));
       const localContent = JSON.parse(await fs.readFile(
-        path.join(test.projectDir, '.gencode', 'settings.local.json'), 'utf-8'
+        path.join(test.projectDir, '.gen', 'settings.local.json'), 'utf-8'
       ));
 
       expect(projectContent.model).toBe('project-model');
@@ -118,14 +118,14 @@ describe('ConfigManager', () => {
     });
 
     it('should merge with existing settings', async () => {
-      await writeSettings(test.projectDir, 'gencode', { model: 'old', theme: 'dark' });
+      await writeSettings(test.projectDir, 'gen', { model: 'old', theme: 'dark' });
 
       const manager = new ConfigManager({ cwd: test.projectDir });
       await manager.load();
       await manager.saveToLevel({ model: 'new' }, 'project');
 
       const saved = JSON.parse(await fs.readFile(
-        path.join(test.projectDir, '.gencode', 'settings.json'), 'utf-8'
+        path.join(test.projectDir, '.gen', 'settings.json'), 'utf-8'
       ));
 
       expect(saved.model).toBe('new');
@@ -142,7 +142,7 @@ describe('ConfigManager', () => {
       await manager.addPermissionRule('Bash(rm:*)', 'deny', 'project');
 
       const saved = JSON.parse(await fs.readFile(
-        path.join(test.projectDir, '.gencode', 'settings.json'), 'utf-8'
+        path.join(test.projectDir, '.gen', 'settings.json'), 'utf-8'
       ));
 
       expect(saved.permissions?.allow).toContain('Bash(npm:*)');
@@ -152,7 +152,7 @@ describe('ConfigManager', () => {
 
   describe('getEffectivePermissions', () => {
     it('should return all permission lists', async () => {
-      await writeSettings(test.projectDir, 'gencode', {
+      await writeSettings(test.projectDir, 'gen', {
         permissions: { allow: ['A'], ask: ['B'], deny: ['C'] },
       });
 
@@ -168,7 +168,7 @@ describe('ConfigManager', () => {
 
   describe('isAllowed and shouldAsk', () => {
     it('should check permissions correctly', async () => {
-      await writeSettings(test.projectDir, 'gencode', {
+      await writeSettings(test.projectDir, 'gen', {
         permissions: { allow: ['Bash(git:*)'], deny: ['Bash(rm:*)'], ask: ['WebFetch'] },
       });
 
@@ -189,14 +189,14 @@ describe('ConfigManager', () => {
   describe('getSources', () => {
     it('should return all loaded sources', async () => {
       await writeSettings(test.projectDir, 'claude', { model: 'gpt-4' });
-      await writeSettings(test.projectDir, 'gencode', { provider: 'anthropic' });
+      await writeSettings(test.projectDir, 'gen', { provider: 'anthropic' });
 
       const manager = new ConfigManager({ cwd: test.projectDir });
       await manager.load();
       const sources = manager.getSources();
 
       expect(sources.find((s) => s.namespace === 'claude')).toBeDefined();
-      expect(sources.find((s) => s.namespace === 'gencode')).toBeDefined();
+      expect(sources.find((s) => s.namespace === 'gen')).toBeDefined();
     });
   });
 
@@ -206,7 +206,7 @@ describe('ConfigManager', () => {
 
       expect(manager.getDebugSummary()).toBe('Configuration not loaded');
 
-      await writeSettings(test.projectDir, 'gencode', { model: 'test' });
+      await writeSettings(test.projectDir, 'gen', { model: 'test' });
       await manager.load();
 
       expect(manager.getDebugSummary()).toContain('Configuration Sources');

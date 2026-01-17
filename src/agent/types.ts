@@ -4,15 +4,19 @@
 
 import type { PermissionConfig } from '../permissions/types.js';
 import type { CostEstimate } from '../pricing/types.js';
+import type { Provider, AuthMethod } from '../providers/types.js';
 
 export interface AgentConfig {
-  provider: 'openai' | 'anthropic' | 'gemini' | 'vertex-ai';
+  provider: Provider;
+  authMethod?: AuthMethod;
   model: string;
   systemPrompt?: string;
   tools?: string[];
   cwd?: string;
   maxTurns?: number;
   permissions?: Partial<PermissionConfig>;
+  memoryMergeStrategy?: 'fallback' | 'both' | 'gen-only' | 'claude-only';
+  verbose?: boolean;
 }
 
 // Agent Events

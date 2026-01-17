@@ -1,7 +1,7 @@
 /**
  * Plan File Utilities
  *
- * Manages plan files stored in .gencode/plans/ directory.
+ * Manages plan files stored in .gen/plans/ directory.
  * Generates unique filenames with timestamps and slugs.
  */
 
@@ -14,7 +14,7 @@ import type { PlanFile } from './types.js';
 // Constants
 // ============================================================================
 
-const PLANS_DIR = '.gencode/plans';
+const PLANS_DIR = '.gen/plans';
 const PLAN_FILE_EXTENSION = '.md';
 
 // Word lists for generating memorable names (like Claude Code)

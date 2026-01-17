@@ -2,15 +2,15 @@
  * Memory System Types
  *
  * Hierarchical memory loading compatible with Claude Code:
- * At each level, both .gencode and .claude are loaded and merged (gencode has higher priority).
+ * At each level, both .gen and .claude are loaded and merged (gen has higher priority).
  *
  * Levels:
  * - Enterprise: System-wide managed memory (enforced)
- * - User: ~/.gencode/ + ~/.claude/ (both loaded, gencode content appears later)
- * - User Rules: ~/.gencode/rules/ + ~/.claude/rules/
- * - Extra: GENCODE_CONFIG_DIRS directories
- * - Project: ./AGENT.md, .gencode/, ./CLAUDE.md, .claude/ (recursive upward search)
- * - Project Rules: .gencode/rules/ + .claude/rules/
+ * - User: ~/.gen/ + ~/.claude/ (both loaded, gen content appears later)
+ * - User Rules: ~/.gen/rules/ + ~/.claude/rules/
+ * - Extra: GEN_CONFIG_DIRS directories
+ * - Project: ./GEN.md, .gen/, ./CLAUDE.md, .claude/ (recursive upward search)
+ * - Project Rules: .gen/rules/ + .claude/rules/
  * - Local: *.local.md files (gitignored)
  */
 
@@ -23,7 +23,16 @@ export type MemoryLevel =
   | 'project-rules'
   | 'local';
 
-export type MemoryNamespace = 'gencode' | 'claude' | 'extra';
+export type MemoryNamespace = 'gen' | 'claude' | 'extra';
+
+/**
+ * Memory merge strategy - how to combine CLAUDE.md and GEN.md at each level
+ * - fallback: Load GEN.md if exists, else CLAUDE.md (reduces context, default)
+ * - both: Load both CLAUDE.md and GEN.md (current behavior, max context)
+ * - gen-only: Only load .gen/GEN.md files
+ * - claude-only: Only load .claude/CLAUDE.md files
+ */
+export type MemoryMergeStrategy = 'fallback' | 'both' | 'gen-only' | 'claude-only';
 
 export interface MemoryFile {
   path: string;
@@ -46,9 +55,9 @@ export interface MemoryRule {
 
 export interface MemoryConfig {
   // GenCode file names (higher priority)
-  gencodeFilename: string;
-  gencodeLocalFilename: string;
-  gencodeDir: string;
+  genFilename: string;
+  genLocalFilename: string;
+  genDir: string;
 
   // Claude file names (lower priority, loaded first)
   claudeFilename: string;
@@ -64,9 +73,9 @@ export interface MemoryConfig {
 
 export const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
   // GenCode
-  gencodeFilename: 'AGENT.md',
-  gencodeLocalFilename: 'AGENT.local.md',
-  gencodeDir: '.gencode',
+  genFilename: 'GEN.md',
+  genLocalFilename: 'GEN.local.md',
+  genDir: '.gen',
 
   // Claude
   claudeFilename: 'CLAUDE.md',
@@ -82,13 +91,13 @@ export const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
 
 // Legacy compatibility
 export const LEGACY_MEMORY_CONFIG = {
-  primaryFilename: 'AGENT.md',
+  primaryFilename: 'GEN.md',
   fallbackFilename: 'CLAUDE.md',
-  localFilename: 'AGENT.local.md',
+  localFilename: 'GEN.local.md',
   localFallbackFilename: 'CLAUDE.local.md',
-  primaryUserDir: '.gencode',
+  primaryUserDir: '.gen',
   fallbackUserDir: '.claude',
-  primaryLocalDir: '.gencode',
+  primaryLocalDir: '.gen',
   fallbackLocalDir: '.claude',
   rulesDir: 'rules',
   maxFileSize: 100 * 1024,
@@ -103,6 +112,7 @@ export interface LoadedMemory {
   context: string;
   errors: string[];
   sources: MemorySource[]; // For debugging
+  skippedFiles: string[]; // Files skipped due to merge strategy
 }
 
 export interface MemorySource {
@@ -116,4 +126,5 @@ export interface MemorySource {
 export interface MemoryLoadOptions {
   cwd: string;
   currentFile?: string; // For activating path-scoped rules
+  strategy?: MemoryMergeStrategy; // How to merge CLAUDE.md and AGENT.md (default: 'fallback')
 }
