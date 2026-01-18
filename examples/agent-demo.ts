@@ -24,7 +24,7 @@ function getConfig() {
   } else if (process.env.OPENAI_API_KEY) {
     return { provider: 'openai' as const, model: 'gpt-4o' };
   } else if (process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY) {
-    return { provider: 'gemini' as const, model: 'gemini-2.0-flash' };
+    return { provider: 'google' as const, model: 'gemini-2.0-flash' };
   }
   throw new Error('No API key found. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY');
 }
@@ -93,6 +93,10 @@ Use the Glob and Read tools to explore.`;
 
       case 'error':
         console.log(chalk.red('✗ Error:') + ` ${event.error.message}`);
+        // Display full stack trace if DEBUG is enabled
+        if (event.error.stack && process.env.DEBUG) {
+          console.log(chalk.dim(event.error.stack));
+        }
         break;
 
       case 'done':
@@ -100,6 +104,24 @@ Use the Glob and Read tools to explore.`;
         const respLines = responseText.split('\n');
         for (const line of respLines) {
           console.log('  ' + line);
+        }
+        console.log();
+
+        // Display usage and cost information
+        if (event.usage) {
+          console.log(
+            chalk.dim(
+              `  Usage: ${event.usage.inputTokens} in / ${event.usage.outputTokens} out`
+            )
+          );
+        }
+        if (event.cost) {
+          console.log(chalk.dim(`  Cost: ~$${event.cost.total.toFixed(4)}`));
+        }
+
+        // Warn if suspicious token count
+        if (event.usage?.outputTokens === 0 && event.text) {
+          console.log(chalk.yellow('  ⚠ Warning: 0 output tokens reported but text was returned'));
         }
         break;
     }

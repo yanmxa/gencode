@@ -36,12 +36,15 @@ import { getTodos, formatAnswersForDisplay } from '../../tools/index.js';
 import type { Question, QuestionAnswer } from '../../tools/types.js';
 import type { ProviderName } from '../../providers/index.js';
 import type { ApprovalAction, ApprovalSuggestion } from '../../permissions/types.js';
+import type { Message, ToolResultContent, ToolUseContent } from '../../providers/types.js';
+import type { SessionMetadata } from '../../session/types.js';
 import { gatherContextFiles, buildInitPrompt, getContextSummary } from '../../memory/index.js';
 // ModeIndicator kept for potential future use
 import { PlanApproval } from './PlanApproval.js';
 import type { ModeType, PlanApprovalOption, AllowedPrompt } from '../../planning/types.js';
 // Planning utilities kept for potential future use
 import { getCheckpointManager } from '../../checkpointing/index.js';
+import { InputHistoryManager } from '../../input/index.js';
 
 // Types
 interface HistoryItem {
@@ -75,6 +78,7 @@ interface SettingsManager {
   save: (settings: { model?: string }) => Promise<void>;
   getCwd?: () => string;
   addPermissionRule?: (pattern: string, type: 'allow' | 'deny', level?: 'global' | 'project' | 'local') => Promise<void>;
+  get?: () => { inputHistory?: { enabled?: boolean; maxSize?: number; savePath?: string; deduplicateConsecutive?: boolean } };
 }
 
 interface Session {
@@ -106,17 +110,20 @@ function useAgent(config: AgentConfig) {
 // ============================================================================
 // Utils
 // ============================================================================
-const genId = () => Math.random().toString(36).slice(2);
+function genId(): string {
+  return Math.random().toString(36).slice(2);
+}
 
-const formatRelativeTime = (dateStr: string) => {
+function formatRelativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   const hrs = Math.floor(mins / 60);
   const days = Math.floor(hrs / 24);
+
   if (mins < 60) return `${mins}m`;
   if (hrs < 24) return `${hrs}h`;
   return `${days}d`;
-};
+}
 
 // ============================================================================
 // Help Component
@@ -137,6 +144,8 @@ function HelpPanel() {
     ['/memory', 'Show memory files'],
     ['/changes', 'List file changes'],
     ['/rewind [n|all]', 'Undo file changes'],
+    ['/context', 'Show context stats'],
+    ['/compact', 'Compact conversation'],
   ];
 
   return (
@@ -225,6 +234,30 @@ function MemoryFilesDisplay({ files }: { files: MemoryFileInfo[] }) {
 }
 
 // ============================================================================
+// Token Estimation Utilities
+// ============================================================================
+
+/**
+ * Language-aware token estimation for streaming text
+ * Provides better estimates for multilingual content than the simple 4:1 ratio
+ *
+ * @param text - Text chunk to estimate tokens for
+ * @returns Estimated token count
+ */
+function estimateTokenDelta(text: string): number {
+  // ASCII/English: ~4 chars per token
+  const asciiChars = (text.match(/[\x00-\x7F]/g) || []).length;
+
+  // CJK (Chinese, Japanese, Korean): ~1.5 chars per token
+  const cjkChars = (text.match(/[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF]/g) || []).length;
+
+  // Other Unicode (including emojis): ~3 chars per token
+  const otherChars = text.length - asciiChars - cjkChars;
+
+  return Math.max(1, Math.ceil(asciiChars / 4 + cjkChars / 1.5 + otherChars / 3));
+}
+
+// ============================================================================
 // Main App
 // ============================================================================
 export function App({ config, settingsManager, resumeLatest, permissionSettings }: AppProps) {
@@ -259,6 +292,14 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
   const [isThinking, setIsThinking] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const streamingTextRef = useRef(''); // Track current streaming text for closure
+
+  // Performance optimization: Throttle streaming text updates
+  const streamBufferRef = useRef(''); // Buffer for accumulated text
+  const lastFlushTimeRef = useRef(0); // Last time we flushed to UI
+  const flushTimerRef = useRef<NodeJS.Timeout | null>(null); // Pending flush timer
+  const FLUSH_INTERVAL_MS = 16; // ~60 FPS throttling
+
+  const [messageQueue, setMessageQueue] = useState<string[]>([]);
   const [processingStartTime, setProcessingStartTime] = useState<number | undefined>(undefined);
   const [tokenCount, setTokenCount] = useState(0);
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
@@ -272,6 +313,10 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
   const [pendingTool, setPendingTool] = useState<{ name: string; input: Record<string, unknown> } | null>(null);
   const pendingToolRef = useRef<{ name: string; input: Record<string, unknown> } | null>(null);
   const [todos, setTodos] = useState<ReturnType<typeof getTodos>>([]);
+
+  // Input history management
+  const historyManagerRef = useRef<InputHistoryManager | null>(null);
+  const [historyTempInput, setHistoryTempInput] = useState(''); // Store original input when navigating
 
   // Operating mode state (normal → plan → accept → normal)
   const [currentMode, setCurrentMode] = useState<ModeType>('normal');
@@ -292,9 +337,212 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
     setCmdSuggestionIndex(0);
   }, [input]);
 
+  // Initialize input history manager
+  useEffect(() => {
+    const initHistory = async () => {
+      const settings = settingsManager?.get?.();
+      const historyConfig = settings?.inputHistory;
+      const manager = new InputHistoryManager(historyConfig);
+      await manager.load();
+      historyManagerRef.current = manager;
+    };
+
+    initHistory();
+
+    // Cleanup: flush history on unmount
+    return () => {
+      if (historyManagerRef.current) {
+        void historyManagerRef.current.flush();
+      }
+    };
+  }, [settingsManager]);
+
   // Add to history
   const addHistory = useCallback((item: Omit<HistoryItem, 'id'>) => {
     setHistory((prev) => [...prev, { ...item, id: genId() }]);
+  }, []);
+
+  // Track if warning has been shown (to avoid spam)
+  const contextWarningShownRef = useRef(false);
+
+  // Listen to session manager events for context warnings
+  useEffect(() => {
+    const sessionMgr = agent.getSessionManager();
+
+    const handleContextWarning = (data: { usagePercent: number }) => {
+      if (!contextWarningShownRef.current) {
+        addHistory({
+          type: 'info',
+          content: `⚠️  Context usage at ${Math.round(data.usagePercent)}% - Consider using /compact`,
+        });
+        contextWarningShownRef.current = true;
+      }
+    };
+
+    const handleAutoCompacting = (data: { strategy: string; usagePercent: number }) => {
+      addHistory({
+        type: 'info',
+        content: `📦 Auto-compacting (${Math.round(data.usagePercent)}% usage, strategy: ${data.strategy})...`,
+      });
+    };
+
+    const handleCompactionComplete = (data: { strategy: string }) => {
+      addHistory({
+        type: 'info',
+        content: `✓ Compaction complete (${data.strategy})`,
+      });
+      // Reset warning flag after compaction
+      contextWarningShownRef.current = false;
+    };
+
+    sessionMgr.on('context-warning', handleContextWarning);
+    sessionMgr.on('auto-compacting', handleAutoCompacting);
+    sessionMgr.on('compaction-complete', handleCompactionComplete);
+
+    return () => {
+      sessionMgr.off('context-warning', handleContextWarning);
+      sessionMgr.off('auto-compacting', handleAutoCompacting);
+      sessionMgr.off('compaction-complete', handleCompactionComplete);
+    };
+  }, [agent, addHistory]);
+
+  // Flush buffered streaming text to UI (throttled to ~60 FPS)
+  const flushStreamBuffer = useCallback(() => {
+    if (streamBufferRef.current) {
+      streamingTextRef.current = streamBufferRef.current;
+      setStreamingText(streamBufferRef.current);
+      lastFlushTimeRef.current = Date.now();
+    }
+    // Clear pending timer
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+  }, []);
+
+  // Add streaming text with throttling for performance
+  const addStreamingText = useCallback((text: string) => {
+    // Accumulate in buffer
+    streamBufferRef.current += text;
+
+    const now = Date.now();
+    const timeSinceLastFlush = now - lastFlushTimeRef.current;
+
+    if (timeSinceLastFlush >= FLUSH_INTERVAL_MS) {
+      // Flush immediately if enough time has passed
+      flushStreamBuffer();
+    } else if (!flushTimerRef.current) {
+      // Schedule a flush for the next interval
+      const delay = FLUSH_INTERVAL_MS - timeSinceLastFlush;
+      flushTimerRef.current = setTimeout(flushStreamBuffer, delay);
+    }
+    // Otherwise, wait for the scheduled flush
+  }, [flushStreamBuffer, FLUSH_INTERVAL_MS]);
+
+  // Convert Message[] to HistoryItem[] for displaying session history
+  const convertMessagesToHistory = useCallback((
+    messages: Message[],
+    metadata?: SessionMetadata
+  ): HistoryItem[] => {
+    const items: HistoryItem[] = [];
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+
+      // Skip system messages (they're for the LLM, not for display)
+      if (msg.role === 'system') {
+        continue;
+      }
+
+      if (msg.role === 'user') {
+        // User messages can be plain text or contain tool results
+        if (typeof msg.content === 'string') {
+          items.push({
+            id: genId(),
+            type: 'user',
+            content: msg.content,
+          });
+        } else {
+          // Check for tool results
+          const toolResults = msg.content.filter((c) => c.type === 'tool_result');
+          const textContent = msg.content.filter((c) => c.type === 'text')
+            .map((c) => (c as { text: string }).text)
+            .join('\n');
+
+          if (textContent) {
+            items.push({
+              id: genId(),
+              type: 'user',
+              content: textContent,
+            });
+          }
+
+          // Add tool results
+          for (const result of toolResults) {
+            const r = result as ToolResultContent;
+            items.push({
+              id: genId(),
+              type: 'tool_result',
+              content: r.content,
+              meta: { toolUseId: r.toolUseId, isError: r.isError },
+            });
+          }
+        }
+      } else if (msg.role === 'assistant') {
+        // Assistant messages can be text or contain tool calls
+        if (typeof msg.content === 'string') {
+          items.push({
+            id: genId(),
+            type: 'assistant',
+            content: msg.content,
+          });
+        } else {
+          // Separate text and tool calls
+          const textContent = msg.content.filter((c) => c.type === 'text')
+            .map((c) => (c as { text: string }).text)
+            .join('\n');
+          const toolCalls = msg.content.filter((c) => c.type === 'tool_use');
+
+          if (textContent) {
+            items.push({
+              id: genId(),
+              type: 'assistant',
+              content: textContent,
+            });
+          }
+
+          // Add tool calls
+          for (const call of toolCalls) {
+            const c = call as ToolUseContent;
+            items.push({
+              id: genId(),
+              type: 'tool_call',
+              content: c.name,
+              meta: { id: c.id, name: c.name, input: c.input },
+            });
+          }
+        }
+      }
+
+      // Inject completion message if this message index has a completion
+      if (metadata?.completions) {
+        const completion = metadata.completions.find((c) => c.afterMessageIndex === i);
+        if (completion) {
+          items.push({
+            id: genId(),
+            type: 'completion',
+            content: '',
+            meta: {
+              durationMs: completion.durationMs,
+              usage: completion.usage,
+              cost: completion.cost,
+            },
+          });
+        }
+      }
+    }
+
+    return items;
   }, []);
 
   // Initialize
@@ -339,12 +587,18 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
       if (resumeLatest) {
         const resumed = await agent.resumeLatest();
         if (resumed) {
-          addHistory({ type: 'info', content: 'Session restored' });
+          // Get the restored messages and display them
+          const messages = agent.getHistory();
+          const session = agent.getSessionManager().getCurrent();
+          const historyItems = convertMessagesToHistory(messages, session?.metadata);
+
+          // Add all historical messages
+          setHistory((prev) => [...prev, ...historyItems]);
         }
       }
     };
     init();
-  }, [agent, resumeLatest, addHistory, permissionSettings, settingsManager]);
+  }, [agent, resumeLatest, addHistory, permissionSettings, settingsManager, convertMessagesToHistory]);
 
   // Handle question answers (AskUserQuestion)
   const handleQuestionComplete = useCallback((answers: QuestionAnswer[]) => {
@@ -432,20 +686,32 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
 
       case 'resume': {
         let success = false;
-        if (arg) {
+
+        if (!arg) {
+          success = await agent.resumeLatest();
+        } else {
           const index = parseInt(arg, 10);
-          if (!isNaN(index)) {
+          if (isNaN(index)) {
+            success = await agent.resumeSession(arg);
+          } else {
             const sessions = await agent.listSessions();
             if (index >= 1 && index <= sessions.length) {
               success = await agent.resumeSession(sessions[index - 1].id);
             }
-          } else {
-            success = await agent.resumeSession(arg);
           }
-        } else {
-          success = await agent.resumeLatest();
         }
-        addHistory({ type: 'info', content: success ? 'Restored' : 'Failed' });
+
+        if (success) {
+          // Get the restored messages and display them
+          const messages = agent.getHistory();
+          const session = agent.getSessionManager().getCurrent();
+          const historyItems = convertMessagesToHistory(messages, session?.metadata);
+
+          // Add all historical messages
+          setHistory((prev) => [...prev, ...historyItems]);
+        } else {
+          addHistory({ type: 'info', content: 'Failed to restore session' });
+        }
         return true;
       }
 
@@ -711,6 +977,127 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         return true;
       }
 
+      case 'compact': {
+        // Manually trigger conversation compaction
+        const sessionMgr = agent.getSessionManager();
+        const current = sessionMgr.getCurrent();
+
+        if (!current || current.messages.length === 0) {
+          addHistory({ type: 'info', content: 'No messages to compact' });
+          return true;
+        }
+
+        // Perform manual compaction
+        const modelInfo = agent.getModelInfo();
+        if (modelInfo) {
+          try {
+            await sessionMgr.performCompaction(modelInfo);
+
+            const stats = sessionMgr.getCompressionStats();
+            const saved = stats?.totalMessages ? stats.totalMessages - stats.activeMessages : 0;
+            const savedPercent = stats?.totalMessages
+              ? ((saved / stats.totalMessages) * 100).toFixed(0)
+              : '0';
+
+            // Create visual bars (ASCII only)
+            const barWidth = 15;
+            const activeBar = stats?.totalMessages
+              ? Math.round((stats.activeMessages / stats.totalMessages) * barWidth)
+              : barWidth;
+            const totalBar = barWidth;
+
+            const activeVisual = '#'.repeat(activeBar) + '.'.repeat(barWidth - activeBar);
+            const totalVisual = '#'.repeat(totalBar);
+
+            // Format with simple ASCII box
+            const w = 50;
+            const pad = (text: string) => text + ' '.repeat(Math.max(0, w - text.length - 3));
+
+            const lines = [
+              '+' + '-'.repeat(w - 2) + '+',
+              '| ' + pad('Compaction Complete') + '|',
+              '+' + '-'.repeat(w - 2) + '+',
+              '| ' + pad(`Active Messages    ${String(stats?.activeMessages || 0).padStart(3)}  [${activeVisual}]`) + '|',
+              '| ' + pad(`Total Messages     ${String(stats?.totalMessages || 0).padStart(3)}  [${totalVisual}]`) + '|',
+              '| ' + pad(`Summaries          ${String(stats?.summaryCount || 0).padStart(3)}`) + '|',
+              '| ' + pad('') + '|',
+              '| ' + pad(`Saved: ${savedPercent}%`) + '|',
+              '+' + '-'.repeat(w - 2) + '+',
+            ];
+
+            addHistory({
+              type: 'info',
+              content: '\n' + lines.join('\n'),
+            });
+          } catch (error) {
+            addHistory({
+              type: 'info',
+              content: `Compaction failed: ${error instanceof Error ? error.message : String(error)}`,
+            });
+          }
+        } else {
+          addHistory({ type: 'info', content: 'Model information not available' });
+        }
+        return true;
+      }
+
+      case 'context': {
+        // Show context usage statistics
+        const sessionMgr = agent.getSessionManager();
+        const stats = sessionMgr.getCompressionStats();
+
+        if (!stats) {
+          addHistory({ type: 'info', content: 'No compression statistics available' });
+          return true;
+        }
+
+        const activeRatio = stats.totalMessages > 0
+          ? ((stats.activeMessages / stats.totalMessages) * 100).toFixed(0)
+          : '100';
+
+        const isCompressed = stats.activeMessages < stats.totalMessages;
+
+        // Create progress bar (ASCII only)
+        const barWidth = 20;
+        const filledWidth = stats.totalMessages > 0
+          ? Math.round((stats.activeMessages / stats.totalMessages) * barWidth)
+          : barWidth;
+        const progressBar = '#'.repeat(filledWidth) + '.'.repeat(barWidth - filledWidth);
+
+        const statusText = isCompressed ? 'Compressed' : 'Uncompressed';
+        const statusColor = isCompressed ? '\x1b[32m' : '\x1b[90m';
+
+        // Format with simple ASCII box
+        const w = 50;
+        const visibleLength = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, '').length;
+        const pad = (text: string) => {
+          const visible = visibleLength(text);
+          return text + ' '.repeat(Math.max(0, w - visible - 3));
+        };
+
+        const statusLine = `Status: ${statusColor}${statusText}\x1b[0m`;
+
+        const lines = [
+          '+' + '-'.repeat(w - 2) + '+',
+          '| ' + pad('Context Usage Statistics') + '|',
+          '+' + '-'.repeat(w - 2) + '+',
+          '| ' + pad(`Active Messages     ${String(stats.activeMessages).padStart(3)}`) + '|',
+          '| ' + pad(`Total Messages      ${String(stats.totalMessages).padStart(3)}`) + '|',
+          '| ' + pad(`Summaries           ${String(stats.summaryCount).padStart(3)}`) + '|',
+          '| ' + pad('') + '|',
+          '| ' + pad(`Usage  [${progressBar}] ${activeRatio.padStart(3)}%`) + '|',
+          '| ' + pad('') + '|',
+          '| ' + pad(statusLine) + '|',
+          '+' + '-'.repeat(w - 2) + '+',
+        ];
+
+        addHistory({
+          type: 'info',
+          content: '\n' + lines.join('\n'),
+        });
+        return true;
+      }
+
       default:
         return false;
     }
@@ -718,6 +1105,8 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
 
   // Interrupt ref for ESC handling
   const interruptFlagRef = useRef(false);
+  // AbortController for cancellation support
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Run agent
   const runAgent = async (prompt: string) => {
@@ -725,25 +1114,36 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
     setIsThinking(true);
     setStreamingText('');
     streamingTextRef.current = '';
+    // Clear streaming buffer and any pending flush timers
+    streamBufferRef.current = '';
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
     interruptFlagRef.current = false;
+
+    // Create AbortController for this run
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     const startTime = Date.now();
     setProcessingStartTime(startTime);
     setTokenCount(0);
 
     try {
-      for await (const event of agent.run(prompt)) {
+      for await (const event of agent.run(prompt, abortController.signal)) {
         // Check for interrupt
-        if (interruptFlagRef.current) {
+        if (interruptFlagRef.current || abortController.signal.aborted) {
           break;
         }
 
         switch (event.type) {
           case 'text':
             setIsThinking(false);
-            streamingTextRef.current += event.text;
-            setStreamingText(streamingTextRef.current);
-            // Estimate token count (roughly 4 chars per token)
-            setTokenCount((prev) => prev + Math.max(1, Math.ceil(event.text.length / 4)));
+            // Use throttled streaming text update for better performance
+            addStreamingText(event.text);
+            // Estimate token count with language-aware estimation
+            setTokenCount((prev) => prev + estimateTokenDelta(event.text));
             break;
 
           case 'tool_start':
@@ -796,16 +1196,39 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
             setIsThinking(true);
             break;
 
+          case 'reasoning_delta':
+            // Display reasoning content from o1/o3/Gemini 3+ models
+            setIsThinking(false);
+            addHistory({
+              type: 'info',
+              content: `💭 Reasoning: ${event.text}`,
+            });
+            break;
+
+          case 'tool_input_delta':
+            // Progressive display of tool input JSON (optional enhancement)
+            // For now, we just accumulate and display when complete
+            // Could be enhanced to show partial JSON in real-time
+            break;
+
           case 'error':
             setIsThinking(false);
             addHistory({ type: 'info', content: `Error: ${event.error.message}` });
             break;
 
           case 'done':
+            // Flush any remaining buffered text immediately
+            flushStreamBuffer();
+
             if (streamingTextRef.current) {
               addHistory({ type: 'assistant', content: streamingTextRef.current });
               streamingTextRef.current = '';
+              streamBufferRef.current = '';
               setStreamingText('');
+            }
+            // Use real token count from usage if available (overrides estimate)
+            if (event.usage) {
+              setTokenCount(event.usage.outputTokens);
             }
             // Add completion message with duration and cost info
             const durationMs = Date.now() - startTime;
@@ -823,16 +1246,39 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         type: 'info',
         content: `Error: ${error instanceof Error ? error.message : String(error)}`,
       });
+    } finally {
+      // Clean up AbortController
+      abortControllerRef.current = null;
     }
 
     setIsProcessing(false);
     setIsThinking(false);
+
+    // Process next message in queue if any
+    setMessageQueue((queue) => {
+      if (queue.length > 0) {
+        const [nextMessage, ...rest] = queue;
+        // Schedule next message processing
+        setTimeout(() => {
+          addHistory({ type: 'user', content: nextMessage });
+          runAgent(nextMessage);
+        }, 0);
+        return rest;
+      }
+      return queue;
+    });
   };
 
   // Handle submit
   const handleSubmit = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+
+    // Add to input history
+    if (historyManagerRef.current) {
+      historyManagerRef.current.add(trimmed);
+      historyManagerRef.current.reset(); // Reset navigation state
+    }
 
     // Auto-complete command on Enter if no exact match
     if (trimmed.startsWith('/') && cmdSuggestions.length > 0) {
@@ -905,28 +1351,43 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
       return;
     }
 
+    // Queue message if already processing
+    if (isProcessing) {
+      setMessageQueue((queue) => [...queue, trimmed]);
+      // Don't add history item - we'll show queue count in the UI
+      return;
+    }
+
     addHistory({ type: 'user', content: trimmed });
     await runAgent(trimmed);
   };
 
   // Keyboard shortcuts
   useInput((inputChar, key) => {
-    if (key.ctrl && inputChar === 'c') {
-      agent.saveSession().then(() => exit());
-    }
-
-    // ESC to interrupt processing
-    if (key.escape && isProcessing) {
-      interruptFlagRef.current = true;
-      setIsProcessing(false);
-      setStreamingText('');
-      streamingTextRef.current = '';
-      // Clear pending tool (stop spinner)
-      pendingToolRef.current = null;
-      setPendingTool(null);
-      // Clean up incomplete tool_use messages to prevent API errors
-      agent.cleanupIncompleteMessages();
-      addHistory({ type: 'info', content: 'Interrupted' });
+    // ESC to interrupt processing or cancel history navigation
+    if (key.escape) {
+      if (isProcessing) {
+        // Abort the operation
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+        interruptFlagRef.current = true;
+        setIsProcessing(false);
+        setStreamingText('');
+        streamingTextRef.current = '';
+        streamBufferRef.current = '';
+        // Clear pending tool (stop spinner)
+        pendingToolRef.current = null;
+        setPendingTool(null);
+        // Clean up incomplete tool_use messages to prevent API errors
+        agent.cleanupIncompleteMessages();
+        addHistory({ type: 'info', content: 'Interrupted' });
+      } else if (historyManagerRef.current?.isNavigating()) {
+        // Cancel history navigation - restore original input
+        historyManagerRef.current.reset();
+        setInput(historyTempInput);
+        setHistoryTempInput('');
+      }
     }
 
     // Shift+Tab to cycle modes: normal → plan → accept → normal
@@ -967,19 +1428,58 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         }
       }
     }
+    // Input history navigation (when NOT showing command suggestions)
+    else if (!isProcessing && !confirmState && !questionState && !planApprovalState && historyManagerRef.current) {
+      if (key.upArrow) {
+        // Save current input on first navigation
+        if (!historyManagerRef.current.isNavigating()) {
+          setHistoryTempInput(input);
+        }
+
+        const prevEntry = historyManagerRef.current.previous();
+        if (prevEntry !== null) {
+          setInput(prevEntry);
+          setInputKey((k) => k + 1); // Force cursor to end
+        }
+      } else if (key.downArrow && historyManagerRef.current.isNavigating()) {
+        const nextEntry = historyManagerRef.current.next();
+        if (nextEntry === null) {
+          // Reached end - restore original input
+          setInput(historyTempInput);
+          setHistoryTempInput('');
+        } else {
+          setInput(nextEntry);
+        }
+        setInputKey((k) => k + 1); // Force cursor to end
+      }
+    }
   });
 
   // Render history item
   const renderHistoryItem = (item: HistoryItem) => {
     switch (item.type) {
-      case 'header':
+      case 'header': {
+        // Calculate context stats for header
+        const sessionMgr = agent.getSessionManager();
+        const compressionStats = sessionMgr.getCompressionStats();
+        const tokenUsage = sessionMgr.getTokenUsage();
+        const modelInfo = agent.getModelInfo();
+
+        const contextStats = compressionStats && modelInfo && compressionStats.activeMessages > 0 ? {
+          activeMessages: compressionStats.activeMessages,
+          totalMessages: compressionStats.totalMessages,
+          usagePercent: (tokenUsage.total / modelInfo.contextWindow) * 100,
+        } : undefined;
+
         return (
           <Header
             provider={(item.meta?.provider as string) || ''}
             model={(item.meta?.model as string) || ''}
             cwd={(item.meta?.cwd as string) || ''}
+            contextStats={contextStats}
           />
         );
+      }
       case 'welcome':
         return <WelcomeMessage model={(item.meta?.model as string) || item.content} />;
       case 'user':
@@ -1024,6 +1524,14 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         }
         if (item.content === '__MEMORY__' && item.meta?.files) {
           return <MemoryFilesDisplay files={item.meta.files as MemoryFileInfo[]} />;
+        }
+        // Check if content is a formatted box (starts with box border)
+        if (item.content.trim().startsWith('+---')) {
+          return (
+            <Box marginTop={1}>
+              <Text color={colors.textSecondary}>{item.content}</Text>
+            </Box>
+          );
         }
         return <InfoMessage text={item.content} />;
       case 'completion':
@@ -1113,6 +1621,17 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
 
       {!confirmState && !questionState && !showModelSelector && !showProviderManager && (
         <Box flexDirection="column" marginTop={2}>
+          {/* Queue display above input */}
+          {messageQueue.length > 0 && (
+            <Box flexDirection="column" marginBottom={1}>
+              {messageQueue.map((msg, i) => (
+                <Text key={i} color={colors.textMuted}>
+                  ⏳ <Text color={colors.text}>{msg.length > 60 ? msg.slice(0, 60) + '...' : msg}</Text>
+                </Text>
+              ))}
+            </Box>
+          )}
+
           <PromptInput
             key={inputKey}
             value={input}

@@ -1,0 +1,45 @@
+%% Layer 1: Tool Output Pruning
+%% Detailed pruneToolOutputs flow
+
+flowchart TD
+    Start([pruneToolOutputs]) --> CheckMin{total tokens > 20k?}
+    CheckMin -->|No| Return0[Return: pruned=false<br/>count=0, saved=0]
+    CheckMin -->|Yes| InitVars[Initialize:<br/>protectedTokens = 0<br/>protectedIndices = Set]
+
+    InitVars --> LoopBackward[Iterate backward<br/>i = length-1 to 0]
+    LoopBackward --> CheckMsg{Message contains<br/>tool_result?}
+
+    CheckMsg -->|No| NextMsg1[Continue to next]
+    CheckMsg -->|Yes| CalcMsgTokens[Calculate message tokens]
+
+    CalcMsgTokens --> CheckProtect{protectedTokens<br/>< 40k?}
+    CheckProtect -->|Yes| AddProtected[protectedTokens += msgTokens<br/>protectedIndices.add i]
+    CheckProtect -->|No| StopLoop[Stop loop]
+
+    AddProtected --> NextMsg1
+    NextMsg1 --> MoreMsg1{More messages?}
+    MoreMsg1 -->|Yes| LoopBackward
+    MoreMsg1 -->|No| LoopForward
+
+    StopLoop --> LoopForward[Iterate forward<br/>i = 0 to length-1]
+    LoopForward --> CheckProtected{i in<br/>protectedIndices?}
+
+    CheckProtected -->|Yes| NextMsg2[Continue to next]
+    CheckProtected -->|No| HasToolRes{Contains<br/>tool_result?}
+
+    HasToolRes -->|No| NextMsg2
+    HasToolRes -->|Yes| CalcBefore[Record tokens before clear]
+
+    CalcBefore --> ClearContent[Clear tool result:<br/>content = Old tool result cleared<br/>pruned = true<br/>prunedAt = ISO timestamp]
+    ClearContent --> CalcAfter[Record tokens after clear]
+    CalcAfter --> UpdateStats[savedTokens += before - after<br/>prunedCount++]
+
+    UpdateStats --> NextMsg2
+    NextMsg2 --> MoreMsg2{More messages?}
+    MoreMsg2 -->|Yes| LoopForward
+    MoreMsg2 -->|No| ReturnStats[Return: pruned, count, saved]
+
+    style CheckMin fill:#fff3e0
+    style CheckProtect fill:#fff3e0
+    style ClearContent fill:#ffd93d,stroke:#333,stroke-width:2px
+    style ReturnStats fill:#51cf66

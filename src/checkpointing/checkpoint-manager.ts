@@ -123,6 +123,54 @@ export class CheckpointManager {
   }
 
   /**
+   * Serialize checkpoints for JSON storage
+   */
+  serialize(): Array<{
+    id: string;
+    path: string;
+    changeType: string;
+    timestamp: string;
+    previousContent: string | null;
+    newContent: string | null;
+    toolName: string;
+  }> {
+    return this.session.checkpoints.map((cp) => ({
+      id: cp.id,
+      path: cp.path,
+      changeType: cp.changeType,
+      timestamp: cp.timestamp.toISOString(),
+      previousContent: cp.previousContent,
+      newContent: cp.newContent,
+      toolName: cp.toolName,
+    }));
+  }
+
+  /**
+   * Restore checkpoints from saved data
+   */
+  deserialize(
+    data: Array<{
+      id: string;
+      path: string;
+      changeType: string;
+      timestamp: string;
+      previousContent: string | null;
+      newContent: string | null;
+      toolName: string;
+    }>
+  ): void {
+    this.session.checkpoints = data.map((item) => ({
+      id: item.id,
+      path: item.path,
+      changeType: item.changeType as 'create' | 'modify' | 'delete',
+      timestamp: new Date(item.timestamp),
+      previousContent: item.previousContent,
+      newContent: item.newContent,
+      toolName: item.toolName,
+    }));
+  }
+
+  /**
    * Rewind changes based on options
    */
   async rewind(options: RewindOptions): Promise<RewindResult> {

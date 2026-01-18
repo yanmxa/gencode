@@ -1,0 +1,30 @@
+%% Compression Decision Flow
+%% needsCompression logic
+
+flowchart TD
+    Start([Check if compression needed]) --> CheckEnabled{compression.enabled?}
+    CheckEnabled -->|No| NoCompression[Return: strategy = none]
+    CheckEnabled -->|Yes| CalcTokens[Calculate total tokens]
+
+    CalcTokens --> UseActual{Has actual TokenUsage?}
+    UseActual -->|Yes| SumActual[input + cache.read +<br/>output + reasoning]
+    UseActual -->|No| EstimateAll[Estimate all messages<br/>chars / 4]
+
+    SumActual --> GetUsable[Calculate usable context]
+    EstimateAll --> GetUsable
+
+    GetUsable --> CalcUsable[usable = contextWindow -<br/>min of outputLimit and 32k]
+    CalcUsable --> CheckOverflow{total > usable?}
+
+    CheckOverflow -->|No| NoCompression
+    CheckOverflow -->|Yes| CheckPruneMin{total > 20k AND<br/>enablePruning?}
+
+    CheckPruneMin -->|Yes| UsePrune[Return: strategy = prune]
+    CheckPruneMin -->|No| UseCompact[Return: strategy = compact]
+
+    style CheckEnabled fill:#e3f2fd
+    style CheckOverflow fill:#fff3e0
+    style CheckPruneMin fill:#fff3e0
+    style UsePrune fill:#ffd93d
+    style UseCompact fill:#74c0fc
+    style NoCompression fill:#f1f3f4

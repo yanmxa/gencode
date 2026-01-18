@@ -2,7 +2,7 @@
  * Recode - Multi-LLM Agent SDK
  *
  * A unified SDK for building AI agents with support for
- * OpenAI, Anthropic, and Google Gemini models.
+ * OpenAI, Anthropic, and Google models.
  */
 
 // Providers
@@ -24,13 +24,13 @@ export {
   type StopReason,
   type OpenAIConfig,
   type AnthropicConfig,
-  type GeminiConfig,
+  type GoogleConfig,
   type ProviderConfig,
   type ProviderName,
   // Providers
   OpenAIProvider,
   AnthropicProvider,
-  GeminiProvider,
+  GoogleProvider,
   // Factory
   createProvider,
   inferProvider,

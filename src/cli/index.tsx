@@ -34,7 +34,7 @@ async function setupProxy(): Promise<void> {
 // Configuration
 // ============================================================================
 function detectConfig(settings: Settings, providersConfig: ProvidersConfigManager): AgentConfig {
-  let provider: Provider = 'gemini';
+  let provider: Provider = 'google';
   let authMethod: AuthMethod | undefined;
   let model = 'gemini-2.0-flash';
 
@@ -60,7 +60,7 @@ function detectConfig(settings: Settings, providersConfig: ProvidersConfigManage
     authMethod = 'api_key';
     model = 'gpt-4o';
   } else if (process.env.GOOGLE_API_KEY) {
-    provider = 'gemini';
+    provider = 'google';
     authMethod = 'api_key';
     model = 'gemini-2.0-flash';
   }
@@ -99,6 +99,7 @@ function detectConfig(settings: Settings, providersConfig: ProvidersConfigManage
     model,
     cwd: process.cwd(),
     maxTurns: 20,
+    compression: settings.compression,
   };
 }
 

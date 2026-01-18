@@ -5,6 +5,7 @@
 import type { PermissionConfig } from '../permissions/types.js';
 import type { CostEstimate } from '../pricing/types.js';
 import type { Provider, AuthMethod } from '../providers/types.js';
+import type { CompressionConfig } from '../session/compression/types.js';
 
 export interface AgentConfig {
   provider: Provider;
@@ -17,6 +18,10 @@ export interface AgentConfig {
   permissions?: Partial<PermissionConfig>;
   memoryMergeStrategy?: 'fallback' | 'both' | 'gen-only' | 'claude-only';
   verbose?: boolean;
+  /** Compression configuration */
+  compression?: Partial<CompressionConfig>;
+  /** Enable LLM token streaming for real-time output */
+  streaming?: boolean;
 }
 
 // Agent Events
@@ -82,6 +87,17 @@ export interface AgentEventAskUser {
   }>;
 }
 
+export interface AgentEventReasoningDelta {
+  type: 'reasoning_delta';
+  text: string;  // Reasoning content from o1/o3/Gemini 3+ models
+}
+
+export interface AgentEventToolInputDelta {
+  type: 'tool_input_delta';
+  id: string;
+  delta: string;  // Incremental JSON string fragment
+}
+
 export type AgentEvent =
   | AgentEventText
   | AgentEventToolStart
@@ -89,4 +105,6 @@ export type AgentEvent =
   | AgentEventThinking
   | AgentEventError
   | AgentEventDone
-  | AgentEventAskUser;
+  | AgentEventAskUser
+  | AgentEventReasoningDelta
+  | AgentEventToolInputDelta;

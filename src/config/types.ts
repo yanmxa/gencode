@@ -17,7 +17,7 @@ import * as path from 'path';
 // Provider Types
 // =============================================================================
 
-export type Provider = 'openai' | 'anthropic' | 'gemini';
+export type Provider = 'openai' | 'anthropic' | 'google';
 export type AuthMethod = 'api_key' | 'vertex' | 'bedrock' | 'azure' | 'oauth';
 
 // Legacy type alias for backward compatibility
@@ -69,6 +69,31 @@ export interface Settings {
 
   // Memory configuration
   memoryMergeStrategy?: 'fallback' | 'both' | 'gen-only' | 'claude-only';
+
+  // Compression configuration
+  compression?: {
+    enabled?: boolean;
+    enablePruning?: boolean;
+    enableCompaction?: boolean;
+    pruneMinimum?: number;
+    pruneProtect?: number;
+    reservedOutputTokens?: number;
+    model?: string;
+  };
+
+  // Input history configuration
+  inputHistory?: {
+    enabled?: boolean;
+    maxSize?: number;
+    savePath?: string;
+    deduplicateConsecutive?: boolean;
+  };
+
+  // Input behavior configuration
+  input?: {
+    multilineEnabled?: boolean; // Default: true - Enable Shift+Enter for multi-line input
+    ctrlCClear?: boolean; // Default: true - Clear input on Ctrl+C if text present
+  };
 
   // Managed-only fields (cannot be overridden by lower levels)
   strictKnownMarketplaces?: unknown[];

@@ -5,6 +5,7 @@ This directory contains documentation for the GenCode project.
 ## Contents
 
 - [**providers-and-models.md**](./providers-and-models.md) - Provider management and model selection
+- [**session-compression.md**](./session-compression.md) - Session compression implementation guide
 - [**proposals/**](./proposals/) - Enhancement proposals for new features
 
 ## About GenCode

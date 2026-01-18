@@ -8,7 +8,8 @@ This directory contains enhancement proposals for the gencode project. Each prop
 2. **Under Review**: Community and maintainer review
 3. **Accepted**: Approved for implementation
 4. **Implemented**: Feature has been implemented
-5. **Rejected**: Proposal was rejected with explanation
+5. **Implemented ⚠️**: Implemented but not fully verified/tested
+6. **Rejected**: Proposal was rejected with explanation
 
 ## Proposal Index
 
@@ -22,8 +23,8 @@ This directory contains enhancement proposals for the gencode project. Each prop
 | [0004](./0004-plan-mode.md) | Plan Mode | Implemented |
 | [0005](./0005-todo-system.md) | Todo System | Implemented |
 | [0006](./0006-memory-system.md) | Memory System (MYCODE.md) | Implemented |
-| [0007](./0007-context-management.md) | Context Management | Draft |
-| [0008](./0008-checkpointing.md) | Checkpointing | Partially Implemented |
+| [0007](./0007-context-management.md) | Context Management | Implemented ⚠️ |
+| [0008](./0008-checkpointing.md) | Checkpointing | Implemented ⚠️ |
 | [0009](./0009-hooks-system.md) | Hooks System | Draft |
 | [0010](./0010-mcp-integration.md) | MCP Integration | Draft |
 | [0021](./0021-skills-system.md) | Skills System | Draft |

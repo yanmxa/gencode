@@ -25,6 +25,8 @@ export const COMMANDS: Command[] = [
   { name: '/memory', description: 'Show memory files' },
   { name: '/changes', description: 'List file changes' },
   { name: '/rewind', description: 'Undo file changes' },
+  { name: '/context', description: 'Show context usage stats' },
+  { name: '/compact', description: 'Manually compact conversation' },
 ];
 
 interface CommandSuggestionsProps {

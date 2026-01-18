@@ -19,7 +19,7 @@ if (proxyUrl) {
 import {
   OpenAIProvider,
   AnthropicProvider,
-  GeminiProvider,
+  GoogleProvider,
   createProvider,
   inferProvider,
   type LLMProvider,
@@ -126,7 +126,7 @@ async function main() {
 
   if (process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY) {
     tests.push({
-      provider: new GeminiProvider(),
+      provider: new GoogleProvider(),
       model: 'gemini-2.0-flash',
       envKey: 'GOOGLE_API_KEY',
     });
@@ -151,7 +151,7 @@ async function main() {
   // Test createProvider factory (use first available provider)
   console.log('\n--- Factory Test ---');
   const firstProvider = tests[0];
-  const providerName = firstProvider.provider.name as 'openai' | 'anthropic' | 'gemini';
+  const providerName = firstProvider.provider.name as 'openai' | 'anthropic' | 'google';
   const factoryProvider = createProvider({ provider: providerName });
   console.log(`Created provider via factory: ${factoryProvider.name}`);
 

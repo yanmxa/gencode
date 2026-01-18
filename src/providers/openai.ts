@@ -247,13 +247,20 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   private convertStopReason(reason: string | null): StopReason {
+    if (!reason) {
+      console.warn('[OpenAI] Warning: Received null finish_reason, defaulting to end_turn');
+      return 'end_turn';
+    }
+
     switch (reason) {
       case 'tool_calls':
         return 'tool_use';
       case 'length':
         return 'max_tokens';
       case 'stop':
+        return 'end_turn';
       default:
+        console.warn(`[OpenAI] Unknown finish_reason: ${reason}, defaulting to end_turn`);
         return 'end_turn';
     }
   }

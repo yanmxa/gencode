@@ -22,9 +22,9 @@ GPT models from OpenAI:
 |-------------------|----------------------|-------------|
 | API Key | `OPENAI_API_KEY` | Direct API access |
 
-### Google Gemini
+### Google
 
-Gemini models from Google:
+Google Generative AI (Gemini models):
 
 | Connection Method | Environment Variables | Description |
 |-------------------|----------------------|-------------|
@@ -182,7 +182,7 @@ gcloud services enable aiplatform.googleapis.com
 
 GenCode uses a two-layer provider architecture:
 
-- **Layer 1: Provider** (Semantic layer) - `anthropic` | `openai` | `gemini`
+- **Layer 1: Provider** (Semantic layer) - `anthropic` | `openai` | `google`
 - **Layer 2: AuthMethod** (Implementation layer) - `api_key` | `vertex` | `bedrock` | `azure`
 
 Each provider can support multiple authentication methods. For example, Anthropic supports:

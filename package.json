@@ -1,6 +1,6 @@
 {
   "name": "gencode-ai",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "An open-source AI assistant for your terminal",
   "type": "module",
   "main": "dist/index.js",
@@ -14,8 +14,7 @@
     "start": "node dist/cli/index.js",
     "start:dev": "npx tsx src/cli/index.tsx",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "example": "npx tsx examples/basic.ts",
-    "migrate": "npx tsx scripts/migrate.ts"
+    "example": "npx tsx examples/basic.ts"
   },
   "keywords": [
     "agent",

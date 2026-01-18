@@ -23,6 +23,7 @@ import {
   type ModeType,
   type AllowedPrompt,
 } from '../planning/index.js';
+import { initCheckpointManager } from '../checkpointing/index.js';
 
 // Type for askUser callback
 export type AskUserCallback = (questions: Question[]) => Promise<QuestionAnswer[]>;
@@ -35,7 +36,6 @@ export class Agent {
   private memoryManager: MemoryManager;
   private planModeManager: PlanModeManager;
   private config: AgentConfig;
-  private messages: Message[] = [];
   private sessionId: string | null = null;
   private loadedMemory: LoadedMemory | null = null;
   private askUserCallback: AskUserCallback | null = null;
@@ -56,9 +56,14 @@ export class Agent {
       config: config.permissions,
       projectPath: config.cwd,
     });
-    this.sessionManager = new SessionManager();
+    this.sessionManager = new SessionManager({
+      compression: config.compression,
+    });
     this.memoryManager = new MemoryManager();
     this.planModeManager = getPlanModeManager();
+
+    // Set compression engine with current model
+    this.sessionManager.setCompressionEngine(this.provider, this.config.model);
   }
 
   /**
@@ -277,6 +282,8 @@ export class Agent {
         provider: newProvider,
         authMethod: newAuthMethod,
       });
+      // Update compression engine with new provider and model
+      this.sessionManager.setCompressionEngine(this.provider, model);
     }
   }
 
@@ -292,6 +299,38 @@ export class Agent {
    */
   getProvider(): Provider {
     return this.config.provider;
+  }
+
+  /**
+   * Get model information for compression
+   */
+  getModelInfo(): { contextWindow: number; outputLimit?: number } {
+    // Try to get from provider if available
+    if (this.provider.getModelInfo) {
+      const info = this.provider.getModelInfo(this.config.model);
+      if (info.contextWindow) {
+        return { contextWindow: info.contextWindow, outputLimit: info.outputLimit };
+      }
+    }
+
+    // Fallback: rough estimates based on model name
+    // These should eventually be moved to provider implementations
+    const model = this.config.model.toLowerCase();
+
+    if (model.includes('claude')) {
+      return { contextWindow: 200_000, outputLimit: 8192 };
+    }
+
+    if (model.includes('gpt-4') || model.includes('gpt-3.5')) {
+      return { contextWindow: 128_000, outputLimit: 4096 };
+    }
+
+    if (model.includes('gemini')) {
+      return { contextWindow: 1_000_000, outputLimit: 8192 };
+    }
+
+    // Default fallback
+    return { contextWindow: 128_000, outputLimit: 4096 };
   }
 
   /**
@@ -313,7 +352,9 @@ export class Agent {
     });
 
     this.sessionId = session.metadata.id;
-    this.messages = [];
+
+    // Initialize checkpoint manager for this session
+    initCheckpointManager(this.sessionId);
 
     return this.sessionId;
   }
@@ -328,7 +369,9 @@ export class Agent {
     }
 
     this.sessionId = session.metadata.id;
-    this.messages = session.messages;
+
+    // CheckpointManager already restored by SessionManager.load()
+    // No need to call initCheckpointManager again
 
     return true;
   }
@@ -343,7 +386,9 @@ export class Agent {
     }
 
     this.sessionId = session.metadata.id;
-    this.messages = session.messages;
+
+    // CheckpointManager already restored by SessionManager.load()
+    // No need to call initCheckpointManager again
 
     return true;
   }
@@ -382,7 +427,6 @@ export class Agent {
   async saveSession(): Promise<void> {
     const current = this.sessionManager.getCurrent();
     if (current) {
-      current.messages = this.messages;
       await this.sessionManager.save(current);
     }
   }
@@ -390,21 +434,42 @@ export class Agent {
   /**
    * Run a single query through the agent
    */
-  async *run(prompt: string): AsyncGenerator<AgentEvent, void, unknown> {
-    // Auto-create session if none exists
-    if (!this.sessionId) {
-      await this.startSession();
+  async *run(prompt: string, signal?: AbortSignal): AsyncGenerator<AgentEvent, void, unknown> {
+    // Check for abort before starting
+    if (signal?.aborted) {
+      yield { type: 'error', error: new Error('Operation cancelled') };
+      return;
     }
 
-    // Load memory if not already loaded
-    if (!this.loadedMemory) {
-      await this.loadMemory();
+    // Auto-create session if none exists
+    try {
+      if (!this.sessionId) {
+        await this.startSession();
+      }
+
+      // Load memory if not already loaded
+      if (!this.loadedMemory) {
+        await this.loadMemory();
+      }
+    } catch (error) {
+      yield {
+        type: 'error',
+        error: error instanceof Error ? error : new Error(String(error))
+      };
+      return;
     }
 
     // Add user message
     const userMessage: Message = { role: 'user', content: prompt };
-    this.messages.push(userMessage);
-    await this.sessionManager.addMessage(userMessage);
+    try {
+      await this.sessionManager.addMessage(userMessage, this.getModelInfo());
+    } catch (error) {
+      yield {
+        type: 'error',
+        error: new Error(`Failed to save user message: ${error instanceof Error ? error.message : String(error)}`)
+      };
+      return;
+    }
 
     let turns = 0;
     const maxTurns = this.config.maxTurns ?? 10;
@@ -417,6 +482,10 @@ export class Agent {
 
       // Call LLM
       let response;
+      const processingStartTime = Date.now();
+      // Determine if streaming is enabled
+      const useStreaming = process.env.GEN_STREAM === '1' || this.config.streaming;
+
       try {
         // Debug prompt loading (enabled with GENCODE_DEBUG_PROMPTS=1)
         debugPromptLoading(this.config.model, this.config.provider);
@@ -433,15 +502,142 @@ export class Agent {
             this.config.provider // Fallback provider if model lookup fails
           );
 
-        response = await this.provider.complete({
-          model: this.config.model,
-          messages: this.messages,
-          tools: toolDefs,
-          systemPrompt,
-          maxTokens: 4096,
-        });
+        if (useStreaming) {
+          // === STREAMING PATH ===
+          // Build response incrementally from stream chunks
+          const responseBuilder = {
+            content: [] as Array<{ type: 'text'; text: string } | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }>,
+            textBuffer: '',
+            toolCalls: new Map<string, { id: string; name: string; inputBuffer: string }>(),
+            stopReason: 'end_turn' as 'end_turn' | 'max_tokens' | 'tool_use' | 'stop_sequence',
+            usage: undefined as { inputTokens: number; outputTokens: number } | undefined,
+            cost: undefined as { inputCost: number; outputCost: number; totalCost: number; currency: string } | undefined,
+          };
+
+          // Process stream chunks
+          for await (const chunk of this.provider.stream({
+            model: this.config.model,
+            messages: this.sessionManager.getMessagesForLLM(),
+            tools: toolDefs,
+            systemPrompt,
+            maxTokens: 4096,
+            signal, // Pass abort signal for cancellation
+          })) {
+            // Check for abort
+            if (signal?.aborted) {
+              yield { type: 'error', error: new Error('Operation cancelled by user') };
+              return;
+            }
+            switch (chunk.type) {
+              case 'text':
+                // Accumulate text and yield immediately for real-time display
+                responseBuilder.textBuffer += chunk.text;
+                yield { type: 'text', text: chunk.text };
+                break;
+
+              case 'reasoning':
+                // Forward reasoning content (o1/o3/Gemini 3+ thinking)
+                yield { type: 'reasoning_delta', text: chunk.text };
+                break;
+
+              case 'tool_start':
+                // Initialize tool call tracking
+                responseBuilder.toolCalls.set(chunk.id, {
+                  id: chunk.id,
+                  name: chunk.name,
+                  inputBuffer: '',
+                });
+                break;
+
+              case 'tool_input':
+                // Accumulate incremental JSON input and forward delta
+                const tool = responseBuilder.toolCalls.get(chunk.id);
+                if (tool) {
+                  tool.inputBuffer += chunk.input;
+                  // Emit incremental tool input for progressive display
+                  yield { type: 'tool_input_delta', id: chunk.id, delta: chunk.input };
+                }
+                break;
+
+              case 'done':
+                // Save final metadata
+                responseBuilder.stopReason = chunk.response.stopReason;
+                responseBuilder.usage = chunk.response.usage;
+                responseBuilder.cost = chunk.response.cost;
+                break;
+
+              case 'error':
+                yield { type: 'error', error: chunk.error };
+                return;
+            }
+          }
+
+          // Build complete response from accumulated data
+          if (responseBuilder.textBuffer) {
+            responseBuilder.content.push({
+              type: 'text',
+              text: responseBuilder.textBuffer,
+            });
+          }
+
+          for (const [_id, tool] of responseBuilder.toolCalls) {
+            try {
+              responseBuilder.content.push({
+                type: 'tool_use',
+                id: tool.id,
+                name: tool.name,
+                input: JSON.parse(tool.inputBuffer || '{}'),
+              });
+            } catch (error) {
+              // If JSON parsing fails, treat as malformed tool call
+              yield {
+                type: 'error',
+                error: new Error(`Failed to parse tool input for ${tool.name}: ${error instanceof Error ? error.message : String(error)}`),
+              };
+              return;
+            }
+          }
+
+          response = {
+            content: responseBuilder.content,
+            stopReason: responseBuilder.stopReason,
+            usage: responseBuilder.usage,
+            cost: responseBuilder.cost,
+          };
+
+        } else {
+          // === TRADITIONAL PATH (COMPLETE) ===
+          response = await this.provider.complete({
+            model: this.config.model,
+            messages: this.sessionManager.getMessagesForLLM(),
+            tools: toolDefs,
+            systemPrompt,
+            maxTokens: 4096,
+          });
+        }
       } catch (error) {
         yield { type: 'error', error: error as Error };
+        return;
+      }
+
+      // Validate response completeness
+      if (!response || !response.content) {
+        yield {
+          type: 'error',
+          error: new Error('Provider returned null or undefined response')
+        };
+        return;
+      }
+
+      // Validate content is not empty (excluding max_tokens case)
+      if (response.content.length === 0 && response.stopReason !== 'max_tokens') {
+        yield {
+          type: 'error',
+          error: new Error(
+            `Provider returned empty content (stopReason: ${response.stopReason}, ` +
+            `usage: ${JSON.stringify(response.usage)})`
+          )
+        };
         return;
       }
 
@@ -452,18 +648,51 @@ export class Agent {
       for (const content of response.content) {
         if (content.type === 'text') {
           textContent += content.text;
-          yield { type: 'text', text: content.text };
+          // Only yield text if not in streaming mode (streaming already yielded chunks)
+          if (!useStreaming) {
+            yield { type: 'text', text: content.text };
+          }
         } else if (content.type === 'tool_use') {
           toolCalls.push({ id: content.id, name: content.name, input: content.input });
         }
       }
 
       // Add assistant message and check if done
-      this.messages.push({ role: 'assistant', content: response.content });
-      await this.sessionManager.addMessage({ role: 'assistant', content: response.content });
+      try {
+        await this.sessionManager.addMessage(
+          { role: 'assistant', content: response.content },
+          this.getModelInfo()
+        );
+      } catch (error) {
+        yield {
+          type: 'error',
+          error: new Error(`Failed to save assistant message: ${error instanceof Error ? error.message : String(error)}`)
+        };
+        return;
+      }
 
       if (response.stopReason !== 'tool_use' || toolCalls.length === 0) {
         yield { type: 'done', text: textContent, usage: response.usage, cost: response.cost };
+
+        // Save completion metadata for UI restoration
+        if (response.usage || response.cost) {
+          const current = this.sessionManager.getCurrent();
+          if (current) {
+            if (!current.metadata.completions) {
+              current.metadata.completions = [];
+            }
+            current.metadata.completions.push({
+              afterMessageIndex: current.messages.length - 1,
+              durationMs: Date.now() - processingStartTime,
+              usage: response.usage ? {
+                inputTokens: response.usage.inputTokens,
+                outputTokens: response.usage.outputTokens,
+              } : undefined,
+              cost: response.cost,
+            });
+          }
+        }
+
         return;
       }
 
@@ -480,23 +709,51 @@ export class Agent {
       for (const call of toolCalls) {
         yield { type: 'tool_start', id: call.id, name: call.name, input: call.input };
 
-        const allowed = await this.permissions.requestPermission(call.name, call.input);
-        const result = allowed
-          ? await this.registry.execute(call.name, call.input, toolContext)
-          : { success: false, output: '', error: 'Permission denied by user' };
+        try {
+          // Protect permission check and tool execution
+          const allowed = await this.permissions.requestPermission(call.name, call.input);
+          const result = allowed
+            ? await this.registry.execute(call.name, call.input, toolContext)
+            : { success: false, output: '', error: 'Permission denied by user' };
 
-        yield { type: 'tool_result', id: call.id, name: call.name, result };
-        toolResults.push({
-          type: 'tool_result',
-          toolUseId: call.id,
-          content: result.success ? result.output : (result.error ?? 'Unknown error'),
-          isError: !result.success,
-        });
+          yield { type: 'tool_result', id: call.id, name: call.name, result };
+          toolResults.push({
+            type: 'tool_result',
+            toolUseId: call.id,
+            content: result.success ? result.output : (result.error ?? 'Unknown error'),
+            isError: !result.success,
+          });
+        } catch (error) {
+          // Catch permission check or tool execution errors
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          const errorResult = {
+            success: false,
+            output: '',
+            error: `Tool execution error: ${errorMsg}`
+          };
+          yield { type: 'tool_result', id: call.id, name: call.name, result: errorResult };
+          toolResults.push({
+            type: 'tool_result',
+            toolUseId: call.id,
+            content: errorMsg,
+            isError: true,
+          });
+        }
       }
 
       // Add tool results as user message
-      this.messages.push({ role: 'user', content: toolResults });
-      await this.sessionManager.addMessage({ role: 'user', content: toolResults });
+      try {
+        await this.sessionManager.addMessage(
+          { role: 'user', content: toolResults },
+          this.getModelInfo()
+        );
+      } catch (error) {
+        yield {
+          type: 'error',
+          error: new Error(`Failed to save tool results: ${error instanceof Error ? error.message : String(error)}`)
+        };
+        return;
+      }
     }
 
     yield { type: 'error', error: new Error(`Max turns (${maxTurns}) exceeded`) };
@@ -506,7 +763,6 @@ export class Agent {
    * Clear conversation history
    */
   clearHistory(): void {
-    this.messages = [];
     this.sessionManager.clearMessages();
   }
 
@@ -515,24 +771,18 @@ export class Agent {
    * Removes the last assistant message if it contains tool_use without corresponding tool_result
    */
   cleanupIncompleteMessages(): void {
-    if (this.messages.length === 0) return;
+    const messages = this.sessionManager.getMessages();
+    if (messages.length === 0) return;
 
-    const lastMessage = this.messages[this.messages.length - 1];
+    const lastMessage = messages[messages.length - 1];
 
     // Check if last message is an assistant message with tool_use
     if (lastMessage.role === 'assistant' && Array.isArray(lastMessage.content)) {
       const hasToolUse = lastMessage.content.some((c) => c.type === 'tool_use');
 
       if (hasToolUse) {
-        // Remove the incomplete assistant message
-        this.messages.pop();
-
-        // Also remove from session manager
-        // Note: SessionManager should have corresponding cleanup method
-        const messages = this.sessionManager.getMessages();
-        if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
-          this.sessionManager.removeLastMessage();
-        }
+        // Remove the incomplete assistant message from session manager
+        this.sessionManager.removeLastMessage();
       }
     }
   }
@@ -541,6 +791,18 @@ export class Agent {
    * Get conversation history
    */
   getHistory(): Message[] {
-    return [...this.messages];
+    return this.sessionManager.getMessages();
+  }
+
+  /**
+   * Get compression statistics
+   */
+  getCompressionStats(): {
+    totalMessages: number;
+    activeMessages: number;
+    summaryCount: number;
+    compressionRatio: number;
+  } | null {
+    return this.sessionManager.getCompressionStats();
   }
 }

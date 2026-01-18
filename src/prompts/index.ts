@@ -83,7 +83,7 @@ export function getProviderForModel(model: string): string | null {
  * Handles both "provider" and "provider:authMethod" formats
  */
 export function mapProviderToPromptType(provider: string): ProviderType {
-  // Extract provider prefix (e.g., "gemini:api_key" → "gemini")
+  // Extract provider prefix (e.g., "google:api_key" → "google")
   const providerPrefix = provider.split(':')[0];
 
   switch (providerPrefix) {
@@ -91,8 +91,8 @@ export function mapProviderToPromptType(provider: string): ProviderType {
       return 'anthropic';
     case 'openai':
       return 'openai';
-    case 'gemini':
-      return 'gemini';
+    case 'google':
+      return 'gemini'; // Google provider uses Gemini models, so use gemini prompt
     default:
       return 'generic';
   }

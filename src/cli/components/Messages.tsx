@@ -110,29 +110,35 @@ interface ToolCallProps {
 function formatToolInput(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case 'Read':
-      return input.file_path as string || '';
     case 'Write':
     case 'Edit':
-      return input.file_path as string || '';
+      return (input.file_path as string) || '';
+
     case 'Glob':
-      return input.pattern as string || '';
-    case 'Grep':
-      return `"${input.pattern}"` + (input.path ? ` in ${input.path}` : '');
+      return (input.pattern as string) || '';
+
+    case 'Grep': {
+      const pattern = `"${input.pattern}"`;
+      return input.path ? `${pattern} in ${input.path}` : pattern;
+    }
+
     case 'Bash':
-      return truncate(input.command as string || '', 50);
+      return truncate((input.command as string) || '', 50);
+
     case 'WebFetch':
-      return input.url as string || '';
+      return (input.url as string) || '';
+
     case 'WebSearch':
       return `"${input.query}"` || '';
+
     case 'TodoWrite': {
-      const todos = input.todos as Array<{ content: string; status: string }> || [];
+      const todos = (input.todos as Array<{ content: string; status: string }>) || [];
       return `${todos.length} task${todos.length !== 1 ? 's' : ''}`;
     }
-    case 'AskUserQuestion': {
-      // Show collapsed JSON preview
-      const json = JSON.stringify(input);
-      return truncate(json, 60);
-    }
+
+    case 'AskUserQuestion':
+      return truncate(JSON.stringify(input), 60);
+
     default:
       return truncate(JSON.stringify(input), 40);
   }
@@ -368,7 +374,7 @@ export function CompletionMessage({ durationMs, usage, cost }: CompletionMessage
     );
   }
 
-  if (cost) {
+  if (cost && cost.totalCost > 0) {
     parts.push(`(~${formatCost(cost.totalCost)})`);
   }
 

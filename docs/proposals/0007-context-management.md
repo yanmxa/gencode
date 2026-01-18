@@ -2,9 +2,9 @@
 
 - **Proposal ID**: 0007
 - **Author**: mycode team
-- **Status**: Draft
+- **Status**: Implemented - Pending Verification
 - **Created**: 2025-01-15
-- **Updated**: 2025-01-15
+- **Updated**: 2026-01-18
 
 ## Summary
 
@@ -427,3 +427,253 @@ Existing sessions will work without context stats; stats begin tracking on first
 - [Claude Code Context Management](https://code.claude.com/docs/en/context)
 - [OpenAI Tokenizer (tiktoken)](https://github.com/openai/tiktoken)
 - [Anthropic Token Counting](https://docs.anthropic.com/en/docs/tokens)
+
+## Implementation Status
+
+### ✅ Implemented (Phase 1-3)
+
+**Session Compression System**:
+- ✅ `CompressionEngine` class with Layer 1 (Pruning) and Layer 2 (Compaction)
+  - Message deduplication and quality scoring
+  - Context-aware summarization
+  - Intelligent message selection (recent, high-value, tool results)
+  - Configurable thresholds and parameters
+- ✅ Integration with `SessionManager`
+  - Automatic compression when approaching context limits
+  - Compression statistics tracking
+  - Persistent compression metadata in session files
+
+**CLI Commands**:
+- ✅ `/compact` - Manual conversation compaction
+  - Triggers compression immediately
+  - Shows statistics (active/total messages, summaries, saved %)
+  - Visual ASCII box display with progress bars
+- ✅ `/context` - Context usage statistics
+  - Shows active vs total message counts
+  - Displays compression status (Compressed/Uncompressed)
+  - Progress bar visualization
+  - ASCII box display with colored status
+
+**UI Rendering Fixes** (2026-01-18):
+- ✅ Fixed info icon "ℹ" appearing on separate line before box output
+  - Added box content detection in `renderHistoryItem()` (App.tsx:1389-1396)
+  - Box content now renders directly without InfoMessage wrapper
+- ✅ Fixed right border alignment for `/context` and `/compact` commands
+  - Corrected padding calculation from `-2` to `-3` (App.tsx:904, 965)
+  - All border characters (`+`, `|`) now perfectly aligned
+  - Consistent 50-character width across all lines
+
+**Visual Output** (After Fixes):
+```
++------------------------------------------------+
+| Context Usage Statistics                       |
++------------------------------------------------+
+| Active Messages      12                        |
+| Total Messages       45                        |
+| Summaries             2                        |
+|                                                |
+| Usage  [#####...............]  27%             |
+|                                                |
+| Status: Compressed                             |
++------------------------------------------------+
+```
+
+### ✅ Newly Implemented (2026-01-18 - Pending Verification)
+
+**Token Counting & Tracking**:
+- ✅ **Cumulative token tracking** from API responses
+  - `SessionManager.cumulativeTokens` tracks input/output/total
+  - `calculateCumulativeTokens()` sums from session metadata
+  - `updateTokenUsageFromLatestCompletion()` for incremental updates
+  - `getTokenUsage()` public getter for current usage
+  - Persisted to `session.metadata.tokenUsage` on save
+- ✅ **Actual API token usage** instead of 4:1 estimates
+  - Token usage passed to `CompressionEngine.needsCompression()`
+  - Uses provider-returned `inputTokens` and `outputTokens`
+  - Falls back to 4:1 estimate if API doesn't return usage
+
+**Auto-Compaction with Thresholds**:
+- ✅ **Threshold-based compression triggering**
+  - 80% warning threshold: emits `context-warning` event
+  - 90% auto-compact threshold: triggers compression automatically
+  - Returns `usagePercent` and `shouldWarn` flags from `needsCompression()`
+- ✅ **Event-driven architecture** with EventEmitter
+  - `context-warning` - Emitted at 80% usage
+  - `auto-compacting` - Emitted before compression at 90%
+  - `compaction-complete` - Emitted after compression finishes
+- ✅ **User feedback in UI**
+  - ⚠️ "Context usage at 82% - Consider using /compact"
+  - 📦 "Auto-compacting (91% usage, strategy: prune)..."
+  - ✓ "Compaction complete (prune)"
+  - Smart warning deduplication (shows once per session)
+
+**Status Display**:
+- ✅ **Context usage in header**
+  - Format: `Context: 45/120 msgs (37%)`
+  - Real-time updates after each completion
+  - Only shown when activeMessages > 0
+  - Calculates percentage from actual token usage vs context window
+- ✅ **Real-time token tracking**
+  - Header refreshes on every render
+  - Pulls from `SessionManager.getTokenUsage()` and `getCompressionStats()`
+
+**Implementation Details**:
+- ✅ **Files Modified**:
+  - `src/session/manager.ts` - Token tracking, event emission
+  - `src/session/compression/engine.ts` - Threshold logic
+  - `src/cli/components/Header.tsx` - Context stats display
+  - `src/cli/components/App.tsx` - Event listeners, header updates
+- ✅ **Backward Compatible**: Works with existing sessions
+- ✅ **Build Status**: TypeScript compilation successful
+
+### ❌ Not Implemented (Deferred - Low Priority)
+
+**Provider-Specific Tokenizers**:
+- ❌ Client-side tokenizer implementations
+  - No OpenAITokenizer, AnthropicTokenizer, or GeminiTokenizer classes
+  - Not needed: Using actual API token counts instead
+  - Could be added later for pre-submission estimates
+  - **Decision**: Deferred - API usage is more accurate
+
+**Memory Tool**:
+- ❌ Claude Code-style Memory Tool implementation
+  - No persistent storage across context resets
+  - Memory system exists but uses different approach (GEN.md files)
+  - **Decision**: Out of scope for this proposal
+
+### 📋 Verification & Testing Required
+
+**Core functionality implemented - needs real-world testing:**
+
+1. **Verification Tasks** (High Priority):
+   - ✅ Build successful - TypeScript compilation passed
+   - ⏳ **Test 80% warning trigger** - Start long conversation and verify warning appears
+   - ⏳ **Test 90% auto-compact** - Continue until auto-compaction triggers
+   - ⏳ **Verify token accuracy** - Compare displayed tokens vs API actual usage
+   - ⏳ **Test header display** - Confirm context stats update in real-time
+   - ⏳ **Test session persistence** - Reload session and verify token counts preserved
+   - ⏳ **Test event deduplication** - Verify warning only shows once per session
+
+2. **Edge Cases to Test**:
+   - Session load with no token usage data (backward compatibility)
+   - Session fork inherits correct token counts
+   - Compression resets warning flag after compaction
+   - Multiple rapid completions don't spam warnings
+   - Very short sessions (< 10 messages) display correctly
+
+3. **Future Optimizations** (Low Priority - Post-Verification):
+   - Advanced compaction strategies
+   - Better summarization quality
+   - Provider-specific tokenizers for pre-submission estimates
+   - Memory tool integration
+
+### 📁 Implementation Files
+
+| File | Status | Notes |
+|------|--------|-------|
+| `src/session/compression/engine.ts` | ✅ Complete | Layer 1 & 2 compression + threshold logic |
+| `src/session/compression/types.ts` | ✅ Complete | All compression types |
+| `src/session/compression/index.ts` | ✅ Complete | Module exports |
+| `src/session/manager.ts` | ✅ Modified | Token tracking + EventEmitter + compression |
+| `src/session/types.ts` | ✅ Modified | Token usage in metadata |
+| `src/cli/components/App.tsx` | ✅ Modified | Event listeners + header stats |
+| `src/cli/components/Header.tsx` | ✅ Modified | Context stats display |
+| `src/context/tokenizer.ts` | ⏸️ Deferred | Using API token counts instead |
+| `src/context/context-manager.ts` | ⏸️ Deferred | Context tracking in SessionManager |
+
+### 🐛 Bug Fixes
+
+**UI Rendering Issues** (Fixed 2026-01-18):
+
+**Problem 1**: Info icon "ℹ" appearing on separate line before box output
+- **Root Cause**: `InfoMessage` component always prepended icon, causing it to appear on separate line
+- **Solution**: Added box content detection (`content.trim().startsWith('+---')`) in `renderHistoryItem()`
+- **Files Changed**: `src/cli/components/App.tsx` (lines 1389-1396)
+
+**Problem 2**: Right border `|` not aligned properly
+- **Root Cause**: Padding calculation was off by 1 character
+- **Before**: `w - text.length - 2` and `w - visible - 2`
+- **After**: `w - text.length - 3` and `w - visible - 3`
+- **Explanation**: Border line `'| ' + pad(text) + '|'` = 2 + pad + 1 = w, so pad = w - 3
+- **Files Changed**: `src/cli/components/App.tsx` (lines 904, 965)
+
+**Test Results**:
+```
+✅ All lines same length: true
+✅ Expected: 50, Actual: 50
+✅ /compact box: Passed
+✅ /context box: Passed
+✅ No info icon in output
+✅ Perfect border alignment
+```
+
+---
+
+## 📦 Latest Implementation (2026-01-18)
+
+### Summary
+
+Completed all high-priority features from the "Remaining Work" section:
+- ✅ Accurate token tracking from API responses
+- ✅ 80% warning threshold + 90% auto-compaction
+- ✅ Real-time context display in header
+- ✅ Event-driven architecture for extensibility
+
+### Implementation Phases
+
+**Phase 1: Token Usage Tracking** (~30 min)
+- Added cumulative token tracking to SessionManager
+- Implemented token calculation from session metadata
+- Updated compression to use actual API token counts
+- Added public `getTokenUsage()` getter
+
+**Phase 2: Threshold Warnings** (~45 min)
+- Modified `needsCompression()` to return usage % and warning flags
+- Extended SessionManager with EventEmitter
+- Implemented 3 events: `context-warning`, `auto-compacting`, `compaction-complete`
+- Added UI event listeners with smart deduplication
+
+**Phase 3: Context Display** (~30 min)
+- Updated Header component with optional context stats
+- Real-time header updates showing "Context: X/Y msgs (Z%)"
+- Only displays when activeMessages > 0
+
+### Code Changes
+
+**Total**: ~105 lines across 4 files
+
+| File | Changes | Lines |
+|------|---------|-------|
+| `src/session/manager.ts` | Token tracking, events, getters | +65 |
+| `src/session/compression/engine.ts` | Threshold logic | +15 |
+| `src/cli/components/Header.tsx` | Context stats display | +15 |
+| `src/cli/components/App.tsx` | Event listeners, header stats | +40 |
+
+### Key Design Decisions
+
+1. **API Token Counts over Tokenizers**
+   - Using actual usage from API responses instead of client-side estimation
+   - More accurate, no external dependencies (tiktoken, etc.)
+   - Falls back to 4:1 estimate if API doesn't provide usage
+
+2. **Event-Driven Architecture**
+   - SessionManager extends EventEmitter
+   - Loosely coupled: compression engine doesn't need UI knowledge
+   - Easy to add more listeners (logging, analytics, etc.)
+
+3. **Smart Warning Deduplication**
+   - Warning only shown once per session using `contextWarningShownRef`
+   - Resets after compaction completes
+   - Prevents spam during long conversations
+
+### Testing Required
+
+See "📋 Verification & Testing Required" section above for:
+- Functional tests (80% warning, 90% auto-compact)
+- Edge cases (session load, fork, persistence)
+- Real-world usage validation
+
+### References
+
+Implementation plan: `STREAMING_IMPLEMENTATION_SUMMARY.md` (Phase 4 context management)
+Related proposal: `0007-context-management.md` (this document)

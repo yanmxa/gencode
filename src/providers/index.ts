@@ -5,7 +5,7 @@
 export * from './types.js';
 export { OpenAIProvider } from './openai.js';
 export { AnthropicProvider } from './anthropic.js';
-export { GeminiProvider } from './gemini.js';
+export { GoogleProvider } from './google.js';
 export { AnthropicVertexProvider } from './vertex-ai.js';
 
 import type {
@@ -14,12 +14,12 @@ import type {
   AuthMethod,
   OpenAIConfig,
   AnthropicConfig,
-  GeminiConfig,
+  GoogleConfig,
   VertexAIConfig,
 } from './types.js';
 import { OpenAIProvider } from './openai.js';
 import { AnthropicProvider } from './anthropic.js';
-import { GeminiProvider } from './gemini.js';
+import { GoogleProvider } from './google.js';
 import { AnthropicVertexProvider } from './vertex-ai.js';
 
 // Legacy type alias for backward compatibility
@@ -29,13 +29,13 @@ export type ProviderName = Provider;
 export type ProviderConfigMap = {
   openai: OpenAIConfig;
   anthropic: AnthropicConfig;
-  gemini: GeminiConfig;
+  google: GoogleConfig;
 };
 
 export interface CreateProviderOptions {
   provider: Provider;
   authMethod?: AuthMethod;
-  config?: OpenAIConfig | AnthropicConfig | GeminiConfig | VertexAIConfig;
+  config?: OpenAIConfig | AnthropicConfig | GoogleConfig | VertexAIConfig;
 }
 
 /**
@@ -62,11 +62,11 @@ export function createProvider(options: CreateProviderOptions): LLMProvider {
     throw new Error(`Unsupported auth method for openai: ${authMethod}`);
   }
 
-  if (provider === 'gemini') {
+  if (provider === 'google') {
     if (authMethod === 'api_key') {
-      return new GeminiProvider(config as GeminiConfig);
+      return new GoogleProvider(config as GoogleConfig);
     }
-    throw new Error(`Unsupported auth method for gemini: ${authMethod}`);
+    throw new Error(`Unsupported auth method for google: ${authMethod}`);
   }
 
   throw new Error(`Unknown provider: ${provider}`);
@@ -97,9 +97,9 @@ export function inferProvider(model: string): Provider {
     return 'anthropic';
   }
 
-  // Gemini models
+  // Google models (Gemini)
   if (modelLower.includes('gemini') || modelLower.includes('palm')) {
-    return 'gemini';
+    return 'google';
   }
 
   // Default to OpenAI (most common)
@@ -143,10 +143,10 @@ export const ModelAliases: Record<
   'claude-haiku': { provider: 'anthropic', model: 'claude-haiku-4-20250514' },
   'claude-3.5-sonnet': { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' },
 
-  // Gemini
-  'gemini-2.0-flash': { provider: 'gemini', model: 'gemini-2.0-flash' },
-  'gemini-1.5-pro': { provider: 'gemini', model: 'gemini-1.5-pro' },
-  'gemini-1.5-flash': { provider: 'gemini', model: 'gemini-1.5-flash' },
+  // Google (Gemini models)
+  'gemini-2.0-flash': { provider: 'google', model: 'gemini-2.0-flash' },
+  'gemini-1.5-pro': { provider: 'google', model: 'gemini-1.5-pro' },
+  'gemini-1.5-flash': { provider: 'google', model: 'gemini-1.5-flash' },
 
   // Anthropic via Vertex AI
   'vertex-sonnet': { provider: 'anthropic', authMethod: 'vertex', model: 'claude-sonnet-4-5@20250929' },

@@ -104,7 +104,8 @@ describe('Prompt Loader', () => {
     it('should map known providers correctly', () => {
       expect(mapProviderToPromptType('anthropic')).toBe('anthropic');
       expect(mapProviderToPromptType('openai')).toBe('openai');
-      expect(mapProviderToPromptType('gemini')).toBe('gemini');
+      // Google provider uses Gemini models, so it maps to gemini prompt
+      expect(mapProviderToPromptType('google')).toBe('gemini');
     });
 
     it('should return generic for unknown providers', () => {

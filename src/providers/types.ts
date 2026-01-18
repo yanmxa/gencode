@@ -12,7 +12,7 @@ import type { CostEstimate } from '../pricing/types.js';
 /**
  * Provider - Semantic layer (only 3 providers)
  */
-export type Provider = 'anthropic' | 'openai' | 'gemini';
+export type Provider = 'anthropic' | 'openai' | 'google';
 
 /**
  * Authentication method for providers
@@ -113,6 +113,7 @@ export interface CompletionOptions {
   maxTokens?: number;
   temperature?: number;
   stream?: boolean;
+  signal?: AbortSignal; // For cancellation support
 }
 
 export type StopReason = 'end_turn' | 'tool_use' | 'max_tokens' | 'stop_sequence';
@@ -123,6 +124,15 @@ export interface CompletionResponse {
   usage?: {
     inputTokens: number;
     outputTokens: number;
+    /** Reasoning tokens (for thinking models like o1/o3) */
+    reasoningTokens?: number;
+    /** Cache statistics (Anthropic prompt caching) */
+    cache?: {
+      /** Cache hit tokens (~10% cost) */
+      readTokens: number;
+      /** Cache creation tokens */
+      writeTokens: number;
+    };
   };
   cost?: CostEstimate;
 }
@@ -150,6 +160,11 @@ export interface StreamChunkToolInput {
   input: string; // Partial JSON string
 }
 
+export interface StreamChunkReasoning {
+  type: 'reasoning';
+  text: string; // Reasoning content from o1/o3/Gemini 3+ models
+}
+
 export interface StreamChunkDone {
   type: 'done';
   response: CompletionResponse;
@@ -164,6 +179,7 @@ export type StreamChunk =
   | StreamChunkText
   | StreamChunkToolStart
   | StreamChunkToolInput
+  | StreamChunkReasoning
   | StreamChunkDone
   | StreamChunkError;
 
@@ -175,6 +191,10 @@ export interface ModelInfo {
   id: string;
   name: string;
   description?: string;
+  /** Model context window size (for compression decisions) */
+  contextWindow?: number;
+  /** Model output limit (for compression decisions) */
+  outputLimit?: number;
 }
 
 export interface LLMProvider {
@@ -194,6 +214,16 @@ export interface LLMProvider {
    * List available models from the provider
    */
   listModels(): Promise<ModelInfo[]>;
+
+  /**
+   * Get current model name (optional - for backward compatibility)
+   */
+  getModel?(): string;
+
+  /**
+   * Get model information (for compression decisions)
+   */
+  getModelInfo?(model: string): ModelInfo;
 }
 
 // ============================================================================
@@ -211,7 +241,7 @@ export interface AnthropicConfig {
   baseURL?: string;
 }
 
-export interface GeminiConfig {
+export interface GoogleConfig {
   apiKey?: string;
 }
 
@@ -221,4 +251,4 @@ export interface VertexAIConfig {
   accessToken?: string;
 }
 
-export type ProviderConfig = OpenAIConfig | AnthropicConfig | GeminiConfig | VertexAIConfig;
+export type ProviderConfig = OpenAIConfig | AnthropicConfig | GoogleConfig | VertexAIConfig;

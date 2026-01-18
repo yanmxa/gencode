@@ -1,6 +1,6 @@
 /**
- * Google Gemini Provider Implementation
- * Supports Gemini 1.5 Pro, Gemini 1.5 Flash, Gemini 2.0, etc.
+ * Google Provider Implementation
+ * Supports Gemini models: Gemini 1.5 Pro, Gemini 1.5 Flash, Gemini 2.0, etc.
  */
 
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
@@ -16,28 +16,28 @@ import type {
   MessageContent,
   ToolDefinition,
   StopReason,
-  GeminiConfig,
+  GoogleConfig,
   JSONSchema,
   ModelInfo,
 } from './types.js';
 
-export class GeminiProvider implements LLMProvider {
+export class GoogleProvider implements LLMProvider {
   static readonly meta: ProviderClassMeta = {
-    provider: 'gemini',
+    provider: 'google',
     authMethod: 'api_key',
     envVars: ['GOOGLE_API_KEY', 'GEMINI_API_KEY'],
-    displayName: 'Direct API',
-    description: 'Direct API access',
+    displayName: 'Google',
+    description: 'Google Generative AI (Gemini models)',
   };
 
-  readonly name = 'gemini';
+  readonly name = 'google';
   private client: GoogleGenerativeAI;
   private apiKey: string;
 
-  constructor(config: GeminiConfig = {}) {
+  constructor(config: GoogleConfig = {}) {
     const apiKey = config.apiKey ?? process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      throw new Error('Gemini API key is required. Set GOOGLE_API_KEY or GEMINI_API_KEY.');
+      throw new Error('Google API key is required. Set GOOGLE_API_KEY or GEMINI_API_KEY.');
     }
     this.apiKey = apiKey;
     this.client = new GoogleGenerativeAI(apiKey);
@@ -95,6 +95,12 @@ export class GeminiProvider implements LLMProvider {
           const id = `call_${callIndex++}`;
           // Capture thoughtSignature for Gemini 3+ models
           const partAny = part as { thoughtSignature?: string };
+
+          // Emit reasoning content if available (Gemini 3+ thinking)
+          if (partAny.thoughtSignature) {
+            yield { type: 'reasoning', text: partAny.thoughtSignature };
+          }
+
           functionCalls.push({
             id,
             name: fc.name,
@@ -125,12 +131,30 @@ export class GeminiProvider implements LLMProvider {
     const finalResponse = await result.response;
     const stopReason = this.getStopReason(finalResponse, functionCalls.length > 0);
 
+    // Debug: Log usage metadata
+    if (process.env.DEBUG_TOKENS) {
+      console.error('[Google] usageMetadata:', JSON.stringify(finalResponse.usageMetadata, null, 2));
+    }
+
     const usage = finalResponse.usageMetadata
       ? {
           inputTokens: finalResponse.usageMetadata.promptTokenCount ?? 0,
-          outputTokens: finalResponse.usageMetadata.candidatesTokenCount ?? 0,
+          // Fix: candidatesTokenCount is unreliable, calculate from total - prompt
+          // Ensure outputTokens is never negative
+          outputTokens: Math.max(
+            0,
+            (finalResponse.usageMetadata.totalTokenCount ?? 0) - (finalResponse.usageMetadata.promptTokenCount ?? 0)
+          ),
         }
       : undefined;
+
+    // Warn if suspicious token count
+    if (usage && usage.outputTokens === 0 && content.length > 0) {
+      console.warn(
+        '[Google] Warning: usageMetadata shows 0 output tokens but content was returned. ' +
+        'This may indicate a Gemini API issue.'
+      );
+    }
 
     const cost = usage ? calculateCost(this.name, options.model, usage) : undefined;
 
@@ -276,12 +300,30 @@ export class GeminiProvider implements LLMProvider {
 
     const hasFunctionCalls = parts.some((p) => 'functionCall' in p);
 
+    // Debug: Log usage metadata
+    if (process.env.DEBUG_TOKENS) {
+      console.error('[Google complete] usageMetadata:', JSON.stringify(response.usageMetadata, null, 2));
+    }
+
     const usage = response.usageMetadata
       ? {
           inputTokens: response.usageMetadata.promptTokenCount ?? 0,
-          outputTokens: response.usageMetadata.candidatesTokenCount ?? 0,
+          // Fix: candidatesTokenCount is unreliable, calculate from total - prompt
+          // Ensure outputTokens is never negative
+          outputTokens: Math.max(
+            0,
+            (response.usageMetadata.totalTokenCount ?? 0) - (response.usageMetadata.promptTokenCount ?? 0)
+          ),
         }
       : undefined;
+
+    // Warn if suspicious token count
+    if (usage && usage.outputTokens === 0 && content.length > 0) {
+      console.warn(
+        '[Google] Warning: usageMetadata shows 0 output tokens but content was returned. ' +
+        'This may indicate a Gemini API issue.'
+      );
+    }
 
     const cost = usage ? calculateCost(this.name, model, usage) : undefined;
 
@@ -299,13 +341,22 @@ export class GeminiProvider implements LLMProvider {
     }
 
     const finishReason = response.candidates?.[0]?.finishReason;
-    switch (finishReason) {
-      case 'MAX_TOKENS':
-        return 'max_tokens';
-      case 'STOP':
-      default:
-        return 'end_turn';
+
+    if (finishReason === 'MAX_TOKENS') {
+      return 'max_tokens';
     }
+
+    if (finishReason === 'STOP') {
+      return 'end_turn';
+    }
+
+    if (finishReason === 'SAFETY' || finishReason === 'RECITATION') {
+      console.warn(`[Google] Content blocked by ${finishReason} filter`);
+      return 'end_turn';
+    }
+
+    console.warn(`[Google] Unknown finishReason: ${finishReason}`);
+    return 'end_turn';
   }
 
   async listModels(): Promise<ModelInfo[]> {

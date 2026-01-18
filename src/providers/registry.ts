@@ -7,7 +7,7 @@ import type { SearchProviderName } from './search/types.js';
 import { AnthropicProvider } from './anthropic.js';
 import { AnthropicVertexProvider } from './vertex-ai.js';
 import { OpenAIProvider } from './openai.js';
-import { GeminiProvider } from './gemini.js';
+import { GoogleProvider } from './google.js';
 
 // ============================================================================
 // LLM Provider Classes
@@ -26,7 +26,7 @@ export const PROVIDER_CLASSES: ProviderClass[] = [
   AnthropicProvider,
   AnthropicVertexProvider,
   OpenAIProvider,
-  GeminiProvider,
+  GoogleProvider,
 ];
 
 /**
@@ -41,7 +41,7 @@ export interface ProviderMeta {
 export const PROVIDER_METADATA: ProviderMeta[] = [
   { id: 'anthropic', name: 'Anthropic', popularity: 1 },
   { id: 'openai', name: 'OpenAI', popularity: 2 },
-  { id: 'gemini', name: 'Google Gemini', popularity: 3 },
+  { id: 'google', name: 'Google', popularity: 3 },
 ];
 
 // ============================================================================
