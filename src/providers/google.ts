@@ -287,6 +287,14 @@ export class GoogleProvider implements LLMProvider {
       result.required = schema.required;
     }
 
+    if (schema.items) {
+      result.items = this.convertSchema(schema.items);
+    }
+
+    if (schema.enum) {
+      result.enum = schema.enum;
+    }
+
     return result;
   }
 
