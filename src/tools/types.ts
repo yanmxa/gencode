@@ -149,9 +149,9 @@ export type TodoWriteInput = z.infer<typeof TodoWriteInputSchema>;
 export function zodToJsonSchema(schema: z.ZodSchema<any>): Record<string, unknown> {
   // Use Zod's built-in JSON schema support or manual conversion
   try {
-    // Zod v4 approach - check if toJsonSchema exists
-    if ('toJsonSchema' in z && typeof z.toJsonSchema === 'function') {
-      return z.toJsonSchema(schema) as Record<string, unknown>;
+    // Check if toJSONSchema method exists on the schema itself
+    if ('toJSONSchema' in schema && typeof (schema as any).toJSONSchema === 'function') {
+      return (schema as any).toJSONSchema() as Record<string, unknown>;
     }
   } catch {
     // Fall through to manual conversion
