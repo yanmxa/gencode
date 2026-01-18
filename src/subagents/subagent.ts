@@ -10,13 +10,17 @@
 
 import { Agent } from '../agent/agent.js';
 import type { AgentConfig } from '../agent/types.js';
-import type { Provider } from '../providers/types.js';
+import type { Provider, AuthMethod } from '../providers/types.js';
 import type { Message } from '../providers/types.js';
+import { inferProvider, inferAuthMethod } from '../providers/index.js';
 import { SUBAGENT_CONFIGS } from './configs.js';
 import type { SubagentType, SubagentConfig, TaskOutput } from './types.js';
 import { SubagentSessionManager } from './subagent-session-manager.js';
 import { isVerboseDebugEnabled } from '../shared/debug.js';
 import { logger } from '../shared/logger.js';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 export interface SubagentOptions {
   /** Subagent type */
@@ -25,8 +29,11 @@ export interface SubagentOptions {
   /** Optional: override specific config fields */
   config?: Partial<SubagentConfig>;
 
-  /** Optional: provider (defaults to anthropic) */
+  /** Optional: provider (defaults to inferred from model or anthropic) */
   provider?: Provider;
+
+  /** Optional: authentication method (defaults to inferred from model) */
+  authMethod?: AuthMethod;
 
   /** Optional: model override */
   model?: string;
@@ -51,6 +58,9 @@ export interface SubagentOptions {
 
   /** Optional: parent subagent ID (for tracking lineage) */
   parentSubagentId?: string;
+
+  /** Optional: parent agent's model (for inheriting credentials) */
+  parentModel?: string;
 }
 
 /**
@@ -87,10 +97,35 @@ export class Subagent {
     const baseConfig = SUBAGENT_CONFIGS[options.type];
     this.config = { ...baseConfig, ...options.config };
 
+    // Determine the model to use
+    // Priority 1: Explicit options.model
+    // Priority 2: Parent model (inherit from parent agent)
+    // Priority 3: Config default model
+    let targetModel = options.model ?? options.parentModel ?? this.config.defaultModel;
+
+    // Determine provider and authMethod
+    // If provided explicitly (from parent agent), use them directly
+    // Otherwise infer from the model
+    let provider: Provider = options.provider ?? inferProvider(targetModel);
+    let authMethod: AuthMethod | undefined = options.authMethod ?? inferAuthMethod(targetModel);
+
+    // Verbose debug: Log credential inheritance
+    if (isVerboseDebugEnabled('subagents')) {
+      logger.debug('Subagent', 'Subagent credentials', {
+        type: this.type,
+        model: targetModel,
+        provider,
+        authMethod,
+        inheritedFromParent: !!(options.provider || options.parentModel),
+        explicitModel: !!options.model,
+      });
+    }
+
     // Build Agent configuration
     const agentConfig: AgentConfig = {
-      provider: options.provider ?? 'anthropic',
-      model: options.model ?? this.config.defaultModel,
+      provider,
+      authMethod,
+      model: targetModel,
       cwd: options.cwd ?? process.cwd(),
       systemPrompt: this.config.systemPrompt,
       maxTurns: this.config.maxTurns,
@@ -372,6 +407,44 @@ export class Subagent {
     const timestamp = Date.now();
     const random = Math.random().toString(36).slice(2, 8);
     return `subagent-${timestamp}-${random}`;
+  }
+
+  /**
+   * Check if a provider has available API keys
+   */
+  private isProviderAvailable(provider: Provider): boolean {
+    switch (provider) {
+      case 'anthropic':
+        return !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_VERTEX_PROJECT_ID);
+      case 'openai':
+        return !!process.env.OPENAI_API_KEY;
+      case 'google':
+        return !!process.env.GOOGLE_API_KEY;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Get system default model from settings.json or environment variables
+   */
+  private getSystemDefaultModel(): string | undefined {
+    // Try ~/.gen/settings.json first
+    const genSettingsPath = path.join(os.homedir(), '.gen', 'settings.json');
+    try {
+      if (fs.existsSync(genSettingsPath)) {
+        const content = fs.readFileSync(genSettingsPath, 'utf-8');
+        const settings = JSON.parse(content);
+        if (settings.model) {
+          return settings.model;
+        }
+      }
+    } catch {
+      // Ignore errors, fall through to env vars
+    }
+
+    // Fall back to environment variables
+    return process.env.GEN_MODEL;
   }
 
   /**

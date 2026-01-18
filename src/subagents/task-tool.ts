@@ -133,7 +133,10 @@ Subagents run in isolated contexts - only their summary is returned to you, not 
         const taskPromises = input.tasks.map(async (taskDef) => {
           const subagent = new Subagent({
             type: taskDef.subagent_type,
-            model: taskDef.model,
+            model: taskDef.model, // Can be undefined, will fall back
+            provider: context.currentProvider as any,
+            authMethod: context.currentAuthMethod as any,
+            parentModel: context.currentModel,
             cwd: context.cwd,
             config: taskDef.max_turns ? { maxTurns: taskDef.max_turns } : undefined,
             persistSession: true,
@@ -179,7 +182,10 @@ Subagents run in isolated contexts - only their summary is returned to you, not 
         // Create subagent instance
         const subagent = new Subagent({
           type: input.subagent_type,
-          model: input.model,
+          model: input.model, // Can be undefined, will fall back
+          provider: context.currentProvider as any,
+          authMethod: context.currentAuthMethod as any,
+          parentModel: context.currentModel,
           cwd: context.cwd,
           config: input.max_turns ? { maxTurns: input.max_turns } : undefined,
           persistSession: true, // Keep persistence enabled for resumed sessions
@@ -211,9 +217,13 @@ Subagents run in isolated contexts - only their summary is returned to you, not 
       }
 
       // Create subagent instance
+      // Use parent agent's model/provider/authMethod if not explicitly specified
       const subagent = new Subagent({
         type: input.subagent_type,
-        model: input.model,
+        model: input.model, // Can be undefined, will fall back in Subagent constructor
+        provider: context.currentProvider as any,
+        authMethod: context.currentAuthMethod as any,
+        parentModel: context.currentModel, // Pass parent model for fallback
         cwd: context.cwd,
         config: input.max_turns ? { maxTurns: input.max_turns } : undefined,
         persistSession: true, // Always enable persistence for resume capability

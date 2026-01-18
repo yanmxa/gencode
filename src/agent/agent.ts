@@ -26,6 +26,8 @@ import {
 import { initCheckpointManager } from '../checkpointing/index.js';
 import { HooksManager } from '../hooks/index.js';
 import type { HooksConfig } from '../hooks/index.js';
+import { CommandManager } from '../commands/manager.js';
+import type { ParsedCommand } from '../commands/types.js';
 
 // Type for askUser callback
 export type AskUserCallback = (questions: Question[]) => Promise<QuestionAnswer[]>;
@@ -34,6 +36,8 @@ export class Agent {
   private provider: LLMProvider;
   private registry: ToolRegistry | null = null; // Lazy-initialized for async skill discovery
   private registryPromise: Promise<ToolRegistry> | null = null; // Mutex for registry initialization
+  private commandManager: CommandManager | null = null; // Lazy-initialized for async command discovery
+  private commandManagerPromise: Promise<CommandManager> | null = null; // Mutex for command manager initialization
   private permissions: PermissionManager;
   private sessionManager: SessionManager;
   private memoryManager: MemoryManager;
@@ -95,6 +99,38 @@ export class Agent {
     } finally {
       // Clear the promise after initialization completes
       this.registryPromise = null;
+    }
+  }
+
+  /**
+   * Ensure command manager is initialized (lazy loading for async command discovery)
+   * Thread-safe: Prevents concurrent initialization using a mutex
+   */
+  private async ensureCommandManager(): Promise<CommandManager> {
+    // If already initialized, return immediately
+    if (this.commandManager) {
+      return this.commandManager;
+    }
+
+    // If initialization is in progress, wait for it
+    if (this.commandManagerPromise) {
+      return this.commandManagerPromise;
+    }
+
+    // Start new initialization
+    const cwd = this.config.cwd ?? process.cwd();
+    this.commandManagerPromise = (async () => {
+      const manager = new CommandManager(cwd);
+      await manager.initialize();
+      return manager;
+    })();
+
+    try {
+      this.commandManager = await this.commandManagerPromise;
+      return this.commandManager;
+    } finally {
+      // Clear the promise after initialization completes
+      this.commandManagerPromise = null;
     }
   }
 
@@ -516,8 +552,62 @@ export class Agent {
       return;
     }
 
-    // Add user message
-    const userMessage: Message = { role: 'user', content: prompt };
+    // ============================================================================
+    // COMMAND DETECTION AND EXPANSION
+    // ============================================================================
+    let actualPrompt = prompt;
+    let parsedCommand: ParsedCommand | null = null;
+
+    // Check if input starts with / (command syntax)
+    if (prompt.trim().startsWith('/')) {
+      try {
+        const commandManager = await this.ensureCommandManager();
+
+        // Parse command: /name args
+        const trimmed = prompt.trim().slice(1); // Remove leading /
+        const firstSpaceIndex = trimmed.indexOf(' ');
+        const commandName = firstSpaceIndex === -1 ? trimmed : trimmed.slice(0, firstSpaceIndex);
+        const args = firstSpaceIndex === -1 ? '' : trimmed.slice(firstSpaceIndex + 1);
+
+        // Try to parse the command
+        parsedCommand = await commandManager.parseCommand(commandName, args);
+
+        if (parsedCommand) {
+          // Replace prompt with expanded template
+          actualPrompt = parsedCommand.expandedPrompt;
+
+          // Apply pre-authorized tools (add to permission manager)
+          if (parsedCommand.preAuthorizedTools.length > 0) {
+            for (const toolPattern of parsedCommand.preAuthorizedTools) {
+              this.permissions.addAllowedPrompts([{
+                tool: 'Bash',
+                prompt: toolPattern,
+              }]);
+            }
+          }
+
+          // Apply model override if specified
+          if (parsedCommand.modelOverride) {
+            this.config.model = parsedCommand.modelOverride;
+            // Recreate provider with new model if needed
+            // (In practice, model is just passed to API calls, no need to recreate)
+          }
+
+          // Yield event to show command was recognized
+          yield {
+            type: 'text',
+            text: `[Command: /${commandName}${args ? ' ' + args : ''}]\n\n`,
+          };
+        }
+        // If command not found, continue with original prompt (LLM will handle it)
+      } catch (error) {
+        // Command parsing failed, continue with original prompt
+        console.warn('Command parsing failed:', error);
+      }
+    }
+
+    // Add user message (with expanded prompt if command was parsed)
+    const userMessage: Message = { role: 'user', content: actualPrompt };
     try {
       await this.sessionManager.addMessage(userMessage, this.getModelInfo());
     } catch (error) {
@@ -768,10 +858,13 @@ export class Agent {
       const toolResults: ToolResultContent[] = [];
       const cwd = this.config.cwd ?? process.cwd();
 
-      // Build tool context with askUser callback
+      // Build tool context with askUser callback and current agent info
       const toolContext = {
         cwd,
         askUser: this.askUserCallback ?? undefined,
+        currentProvider: this.config.provider,
+        currentModel: this.config.model,
+        currentAuthMethod: this.config.authMethod,
       };
 
       for (const call of toolCalls) {

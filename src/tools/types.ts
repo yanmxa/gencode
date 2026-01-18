@@ -31,6 +31,12 @@ export interface ToolContext {
   abortSignal?: AbortSignal;
   /** Callback for AskUserQuestion tool to interact with user */
   askUser?: (questions: Question[]) => Promise<QuestionAnswer[]>;
+  /** Current agent's provider (for Task tool to inherit) */
+  currentProvider?: string;
+  /** Current agent's model (for Task tool to inherit) */
+  currentModel?: string;
+  /** Current agent's auth method (for Task tool to inherit) */
+  currentAuthMethod?: string;
 }
 
 export interface ToolResultMetadata {
