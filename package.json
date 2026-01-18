@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "gencode": "./dist/cli/index.js"
+    "gencode": "dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
