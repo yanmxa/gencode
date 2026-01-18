@@ -17,6 +17,7 @@ import {
   InfoMessage,
   WelcomeMessage,
   CompletionMessage,
+  CommandListDisplay,
 } from './Messages.js';
 import { Header } from './Header.js';
 import { ProgressBar } from './Spinner.js';
@@ -49,7 +50,7 @@ import { InputHistoryManager } from '../../input/index.js';
 // Types
 interface HistoryItem {
   id: string;
-  type: 'header' | 'welcome' | 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'info' | 'completion' | 'todos';
+  type: 'header' | 'welcome' | 'user' | 'assistant' | 'tool_call' | 'tool_result' | 'info' | 'completion' | 'todos' | 'commands';
   content: string;
   meta?: Record<string, unknown>;
 }
@@ -92,11 +93,26 @@ interface PermissionSettings {
   deny?: string[];
 }
 
+interface HooksConfig {
+  [event: string]: Array<{
+    matcher?: string;
+    hooks: Array<{
+      type: 'command' | 'prompt';
+      command?: string;
+      prompt?: string;
+      timeout?: number;
+      statusMessage?: string;
+      blocking?: boolean;
+    }>;
+  }>;
+}
+
 interface AppProps {
   config: AgentConfig;
   settingsManager?: SettingsManager;
   resumeLatest?: boolean;
   permissionSettings?: PermissionSettings;
+  hooksConfig?: HooksConfig;
 }
 
 // ============================================================================
@@ -136,6 +152,7 @@ function HelpPanel() {
     ['/model [name]', 'Switch model'],
     ['/provider', 'Manage providers'],
     ['/sessions', 'List sessions'],
+    ['/tasks', 'List background tasks'],
     ['/resume [n]', 'Resume session'],
     ['/new', 'New session'],
     ['/save', 'Save session'],
@@ -175,6 +192,123 @@ function SessionsTable({ sessions }: SessionsTableProps) {
           <Text color={colors.textMuted}>{formatRelativeTime(s.updatedAt)}</Text>
         </Text>
       ))}
+    </Box>
+  );
+}
+
+// ============================================================================
+// Tasks Table Component
+// ============================================================================
+interface TasksTableProps {
+  tasks: Array<{
+    id: string;
+    description: string;
+    status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
+    startedAt: Date | string;
+    completedAt?: Date | string;
+    durationMs?: number;
+  }>;
+}
+
+function TasksTable({ tasks }: TasksTableProps) {
+  const getStatusDisplay = (status: string): { icon: string; color: string; label: string } => {
+    switch (status) {
+      case 'running':
+        return { icon: '●', color: colors.info, label: 'Running' };
+      case 'pending':
+        return { icon: '○', color: colors.textMuted, label: 'Pending' };
+      case 'completed':
+        return { icon: '✔', color: colors.success, label: 'Done' };
+      case 'error':
+        return { icon: '✖', color: colors.error, label: 'Failed' };
+      case 'cancelled':
+        return { icon: '⊘', color: colors.warning, label: 'Stopped' };
+      default:
+        return { icon: '·', color: colors.textMuted, label: 'Unknown' };
+    }
+  };
+
+  const formatElapsedTime = (task: TasksTableProps['tasks'][0]): string => {
+    const startTime = typeof task.startedAt === 'string'
+      ? new Date(task.startedAt).getTime()
+      : task.startedAt.getTime();
+
+    if (task.durationMs !== undefined) {
+      // Task completed, show duration
+      const seconds = Math.floor(task.durationMs / 1000);
+      if (seconds < 60) return `${seconds}s`;
+      const minutes = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${minutes}m ${secs}s`;
+    } else {
+      // Task running, show elapsed time
+      const elapsed = Date.now() - startTime;
+      const seconds = Math.floor(elapsed / 1000);
+      if (seconds < 60) return `${seconds}s`;
+      const minutes = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${minutes}m ${secs}s`;
+    }
+  };
+
+  const getTypeLabel = (task: TasksTableProps['tasks'][0]): string => {
+    // Extract task type from description
+    if (task.description.toLowerCase().includes('bash:')) return 'bash';
+    if (task.description.toLowerCase().includes('test')) return 'test';
+    if (task.description.toLowerCase().includes('build')) return 'build';
+    return 'task';
+  };
+
+  return (
+    <Box flexDirection="column">
+      {/* Header */}
+      <Box marginBottom={1}>
+        <Text>
+          <Text color={colors.textMuted}>{'STATUS'.padEnd(9)}</Text>
+          <Text color={colors.textMuted}>{'ID'.padEnd(9)}</Text>
+          <Text color={colors.textMuted}>{'DESCRIPTION'.padEnd(33)}</Text>
+          <Text color={colors.textMuted}>{'TIME'.padEnd(10)}</Text>
+          <Text color={colors.textMuted}>TYPE</Text>
+        </Text>
+      </Box>
+
+      {/* Tasks */}
+      {tasks.slice(0, 10).map((task, index) => {
+        const status = getStatusDisplay(task.status);
+        const typeLabel = getTypeLabel(task);
+
+        return (
+          <Box key={task.id} marginBottom={index < tasks.length - 1 ? 0 : 0}>
+            <Text>
+              <Text color={status.color}>{status.icon} </Text>
+              <Text color={status.color}>{status.label.padEnd(7)}</Text>
+              <Text color={colors.primary} dimColor>
+                {task.id.slice(0, 8).padEnd(9)}
+              </Text>
+              <Text>{task.description.slice(0, 32).padEnd(33)}</Text>
+              <Text color={colors.textSecondary}>
+                {formatElapsedTime(task).padEnd(10)}
+              </Text>
+              <Text color={colors.textMuted} dimColor>
+                {typeLabel}
+              </Text>
+            </Text>
+          </Box>
+        );
+      })}
+
+      {/* Footer */}
+      {tasks.length > 10 && (
+        <Box marginTop={1}>
+          <Text color={colors.textMuted}>
+            ... and {tasks.length - 10} more task{tasks.length - 10 !== 1 ? 's' : ''}
+          </Text>
+        </Box>
+      )}
+
+      {tasks.length === 0 && (
+        <Text color={colors.textMuted}>No tasks found</Text>
+      )}
     </Box>
   );
 }
@@ -260,7 +394,7 @@ function estimateTokenDelta(text: string): number {
 // ============================================================================
 // Main App
 // ============================================================================
-export function App({ config, settingsManager, resumeLatest, permissionSettings }: AppProps) {
+export function App({ config, settingsManager, resumeLatest, permissionSettings, hooksConfig }: AppProps) {
   const { exit } = useApp();
   const agent = useAgent(config);
 
@@ -551,6 +685,11 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
       // Initialize permission system with settings
       await agent.initializePermissions(permissionSettings);
 
+      // Initialize hooks system with configuration
+      if (hooksConfig) {
+        agent.initializeHooks(hooksConfig);
+      }
+
       // Set enhanced confirm callback with approval options
       agent.setEnhancedConfirmCallback(async (tool, toolInput, suggestions) => {
         // Auto-approve in accept mode
@@ -680,6 +819,20 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
           addHistory({ type: 'info', content: 'No sessions' });
         } else {
           addHistory({ type: 'info', content: '__SESSIONS__', meta: { input: sessions } });
+        }
+        return true;
+      }
+
+      case 'tasks': {
+        const { TaskManager } = await import('../../tasks/task-manager.js');
+        const taskManager = new TaskManager();
+        const filter = (arg as 'all' | 'running' | 'completed' | 'error') || 'all';
+        const tasks = taskManager.listTasks(filter);
+
+        if (tasks.length === 0) {
+          addHistory({ type: 'info', content: 'No background tasks' });
+        } else {
+          addHistory({ type: 'info', content: '__TASKS__', meta: { input: tasks } });
         }
         return true;
       }
@@ -1098,8 +1251,68 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         return true;
       }
 
-      default:
+      case 'commands':
+      case 'cmd': {
+        const { getCommandManager } = await import('../../commands/index.js');
+        const cmdMgr = await getCommandManager(cwd);
+        const commands = await cmdMgr.listCommands();
+
+        if (commands.length === 0) {
+          addHistory({ type: 'info', content: 'No custom commands found' });
+        } else {
+          addHistory({ type: 'info', content: '__COMMANDS__', meta: { commands } });
+        }
+        return true;
+      }
+
+      default: {
+        // Check for custom commands
+        const { getCommandManager } = await import('../../commands/index.js');
+        const cmdMgr = await getCommandManager(cwd);
+
+        if (await cmdMgr.hasCommand(command)) {
+          const argString = parts.slice(1).join(' ');
+          const parsed = await cmdMgr.parseCommand(command, argString);
+
+          if (parsed) {
+            // Apply pre-authorized tools
+            if (parsed.preAuthorizedTools.length > 0) {
+              const permManager = agent.getPermissionManager();
+
+              // Convert tool names/patterns to PromptPermissions
+              const prompts = parsed.preAuthorizedTools.map(toolSpec => {
+                // Check if it's a pattern like "Bash(gh:*)"
+                const patternMatch = toolSpec.match(/^(\w+)\(([^)]+)\)$/);
+                if (patternMatch) {
+                  const [, tool, pattern] = patternMatch;
+                  return { tool, prompt: pattern };
+                } else {
+                  // Simple tool name like "Read" or "Write"
+                  return { tool: toolSpec, prompt: `use ${toolSpec} tool` };
+                }
+              });
+
+              permManager.addAllowedPrompts(prompts);
+            }
+
+            // Apply model override
+            if (parsed.modelOverride) {
+              agent.setModel(parsed.modelOverride);
+              setCurrentModel(parsed.modelOverride);
+              setCurrentProvider(agent.getProvider());
+            }
+
+            // Add command to history
+            addHistory({ type: 'user', content: `/${command} ${argString}`.trim() });
+
+            // Execute expanded prompt
+            await runAgent(parsed.expandedPrompt);
+            return true;
+          }
+        }
+
         return false;
+      }
     }
   };
 
@@ -1507,6 +1720,9 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         if (item.content === '__SESSIONS__' && item.meta?.input) {
           return <SessionsTable sessions={item.meta.input as Session[]} />;
         }
+        if (item.content === '__TASKS__' && item.meta?.input) {
+          return <TasksTable tasks={item.meta.input as any[]} />;
+        }
         if (item.content === '__PERMISSIONS__' && item.meta?.rules) {
           return (
             <PermissionRulesDisplay
@@ -1524,6 +1740,9 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings 
         }
         if (item.content === '__MEMORY__' && item.meta?.files) {
           return <MemoryFilesDisplay files={item.meta.files as MemoryFileInfo[]} />;
+        }
+        if (item.content === '__COMMANDS__' && item.meta?.commands) {
+          return <CommandListDisplay commands={item.meta.commands as any[]} />;
         }
         // Check if content is a formatted box (starts with box border)
         if (item.content.trim().startsWith('+---')) {

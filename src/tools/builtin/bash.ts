@@ -6,6 +6,7 @@ import { spawn } from 'child_process';
 import type { Tool, ToolContext, ToolResult } from '../types.js';
 import { BashInputSchema, type BashInput } from '../types.js';
 import { loadToolDescription } from '../../prompts/index.js';
+import { TaskManager } from '../../tasks/task-manager.js';
 
 export const bashTool: Tool<BashInput> = {
   name: 'Bash',
@@ -13,6 +14,37 @@ export const bashTool: Tool<BashInput> = {
   parameters: BashInputSchema,
 
   async execute(input: BashInput, context: ToolContext): Promise<ToolResult> {
+    // Handle background execution
+    if (input.run_in_background) {
+      const taskManager = new TaskManager();
+      const description = input.description || `Bash: ${input.command.slice(0, 50)}`;
+
+      try {
+        const { taskId, outputFile } = await taskManager.createBashTask(
+          input.command,
+          description,
+          context.cwd
+        );
+
+        return {
+          success: true,
+          output: `Background task started: ${taskId}\n\nOutput file: ${outputFile}\n\nUse TaskOutput tool to check status:\n  TaskOutput { action: "status", taskId: "${taskId}" }`,
+          metadata: {
+            title: 'Bash (background)',
+            subtitle: description,
+          },
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          success: false,
+          output: '',
+          error: `Failed to start background task: ${errorMsg}`,
+        };
+      }
+    }
+
+    // Foreground execution (existing code)
     const timeout = input.timeout ?? 30000;
 
     return new Promise((resolve) => {

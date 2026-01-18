@@ -209,6 +209,7 @@ async function main() {
       settingsManager={settingsManager}
       resumeLatest={args.continue}
       permissionSettings={settings.permissions}
+      hooksConfig={settings.hooks}
     />
   );
 }

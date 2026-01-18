@@ -9,9 +9,10 @@ GenCode implements a multi-level configuration system compatible with Claude Cod
 1. [Configuration Hierarchy](#configuration-hierarchy)
 2. [Detailed Flow Diagrams](#detailed-flow-diagrams)
 3. [Merge Strategy](#merge-strategy)
-4. [GenCode vs OpenCode vs Claude Code](#gencode-vs-opencode-vs-claude-code-comparison)
-5. [Usage Examples](#usage-examples)
-6. [API Reference](#api-reference)
+4. [Resource Discovery System](#resource-discovery-system)
+5. [GenCode vs OpenCode vs Claude Code](#gencode-vs-opencode-vs-claude-code-comparison)
+6. [Usage Examples](#usage-examples)
+7. [API Reference](#api-reference)
 
 ---
 
@@ -358,6 +359,189 @@ src/memory/
 ├── types.ts           # Memory types (updated for merge semantics)
 └── memory-manager.ts  # Memory loading (updated for merge semantics)
 ```
+
+---
+
+## Resource Discovery System
+
+GenCode implements a unified resource discovery system for Commands, Skills, and Subagents. Unlike Settings and Memory which use **deep merge** strategies, these resources use a **name-based merge** strategy where resources with the same name from higher priority sources override those from lower priority sources.
+
+### Architecture Overview
+
+```
+src/discovery/
+├── types.ts           # Core types: DiscoverableResource, ResourceParser, FilePattern
+├── path-resolver.ts   # Unified path resolution for all resource levels
+├── file-scanner.ts    # File pattern matching (flat, nested, multiple, single)
+├── base-loader.ts     # Generic resource discovery with merge logic
+└── index.ts           # Public API exports
+```
+
+### Resource Types
+
+All resources implement the `DiscoverableResource` interface:
+
+```typescript
+interface DiscoverableResource {
+  name: string;
+  source: ResourceSource; // { path, level, namespace }
+}
+```
+
+#### Commands
+- **Location**: `commands/*.md`
+- **Pattern**: Flat (all .md files in commands directory)
+- **Format**: Markdown with YAML frontmatter
+- **Loading**: User and project levels
+- **Example**: `~/.gen/commands/commit.md`, `.gen/commands/test.md`
+
+#### Skills
+- **Location**: `skills/*/SKILL.md`
+- **Pattern**: Nested (SKILL.md in each subdirectory)
+- **Format**: Markdown with YAML frontmatter
+- **Loading**: User and project levels
+- **Example**: `~/.gen/skills/database/SKILL.md`
+
+#### Subagents (Custom Agents)
+- **Location**: `agents/*.{json,md}`
+- **Pattern**: Multiple extensions (JSON or Markdown)
+- **Format**: JSON config or Markdown with frontmatter
+- **Loading**: User and project levels
+- **Example**: `~/.gen/agents/ml-engineer.md`, `.gen/agents/code-reviewer.json`
+
+### File Patterns
+
+The unified file scanner supports four pattern types:
+
+| Pattern | Description | Example |
+|---------|-------------|---------|
+| **flat** | Files with extension in directory | `commands/*.md` |
+| **nested** | Specific filename in subdirectories | `skills/*/SKILL.md` |
+| **multiple** | Multiple extensions | `agents/*.{json,md}` |
+| **single** | Single file | `.mcp.json` |
+
+### Priority Rules
+
+Resources follow the same level and namespace priority as Settings:
+
+**Level Priority** (ascending):
+1. `user` - `~/.claude/` and `~/.gen/`
+2. `project` - `.claude/` and `.gen/`
+3. `local` - `.claude.local/` and `.gen.local/` (gitignored)
+4. `managed` - System-wide (future)
+
+**Namespace Priority** (within same level):
+- `claude` < `gen` (gen has higher priority)
+
+**Name-based Merge**:
+- Resources with the same name: higher priority source wins
+- Different names: all resources are loaded
+- Example: If both `~/.gen/commands/test.md` and `.gen/commands/test.md` exist, project level wins
+
+### Discovery Flow
+
+```
+                              ┌─────────────────┐
+                              │  START          │
+                              │  resources = {} │
+                              └────────┬────────┘
+                                       │
+    ╔══════════════════════════════════▼══════════════════════════════════════════╗
+    ║  STEP 1: Scan USER Level (claude then gen)                                  ║
+    ╠═════════════════════════════════════════════════════════════════════════════╣
+    ║   For each dir in [~/.claude/commands, ~/.gen/commands]:               ║
+    ║     - Scan files matching pattern                                           ║
+    ║     - Parse each file with ResourceParser                                   ║
+    ║     - Add to resources map (gen overwrites claude if same name)             ║
+    ╚══════════════════════════════════╤══════════════════════════════════════════╝
+                                       │
+    ╔══════════════════════════════════▼══════════════════════════════════════════╗
+    ║  STEP 2: Scan PROJECT Level (claude then gen)                               ║
+    ╠═════════════════════════════════════════════════════════════════════════════╣
+    ║   For each dir in [.claude/commands, .gen/commands]:                   ║
+    ║     - Scan files matching pattern                                           ║
+    ║     - Parse each file with ResourceParser                                   ║
+    ║     - Add to resources map (overwrites user level if same name)             ║
+    ╚══════════════════════════════════╤══════════════════════════════════════════╝
+                                       │
+    ╔══════════════════════════════════▼══════════════════════════════════════════╗
+    ║  STEP 3: Scan LOCAL Level (optional, claude then gen)                       ║
+    ╠═════════════════════════════════════════════════════════════════════════════╣
+    ║   For each dir in [.claude.local/commands, .gen.local/commands]:       ║
+    ║     - Scan files matching pattern                                           ║
+    ║     - Parse each file with ResourceParser                                   ║
+    ║     - Add to resources map (overwrites project level if same name)          ║
+    ╚══════════════════════════════════╤══════════════════════════════════════════╝
+                                       │
+                              ┌────────▼────────┐
+                              │ Return resources│
+                              │ Map<name, T>    │
+                              └─────────────────┘
+```
+
+### Settings vs Resources Comparison
+
+| Aspect | Settings/Memory | Commands/Skills/Subagents |
+|--------|----------------|--------------------------|
+| **Strategy** | Deep merge | Name-based merge |
+| **Result** | Single merged object | Map of resources |
+| **Conflict** | Later value overwrites | Higher priority source wins |
+| **Arrays** | Concatenate & dedupe | N/A (separate resources) |
+| **Use Case** | Configuration values | Executable resources |
+
+### Extensibility
+
+Adding new resource types requires three steps:
+
+1. **Define Type** (extends `DiscoverableResource`):
+```typescript
+export interface PluginDefinition extends DiscoverableResource {
+  name: string;
+  version: string;
+  description: string;
+  source: ResourceSource;
+}
+```
+
+2. **Implement Parser** (implements `ResourceParser`):
+```typescript
+export class PluginParser implements ResourceParser<PluginDefinition> {
+  async parse(filePath, level, namespace): Promise<PluginDefinition | null> {
+    // Parse plugin.json or PLUGIN.md
+  }
+  isValidName(name: string): boolean {
+    return /^[a-zA-Z0-9_-]+$/.test(name);
+  }
+}
+```
+
+3. **Use Unified Loader**:
+```typescript
+const plugins = await discoverResources(projectRoot, {
+  resourceType: 'Plugin',
+  subdirectory: 'plugins',
+  filePattern: { type: 'nested', filename: 'plugin.json' },
+  parser: new PluginParser(),
+  levels: ['user', 'project'],
+});
+```
+
+### Benefits
+
+- **Code Reuse**: ~481 lines of duplicate code eliminated
+- **Consistency**: Same directory structure and priority rules for all resources
+- **Type Safety**: TypeScript generics ensure type-safe resource handling
+- **Testability**: Easy to test with isolated project-only mode
+- **Extensibility**: New resource types can be added in minutes
+
+### Future Resource Types
+
+When implementing new proposals (e.g., plugins, MCP servers, workflows), prefer using or extending the unified resource discovery system rather than creating separate loading mechanisms. This ensures:
+
+- Consistent user experience (same directories, same priority rules)
+- Automatic support for all levels (user, project, local, managed)
+- Automatic support for both namespaces (.gen and .claude)
+- Less code to write, test, and maintain
 
 ## GenCode vs OpenCode vs Claude Code Comparison
 

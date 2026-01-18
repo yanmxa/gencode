@@ -40,9 +40,12 @@ export class ToolRegistry {
 
   /**
    * Get tool definitions for LLM
+   * Supports wildcard '*' to mean "all tools"
    */
   getDefinitions(toolNames?: string[]): ToolDefinition[] {
-    const names = toolNames ?? this.list();
+    // Support wildcard: if '*' is in the list, expand to all tools
+    const names = toolNames?.includes('*') ? this.list() : (toolNames ?? this.list());
+
     return names
       .map((name) => {
         const tool = this.tools.get(name);

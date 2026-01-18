@@ -384,3 +384,63 @@ export function CompletionMessage({ durationMs, usage, cost }: CompletionMessage
     </Box>
   );
 }
+
+interface CommandDefinition {
+  name: string;
+  description?: string;
+  argumentHint?: string;
+  level: 'user' | 'project';
+  namespace: 'gen' | 'claude';
+}
+
+interface CommandListDisplayProps {
+  commands: CommandDefinition[];
+}
+
+export function CommandListDisplay({ commands }: CommandListDisplayProps) {
+  if (commands.length === 0) {
+    return (
+      <Box marginTop={1}>
+        <Text color={colors.textMuted}>No custom commands found</Text>
+      </Box>
+    );
+  }
+
+  // Group commands by namespace
+  const genCommands = commands.filter(c => c.namespace === 'gen');
+  const claudeCommands = commands.filter(c => c.namespace === 'claude');
+
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text bold color={colors.info}>Available Custom Commands:</Text>
+
+      {genCommands.length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          <Text dimColor>GenCode Commands:</Text>
+          {genCommands.map(cmd => (
+            <Box key={cmd.name} marginLeft={2}>
+              <Text color={colors.success}>/{cmd.name}</Text>
+              {cmd.argumentHint && <Text dimColor> {cmd.argumentHint}</Text>}
+              {cmd.description && <Text dimColor> - {cmd.description}</Text>}
+              <Text dimColor> ({cmd.level})</Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {claudeCommands.length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          <Text dimColor>Claude Code Commands:</Text>
+          {claudeCommands.map(cmd => (
+            <Box key={cmd.name} marginLeft={2}>
+              <Text color={colors.success}>/{cmd.name}</Text>
+              {cmd.argumentHint && <Text dimColor> {cmd.argumentHint}</Text>}
+              {cmd.description && <Text dimColor> - {cmd.description}</Text>}
+              <Text dimColor> ({cmd.level})</Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+}

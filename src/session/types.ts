@@ -6,6 +6,7 @@ import type { Message } from '../providers/types.js';
 import type { CostEstimate } from '../pricing/types.js';
 import type { ConversationSummary, CompressionConfig } from './compression/types.js';
 import type { FileCheckpoint } from '../checkpointing/types.js';
+import type { SubagentType } from '../subagents/types.js';
 
 export interface SessionMetadata {
   id: string;
@@ -29,6 +30,15 @@ export interface SessionMetadata {
     usage?: { inputTokens: number; outputTokens: number };
     cost?: CostEstimate;
   }>;
+
+  // Subagent session fields (Phase 3)
+  isSubagentSession?: boolean; // True if this is a subagent session
+  subagentType?: SubagentType; // Type of subagent (Explore, Plan, Bash, general-purpose)
+  parentSessionId?: string; // Link to parent agent session (for subagents)
+  resumeCount?: number; // Number of times this session has been resumed
+  expiresAt?: string; // ISO 8601 timestamp when session expires
+  originalDescription?: string; // Original task description
+  lastResumedAt?: string; // ISO 8601 timestamp of last resume
 }
 
 export interface Session {

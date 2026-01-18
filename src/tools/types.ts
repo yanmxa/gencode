@@ -27,6 +27,7 @@ export interface QuestionAnswer {
 
 export interface ToolContext {
   cwd: string;
+  sessionId?: string;
   abortSignal?: AbortSignal;
   /** Callback for AskUserQuestion tool to interact with user */
   askUser?: (questions: Question[]) => Promise<QuestionAnswer[]>;
@@ -100,6 +101,8 @@ export type EditInput = z.infer<typeof EditInputSchema>;
 export const BashInputSchema = z.object({
   command: z.string().describe('The bash command to execute'),
   timeout: z.number().optional().describe('Timeout in milliseconds (default: 30000)'),
+  run_in_background: z.boolean().optional().describe('Run command in background and return task ID'),
+  description: z.string().optional().describe('Description of the task (used for background tasks)'),
 });
 export type BashInput = z.infer<typeof BashInputSchema>;
 
@@ -193,14 +196,67 @@ function zodFieldToJsonSchema(field: unknown): Record<string, unknown> {
 
   // Get the inner type for optionals
   let typeName = def?.typeName ?? def?.def?.typeName ?? 'string';
+  let innerField = field;
 
   // Unwrap optional
   if (typeName === 'ZodOptional' || typeName === 'optional') {
     const inner = def?.def?.innerType ?? def?.innerType;
     if (inner) {
+      innerField = inner;
       const innerDef = inner._zod ?? inner._def;
       typeName = innerDef?.typeName ?? innerDef?.def?.typeName ?? 'string';
     }
+  }
+
+  // Handle ZodObject - nested objects
+  if (typeName === 'ZodObject' || typeName === 'object') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const shape = (innerField as any).shape ?? (innerField as any)._zod?.def?.shape ?? (innerField as any)._def?.shape;
+    if (shape) {
+      const properties: Record<string, unknown> = {};
+      const required: string[] = [];
+
+      for (const [key, value] of Object.entries(shape)) {
+        properties[key] = zodFieldToJsonSchema(value);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const valDef = (value as any)._zod ?? (value as any)._def;
+        const isOptional = valDef?.typeName === 'ZodOptional' || valDef?.def?.typeName === 'optional';
+        if (!isOptional) {
+          required.push(key);
+        }
+      }
+
+      return {
+        type: 'object',
+        properties,
+        required: required.length > 0 ? required : undefined,
+        description,
+      };
+    }
+  }
+
+  // Handle ZodEnum - enum types
+  if (typeName === 'ZodEnum' || typeName === 'enum') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const values = (innerField as any)._def?.values ?? (innerField as any)._zod?.def?.values ?? def?.def?.values ?? def?.values;
+    if (values && Array.isArray(values)) {
+      return {
+        type: 'string',
+        enum: values,
+        description,
+      };
+    }
+  }
+
+  // Handle ZodArray - arrays
+  if (typeName === 'ZodArray' || typeName === 'array') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = (innerField as any)._def?.type ?? (innerField as any)._zod?.def?.type ?? def?.def?.type ?? def?.type ?? def?.def?.element ?? def?.element;
+    return {
+      type: 'array',
+      items: items ? zodFieldToJsonSchema(items) : { type: 'string' },
+      description,
+    };
   }
 
   // Map Zod types to JSON Schema types
@@ -209,13 +265,6 @@ function zodFieldToJsonSchema(field: unknown): Record<string, unknown> {
     type = 'number';
   } else if (typeName === 'ZodBoolean' || typeName === 'boolean') {
     type = 'boolean';
-  } else if (typeName === 'ZodArray' || typeName === 'array') {
-    const items = def?.def?.element ?? def?.element;
-    return {
-      type: 'array',
-      items: items ? zodFieldToJsonSchema(items) : { type: 'string' },
-      description,
-    };
   }
 
   return { type, description };

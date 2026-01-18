@@ -2,9 +2,10 @@
 
 - **Proposal ID**: 0010
 - **Author**: mycode team
-- **Status**: Draft
+- **Status**: Implemented
 - **Created**: 2025-01-15
-- **Updated**: 2025-01-15
+- **Updated**: 2026-01-18
+- **Implemented**: 2026-01-18
 
 ## Summary
 
@@ -380,3 +381,153 @@ No breaking changes to existing functionality.
 - [MCP GitHub Repository](https://github.com/modelcontextprotocol)
 - [Claude Code MCP Documentation](https://code.claude.com/docs/en/mcp)
 - [Building MCP Servers](https://modelcontextprotocol.io/quickstart)
+
+---
+
+## Implementation Notes
+
+**Implementation Date**: 2026-01-18
+
+### What Was Implemented
+
+1. **Core Infrastructure (Phase 1-3)**:
+   - MCP SDK integration (`@modelcontextprotocol/sdk@1.6.1`)
+   - Type definitions and configuration system
+   - Client lifecycle management with MCPManager singleton
+   - Tool bridging (MCP tools → gencode Tool format)
+   - Multi-transport support (Stdio, HTTP, SSE) with fallback
+   - Environment variable expansion (`${VAR}`, `${VAR:-default}`)
+
+2. **Configuration System (Phase 2)**:
+   - Hierarchical config loading with fallback (.mcp.json files)
+   - Compatible with Claude Code configuration format
+   - Support for user, project, local, and managed scopes
+   - Runtime environment variable expansion
+
+3. **OAuth Authentication (Phase 4)**:
+   - OAuth 2.0 flow with CSRF protection
+   - Token storage in `~/.gen/mcp-auth.json` (0600 permissions)
+   - Token expiration tracking
+   - OAuth callback server (localhost:19876)
+   - Browser-based authorization flow
+
+4. **Tool Integration**:
+   - Automatic MCP tool loading in tool registry
+   - Tool namespacing (`mcp_<server>_<tool>`)
+   - Permission system integration
+   - Graceful degradation on MCP failures
+
+5. **Documentation**:
+   - Comprehensive user guide (docs/mcp.md)
+   - README updates
+   - Examples for common MCP servers
+
+### What Was Deferred
+
+1. **CLI Commands (Phase 5)**:
+   - `/mcp list`, `/mcp add`, `/mcp auth` commands
+   - Interactive server management
+   - Status display in CLI
+   - **Reason**: Requires deeper understanding of command system architecture
+
+2. **Resources and Prompts (Phase 6)**:
+   - MCP Resources support (read data sources)
+   - MCP Prompts support (template system)
+   - **Reason**: Focused on Tools first for MVP
+
+3. **Advanced Features**:
+   - Server health monitoring
+   - Auto-reconnect on failure
+   - Per-server timeout configuration
+   - Tool caching
+   - **Reason**: Can be added incrementally
+
+### Architecture Decisions
+
+1. **Singleton Pattern for MCPManager**: Ensures single source of truth for all MCP connections
+2. **Lazy Tool Loading**: MCP tools loaded during registry initialization to optimize startup
+3. **Multi-Transport Fallback**: Try StreamableHTTP first, fall back to SSE for compatibility
+4. **Graceful Degradation**: MCP failures don't break the agent, just log warnings
+5. **Namespace Separation**: `mcp_` prefix prevents conflicts with built-in tools
+
+### Known Limitations
+
+1. Only Tools supported (Resources and Prompts not yet implemented)
+2. No CLI commands for server management (config files only)
+3. No visual server status indicators
+4. Failed servers don't auto-reconnect
+5. OAuth flow requires manual browser interaction
+
+### Testing Recommendations
+
+1. **Local Server Test (Stdio)**:
+   ```bash
+   # Create .gen/.mcp.json
+   {
+     "mcpServers": {
+       "filesystem": {
+         "type": "stdio",
+         "command": "npx",
+         "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+       }
+     }
+   }
+   ```
+
+2. **Remote Server Test (HTTP)**:
+   ```bash
+   # Create ~/.gen/.mcp.json
+   {
+     "mcpServers": {
+       "github": {
+         "type": "http",
+         "url": "${GITHUB_MCP_URL}",
+         "headers": {
+           "Authorization": "Bearer ${GITHUB_TOKEN}"
+         }
+       }
+     }
+   }
+   ```
+
+3. **Environment Variable Test**:
+   - Test `${VAR}` and `${VAR:-default}` syntax
+   - Verify expansion in command, args, env, url, headers
+
+### Future Enhancements
+
+1. **CLI Commands**: Add `/mcp` commands for interactive management
+2. **Resources Support**: Implement MCP Resources for data sources
+3. **Prompts Support**: Implement MCP Prompts for templates
+4. **Health Monitoring**: Track server health and auto-reconnect
+5. **UI Improvements**: Server status in CLI, better error messages
+6. **Streaming**: Support streaming tool execution
+7. **Caching**: Cache tool definitions for performance
+
+### Files Created
+
+**Core** (10 files):
+- src/mcp/types.ts
+- src/mcp/client.ts
+- src/mcp/bridge.ts
+- src/mcp/env-expand.ts
+- src/mcp/config.ts
+- src/mcp/connection.ts
+- src/mcp/manager.ts
+- src/mcp/auth.ts
+- src/mcp/oauth-callback.ts
+- src/mcp/oauth-provider.ts
+- src/mcp/index.ts
+
+**Documentation** (1 file):
+- docs/mcp.md
+
+**Modified** (3 files):
+- package.json (added MCP SDK and 'open' dependencies)
+- README.md (added MCP feature)
+- src/tools/index.ts (MCP tool loading)
+
+### Dependencies Added
+
+- `@modelcontextprotocol/sdk@^1.6.1` - Official MCP SDK
+- `open@^10.1.0` - Browser opening for OAuth flow

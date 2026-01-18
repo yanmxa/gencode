@@ -2,6 +2,9 @@
  * Tools System - Built-in tools and registry
  */
 
+import { logger } from '../shared/logger.js';
+import { isDebugEnabled } from '../shared/debug.js';
+
 export * from './types.js';
 export { ToolRegistry } from './registry.js';
 
@@ -27,9 +30,13 @@ export type {
   AskUserQuestionInput,
   AskUserQuestionResult,
 } from './builtin/ask-user.js';
+export { taskoutputTool } from './builtin/taskoutput.js';
 
 // Plan mode tools
 export { enterPlanModeTool, exitPlanModeTool } from '../planning/index.js';
+
+// Subagent tools
+export { taskTool } from '../subagents/index.js';
 
 import { ToolRegistry } from './registry.js';
 import { readTool } from './builtin/read.js';
@@ -42,12 +49,30 @@ import { webfetchTool } from './builtin/webfetch.js';
 import { websearchTool } from './builtin/websearch.js';
 import { todowriteTool } from './builtin/todowrite.js';
 import { askUserQuestionTool } from './builtin/ask-user.js';
+import { taskoutputTool } from './builtin/taskoutput.js';
 import { enterPlanModeTool, exitPlanModeTool } from '../planning/index.js';
+import { taskTool } from '../subagents/index.js';
+import { createSkillTool } from '../skills/index.js';
+
+// Mutex for preventing concurrent registry initialization
+let registryInitPromise: Promise<ToolRegistry> | null = null;
 
 /**
  * Create a registry with all built-in tools
+ * Now async to support dynamic skill discovery and MCP tools
+ *
+ * Thread-safe: Uses a mutex to prevent concurrent initialization
+ *
+ * @param cwd - Current working directory for skill discovery
  */
-export function createDefaultRegistry(): ToolRegistry {
+export async function createDefaultRegistry(cwd: string): Promise<ToolRegistry> {
+  // If initialization is already in progress, wait for it
+  if (registryInitPromise) {
+    return registryInitPromise;
+  }
+
+  // Start new initialization
+  registryInitPromise = (async () => {
   const registry = new ToolRegistry();
   registry.registerAll([
     readTool,
@@ -60,10 +85,52 @@ export function createDefaultRegistry(): ToolRegistry {
     websearchTool,
     todowriteTool,
     askUserQuestionTool,
+    taskoutputTool,
     enterPlanModeTool,
     exitPlanModeTool,
+    taskTool,
   ]);
+
+  // Dynamically create and register Skill tool
+  const skillTool = await createSkillTool(cwd);
+  registry.register(skillTool);
+
+  // Load MCP tools if available
+  try {
+    const { getMCPManager, loadMCPConfig } = await import('../mcp/index.js');
+    const mcpConfig = await loadMCPConfig(cwd);
+    const mcpManager = getMCPManager();
+
+    // Initialize MCP manager if not already initialized
+    if (!mcpManager.isInitialized()) {
+      await mcpManager.initialize(mcpConfig);
+    }
+
+    // Get all MCP tools
+    const mcpTools = await mcpManager.getAllTools();
+    if (mcpTools.length > 0) {
+      registry.registerAll(mcpTools);
+      if (isDebugEnabled('mcp')) {
+        logger.debug('MCP', `Loaded ${mcpTools.length} tools from MCP servers`);
+      }
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    logger.warn('MCP', 'MCP integration failed to load', {
+      error: errorMsg,
+      hint: 'Check .mcp.json configuration. MCP is optional - system will continue without it.',
+    });
+  }
+
   return registry;
+  })();
+
+  try {
+    return await registryInitPromise;
+  } finally {
+    // Clear the promise after initialization completes
+    registryInitPromise = null;
+  }
 }
 
 /**
@@ -80,6 +147,8 @@ export const builtinTools = [
   websearchTool,
   todowriteTool,
   askUserQuestionTool,
+  taskoutputTool,
   enterPlanModeTool,
   exitPlanModeTool,
+  taskTool,
 ];

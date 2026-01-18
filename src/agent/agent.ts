@@ -24,17 +24,21 @@ import {
   type AllowedPrompt,
 } from '../planning/index.js';
 import { initCheckpointManager } from '../checkpointing/index.js';
+import { HooksManager } from '../hooks/index.js';
+import type { HooksConfig } from '../hooks/index.js';
 
 // Type for askUser callback
 export type AskUserCallback = (questions: Question[]) => Promise<QuestionAnswer[]>;
 
 export class Agent {
   private provider: LLMProvider;
-  private registry: ToolRegistry;
+  private registry: ToolRegistry | null = null; // Lazy-initialized for async skill discovery
+  private registryPromise: Promise<ToolRegistry> | null = null; // Mutex for registry initialization
   private permissions: PermissionManager;
   private sessionManager: SessionManager;
   private memoryManager: MemoryManager;
   private planModeManager: PlanModeManager;
+  private hooksManager: HooksManager;
   private config: AgentConfig;
   private sessionId: string | null = null;
   private loadedMemory: LoadedMemory | null = null;
@@ -51,7 +55,7 @@ export class Agent {
       provider: config.provider,
       authMethod: config.authMethod,
     });
-    this.registry = createDefaultRegistry();
+    // Registry is now initialized lazily in ensureRegistry()
     this.permissions = new PermissionManager({
       config: config.permissions,
       projectPath: config.cwd,
@@ -61,9 +65,37 @@ export class Agent {
     });
     this.memoryManager = new MemoryManager();
     this.planModeManager = getPlanModeManager();
+    this.hooksManager = new HooksManager();
 
     // Set compression engine with current model
     this.sessionManager.setCompressionEngine(this.provider, this.config.model);
+  }
+
+  /**
+   * Ensure tool registry is initialized (lazy loading for async skill discovery)
+   * Thread-safe: Prevents concurrent initialization using a mutex
+   */
+  private async ensureRegistry(): Promise<ToolRegistry> {
+    // If already initialized, return immediately
+    if (this.registry) {
+      return this.registry;
+    }
+
+    // If initialization is in progress, wait for it
+    if (this.registryPromise) {
+      return this.registryPromise;
+    }
+
+    // Start new initialization
+    this.registryPromise = createDefaultRegistry(this.config.cwd ?? process.cwd());
+
+    try {
+      this.registry = await this.registryPromise;
+      return this.registry;
+    } finally {
+      // Clear the promise after initialization completes
+      this.registryPromise = null;
+    }
   }
 
   /**
@@ -71,6 +103,15 @@ export class Agent {
    */
   async initializePermissions(settings?: PermissionSettings): Promise<void> {
     await this.permissions.initialize(settings);
+  }
+
+  /**
+   * Initialize hooks system (load hooks configuration)
+   */
+  initializeHooks(hooksConfig?: HooksConfig): void {
+    if (hooksConfig) {
+      this.hooksManager.setConfig(hooksConfig);
+    }
   }
 
   /**
@@ -356,6 +397,14 @@ export class Agent {
     // Initialize checkpoint manager for this session
     initCheckpointManager(this.sessionId);
 
+    // Trigger SessionStart hooks
+    await this.hooksManager.trigger('SessionStart', {
+      event: 'SessionStart',
+      cwd: this.config.cwd ?? process.cwd(),
+      sessionId: this.sessionId,
+      timestamp: new Date(),
+    });
+
     return this.sessionId;
   }
 
@@ -372,6 +421,14 @@ export class Agent {
 
     // CheckpointManager already restored by SessionManager.load()
     // No need to call initCheckpointManager again
+
+    // Trigger SessionStart hooks (for resumed sessions)
+    await this.hooksManager.trigger('SessionStart', {
+      event: 'SessionStart',
+      cwd: this.config.cwd ?? process.cwd(),
+      sessionId: this.sessionId,
+      timestamp: new Date(),
+    });
 
     return true;
   }
@@ -477,8 +534,11 @@ export class Agent {
     while (turns < maxTurns) {
       turns++;
 
+      // Ensure tool registry is initialized (lazy loading)
+      const registry = await this.ensureRegistry();
+
       // Get tool definitions (filtered by plan mode if active)
-      const toolDefs = this.registry.getFilteredDefinitions(this.config.tools);
+      const toolDefs = registry.getFilteredDefinitions(this.config.tools);
 
       // Call LLM
       let response;
@@ -693,6 +753,14 @@ export class Agent {
           }
         }
 
+        // Trigger Stop hooks when conversation ends
+        await this.hooksManager.trigger('Stop', {
+          event: 'Stop',
+          cwd: this.config.cwd ?? process.cwd(),
+          sessionId: this.sessionId ?? undefined,
+          timestamp: new Date(),
+        });
+
         return;
       }
 
@@ -709,11 +777,43 @@ export class Agent {
       for (const call of toolCalls) {
         yield { type: 'tool_start', id: call.id, name: call.name, input: call.input };
 
+        // Trigger PreToolUse hooks
+        const preHookResults = await this.hooksManager.trigger('PreToolUse', {
+          event: 'PreToolUse',
+          cwd,
+          toolName: call.name,
+          toolInput: call.input as Record<string, unknown>,
+          sessionId: this.sessionId ?? undefined,
+          timestamp: new Date(),
+        });
+
+        // Check if any PreToolUse hook blocked the action
+        const preHookBlocked = preHookResults.some(r => r.blocked);
+        if (preHookBlocked) {
+          const blockingHook = preHookResults.find(r => r.blocked);
+          const result = {
+            success: false,
+            output: '',
+            error: `Blocked by PreToolUse hook: ${blockingHook?.error || 'Hook returned exit code 2'}`,
+          };
+          yield { type: 'tool_result', id: call.id, name: call.name, result };
+          toolResults.push({
+            type: 'tool_result',
+            toolUseId: call.id,
+            content: result.error,
+            isError: true,
+          });
+          continue; // Skip to next tool
+        }
+
         try {
+          // Ensure tool registry is initialized
+          const registry = await this.ensureRegistry();
+
           // Protect permission check and tool execution
           const allowed = await this.permissions.requestPermission(call.name, call.input);
           const result = allowed
-            ? await this.registry.execute(call.name, call.input, toolContext)
+            ? await registry.execute(call.name, call.input, toolContext)
             : { success: false, output: '', error: 'Permission denied by user' };
 
           yield { type: 'tool_result', id: call.id, name: call.name, result };
@@ -722,6 +822,18 @@ export class Agent {
             toolUseId: call.id,
             content: result.success ? result.output : (result.error ?? 'Unknown error'),
             isError: !result.success,
+          });
+
+          // Trigger PostToolUse or PostToolUseFailure hooks
+          const hookEvent = result.success ? 'PostToolUse' : 'PostToolUseFailure';
+          await this.hooksManager.trigger(hookEvent, {
+            event: hookEvent,
+            cwd,
+            toolName: call.name,
+            toolInput: call.input as Record<string, unknown>,
+            toolResult: result,
+            sessionId: this.sessionId ?? undefined,
+            timestamp: new Date(),
           });
         } catch (error) {
           // Catch permission check or tool execution errors
@@ -737,6 +849,17 @@ export class Agent {
             toolUseId: call.id,
             content: errorMsg,
             isError: true,
+          });
+
+          // Trigger PostToolUseFailure hooks
+          await this.hooksManager.trigger('PostToolUseFailure', {
+            event: 'PostToolUseFailure',
+            cwd,
+            toolName: call.name,
+            toolInput: call.input as Record<string, unknown>,
+            toolResult: errorResult,
+            sessionId: this.sessionId ?? undefined,
+            timestamp: new Date(),
           });
         }
       }

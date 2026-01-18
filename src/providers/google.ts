@@ -226,15 +226,29 @@ export class GoogleProvider implements LLMProvider {
   }
 
   private convertTools(tools: ToolDefinition[]): Tool[] {
-    return [
+    const result = [
       {
-        functionDeclarations: tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          parameters: this.convertSchema(tool.parameters),
-        })),
+        functionDeclarations: tools.map((tool) => {
+          const convertedSchema = this.convertSchema(tool.parameters);
+
+          // Debug: Log Task tool schema
+          if (tool.name === 'Task' && process.env.DEBUG_SCHEMA) {
+            console.error('[Google] Task tool input schema:');
+            console.error(JSON.stringify(tool.parameters, null, 2));
+            console.error('[Google] Task tool converted schema:');
+            console.error(JSON.stringify(convertedSchema, null, 2));
+          }
+
+          return {
+            name: tool.name,
+            description: tool.description,
+            parameters: convertedSchema,
+          };
+        }),
       },
     ];
+
+    return result;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

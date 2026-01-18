@@ -95,6 +95,21 @@ export interface Settings {
     ctrlCClear?: boolean; // Default: true - Clear input on Ctrl+C if text present
   };
 
+  // Hooks configuration (event-driven shell commands)
+  hooks?: {
+    [event: string]: Array<{
+      matcher?: string;
+      hooks: Array<{
+        type: 'command' | 'prompt';
+        command?: string;
+        prompt?: string;
+        timeout?: number;
+        statusMessage?: string;
+        blocking?: boolean;
+      }>;
+    }>;
+  };
+
   // Managed-only fields (cannot be overridden by lower levels)
   strictKnownMarketplaces?: unknown[];
 

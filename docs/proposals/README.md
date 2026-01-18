@@ -19,15 +19,15 @@ This directory contains enhancement proposals for the gencode project. Each prop
 |----|-------|--------|
 | [0001](./0001-web-fetch-tool.md) | WebFetch Tool | Implemented |
 | [0002](./0002-web-search-tool.md) | WebSearch Tool | Implemented |
-| [0003](./0003-task-subagents.md) | Task Tool & Subagents | Draft |
+| [0003](./0003-task-subagents.md) | Task Tool & Subagents | Implemented |
 | [0004](./0004-plan-mode.md) | Plan Mode | Implemented |
 | [0005](./0005-todo-system.md) | Todo System | Implemented |
 | [0006](./0006-memory-system.md) | Memory System (MYCODE.md) | Implemented |
 | [0007](./0007-context-management.md) | Context Management | Implemented ⚠️ |
 | [0008](./0008-checkpointing.md) | Checkpointing | Implemented ⚠️ |
-| [0009](./0009-hooks-system.md) | Hooks System | Draft |
-| [0010](./0010-mcp-integration.md) | MCP Integration | Draft |
-| [0021](./0021-skills-system.md) | Skills System | Draft |
+| [0009](./0009-hooks-system.md) | Hooks System | Implemented |
+| [0010](./0010-mcp-integration.md) | MCP Integration | Implemented |
+| [0021](./0021-skills-system.md) | Skills System | Implemented |
 | [0041](./0041-configuration-system.md) | Configuration System | Implemented |
 | [0042](./0042-prompt-optimization.md) | Prompt System Optimization | Implemented |
 
