@@ -5,7 +5,7 @@
  * knowledge and workflows from SKILL.md files.
  */
 
-import type { DiscoverableResource, ResourceSource } from '../../infrastructure/discovery/types.js';
+import type { DiscoverableResource, ResourceSource } from '../../base/discovery/types.js';
 
 /**
  * Skill metadata from YAML frontmatter

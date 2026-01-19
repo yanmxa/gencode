@@ -6,7 +6,7 @@
  */
 
 import type { Message } from '../../core/providers/types.js';
-import type { DiscoverableResource, ResourceSource } from '../../infrastructure/discovery/types.js';
+import type { DiscoverableResource, ResourceSource } from '../../base/discovery/types.js';
 
 /**
  * Subagent Types

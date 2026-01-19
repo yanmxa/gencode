@@ -11,8 +11,8 @@
 
 import { spawn } from 'child_process';
 import type { HookDefinition, HookContext, HookResult, HookStdinPayload } from './types.js';
-import { isVerboseDebugEnabled } from '../../infrastructure/utils/debug.js';
-import { logger } from '../../infrastructure/utils/logger.js';
+import { isVerboseDebugEnabled } from '../../base/utils/debug.js';
+import { logger } from '../../base/utils/logger.js';
 
 // =============================================================================
 // Constants

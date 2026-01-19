@@ -20,7 +20,7 @@
 
 import { Subagent } from '../src/extensions/subagents/subagent.js';
 import { SUBAGENT_CONFIGS } from '../src/extensions/subagents/configs.js';
-import { isVerboseDebugEnabled } from '../src/infrastructure/utils/debug.js';
+import { isVerboseDebugEnabled } from '../src/base/utils/debug.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 

@@ -37,7 +37,7 @@ import type {
   MemoryMergeStrategy,
 } from './types.js';
 import { DEFAULT_MEMORY_CONFIG } from './types.js';
-import { getManagedPaths, GEN_CONFIG_ENV } from '../../infrastructure/config/types.js';
+import { getManagedPaths, GEN_CONFIG_ENV } from '../../base/config/types.js';
 
 /**
  * Result of loading files at a level with merge strategy

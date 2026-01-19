@@ -2,8 +2,8 @@
  * Tools System - Built-in tools and registry
  */
 
-import { logger } from '../../infrastructure/utils/logger.js';
-import { isDebugEnabled } from '../../infrastructure/utils/debug.js';
+import { logger } from '../../base/utils/logger.js';
+import { isDebugEnabled } from '../../base/utils/debug.js';
 
 export * from './types.js';
 export { ToolRegistry } from './registry.js';

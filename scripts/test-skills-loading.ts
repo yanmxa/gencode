@@ -15,7 +15,7 @@
  */
 
 import { SkillDiscovery } from '../src/extensions/skills/discovery.js';
-import { logger } from '../src/infrastructure/utils/logger.js';
+import { logger } from '../src/base/utils/logger.js';
 import * as path from 'node:path';
 
 const args = process.argv.slice(2);

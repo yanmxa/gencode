@@ -9,7 +9,7 @@ import { render } from 'ink';
 import React from 'react';
 import { App } from './components/App.js';
 import type { AgentConfig } from '../core/agent/types.js';
-import { SettingsManager, ProvidersConfigManager, type Settings, type Provider } from '../infrastructure/config/index.js';
+import { SettingsManager, ProvidersConfigManager, type Settings, type Provider } from '../base/config/index.js';
 import type { AuthMethod } from '../core/providers/types.js';
 import { inferProvider, inferAuthMethod } from '../core/providers/index.js';
 

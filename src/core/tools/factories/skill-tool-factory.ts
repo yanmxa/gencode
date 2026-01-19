@@ -9,9 +9,9 @@ import { z } from 'zod';
 import type { Tool, ToolContext, ToolResult } from '../types.js';
 import { SkillDiscovery } from '../../../extensions/skills/manager.js';
 import type { SkillInput, SkillDefinition } from '../../../extensions/skills/types.js';
-import { formatBoxedMessage } from '../../../infrastructure/utils/format-utils.js';
-import { isVerboseDebugEnabled } from '../../../infrastructure/utils/debug.js';
-import { logger } from '../../../infrastructure/utils/logger.js';
+import { formatBoxedMessage } from '../../../base/utils/format-utils.js';
+import { isVerboseDebugEnabled } from '../../../base/utils/debug.js';
+import { logger } from '../../../base/utils/logger.js';
 
 // Module-level discovery instance (shared across tool invocations in production)
 // This is a singleton for performance, but can be reset for testing

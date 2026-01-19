@@ -17,8 +17,8 @@
  *   npm run test:components -- --verbose # Verbose errors
  */
 
-import { LoadingReporter } from '../src/infrastructure/utils/loading-reporter.js';
-import { logger } from '../src/infrastructure/utils/logger.js';
+import { LoadingReporter } from '../src/base/utils/loading-reporter.js';
+import { logger } from '../src/base/utils/logger.js';
 import { SkillDiscovery } from '../src/extensions/skills/manager.js';
 import { discoverCommands } from '../src/extensions/commands/discovery.js';
 import { CustomAgentLoader } from '../src/extensions/subagents/manager.js';

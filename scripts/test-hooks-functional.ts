@@ -15,7 +15,7 @@
  */
 
 import { HooksManager } from '../src/extensions/hooks/hooks-manager.js';
-import { isVerboseDebugEnabled } from '../src/infrastructure/utils/debug.js';
+import { isVerboseDebugEnabled } from '../src/base/utils/debug.js';
 import type { HooksConfig } from '../src/extensions/hooks/types.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';

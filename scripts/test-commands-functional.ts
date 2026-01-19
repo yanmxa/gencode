@@ -15,7 +15,7 @@
  */
 
 import { CommandManager } from '../src/extensions/commands/manager.js';
-import { isVerboseDebugEnabled } from '../src/infrastructure/utils/debug.js';
+import { isVerboseDebugEnabled } from '../src/base/utils/debug.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 

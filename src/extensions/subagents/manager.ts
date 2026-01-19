@@ -26,7 +26,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
-import { discoverResources } from '../../infrastructure/discovery/index.js';
+import { discoverResources } from '../../base/discovery/index.js';
 import { CustomAgentParser } from './parser.js';
 import type { SubagentConfig, CustomAgentDefinition, customAgentToConfig } from './types.js';
 import { customAgentToConfig as convertToConfig } from './types.js';

@@ -5,7 +5,7 @@
  * compatible with Claude Code and OpenCode formats.
  */
 
-import type { DiscoverableResource, ResourceSource } from '../../infrastructure/discovery/types.js';
+import type { DiscoverableResource, ResourceSource } from '../../base/discovery/types.js';
 
 export interface CommandDefinition extends DiscoverableResource {
   /** Command name (from filename without .md extension) */

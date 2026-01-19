@@ -9,8 +9,8 @@ import type { MCPConfig, MCPServer, MCPStatus, MCPServerInfo } from './types.js'
 import { createMCPClient } from './client.js';
 import { connectToServer, disconnectFromServer } from './connection.js';
 import { bridgeMCPTools } from '../../core/tools/factories/mcp-tool-factory.js';
-import { logger } from '../../infrastructure/utils/logger.js';
-import { isDebugEnabled } from '../../infrastructure/utils/debug.js';
+import { logger } from '../../base/utils/logger.js';
+import { isDebugEnabled } from '../../base/utils/debug.js';
 
 /**
  * MCP Manager - Singleton

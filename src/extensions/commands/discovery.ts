@@ -9,7 +9,7 @@
  * 4. .gen/commands/ (project-level GenCode)
  */
 
-import { discoverResources } from '../../infrastructure/discovery/index.js';
+import { discoverResources } from '../../base/discovery/index.js';
 import { CommandParser } from './parser.js';
 import type { CommandDefinition } from './types.js';
 

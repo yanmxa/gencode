@@ -8,9 +8,9 @@ import matter from 'gray-matter';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { SkillDefinition } from './types.js';
-import type { ResourceParser, ResourceLevel, ResourceNamespace } from '../../infrastructure/discovery/types.js';
-import { isValidResourceName } from '../../infrastructure/utils/validation.js';
-import { validateSkillFrontmatter } from '../../infrastructure/utils/config-validator.js';
+import type { ResourceParser, ResourceLevel, ResourceNamespace } from '../../base/discovery/types.js';
+import { isValidResourceName } from '../../base/utils/validation.js';
+import { validateSkillFrontmatter } from '../../base/utils/config-validator.js';
 
 /**
  * Parse a SKILL.md file and return a SkillDefinition

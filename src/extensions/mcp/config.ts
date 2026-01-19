@@ -18,7 +18,7 @@ import * as path from 'path';
 import * as os from 'os';
 import type { MCPConfig, MCPServerConfig } from './types.js';
 import { expandServerConfig } from './env-expand.js';
-import { getManagedPaths as getBaseManagedPaths, findProjectRoot as baseProjectRoot } from '../../infrastructure/utils/path-utils.js';
+import { getManagedPaths as getBaseManagedPaths, findProjectRoot as baseProjectRoot } from '../../base/utils/path-utils.js';
 
 /**
  * Get managed MCP config file paths

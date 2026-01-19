@@ -9,7 +9,7 @@
  */
 
 import type { HookDefinition, HookContext, HookStdinPayload } from './types.js';
-import { STATUS_SYMBOLS } from '../../infrastructure/utils/format-utils.js';
+import { STATUS_SYMBOLS } from '../../base/utils/format-utils.js';
 
 // =============================================================================
 // Variable Expansion

@@ -9,9 +9,9 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { z } from 'zod';
-import type { ResourceParser, ResourceLevel, ResourceNamespace } from '../../infrastructure/discovery/types.js';
+import type { ResourceParser, ResourceLevel, ResourceNamespace } from '../../base/discovery/types.js';
 import type { CustomAgentDefinition } from './types.js';
-import { logger } from '../../infrastructure/utils/logger.js';
+import { logger } from '../../base/utils/logger.js';
 
 /**
  * Custom agent configuration schema

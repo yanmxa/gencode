@@ -6,7 +6,7 @@
  * and merges them with priority: project gen > project claude > user gen > user claude
  */
 
-import { ResourceManager } from '../../infrastructure/discovery/index.js';
+import { ResourceManager } from '../../base/discovery/index.js';
 import { SkillParser } from './parser.js';
 import type { SkillDefinition } from './types.js';
 
