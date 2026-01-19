@@ -14,7 +14,7 @@
  */
 
 import { createSkillTool, resetSkillDiscovery } from '../src/skills/skill-tool.js';
-import { isVerboseDebugEnabled } from '../src/shared/debug.js';
+import { isVerboseDebugEnabled } from '../src/common/debug.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 

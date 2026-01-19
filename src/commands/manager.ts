@@ -8,8 +8,8 @@
 import { discoverCommands } from './discovery.js';
 import { expandTemplate, parseArguments } from './expander.js';
 import type { CommandDefinition, ParsedCommand, ExpansionContext } from './types.js';
-import { isVerboseDebugEnabled } from '../shared/debug.js';
-import { logger } from '../shared/logger.js';
+import { isVerboseDebugEnabled } from '../common/debug.js';
+import { logger } from '../common/logger.js';
 
 export class CommandManager {
   private commands: Map<string, CommandDefinition> = new Map();

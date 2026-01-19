@@ -17,7 +17,7 @@
  */
 
 import { CustomAgentLoader } from '../src/subagents/custom-agent-loader.js';
-import { logger } from '../src/shared/logger.js';
+import { logger } from '../src/common/logger.js';
 
 const args = process.argv.slice(2);
 const verbose = args.includes('--verbose');

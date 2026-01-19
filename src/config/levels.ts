@@ -8,7 +8,6 @@
 
 import * as path from 'path';
 import * as os from 'os';
-import * as fs from 'fs/promises';
 import {
   ConfigLevelType,
   GEN_DIR,
@@ -19,6 +18,10 @@ import {
   GEN_CONFIG_ENV,
   getManagedPaths,
 } from './types.js';
+import { pathExists, findProjectRoot } from '../common/path-utils.js';
+
+// Re-export for backward compatibility
+export { findProjectRoot };
 
 /**
  * Configuration path info for a specific namespace
@@ -39,57 +42,6 @@ export interface ResolvedLevel {
   priority: number;
   paths: ConfigPathInfo[];
   description: string;
-}
-
-/**
- * Find the project root by walking up the directory tree
- */
-export async function findProjectRoot(cwd: string): Promise<string> {
-  let current = path.resolve(cwd);
-  const root = path.parse(current).root;
-
-  while (current !== root) {
-    // Check for git directory
-    try {
-      await fs.access(path.join(current, '.git'));
-      return current;
-    } catch {
-      // Not a git root, continue
-    }
-
-    // Check for .gen or .claude directories
-    try {
-      await fs.access(path.join(current, GEN_DIR));
-      return current;
-    } catch {
-      // Continue
-    }
-
-    try {
-      await fs.access(path.join(current, CLAUDE_DIR));
-      return current;
-    } catch {
-      // Continue
-    }
-
-    const parent = path.dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-
-  return cwd;
-}
-
-/**
- * Check if a path exists
- */
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**

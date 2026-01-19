@@ -15,7 +15,7 @@
  */
 
 import { HooksManager } from '../src/hooks/hooks-manager.js';
-import { logger } from '../src/shared/logger.js';
+import { logger } from '../src/common/logger.js';
 
 const args = process.argv.slice(2);
 const verbose = args.includes('--verbose');

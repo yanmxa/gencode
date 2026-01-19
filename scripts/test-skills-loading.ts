@@ -15,7 +15,7 @@
  */
 
 import { SkillDiscovery } from '../src/skills/discovery.js';
-import { logger } from '../src/shared/logger.js';
+import { logger } from '../src/common/logger.js';
 import * as path from 'node:path';
 
 const args = process.argv.slice(2);

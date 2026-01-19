@@ -40,13 +40,3 @@ export async function discoverCommands(
   });
 }
 
-/**
- * Watch command directories for changes (for future hot-reload support)
- */
-export async function watchCommandDirectories(
-  projectRoot: string,
-  onChange: () => void
-): Promise<void> {
-  // TODO: Implement file watching for hot reload
-  // For now, commands are loaded once at initialization
-}

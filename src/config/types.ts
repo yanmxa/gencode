@@ -167,36 +167,14 @@ export const SETTINGS_LOCAL_FILE_NAME = 'settings.local.json';
 export const MANAGED_SETTINGS_FILE_NAME = 'managed-settings.json';
 export const PROVIDERS_FILE_NAME = 'providers.json';
 
-// Directory names
-export const GEN_DIR = '.gen';
-export const CLAUDE_DIR = '.claude';
+// Directory names - imported from common utilities and re-exported
+import { GEN_DIR, CLAUDE_DIR, getManagedPaths, type ManagedPaths } from '../common/path-utils.js';
+export { GEN_DIR, CLAUDE_DIR, getManagedPaths };
+export type { ManagedPaths };
 
 // User directory paths
 export const USER_GEN_DIR = path.join(os.homedir(), GEN_DIR);
 export const USER_CLAUDE_DIR = path.join(os.homedir(), CLAUDE_DIR);
-
-// Managed settings locations by platform
-export function getManagedPaths(): { gen: string; claude: string } {
-  const platform = os.platform();
-
-  if (platform === 'darwin') {
-    return {
-      gen: '/Library/Application Support/GenCode',
-      claude: '/Library/Application Support/ClaudeCode',
-    };
-  } else if (platform === 'win32') {
-    return {
-      gen: 'C:\\Program Files\\GenCode',
-      claude: 'C:\\Program Files\\ClaudeCode',
-    };
-  } else {
-    // Linux and other Unix-like systems
-    return {
-      gen: '/etc/gencode',
-      claude: '/etc/claude-code',
-    };
-  }
-}
 
 // =============================================================================
 // Legacy Types (for backward compatibility)

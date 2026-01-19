@@ -9,8 +9,8 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { SkillDefinition } from './types.js';
 import type { ResourceParser, ResourceLevel, ResourceNamespace } from '../discovery/types.js';
-import { isValidResourceName } from '../shared/validation.js';
-import { validateSkillFrontmatter } from '../shared/config-validator.js';
+import { isValidResourceName } from '../common/validation.js';
+import { validateSkillFrontmatter } from '../common/config-validator.js';
 
 /**
  * Parse a SKILL.md file and return a SkillDefinition

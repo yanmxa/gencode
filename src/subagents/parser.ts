@@ -11,7 +11,7 @@ import * as path from 'path';
 import { z } from 'zod';
 import type { ResourceParser, ResourceLevel, ResourceNamespace } from '../discovery/types.js';
 import type { CustomAgentDefinition } from './types.js';
-import { logger } from '../shared/logger.js';
+import { logger } from '../common/logger.js';
 
 /**
  * Custom agent configuration schema

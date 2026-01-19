@@ -18,52 +18,26 @@ import * as path from 'path';
 import * as os from 'os';
 import type { MCPConfig, MCPServerConfig } from './types.js';
 import { expandServerConfig } from './env-expand.js';
+import { getManagedPaths as getBaseManagedPaths, findProjectRoot as baseProjectRoot } from '../common/path-utils.js';
 
 /**
- * Get managed paths for MCP config
+ * Get managed MCP config file paths
  */
 function getManagedPaths(): { gen: string; claude: string } {
-  const platform = os.platform();
-
-  if (platform === 'darwin') {
-    return {
-      gen: '/Library/Application Support/GenCode/managed-mcp.json',
-      claude: '/Library/Application Support/ClaudeCode/managed-mcp.json',
-    };
-  } else if (platform === 'win32') {
-    return {
-      gen: 'C:\\Program Files\\GenCode\\managed-mcp.json',
-      claude: 'C:\\Program Files\\ClaudeCode\\managed-mcp.json',
-    };
-  } else {
-    // Linux and other Unix-like systems
-    return {
-      gen: '/etc/gencode/managed-mcp.json',
-      claude: '/etc/claude-code/managed-mcp.json',
-    };
-  }
+  const basePaths = getBaseManagedPaths();
+  return {
+    gen: path.join(basePaths.gen, 'managed-mcp.json'),
+    claude: path.join(basePaths.claude, 'managed-mcp.json'),
+  };
 }
 
 /**
  * Find project root (directory containing .git)
+ * Wrapper that returns null instead of cwd when not found
  */
 async function findProjectRoot(cwd: string): Promise<string | null> {
-  let current = cwd;
-
-  while (true) {
-    try {
-      const gitPath = path.join(current, '.git');
-      await fs.stat(gitPath);
-      return current;
-    } catch {
-      const parent = path.dirname(current);
-      if (parent === current) {
-        // Reached filesystem root
-        return null;
-      }
-      current = parent;
-    }
-  }
+  const result = await baseProjectRoot(cwd);
+  return result === cwd ? null : result;
 }
 
 /**

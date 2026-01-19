@@ -10,8 +10,8 @@
 import type { DiscoverableResource, DiscoveryConfig, ResourceDirectory } from './types.js';
 import { getResourceDirectories, findProjectRoot } from './path-resolver.js';
 import { scanDirectory, extractResourceName } from './file-scanner.js';
-import { logger } from '../shared/logger.js';
-import { isDebugEnabled } from '../shared/debug.js';
+import { logger } from '../common/logger.js';
+import { isDebugEnabled } from '../common/debug.js';
 
 /**
  * Discover resources from all configured sources

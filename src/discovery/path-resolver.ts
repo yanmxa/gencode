@@ -11,90 +11,17 @@
 
 import * as path from 'path';
 import * as os from 'os';
-import * as fs from 'fs/promises';
 import type { ResourceLevel, ResourceNamespace, ResourceDirectory } from './types.js';
+import {
+  GEN_DIR,
+  CLAUDE_DIR,
+  getManagedPaths,
+  pathExists,
+  findProjectRoot,
+} from '../common/path-utils.js';
 
-/**
- * Standard directory names
- */
-export const GEN_DIR = '.gen';
-export const CLAUDE_DIR = '.claude';
-
-/**
- * Get managed paths based on platform
- */
-function getManagedPaths(): { gen: string; claude: string } {
-  const platform = os.platform();
-
-  if (platform === 'darwin') {
-    return {
-      gen: '/Library/Application Support/GenCode',
-      claude: '/Library/Application Support/ClaudeCode',
-    };
-  } else if (platform === 'win32') {
-    return {
-      gen: 'C:\\Program Files\\GenCode',
-      claude: 'C:\\Program Files\\ClaudeCode',
-    };
-  } else {
-    // Linux and other Unix-like systems
-    return {
-      gen: '/etc/gencode',
-      claude: '/etc/claude-code',
-    };
-  }
-}
-
-/**
- * Find project root by walking up the directory tree
- */
-export async function findProjectRoot(cwd: string): Promise<string> {
-  let current = path.resolve(cwd);
-  const root = path.parse(current).root;
-
-  while (current !== root) {
-    // Check for git directory
-    try {
-      await fs.access(path.join(current, '.git'));
-      return current;
-    } catch {
-      // Not a git root, continue
-    }
-
-    // Check for .gen or .claude directories
-    try {
-      await fs.access(path.join(current, GEN_DIR));
-      return current;
-    } catch {
-      // Continue
-    }
-
-    try {
-      await fs.access(path.join(current, CLAUDE_DIR));
-      return current;
-    } catch {
-      // Continue
-    }
-
-    const parent = path.dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-
-  return cwd;
-}
-
-/**
- * Check if a path exists
- */
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
+// Re-export for backward compatibility
+export { GEN_DIR, CLAUDE_DIR, findProjectRoot };
 
 /**
  * Get resource directories for discovery

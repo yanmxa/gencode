@@ -11,18 +11,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { FilePattern } from './types.js';
-
-/**
- * Check if a path exists
- */
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { pathExists } from '../common/path-utils.js';
 
 /**
  * Scan directory for files matching the pattern

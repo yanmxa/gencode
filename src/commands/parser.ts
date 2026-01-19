@@ -10,8 +10,8 @@ import * as path from 'path';
 import matter from 'gray-matter';
 import type { CommandDefinition, CommandFrontmatter } from './types.js';
 import type { ResourceParser, ResourceLevel, ResourceNamespace } from '../discovery/types.js';
-import { isValidResourceName } from '../shared/validation.js';
-import { validateCommandFrontmatter } from '../shared/config-validator.js';
+import { isValidResourceName } from '../common/validation.js';
+import { validateCommandFrontmatter } from '../common/config-validator.js';
 
 /**
  * Parse a command markdown file
