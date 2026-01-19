@@ -8,10 +8,10 @@ import 'dotenv/config';
 import { render } from 'ink';
 import React from 'react';
 import { App } from './components/App.js';
-import type { AgentConfig } from '../agent/types.js';
-import { SettingsManager, ProvidersConfigManager, type Settings, type Provider } from '../config/index.js';
-import type { AuthMethod } from '../providers/types.js';
-import { inferProvider, inferAuthMethod } from '../providers/index.js';
+import type { AgentConfig } from '../core/agent/types.js';
+import { SettingsManager, ProvidersConfigManager, type Settings, type Provider } from '../infrastructure/config/index.js';
+import type { AuthMethod } from '../core/providers/types.js';
+import { inferProvider, inferAuthMethod } from '../core/providers/index.js';
 
 // ============================================================================
 // Proxy Setup
@@ -150,7 +150,7 @@ function printUsage(): void {
 // Non-interactive mode
 // ============================================================================
 async function runNonInteractive(prompt: string, config: AgentConfig): Promise<void> {
-  const { Agent } = await import('../agent/agent.js');
+  const { Agent } = await import('../core/agent/agent.js');
 
   const agent = new Agent(config);
 

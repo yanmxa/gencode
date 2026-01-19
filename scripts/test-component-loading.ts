@@ -17,14 +17,14 @@
  *   npm run test:components -- --verbose # Verbose errors
  */
 
-import { LoadingReporter } from '../src/common/loading-reporter.js';
-import { logger } from '../src/common/logger.js';
-import { SkillDiscovery } from '../src/skills/discovery.js';
-import { discoverCommands } from '../src/commands/discovery.js';
-import { CustomAgentLoader } from '../src/subagents/custom-agent-loader.js';
-import { HooksManager } from '../src/hooks/hooks-manager.js';
-import { MCPManager } from '../src/mcp/manager.js';
-import { createDefaultRegistry } from '../src/tools/index.js';
+import { LoadingReporter } from '../src/infrastructure/utils/loading-reporter.js';
+import { logger } from '../src/infrastructure/utils/logger.js';
+import { SkillDiscovery } from '../src/extensions/skills/manager.js';
+import { discoverCommands } from '../src/extensions/commands/discovery.js';
+import { CustomAgentLoader } from '../src/extensions/subagents/manager.js';
+import { HooksManager } from '../src/extensions/hooks/hooks-manager.js';
+import { MCPManager } from '../src/extensions/mcp/manager.js';
+import { createDefaultRegistry } from '../src/core/tools/index.js';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
 

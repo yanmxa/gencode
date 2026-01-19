@@ -4,10 +4,10 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Text, useApp, useInput, Static } from 'ink';
-import { Agent } from '../../agent/index.js';
-import type { AgentConfig } from '../../agent/types.js';
-import { formatTokens, formatCost } from '../../pricing/calculator.js';
-import type { CostEstimate } from '../../pricing/types.js';
+import { Agent } from '../../core/agent/index.js';
+import type { AgentConfig } from '../../core/agent/types.js';
+import { formatTokens, formatCost } from '../../core/pricing/calculator.js';
+import type { CostEstimate } from '../../core/pricing/types.js';
 import {
   UserMessage,
   AssistantMessage,
@@ -33,19 +33,19 @@ import {
 import { TodoList } from './TodoList.js';
 import { QuestionPrompt, AnswerDisplay } from './QuestionPrompt.js';
 import { colors, icons } from './theme.js';
-import { getTodos, formatAnswersForDisplay } from '../../tools/index.js';
-import type { Question, QuestionAnswer } from '../../tools/types.js';
-import type { ProviderName } from '../../providers/index.js';
-import type { ApprovalAction, ApprovalSuggestion } from '../../permissions/types.js';
-import type { Message, ToolResultContent, ToolUseContent } from '../../providers/types.js';
-import type { SessionMetadata } from '../../session/types.js';
-import { gatherContextFiles, buildInitPrompt, getContextSummary } from '../../memory/index.js';
+import { getTodos, formatAnswersForDisplay } from '../../core/tools/index.js';
+import type { Question, QuestionAnswer } from '../../core/tools/types.js';
+import type { ProviderName } from '../../core/providers/index.js';
+import type { ApprovalAction, ApprovalSuggestion } from '../../core/permissions/types.js';
+import type { Message, ToolResultContent, ToolUseContent } from '../../core/providers/types.js';
+import type { SessionMetadata } from '../../core/session/types.js';
+import { gatherContextFiles, buildInitPrompt, getContextSummary } from '../../core/memory/index.js';
 // ModeIndicator kept for potential future use
 import { PlanApproval } from './PlanApproval.js';
-import type { ModeType, PlanApprovalOption, AllowedPrompt } from '../../planning/types.js';
+import type { ModeType, PlanApprovalOption, AllowedPrompt } from '../planning/types.js';
 // Planning utilities kept for potential future use
-import { getCheckpointManager } from '../../checkpointing/index.js';
-import { InputHistoryManager } from '../../input/index.js';
+import { getCheckpointManager } from '../../core/session/checkpointing/index.js';
+import { InputHistoryManager } from '../../core/session/input/index.js';
 
 // Types
 interface HistoryItem {
@@ -824,7 +824,8 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
       }
 
       case 'tasks': {
-        const { TaskManager } = await import('../../tasks/task-manager.js');
+        // @ts-expect-error - dynamic import path resolved at runtime
+        const { TaskManager } = await import('../../../core/session/tasks/task-manager.js');
         const taskManager = new TaskManager();
         const filter = (arg as 'all' | 'running' | 'completed' | 'error') || 'all';
         const tasks = taskManager.listTasks(filter);
@@ -1253,7 +1254,8 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
 
       case 'commands':
       case 'cmd': {
-        const { getCommandManager } = await import('../../commands/index.js');
+        // @ts-expect-error - dynamic import path resolved at runtime
+        const { getCommandManager } = await import('../../../extensions/commands/index.js');
         const cmdMgr = await getCommandManager(cwd);
         const commands = await cmdMgr.listCommands();
 
@@ -1267,7 +1269,8 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
 
       default: {
         // Check for custom commands
-        const { getCommandManager } = await import('../../commands/index.js');
+        // @ts-expect-error - dynamic import path resolved at runtime
+        const { getCommandManager } = await import('../../../extensions/commands/index.js');
         const cmdMgr = await getCommandManager(cwd);
 
         if (await cmdMgr.hasCommand(command)) {
@@ -1280,7 +1283,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
               const permManager = agent.getPermissionManager();
 
               // Convert tool names/patterns to PromptPermissions
-              const prompts = parsed.preAuthorizedTools.map(toolSpec => {
+              const prompts = parsed.preAuthorizedTools.map((toolSpec: string) => {
                 // Check if it's a pattern like "Bash(gh:*)"
                 const patternMatch = toolSpec.match(/^(\w+)\(([^)]+)\)$/);
                 if (patternMatch) {

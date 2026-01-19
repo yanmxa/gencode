@@ -13,7 +13,7 @@
 import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { colors, icons } from './theme.js';
-import type { PlanApprovalOption, AllowedPrompt } from '../../planning/types.js';
+import type { PlanApprovalOption, AllowedPrompt } from '../planning/types.js';
 
 // ============================================================================
 // Types

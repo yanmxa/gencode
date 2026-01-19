@@ -16,8 +16,8 @@
  *   npm run test:subagents -- --verbose         # Show all agents
  */
 
-import { CustomAgentLoader } from '../src/subagents/custom-agent-loader.js';
-import { logger } from '../src/common/logger.js';
+import { CustomAgentLoader } from '../src/extensions/subagents/custom-agent-loader.js';
+import { logger } from '../src/infrastructure/utils/logger.js';
 
 const args = process.argv.slice(2);
 const verbose = args.includes('--verbose');

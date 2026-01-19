@@ -6,9 +6,9 @@ import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { colors, icons } from './theme.js';
 import { LoadingSpinner } from './Spinner.js';
-import { getProviderStore, type ModelInfo } from '../../providers/store.js';
-import { getProviderMeta } from '../../providers/registry.js';
-import type { Provider, AuthMethod } from '../../providers/index.js';
+import { getProviderStore, type ModelInfo } from '../../core/providers/store.js';
+import { getProviderMeta } from '../../core/providers/registry.js';
+import type { Provider, AuthMethod } from '../../core/providers/index.js';
 
 interface ModelItem {
   providerId: Provider;

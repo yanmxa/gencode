@@ -14,8 +14,8 @@
  *   npm run test:commands -- --verbose        # Show all commands
  */
 
-import { discoverCommands } from '../src/commands/discovery.js';
-import { logger } from '../src/common/logger.js';
+import { discoverCommands } from '../src/extensions/commands/discovery.js';
+import { logger } from '../src/infrastructure/utils/logger.js';
 
 const args = process.argv.slice(2);
 const verbose = args.includes('--verbose');

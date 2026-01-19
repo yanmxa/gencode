@@ -3,8 +3,8 @@ import { Box, Text } from 'ink';
 import InkSpinner from 'ink-spinner';
 import { colors, icons } from './theme.js';
 import { renderMarkdown } from './markdown.js';
-import { formatTokens, formatCost } from '../../pricing/calculator.js';
-import type { CostEstimate } from '../../pricing/types.js';
+import { formatTokens, formatCost } from '../../core/pricing/calculator.js';
+import type { CostEstimate } from '../../core/pricing/types.js';
 
 // Truncate string with ellipsis
 const truncate = (str: string, maxLen: number) =>

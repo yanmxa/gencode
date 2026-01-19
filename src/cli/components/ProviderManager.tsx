@@ -14,11 +14,11 @@ import {
   type ProviderClass,
   type ProviderMeta,
   type SearchProviderDefinition,
-} from '../../providers/registry.js';
-import { getProviderStore, type ModelInfo } from '../../providers/store.js';
-import { createProvider, type Provider } from '../../providers/index.js';
-import { isSearchProviderAvailable, type SearchProviderName } from '../../providers/search/index.js';
-import type { AuthMethod } from '../../providers/types.js';
+} from '../../core/providers/registry.js';
+import { getProviderStore, type ModelInfo } from '../../core/providers/store.js';
+import { createProvider, type Provider } from '../../core/providers/index.js';
+import { isSearchProviderAvailable, type SearchProviderName } from '../../core/providers/search/index.js';
+import type { AuthMethod } from '../../core/providers/types.js';
 
 interface ProviderManagerProps {
   onClose: () => void;

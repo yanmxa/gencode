@@ -14,9 +14,9 @@
  *   GEN_DEBUG=2 npm run test:hooks:func  # Verbose debug mode
  */
 
-import { HooksManager } from '../src/hooks/hooks-manager.js';
-import { isVerboseDebugEnabled } from '../src/common/debug.js';
-import type { HooksConfig } from '../src/hooks/types.js';
+import { HooksManager } from '../src/extensions/hooks/hooks-manager.js';
+import { isVerboseDebugEnabled } from '../src/infrastructure/utils/debug.js';
+import type { HooksConfig } from '../src/extensions/hooks/types.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 

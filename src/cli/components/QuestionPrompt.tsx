@@ -11,7 +11,7 @@
 import { useState, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { colors } from './theme.js';
-import type { Question, QuestionAnswer } from '../../tools/types.js';
+import type { Question, QuestionAnswer } from '../../core/tools/types.js';
 
 // ============================================================================
 // Types
