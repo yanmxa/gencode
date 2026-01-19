@@ -24,10 +24,10 @@ import {
   type AllowedPrompt,
 } from '../../cli/planning/index.js';
 import { initCheckpointManager } from '../session/checkpointing/index.js';
-import { HooksManager } from '../../extensions/hooks/index.js';
-import type { HooksConfig } from '../../extensions/hooks/index.js';
-import { CommandManager } from '../../extensions/commands/manager.js';
-import type { ParsedCommand } from '../../extensions/commands/types.js';
+import { HooksManager } from '../../ext/hooks/index.js';
+import type { HooksConfig } from '../../ext/hooks/index.js';
+import { CommandManager } from '../../ext/commands/manager.js';
+import type { ParsedCommand } from '../../ext/commands/types.js';
 
 // Type for askUser callback
 export type AskUserCallback = (questions: Question[]) => Promise<QuestionAnswer[]>;

@@ -101,7 +101,7 @@ export async function createDefaultRegistry(cwd: string): Promise<ToolRegistry> 
 
   // Load MCP tools if available
   try {
-    const { getMCPManager, loadMCPConfig } = await import('../../extensions/mcp/index.js');
+    const { getMCPManager, loadMCPConfig } = await import('../../ext/mcp/index.js');
     const mcpConfig = await loadMCPConfig(cwd);
     const mcpManager = getMCPManager();
 

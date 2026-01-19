@@ -16,7 +16,7 @@
  *   npm run test:subagents -- --verbose         # Show all agents
  */
 
-import { CustomAgentLoader } from '../src/extensions/subagents/custom-agent-loader.js';
+import { CustomAgentLoader } from '../src/ext/subagents/custom-agent-loader.js';
 import { logger } from '../src/base/utils/logger.js';
 
 const args = process.argv.slice(2);

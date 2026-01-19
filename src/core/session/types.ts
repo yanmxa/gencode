@@ -6,7 +6,7 @@ import type { Message } from '../providers/types.js';
 import type { CostEstimate } from '../pricing/types.js';
 import type { ConversationSummary, CompressionConfig } from './compression/types.js';
 import type { FileCheckpoint } from './checkpointing/types.js';
-import type { SubagentType } from '../../extensions/subagents/types.js';
+import type { SubagentType } from '../../ext/subagents/types.js';
 
 export interface SessionMetadata {
   id: string;

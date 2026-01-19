@@ -13,8 +13,8 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
-import type { Subagent } from '../../../extensions/subagents/subagent.js';
-import type { TaskOutput } from '../../../extensions/subagents/types.js';
+import type { Subagent } from '../../../ext/subagents/subagent.js';
+import type { TaskOutput } from '../../../ext/subagents/types.js';
 import type {
   BackgroundTask,
   BackgroundTaskJson,

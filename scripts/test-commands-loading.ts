@@ -14,7 +14,7 @@
  *   npm run test:commands -- --verbose        # Show all commands
  */
 
-import { discoverCommands } from '../src/extensions/commands/discovery.js';
+import { discoverCommands } from '../src/ext/commands/discovery.js';
 import { logger } from '../src/base/utils/logger.js';
 
 const args = process.argv.slice(2);

@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { Tool, ToolContext, ToolResult } from '../types.js';
-import type { MCPToolDef } from '../../../extensions/mcp/types.js';
+import type { MCPToolDef } from '../../../ext/mcp/types.js';
 
 /**
  * Convert JSON Schema to Zod schema (simplified version)

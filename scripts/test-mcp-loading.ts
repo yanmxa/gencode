@@ -13,7 +13,7 @@
  *   npm run test:mcp -- --verbose        # Show server details
  */
 
-import { MCPManager } from '../src/extensions/mcp/manager.js';
+import { MCPManager } from '../src/ext/mcp/manager.js';
 import { logger } from '../src/base/utils/logger.js';
 
 const args = process.argv.slice(2);

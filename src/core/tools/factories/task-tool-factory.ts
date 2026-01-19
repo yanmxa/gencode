@@ -7,10 +7,10 @@
 
 import { z } from 'zod';
 import type { Tool, ToolContext, ToolResult } from '../types.js';
-import { Subagent } from '../../../extensions/subagents/subagent.js';
-import type { TaskInput } from '../../../extensions/subagents/types.js';
+import { Subagent } from '../../../ext/subagents/subagent.js';
+import type { TaskInput } from '../../../ext/subagents/types.js';
 import { TaskManager } from '../../session/tasks/task-manager.js';
-import { SubagentSessionManager } from '../../../extensions/subagents/subagent-session-manager.js';
+import { SubagentSessionManager } from '../../../ext/subagents/subagent-session-manager.js';
 
 /**
  * Task Tool - Spawn isolated subagents for specialized tasks

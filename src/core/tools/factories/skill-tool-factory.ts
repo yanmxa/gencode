@@ -7,8 +7,8 @@
 
 import { z } from 'zod';
 import type { Tool, ToolContext, ToolResult } from '../types.js';
-import { SkillDiscovery } from '../../../extensions/skills/manager.js';
-import type { SkillInput, SkillDefinition } from '../../../extensions/skills/types.js';
+import { SkillDiscovery } from '../../../ext/skills/manager.js';
+import type { SkillInput, SkillDefinition } from '../../../ext/skills/types.js';
 import { formatBoxedMessage } from '../../../base/utils/format-utils.js';
 import { isVerboseDebugEnabled } from '../../../base/utils/debug.js';
 import { logger } from '../../../base/utils/logger.js';

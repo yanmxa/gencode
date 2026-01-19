@@ -4,7 +4,7 @@
  * Enables subagents to run in the background without blocking the main conversation.
  */
 
-import type { SubagentType } from '../../../extensions/subagents/types.js';
+import type { SubagentType } from '../../../ext/subagents/types.js';
 
 /**
  * Status of a background task
