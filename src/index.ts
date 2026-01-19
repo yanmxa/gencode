@@ -35,7 +35,7 @@ export {
   createProvider,
   inferProvider,
   ModelAliases,
-} from './providers/index.js';
+} from './core/providers/index.js';
 
 // Tools
 export {
@@ -51,7 +51,7 @@ export {
   bashTool,
   globTool,
   grepTool,
-} from './tools/index.js';
+} from './core/tools/index.js';
 
 // Permissions
 export {
@@ -61,7 +61,7 @@ export {
   type ConfirmCallback,
   PermissionManager,
   DEFAULT_PERMISSION_CONFIG,
-} from './permissions/index.js';
+} from './core/permissions/index.js';
 
 // Agent
 export {
@@ -73,7 +73,7 @@ export {
   type AgentEventError,
   type AgentEventDone,
   Agent,
-} from './agent/index.js';
+} from './core/agent/index.js';
 
 // Session
 export {
@@ -83,7 +83,7 @@ export {
   type SessionConfig,
   SessionManager,
   DEFAULT_SESSION_CONFIG,
-} from './session/index.js';
+} from './core/session/index.js';
 
 // Checkpointing
 export {
@@ -98,4 +98,4 @@ export {
   getCheckpointManager,
   initCheckpointManager,
   resetCheckpointManager,
-} from './checkpointing/index.js';
+} from './core/session/checkpointing/index.js';

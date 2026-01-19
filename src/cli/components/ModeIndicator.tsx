@@ -11,7 +11,7 @@
 
 import { Box, Text } from 'ink';
 import { colors, icons } from './theme.js';
-import type { ModeType } from '../../planning/types.js';
+import type { ModeType } from '../planning/types.js';
 
 // ============================================================================
 // Types

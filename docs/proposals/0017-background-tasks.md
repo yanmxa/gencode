@@ -2,9 +2,10 @@
 
 - **Proposal ID**: 0017
 - **Author**: mycode team
-- **Status**: Draft
+- **Status**: Implemented
 - **Created**: 2025-01-15
-- **Updated**: 2025-01-15
+- **Updated**: 2026-01-18
+- **Implemented**: 2026-01-18
 
 ## Summary
 
@@ -487,3 +488,113 @@ Integrates with KillShell (0016) and Enhanced Bash (0028).
 - [Node.js Child Process](https://nodejs.org/api/child_process.html)
 - [Claude Code TaskOutput Documentation](https://code.claude.com/docs/en/tools)
 - [BullMQ - Node.js Job Queue](https://docs.bullmq.io/)
+
+## Implementation Notes
+
+### What Was Implemented (2026-01-18)
+
+#### 1. Background Bash Execution
+- **File**: `src/tools/builtin/bash.ts`
+- Added `run_in_background` and `description` parameters to BashInputSchema
+- Integrated with TaskManager for background execution
+- Returns task ID and output file path when run in background
+
+#### 2. TaskManager Enhancement
+- **File**: `src/tasks/task-manager.ts`
+- Added `createBashTask()` method for spawning bash commands in background
+- Implemented `executeBashAsync()` for async process execution
+- Supports output streaming to file, status tracking, and completion detection
+- Max 10MB output file size (truncated if exceeded)
+- Proper process cleanup and error handling
+
+#### 3. CLI /tasks Command
+- **File**: `src/cli/components/App.tsx`
+- Added `/tasks [filter]` command to list background tasks
+- Supports filters: `all`, `running`, `completed`, `error`
+- Integrated with help panel
+
+#### 4. TasksTable Display Component (Enhanced UI/UX)
+- **File**: `src/cli/components/App.tsx`
+- Created professional dashboard-style `TasksTable` component
+- **Status Indicators**: Color-coded with icons and labels
+  - Running: Blue (●) "Running"
+  - Pending: Gray (○) "Pending"
+  - Completed: Green (✔) "Done"
+  - Failed: Red (✖) "Failed"
+  - Cancelled: Yellow (⊘) "Stopped"
+- **Table Structure**: Headers (STATUS, ID, DESCRIPTION, TIME, TYPE)
+- **Enhanced Features**:
+  - Task type auto-detection (bash, test, build, task)
+  - Improved time format (Xm Ys for precision)
+  - Empty state handling ("No tasks found")
+  - Overflow indicator ("... and X more tasks")
+- Displays up to 10 tasks with consistent column alignment
+- Follows real-time monitoring dashboard best practices
+
+#### 5. Type System Updates
+- **File**: `src/tools/types.ts`
+- Updated BashInputSchema with background execution parameters
+- Maintained compatibility with existing foreground execution
+
+### Testing
+
+Manual testing guide created: `test-background-bash.md`
+
+Test coverage includes:
+1. Simple background command execution
+2. /tasks command with filtering
+3. Failed command handling
+4. Long output handling
+5. Task status tracking
+6. TaskOutput integration
+
+### Known Limitations
+
+1. **No cross-session persistence**: Tasks are lost when CLI restarts
+   - Future: Implement task persistence across sessions (Phase 4)
+2. **No completion notifications**: User must manually check task status
+   - Future: Add task notifications on completion (Phase 5)
+3. **Build errors in MCP code**: Pre-existing TypeScript errors in `src/mcp/` unrelated to this implementation
+
+### UI/UX Enhancements
+
+The TasksTable component follows professional dashboard design patterns:
+
+**Status Indicators:**
+- Color-coded status with semantic icons (●○✔✖⊘)
+- Clear text labels for accessibility
+- Consistent with theme color system
+
+**Information Hierarchy:**
+1. Status (most prominent) - Icon + Color + Label
+2. Task ID (primary color) - Unique identifier
+3. Description - Main task information
+4. Time (secondary color) - Elapsed/duration
+5. Type (muted) - Auto-detected category
+
+**User Experience:**
+- Table headers for better scanability
+- Consistent column alignment
+- Empty state handling
+- Overflow indication (>10 tasks)
+- Professional appearance matching modern CLI tools
+
+See `docs/ui-improvements-tasks.md` and `docs/tasks-ui-comparison.md` for detailed design rationale.
+
+### Files Modified
+
+1. `src/tools/types.ts` - BashInputSchema update
+2. `src/tools/builtin/bash.ts` - Background execution support
+3. `src/tasks/task-manager.ts` - createBashTask and executeBashAsync methods
+4. `src/cli/components/App.tsx` - /tasks command and enhanced TasksTable component
+5. `docs/proposals/0017-background-tasks.md` - Status update and notes
+6. `docs/ui-improvements-tasks.md` - UI/UX design documentation
+7. `docs/tasks-ui-comparison.md` - Before/after visual comparison
+
+### Migration Status
+
+- ✅ Phase 1: Basic TaskManager and TaskOutput tool (Already existed)
+- ✅ Phase 2: /tasks CLI command (Implemented)
+- ✅ Phase 3: Bash background execution (Implemented)
+- ⏳ Phase 4: Task persistence across sessions (Future)
+- ⏳ Phase 5: Task notifications on completion (Future)

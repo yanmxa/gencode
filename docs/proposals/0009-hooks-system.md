@@ -2,9 +2,10 @@
 
 - **Proposal ID**: 0009
 - **Author**: mycode team
-- **Status**: Draft
+- **Status**: Implemented
 - **Created**: 2025-01-15
-- **Updated**: 2025-01-15
+- **Updated**: 2026-01-18
+- **Implemented**: 2026-01-18 (Phase 1), 2026-01-18 (Phase 2)
 
 ## Summary
 
@@ -341,3 +342,141 @@ No breaking changes to existing functionality.
 - [Claude Code Hooks Documentation](https://code.claude.com/docs/en/hooks)
 - [Understanding Claude Code Full Stack](https://alexop.dev/posts/understanding-claude-code-full-stack/)
 - [Git Hooks](https://git-scm.com/docs/githooks) (similar concept)
+
+## Implementation Notes
+
+### Phase 1 Implementation (2026-01-18)
+
+**Status**: ✅ Core infrastructure implemented and tested
+
+Phase 1 focused on building the core hooks system without integrating into the agent loop, to avoid conflicts with the ongoing Task Tool (Proposal 0003) implementation.
+
+### Files Created
+
+| File | Description |
+|------|-------------|
+| `src/hooks/types.ts` | Type definitions for hooks system |
+| `src/hooks/executor.ts` | Hook execution engine with bash command support |
+| `src/hooks/matcher.ts` | Pattern matching for filtering hooks by tool name |
+| `src/hooks/hooks-manager.ts` | Core orchestration class for hook management |
+| `src/hooks/utils.ts` | Utility functions for variable expansion, validation, formatting |
+| `src/hooks/index.ts` | Module exports |
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `src/config/types.ts` | Added `hooks` field to Settings interface |
+
+### Tests Created
+
+| Test File | Tests | Description |
+|-----------|-------|-------------|
+| `tests/hooks/matcher.test.ts` | 13 tests | Pattern matching functionality |
+| `tests/hooks/utils.test.ts` | 25 tests | Utility functions |
+| `tests/hooks/hooks-manager.test.ts` | 10 tests | HooksManager orchestration |
+| `tests/hooks/executor.test.ts` | 9 tests | Hook execution |
+
+**Total**: 57 tests, all passing ✅
+
+### Key Implementation Details
+
+1. **Executor Pattern**: Uses Node.js `spawn()` with proper timeout handling, stdio collection, and exit code interpretation (0=success, 2=block, other=warn)
+
+2. **Environment Variables**: Hooks receive context through both environment variables ($TOOL_NAME, $FILE_PATH, etc.) and JSON via stdin
+
+3. **Pattern Matching**: Supports wildcard ("*"), exact match, and regex patterns for tool filtering
+
+4. **Type Safety**: Full TypeScript implementation with comprehensive type definitions
+
+5. **Testing**: Comprehensive unit test coverage with integration tests for real command execution
+
+### Configuration Example
+
+Users can configure hooks in `.gen/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'File modified: $FILE_PATH'",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay ~/.gen/sounds/done.mp3"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Phase 2 - Integration (Completed 2026-01-18)
+
+**Status**: ✅ Fully integrated into agent loop
+
+Phase 2 completed with full integration:
+1. ✅ Integrated hooks into agent loop (`src/agent/agent.ts`)
+2. ✅ Added PreToolUse hook trigger point (with blocking support)
+3. ✅ Added PostToolUse hook trigger point
+4. ✅ Added PostToolUseFailure hook trigger point
+5. ✅ Added SessionStart hooks (startSession + resumeSession)
+6. ✅ Added Stop hooks (conversation end)
+7. ✅ Integrated into CLI (`src/cli/index.tsx`, `src/cli/components/App.tsx`)
+8. ✅ Created integration tests (`tests/integration/hooks-integration.test.ts`)
+
+**Modified Files:**
+| File | Changes |
+|------|---------|
+| `src/agent/agent.ts` | Added HooksManager, trigger points for all events, blocking logic |
+| `src/cli/components/App.tsx` | Added hooksConfig prop and initialization |
+| `src/cli/index.tsx` | Pass hooks config from settings to App |
+| `tests/integration/hooks-integration.test.ts` | Integration tests with real agent |
+| `tests/config/hooks-config.test.ts` | Tests for Claude Code fallback and merge behavior (7 tests) |
+
+**Key Features:**
+- **Blocking Hooks**: PreToolUse hooks with exit code 2 block tool execution
+- **Event Coverage**: All tool events (Pre/Post/Failure) + session events (Start/Stop)
+- **Automatic Loading**: Hooks config loaded from `.gen/settings.json` on CLI startup
+- **Full Context**: Hooks receive session ID, tool name, input, result, timestamps
+
+### Compatibility Notes
+
+- **No Breaking Changes**: Phase 1 adds new infrastructure without modifying existing functionality
+- **Claude Code Compatible**: Settings format matches Claude Code's hooks configuration
+- **Configuration Fallback**: Hooks config supports Claude Code fallback mechanism
+  - Loads from both `.gen/settings.json` and `.claude/settings.json`
+  - `.gen` settings take priority over `.claude` at the same level
+  - When `.gen` has no hooks, automatically falls back to `.claude` hooks
+  - Hooks from both sources are merged (arrays concatenated, objects deep-merged)
+  - Allows seamless migration from Claude Code while enabling GenCode-specific customizations
+- **Extensible**: Easy to add new hook types (prompt hooks) and events in future
+
+### Performance Considerations
+
+- Hooks run with configurable timeouts (default: 60s)
+- Parallel execution by default (configurable)
+- Output truncation at 30KB to prevent memory issues
+- Proper process cleanup with SIGTERM → SIGKILL escalation
+
+### Security Considerations
+
+- Uses `spawn()` with array arguments (not shell string concatenation)
+- Environment variables are properly escaped
+- Path sanitization prevents traversal attacks
+- Sensitive directories are blocked (/etc, /var, /sys, /proc, /dev)
+- Commands run with user's permissions (no privilege escalation)

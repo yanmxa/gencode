@@ -13,7 +13,7 @@
 import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { colors, icons } from './theme.js';
-import type { PlanApprovalOption, AllowedPrompt } from '../../planning/types.js';
+import type { PlanApprovalOption, AllowedPrompt } from '../planning/types.js';
 
 // ============================================================================
 // Types
@@ -51,20 +51,26 @@ const APPROVAL_OPTIONS: ApprovalOption[] = [
     description: 'Fresh start with automatic approval',
   },
   {
+    label: 'Yes, and manually approve edits',
+    shortcut: '2',
+    option: 'approve_manual_keep',
+    description: 'Keep context, review each change',
+  },
+  {
     label: 'Yes, auto-accept edits',
-    shortcut: '1',
+    shortcut: '3',
     option: 'approve',
     description: 'Continue with automatic approval',
   },
   {
     label: 'Yes, manually approve edits',
-    shortcut: '2',
+    shortcut: '4',
     option: 'approve_manual',
     description: 'Review each change before applying',
   },
   {
     label: 'Type here to tell Claude what to change',
-    shortcut: '3',
+    shortcut: '5',
     option: 'modify',
     description: 'Go back to modify the plan',
   },
@@ -194,11 +200,15 @@ export function PlanApproval({
 
     // Number shortcuts
     if (inputChar === '1') {
-      onDecision('approve');
+      onDecision('approve_clear');
     } else if (inputChar === '2') {
-      onDecision('approve_manual');
+      onDecision('approve_manual_keep');
     } else if (inputChar === '3') {
-      setSelectedIndex(3);
+      onDecision('approve');
+    } else if (inputChar === '4') {
+      onDecision('approve_manual');
+    } else if (inputChar === '5') {
+      setSelectedIndex(4);
       setIsTyping(true);
     }
   });

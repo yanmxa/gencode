@@ -2,10 +2,11 @@
 
 - **Proposal ID**: 0021
 - **Author**: mycode team
-- **Status**: Draft
+- **Status**: Implemented
 - **Priority**: P1 (Core Feature)
 - **Created**: 2025-01-15
 - **Updated**: 2025-01-17
+- **Implemented**: 2026-01-18
 
 ## Summary
 
@@ -408,3 +409,125 @@ No breaking changes to existing functionality.
 - [Claude Code Skills Documentation](https://code.claude.com/docs/en/skills)
 - [YAML Frontmatter Specification](https://jekyllrb.com/docs/front-matter/)
 - [Plugin System Proposal (0022)](./0022-plugin-system.md)
+
+---
+
+## Implementation Notes
+
+### Implementation Date
+**2026-01-18** - Core skills system implemented
+
+### Files Created
+
+| File | Lines | Description |
+|------|-------|-------------|
+| `src/skills/types.ts` | 34 | Type definitions for skills system |
+| `src/skills/parser.ts` | 55 | SKILL.md frontmatter parser using gray-matter |
+| `src/skills/discovery.ts` | 99 | Skill discovery with merge strategy |
+| `src/skills/skill-tool.ts` | 119 | Skill tool with dynamic description generation |
+| `src/skills/index.ts` | 8 | Module exports |
+
+**Total**: ~315 new lines across 5 new files
+
+### Files Modified
+
+| File | Changes | Description |
+|------|---------|-------------|
+| `src/tools/index.ts` | Made `createDefaultRegistry()` async, added `cwd` parameter, registered Skill tool | +6 lines |
+| `src/agent/agent.ts` | Made registry lazy-initialized, added `ensureRegistry()` method, updated registry access | +12 lines |
+
+**Total modifications**: ~18 lines across 2 files
+
+### Key Implementation Details
+
+1. **Merge Strategy Pattern**
+   - Follows memory system's "both" strategy
+   - Loads from all 4 directories: user claude, user gen, project claude, project gen
+   - Priority: project gen > project claude > user gen > user claude
+   - Uses Map.set() behavior: later overwrites earlier for same-name skills
+
+2. **Lazy Registry Initialization**
+   - Registry is `null` in constructor
+   - `ensureRegistry()` method creates registry on first use
+   - Allows async skill discovery during agent initialization
+   - No breaking changes to Agent constructor API
+
+3. **Dynamic Tool Description**
+   - Skill tool description lists all discovered skills
+   - LLM sees available skills and descriptions
+   - Progressive disclosure: metadata in description, full content on-demand
+
+4. **Cache Optimization**
+   - Skills injected as tool_result, not system prompt
+   - Preserves prompt cache for cost savings
+   - Follows Claude Code's pattern for ~87% cost reduction
+
+5. **Directory Structure**
+   - User: `~/.gen/skills/`, `~/.claude/skills/`
+   - Project: `.gen/skills/`, `.claude/skills/`
+   - Each skill is a subdirectory with `SKILL.md`
+
+### Testing Results
+
+**Build**: ✅ `npm run build` passes with no TypeScript errors
+
+**Unit Tests**: ✅ 29/29 tests passing across 3 test suites
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| `src/skills/parser.test.ts` | 9 tests | Frontmatter parsing, validation, error handling |
+| `src/skills/discovery.test.ts` | 13 tests | Directory scanning, merge priority, invalid files |
+| `src/skills/skill-tool.test.ts` | 7 tests | Tool creation, execution, formatting, arguments |
+
+**Test Coverage**:
+- ✅ SKILL.md parsing with required/optional fields
+- ✅ Merge priority (project gen > project claude > user gen > user claude)
+- ✅ Same-name skill overwriting behavior
+- ✅ Different-name skill additive behavior
+- ✅ Invalid SKILL.md graceful handling
+- ✅ Empty directories and non-existent paths
+- ✅ Skill arguments passing
+- ✅ Tool description generation
+- ✅ Skill content formatting and injection
+
+**Manual Testing Guide**: [docs/SKILLS_MANUAL_TEST.md](../SKILLS_MANUAL_TEST.md)
+
+Comprehensive manual testing guide with 5 scenarios:
+1. Verify skill discovery from all 4 directories
+2. Test merge priority with same-name skills
+3. Test skill arguments
+4. Test invalid SKILL.md handling
+5. Real-world usage with code-review skill
+
+**Verification**:
+- [x] Skills discovered from all 4 directories
+- [x] Merge strategy implemented correctly
+- [x] TypeScript compilation successful
+- [x] No runtime errors during build
+- [x] Unit tests passing (29/29)
+- [x] Manual testing guide created
+
+### Known Limitations (MVP)
+
+1. **No CLI Commands** - `/skills` command not yet implemented
+2. **No Validation** - Zod schema validation for frontmatter not added
+3. **No Tool Filtering** - `allowed-tools` field parsed but not enforced
+4. **No Plugin Integration** - Skills from plugins not yet supported
+
+### Future Enhancements
+
+- [ ] `/skills` CLI command to list available skills
+- [ ] `/skill create <name>` to scaffold new skills
+- [ ] Zod validation for frontmatter fields
+- [ ] Tool filtering based on `allowed-tools` field
+- [ ] Plugin system integration
+- [ ] Skill versioning and dependencies
+- [ ] Skill resources/ directory support (scripts, references)
+
+### Benefits Achieved
+
+✅ **Extensibility** - Users can add domain expertise via SKILL.md files
+✅ **Merge Strategy** - Skills from all levels coexist with clear priority
+✅ **Cache Efficiency** - Tool_result injection preserves prompt cache
+✅ **Zero Breaking Changes** - Fully backward compatible
+✅ **Progressive Disclosure** - Efficient token usage (metadata vs full content)

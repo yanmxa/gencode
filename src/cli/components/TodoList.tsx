@@ -4,7 +4,7 @@
  */
 import { Box, Text } from 'ink';
 import { colors } from './theme.js';
-import type { TodoItem } from '../../tools/types.js';
+import type { TodoItem } from '../../core/tools/types.js';
 
 interface TodoListProps {
   todos: TodoItem[];

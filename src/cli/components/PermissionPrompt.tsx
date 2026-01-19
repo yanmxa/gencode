@@ -15,7 +15,7 @@
 import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { colors, icons } from './theme.js';
-import type { ApprovalAction, ApprovalSuggestion } from '../../permissions/types.js';
+import type { ApprovalAction, ApprovalSuggestion } from '../../core/permissions/types.js';
 
 // ============================================================================
 // Types
