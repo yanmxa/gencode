@@ -14,8 +14,8 @@
  *   npm run test:skills -- --verbose     # Show all skills
  */
 
-import { SkillDiscovery } from '../src/ext/skills/discovery.js';
-import { logger } from '../src/base/utils/logger.js';
+import { SkillDiscovery } from '../../src/ext/skills/discovery.js';
+import { logger } from '../../src/base/utils/logger.js';
 import * as path from 'node:path';
 
 const args = process.argv.slice(2);

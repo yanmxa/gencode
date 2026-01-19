@@ -91,7 +91,7 @@ Content
     );
 
     await expect(parseSkillFile(skillPath, 'user', 'gen')).rejects.toThrow(
-      /missing or invalid 'name' field/
+      /Invalid SKILL.md frontmatter: name: Invalid input: expected string, received undefined/
     );
   });
 
@@ -108,7 +108,7 @@ Content
     );
 
     await expect(parseSkillFile(skillPath, 'user', 'gen')).rejects.toThrow(
-      /missing or invalid 'description' field/
+      /Invalid SKILL.md frontmatter: description: Invalid input: expected string, received undefined/
     );
   });
 

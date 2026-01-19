@@ -43,6 +43,8 @@ import { gatherContextFiles, buildInitPrompt, getContextSummary } from '../../co
 // ModeIndicator kept for potential future use
 import { PlanApproval } from './PlanApproval.js';
 import type { ModeType, PlanApprovalOption, AllowedPrompt } from '../planning/types.js';
+import { getPlanModeManager } from '../planning/index.js';
+import { readPlanFile, parseFilesToChange } from '../planning/plan-file.js';
 // Planning utilities kept for potential future use
 import { getCheckpointManager } from '../../core/session/checkpointing/index.js';
 import { InputHistoryManager } from '../../core/session/input/index.js';
@@ -540,6 +542,60 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
     };
   }, [agent, addHistory]);
 
+  // Listen to plan mode manager events for approval UI
+  useEffect(() => {
+    const planModeManager = getPlanModeManager();
+
+    const unsubscribe = planModeManager.subscribe(async (event: { type: string; phase?: string }) => {
+      // When phase changes to 'approval', show the approval UI
+      if (event.type === 'phase_change' && event.phase === 'approval') {
+        const planFilePath = planModeManager.getPlanFilePath();
+        const requestedPermissions = planModeManager.getRequestedPermissions();
+
+        if (!planFilePath) {
+          addHistory({ type: 'info', content: 'Error: No plan file found' });
+          return;
+        }
+
+        try {
+          // Read plan file
+          const planFile = await readPlanFile(planFilePath);
+          if (!planFile) {
+            addHistory({ type: 'info', content: `Error: Could not read plan file: ${planFilePath}` });
+            return;
+          }
+
+          // Parse files to change
+          const filesToChange = parseFilesToChange(planFile.content);
+
+          // Extract first paragraph as summary (or first 200 chars)
+          const lines = planFile.content.split('\n').filter((l: string) => l.trim() && !l.startsWith('#'));
+          const planSummary = lines[0]?.slice(0, 200) || 'Implementation plan ready';
+
+          // Show approval UI
+          setPlanApprovalState({
+            planSummary,
+            requestedPermissions,
+            filesToChange,
+            planFilePath,
+            resolve: (option: PlanApprovalOption, customInput?: string) => {
+              handlePlanApprovalDecision(option, customInput);
+            },
+          });
+        } catch (error) {
+          addHistory({
+            type: 'info',
+            content: `Error reading plan: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [addHistory]);
+
   // Flush buffered streaming text to UI (throttled to ~60 FPS)
   const flushStreamBuffer = useCallback(() => {
     if (streamBufferRef.current) {
@@ -772,6 +828,68 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
       setConfirmState(null);
     }
   };
+
+  // Handle plan approval decision
+  const handlePlanApprovalDecision = useCallback(async (option: PlanApprovalOption, customInput?: string) => {
+    // Close approval UI
+    setPlanApprovalState(null);
+
+    switch (option) {
+      case 'approve_clear':
+        // Option 1: Clear context + auto-accept edits
+        addHistory({ type: 'info', content: 'Plan approved (clearing context, auto-accepting edits)' });
+        agent.exitPlanMode(true); // Approve with permissions
+        agent.clearHistory(); // Clear conversation context
+        await agent.startSession(); // Start fresh session
+        setHistory(initialHistory); // Clear UI history
+        setCurrentMode('accept'); // Switch to auto-accept mode
+        break;
+
+      case 'approve_manual_keep':
+        // Option 2: Keep context + manually approve edits (NEW)
+        addHistory({ type: 'info', content: 'Plan approved (keeping context, manual approval enabled)' });
+        agent.exitPlanMode(true); // Approve with permissions
+        // Keep conversation history
+        // Keep plan file and exploration context
+        setCurrentMode('normal'); // Manual approval mode
+        break;
+
+      case 'approve':
+        // Option 3: Clear plan details + auto-accept edits
+        addHistory({ type: 'info', content: 'Plan approved (auto-accepting edits)' });
+        agent.exitPlanMode(true); // Approve with permissions
+        // Keep conversation but clear plan-specific details
+        setCurrentMode('accept'); // Switch to auto-accept mode
+        break;
+
+      case 'approve_manual':
+        // Option 4: Clear plan details + manually approve edits
+        addHistory({ type: 'info', content: 'Plan approved (manual approval enabled)' });
+        agent.exitPlanMode(true); // Approve with permissions
+        // Keep conversation but clear plan-specific details
+        setCurrentMode('normal'); // Manual approval mode
+        break;
+
+      case 'modify':
+        // Option 5: Go back to modify the plan
+        if (customInput) {
+          addHistory({ type: 'info', content: `Modifying plan: ${customInput}` });
+          addHistory({ type: 'user', content: customInput });
+          await runAgent(customInput);
+        } else {
+          addHistory({ type: 'info', content: 'Please provide feedback on what to change' });
+        }
+        // Stay in plan mode
+        break;
+
+      case 'cancel':
+        // Cancel plan mode entirely
+        addHistory({ type: 'info', content: 'Plan cancelled' });
+        agent.exitPlanMode(false); // Exit without approving
+        setCurrentMode('normal');
+        break;
+    }
+  }, [agent, addHistory, initialHistory]);
 
   // Handle model selection
   const handleModelSelect = async (model: string, providerId?: ProviderName, authMethod?: string) => {

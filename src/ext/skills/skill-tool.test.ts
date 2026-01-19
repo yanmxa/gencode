@@ -5,8 +5,8 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import { createSkillTool } from './skill-tool.js';
-import type { ToolContext } from '../core/tools/types.js';
+import { createSkillTool } from '../../core/tools/factories/skill-tool-factory.js';
+import type { ToolContext } from '../../core/tools/types.js';
 
 describe('createSkillTool', () => {
   let tempDir: string;

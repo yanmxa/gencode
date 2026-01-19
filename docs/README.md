@@ -12,13 +12,14 @@ This directory contains documentation for the GenCode project.
 
 - [providers.md](./providers.md) - Provider management and model selection
 - [permissions.md](./permissions.md) - Permission system guide
+- [plan-mode.md](./plan-mode.md) - Plan mode for implementation planning
 - [memory-system.md](./memory-system.md) - Memory and context management
 - [session-compression.md](./session-compression.md) - Session compression implementation
 
 ### 🧩 Extensibility System
 
 - [Slash Commands](#slash-commands) - Custom markdown-based commands ([detailed guide](./custom-commands.md))
-- [Skills System](#skills-system) - Domain expertise files
+- [Skills System](#skills-system) - Domain expertise files -> algin https://agentskills.io/home 
 - [Subagent System](#subagent-system) - Specialized agents ([detailed guide](./custom-agents.md))
 - [MCP Integration](#mcp-integration) - Model Context Protocol ([detailed guide](./mcp.md))
 - [Hooks System](#hooks-system) - Event-driven automation ([detailed guide](./hooks.md))
@@ -36,8 +37,9 @@ GenCode is an open-source, provider-agnostic AI coding assistant. It brings Clau
 
 #### Core Capabilities
 - **Multi-Provider Support**: Anthropic, OpenAI, Google, Vertex AI
-- **12 Built-in Tools**: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, TodoWrite, AskUserQuestion, TaskOutput, Skill
+- **13 Built-in Tools**: Read, Write, Edit, Glob, Grep, Bash, Task, TaskOutput, WebFetch, WebSearch, TodoWrite, AskUserQuestion, Skill
 - **Permission System**: Fine-grained access control with pattern-based rules
+- **Plan Mode**: Interactive implementation planning workflow with user approval
 - **Session Management**: Auto-save, resume, compression
 - **Cost Tracking**: Real-time token usage and cost estimates
 

@@ -101,6 +101,11 @@ export const EditInputSchema = z.object({
   file_path: z.string().describe('The absolute path to the file to modify'),
   old_string: z.string().describe('The text to replace'),
   new_string: z.string().describe('The replacement text'),
+  replace_all: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Replace all occurrences instead of requiring uniqueness (default: false)'),
 });
 export type EditInput = z.infer<typeof EditInputSchema>;
 
@@ -136,8 +141,12 @@ export const WebFetchInputSchema = z.object({
 export type WebFetchInput = z.infer<typeof WebFetchInputSchema>;
 
 export const TodoItemSchema = z.object({
-  content: z.string().min(1).describe('The task description'),
+  content: z.string().min(1).describe('The task description (imperative form, e.g., "Run tests")'),
   status: z.enum(['pending', 'in_progress', 'completed']).describe('Current status of the task'),
+  activeForm: z
+    .string()
+    .min(1)
+    .describe('Present continuous form shown during execution (e.g., "Running tests")'),
   id: z.string().optional().describe('Unique task identifier'),
 });
 export type TodoItem = z.infer<typeof TodoItemSchema>;

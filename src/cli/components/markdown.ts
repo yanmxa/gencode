@@ -40,13 +40,13 @@ const terminalRenderer: RendererObject = {
     ];
     const colorFn = colors[Math.min(token.depth - 1, 3)];
     const content = parseInline(this, token.tokens, token.text);
-    return '\n' + colorFn(content) + '\n\n';
+    return colorFn(content) + '\n';  // Reduced whitespace around headings
   },
 
   // Paragraphs - must parse inline tokens for bold/italic/etc
   paragraph(token: Tokens.Paragraph): string {
     const content = parseInline(this, token.tokens, token.text);
-    return content + '\n\n';
+    return content + '\n';  // Single newline to reduce whitespace
   },
 
   // Bold text
@@ -70,7 +70,7 @@ const terminalRenderer: RendererObject = {
   code({ text, lang }: Tokens.Code): string {
     const langHeader = lang ? chalk.dim(`  [${lang}]`) + '\n' : '';
     const lines = text.split('\n').map(line => chalk.cyan('    ' + line)).join('\n');
-    return '\n' + langHeader + lines + '\n\n';
+    return langHeader + lines + '\n';  // Reduced whitespace around code blocks
   },
 
   // List - parse block tokens for each item (they may contain nested text+inline tokens)
@@ -80,7 +80,7 @@ const terminalRenderer: RendererObject = {
       const content = parseTokens(this, item.tokens, item.text);
       return `  ${bullet} ${content}`;
     }).join('\n');
-    return result + '\n\n';
+    return result + '\n';  // Single newline after lists
   },
 
   // List item - use block parser since items contain text tokens with nested inline
@@ -100,12 +100,12 @@ const terminalRenderer: RendererObject = {
     const lines = text.split('\n').map(line =>
       chalk.dim('│ ') + chalk.italic(line)
     ).join('\n');
-    return '\n' + lines + '\n\n';
+    return lines + '\n';  // Reduced whitespace around blockquotes
   },
 
   // Horizontal rule
   hr(): string {
-    return '\n' + chalk.dim('─'.repeat(40)) + '\n\n';
+    return chalk.dim('─'.repeat(40)) + '\n';  // Reduced whitespace
   },
 
   // Line break

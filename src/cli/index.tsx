@@ -38,7 +38,7 @@ function detectConfig(settings: Settings, providersConfig: ProvidersConfigManage
   let authMethod: AuthMethod | undefined;
   let model = 'gemini-2.0-flash';
 
-  // Auto-detect from environment variables
+  // Priority 3: Auto-detect from API keys (lowest priority)
   // Check Vertex AI first (requires explicit opt-in)
   const useVertex = process.env.CLAUDE_CODE_USE_VERTEX === '1' || process.env.CLAUDE_CODE_USE_VERTEX === 'true';
   const hasVertexProject = !!(
@@ -65,15 +65,7 @@ function detectConfig(settings: Settings, providersConfig: ProvidersConfigManage
     model = 'gemini-2.0-flash';
   }
 
-  // Override from env vars
-  if (process.env.GEN_PROVIDER) {
-    provider = process.env.GEN_PROVIDER as Provider;
-  }
-  if (process.env.GEN_MODEL) {
-    model = process.env.GEN_MODEL;
-  }
-
-  // Override from saved settings (highest priority)
+  // Priority 2: Saved settings (medium priority)
   if (settings.provider) {
     provider = settings.provider;
   }
@@ -87,6 +79,25 @@ function detectConfig(settings: Settings, providersConfig: ProvidersConfigManage
         authMethod = cached.authMethod;
       } else {
         // Fall back to model name inference
+        provider = inferProvider(model);
+        authMethod = inferAuthMethod(model);
+      }
+    }
+  }
+
+  // Priority 1: Environment variables (highest priority - current session override)
+  if (process.env.GEN_PROVIDER) {
+    provider = process.env.GEN_PROVIDER as Provider;
+  }
+  if (process.env.GEN_MODEL) {
+    model = process.env.GEN_MODEL;
+    // Infer provider from model if not explicitly set
+    if (!process.env.GEN_PROVIDER) {
+      const cached = providersConfig.inferProviderFromCache(model);
+      if (cached) {
+        provider = cached.provider;
+        authMethod = cached.authMethod;
+      } else {
         provider = inferProvider(model);
         authMethod = inferAuthMethod(model);
       }
@@ -149,10 +160,34 @@ function printUsage(): void {
 // ============================================================================
 // Non-interactive mode
 // ============================================================================
-async function runNonInteractive(prompt: string, config: AgentConfig): Promise<void> {
+async function runNonInteractive(
+  prompt: string,
+  config: AgentConfig,
+  options: { resumeLatest?: boolean; settings?: Settings } = {}
+): Promise<void> {
   const { Agent } = await import('../core/agent/agent.js');
 
   const agent = new Agent(config);
+
+  // Initialize hooks system if configured
+  if (options.settings?.hooks) {
+    agent.initializeHooks(options.settings.hooks);
+  }
+
+  // Resume previous session if -c flag is used
+  if (options.resumeLatest) {
+    const resumed = await agent.resumeLatest();
+    if (resumed) {
+      const session = agent.getSessionManager().getCurrent();
+      if (process.env.GEN_DEBUG) {
+        console.error(`[session] Resumed session: ${session?.metadata.id} (${session?.messages.length} messages)`);
+      }
+    } else {
+      if (process.env.GEN_DEBUG) {
+        console.error(`[session] No previous session found, starting new session`);
+      }
+    }
+  }
 
   let response = '';
   for await (const event of agent.run(prompt)) {
@@ -196,9 +231,14 @@ async function main() {
 
   const config = detectConfig(settings, providersConfig);
 
+  // Debug: Log provider/model info
+  if (process.env.GEN_DEBUG) {
+    console.error(`[config] Provider: ${config.provider}, Auth: ${config.authMethod || 'api_key'}, Model: ${config.model}`);
+  }
+
   // Non-interactive mode with -p flag
   if (args.prompt) {
-    await runNonInteractive(args.prompt, config);
+    await runNonInteractive(args.prompt, config, { resumeLatest: args.continue, settings });
     return;
   }
 

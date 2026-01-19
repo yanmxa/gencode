@@ -15,7 +15,7 @@ import {
 import { SessionManager } from '../session/index.js';
 import { MemoryManager, type LoadedMemory } from '../memory/index.js';
 import type { AgentConfig, AgentEvent } from './types.js';
-import { buildSystemPromptForModel, debugPromptLoading } from '../../cli/prompts/index.js';
+import { buildSystemPromptWithPlanMode, debugPromptLoading } from '../../cli/prompts/index.js';
 import type { Question, QuestionAnswer } from '../tools/types.js';
 import {
   getPlanModeManager,
@@ -637,19 +637,27 @@ export class Agent {
       const useStreaming = process.env.GEN_STREAM === '1' || this.config.streaming;
 
       try {
-        // Debug prompt loading (enabled with GENCODE_DEBUG_PROMPTS=1)
-        debugPromptLoading(this.config.model, this.config.provider);
+        // Debug prompt loading (enabled with GEN_DEBUG_PROMPTS=1 or =2)
+        debugPromptLoading(
+          this.config.model,
+          this.config.provider,
+          this.planModeManager.isActive(),
+          this.planModeManager.getPlanFilePath() ?? undefined
+        );
 
         // Build system prompt based on model → provider → prompt flow
         // Looks up provider from ~/.gencode/providers.json, falls back to config.provider
+        // Includes plan mode instructions if plan mode is active
         const systemPrompt =
           this.config.systemPrompt ??
-          buildSystemPromptForModel(
+          buildSystemPromptWithPlanMode(
             this.config.model,
             this.config.cwd ?? process.cwd(),
             true, // Assume git repo for now
             this.loadedMemory?.context,
-            this.config.provider // Fallback provider if model lookup fails
+            this.config.provider, // Fallback provider if model lookup fails
+            this.planModeManager.isActive(), // Plan mode active flag
+            this.planModeManager.getPlanFilePath() ?? undefined // Plan file path
           );
 
         if (useStreaming) {

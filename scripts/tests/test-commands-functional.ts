@@ -14,8 +14,8 @@
  *   GEN_DEBUG=2 npm run test:commands:func  # Verbose debug mode
  */
 
-import { CommandManager } from '../src/ext/commands/manager.js';
-import { isVerboseDebugEnabled } from '../src/base/utils/debug.js';
+import { CommandManager } from '../../src/ext/commands/manager.js';
+import { isVerboseDebugEnabled } from '../../src/base/utils/debug.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 

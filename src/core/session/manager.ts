@@ -362,9 +362,12 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Clear old sessions based on config
+   * @param options.all - If true, clean up all sessions regardless of cwd (default: true)
    */
-  async cleanup(): Promise<number> {
-    const sessions = await this.list();
+  async cleanup(options?: { all?: boolean }): Promise<number> {
+    // Default to all sessions for cleanup (different from list default)
+    const shouldShowAll = options?.all ?? true;
+    const sessions = await this.list({ all: shouldShowAll });
     let deleted = 0;
 
     const now = Date.now();
@@ -558,20 +561,22 @@ export class SessionManager extends EventEmitter {
     const preserveRecent = 10; // Default, could be configurable
     const summarizeEnd = session.messages.length - preserveRecent - 1;
 
-    // Find start point: after last summary or beginning
+    // Find start point: skip system messages (including summary messages) at the beginning
+    // After compaction, the messages array starts with system messages followed by recent messages
+    // We need to find the first non-system message as our starting point
     let summarizeStart = 0;
-    if (session.summaries && session.summaries.length > 0) {
-      const lastSummary = session.summaries[session.summaries.length - 1];
-      summarizeStart = lastSummary.coveringMessages[1] + 1;
-    } else {
-      // Skip system prompt
-      const firstSystemIdx = session.messages.findIndex((m) => m.role === 'system');
-      if (firstSystemIdx >= 0) {
-        summarizeStart = firstSystemIdx + 1;
+    for (let i = 0; i < session.messages.length; i++) {
+      if (session.messages[i].role !== 'system') {
+        summarizeStart = i;
+        break;
       }
     }
 
+    // Need at least some messages to summarize (more than just the preserved ones)
     if (summarizeEnd <= summarizeStart) return;
+
+    // Need at least 5 messages to summarize to make it worthwhile
+    if (summarizeEnd - summarizeStart < 5) return;
 
     // Generate summary
     const summary = await this.compressionEngine.compact(session.messages, [
@@ -586,20 +591,21 @@ export class SessionManager extends EventEmitter {
     // Replace summarized messages
     const preserved: Message[] = [];
 
-    // Preserve system prompt
-    const systemMsg = session.messages.find((m) => m.role === 'system');
-    if (systemMsg) {
-      preserved.push(systemMsg);
+    // Preserve all system messages at the beginning (system prompt + previous summaries)
+    for (let i = 0; i < summarizeStart; i++) {
+      if (session.messages[i].role === 'system') {
+        preserved.push(session.messages[i]);
+      }
     }
 
-    // Add summary as system message
+    // Add new summary as system message
     const summaryMessage: Message = {
       role: 'system',
       content: this.formatSummaryAsContext(summary),
     };
     preserved.push(summaryMessage);
 
-    // Add recent messages
+    // Add recent messages (those after summarizeEnd)
     const recentMessages = session.messages.slice(summarizeEnd + 1);
     session.messages = [...preserved, ...recentMessages];
   }

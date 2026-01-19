@@ -264,10 +264,70 @@ export function buildSystemPromptForModel(
 }
 
 /**
+ * Load plan mode prompt if it exists
+ */
+export function loadPlanModePrompt(): string {
+  try {
+    return loadPrompt('system', 'plan-mode');
+  } catch {
+    // Plan mode prompt not found - return empty string
+    return '';
+  }
+}
+
+/**
+ * Build system prompt with plan mode context
+ * Appends plan mode instructions when plan mode is active
+ *
+ * @param model - The model ID
+ * @param cwd - Current working directory
+ * @param isGitRepo - Whether the cwd is a git repository
+ * @param memoryContext - Optional memory context to include
+ * @param fallbackProvider - Provider to use if model lookup fails
+ * @param planModeActive - Whether plan mode is currently active
+ * @param planFilePath - Path to the plan file (if in plan mode)
+ */
+export function buildSystemPromptWithPlanMode(
+  model: string,
+  cwd: string,
+  isGitRepo: boolean = false,
+  memoryContext?: string,
+  fallbackProvider?: string,
+  planModeActive: boolean = false,
+  planFilePath?: string
+): string {
+  let prompt = buildSystemPromptForModel(model, cwd, isGitRepo, memoryContext, fallbackProvider);
+
+  if (planModeActive) {
+    const planModePrompt = loadPlanModePrompt();
+    if (planModePrompt) {
+      prompt += '\n\n' + planModePrompt;
+
+      // Add plan file path context if available
+      if (planFilePath) {
+        prompt += `\n\n## Current Plan File\n\nYour plan file is located at: ${planFilePath}\n\nWrite your implementation plan to this file when you reach Phase 4 (Final Plan).`;
+      }
+    }
+  }
+
+  return prompt;
+}
+
+/**
  * Debug utility to verify prompt loading at runtime
  * Set GEN_DEBUG_PROMPTS=1 for summary, GEN_DEBUG_PROMPTS=2 for full content
+ *
+ * @param model - The model ID
+ * @param fallbackProvider - Provider to use if model lookup fails
+ * @param planModeActive - Whether plan mode is currently active
+ * @param planFilePath - Path to the plan file (if in plan mode)
  */
-export function debugPromptLoading(model: string, fallbackProvider?: string): void {
+export function debugPromptLoading(
+  model: string,
+  fallbackProvider?: string,
+  planModeActive: boolean = false,
+  planFilePath?: string
+): void {
   const debugLevel = process.env.GEN_DEBUG_PROMPTS;
   if (!debugLevel || debugLevel === '0') {
     return;
@@ -276,14 +336,22 @@ export function debugPromptLoading(model: string, fallbackProvider?: string): vo
   const promptType = getPromptTypeForModel(model, fallbackProvider);
   const basePrompt = loadPrompt('system', 'base');
   const providerPrompt = loadPrompt('system', promptType);
+  const planModePrompt = planModeActive ? loadPlanModePrompt() : '';
 
   console.error('[PROMPT DEBUG] ================================');
   console.error(`[PROMPT DEBUG] Model: ${model}`);
   console.error(`[PROMPT DEBUG] Fallback Provider: ${fallbackProvider || 'none'}`);
   console.error(`[PROMPT DEBUG] Resolved Prompt Type: ${promptType}`);
+  console.error(`[PROMPT DEBUG] Plan Mode Active: ${planModeActive}`);
+  if (planModeActive && planFilePath) {
+    console.error(`[PROMPT DEBUG] Plan File: ${planFilePath}`);
+  }
   console.error(`[PROMPT DEBUG] base.txt lines: ${basePrompt.split('\n').length}`);
   console.error(`[PROMPT DEBUG] ${promptType}.txt lines: ${providerPrompt.split('\n').length}`);
-  console.error(`[PROMPT DEBUG] Total chars: ${basePrompt.length + providerPrompt.length}`);
+  if (planModeActive) {
+    console.error(`[PROMPT DEBUG] plan-mode.txt lines: ${planModePrompt.split('\n').length}`);
+  }
+  console.error(`[PROMPT DEBUG] Total chars: ${basePrompt.length + providerPrompt.length + planModePrompt.length}`);
 
   // Verify key content
   const checks = [
@@ -297,6 +365,21 @@ export function debugPromptLoading(model: string, fallbackProvider?: string): vo
     const found = check.pattern.test(basePrompt);
     console.error(`[PROMPT DEBUG] ✓ ${check.name}: ${found ? 'OK' : 'MISSING'}`);
   }
+
+  // Plan mode specific checks
+  if (planModeActive) {
+    const planChecks = [
+      { name: 'Plan Mode Header', pattern: /# Plan Mode/i },
+      { name: 'Workflow', pattern: /Workflow|phase/i },
+      { name: 'Tool Access', pattern: /Blocked|Available/i },
+      { name: 'ExitPlanMode', pattern: /ExitPlanMode/i },
+    ];
+    for (const check of planChecks) {
+      const found = check.pattern.test(planModePrompt);
+      console.error(`[PROMPT DEBUG] ✓ Plan: ${check.name}: ${found ? 'OK' : 'MISSING'}`);
+    }
+  }
+
   console.error('[PROMPT DEBUG] ================================');
 
   // Print full content if level >= 2
@@ -305,6 +388,13 @@ export function debugPromptLoading(model: string, fallbackProvider?: string): vo
     console.error(basePrompt);
     console.error(`\n[PROMPT DEBUG] === ${promptType}.txt ===\n`);
     console.error(providerPrompt);
+    if (planModeActive) {
+      console.error('\n[PROMPT DEBUG] === plan-mode.txt ===\n');
+      console.error(planModePrompt);
+      if (planFilePath) {
+        console.error(`\n[PROMPT DEBUG] Plan file path: ${planFilePath}`);
+      }
+    }
     console.error('\n[PROMPT DEBUG] === END ===\n');
   }
 }

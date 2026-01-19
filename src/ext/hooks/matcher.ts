@@ -24,12 +24,12 @@
  * @returns true if pattern matches, false otherwise
  */
 export function matchesTool(pattern: string | undefined, toolName: string | undefined): boolean {
-  // Wildcard patterns - match everything
+  // Wildcard patterns - match everything (including events without toolName like SessionStart)
   if (!pattern || pattern === '' || pattern === '*') {
     return true;
   }
 
-  // No tool name to match against
+  // No tool name to match against - can only match wildcard (already handled above)
   if (!toolName) {
     return false;
   }

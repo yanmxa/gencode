@@ -67,7 +67,8 @@ export function AssistantMessage({ text, streaming }: AssistantMessageProps) {
   if (streaming) {
     const termWidth = process.stdout.columns || 80;
     const contentWidth = termWidth - 4;
-    const lines = wrapText(text.trimEnd(), contentWidth);
+    // Trim both ends to remove leading/trailing newlines
+    const lines = wrapText(text.trim(), contentWidth);
 
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={0}>

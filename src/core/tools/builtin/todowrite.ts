@@ -39,7 +39,9 @@ function formatTodos(todos: TodoItem[]): string {
 
   const lines = todos.map((todo, index) => {
     const icon = statusIcons[todo.status] || '[ ]';
-    return `${index + 1}. ${icon} ${todo.content}`;
+    // Show activeForm for in_progress tasks, content otherwise
+    const display = todo.status === 'in_progress' && todo.activeForm ? todo.activeForm : todo.content;
+    return `${index + 1}. ${icon} ${display}`;
   });
 
   return lines.join('\n');

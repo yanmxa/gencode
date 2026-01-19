@@ -5,11 +5,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { ConfigManager } from '../../src/config/manager.js';
+import { ConfigManager } from '../../src/base/config/manager.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import type { HooksConfig } from '../../src/hooks/types.js';
+import type { HooksConfig } from '../../src/ext/hooks/types.js';
 
 describe('Hooks Configuration Loading (Integration)', () => {
   let testProjectDir: string;

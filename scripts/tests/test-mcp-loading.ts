@@ -13,8 +13,8 @@
  *   npm run test:mcp -- --verbose        # Show server details
  */
 
-import { MCPManager } from '../src/ext/mcp/manager.js';
-import { logger } from '../src/base/utils/logger.js';
+import { MCPManager } from '../../src/ext/mcp/manager.js';
+import { logger } from '../../src/base/utils/logger.js';
 
 const args = process.argv.slice(2);
 const verbose = args.includes('--verbose');

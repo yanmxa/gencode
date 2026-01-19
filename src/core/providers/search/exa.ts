@@ -176,6 +176,9 @@ export class ExaProvider implements SearchProvider {
         headers: {
           Accept: 'application/json, text/event-stream',
           'Content-Type': 'application/json',
+          // Explicitly omit authentication (Exa's public endpoint)
+          'X-Api-Key': '',
+          Authorization: '',
         },
         body: JSON.stringify(searchRequest),
         signal: AbortSignal.any(signals),

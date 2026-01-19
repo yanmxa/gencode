@@ -18,6 +18,7 @@ import type {
 } from './types.js';
 import { executeHook } from './executor.js';
 import { matchesTool } from './matcher.js';
+import { isDebugEnabled } from '../../base/utils/debug.js';
 
 // =============================================================================
 // Hooks Manager Class
@@ -64,6 +65,12 @@ export class HooksManager {
     // Limit number of hooks if maxHooks is set
     const hooksToExecute = matchingHooks.slice(0, maxHooks);
 
+    if (isDebugEnabled('hooks')) {
+      console.error(
+        `[hooks] Trigger ${event}${context.toolName ? ` for ${context.toolName}` : ''}: ${matchingHooks.length} hooks matched, ${hooksToExecute.length} to execute`
+      );
+    }
+
     if (hooksToExecute.length === 0) {
       return [];
     }
@@ -104,6 +111,15 @@ export class HooksManager {
    */
   setConfig(config: HooksConfig): void {
     this.config = config;
+
+    if (isDebugEnabled('hooks')) {
+      const eventCount = Object.keys(config).length;
+      const totalHooks = Object.values(config).reduce(
+        (sum, matchers) => sum + matchers.reduce((s, m) => s + m.hooks.length, 0),
+        0
+      );
+      console.error(`[hooks] Configuration loaded: ${eventCount} events, ${totalHooks} total hooks`);
+    }
   }
 
   /**
@@ -130,9 +146,17 @@ export class HooksManager {
     const matchers = this.config[event] || [];
     const matchingHooks: HookDefinition[] = [];
 
+    if (isDebugEnabled('hooks') && matchers.length > 0) {
+      console.error(`[hooks] Matching for ${event}, toolName=${toolName}, matchers count=${matchers.length}`);
+    }
+
     for (const matcher of matchers) {
+      const matches = matchesTool(matcher.matcher, toolName);
+      if (isDebugEnabled('hooks')) {
+        console.error(`[hooks]   Matcher pattern="${matcher.matcher}", matches=${matches}, hooks count=${matcher.hooks.length}`);
+      }
       // Check if matcher pattern matches the tool name
-      if (matchesTool(matcher.matcher, toolName)) {
+      if (matches) {
         matchingHooks.push(...matcher.hooks);
       }
     }

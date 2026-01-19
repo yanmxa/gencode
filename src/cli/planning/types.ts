@@ -26,6 +26,7 @@ export type PlanApprovalOption =
   | 'approve' // Accept plan and execute with auto-accept edits
   | 'approve_clear' // Accept plan, clear context, auto-accept edits
   | 'approve_manual' // Accept plan but manually approve each edit
+  | 'approve_manual_keep' // Accept plan, keep context, manually approve each edit
   | 'modify' // Go back to modify the plan
   | 'cancel'; // Cancel plan mode entirely
 
@@ -83,6 +84,7 @@ export interface PlanFile {
 
 /**
  * Tools allowed in plan mode (read-only + planning tools)
+ * Note: Write is allowed but restricted to plan file only (enforced at execution time)
  */
 export const PLAN_MODE_ALLOWED_TOOLS = [
   'Read',
@@ -94,12 +96,14 @@ export const PLAN_MODE_ALLOWED_TOOLS = [
   'AskUserQuestion',
   'EnterPlanMode', // Can re-enter if needed
   'ExitPlanMode', // To exit plan mode
+  'Write', // Allowed but restricted to plan file only (enforced in write.ts)
 ] as const;
 
 /**
  * Tools blocked in plan mode (write/execute operations)
+ * Note: Write is NOT blocked because it's needed to write the plan file
  */
-export const PLAN_MODE_BLOCKED_TOOLS = ['Write', 'Edit', 'Bash'] as const;
+export const PLAN_MODE_BLOCKED_TOOLS = ['Edit', 'Bash'] as const;
 
 export type PlanModeAllowedTool = (typeof PLAN_MODE_ALLOWED_TOOLS)[number];
 export type PlanModeBlockedTool = (typeof PLAN_MODE_BLOCKED_TOOLS)[number];

@@ -17,14 +17,14 @@
  *   npm run test:components -- --verbose # Verbose errors
  */
 
-import { LoadingReporter } from '../src/base/utils/loading-reporter.js';
-import { logger } from '../src/base/utils/logger.js';
-import { SkillDiscovery } from '../src/ext/skills/manager.js';
-import { discoverCommands } from '../src/ext/commands/discovery.js';
-import { CustomAgentLoader } from '../src/ext/subagents/manager.js';
-import { HooksManager } from '../src/ext/hooks/hooks-manager.js';
-import { MCPManager } from '../src/ext/mcp/manager.js';
-import { createDefaultRegistry } from '../src/core/tools/index.js';
+import { LoadingReporter } from '../../src/base/utils/loading-reporter.js';
+import { logger } from '../../src/base/utils/logger.js';
+import { SkillDiscovery } from '../../src/ext/skills/manager.js';
+import { discoverCommands } from '../../src/ext/commands/discovery.js';
+import { CustomAgentLoader } from '../../src/ext/subagents/manager.js';
+import { HooksManager } from '../../src/ext/hooks/hooks-manager.js';
+import { MCPManager } from '../../src/ext/mcp/manager.js';
+import { createDefaultRegistry } from '../../src/core/tools/index.js';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
 

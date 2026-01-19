@@ -13,6 +13,7 @@ import { spawn } from 'child_process';
 import type { HookDefinition, HookContext, HookResult, HookStdinPayload } from './types.js';
 import { isVerboseDebugEnabled } from '../../base/utils/debug.js';
 import { logger } from '../../base/utils/logger.js';
+import { expandVariables } from './utils.js';
 
 // =============================================================================
 // Constants
@@ -116,9 +117,12 @@ async function executeCommandHook(hook: HookDefinition, context: HookContext): P
   // Build environment variables
   const env = buildEnvironment(context);
 
+  // Expand variables in command (e.g., $SESSION_ID, $FILE_PATH)
+  const expandedCommand = expandVariables(hook.command, context);
+
   return new Promise((resolve) => {
     // Spawn bash process
-    const proc = spawn('bash', ['-c', hook.command!], {
+    const proc = spawn('bash', ['-c', expandedCommand], {
       cwd: context.cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],

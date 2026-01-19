@@ -14,8 +14,8 @@
  *   npm run test:hooks -- --verbose        # Show all hooks
  */
 
-import { HooksManager } from '../src/ext/hooks/hooks-manager.js';
-import { logger } from '../src/base/utils/logger.js';
+import { HooksManager } from '../../src/ext/hooks/hooks-manager.js';
+import { logger } from '../../src/base/utils/logger.js';
 
 const args = process.argv.slice(2);
 const verbose = args.includes('--verbose');

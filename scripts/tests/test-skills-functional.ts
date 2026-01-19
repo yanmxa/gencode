@@ -13,8 +13,8 @@
  *   GEN_DEBUG=2 npm run test:skills:func  # Verbose debug mode
  */
 
-import { createSkillTool, resetSkillDiscovery } from '../src/core/tools/index.js';
-import { isVerboseDebugEnabled } from '../src/base/utils/debug.js';
+import { createSkillTool, resetSkillDiscovery } from '../../src/core/tools/index.js';
+import { isVerboseDebugEnabled } from '../../src/base/utils/debug.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
