@@ -234,7 +234,7 @@ async function testSubagentConfiguration() {
     // Test 8: Verify custom agent loader (if any exist)
     console.log('\nTest 8: Checking for custom agents...');
     try {
-      const { CustomAgentLoader } = await import('../src/subagents/custom-agent-loader.js');
+      const { CustomAgentLoader } = await import('../src/ext/subagents/manager.js');
       const loader = new CustomAgentLoader();
       await loader.initialize();
       const customAgents = await loader.listAgents(cwd);
