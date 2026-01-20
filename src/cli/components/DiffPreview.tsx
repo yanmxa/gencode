@@ -4,7 +4,7 @@
  */
 
 import { Box, Text } from 'ink';
-import { colors } from './theme.js';
+import { colors, icons } from './theme.js';
 
 interface DiffLineData {
   type: 'header' | 'hunk' | 'add' | 'remove' | 'context';
@@ -104,7 +104,7 @@ export function DiffPreview({ filePath, diff, collapsed = true, maxLines = 50 }:
     >
       {/* Header with file path and stats */}
       <Box>
-        <Text color={colors.toolHeader}>[E] </Text>
+        <Text color={colors.tool}>{icons.toolEdit} </Text>
         <Text color={colors.textSecondary}>{filePath}</Text>
         <Text>  </Text>
         <Text color={colors.diffAdd}>+{addCount}</Text>

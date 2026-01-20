@@ -1,7 +1,7 @@
 /**
  * Spinner Component - Vivid thinking animation
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import InkSpinner from 'ink-spinner';
 import { colors } from './theme.js';
@@ -33,61 +33,6 @@ export function LoadingSpinner({ text = 'Loading...' }: SpinnerProps) {
   );
 }
 
-// Thinking phrases that rotate during processing
-const thinkingPhrases = [
-  'Thinking',
-  'Pondering',
-  'Analyzing',
-  'Processing',
-  'Reasoning',
-  'Contemplating',
-  'Figuring out',
-  'Working on it',
-  'Almost there',
-  'Crafting response',
-];
-
-// Animation frames for different styles
-const animations = {
-  // Brainwave animation
-  brainwave: ['🧠 ∿∿∿', '🧠∿ ∿∿', '🧠∿∿ ∿', '🧠∿∿∿ ', '🧠 ∿∿∿', '🧠∿ ∿∿'],
-  // Sparkle animation
-  sparkle: ['✨    ', ' ✨   ', '  ✨  ', '   ✨ ', '    ✨', '   ✨ ', '  ✨  ', ' ✨   '],
-  // DNA helix
-  dna: ['🔬 ⌬⌬⌬', '🔬⌬ ⌬⌬', '🔬⌬⌬ ⌬', '🔬⌬⌬⌬ ', '🔬 ⌬⌬⌬'],
-  // Pulse dots
-  pulse: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
-  // Wave animation
-  wave: ['≋≈∼∽', '∽≋≈∼', '∼∽≋≈', '≈∼∽≋'],
-  // Bounce bar with gradient
-  bounceGradient: [
-    '█▓▒░    ',
-    ' █▓▒░   ',
-    '  █▓▒░  ',
-    '   █▓▒░ ',
-    '    █▓▒░',
-    '   ░▒▓█ ',
-    '  ░▒▓█  ',
-    ' ░▒▓█   ',
-    '░▒▓█    ',
-  ],
-  // Orbit animation
-  orbit: ['◐', '◓', '◑', '◒'],
-  // Loading bar with shimmer
-  shimmer: [
-    '▓▓▓▓▓░░░',
-    '░▓▓▓▓▓░░',
-    '░░▓▓▓▓▓░',
-    '░░░▓▓▓▓▓',
-    '░░░░▓▓▓▓',
-    '░░░▓▓▓▓▓',
-    '░░▓▓▓▓▓░',
-    '░▓▓▓▓▓░░',
-  ],
-};
-
-type AnimationType = keyof typeof animations;
-const animationTypes = Object.keys(animations) as AnimationType[];
 
 // Format elapsed time
 function formatElapsed(ms: number): string {
@@ -112,33 +57,22 @@ interface ProgressBarProps {
   isThinking?: boolean;
 }
 
+// Star animation frames (Claude Code style)
+const starFrames = ['✶', '✷', '✸', '✹', '✺', '✹', '✸', '✷'];
+
 /**
  * Progress bar animation for processing state
- * Claude Code style with time, tokens, and thinking status
+ * Claude Code style: ✶ Working… (ctrl+c to interrupt · 42s · ↓ 1.1k tokens · thinking)
  */
 export function ProgressBar({ startTime, tokenCount = 0, isThinking = false }: ProgressBarProps) {
-  const [frame, setFrame] = useState(0);
-  const [phraseIndex, setPhraseIndex] = useState(0);
   const [elapsed, setElapsed] = useState(0);
-
-  // Pick a random animation style on mount
-  const animStyle = useMemo(() => {
-    const randomIndex = Math.floor(Math.random() * animationTypes.length);
-    return animationTypes[randomIndex];
-  }, []);
-
-  const currentAnim = animations[animStyle];
+  const [frame, setFrame] = useState(0);
 
   useEffect(() => {
-    // Fast animation update
+    // Star animation
     const animTimer = setInterval(() => {
-      setFrame((f) => (f + 1) % currentAnim.length);
-    }, 120);
-
-    // Slower phrase rotation (every 2.5 seconds)
-    const phraseTimer = setInterval(() => {
-      setPhraseIndex((p) => (p + 1) % thinkingPhrases.length);
-    }, 2500);
+      setFrame((f) => (f + 1) % starFrames.length);
+    }, 100);
 
     // Update elapsed time every second
     const elapsedTimer = setInterval(() => {
@@ -149,19 +83,14 @@ export function ProgressBar({ startTime, tokenCount = 0, isThinking = false }: P
 
     return () => {
       clearInterval(animTimer);
-      clearInterval(phraseTimer);
       clearInterval(elapsedTimer);
     };
-  }, [currentAnim.length, startTime]);
+  }, [startTime]);
 
-  const animFrame = currentAnim[frame];
-  const phrase = thinkingPhrases[phraseIndex];
+  const star = starFrames[frame];
 
-  // Animated ellipsis
-  const ellipsis = '.'.repeat((frame % 3) + 1).padEnd(3, ' ');
-
-  // Build status parts
-  const parts: string[] = [];
+  // Build status parts (Claude style)
+  const parts: string[] = ['ctrl+c to interrupt'];
   if (startTime && elapsed > 0) {
     parts.push(formatElapsed(elapsed));
   }
@@ -172,14 +101,13 @@ export function ProgressBar({ startTime, tokenCount = 0, isThinking = false }: P
     parts.push('thinking');
   }
 
-  const statusText = parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
+  const statusText = parts.join(' · ');
 
   return (
-    <Box>
-      <Text color={colors.brand}>{animFrame}</Text>
-      <Text color={colors.textSecondary}> {phrase}</Text>
-      <Text color={colors.textMuted}>{ellipsis}</Text>
-      <Text color={colors.textMuted}>(esc to stop{statusText})</Text>
+    <Box marginTop={1}>
+      <Text color={colors.brand}>{star}</Text>
+      <Text color={colors.textSecondary}> Inferring…</Text>
+      <Text color={colors.textMuted}> ({statusText})</Text>
     </Box>
   );
 }

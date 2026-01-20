@@ -243,6 +243,16 @@ export class PermissionManager {
     // Step 4: Default behavior (read-only → auto, write → prompt)
     // ========================================================================
 
+    // Special case: Edit tool handles its own permission with diff preview
+    // Skip pre-execution confirmation to let the tool show the diff
+    if (tool === 'Edit') {
+      return {
+        allowed: true,
+        reason: 'Edit tool handles its own permission with diff',
+        requiresConfirmation: false,
+      };
+    }
+
     // Check session rejection cache
     if (this.sessionRejections.has(cacheKey)) {
       await this.logAudit(context, 'denied', 'Session rejection cache');

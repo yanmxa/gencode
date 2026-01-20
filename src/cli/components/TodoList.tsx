@@ -15,37 +15,45 @@ export function TodoList({ todos }: TodoListProps) {
 
   const completed = todos.filter((t) => t.status === 'completed').length;
   const total = todos.length;
+  const inProgress = todos.find((t) => t.status === 'in_progress');
 
   return (
     <Box flexDirection="column" marginTop={1} marginLeft={2}>
-      {/* Header with count */}
-      <Text color={colors.textMuted}>
-        Tasks {completed}/{total}
-      </Text>
-      {/* Task list */}
-      {todos.map((todo, i) => {
+      {/* Header with active task */}
+      {inProgress ? (
+        <Text color={colors.textSecondary}>
+          <Text color={colors.warning}>▸</Text> {inProgress.activeForm || inProgress.content}
+          <Text color={colors.textMuted}> ({completed}/{total})</Text>
+        </Text>
+      ) : (
+        <Text color={colors.textMuted}>
+          Tasks {completed}/{total}
+        </Text>
+      )}
+      {/* Task list - show only if more than one task */}
+      {todos.length > 1 && todos.map((todo, i) => {
         const isCompleted = todo.status === 'completed';
         const isInProgress = todo.status === 'in_progress';
 
-        // Status indicators: [x] done, [>] active, [ ] pending
-        let bracket: string;
-        let bracketColor: string;
+        // Status indicators: ✓ done, ▸ active, ○ pending
+        let indicator: string;
+        let indicatorColor: string;
 
         if (isCompleted) {
-          bracket = '[x]';
-          bracketColor = colors.success;
+          indicator = '✓';
+          indicatorColor = colors.success;
         } else if (isInProgress) {
-          bracket = '[>]';
-          bracketColor = colors.warning;
+          indicator = '▸';
+          indicatorColor = colors.warning;
         } else {
-          bracket = '[ ]';
-          bracketColor = colors.textMuted;
+          indicator = '○';
+          indicatorColor = colors.textMuted;
         }
 
         return (
           <Text key={i} dimColor={isCompleted}>
-            <Text color={bracketColor}>{bracket}</Text>
-            <Text strikethrough={isCompleted}> {todo.content}</Text>
+            <Text color={indicatorColor}> {indicator}</Text>
+            <Text strikethrough={isCompleted} color={isCompleted ? colors.textMuted : colors.textSecondary}> {todo.content}</Text>
           </Text>
         );
       })}

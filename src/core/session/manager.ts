@@ -424,9 +424,13 @@ export class SessionManager extends EventEmitter {
 
     // Check if compression is needed
     if (this.compressionEngine && modelInfo) {
-      // Pass actual token usage to compression engine
-      const tokenUsage = this.cumulativeTokens.total > 0
-        ? { input: this.cumulativeTokens.input, output: this.cumulativeTokens.output }
+      // Get the latest completion's input tokens as current context size
+      // This is more accurate than cumulative tokens (which grows with each request)
+      // The input tokens of the latest request represents the actual context window usage
+      const completions = this.currentSession.metadata.completions;
+      const latestCompletion = completions?.[completions.length - 1];
+      const tokenUsage = latestCompletion?.usage
+        ? { input: latestCompletion.usage.inputTokens, output: 0 }
         : undefined;
 
       const { needed, strategy, usagePercent, shouldWarn } =
@@ -440,7 +444,7 @@ export class SessionManager extends EventEmitter {
       if (shouldWarn && !needed && usagePercent) {
         this.emit('context-warning', {
           usagePercent,
-          totalTokens: this.cumulativeTokens.total,
+          totalTokens: latestCompletion?.usage?.inputTokens || 0,
           maxTokens: modelInfo.contextWindow,
         });
       }

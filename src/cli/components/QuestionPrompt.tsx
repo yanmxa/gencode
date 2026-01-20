@@ -54,7 +54,7 @@ function ProgressBar({ questions, currentIndex, answers, showSubmit = true }: Pr
         return (
           <Box key={idx}>
             {isCurrent ? (
-              <Text backgroundColor="#6366F1" color="#FFFFFF" bold>
+              <Text backgroundColor={colors.brand} color="#FFFFFF" bold>
                 {` □ ${q.header} `}
               </Text>
             ) : (
@@ -69,7 +69,7 @@ function ProgressBar({ questions, currentIndex, answers, showSubmit = true }: Pr
       {showSubmit && (
         <>
           {isReviewMode ? (
-            <Text backgroundColor="#22C55E" color="#FFFFFF" bold>
+            <Text backgroundColor={colors.success} color="#FFFFFF" bold>
               {` ✓ Submit `}
             </Text>
           ) : (

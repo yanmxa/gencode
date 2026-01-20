@@ -36,6 +36,8 @@ export const BUILTIN_COMMANDS: Command[] = [
   { name: '/context', description: 'Show context usage stats' },
   { name: '/compact', description: 'Manually compact conversation' },
   { name: '/commands', description: 'List custom commands' },
+  { name: '/expand', description: 'Expand truncated tool result', argumentHint: '[number|all]' },
+  { name: '/collapse', description: 'Collapse expanded tool result', argumentHint: '[number|all]' },
 ];
 
 /**

@@ -1,21 +1,19 @@
 /**
- * Permission Prompt Component - Simplified UI
+ * Permission Prompt Component - Claude Code style UI
  *
- * Design:
- * ╭──────────────────────────────────────────────────╮
- * │  [$] Bash                                        │
- * │                                                  │
- * │  osascript -e '                                  │
- * │    tell application "Mail"                       │
- * │    ...                                           │
- * │                               ▼ 28 more lines tab│
- * │                                                  │
- * │  Allow this action?                              │
- * │                                                  │
- * │  ▸ [1] Yes                                       │
- * │    [2] Yes, always                               │
- * │    [3] No                                        │
- * ╰──────────────────────────────────────────────────╯
+ * Design (horizontal line style):
+ * ─────────────────────────────────────────────────────
+ *  ⏺ Bash
+ *    osascript -e '
+ *      tell application "Mail"
+ *      ...
+ *                                  ▼ 28 more lines tab
+ *
+ *  Do you want to proceed?
+ *    ▸ Yes        [1] allow once
+ *      Always     [2] allow always
+ *      No         [3] deny
+ * ─────────────────────────────────────────────────────
  */
 
 import { useState } from 'react';
@@ -81,9 +79,25 @@ function formatInput(
       return (input.command as string) ?? JSON.stringify(input);
 
     case 'Read':
-    case 'Write':
     case 'Edit':
       return (input.file_path as string) ?? (input.path as string) ?? '';
+
+    case 'Write': {
+      const filePath = (input.file_path as string) ?? (input.path as string) ?? '';
+      const content = input.content as string | undefined;
+      if (content) {
+        // Show file path as header with content preview (Claude Code style)
+        const shortPath = filePath.replace(process.env.HOME || '', '~');
+        const lines = content.split('\n');
+        const preview = lines.slice(0, 10).join('\n');
+        const moreLines = lines.length > 10 ? `\n... +${lines.length - 10} more lines` : '';
+        // Use terminal width for dashed lines
+        const termWidth = process.stdout.columns || 80;
+        const dashedLine = '╌'.repeat(termWidth - 4);
+        return `Create file ${shortPath}\n${dashedLine}\n${preview}${moreLines}\n${dashedLine}`;
+      }
+      return filePath;
+    }
 
     case 'Glob':
       return `${input.pattern ?? ''} in ${input.path ?? '.'}`;
@@ -111,27 +125,33 @@ function formatInput(
 }
 
 /**
- * Get icon for tool (terminal style)
+ * Get icon for tool (Claude Code style - clean Unicode)
  */
 function getToolIcon(tool: string): string {
   switch (tool) {
     case 'Bash':
-      return '[$]';
+      return icons.toolBash;
     case 'Read':
-      return '[R]';
+      return icons.toolRead;
     case 'Write':
-      return '[W]';
+      return icons.toolWrite;
     case 'Edit':
-      return '[E]';
+      return icons.toolEdit;
     case 'Glob':
-      return '[G]';
+      return icons.toolGlob;
     case 'Grep':
-      return '[S]';
+      return icons.toolGrep;
     case 'WebFetch':
     case 'WebSearch':
-      return '[W]';
+      return icons.toolWeb;
     case 'TodoWrite':
-      return '[T]';
+      return icons.toolTodo;
+    case 'Task':
+      return icons.toolTask;
+    case 'LSP':
+      return icons.toolLsp;
+    case 'NotebookEdit':
+      return icons.toolNotebook;
     default:
       return icons.tool;
   }
@@ -216,18 +236,18 @@ export function PermissionPrompt({
     return suggestion.label;
   };
 
+  // Get terminal width for horizontal line
+  const termWidth = process.stdout.columns || 80;
+  const lineChar = '─';
+
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={colors.permissionBorder}
-      paddingX={1}
-      marginTop={1}
-    >
-      {/* Tool name header */}
+    <Box flexDirection="column" marginTop={1}>
+      {/* Top horizontal line */}
+      <Text color={colors.textMuted}>{lineChar.repeat(termWidth)}</Text>
+
+      {/* Tool name header - Claude style with ⏺ icon */}
       <Box marginTop={1}>
-        <Text color={colors.toolHeader}>{toolIcon} </Text>
-        <Text bold>{displayToolName}</Text>
+        <Text><Text color={colors.tool}>{icons.toolCall}</Text> <Text bold>{displayToolName}</Text></Text>
       </Box>
 
       {/* Content: either text lines or JSX (like DiffPreview) */}
@@ -251,12 +271,12 @@ export function PermissionPrompt({
         )}
       </Box>
 
-      {/* Question */}
+      {/* Question - Claude style */}
       <Box marginTop={1}>
-        <Text bold>Allow this action?</Text>
+        <Text bold>Do you want to proceed?</Text>
       </Box>
 
-      {/* Options */}
+      {/* Options - Claude style with cleaner layout */}
       <Box flexDirection="column" marginLeft={2} marginY={1}>
         {suggestions.map((suggestion, index) => {
           const isSelected = index === selectedIndex;
@@ -264,22 +284,25 @@ export function PermissionPrompt({
 
           return (
             <Box key={suggestion.action}>
-              <Text color={isSelected ? colors.optionSelected : colors.textMuted}>
+              <Text color={isSelected ? colors.brand : colors.textMuted}>
                 {isSelected ? '▸ ' : '  '}
               </Text>
-              <Text color={colors.textMuted}>[{suggestion.shortcut}] </Text>
               <Text color={isSelected ? colors.text : colors.textSecondary} bold={isSelected}>
                 {label}
               </Text>
+              <Text color={colors.textMuted}> [{suggestion.shortcut}]</Text>
             </Box>
           );
         })}
       </Box>
 
-      {/* Keyboard hint */}
-      <Box justifyContent="flex-end" marginBottom={1}>
-        <Text color={colors.textMuted}>↑↓ navigate • Enter confirm</Text>
+      {/* Footer hint (Claude style) */}
+      <Box marginTop={1}>
+        <Text color={colors.textMuted}>Esc to cancel</Text>
       </Box>
+
+      {/* Bottom horizontal line */}
+      <Text color={colors.textMuted}>{lineChar.repeat(termWidth)}</Text>
     </Box>
   );
 }

@@ -1,10 +1,27 @@
 import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import InkSpinner from 'ink-spinner';
+import stripAnsi from 'strip-ansi';
 import { colors, icons } from './theme.js';
 import { renderMarkdown } from './markdown.js';
 import { formatTokens, formatCost } from '../../core/pricing/calculator.js';
 import type { CostEstimate } from '../../core/pricing/types.js';
+
+// Trim leading whitespace while preserving ANSI codes
+// The issue is that ANSI escape codes come before whitespace, so /^\s+/ doesn't match
+function trimLeadingWhitespace(str: string): string {
+  // ANSI escape sequence pattern: ESC [ ... m
+  const ansiPattern = /^(\x1b\[[0-9;]*m)*/;
+  const match = str.match(ansiPattern);
+  if (match && match[0]) {
+    // Extract ANSI prefix, trim the rest, then recombine
+    const ansiPrefix = match[0];
+    const rest = str.slice(ansiPrefix.length);
+    const trimmedRest = rest.replace(/^\s+/, '');
+    return ansiPrefix + trimmedRest;
+  }
+  return str.replace(/^\s+/, '');
+}
 
 // Truncate string with ellipsis
 const truncate = (str: string, maxLen: number) =>
@@ -17,7 +34,7 @@ const truncateSingleLine = (str: string, maxLen: number) => {
   return singleLine.length > maxLen ? singleLine.slice(0, maxLen - 3) + '...' : singleLine;
 };
 
-// Get tool-specific icon
+// Get tool-specific icon (Claude Code style)
 function getToolIcon(name: string): string {
   switch (name) {
     case 'Bash':
@@ -39,6 +56,12 @@ function getToolIcon(name: string): string {
       return icons.toolTodo;
     case 'AskUserQuestion':
       return icons.toolQuestion;
+    case 'Task':
+      return icons.toolTask;
+    case 'LSP':
+      return icons.toolLsp;
+    case 'NotebookEdit':
+      return icons.toolNotebook;
     default:
       return icons.tool;
   }
@@ -108,9 +131,9 @@ export function AssistantMessage({ text, streaming }: AssistantMessageProps) {
       <Box flexDirection="column" marginTop={1} marginBottom={0}>
         {lines.map((line, i) => (
           <Box key={i}>
-            {i === 0 && <Text color={colors.success}>{icons.assistant} </Text>}
-            {i > 0 && <Text>  </Text>}
             <Text>
+              {i === 0 && <Text color={colors.brand}>{icons.assistant}</Text>}
+              {i === 0 ? ' ' : '  '}
               {line}
               {i === lines.length - 1 && (
                 <Text color={colors.brandLight}>{icons.cursor}</Text>
@@ -122,15 +145,19 @@ export function AssistantMessage({ text, streaming }: AssistantMessageProps) {
     );
   }
 
-  // Completed: render with markdown
-  const rendered = renderMarkdown(text);
+  // Completed: render with markdown (Claude Code style)
+  // Trim to remove any leading/trailing whitespace from rendered markdown
+  // Use ANSI-aware trimming because chalk colors may precede whitespace
+  const rendered = trimLeadingWhitespace(renderMarkdown(text));
 
   return (
     <Box flexDirection="column" marginTop={1} marginBottom={0}>
       <Box>
-        <Text color={colors.success}>{icons.assistant}</Text>
-        <Text> </Text>
-        <Text wrap="wrap">{rendered}</Text>
+        <Text>
+          <Text color={colors.brand}>{icons.assistant}</Text>
+          {' '}
+          <Text wrap="wrap">{rendered}</Text>
+        </Text>
       </Box>
     </Box>
   );
@@ -141,20 +168,32 @@ interface ToolCallProps {
   input: Record<string, unknown>;
 }
 
-// Format tool input for display
+// Format path for display (Claude Code style - show full path with ~ for home)
+function formatPath(fullPath: string): string {
+  if (!fullPath) return '';
+  const home = process.env.HOME || '';
+  if (home && fullPath.startsWith(home)) {
+    return '~' + fullPath.slice(home.length);
+  }
+  return fullPath;
+}
+
+// Format tool input for display (Claude Code style: ToolName(param))
 function formatToolInput(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case 'Read':
     case 'Write':
-    case 'Edit':
-      return (input.file_path as string) || '';
+    case 'Edit': {
+      const filePath = (input.file_path as string) || '';
+      return formatPath(filePath);
+    }
 
     case 'Glob':
-      return (input.pattern as string) || '';
+      return `pattern: "${input.pattern || ''}"`;
 
     case 'Grep': {
-      const pattern = `"${input.pattern}"`;
-      return input.path ? `${pattern} in ${input.path}` : pattern;
+      const pattern = input.pattern as string;
+      return `pattern: "${pattern}"`;
     }
 
     case 'Bash':
@@ -172,6 +211,9 @@ function formatToolInput(name: string, input: Record<string, unknown>): string {
       return `${todos.length} task${todos.length !== 1 ? 's' : ''}`;
     }
 
+    case 'Task':
+      return (input.description as string) || '';
+
     case 'AskUserQuestion':
       return truncate(JSON.stringify(input), 60);
 
@@ -184,16 +226,19 @@ export function ToolCall({ name, input }: ToolCallProps) {
   // Hide TodoWrite (shown in TodoList component)
   if (name === 'TodoWrite') return null;
 
-  const toolIcon = getToolIcon(name);
   const displayInput = formatToolInput(name, input);
 
+  // Claude Code style: ⏺ Read(filename)
   return (
     <Box marginTop={1}>
-      <Text color={colors.statusSuccess}>{icons.statusCheck} </Text>
-      <Text color={colors.toolHeader}>{toolIcon} </Text>
-      <Text bold>{name}</Text>
-      <Text>  </Text>
-      <Text color={colors.textSecondary}>{truncateSingleLine(displayInput, 60)}</Text>
+      <Text>
+        <Text color={colors.tool}>{icons.toolCall}</Text>
+        {' '}
+        <Text bold>{name}</Text>
+        <Text color={colors.textMuted}>(</Text>
+        <Text color={colors.textSecondary}>{truncateSingleLine(displayInput, 60)}</Text>
+        <Text color={colors.textMuted}>)</Text>
+      </Text>
     </Box>
   );
 }
@@ -208,16 +253,20 @@ export function PendingToolCall({ name, input }: PendingToolCallProps) {
   // Hide TodoWrite (shown in TodoList component)
   if (name === 'TodoWrite') return null;
 
-  const toolIcon = getToolIcon(name);
   const displayInput = formatToolInput(name, input);
 
+  // Claude Code style with spinner: ⏺ Read(filename) - but show spinner before
   return (
     <Box marginTop={1}>
-      <Text color={colors.statusRunning}><InkSpinner type="dots" /> </Text>
-      <Text color={colors.toolHeader}>{toolIcon} </Text>
-      <Text bold>{name}</Text>
-      <Text>  </Text>
-      <Text color={colors.textSecondary}>{truncateSingleLine(displayInput, 60)}</Text>
+      <Text>
+        <Text color={colors.tool}>{icons.toolCall}</Text>
+        {' '}
+        <Text bold>{name}</Text>
+        <Text color={colors.textMuted}>(</Text>
+        <Text color={colors.textSecondary}>{truncateSingleLine(displayInput, 55)}</Text>
+        <Text color={colors.textMuted}>)</Text>
+        <Text color={colors.warning}> <InkSpinner type="dots" /></Text>
+      </Text>
     </Box>
   );
 }
@@ -241,14 +290,48 @@ interface ToolResultProps {
   id?: string;
 }
 
-export function ToolResult({ name, success, output, error, metadata, expanded }: ToolResultProps) {
-  const statusColor = success ? colors.statusSuccess : colors.statusError;
+// Generate tool result summary (Claude Code style)
+function getToolResultSummary(name: string, success: boolean, output: string, error?: string): string {
+  if (!success && error) {
+    return `Error: ${truncate(error, 60)}`;
+  }
 
+  const lines = output.split('\n').filter(line => line.trim());
+  const lineCount = lines.length;
+
+  switch (name) {
+    case 'Read':
+      return `Read ${lineCount} line${lineCount !== 1 ? 's' : ''}`;
+    case 'Write':
+      return `Wrote ${lineCount} line${lineCount !== 1 ? 's' : ''}`;
+    case 'Edit':
+      return `Edited file`;
+    case 'Glob':
+      return `Found ${lineCount} file${lineCount !== 1 ? 's' : ''}`;
+    case 'Grep':
+      return `Found ${lineCount} match${lineCount !== 1 ? 'es' : ''}`;
+    case 'Bash':
+      if (output.trim() === '') return 'Done';
+      if (lineCount === 1) return truncate(output.trim(), 60);
+      // Show first line + remaining count inline (Claude Code style)
+      const firstLine = truncate(lines[0], 40);
+      return `${firstLine} … +${lineCount - 1} lines`;
+    case 'WebFetch':
+    case 'WebSearch':
+      return `Received response`;
+    case 'Task':
+      return `Task completed`;
+    default:
+      return success ? 'Done' : 'Failed';
+  }
+}
+
+export function ToolResult({ name, success, output, error, metadata, expanded }: ToolResultProps) {
   // If metadata has subtitle (e.g., "Received 540.3KB (200 OK)"), show it
   if (metadata?.subtitle) {
     return (
-      <Box marginLeft={2} marginTop={1}>
-        <Text color={colors.textMuted}>└─ </Text>
+      <Box marginLeft={2}>
+        <Text color={colors.textMuted}>{icons.toolResult}  </Text>
         <Text color={colors.textSecondary}>{metadata.subtitle}</Text>
       </Box>
     );
@@ -259,38 +342,50 @@ export function ToolResult({ name, success, output, error, metadata, expanded }:
     return null;
   }
 
-  // Determine content to display: prioritize error field when failed
+  // Get summary for display (Claude Code style)
+  const summary = getToolResultSummary(name, success, output, error);
+  const statusColor = success ? colors.textSecondary : colors.error;
+
+  // Determine if content can be expanded
   const contentToShow = (!success && error) ? error : output;
   const lines = contentToShow.split('\n').filter(line => line.trim());
-  const maxDisplayLines = 3;
-  const isTruncated = !expanded && lines.length > maxDisplayLines;
-  const remainingLines = lines.length - maxDisplayLines;
+  const canExpand = lines.length > 0;
 
-  // When expanded, show all lines
-  const displayLines = expanded ? lines : lines.slice(0, maxDisplayLines);
-
-  // First line with tree connector
-  const firstLine = displayLines[0] || (success ? 'Done' : 'Failed');
-
-  return (
-    <Box marginLeft={2} flexDirection="column" marginTop={1}>
-      <Box>
-        <Text color={colors.textMuted}>└─ </Text>
-        <Text color={statusColor}>{truncate(firstLine.trim(), 70)}</Text>
+  // When not expanded, show summary only (Claude Code style)
+  if (!expanded) {
+    return (
+      <Box marginLeft={2}>
+        <Text color={colors.textMuted}>{icons.toolResult}  </Text>
+        <Text color={statusColor}>{summary}</Text>
+        {canExpand && (
+          <>
+            <Text color={colors.textMuted}> (</Text>
+            <Text color={colors.info}>tab</Text>
+            <Text color={colors.textMuted}> to expand)</Text>
+          </>
+        )}
       </Box>
-      {/* Additional lines */}
-      {displayLines.slice(1).map((line, idx) => (
+    );
+  }
+
+  // When expanded, show full content
+  return (
+    <Box marginLeft={2} flexDirection="column">
+      {/* Summary line */}
+      <Box>
+        <Text color={colors.textMuted}>{icons.toolResult}  </Text>
+        <Text color={statusColor}>{summary}</Text>
+        <Text color={colors.textMuted}> (</Text>
+        <Text color={colors.info}>tab</Text>
+        <Text color={colors.textMuted}> to collapse)</Text>
+      </Box>
+      {/* Content lines */}
+      {lines.map((line, idx) => (
         <Box key={idx}>
           <Text color={colors.textMuted}>   </Text>
-          <Text color={colors.textSecondary}>{truncate(line.trim(), 70)}</Text>
+          <Text color={colors.textSecondary}>{truncate(line, 70)}</Text>
         </Box>
       ))}
-      {/* Truncation indicator */}
-      {isTruncated && (
-        <Box>
-          <Text color={colors.textMuted}>   ... {remainingLines} more lines</Text>
-        </Box>
-      )}
     </Box>
   );
 }
@@ -326,10 +421,23 @@ interface WelcomeMessageProps {
   model: string;
 }
 
-export function WelcomeMessage({ model: _model }: WelcomeMessageProps) {
+// Format model name for display (same as Header.tsx)
+function formatModelNameForWelcome(model: string): string {
+  if (model.includes('opus')) return 'Opus 4.5';
+  if (model.includes('sonnet')) return 'Sonnet 4';
+  if (model.includes('haiku')) return 'Haiku 4';
+  if (model.includes('gpt-4')) return 'GPT-4';
+  if (model.includes('gpt-3.5')) return 'GPT-3.5';
+  if (model.includes('gemini')) return 'Gemini';
+  return model;
+}
+
+export function WelcomeMessage({ model }: WelcomeMessageProps) {
+  // Claude Code style: "Welcome to [Model]"
+  const displayModel = formatModelNameForWelcome(model);
   return (
-    <Box marginTop={1} marginBottom={0}>
-      <Text color={colors.textMuted}>? for help · Ctrl+C to exit</Text>
+    <Box marginTop={1}>
+      <Text color={colors.textMuted}>  Welcome to {displayModel}</Text>
     </Box>
   );
 }
@@ -341,22 +449,6 @@ export function ShortcutsHint() {
     </Box>
   );
 }
-
-// Random verbs for completion message (Claude Code style)
-const COMPLETION_VERBS = [
-  'Baked',
-  'Crafted',
-  'Brewed',
-  'Cooked',
-  'Forged',
-  'Built',
-  'Woven',
-  'Assembled',
-  'Conjured',
-  'Rendered',
-  'Compiled',
-  'Distilled',
-];
 
 function formatDuration(ms: number): string {
   const totalSecs = Math.floor(ms / 1000);
@@ -378,24 +470,27 @@ interface CompletionMessageProps {
 }
 
 export function CompletionMessage({ durationMs, usage, cost }: CompletionMessageProps) {
-  // Pick a random verb (stable per render via useMemo would be better, but keep simple)
-  const verb = COMPLETION_VERBS[Math.floor(Math.random() * COMPLETION_VERBS.length)];
+  // Build the message parts (Claude Code style - clean and informative)
+  const parts: string[] = [];
 
-  // Build the message parts
-  const parts = [`✻ ${verb} for ${formatDuration(durationMs)}`];
+  // Duration
+  parts.push(formatDuration(durationMs));
 
+  // Token usage
   if (usage) {
     parts.push(
-      `Tokens: ${formatTokens(usage.inputTokens)} in / ${formatTokens(usage.outputTokens)} out`
+      `${formatTokens(usage.inputTokens)} in → ${formatTokens(usage.outputTokens)} out`
     );
   }
 
+  // Cost
   if (cost && cost.totalCost > 0) {
-    parts.push(`(~${formatCost(cost.totalCost)})`);
+    parts.push(`~${formatCost(cost.totalCost)}`);
   }
 
   return (
     <Box marginTop={1}>
+      <Text color={colors.textMuted}>✓ </Text>
       <Text color={colors.textMuted}>{parts.join(' • ')}</Text>
     </Box>
   );

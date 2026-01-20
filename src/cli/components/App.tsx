@@ -145,37 +145,123 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 // ============================================================================
-// Help Component
+// Help Component - Enhanced with tabs, shortcuts, and better formatting
 // ============================================================================
 function HelpPanel() {
-  const commands: [string, string][] = [
+  const version = 'v0.5.0';
+
+  // Keyboard shortcuts (3 columns like Claude Code)
+  const shortcuts: [string, string, string][] = [
+    ['/ for commands', 'double tap esc to clear', 'ctrl+c to interrupt'],
+    ['@ for file paths', 'shift+enter for newline', 'ctrl+l to clear screen'],
+    ['tab to expand results', 'ctrl+o for verbose', 'esc to cancel'],
+  ];
+
+  // Commands organized by category
+  const modeCommands: [string, string][] = [
     ['/plan [desc]', 'Enter plan mode'],
     ['/normal', 'Exit to normal mode'],
-    ['/accept', 'Enter auto-accept mode'],
-    ['/model [name]', 'Switch model'],
-    ['/provider', 'Manage providers'],
+    ['/accept', 'Auto-accept mode'],
+  ];
+
+  const sessionCommands: [string, string][] = [
     ['/sessions', 'List sessions'],
-    ['/tasks', 'List background tasks'],
     ['/resume [n]', 'Resume session'],
     ['/new', 'New session'],
     ['/save', 'Save session'],
     ['/clear', 'Clear chat'],
+  ];
+
+  const toolCommands: [string, string][] = [
+    ['/model [name]', 'Switch model'],
+    ['/provider', 'Manage providers'],
+    ['/context', 'Show context stats'],
+    ['/compact', 'Compact conversation'],
+    ['/tasks', 'Background tasks'],
+  ];
+
+  const fileCommands: [string, string][] = [
     ['/init', 'Generate GEN.md'],
     ['/memory', 'Show memory files'],
     ['/changes', 'List file changes'],
-    ['/rewind [n|all]', 'Undo file changes'],
-    ['/context', 'Show context stats'],
-    ['/compact', 'Compact conversation'],
+    ['/rewind [n]', 'Undo changes'],
   ];
+
+  const termWidth = process.stdout.columns || 80;
+  const separator = '─'.repeat(termWidth);
 
   return (
     <Box flexDirection="column">
-      {commands.map(([cmd, desc]) => (
-        <Text key={cmd}>
-          <Text color={colors.primary}>{cmd.padEnd(14)}</Text>
-          <Text color={colors.textMuted}>{desc}</Text>
-        </Text>
+      {/* Header */}
+      <Text color={colors.textMuted}>{separator}</Text>
+      <Box justifyContent="center">
+        <Text color={colors.brand} bold>GenCode {version}</Text>
+        <Text color={colors.textMuted}>  ·  </Text>
+        <Text color={colors.textSecondary}>AI-powered terminal assistant</Text>
+      </Box>
+      <Text color={colors.textMuted}>{separator}</Text>
+
+      {/* Shortcuts Section */}
+      <Box marginTop={1}>
+        <Text bold color={colors.info}>Shortcuts</Text>
+      </Box>
+      {shortcuts.map((row, i) => (
+        <Box key={i}>
+          <Text color={colors.textSecondary}>{row[0].padEnd(24)}</Text>
+          <Text color={colors.textSecondary}>{row[1].padEnd(28)}</Text>
+          <Text color={colors.textSecondary}>{row[2]}</Text>
+        </Box>
       ))}
+
+      {/* Commands Section */}
+      <Box marginTop={1}>
+        <Text bold color={colors.info}>Commands</Text>
+      </Box>
+      <Box>
+        {/* Column 1: Mode + Session */}
+        <Box flexDirection="column" marginRight={4}>
+          <Text dimColor>Mode</Text>
+          {modeCommands.map(([cmd, desc]) => (
+            <Text key={cmd}>
+              <Text color={colors.primary}>{cmd.padEnd(14)}</Text>
+              <Text color={colors.textMuted}>{desc}</Text>
+            </Text>
+          ))}
+          <Box marginTop={1}><Text dimColor>Session</Text></Box>
+          {sessionCommands.map(([cmd, desc]) => (
+            <Text key={cmd}>
+              <Text color={colors.primary}>{cmd.padEnd(14)}</Text>
+              <Text color={colors.textMuted}>{desc}</Text>
+            </Text>
+          ))}
+        </Box>
+        {/* Column 2: Tools + Files */}
+        <Box flexDirection="column">
+          <Text dimColor>Tools</Text>
+          {toolCommands.map(([cmd, desc]) => (
+            <Text key={cmd}>
+              <Text color={colors.primary}>{cmd.padEnd(14)}</Text>
+              <Text color={colors.textMuted}>{desc}</Text>
+            </Text>
+          ))}
+          <Box marginTop={1}><Text dimColor>Files</Text></Box>
+          {fileCommands.map(([cmd, desc]) => (
+            <Text key={cmd}>
+              <Text color={colors.primary}>{cmd.padEnd(14)}</Text>
+              <Text color={colors.textMuted}>{desc}</Text>
+            </Text>
+          ))}
+        </Box>
+      </Box>
+
+      {/* Footer */}
+      <Box marginTop={1}>
+        <Text color={colors.textMuted}>For more help: </Text>
+        <Text color={colors.info}>https://github.com/anthropics/gencode</Text>
+      </Box>
+      <Box>
+        <Text color={colors.textMuted}>Esc to close</Text>
+      </Box>
     </Box>
   );
 }
@@ -1442,6 +1528,67 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
         return true;
       }
 
+      case 'expand':
+      case 'collapse': {
+        const isExpand = command === 'expand';
+
+        if (arg === 'all') {
+          // Expand/collapse all truncated results
+          const truncatedResults = history.filter((item) => {
+            if (item.type !== 'tool_result') return false;
+            const contentToShow = (item.meta?.error as string | undefined) || item.content;
+            const lines = contentToShow.split('\n').filter((line: string) => line.trim());
+            return lines.length > 3;
+          });
+
+          setExpandedToolResults(
+            isExpand ? new Set(truncatedResults.map((r) => r.id)) : new Set()
+          );
+
+          const action = isExpand ? 'Expanded' : 'Collapsed';
+          addHistory({
+            type: 'info',
+            content: `${action} ${truncatedResults.length} result${truncatedResults.length !== 1 ? 's' : ''}`,
+          });
+        } else {
+          // Expand/collapse specific or most recent result
+          const results = history.filter((item) => item.type === 'tool_result');
+          let target;
+
+          if (arg) {
+            const index = parseInt(arg, 10) - 1;
+            if (!isNaN(index) && index >= 0 && index < results.length) {
+              target = results[index];
+            } else {
+              addHistory({ type: 'info', content: `Invalid result number: ${arg}` });
+              return true;
+            }
+          } else {
+            // No arg - use most recent
+            target = results[results.length - 1];
+          }
+
+          if (target) {
+            setExpandedToolResults((prev) => {
+              const newSet = new Set(prev);
+              if (isExpand) {
+                newSet.add(target.id);
+              } else {
+                newSet.delete(target.id);
+              }
+              return newSet;
+            });
+
+            const action = isExpand ? 'Expanded' : 'Collapsed';
+            addHistory({ type: 'info', content: `${action} result` });
+          } else {
+            addHistory({ type: 'info', content: 'No tool results found' });
+          }
+        }
+
+        return true;
+      }
+
       default: {
         // Check for custom commands
         const debugEnabled = process.env.GEN_DEBUG?.includes('commands');
@@ -1820,6 +1967,30 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
       } else if (key.downArrow) {
         setCmdSuggestionIndex((i) => Math.min(cmdSuggestions.length - 1, i + 1));
       } else if (key.tab) {
+        // If input is empty, use Tab to expand/collapse most recent tool result
+        if (!input.trim()) {
+          const truncatedResults = history.filter((item) => {
+            if (item.type !== 'tool_result') return false;
+            const contentToShow = (item.meta?.error as string | undefined) || item.content;
+            const lines = contentToShow.split('\n').filter((line: string) => line.trim());
+            return lines.length > 3;
+          });
+
+          if (truncatedResults.length > 0) {
+            const latest = truncatedResults[truncatedResults.length - 1];
+            setExpandedToolResults((prev) => {
+              const newSet = new Set(prev);
+              if (newSet.has(latest.id)) {
+                newSet.delete(latest.id);
+              } else {
+                newSet.add(latest.id);
+              }
+              return newSet;
+            });
+            return; // Prevent further handling
+          }
+        }
+
         // Autocomplete with selected suggestion
         const selected = cmdSuggestions[cmdSuggestionIndex];
         if (selected) {
@@ -1852,6 +2023,27 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
           setInput(nextEntry);
         }
         setInputKey((k) => k + 1); // Force cursor to end
+      } else if (key.tab && !input.trim()) {
+        // Tab to expand/collapse most recent truncated tool result (when input is empty)
+        const truncatedResults = history.filter((item) => {
+          if (item.type !== 'tool_result') return false;
+          const contentToShow = (item.meta?.error as string | undefined) || item.content;
+          const lines = contentToShow.split('\n').filter((line: string) => line.trim());
+          return lines.length > 3;
+        });
+
+        if (truncatedResults.length > 0) {
+          const latest = truncatedResults[truncatedResults.length - 1];
+          setExpandedToolResults((prev) => {
+            const newSet = new Set(prev);
+            if (newSet.has(latest.id)) {
+              newSet.delete(latest.id);
+            } else {
+              newSet.add(latest.id);
+            }
+            return newSet;
+          });
+        }
       }
     }
   });
@@ -2069,8 +2261,13 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
       {isProcessing && !confirmState && !questionState ? (
         <ProgressBar startTime={processingStartTime} tokenCount={tokenCount} isThinking={isThinking} />
       ) : showCmdSuggestions && cmdSuggestions.length > 0 ? (
-        <Box marginTop={1}>
+        <Box marginTop={0}>
           <Text color={colors.textMuted}>  Tab to complete · ↑↓ navigate</Text>
+        </Box>
+      ) : history.length <= 2 ? (
+        // Show hint only on welcome screen (header + welcome in history)
+        <Box marginTop={0}>
+          <Text color={colors.textMuted}>  ? for shortcuts</Text>
         </Box>
       ) : null}
     </Box>
