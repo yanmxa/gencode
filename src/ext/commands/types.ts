@@ -53,6 +53,16 @@ export interface ExpansionContext {
 
   /** Project root for @file security checks */
   projectRoot: string;
+
+  /** Environment variables for path abstraction */
+  env: {
+    /**
+     * Base config directory where this command is located
+     * Examples: ~/.claude, ~/.gen, ./.claude, ./.gen
+     * Use: $GEN_CONFIG_DIR/scripts/my-script.sh
+     */
+    GEN_CONFIG_DIR: string;
+  };
 }
 
 /**
@@ -63,4 +73,6 @@ export interface CommandFrontmatter {
   'argument-hint'?: string;
   'allowed-tools'?: string | string[];
   model?: string;
+  /** Files to include inline (relative to command file directory) */
+  includes?: string | string[];
 }

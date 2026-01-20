@@ -42,6 +42,9 @@ export async function scanDirectory(
     case 'multiple':
       return scanMultipleExtensions(dirPath, pattern.extensions);
 
+    case 'recursive':
+      return scanRecursiveDirectory(dirPath, pattern.extension);
+
     default:
       return [];
   }
@@ -134,6 +137,38 @@ async function scanMultipleExtensions(
 }
 
 /**
+ * Recursively scan directory and subdirectories for files with specific extension
+ */
+async function scanRecursiveDirectory(
+  dirPath: string,
+  extension: string
+): Promise<string[]> {
+  const files: string[] = [];
+
+  async function scanDir(currentPath: string): Promise<void> {
+    try {
+      const entries = await fs.readdir(currentPath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(currentPath, entry.name);
+
+        if (entry.isFile() && entry.name.endsWith(extension)) {
+          files.push(fullPath);
+        } else if (entry.isDirectory()) {
+          // Recursively scan subdirectories
+          await scanDir(fullPath);
+        }
+      }
+    } catch {
+      // Ignore errors for individual directories
+    }
+  }
+
+  await scanDir(dirPath);
+  return files;
+}
+
+/**
  * Extract resource name from file path based on pattern
  *
  * @param filePath Absolute file path
@@ -171,6 +206,14 @@ export function extractResourceName(
         }
       }
       return null;
+
+    case 'recursive':
+      // For recursive files, convert path to colon-separated name
+      // Examples:
+      //   commands/email/digest.md → email:digest
+      //   commands/foo.md → foo
+      const nameWithoutExt = relativePath.slice(0, -pattern.extension.length);
+      return nameWithoutExt.replace(/\//g, ':').replace(/\\/g, ':');
 
     default:
       return null;

@@ -2,7 +2,7 @@
  * Main App Component - Compact Ink-based TUI
  * Inspired by Claude Code and Gemini CLI design patterns
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Box, Text, useApp, useInput, Static } from 'ink';
 import { Agent } from '../../core/agent/index.js';
 import type { AgentConfig } from '../../core/agent/types.js';
@@ -24,7 +24,7 @@ import { ProgressBar } from './Spinner.js';
 import { PromptInput, ConfirmPrompt } from './Input.js';
 import { ModelSelector } from './ModelSelector.js';
 import { ProviderManager } from './ProviderManager.js';
-import { CommandSuggestions, getFilteredCommands } from './CommandSuggestions.js';
+import { CommandSuggestions, getFilteredCommands, BUILTIN_COMMANDS } from './CommandSuggestions.js';
 import {
   PermissionPrompt,
   PermissionRulesDisplay,
@@ -61,6 +61,7 @@ interface ConfirmState {
   tool: string;
   input: Record<string, unknown>;
   suggestions: ApprovalSuggestion[];
+  metadata?: Record<string, unknown>;
   resolve: (action: ApprovalAction) => void;
 }
 
@@ -449,6 +450,10 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
   const [pendingTool, setPendingTool] = useState<{ name: string; input: Record<string, unknown> } | null>(null);
   const pendingToolRef = useRef<{ name: string; input: Record<string, unknown> } | null>(null);
   const [todos, setTodos] = useState<ReturnType<typeof getTodos>>([]);
+  const [expandedToolResults, setExpandedToolResults] = useState<Set<string>>(new Set());
+
+  // Custom commands for autocomplete
+  const [customCommands, setCustomCommands] = useState<Array<{ name: string; description: string; argumentHint?: string }>>([]);
 
   // Input history management
   const historyManagerRef = useRef<InputHistoryManager | null>(null);
@@ -466,7 +471,16 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
 
   // Check if showing command suggestions
   const showCmdSuggestions = input.startsWith('/') && !isProcessing;
-  const cmdSuggestions = showCmdSuggestions ? getFilteredCommands(input) : [];
+  const cmdSuggestions = showCmdSuggestions ? getFilteredCommands(input, customCommands) : [];
+
+  // Find argument hint for matched command (when input matches command exactly or starts with command + space)
+  const matchedCommandHint = useMemo(() => {
+    if (!input.startsWith('/')) return undefined;
+    const inputCmd = input.split(' ')[0]; // Get command part before any arguments
+    const allCommands = [...BUILTIN_COMMANDS, ...customCommands];
+    const matched = allCommands.find((cmd) => cmd.name === inputCmd);
+    return matched?.argumentHint;
+  }, [input, customCommands]);
 
   // Reset suggestion index when input changes
   useEffect(() => {
@@ -738,6 +752,26 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
   // Initialize
   useEffect(() => {
     const init = async () => {
+      // Load custom commands for autocomplete
+      try {
+        const { getCommandManager } = await import('../../ext/commands/index.js');
+        const cmdMgr = await getCommandManager(cwd);
+        const commands = await cmdMgr.listCommands();
+        setCustomCommands(
+          commands
+            // Only include namespaced commands (those with ':')
+            .filter((cmd) => cmd.name.includes(':'))
+            .map((cmd) => ({
+              name: `/${cmd.name}`,
+              description: cmd.description || '',
+              argumentHint: cmd.argumentHint,
+            }))
+        );
+      } catch (error) {
+        // Silently fail if command loading fails
+        console.error('Failed to load custom commands:', error);
+      }
+
       // Initialize permission system with settings
       await agent.initializePermissions(permissionSettings);
 
@@ -770,6 +804,31 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
         });
       });
 
+      // Set askPermission callback for tools that need metadata-based permission (e.g., Edit with diff)
+      agent.setAskPermissionCallback(async (request) => {
+        // Auto-approve in accept mode
+        if (currentModeRef.current === 'accept') {
+          return 'allow_once';
+        }
+
+        // Get default suggestions (same as enhanced confirm)
+        const suggestions: ApprovalSuggestion[] = [
+          { action: 'allow_once', label: 'Yes', shortcut: '1' },
+          { action: 'allow_always', label: "Yes, and don't ask again", shortcut: '2' },
+          { action: 'deny', label: 'No', shortcut: '3' },
+        ];
+
+        return new Promise<ApprovalAction>((resolve) => {
+          setConfirmState({
+            tool: request.tool,
+            input: request.input as Record<string, unknown>,
+            suggestions,
+            metadata: request.metadata,
+            resolve,
+          });
+        });
+      });
+
       // Set callback to save permission rules to settings.local.json
       if (settingsManager?.addPermissionRule) {
         agent.setSaveRuleCallback(async (tool, pattern) => {
@@ -793,7 +852,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
       }
     };
     init();
-  }, [agent, resumeLatest, addHistory, permissionSettings, settingsManager, convertMessagesToHistory]);
+  }, [agent, resumeLatest, addHistory, permissionSettings, settingsManager, convertMessagesToHistory, cwd]);
 
   // Handle question answers (AskUserQuestion)
   const handleQuestionComplete = useCallback((answers: QuestionAnswer[]) => {
@@ -942,8 +1001,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
       }
 
       case 'tasks': {
-        // @ts-expect-error - dynamic import path resolved at runtime
-        const { TaskManager } = await import('../../../core/session/tasks/task-manager.js');
+        const { TaskManager } = await import('../../core/session/tasks/task-manager.js');
         const taskManager = new TaskManager();
         const filter = (arg as 'all' | 'running' | 'completed' | 'error') || 'all';
         const tasks = taskManager.listTasks(filter);
@@ -1372,8 +1430,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
 
       case 'commands':
       case 'cmd': {
-        // @ts-expect-error - dynamic import path resolved at runtime
-        const { getCommandManager } = await import('../../../extensions/commands/index.js');
+        const { getCommandManager } = await import('../../ext/commands/index.js');
         const cmdMgr = await getCommandManager(cwd);
         const commands = await cmdMgr.listCommands();
 
@@ -1387,9 +1444,18 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
 
       default: {
         // Check for custom commands
-        // @ts-expect-error - dynamic import path resolved at runtime
-        const { getCommandManager } = await import('../../../extensions/commands/index.js');
+        const debugEnabled = process.env.GEN_DEBUG?.includes('commands');
+        if (debugEnabled) {
+          console.error(`[debug:commands] Checking custom command: /${command}`);
+          console.error(`[debug:commands] CWD: ${cwd}`);
+        }
+
+        const { getCommandManager } = await import('../../ext/commands/index.js');
         const cmdMgr = await getCommandManager(cwd);
+
+        if (debugEnabled) {
+          console.error(`[debug:commands] Command manager initialized for: ${cwd}`);
+        }
 
         if (await cmdMgr.hasCommand(command)) {
           const argString = parts.slice(1).join(' ');
@@ -1521,6 +1587,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
                 meta: {
                   toolName: event.name,
                   success: event.result.success,
+                  error: event.result.error,
                   metadata: event.result.metadata,
                 },
               });
@@ -1833,7 +1900,10 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
             name={(item.meta?.toolName as string) || ''}
             success={(item.meta?.success as boolean) ?? true}
             output={item.content}
+            error={(item.meta?.error as string) || undefined}
             metadata={item.meta?.metadata as Record<string, unknown> | undefined}
+            expanded={expandedToolResults.has(item.id)}
+            id={item.id}
           />
         );
       case 'info':
@@ -1906,6 +1976,7 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
           suggestions={confirmState.suggestions}
           onDecision={handlePermissionDecision}
           projectPath={settingsManager?.getCwd?.() ?? process.cwd()}
+          metadata={confirmState.metadata}
         />
       )}
 
@@ -1977,9 +2048,10 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
             value={input}
             onChange={setInput}
             onSubmit={handleSubmit}
+            hint={matchedCommandHint}
           />
           {showCmdSuggestions && cmdSuggestions.length > 0 && (
-            <CommandSuggestions input={input} selectedIndex={cmdSuggestionIndex} />
+            <CommandSuggestions input={input} selectedIndex={cmdSuggestionIndex} customCommands={customCommands} />
           )}
           {currentMode === 'plan' && !isProcessing && (
             <Text color={colors.warning} dimColor>

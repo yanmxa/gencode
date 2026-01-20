@@ -6,7 +6,7 @@ export * from './types.js';
 export { OpenAIProvider } from './openai.js';
 export { AnthropicProvider } from './anthropic.js';
 export { GoogleProvider } from './google.js';
-export { AnthropicVertexProvider } from './vertex-ai.js';
+export { AnthropicVertexProvider } from './anthropic-vertex.js';
 
 import type {
   LLMProvider,
@@ -20,7 +20,7 @@ import type {
 import { OpenAIProvider } from './openai.js';
 import { AnthropicProvider } from './anthropic.js';
 import { GoogleProvider } from './google.js';
-import { AnthropicVertexProvider } from './vertex-ai.js';
+import { AnthropicVertexProvider } from './anthropic-vertex.js';
 
 // Legacy type alias for backward compatibility
 /** @deprecated Use Provider instead */

@@ -137,6 +137,7 @@ async function expandFileIncludes(
  * Variables:
  * - $ARGUMENTS: Full argument string
  * - $1, $2, $3...: Positional arguments
+ * - $GEN_CONFIG_DIR: Base config directory (e.g., ~/.claude, ~/.gen)
  *
  * File includes:
  * - @filepath: Replace with file content (with security checks)
@@ -156,7 +157,13 @@ export async function expandTemplate(
     result = result.replace(pattern, arg);
   });
 
-  // 3. Expand @file includes (async)
+  // 3. Replace environment variables ($CLAUDE_DIR, $SCRIPT_DIR, etc.)
+  for (const [key, value] of Object.entries(context.env)) {
+    const pattern = new RegExp(`\\$${key}`, 'g');
+    result = result.replace(pattern, value);
+  }
+
+  // 4. Expand @file includes (async)
   result = await expandFileIncludes(result, context.projectRoot);
 
   return result;

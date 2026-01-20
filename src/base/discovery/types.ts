@@ -79,6 +79,12 @@ export type FilePattern =
       type: 'single';
       /** Exact filename (e.g., '.mcp.json') */
       filename: string;
+    }
+  | {
+      /** Recursive structure - files in directory and all subdirectories (e.g., commands/**\/*.md) */
+      type: 'recursive';
+      /** File extension including dot (e.g., '.md') */
+      extension: string;
     };
 
 /**

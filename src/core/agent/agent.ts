@@ -47,6 +47,7 @@ export class Agent {
   private sessionId: string | null = null;
   private loadedMemory: LoadedMemory | null = null;
   private askUserCallback: AskUserCallback | null = null;
+  private askPermissionCallback: ((request: import('../tools/types.js').PermissionRequest) => Promise<ApprovalAction | undefined>) | null = null;
 
   constructor(config: AgentConfig) {
     this.config = {
@@ -205,6 +206,16 @@ export class Agent {
    */
   setAskUserCallback(callback: AskUserCallback): void {
     this.askUserCallback = callback;
+  }
+
+  /**
+   * Set callback for tools to request permission with metadata (e.g., diff preview)
+   * This allows tools like Edit to show rich previews before execution
+   */
+  setAskPermissionCallback(
+    callback: (request: import('../tools/types.js').PermissionRequest) => Promise<ApprovalAction | undefined>
+  ): void {
+    this.askPermissionCallback = callback;
   }
 
   /**
@@ -573,8 +584,13 @@ export class Agent {
         parsedCommand = await commandManager.parseCommand(commandName, args);
 
         if (parsedCommand) {
-          // Replace prompt with expanded template
-          actualPrompt = parsedCommand.expandedPrompt;
+          // Replace prompt with wrapped expanded template (Claude Code style)
+          // XML tags help LLM understand this is a command template, not user prose
+          actualPrompt = `<command-expansion name="${commandName}">
+${parsedCommand.expandedPrompt}
+</command-expansion>
+
+Follow the instructions in the command above.`;
 
           // Apply pre-authorized tools (add to permission manager)
           if (parsedCommand.preAuthorizedTools.length > 0) {
@@ -594,9 +610,10 @@ export class Agent {
           }
 
           // Yield event to show command was recognized
+          // Include <command-running> tag to prevent LLM from re-invoking the same command
           yield {
             type: 'text',
-            text: `[Command: /${commandName}${args ? ' ' + args : ''}]\n\n`,
+            text: `<command-running>${commandName}</command-running>\n[Command: /${commandName}${args ? ' ' + args : ''}]\n\n`,
           };
         }
         // If command not found, continue with original prompt (LLM will handle it)
@@ -870,6 +887,7 @@ export class Agent {
       const toolContext = {
         cwd,
         askUser: this.askUserCallback ?? undefined,
+        askPermission: this.askPermissionCallback ?? undefined,
         currentProvider: this.config.provider,
         currentModel: this.config.model,
         currentAuthMethod: this.config.authMethod,

@@ -6,9 +6,10 @@ interface PromptInputProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: (value: string) => void;
+  hint?: string;
 }
 
-export function PromptInput({ value, onChange, onSubmit }: PromptInputProps) {
+export function PromptInput({ value, onChange, onSubmit, hint }: PromptInputProps) {
   const handleSubmit = (text: string) => {
     if (text.trim()) {
       onSubmit(text);
@@ -30,6 +31,7 @@ export function PromptInput({ value, onChange, onSubmit }: PromptInputProps) {
           onSubmit={handleSubmit}
           placeholder=""
         />
+        {hint && <Text dimColor> {hint}</Text>}
       </Box>
       <Text color={colors.textMuted}>{border}</Text>
     </Box>

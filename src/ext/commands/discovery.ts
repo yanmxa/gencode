@@ -34,7 +34,7 @@ export async function discoverCommands(
   return discoverResources(projectRoot, {
     resourceType: 'Command',
     subdirectory: 'commands',
-    filePattern: { type: 'flat', extension: '.md' },
+    filePattern: { type: 'recursive', extension: '.md' },
     parser: commandParser,
     levels: ['user', 'project'], // Commands only use user and project levels
   });

@@ -5,7 +5,7 @@
 import type { Provider, AuthMethod, ProviderClassMeta, LLMProvider } from './types.js';
 import type { SearchProviderName } from './search/types.js';
 import { AnthropicProvider } from './anthropic.js';
-import { AnthropicVertexProvider } from './vertex-ai.js';
+import { AnthropicVertexProvider } from './anthropic-vertex.js';
 import { OpenAIProvider } from './openai.js';
 import { GoogleProvider } from './google.js';
 

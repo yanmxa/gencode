@@ -619,12 +619,27 @@ export class AnthropicVertexProvider implements LLMProvider {
   }
 
   private getKnownModels(): ModelInfo[] {
-    // Fallback known models when API is unavailable
+    // Hardcoded Anthropic Claude models available on Vertex AI
+    //
+    // Why hardcoded? Vertex AI does not provide a public API to list publisher models.
+    // The /publishers/anthropic/models endpoint requires special permissions and often
+    // returns permission errors. This is a known limitation of Vertex AI Model Garden.
+    //
+    // References for available Claude models on Vertex AI:
+    // - https://docs.cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude
+    // - https://docs.anthropic.com/en/api/claude-on-vertex-ai
+    //
+    // Update this list when new Claude models are released on Vertex AI.
     return [
+      {
+        id: 'claude-opus-4-5@20251101',
+        name: 'Claude Opus 4.5',
+        description: 'Most capable Claude model with extended thinking',
+      },
       {
         id: 'claude-sonnet-4-5@20250929',
         name: 'Claude Sonnet 4.5',
-        description: 'Latest Claude Sonnet model on Vertex AI',
+        description: 'Balanced performance and speed',
       },
       {
         id: 'claude-haiku-4-5@20251001',
@@ -634,7 +649,7 @@ export class AnthropicVertexProvider implements LLMProvider {
       {
         id: 'claude-opus-4-1@20250805',
         name: 'Claude Opus 4.1',
-        description: 'Most capable Claude model',
+        description: 'Previous generation Opus model',
       },
     ];
   }

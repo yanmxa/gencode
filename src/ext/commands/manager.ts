@@ -5,11 +5,45 @@
  * retrieval, and parsing with variable expansion.
  */
 
+import * as os from 'os';
+import * as path from 'path';
 import { discoverCommands } from './discovery.js';
 import { expandTemplate, parseArguments } from './expander.js';
 import type { CommandDefinition, ParsedCommand, ExpansionContext } from './types.js';
+import type { ResourceLevel, ResourceNamespace } from '../../base/discovery/types.js';
 import { isVerboseDebugEnabled } from '../../base/utils/debug.js';
 import { logger } from '../../base/utils/logger.js';
+
+/**
+ * Get base config directory from resource source metadata
+ *
+ * Examples:
+ * - user + claude -> ~/.claude
+ * - user + gen -> ~/.gen
+ * - project + claude -> {projectRoot}/.claude
+ * - project + gen -> {projectRoot}/.gen
+ */
+function getConfigDirectory(
+  level: ResourceLevel,
+  namespace: ResourceNamespace,
+  projectRoot: string
+): string {
+  const dirName = `.${namespace}`;
+
+  switch (level) {
+    case 'user':
+      return path.join(os.homedir(), dirName);
+    case 'project':
+      return path.join(projectRoot, dirName);
+    case 'local':
+    case 'managed':
+      // For local/managed levels, fall back to project
+      return path.join(projectRoot, dirName);
+    default:
+      // Should never happen, but fallback to project
+      return path.join(projectRoot, dirName);
+  }
+}
 
 export class CommandManager {
   private commands: Map<string, CommandDefinition> = new Map();
@@ -98,6 +132,13 @@ export class CommandManager {
     // Parse arguments into positional array
     const positionalArgs = parseArguments(args);
 
+    // Calculate base config directory from command's source
+    const configDir = getConfigDirectory(
+      definition.source.level,
+      definition.source.namespace,
+      this.projectRoot
+    );
+
     // Verbose debug: Log template expansion
     if (isVerboseDebugEnabled('commands')) {
       logger.debug('Command', `Expanding template for /${name}`, {
@@ -105,6 +146,7 @@ export class CommandManager {
         arguments: args,
         positionalArgsCount: positionalArgs.length,
         projectRoot: this.projectRoot,
+        configDir,
       });
     }
 
@@ -113,6 +155,9 @@ export class CommandManager {
       arguments: args,
       positionalArgs,
       projectRoot: this.projectRoot,
+      env: {
+        GEN_CONFIG_DIR: configDir,
+      },
     };
 
     // Expand template

@@ -5,6 +5,8 @@
 
 import { marked, type Tokens, type RendererObject, type Token } from 'marked';
 import chalk from 'chalk';
+import Table from 'cli-table3';
+import stringWidth from 'string-width';
 
 // Helper type for renderer context with parser access
 type RendererContext = {
@@ -26,6 +28,32 @@ function parseTokens(ctx: unknown, tokens: Token[], fallback: string): string {
   // For list items, tokens may contain text tokens with nested inline tokens
   // Use parse() for block-level token arrays
   return context.parser?.parse(tokens).trim() ?? fallback;
+}
+
+/**
+ * Create cli-table3 instance with terminal-optimized settings
+ * Handles CJK characters correctly using string-width
+ */
+function createTable(headers: string[], rows: string[][]): string {
+  const table = new Table({
+    head: headers,
+    chars: {
+      'top': '─', 'top-mid': '┬', 'top-left': '┌', 'top-right': '┐',
+      'bottom': '─', 'bottom-mid': '┴', 'bottom-left': '└', 'bottom-right': '┘',
+      'left': '│', 'left-mid': '├', 'mid': '─', 'mid-mid': '┼',
+      'right': '│', 'right-mid': '┤', 'middle': '│'
+    },
+    style: {
+      head: ['cyan', 'bold'],  // Match existing code block style (cyan)
+      border: ['dim'],
+      compact: true
+    },
+    wordWrap: true,
+    wrapOnWordBoundary: true,
+  });
+
+  rows.forEach(row => table.push(row));
+  return table.toString();
 }
 
 // Custom terminal renderer
@@ -117,6 +145,30 @@ const terminalRenderer: RendererObject = {
   del(token: Tokens.Del): string {
     const content = parseInline(this, token.tokens, token.text);
     return chalk.strikethrough(content);
+  },
+
+  // Table - render using cli-table3
+  table(token: Tokens.Table): string {
+    const headers = token.header.map(cell => {
+      return parseInline(this, cell.tokens, cell.text);
+    });
+
+    const rows = token.rows.map(row => {
+      return row.map(cell => {
+        return parseInline(this, cell.tokens, cell.text);
+      });
+    });
+
+    const tableOutput = createTable(headers, rows);
+    return tableOutput + '\n';
+  },
+
+  tablecell(token: Tokens.TableCell): string {
+    return parseInline(this, token.tokens, token.text);
+  },
+
+  tablerow(token: Tokens.TableRow): string {
+    return token.text;
   },
 
   // Plain text - may contain nested inline tokens (like in list items)

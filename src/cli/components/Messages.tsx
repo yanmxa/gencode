@@ -10,6 +10,40 @@ import type { CostEstimate } from '../../core/pricing/types.js';
 const truncate = (str: string, maxLen: number) =>
   str.length > maxLen ? str.slice(0, maxLen - 3) + '...' : str;
 
+// Compress multi-line text to single line, then truncate
+const truncateSingleLine = (str: string, maxLen: number) => {
+  // Replace newlines and multiple whitespace with single space
+  const singleLine = str.replace(/\s+/g, ' ').trim();
+  return singleLine.length > maxLen ? singleLine.slice(0, maxLen - 3) + '...' : singleLine;
+};
+
+// Get tool-specific icon
+function getToolIcon(name: string): string {
+  switch (name) {
+    case 'Bash':
+      return icons.toolBash;
+    case 'Read':
+      return icons.toolRead;
+    case 'Write':
+      return icons.toolWrite;
+    case 'Edit':
+      return icons.toolEdit;
+    case 'Glob':
+      return icons.toolGlob;
+    case 'Grep':
+      return icons.toolGrep;
+    case 'WebFetch':
+    case 'WebSearch':
+      return icons.toolWeb;
+    case 'TodoWrite':
+      return icons.toolTodo;
+    case 'AskUserQuestion':
+      return icons.toolQuestion;
+    default:
+      return icons.tool;
+  }
+}
+
 // Word wrap text to terminal width
 function wrapText(text: string, width: number): string[] {
   const lines: string[] = [];
@@ -124,7 +158,8 @@ function formatToolInput(name: string, input: Record<string, unknown>): string {
     }
 
     case 'Bash':
-      return truncate((input.command as string) || '', 50);
+      // Return raw command; truncateSingleLine will handle compression at display time
+      return (input.command as string) || '';
 
     case 'WebFetch':
       return (input.url as string) || '';
@@ -149,38 +184,16 @@ export function ToolCall({ name, input }: ToolCallProps) {
   // Hide TodoWrite (shown in TodoList component)
   if (name === 'TodoWrite') return null;
 
-  // Special display for AskUserQuestion (Claude Code style with expand hint)
-  if (name === 'AskUserQuestion') {
-    const json = JSON.stringify(input);
-    const displayJson = truncate(json, 70);
-
-    return (
-      <Box marginTop={1} flexDirection="column">
-        <Box>
-          <Text color={colors.tool}>{icons.tool}</Text>
-          <Text> </Text>
-          <Text bold>{name}</Text>
-          <Text color={colors.textMuted}>  </Text>
-          <Text color={colors.textSecondary}>{displayJson}</Text>
-          <Text color={colors.textMuted}>  ctrl+o</Text>
-        </Box>
-      </Box>
-    );
-  }
-
+  const toolIcon = getToolIcon(name);
   const displayInput = formatToolInput(name, input);
 
   return (
     <Box marginTop={1}>
-      <Text color={colors.tool}>{icons.tool}</Text>
-      <Text> </Text>
+      <Text color={colors.statusSuccess}>{icons.statusCheck} </Text>
+      <Text color={colors.toolHeader}>{toolIcon} </Text>
       <Text bold>{name}</Text>
-      {displayInput && (
-        <>
-          <Text color={colors.textMuted}> </Text>
-          <Text color={colors.textSecondary}>{truncate(displayInput, 60)}</Text>
-        </>
-      )}
+      <Text>  </Text>
+      <Text color={colors.textSecondary}>{truncateSingleLine(displayInput, 60)}</Text>
     </Box>
   );
 }
@@ -195,40 +208,16 @@ export function PendingToolCall({ name, input }: PendingToolCallProps) {
   // Hide TodoWrite (shown in TodoList component)
   if (name === 'TodoWrite') return null;
 
-  // Special display for AskUserQuestion
-  if (name === 'AskUserQuestion') {
-    const json = JSON.stringify(input);
-    const displayJson = truncate(json, 70);
-
-    return (
-      <Box marginTop={1}>
-        <Text color={colors.tool}>
-          <InkSpinner type="dots" />
-        </Text>
-        <Text> </Text>
-        <Text bold>{name}</Text>
-        <Text color={colors.textMuted}>  </Text>
-        <Text color={colors.textSecondary}>{displayJson}</Text>
-        <Text color={colors.textMuted}>  ctrl+o</Text>
-      </Box>
-    );
-  }
-
+  const toolIcon = getToolIcon(name);
   const displayInput = formatToolInput(name, input);
 
   return (
     <Box marginTop={1}>
-      <Text color={colors.tool}>
-        <InkSpinner type="dots" />
-      </Text>
-      <Text> </Text>
+      <Text color={colors.statusRunning}><InkSpinner type="dots" /> </Text>
+      <Text color={colors.toolHeader}>{toolIcon} </Text>
       <Text bold>{name}</Text>
-      {displayInput && (
-        <>
-          <Text> </Text>
-          <Text color={colors.textSecondary}>{truncate(displayInput, 60)}</Text>
-        </>
-      )}
+      <Text>  </Text>
+      <Text color={colors.textSecondary}>{truncateSingleLine(displayInput, 60)}</Text>
     </Box>
   );
 }
@@ -246,19 +235,21 @@ interface ToolResultProps {
   name: string;
   success: boolean;
   output: string;
+  error?: string;
   metadata?: ToolResultMetadata;
+  expanded?: boolean;
+  id?: string;
 }
 
-export function ToolResult({ name, success, output, metadata }: ToolResultProps) {
-  const statusColor = success ? colors.success : colors.error;
+export function ToolResult({ name, success, output, error, metadata, expanded }: ToolResultProps) {
+  const statusColor = success ? colors.statusSuccess : colors.statusError;
 
   // If metadata has subtitle (e.g., "Received 540.3KB (200 OK)"), show it
   if (metadata?.subtitle) {
     return (
-      <Box marginLeft={2}>
-        <Text color={colors.textMuted}>{icons.treeEnd}</Text>
-        <Text> </Text>
-        <Text color={statusColor}>{metadata.subtitle}</Text>
+      <Box marginLeft={2} marginTop={1}>
+        <Text color={colors.textMuted}>└─ </Text>
+        <Text color={colors.textSecondary}>{metadata.subtitle}</Text>
       </Box>
     );
   }
@@ -268,14 +259,38 @@ export function ToolResult({ name, success, output, metadata }: ToolResultProps)
     return null;
   }
 
-  // Default: Show first line of output with status icon
-  const displayOutput = truncate(output.split('\n')[0]?.trim() || '', 60);
+  // Determine content to display: prioritize error field when failed
+  const contentToShow = (!success && error) ? error : output;
+  const lines = contentToShow.split('\n').filter(line => line.trim());
+  const maxDisplayLines = 3;
+  const isTruncated = !expanded && lines.length > maxDisplayLines;
+  const remainingLines = lines.length - maxDisplayLines;
+
+  // When expanded, show all lines
+  const displayLines = expanded ? lines : lines.slice(0, maxDisplayLines);
+
+  // First line with tree connector
+  const firstLine = displayLines[0] || (success ? 'Done' : 'Failed');
 
   return (
-    <Box marginLeft={2}>
-      <Text color={colors.textMuted}>{icons.treeEnd}</Text>
-      <Text> </Text>
-      <Text color={statusColor}>{displayOutput || (success ? 'Done' : 'Failed')}</Text>
+    <Box marginLeft={2} flexDirection="column" marginTop={1}>
+      <Box>
+        <Text color={colors.textMuted}>└─ </Text>
+        <Text color={statusColor}>{truncate(firstLine.trim(), 70)}</Text>
+      </Box>
+      {/* Additional lines */}
+      {displayLines.slice(1).map((line, idx) => (
+        <Box key={idx}>
+          <Text color={colors.textMuted}>   </Text>
+          <Text color={colors.textSecondary}>{truncate(line.trim(), 70)}</Text>
+        </Box>
+      ))}
+      {/* Truncation indicator */}
+      {isTruncated && (
+        <Box>
+          <Text color={colors.textMuted}>   ... {remainingLines} more lines</Text>
+        </Box>
+      )}
     </Box>
   );
 }

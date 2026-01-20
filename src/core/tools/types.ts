@@ -25,12 +25,32 @@ export interface QuestionAnswer {
   customInput?: string;
 }
 
+// Forward declaration for ApprovalAction (defined in permissions/types.ts)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type ApprovalAction = 'allow_once' | 'allow_session' | 'allow_always' | 'deny';
+
+// Permission request for tools that need user approval with additional context
+export interface PermissionRequest {
+  /** Tool requesting permission */
+  tool: string;
+  /** Tool input parameters */
+  input: unknown;
+  /** Additional metadata for display (e.g., diff, preview) */
+  metadata?: {
+    diff?: string;
+    filePath?: string;
+    [key: string]: unknown;
+  };
+}
+
 export interface ToolContext {
   cwd: string;
   sessionId?: string;
   abortSignal?: AbortSignal;
   /** Callback for AskUserQuestion tool to interact with user */
   askUser?: (questions: Question[]) => Promise<QuestionAnswer[]>;
+  /** Callback for tools to request permission with additional metadata (e.g., diff preview) */
+  askPermission?: (request: PermissionRequest) => Promise<ApprovalAction | undefined>;
   /** Current agent's provider (for Task tool to inherit) */
   currentProvider?: string;
   /** Current agent's model (for Task tool to inherit) */

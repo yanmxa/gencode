@@ -12,10 +12,11 @@
  * - Numbers (0-9)
  * - Dash (-)
  * - Underscore (_)
+ * - Colon (:) for namespaced commands (e.g., email:digest, jira:my-issues)
  *
  * @param name - Resource name to validate
  * @returns true if valid, false otherwise
  */
 export function isValidResourceName(name: string): boolean {
-  return /^[a-zA-Z0-9_-]+$/.test(name);
+  return /^[a-zA-Z0-9_:-]+$/.test(name);
 }

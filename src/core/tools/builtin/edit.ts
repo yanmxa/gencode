@@ -3,6 +3,7 @@
  */
 
 import * as fs from 'fs/promises';
+import { createTwoFilesPatch } from 'diff';
 import type { Tool, ToolResult } from '../types.js';
 import { EditInputSchema, type EditInput, resolvePath, getErrorMessage } from '../types.js';
 import { loadToolDescription } from '../../../cli/prompts/index.js';
@@ -15,8 +16,8 @@ export const editTool: Tool<EditInput> = {
   async execute(input, context): Promise<ToolResult> {
     try {
       const filePath = resolvePath(input.file_path, context.cwd);
-      const content = await fs.readFile(filePath, 'utf-8');
-      const occurrences = content.split(input.old_string).length - 1;
+      const oldContent = await fs.readFile(filePath, 'utf-8');
+      const occurrences = oldContent.split(input.old_string).length - 1;
 
       if (occurrences === 0) {
         return { success: false, output: '', error: 'The string to replace was not found in the file.' };
@@ -33,16 +34,53 @@ export const editTool: Tool<EditInput> = {
         };
       }
 
-      // Perform replacement
+      // Perform replacement (generate new content)
       let newContent: string;
       if (replaceAll) {
         // Replace all occurrences
-        newContent = content.split(input.old_string).join(input.new_string);
+        newContent = oldContent.split(input.old_string).join(input.new_string);
       } else {
         // Replace single occurrence
-        newContent = content.replace(input.old_string, input.new_string);
+        newContent = oldContent.replace(input.old_string, input.new_string);
       }
 
+      // Generate unified diff for preview
+      const diff = createTwoFilesPatch(
+        filePath,
+        filePath,
+        oldContent,
+        newContent,
+        undefined,
+        undefined
+      );
+
+      // Trim diff to remove file headers (--- +++)
+      const trimmedDiff = diff
+        .split('\n')
+        .slice(2) // Remove first two lines (--- and +++)
+        .join('\n');
+
+      // Request permission with diff metadata
+      if (context.askPermission) {
+        const decision = await context.askPermission({
+          tool: 'Edit',
+          input,
+          metadata: {
+            diff: trimmedDiff,
+            filePath,
+          },
+        });
+
+        if (!decision || decision === 'deny') {
+          return {
+            success: false,
+            output: '',
+            error: 'Edit operation denied by user',
+          };
+        }
+      }
+
+      // User approved - write the file
       await fs.writeFile(filePath, newContent, 'utf-8');
 
       const oldLines = input.old_string.split('\n').length;

@@ -40,6 +40,19 @@ export async function discoverResources<T extends DiscoverableResource>(
     levels
   );
 
+  if (isDebugEnabled('commands') || isDebugEnabled('discovery')) {
+    logger.debug(
+      config.resourceType,
+      'Starting discovery',
+      {
+        projectRoot: resolvedRoot,
+        subdirectory: config.subdirectory,
+        levels,
+        searchPaths: directories.map(d => `${d.path} (${d.level}/${d.namespace})`),
+      }
+    );
+  }
+
   // Load resources from all directories
   const resources = new Map<string, T>();
 
@@ -51,6 +64,18 @@ export async function discoverResources<T extends DiscoverableResource>(
 
     // Scan directory for matching files
     const files = await scanDirectory(directory.path, config.filePattern);
+
+    if (isDebugEnabled('commands') || isDebugEnabled('discovery')) {
+      logger.debug(
+        config.resourceType,
+        `Found ${files.length} file(s) in ${directory.path}`,
+        {
+          level: directory.level,
+          namespace: directory.namespace,
+          files: files.length > 0 ? files.slice(0, 5) : [], // Show first 5 files
+        }
+      );
+    }
 
     // Parse each file
     for (const filePath of files) {
@@ -99,6 +124,10 @@ export async function discoverResources<T extends DiscoverableResource>(
         );
 
         if (resource) {
+          // Override the name with the extracted name (which includes path structure)
+          // This is important for recursive patterns where name should be "email:digest" not just "digest"
+          resource.name = name;
+
           // Add or override resource (higher priority overwrites lower)
           resources.set(name, resource);
 
@@ -129,6 +158,17 @@ export async function discoverResources<T extends DiscoverableResource>(
         );
       }
     }
+  }
+
+  if (isDebugEnabled('commands') || isDebugEnabled('discovery')) {
+    logger.debug(
+      config.resourceType,
+      'Discovery complete',
+      {
+        totalResources: resources.size,
+        resourceNames: Array.from(resources.keys()),
+      }
+    );
   }
 
   return resources;

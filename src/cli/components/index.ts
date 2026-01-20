@@ -18,7 +18,7 @@ export { ThinkingSpinner, LoadingSpinner, ProgressBar } from './Spinner.js';
 export { PromptInput, ConfirmPrompt } from './Input.js';
 export { colors, icons } from './theme.js';
 export { ModelSelector } from './ModelSelector.js';
-export { CommandSuggestions, COMMANDS, getFilteredCommands } from './CommandSuggestions.js';
+export { CommandSuggestions, BUILTIN_COMMANDS, getFilteredCommands } from './CommandSuggestions.js';
 export {
   PermissionPrompt,
   SimpleConfirmPrompt,
@@ -26,3 +26,4 @@ export {
   PermissionAuditDisplay,
 } from './PermissionPrompt.js';
 export { QuestionPrompt, AnswerDisplay } from './QuestionPrompt.js';
+export { DiffPreview } from './DiffPreview.js';

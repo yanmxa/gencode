@@ -52,13 +52,50 @@ export async function parseCommandFile(
     }
   }
 
+  // Process includes (inline file contents)
+  let finalContent = content.trim();
+  if (frontmatter.includes) {
+    const includesList = Array.isArray(frontmatter.includes)
+      ? frontmatter.includes
+      : [frontmatter.includes];
+
+    const commandDir = path.dirname(filePath);
+    const includeContents: string[] = [];
+
+    for (const includePath of includesList) {
+      try {
+        // Resolve relative to command file directory
+        const resolvedPath = path.resolve(commandDir, includePath);
+
+        // Security: ensure file is not outside command directory tree
+        if (!resolvedPath.startsWith(commandDir)) {
+          includeContents.push(`\n\n<!-- Error: Include path '${includePath}' is outside command directory -->\n`);
+          continue;
+        }
+
+        const includeContent = await fs.readFile(resolvedPath, 'utf-8');
+        const fileName = path.basename(resolvedPath);
+
+        // Add include with clear markers
+        includeContents.push(`\n\n<!-- Included file: ${fileName} -->\n\`\`\`\n${includeContent}\n\`\`\`\n`);
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        includeContents.push(`\n\n<!-- Error loading '${includePath}': ${errMsg} -->\n`);
+      }
+    }
+
+    if (includeContents.length > 0) {
+      finalContent = content.trim() + includeContents.join('');
+    }
+  }
+
   return {
     name,
     description: frontmatter.description,
     argumentHint: frontmatter['argument-hint'],
     allowedTools,
     model: frontmatter.model,
-    content: content.trim(),
+    content: finalContent,
     source: {
       path: filePath,
       level,

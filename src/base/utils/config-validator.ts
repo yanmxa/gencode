@@ -44,6 +44,10 @@ export const CommandFrontmatterSchema = z.object({
     .describe('Tools allowed for this command'),
   'argument-hint': z.string().optional().describe('Hint for command arguments'),
   model: z.string().optional().describe('Preferred model for this command'),
+  includes: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .describe('Files to include inline (relative paths)'),
 });
 
 export type CommandFrontmatter = z.infer<typeof CommandFrontmatterSchema>;

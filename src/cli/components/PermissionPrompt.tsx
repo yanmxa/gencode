@@ -1,20 +1,28 @@
 /**
- * Permission Prompt Component - Claude Code style approval UI
+ * Permission Prompt Component - Simplified UI
  *
- * Claude Code design:
- *
- * Tool use
- * Web Search("query text here")
- *
- * Do you want to proceed?
- *   [1] Yes
- *   [2] Yes, and don't ask again for Web Search in /path/to/project
- *   [3] No
+ * Design:
+ * ╭──────────────────────────────────────────────────╮
+ * │  [$] Bash                                        │
+ * │                                                  │
+ * │  osascript -e '                                  │
+ * │    tell application "Mail"                       │
+ * │    ...                                           │
+ * │                               ▼ 28 more lines tab│
+ * │                                                  │
+ * │  Allow this action?                              │
+ * │                                                  │
+ * │  ▸ [1] Yes                                       │
+ * │    [2] Yes, always                               │
+ * │    [3] No                                        │
+ * ╰──────────────────────────────────────────────────╯
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import type { ReactElement } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { colors, icons } from './theme.js';
+import { DiffPreview } from './DiffPreview.js';
 import type { ApprovalAction, ApprovalSuggestion } from '../../core/permissions/types.js';
 
 // ============================================================================
@@ -32,6 +40,8 @@ interface PermissionPromptProps {
   onDecision: (action: ApprovalAction) => void;
   /** Project path for "don't ask again" option */
   projectPath?: string;
+  /** Additional metadata for display (e.g., diff preview) */
+  metadata?: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -48,8 +58,24 @@ function formatToolName(tool: string): string {
 
 /**
  * Format tool input for display
+ * Returns string or ReactElement (for special previews like diff)
  */
-function formatInput(tool: string, input: Record<string, unknown>): string {
+function formatInput(
+  tool: string,
+  input: Record<string, unknown>,
+  metadata?: Record<string, unknown>
+): string | ReactElement {
+  // Special case: Edit tool with diff metadata
+  if (tool === 'Edit' && metadata?.diff && metadata?.filePath) {
+    return (
+      <DiffPreview
+        filePath={metadata.filePath as string}
+        diff={metadata.diff as string}
+        collapsed={true}
+      />
+    );
+  }
+
   switch (tool) {
     case 'Bash':
       return (input.command as string) ?? JSON.stringify(input);
@@ -85,53 +111,30 @@ function formatInput(tool: string, input: Record<string, unknown>): string {
 }
 
 /**
- * Format tool call in Claude Code style: Tool("input")
- * Returns an array of lines for proper wrapping
- */
-function formatToolCall(tool: string, input: Record<string, unknown>): { name: string; input: string } {
-  const displayName = formatToolName(tool);
-  let inputStr = formatInput(tool, input);
-
-  // Truncate very long inputs
-  const maxLen = 60;
-  if (inputStr.length > maxLen) {
-    inputStr = inputStr.slice(0, maxLen - 3) + '...';
-  }
-
-  return { name: displayName, input: inputStr };
-}
-
-/**
- * Get icon for tool
+ * Get icon for tool (terminal style)
  */
 function getToolIcon(tool: string): string {
   switch (tool) {
     case 'Bash':
-      return '⚡';
+      return '[$]';
     case 'Read':
+      return '[R]';
     case 'Write':
+      return '[W]';
     case 'Edit':
-      return '📄';
+      return '[E]';
     case 'Glob':
+      return '[G]';
     case 'Grep':
-      return '🔍';
+      return '[S]';
     case 'WebFetch':
     case 'WebSearch':
-      return '🌐';
+      return '[W]';
     case 'TodoWrite':
-      return '📋';
+      return '[T]';
     default:
       return icons.tool;
   }
-}
-
-/**
- * Get shortcut key display
- */
-function getShortcutDisplay(shortcut?: string): string {
-  if (!shortcut) return '';
-  if (shortcut === 'n') return 'n';
-  return shortcut;
 }
 
 // ============================================================================
@@ -144,6 +147,7 @@ export function PermissionPrompt({
   suggestions,
   onDecision,
   projectPath,
+  metadata,
 }: PermissionPromptProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -189,65 +193,92 @@ export function PermissionPrompt({
     }
   });
 
-  const toolInfo = formatToolCall(tool, input);
   const displayToolName = formatToolName(tool);
-  const fullInput = formatInput(tool, input);
-  const isLongInput = fullInput.length > 60;
+  const fullInput = formatInput(tool, input, metadata);
+  const toolIcon = getToolIcon(tool);
+
+  // Parse content lines for display
+  let contentLines: string[] = [];
+  if (typeof fullInput === 'string') {
+    contentLines = fullInput.split('\n').filter(Boolean);
+  }
+  const maxContentLines = 8;
+  const isLongInput = contentLines.length > maxContentLines;
+  const displayContentLines = expanded ? contentLines : contentLines.slice(0, maxContentLines);
+  const hiddenLines = contentLines.length - maxContentLines;
 
   // Get dynamic label for "don't ask again" option
   const getDynamicLabel = (suggestion: ApprovalSuggestion): string => {
     if (suggestion.action === 'allow_always' && projectPath) {
-      // Shorten project path for display
       const shortPath = projectPath.replace(process.env.HOME || '', '~');
-      return `Yes, don't ask again for ${displayToolName} in ${shortPath}`;
+      return `Yes, always in ${shortPath}`;
     }
     return suggestion.label;
   };
 
   return (
-    <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={colors.warning} paddingX={1}>
-      {/* Header */}
-      <Box>
-        <Text color={colors.warning}>⚡ </Text>
-        <Text bold>{toolInfo.name}</Text>
+    <Box
+      flexDirection="column"
+      borderStyle="round"
+      borderColor={colors.permissionBorder}
+      paddingX={1}
+      marginTop={1}
+    >
+      {/* Tool name header */}
+      <Box marginTop={1}>
+        <Text color={colors.toolHeader}>{toolIcon} </Text>
+        <Text bold>{displayToolName}</Text>
       </Box>
 
-      {/* Tool input - collapsible for long content */}
-      <Box flexDirection="column" marginLeft={2}>
-        {expanded || !isLongInput ? (
-          <Text color={colors.textSecondary}>{fullInput}</Text>
+      {/* Content: either text lines or JSX (like DiffPreview) */}
+      <Box flexDirection="column" marginLeft={2} marginY={1}>
+        {typeof fullInput === 'string' ? (
+          <>
+            {displayContentLines.map((line, idx) => (
+              <Text key={idx} color={colors.textSecondary}>{line}</Text>
+            ))}
+            {isLongInput && (
+              <Box justifyContent="flex-end">
+                <Text color={colors.textMuted}>
+                  {expanded ? '▲ less' : `▼ ${hiddenLines} more lines`}  tab
+                </Text>
+              </Box>
+            )}
+          </>
         ) : (
-          <Box>
-            <Text color={colors.textSecondary}>{toolInfo.input}</Text>
-            <Text color={colors.textMuted}>{' [-> expand]'}</Text>
-          </Box>
+          // Render JSX element (like DiffPreview)
+          <Box flexDirection="column">{fullInput}</Box>
         )}
       </Box>
 
       {/* Question */}
       <Box marginTop={1}>
-        <Text>Allow this action?</Text>
+        <Text bold>Allow this action?</Text>
       </Box>
 
       {/* Options */}
-      <Box flexDirection="column" marginTop={0} marginLeft={2}>
+      <Box flexDirection="column" marginLeft={2} marginY={1}>
         {suggestions.map((suggestion, index) => {
           const isSelected = index === selectedIndex;
-          const shortcut = getShortcutDisplay(suggestion.shortcut);
           const label = getDynamicLabel(suggestion);
 
           return (
             <Box key={suggestion.action}>
-              <Text color={isSelected ? colors.primary : colors.textMuted}>
-                {isSelected ? '▶' : ' '}
+              <Text color={isSelected ? colors.optionSelected : colors.textMuted}>
+                {isSelected ? '▸ ' : '  '}
               </Text>
-              <Text color={colors.textMuted}> [{shortcut}] </Text>
-              <Text color={isSelected ? colors.text : colors.textSecondary}>
+              <Text color={colors.textMuted}>[{suggestion.shortcut}] </Text>
+              <Text color={isSelected ? colors.text : colors.textSecondary} bold={isSelected}>
                 {label}
               </Text>
             </Box>
           );
         })}
+      </Box>
+
+      {/* Keyboard hint */}
+      <Box justifyContent="flex-end" marginBottom={1}>
+        <Text color={colors.textMuted}>↑↓ navigate • Enter confirm</Text>
       </Box>
     </Box>
   );
