@@ -128,6 +128,9 @@ export const icons = {
   expand: '▼',
   collapse: '▲',
 
-  // Spinner frames
+  // Spinner frames (legacy)
   spinner: ['◐', '◓', '◑', '◒'],
+
+  // GenCode signature pulse animation (unique identity)
+  pulseFrames: ['⦿', '⦾', '◉', '◎', '◉', '⦾', '⦿', '○'],
 };

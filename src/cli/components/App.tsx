@@ -20,7 +20,7 @@ import {
   CommandListDisplay,
 } from './Messages.js';
 import { Header } from './Header.js';
-import { ProgressBar } from './Spinner.js';
+import { ProgressBar, type ProcessingState } from './Spinner.js';
 import { PromptInput, ConfirmPrompt } from './Input.js';
 import { ModelSelector } from './ModelSelector.js';
 import { ProviderManager } from './ProviderManager.js';
@@ -536,6 +536,9 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
   const [pendingTool, setPendingTool] = useState<{ name: string; input: Record<string, unknown> } | null>(null);
   const pendingToolRef = useRef<{ name: string; input: Record<string, unknown> } | null>(null);
   const [todos, setTodos] = useState<ReturnType<typeof getTodos>>([]);
+  // Processing state for dynamic spinner text
+  const [processingState, setProcessingState] = useState<ProcessingState>('inferring');
+  const [currentToolName, setCurrentToolName] = useState<string | undefined>(undefined);
   const [expandedToolResults, setExpandedToolResults] = useState<Set<string>>(new Set());
 
   // Custom commands for autocomplete
@@ -905,6 +908,10 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
         ];
 
         return new Promise<ApprovalAction>((resolve) => {
+          // Clear pending tool first to prevent rendering race condition
+          pendingToolRef.current = null;
+          setPendingTool(null);
+          // Then set confirm state
           setConfirmState({
             tool: request.tool,
             input: request.input as Record<string, unknown>,
@@ -1668,6 +1675,9 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
       flushTimerRef.current = null;
     }
     interruptFlagRef.current = false;
+    // Reset processing state
+    setProcessingState('thinking');
+    setCurrentToolName(undefined);
 
     // Create AbortController for this run
     const abortController = new AbortController();
@@ -1687,6 +1697,8 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
         switch (event.type) {
           case 'text':
             setIsThinking(false);
+            // Update processing state to generating
+            setProcessingState('generating');
             // Use throttled streaming text update for better performance
             addStreamingText(event.text);
             // Estimate token count with language-aware estimation
@@ -1700,6 +1712,9 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
               streamingTextRef.current = '';
               setStreamingText('');
             }
+            // Update processing state to tool_waiting
+            setProcessingState('tool_waiting');
+            setCurrentToolName(event.name);
             // Set pending tool for spinner animation (use both state and ref)
             const toolInfo = { name: event.name, input: event.input as Record<string, unknown> };
             pendingToolRef.current = toolInfo;
@@ -1742,6 +1757,9 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
             pendingToolRef.current = null;
             setPendingTool(null);
             setIsThinking(true);
+            // Reset to thinking state after tool completes
+            setProcessingState('thinking');
+            setCurrentToolName(undefined);
             break;
 
           case 'reasoning_delta':
@@ -2259,7 +2277,13 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
       )}
 
       {isProcessing && !confirmState && !questionState ? (
-        <ProgressBar startTime={processingStartTime} tokenCount={tokenCount} isThinking={isThinking} />
+        <ProgressBar
+          startTime={processingStartTime}
+          tokenCount={tokenCount}
+          isThinking={isThinking}
+          state={processingState}
+          toolName={currentToolName}
+        />
       ) : showCmdSuggestions && cmdSuggestions.length > 0 ? (
         <Box marginTop={0}>
           <Text color={colors.textMuted}>  Tab to complete · ↑↓ navigate</Text>
