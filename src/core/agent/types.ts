@@ -98,6 +98,33 @@ export interface AgentEventToolInputDelta {
   delta: string;  // Incremental JSON string fragment
 }
 
+/**
+ * Permission request event - yielded when a tool needs user permission
+ * This allows the UI to render the permission prompt without blocking the generator
+ */
+export interface AgentEventPermissionRequest {
+  type: 'permission_request';
+  id: string;           // Unique request ID for response correlation
+  toolCallId: string;   // References the tool_start.id
+  tool: string;
+  input: unknown;
+  suggestions: Array<{
+    action: string;
+    label: string;
+    shortcut?: string;
+  }>;
+  metadata?: Record<string, unknown>;  // For Edit tool diff preview, etc.
+}
+
+/**
+ * Waiting for permission event - yielded repeatedly while waiting for user response
+ * This keeps the generator alive so Ink can render and process user input
+ */
+export interface AgentEventWaitingForPermission {
+  type: 'waiting_for_permission';
+  requestId: string;
+}
+
 export type AgentEvent =
   | AgentEventText
   | AgentEventToolStart
@@ -107,4 +134,6 @@ export type AgentEvent =
   | AgentEventDone
   | AgentEventAskUser
   | AgentEventReasoningDelta
-  | AgentEventToolInputDelta;
+  | AgentEventToolInputDelta
+  | AgentEventPermissionRequest
+  | AgentEventWaitingForPermission;

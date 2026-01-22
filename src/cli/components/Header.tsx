@@ -37,28 +37,27 @@ function formatCwd(cwd: string): string {
 }
 
 export function Header({ model, cwd, contextStats }: HeaderProps) {
-  // Warm orange brand colors (matching theme.ts)
-  const c1 = colors.brand;      // #FF7B54 - Coral/Orange
-  const c2 = colors.brandLight; // #FFB38A - Light coral
-  const c3 = '#FFDAB8';         // Even lighter coral
-
   const displayModel = formatModelName(model);
   const displayCwd = formatCwd(cwd);
 
+  // Large letter logo - clean and professional
   return (
     <Box flexDirection="column" marginTop={1}>
-      {/* Claude Code style: logo with info on right */}
+      {/* Line 1: Large G */}
       <Box>
-        <Text color={c1}> ▐▛███▜▌</Text>
-        <Text color={colors.textMuted}>   GenCode v{VERSION}</Text>
+        <Text color={colors.brand} bold> ▐▛███▜▌  </Text>
+        <Text color={colors.brand} bold>GenCode</Text>
+        <Text color={colors.textMuted}> v{VERSION}</Text>
       </Box>
+      {/* Line 2 */}
       <Box>
-        <Text color={c2}>▝▜█████▛▘</Text>
-        <Text color={colors.textMuted}>  {displayModel}</Text>
+        <Text color={colors.brand} bold>▝▜█████▛▘ </Text>
+        <Text color={colors.textMuted}>{displayModel}</Text>
       </Box>
+      {/* Line 3 */}
       <Box>
-        <Text color={c3}>  ▘▘ ▝▝</Text>
-        <Text color={colors.textMuted}>    {displayCwd}</Text>
+        <Text color={colors.brand} bold>  ▘▘ ▝▝   </Text>
+        <Text color={colors.textMuted}>{displayCwd}</Text>
       </Box>
 
       {contextStats && contextStats.activeMessages > 0 && (

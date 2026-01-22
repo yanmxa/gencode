@@ -3,7 +3,6 @@
  */
 
 import * as fs from 'fs/promises';
-import { createTwoFilesPatch } from 'diff';
 import type { Tool, ToolResult } from '../types.js';
 import { EditInputSchema, type EditInput, resolvePath, getErrorMessage } from '../types.js';
 import { loadToolDescription } from '../../../cli/prompts/index.js';
@@ -44,43 +43,11 @@ export const editTool: Tool<EditInput> = {
         newContent = oldContent.replace(input.old_string, input.new_string);
       }
 
-      // Generate unified diff for preview
-      const diff = createTwoFilesPatch(
-        filePath,
-        filePath,
-        oldContent,
-        newContent,
-        undefined,
-        undefined
-      );
+      // Note: Permission with diff preview is now handled by the agent BEFORE tool execution
+      // The agent computes the diff metadata and yields permission_request event
+      // By the time we reach here, permission has already been granted
 
-      // Trim diff to remove file headers (--- +++)
-      const trimmedDiff = diff
-        .split('\n')
-        .slice(2) // Remove first two lines (--- and +++)
-        .join('\n');
-
-      // Request permission with diff metadata
-      if (context.askPermission) {
-        const decision = await context.askPermission({
-          tool: 'Edit',
-          input,
-          metadata: {
-            diff: trimmedDiff,
-            filePath,
-          },
-        });
-
-        if (!decision || decision === 'deny') {
-          return {
-            success: false,
-            output: '',
-            error: 'Edit operation denied by user',
-          };
-        }
-      }
-
-      // User approved - write the file
+      // Write the file
       await fs.writeFile(filePath, newContent, 'utf-8');
 
       const oldLines = input.old_string.split('\n').length;

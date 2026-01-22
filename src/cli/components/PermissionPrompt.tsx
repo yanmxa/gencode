@@ -10,9 +10,9 @@
  *                                  ▼ 28 more lines tab
  *
  *  Do you want to proceed?
- *    ▸ Yes        [1] allow once
- *      Always     [2] allow always
- *      No         [3] deny
+ *    ▸ [1] Yes
+ *      [2] Yes, always in ~/project
+ *      [3] No
  * ─────────────────────────────────────────────────────
  */
 
@@ -65,6 +65,17 @@ function formatInput(
 ): string | ReactElement {
   // Special case: Edit tool with diff metadata
   if (tool === 'Edit' && metadata?.diff && metadata?.filePath) {
+    return (
+      <DiffPreview
+        filePath={metadata.filePath as string}
+        diff={metadata.diff as string}
+        collapsed={true}
+      />
+    );
+  }
+
+  // Special case: Write tool with diff metadata (overwriting existing file)
+  if (tool === 'Write' && metadata?.diff && metadata?.filePath) {
     return (
       <DiffPreview
         filePath={metadata.filePath as string}
@@ -171,6 +182,10 @@ export function PermissionPrompt({
 }: PermissionPromptProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  const [diffCollapsed, setDiffCollapsed] = useState(true);
+
+  // Check if we're showing a diff preview
+  const hasDiffPreview = !!(metadata?.diff && metadata?.filePath);
 
   // Handle keyboard input
   useInput((inputChar, key) => {
@@ -194,9 +209,14 @@ export function PermissionPrompt({
       onDecision('deny');
     }
 
-    // Tab to toggle expand
-    if (key.tab) {
+    // Tab to toggle expand (only when not showing diff preview)
+    if (key.tab && !hasDiffPreview) {
       setExpanded((e) => !e);
+    }
+
+    // 'e' key to toggle diff expand/collapse when showing diff preview
+    if (inputChar.toLowerCase() === 'e' && hasDiffPreview) {
+      setDiffCollapsed((c) => !c);
     }
 
     // Number shortcuts (1-3)
@@ -214,10 +234,12 @@ export function PermissionPrompt({
   });
 
   const displayToolName = formatToolName(tool);
-  const fullInput = formatInput(tool, input, metadata);
   const toolIcon = getToolIcon(tool);
 
-  // Parse content lines for display
+  // For diff preview, we manage state here; otherwise use formatInput
+  const fullInput = hasDiffPreview ? null : formatInput(tool, input, metadata);
+
+  // Parse content lines for display (only for non-diff content)
   let contentLines: string[] = [];
   if (typeof fullInput === 'string') {
     contentLines = fullInput.split('\n').filter(Boolean);
@@ -250,9 +272,17 @@ export function PermissionPrompt({
         <Text><Text color={colors.tool}>{icons.toolCall}</Text> <Text bold>{displayToolName}</Text></Text>
       </Box>
 
-      {/* Content: either text lines or JSX (like DiffPreview) */}
+      {/* Content: either text lines, DiffPreview, or other JSX */}
       <Box flexDirection="column" marginLeft={2} marginY={1}>
-        {typeof fullInput === 'string' ? (
+        {hasDiffPreview ? (
+          // Render DiffPreview with managed collapse state
+          <DiffPreview
+            filePath={metadata.filePath as string}
+            diff={metadata.diff as string}
+            collapsed={diffCollapsed}
+            selfManaged={false}
+          />
+        ) : typeof fullInput === 'string' ? (
           <>
             {displayContentLines.map((line, idx) => (
               <Text key={idx} color={colors.textSecondary}>{line}</Text>
@@ -265,10 +295,10 @@ export function PermissionPrompt({
               </Box>
             )}
           </>
-        ) : (
-          // Render JSX element (like DiffPreview)
+        ) : fullInput ? (
+          // Render other JSX element
           <Box flexDirection="column">{fullInput}</Box>
-        )}
+        ) : null}
       </Box>
 
       {/* Question - Claude style */}
@@ -276,7 +306,7 @@ export function PermissionPrompt({
         <Text bold>Do you want to proceed?</Text>
       </Box>
 
-      {/* Options - Claude style with cleaner layout */}
+      {/* Options - arrow, shortcut, then label */}
       <Box flexDirection="column" marginLeft={2} marginY={1}>
         {suggestions.map((suggestion, index) => {
           const isSelected = index === selectedIndex;
@@ -287,10 +317,10 @@ export function PermissionPrompt({
               <Text color={isSelected ? colors.brand : colors.textMuted}>
                 {isSelected ? '▸ ' : '  '}
               </Text>
+              <Text color={colors.textMuted}>[{suggestion.shortcut}] </Text>
               <Text color={isSelected ? colors.text : colors.textSecondary} bold={isSelected}>
                 {label}
               </Text>
-              <Text color={colors.textMuted}> [{suggestion.shortcut}]</Text>
             </Box>
           );
         })}

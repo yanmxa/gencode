@@ -16,6 +16,9 @@ import { SessionManager } from '../session/index.js';
 import { MemoryManager, type LoadedMemory } from '../memory/index.js';
 import type { AgentConfig, AgentEvent } from './types.js';
 import { buildSystemPromptWithPlanMode, debugPromptLoading } from '../../cli/prompts/index.js';
+import * as fs from 'fs/promises';
+import { createTwoFilesPatch } from 'diff';
+import * as path from 'path';
 import type { Question, QuestionAnswer } from '../tools/types.js';
 import {
   getPlanModeManager,
@@ -48,6 +51,10 @@ export class Agent {
   private loadedMemory: LoadedMemory | null = null;
   private askUserCallback: AskUserCallback | null = null;
   private askPermissionCallback: ((request: import('../tools/types.js').PermissionRequest) => Promise<ApprovalAction | undefined>) | null = null;
+
+  // Permission response channel for async permission handling
+  // Maps request ID to resolver function that receives the approval action
+  private permissionResponseChannel: Map<string, (action: ApprovalAction) => void> = new Map();
 
   constructor(config: AgentConfig) {
     this.config = {
@@ -216,6 +223,87 @@ export class Agent {
     callback: (request: import('../tools/types.js').PermissionRequest) => Promise<ApprovalAction | undefined>
   ): void {
     this.askPermissionCallback = callback;
+  }
+
+  /**
+   * Resolve a pending permission request from the UI
+   * Called by the UI when user responds to a permission prompt
+   */
+  resolvePermissionRequest(requestId: string, action: ApprovalAction): void {
+    const resolver = this.permissionResponseChannel.get(requestId);
+    if (resolver) {
+      resolver(action);
+      this.permissionResponseChannel.delete(requestId);
+    }
+  }
+
+  /**
+   * Compute diff metadata for Edit tool
+   * Called before yielding permission_request to show diff preview in UI
+   */
+  private async computeEditDiffMetadata(
+    input: Record<string, unknown>,
+    cwd: string
+  ): Promise<Record<string, unknown> | undefined> {
+    try {
+      const filePath = input.file_path as string;
+      const oldString = input.old_string as string;
+      const newString = input.new_string as string;
+      const replaceAll = input.replace_all as boolean | undefined;
+
+      if (!filePath || !oldString || newString === undefined) {
+        return undefined;
+      }
+
+      // Resolve file path
+      const resolvedPath = path.isAbsolute(filePath)
+        ? filePath
+        : path.resolve(cwd, filePath);
+
+      // Read file content
+      const oldContent = await fs.readFile(resolvedPath, 'utf-8');
+      const occurrences = oldContent.split(oldString).length - 1;
+
+      if (occurrences === 0) {
+        return { error: 'The string to replace was not found in the file.' };
+      }
+
+      if (!replaceAll && occurrences > 1) {
+        return {
+          error: `The string to replace occurs ${occurrences} times. Please provide a more unique string, or use replace_all: true.`,
+        };
+      }
+
+      // Compute new content
+      let newContent: string;
+      if (replaceAll) {
+        newContent = oldContent.split(oldString).join(newString);
+      } else {
+        newContent = oldContent.replace(oldString, newString);
+      }
+
+      // Generate unified diff
+      const diff = createTwoFilesPatch(
+        resolvedPath,
+        resolvedPath,
+        oldContent,
+        newContent,
+        undefined,
+        undefined
+      );
+
+      // Trim diff headers
+      const trimmedDiff = diff.split('\n').slice(2).join('\n');
+
+      return {
+        diff: trimmedDiff,
+        filePath: resolvedPath,
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   /**
@@ -929,8 +1017,57 @@ Follow the instructions in the command above.`;
           // Ensure tool registry is initialized
           const registry = await this.ensureRegistry();
 
-          // Protect permission check and tool execution
-          const allowed = await this.permissions.requestPermission(call.name, call.input);
+          // Check if user confirmation is needed (without prompting)
+          const needsPermission = this.permissions.needsUserConfirmation(call.name, call.input);
+          let allowed = !needsPermission;
+
+          if (needsPermission) {
+            // Generate unique request ID for this permission request
+            const requestId = `perm_${Date.now()}_${call.id}`;
+
+            // Get suggestions from permission manager
+            const suggestions = this.permissions.getSuggestionsForTool(call.name, call.input);
+
+            // Compute metadata for tools that need it (e.g., Edit tool diff preview)
+            let metadata: Record<string, unknown> | undefined;
+            if (call.name === 'Edit') {
+              metadata = await this.computeEditDiffMetadata(
+                call.input as Record<string, unknown>,
+                cwd
+              );
+            }
+
+            // Create a Promise that will be resolved by the UI via resolvePermissionRequest
+            const responsePromise = new Promise<ApprovalAction>((resolve) => {
+              this.permissionResponseChannel.set(requestId, resolve);
+            });
+
+            // YIELD permission_request event - this pauses the generator!
+            // The UI receives this event, shows the dialog, and calls resolvePermissionRequest()
+            // Then UI calls iterator.next() to resume the generator
+            yield {
+              type: 'permission_request',
+              id: requestId,
+              toolCallId: call.id,
+              tool: call.name,
+              input: call.input,
+              suggestions,
+              metadata,
+            } as import('./types.js').AgentEventPermissionRequest;
+
+            // Generator resumes here after UI calls iterator.next()
+            // The response should already be in the channel from resolvePermissionRequest()
+            const permissionAction = await responsePromise;
+
+            allowed = permissionAction === 'allow_once' ||
+                      permissionAction === 'allow_always' ||
+                      permissionAction === 'allow_session';
+
+            if (allowed) {
+              await this.permissions.processApprovalAction(permissionAction, call.name, call.input);
+            }
+          }
+
           const result = allowed
             ? await registry.execute(call.name, call.input, toolContext)
             : { success: false, output: '', error: 'Permission denied by user' };

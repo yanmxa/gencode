@@ -357,13 +357,6 @@ export function ToolResult({ name, success, output, error, metadata, expanded }:
       <Box marginLeft={2}>
         <Text color={colors.textMuted}>{icons.toolResult}  </Text>
         <Text color={statusColor}>{summary}</Text>
-        {canExpand && (
-          <>
-            <Text color={colors.textMuted}> (</Text>
-            <Text color={colors.info}>tab</Text>
-            <Text color={colors.textMuted}> to expand)</Text>
-          </>
-        )}
       </Box>
     );
   }
@@ -375,9 +368,6 @@ export function ToolResult({ name, success, output, error, metadata, expanded }:
       <Box>
         <Text color={colors.textMuted}>{icons.toolResult}  </Text>
         <Text color={statusColor}>{summary}</Text>
-        <Text color={colors.textMuted}> (</Text>
-        <Text color={colors.info}>tab</Text>
-        <Text color={colors.textMuted}> to collapse)</Text>
       </Box>
       {/* Content lines */}
       {lines.map((line, idx) => (

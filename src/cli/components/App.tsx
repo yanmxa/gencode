@@ -1687,12 +1687,48 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
     setProcessingStartTime(startTime);
     setTokenCount(0);
 
-    try {
-      for await (const event of agent.run(prompt, abortController.signal)) {
+    // Use manual iterator to allow pausing for permission prompts
+    const generator = agent.run(prompt, abortController.signal);
+    const iterator = generator[Symbol.asyncIterator]();
+
+    // Helper to finish processing
+    const finishProcessing = () => {
+      abortControllerRef.current = null;
+      setIsProcessing(false);
+      setIsThinking(false);
+
+      // Process next message in queue if any
+      setMessageQueue((queue) => {
+        if (queue.length > 0) {
+          const [nextMessage, ...rest] = queue;
+          // Schedule next message processing
+          setTimeout(() => {
+            addHistory({ type: 'user', content: nextMessage });
+            runAgent(nextMessage);
+          }, 0);
+          return rest;
+        }
+        return queue;
+      });
+    };
+
+    // Recursive function to process events one at a time
+    // This allows React to render between events
+    const processNextEvent = async () => {
+      try {
         // Check for interrupt
         if (interruptFlagRef.current || abortController.signal.aborted) {
-          break;
+          finishProcessing();
+          return;
         }
+
+        const result = await iterator.next();
+        if (result.done) {
+          finishProcessing();
+          return;
+        }
+
+        const event = result.value;
 
         switch (event.type) {
           case 'text':
@@ -1703,6 +1739,8 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
             addStreamingText(event.text);
             // Estimate token count with language-aware estimation
             setTokenCount((prev) => prev + estimateTokenDelta(event.text));
+            // Continue to next event
+            setTimeout(processNextEvent, 0);
             break;
 
           case 'tool_start':
@@ -1716,9 +1754,13 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
             setProcessingState('tool_waiting');
             setCurrentToolName(event.name);
             // Set pending tool for spinner animation (use both state and ref)
-            const toolInfo = { name: event.name, input: event.input as Record<string, unknown> };
-            pendingToolRef.current = toolInfo;
-            setPendingTool(toolInfo);
+            {
+              const toolInfo = { name: event.name, input: event.input as Record<string, unknown> };
+              pendingToolRef.current = toolInfo;
+              setPendingTool(toolInfo);
+            }
+            // Continue to next event
+            setTimeout(processNextEvent, 0);
             break;
 
           case 'tool_result':
@@ -1760,6 +1802,8 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
             // Reset to thinking state after tool completes
             setProcessingState('thinking');
             setCurrentToolName(undefined);
+            // Continue to next event
+            setTimeout(processNextEvent, 0);
             break;
 
           case 'reasoning_delta':
@@ -1769,17 +1813,22 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
               type: 'info',
               content: `💭 Reasoning: ${event.text}`,
             });
+            // Continue to next event
+            setTimeout(processNextEvent, 0);
             break;
 
           case 'tool_input_delta':
             // Progressive display of tool input JSON (optional enhancement)
             // For now, we just accumulate and display when complete
-            // Could be enhanced to show partial JSON in real-time
+            // Continue to next event
+            setTimeout(processNextEvent, 0);
             break;
 
           case 'error':
             setIsThinking(false);
             addHistory({ type: 'info', content: `Error: ${event.error.message}` });
+            // Continue to next event
+            setTimeout(processNextEvent, 0);
             break;
 
           case 'done':
@@ -1797,42 +1846,78 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
               setTokenCount(event.usage.outputTokens);
             }
             // Add completion message with duration and cost info
-            const durationMs = Date.now() - startTime;
-            addHistory({
-              type: 'completion',
-              content: '',
-              meta: { durationMs, usage: event.usage, cost: event.cost },
-            });
+            {
+              const durationMs = Date.now() - startTime;
+              addHistory({
+                type: 'completion',
+                content: '',
+                meta: { durationMs, usage: event.usage, cost: event.cost },
+              });
+            }
             setProcessingStartTime(undefined);
+            finishProcessing();
+            break;
+
+          case 'permission_request':
+            // Handle permission request - pause processing and show dialog
+            {
+              console.error('[DEBUG] permission_request received:', event.id, event.tool);
+
+              // Auto-approve in accept mode
+              if (currentModeRef.current === 'accept') {
+                console.error('[DEBUG] Auto-approving in accept mode');
+                agent.resolvePermissionRequest(event.id, 'allow_once');
+                // Continue to next event
+                setTimeout(processNextEvent, 0);
+                break;
+              }
+
+              console.error('[DEBUG] Clearing pending tool and setting confirmState');
+
+              // Clear pending tool first to prevent rendering race condition
+              pendingToolRef.current = null;
+              setPendingTool(null);
+              setIsProcessing(false); // Allow UI to render
+
+              // Show permission prompt
+              setConfirmState({
+                tool: event.tool,
+                input: event.input as Record<string, unknown>,
+                suggestions: event.suggestions as ApprovalSuggestion[],
+                metadata: event.metadata,
+                resolve: (action: ApprovalAction) => {
+                  console.error('[DEBUG] Permission resolve called:', action);
+                  // User responded, resolve the permission request
+                  agent.resolvePermissionRequest(event.id, action);
+                  setConfirmState(null);
+                  setIsProcessing(true);
+                  // Continue processing events
+                  setTimeout(processNextEvent, 0);
+                },
+              });
+
+              console.error('[DEBUG] confirmState set, breaking from switch');
+            }
+            // Do NOT continue to next event - wait for user decision
+            // The resolve callback will call processNextEvent
+            break;
+
+          default:
+            // Unknown event, continue
+            setTimeout(processNextEvent, 0);
             break;
         }
+      } catch (error) {
+        addHistory({
+          type: 'info',
+          content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        finishProcessing();
       }
-    } catch (error) {
-      addHistory({
-        type: 'info',
-        content: `Error: ${error instanceof Error ? error.message : String(error)}`,
-      });
-    } finally {
-      // Clean up AbortController
-      abortControllerRef.current = null;
-    }
+    };
 
-    setIsProcessing(false);
-    setIsThinking(false);
-
-    // Process next message in queue if any
-    setMessageQueue((queue) => {
-      if (queue.length > 0) {
-        const [nextMessage, ...rest] = queue;
-        // Schedule next message processing
-        setTimeout(() => {
-          addHistory({ type: 'user', content: nextMessage });
-          runAgent(nextMessage);
-        }, 0);
-        return rest;
-      }
-      return queue;
-    });
+    // Start processing events
+    processNextEvent();
   };
 
   // Handle submit
@@ -2169,6 +2254,12 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
     }
   };
 
+  // Debug render state
+  if (confirmState) {
+    console.error('[DEBUG RENDER] confirmState is SET:', confirmState.tool);
+  }
+  console.error('[DEBUG RENDER] isProcessing:', isProcessing, 'confirmState:', !!confirmState);
+
   return (
     <Box flexDirection="column" paddingBottom={2}>
       <Static items={history}>
@@ -2180,14 +2271,15 @@ export function App({ config, settingsManager, resumeLatest, permissionSettings,
       {streamingText && <AssistantMessage text={streamingText} streaming />}
 
       {confirmState && (
+        (console.error('[DEBUG RENDER] Rendering PermissionPrompt for', confirmState.tool, 'metadata:', JSON.stringify(confirmState.metadata)),
         <PermissionPrompt
           tool={confirmState.tool}
           input={confirmState.input}
           suggestions={confirmState.suggestions}
           onDecision={handlePermissionDecision}
           projectPath={settingsManager?.getCwd?.() ?? process.cwd()}
-          metadata={confirmState.metadata}
-        />
+          metadata={confirmState.metadata}  /* Re-enable diff preview */
+        />)
       )}
 
       {questionState && (

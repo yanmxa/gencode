@@ -273,6 +273,74 @@ export class PermissionManager {
   }
 
   /**
+   * Check if user confirmation is needed for a tool action (without prompting).
+   * Returns true if the permission system would ask the user for confirmation.
+   * Used by the agent to yield permission_request events instead of blocking.
+   */
+  needsUserConfirmation(tool: string, input: unknown): boolean {
+    const context: PermissionContext = {
+      tool,
+      input,
+      sessionId: this.sessionId,
+      projectPath: this.projectPath,
+    };
+
+    // Check DENY rules - blocked, no confirmation needed
+    const denyRule = this.findMatchingRule(context, 'deny');
+    if (denyRule) {
+      return false; // Will be denied, no prompt needed
+    }
+
+    // Check ALLOW rules - auto-approved, no confirmation needed
+    const autoRule = this.findMatchingRule(context, 'auto');
+    if (autoRule) {
+      return false;
+    }
+
+    // Check prompt-based permissions
+    const promptMatch = this.matchPrompt(tool, input);
+    if (promptMatch) {
+      return false;
+    }
+
+    // Check session approval cache
+    const cacheKey = this.getCacheKey(tool, input);
+    if (this.sessionApprovals.has(cacheKey)) {
+      return false;
+    }
+
+    // Check ASK rules or default behavior - will prompt
+    return true;
+  }
+
+  /**
+   * Get approval suggestions for a tool (for UI display)
+   */
+  getSuggestionsForTool(tool: string, input?: unknown): ApprovalSuggestion[] {
+    const context: PermissionContext = {
+      tool,
+      input,
+      sessionId: this.sessionId,
+      projectPath: this.projectPath,
+    };
+    return this.getSuggestions(context);
+  }
+
+  /**
+   * Process an approval action (for external callers like the agent)
+   * Returns true if the action allows the operation
+   */
+  async processApprovalAction(action: ApprovalAction, tool: string, input: unknown): Promise<boolean> {
+    const context: PermissionContext = {
+      tool,
+      input,
+      sessionId: this.sessionId,
+      projectPath: this.projectPath,
+    };
+    return this.handleApprovalActionInternal(action, context);
+  }
+
+  /**
    * Request permission (prompts user if needed)
    */
   async requestPermission(tool: string, input: unknown): Promise<boolean> {
@@ -296,7 +364,7 @@ export class PermissionManager {
     // Prompt user for confirmation
     const action = await this.promptUser(tool, input, decision.suggestions);
 
-    return this.handleApprovalAction(action, context);
+    return this.handleApprovalActionInternal(action, context);
   }
 
   /**
@@ -559,9 +627,9 @@ export class PermissionManager {
   }
 
   /**
-   * Handle the user's approval action
+   * Handle the user's approval action (internal)
    */
-  private async handleApprovalAction(
+  private async handleApprovalActionInternal(
     action: ApprovalAction,
     context: PermissionContext
   ): Promise<boolean> {

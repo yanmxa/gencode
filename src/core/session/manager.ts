@@ -509,6 +509,16 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Truncate messages at a specific index (removes message at index and all after)
+   * Used to clean up corrupted message history with orphaned tool_use blocks
+   */
+  truncateMessagesAt(index: number): void {
+    if (this.currentSession && index >= 0 && index < this.currentSession.messages.length) {
+      this.currentSession.messages = this.currentSession.messages.slice(0, index);
+    }
+  }
+
+  /**
    * Export session to JSON
    */
   async export(id: string): Promise<string> {
