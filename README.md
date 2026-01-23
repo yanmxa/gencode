@@ -5,13 +5,13 @@ Open-source AI coding assistant for the terminal, written in Go.
 ## Install
 
 ```bash
-curl -sL https://github.com/yanmxa/gencode/releases/latest/download/gen_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz | tar xz && sudo mv gen_* /usr/local/bin/gen
+curl -sL https://github.com/yanmxa/gencode/releases/latest/download/gen_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz | tar xz
+sudo mv gen_* /usr/local/bin/gen
 ```
 
 <details>
-<summary>Other methods</summary>
+<summary>From Source</summary>
 
-**From Source**
 ```bash
 git clone https://github.com/yanmxa/gencode.git
 cd gencode && make install
