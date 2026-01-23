@@ -64,7 +64,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				parts = append(parts, &genai.Part{
 					FunctionResponse: &genai.FunctionResponse{
 						ID:       msg.ToolResult.ToolCallID,
-						Name:     "", // Will be determined from context
+						Name:     msg.ToolResult.ToolName,
 						Response: result,
 					},
 				})

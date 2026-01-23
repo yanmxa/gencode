@@ -645,15 +645,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			m.streaming = true
-			m.messages = append(m.messages, chatMessage{role: "assistant", content: ""})
-
-			m.viewport.SetContent(m.renderMessages())
-			m.viewport.GotoBottom()
 
 			ctx, cancel := context.WithCancel(context.Background())
 			m.cancelFunc = cancel
 
+			// Convert messages BEFORE adding the empty assistant placeholder
+			// to avoid sending empty text blocks to the API
 			providerMsgs := m.convertMessagesToProvider()
+
+			// Add empty assistant message for UI streaming display
+			m.messages = append(m.messages, chatMessage{role: "assistant", content: ""})
+			m.viewport.SetContent(m.renderMessages())
+			m.viewport.GotoBottom()
 			modelID := m.getModelID()
 
 			// Build system prompt
@@ -1333,7 +1336,12 @@ func (m model) convertMessagesToProvider() []provider.Message {
 		}
 
 		if msg.toolResult != nil {
-			providerMsg.ToolResult = msg.toolResult
+			// Copy tool result and set tool name
+			tr := *msg.toolResult
+			if msg.toolName != "" {
+				tr.ToolName = msg.toolName
+			}
+			providerMsg.ToolResult = &tr
 		}
 
 		providerMsgs = append(providerMsgs, providerMsg)
