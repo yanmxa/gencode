@@ -4,12 +4,31 @@ Open-source AI coding assistant for the terminal, written in Go.
 
 ## Install
 
+**macOS (Apple Silicon)**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yanmxa/gencode/main/install.sh | bash
+curl -sL https://github.com/yanmxa/gencode/releases/latest/download/gen_darwin_arm64.tar.gz | tar xz
+sudo mv gen_darwin_arm64 /usr/local/bin/gen
+```
+
+**macOS (Intel)**
+```bash
+curl -sL https://github.com/yanmxa/gencode/releases/latest/download/gen_darwin_amd64.tar.gz | tar xz
+sudo mv gen_darwin_amd64 /usr/local/bin/gen
+```
+
+**Linux (x86_64)**
+```bash
+curl -sL https://github.com/yanmxa/gencode/releases/latest/download/gen_linux_amd64.tar.gz | tar xz
+sudo mv gen_linux_amd64 /usr/local/bin/gen
 ```
 
 <details>
 <summary>Other methods</summary>
+
+**Auto-detect script**
+```bash
+curl -fsSL https://raw.githubusercontent.com/yanmxa/gencode/main/install.sh | bash
+```
 
 **Go**
 ```bash
