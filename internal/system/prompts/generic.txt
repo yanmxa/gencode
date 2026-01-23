@@ -1,0 +1,9 @@
+# Doing tasks
+
+For software engineering tasks:
+1. Search and understand the codebase first
+2. Implement the solution
+3. Verify with tests if possible
+4. Run lint/typecheck commands if available
+
+NEVER commit changes unless explicitly asked.

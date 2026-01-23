@@ -1,0 +1,370 @@
+package config
+
+import (
+	"net/url"
+	"path/filepath"
+	"strings"
+)
+
+// PermissionResult represents the result of a permission check.
+type PermissionResult int
+
+const (
+	// PermissionAllow means the action is automatically allowed.
+	PermissionAllow PermissionResult = iota
+
+	// PermissionDeny means the action is automatically denied.
+	PermissionDeny
+
+	// PermissionAsk means the action requires user confirmation.
+	PermissionAsk
+)
+
+// String returns a human-readable representation of the permission result.
+func (p PermissionResult) String() string {
+	switch p {
+	case PermissionAllow:
+		return "allow"
+	case PermissionDeny:
+		return "deny"
+	case PermissionAsk:
+		return "ask"
+	default:
+		return "unknown"
+	}
+}
+
+// ReadOnlyTools is a list of tools that are considered read-only.
+// These tools don't modify any files or state.
+var ReadOnlyTools = map[string]bool{
+	"Read":      true,
+	"Glob":      true,
+	"Grep":      true,
+	"WebFetch":  true,
+	"WebSearch": true,
+}
+
+// IsReadOnlyTool returns true if the tool is read-only.
+func IsReadOnlyTool(toolName string) bool {
+	return ReadOnlyTools[toolName]
+}
+
+// CheckPermission checks if a tool action is allowed based on settings and session permissions.
+// Priority:
+//  1. Session permissions (runtime, e.g., "allow all edits this session")
+//  2. Deny rules (highest priority in settings)
+//  3. Allow rules
+//  4. Ask rules
+//  5. Default behavior (read-only tools allowed, others need confirmation)
+func (s *Settings) CheckPermission(toolName string, args map[string]any, session *SessionPermissions) PermissionResult {
+	// Build the rule string for this tool invocation
+	rule := BuildRule(toolName, args)
+
+	// Check session permissions first
+	if session != nil {
+		if session.IsToolAllowed(toolName) {
+			return PermissionAllow
+		}
+		if session.IsPatternAllowed(rule) {
+			return PermissionAllow
+		}
+	}
+
+	// Check deny rules (highest priority)
+	for _, pattern := range s.Permissions.Deny {
+		if MatchRule(rule, pattern) {
+			return PermissionDeny
+		}
+	}
+
+	// Check allow rules
+	for _, pattern := range s.Permissions.Allow {
+		if MatchRule(rule, pattern) {
+			return PermissionAllow
+		}
+	}
+
+	// Check ask rules
+	for _, pattern := range s.Permissions.Ask {
+		if MatchRule(rule, pattern) {
+			return PermissionAsk
+		}
+	}
+
+	// Default behavior
+	if IsReadOnlyTool(toolName) {
+		return PermissionAllow
+	}
+	return PermissionAsk
+}
+
+// BuildRule builds a rule string from a tool name and arguments.
+// Format: "Tool(args)"
+//
+// Different tools extract different parts of args:
+//   - Bash: "Bash(command)" where command is the shell command
+//   - Read/Edit/Write: "Read(file_path)"
+//   - Glob/Grep: "Glob(pattern)" or "Grep(pattern)"
+//   - WebFetch: "WebFetch(domain:hostname)"
+func BuildRule(toolName string, args map[string]any) string {
+	var argStr string
+
+	switch toolName {
+	case "Bash":
+		// For Bash, use the command with prefix matching support
+		if cmd, ok := args["command"].(string); ok {
+			// Extract command prefix (e.g., "npm install" -> "npm:install")
+			// This allows patterns like "Bash(npm:*)"
+			argStr = normalizeBashCommand(cmd)
+		}
+
+	case "Read", "Edit", "Write":
+		// For file tools, use the file path
+		if fp, ok := args["file_path"].(string); ok {
+			argStr = fp
+		}
+
+	case "Glob":
+		// For Glob, use the pattern
+		if p, ok := args["pattern"].(string); ok {
+			argStr = p
+		}
+
+	case "Grep":
+		// For Grep, use the pattern
+		if p, ok := args["pattern"].(string); ok {
+			argStr = p
+		}
+
+	case "WebFetch":
+		// For WebFetch, extract domain from URL
+		if u, ok := args["url"].(string); ok {
+			if parsed, err := url.Parse(u); err == nil {
+				argStr = "domain:" + parsed.Host
+			} else {
+				argStr = u
+			}
+		}
+
+	default:
+		// Generic: try common field names
+		if fp, ok := args["file_path"].(string); ok {
+			argStr = fp
+		} else if p, ok := args["path"].(string); ok {
+			argStr = p
+		} else if p, ok := args["pattern"].(string); ok {
+			argStr = p
+		}
+	}
+
+	return toolName + "(" + argStr + ")"
+}
+
+// normalizeBashCommand normalizes a bash command for pattern matching.
+// Examples:
+//   - "npm install lodash" -> "npm:install lodash"
+//   - "git commit -m 'msg'" -> "git:commit -m 'msg'"
+//   - "ls -la" -> "ls:-la"
+func normalizeBashCommand(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	parts := strings.SplitN(cmd, " ", 2)
+	if len(parts) == 0 {
+		return cmd
+	}
+
+	// Get the base command (without path)
+	baseCmd := filepath.Base(parts[0])
+
+	if len(parts) == 1 {
+		return baseCmd
+	}
+
+	// Return "command:rest"
+	return baseCmd + ":" + parts[1]
+}
+
+// MatchRule checks if a rule matches a pattern.
+// Rule format: "Tool(args)"
+// Pattern format: "Tool(pattern)" where pattern supports:
+//   - "*" matches any sequence of characters
+//   - "**" matches any sequence including path separators
+//   - "domain:" prefix for WebFetch domain matching
+func MatchRule(rule, pattern string) bool {
+	// Parse rule
+	toolRule, argsRule := parseRule(rule)
+	toolPat, argsPat := parseRule(pattern)
+
+	// Tool names must match exactly
+	if toolRule != toolPat {
+		return false
+	}
+
+	// Match arguments using glob-like patterns
+	return matchGlob(argsRule, argsPat)
+}
+
+// parseRule parses a rule string into tool name and arguments.
+// "Bash(npm install)" -> ("Bash", "npm install")
+func parseRule(s string) (tool, args string) {
+	idx := strings.Index(s, "(")
+	if idx < 0 {
+		return s, ""
+	}
+
+	tool = s[:idx]
+	args = strings.TrimSuffix(s[idx+1:], ")")
+	return
+}
+
+// matchGlob performs glob-like pattern matching.
+// Supports:
+//   - "*" matches any sequence of non-separator characters
+//   - "**" matches any sequence including separators (path components)
+//   - "?" matches a single character
+//   - Exact string matching
+func matchGlob(str, pattern string) bool {
+	// Empty pattern matches empty string
+	if pattern == "" {
+		return str == ""
+	}
+
+	// Handle "**" pattern (matches everything)
+	if pattern == "**" {
+		return true
+	}
+
+	// Handle patterns with "**" (double star - matches any path)
+	if strings.Contains(pattern, "**") {
+		// Split on "**" and match each segment
+		segments := strings.Split(pattern, "**")
+
+		if len(segments) == 2 {
+			prefix := segments[0]
+			suffix := segments[1]
+
+			// Remove leading/trailing slashes from segments for flexibility
+			prefix = strings.TrimSuffix(prefix, "/")
+			suffix = strings.TrimPrefix(suffix, "/")
+
+			// Check prefix matches start
+			if prefix != "" && !strings.HasPrefix(str, prefix) {
+				return false
+			}
+
+			// Check suffix matches end (using simple glob for suffix like "*.go")
+			if suffix != "" {
+				// For suffix matching, we need to find if any suffix of the string matches the pattern
+				// e.g., "*.go" should match "file.go" in "/path/to/file.go"
+				// e.g., ".env.*" should match ".env.local" in "/path/to/.env.local"
+
+				// Get the filename or last component if suffix looks like a filename pattern
+				// For patterns like ".env.*" or "*.go", match against the basename
+				if strings.Contains(suffix, "*") {
+					// If the pattern looks like a filename (starts with . or contains .), try matching against the last path component
+					// Get the last path component of the string
+					lastSlash := strings.LastIndex(str, "/")
+					var filename string
+					if lastSlash >= 0 {
+						filename = str[lastSlash+1:]
+					} else {
+						filename = str
+					}
+
+					// Try matching the filename against the suffix pattern
+					if matchSimpleWildcard(filename, suffix) {
+						return true
+					}
+
+					// Also try matching the whole remaining path (for patterns like "test/*.go")
+					remaining := str
+					if prefix != "" {
+						remaining = strings.TrimPrefix(str, prefix)
+						remaining = strings.TrimPrefix(remaining, "/")
+					}
+					return matchSimpleWildcard(remaining, suffix)
+				}
+				return strings.HasSuffix(str, suffix)
+			}
+
+			return true
+		}
+	}
+
+	// Handle simple wildcard patterns
+	if strings.Contains(pattern, "*") || strings.Contains(pattern, "?") {
+		return matchSimpleWildcard(str, pattern)
+	}
+
+	// Exact match
+	return str == pattern
+}
+
+// matchSimpleWildcard matches a string against a pattern with * and ? wildcards.
+// * matches any sequence of characters (including empty)
+// ? matches exactly one character
+func matchSimpleWildcard(str, pattern string) bool {
+	// Use dynamic programming approach
+	s, p := 0, 0
+	starIdx, matchIdx := -1, 0
+
+	for s < len(str) {
+		if p < len(pattern) && (pattern[p] == '?' || pattern[p] == str[s]) {
+			// Characters match or pattern has ?
+			s++
+			p++
+		} else if p < len(pattern) && pattern[p] == '*' {
+			// Found *, mark the position
+			starIdx = p
+			matchIdx = s
+			p++
+		} else if starIdx != -1 {
+			// Mismatch after *, backtrack
+			p = starIdx + 1
+			matchIdx++
+			s = matchIdx
+		} else {
+			// Hard mismatch
+			return false
+		}
+	}
+
+	// Check remaining pattern characters are all *
+	for p < len(pattern) {
+		if pattern[p] != '*' {
+			return false
+		}
+		p++
+	}
+
+	return true
+}
+
+// CommonDenyPatterns contains commonly denied patterns for security.
+var CommonDenyPatterns = []string{
+	"Read(**/.env)",
+	"Read(**/.env.*)",
+	"Read(**/secrets/**)",
+	"Read(**/*credentials*)",
+	"Read(**/*password*)",
+	"Read(**/.aws/**)",
+	"Read(**/.ssh/**)",
+	"Edit(**/.env)",
+	"Edit(**/.env.*)",
+	"Write(**/.env)",
+	"Write(**/.env.*)",
+}
+
+// CommonAllowPatterns contains commonly allowed patterns.
+var CommonAllowPatterns = []string{
+	"Bash(git:*)",
+	"Bash(npm:*)",
+	"Bash(yarn:*)",
+	"Bash(pnpm:*)",
+	"Bash(go:*)",
+	"Bash(make:*)",
+	"Bash(ls:*)",
+	"Bash(cat:*)",
+	"Bash(head:*)",
+	"Bash(tail:*)",
+	"Bash(pwd)",
+}
