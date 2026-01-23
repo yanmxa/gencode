@@ -6,7 +6,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/myan/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // messageMarshaler wraps a Message for zap logging

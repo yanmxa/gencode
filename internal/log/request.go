@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/myan/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // LogRequest logs an LLM request in human-readable format

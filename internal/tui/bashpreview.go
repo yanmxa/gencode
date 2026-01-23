@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/myan/gencode/internal/tool/permission"
+	"github.com/yanmxa/gencode/internal/tool/permission"
 )
 
 const (

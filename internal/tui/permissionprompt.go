@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/myan/gencode/internal/tool/permission"
+	"github.com/yanmxa/gencode/internal/tool/permission"
 )
 
 // PermissionPrompt manages the permission request UI with Claude Code style.

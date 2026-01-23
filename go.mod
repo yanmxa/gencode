@@ -1,4 +1,4 @@
-module github.com/myan/gencode
+module github.com/yanmxa/gencode
 
 go 1.25.6
 

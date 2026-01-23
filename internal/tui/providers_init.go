@@ -5,7 +5,7 @@ package tui
 
 import (
 	// Import provider packages for side effects (registration)
-	_ "github.com/myan/gencode/internal/provider/anthropic"
-	_ "github.com/myan/gencode/internal/provider/google"
-	_ "github.com/myan/gencode/internal/provider/openai"
+	_ "github.com/yanmxa/gencode/internal/provider/anthropic"
+	_ "github.com/yanmxa/gencode/internal/provider/google"
+	_ "github.com/yanmxa/gencode/internal/provider/openai"
 )

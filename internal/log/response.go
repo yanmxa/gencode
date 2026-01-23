@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/myan/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // LogResponse logs an LLM response in human-readable format

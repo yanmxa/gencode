@@ -3,7 +3,7 @@ package tool
 import (
 	"context"
 
-	"github.com/myan/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // ToolSchema defines the JSON schema for a tool

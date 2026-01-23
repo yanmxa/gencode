@@ -1,7 +1,7 @@
 package google
 
 import (
-	"github.com/myan/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // APIKeyMeta is the metadata for Google via API Key

@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/myan/gencode/internal/tool"
-	"github.com/myan/gencode/internal/tool/ui"
+	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/ui"
 )
 
 // Command represents a slash command

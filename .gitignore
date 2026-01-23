@@ -1,10 +1,9 @@
-# Dependencies
-node_modules/
+# Binary
+gen
+gen_*
+*.tar.gz
 
-# Build output
-dist/
-
-# Environment variables
+# Environment
 .env
 .env.local
 
@@ -16,16 +15,9 @@ dist/
 
 # OS
 .DS_Store
-Thumbs.db
 
-# Logs
-*.log
-npm-debug.log*
-.claude
-CLAUDE.md
-CLAUDE.local.md
+# Local config
 .gen/
+.claude/
+CLAUDE.local.md
 GEN.local.md
-.validation
-
-gen

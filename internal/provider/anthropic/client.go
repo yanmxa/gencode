@@ -6,8 +6,8 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/myan/gencode/internal/log"
-	"github.com/myan/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // Client implements the LLMProvider interface using the Anthropic SDK

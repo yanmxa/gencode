@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/myan/gencode/internal/tool/ui"
+	"github.com/yanmxa/gencode/internal/tool/ui"
 )
 
 // Registry manages tool registration and execution

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/myan/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/log"
 	"go.uber.org/zap"
 )
 
@@ -31,15 +31,17 @@ type Config struct {
 }
 
 // Prompt builds the complete system prompt.
-// Assembly order: base + provider/generic + environment
+// Assembly order: base + tools + provider/generic + environment
 func Prompt(cfg Config) string {
 	base := load("base.txt")
+	tools := load("tools.txt")
 	providerPrompt := providerOrGeneric(cfg.Provider)
 	env := formatEnv(cfg)
 
 	// DEBUG: Verify each part is loaded correctly
 	log.Logger().Info("=== System Prompt Loading ===",
 		zap.Int("base_len", len(base)),
+		zap.Int("tools_len", len(tools)),
 		zap.Int("provider_len", len(providerPrompt)),
 		zap.Int("env_len", len(env)),
 		zap.String("provider", cfg.Provider),
@@ -49,11 +51,14 @@ func Prompt(cfg Config) string {
 	if len(base) == 0 {
 		log.Logger().Warn("WARNING: base.txt is empty!")
 	}
+	if len(tools) == 0 {
+		log.Logger().Warn("WARNING: tools.txt is empty!")
+	}
 	if len(providerPrompt) == 0 {
 		log.Logger().Warn("WARNING: provider/generic prompt is empty!")
 	}
 
-	parts := []string{base, providerPrompt, env}
+	parts := []string{base, tools, providerPrompt, env}
 
 	// Extension points
 	if cfg.Memory != "" {

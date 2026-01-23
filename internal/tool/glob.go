@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/myan/gencode/internal/tool/ui"
+	"github.com/yanmxa/gencode/internal/tool/ui"
 )
 
 const maxGlobResults = 100

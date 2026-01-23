@@ -9,7 +9,7 @@ import (
 	"time"
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
-	"github.com/myan/gencode/internal/tool/ui"
+	"github.com/yanmxa/gencode/internal/tool/ui"
 )
 
 const (

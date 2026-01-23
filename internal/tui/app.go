@@ -18,11 +18,11 @@ import (
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/myan/gencode/internal/config"
-	"github.com/myan/gencode/internal/provider"
-	"github.com/myan/gencode/internal/system"
-	"github.com/myan/gencode/internal/tool"
-	"github.com/myan/gencode/internal/tool/permission"
+	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/permission"
 )
 
 // Run starts the TUI application

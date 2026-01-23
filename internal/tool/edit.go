@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/myan/gencode/internal/tool/permission"
-	"github.com/myan/gencode/internal/tool/ui"
+	"github.com/yanmxa/gencode/internal/tool/permission"
+	"github.com/yanmxa/gencode/internal/tool/ui"
 )
 
 const (

@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
-	"github.com/myan/gencode/internal/tool/permission"
+	"github.com/yanmxa/gencode/internal/tool/permission"
 )
 
 const (

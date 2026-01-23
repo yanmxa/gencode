@@ -9,8 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/myan/gencode/internal/provider"
-	"github.com/myan/gencode/internal/provider/search"
+	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider/search"
 )
 
 // Styles for selector

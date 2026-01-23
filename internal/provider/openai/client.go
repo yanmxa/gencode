@@ -7,8 +7,8 @@ import (
 
 	"github.com/openai/openai-go"
 
-	"github.com/myan/gencode/internal/log"
-	"github.com/myan/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // Client implements the LLMProvider interface using the OpenAI SDK

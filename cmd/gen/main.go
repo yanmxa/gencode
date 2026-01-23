@@ -11,15 +11,15 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 
-	"github.com/myan/gencode/internal/log"
-	"github.com/myan/gencode/internal/provider"
-	"github.com/myan/gencode/internal/tool"
-	"github.com/myan/gencode/internal/tui"
+	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tui"
 
 	// Import providers for registration
-	_ "github.com/myan/gencode/internal/provider/anthropic"
-	_ "github.com/myan/gencode/internal/provider/google"
-	_ "github.com/myan/gencode/internal/provider/openai"
+	_ "github.com/yanmxa/gencode/internal/provider/anthropic"
+	_ "github.com/yanmxa/gencode/internal/provider/google"
+	_ "github.com/yanmxa/gencode/internal/provider/openai"
 )
 
 var (
@@ -230,7 +230,7 @@ Examples:
   cat file.go | gen "Review" Review file via pipe
   gen version                Show version
 
-For more information, visit: https://github.com/myan/gencode
+For more information, visit: https://github.com/yanmxa/gencode
 `
 	fmt.Println(help)
 }
