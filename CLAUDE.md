@@ -17,7 +17,7 @@ go build -o gen ./cmd/gen    # Build binary
 ## Architecture
 
 ```
-cmd/gen/main.go          # CLI entry point
+main.go                  # CLI entry point
 internal/
 ├── provider/            # LLM provider abstraction
 │   ├── anthropic/       # Claude (API key + Vertex AI)

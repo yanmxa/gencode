@@ -12,8 +12,14 @@ sudo mv gen_* /usr/local/bin/gen
 ```
 
 <details>
-<summary>From Source</summary>
+<summary>Other methods</summary>
 
+**Go**
+```bash
+go install github.com/yanmxa/gencode@latest
+```
+
+**From Source**
 ```bash
 git clone https://github.com/yanmxa/gencode.git
 cd gencode && make install

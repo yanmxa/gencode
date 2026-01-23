@@ -1,0 +1,23 @@
+# Tool usage
+
+Prefer specialized tools over Bash for file operations:
+- Read instead of cat/head/tail
+- Edit instead of sed/awk
+- Write instead of echo/cat with redirection
+- Glob instead of find/ls
+- Grep instead of grep/rg
+
+## Key rules
+
+1. **Read before Edit/Write**: Always read a file before modifying it.
+2. **Parallel calls**: Make independent tool calls in parallel.
+3. **Prefer Edit over Write**: For existing files, use Edit instead of Write.
+4. **No unnecessary files**: Never create docs/README unless asked.
+
+## Git safety (Bash)
+
+- NEVER update git config
+- NEVER run destructive commands (push --force, reset --hard) unless asked
+- NEVER skip hooks (--no-verify) unless asked
+- Stage specific files, not `git add -A` or `git add .`
+- NEVER commit unless explicitly asked
