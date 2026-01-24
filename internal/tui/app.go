@@ -23,6 +23,7 @@ import (
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/permission"
+	toolui "github.com/yanmxa/gencode/internal/tool/ui"
 )
 
 // Run starts the TUI application
@@ -93,6 +94,10 @@ type (
 		results   []provider.ToolResult
 		toolNames []string // Tool names for display
 	}
+	// todoUpdateMsg is sent when TodoWrite tool updates the todo list
+	todoUpdateMsg struct {
+		todos []toolui.TodoItem
+	}
 )
 
 type model struct {
@@ -139,6 +144,13 @@ type model struct {
 	// Settings and session permissions
 	settings           *config.Settings
 	sessionPermissions *config.SessionPermissions
+
+	// Todo panel (persistent display)
+	todoPanel *TodoPanel
+
+	// Question prompt (interactive)
+	questionPrompt  *QuestionPrompt
+	pendingQuestion *tool.QuestionRequest
 }
 
 // createMarkdownRenderer creates a glamour renderer with the specified width and compact styling
@@ -273,6 +285,8 @@ func newModel() model {
 		permissionPrompt:   NewPermissionPrompt(),
 		settings:           settings,
 		sessionPermissions: config.NewSessionPermissions(),
+		todoPanel:          NewTodoPanel(),
+		questionPrompt:     NewQuestionPrompt(),
 	}
 }
 
@@ -418,6 +432,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+	// Handle TodoWrite tool result (with todo update)
+	case todoResultMsg:
+		r := msg.result
+		m.messages = append(m.messages, chatMessage{
+			role:       "user",
+			toolResult: &r,
+			toolName:   msg.toolName,
+		})
+		// Update the todo panel
+		m.todoPanel.Update(msg.todos)
+		m.todoPanel.SetWidth(m.width)
+		m.pendingToolIdx++
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+		return m, processNextTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd, m.settings, m.sessionPermissions)
+
 	// Handle single tool result
 	case toolResultMsg:
 		r := msg.result
@@ -458,14 +488,61 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pendingToolIdx = 0
 		return m, m.continueWithToolResults()
 
+	// Handle question request from AskUserQuestion tool
+	case QuestionRequestMsg:
+		m.pendingQuestion = msg.Request
+		m.questionPrompt.Show(msg.Request, m.width)
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+		return m, nil
+
+	// Handle question response (user answered or cancelled)
+	case QuestionResponseMsg:
+		if msg.Cancelled {
+			// User cancelled - create error result
+			tc := m.pendingToolCalls[m.pendingToolIdx]
+			m.messages = append(m.messages, chatMessage{
+				role:     "user",
+				toolName: tc.Name,
+				toolResult: &provider.ToolResult{
+					ToolCallID: tc.ID,
+					Content:    "User cancelled the question prompt",
+					IsError:    true,
+				},
+			})
+			m.pendingToolCalls = nil
+			m.pendingToolIdx = 0
+			m.pendingQuestion = nil
+			m.streaming = false
+			m.viewport.SetContent(m.renderMessages())
+			return m, nil
+		}
+
+		// Execute the tool with the response
+		tc := m.pendingToolCalls[m.pendingToolIdx]
+		m.pendingQuestion = nil
+		return m, executeInteractiveTool(tc, msg.Response, m.cwd)
+
+	// Handle todo update (from TodoWrite tool result)
+	case todoUpdateMsg:
+		m.todoPanel.Update(msg.todos)
+		m.todoPanel.SetWidth(m.width)
+		return m, nil
+
 	case tea.KeyMsg:
-		// Handle permission prompt first
+		// Handle question prompt first (highest priority)
+		if m.questionPrompt.IsActive() {
+			cmd := m.questionPrompt.HandleKeypress(msg)
+			return m, cmd
+		}
+
+		// Handle permission prompt
 		if m.permissionPrompt.IsActive() {
 			cmd := m.permissionPrompt.HandleKeypress(msg)
 			return m, cmd
 		}
 
-		// Handle selector mode first
+		// Handle selector mode
 		if m.selector.IsActive() {
 			cmd := m.selector.HandleKeypress(msg)
 			return m, cmd
@@ -891,22 +968,12 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 			switch permResult {
 			case config.PermissionAllow:
 				// Auto-allowed by settings or session - execute directly
-				output, err := tool.ExecuteAndFormat(ctx, tc.Name, params, cwd)
-				if err != nil {
-					return toolResultMsg{
-						result: provider.ToolResult{
-							ToolCallID: tc.ID,
-							Content:    "Error: " + err.Error(),
-							IsError:    true,
-						},
-						toolName: tc.Name,
-					}
-				}
+				result := tool.Execute(ctx, tc.Name, params, cwd)
 				return toolResultMsg{
 					result: provider.ToolResult{
 						ToolCallID: tc.ID,
-						Content:    output,
-						IsError:    false,
+						Content:    result.FormatForLLM(),
+						IsError:    !result.Success,
 					},
 					toolName: tc.Name,
 				}
@@ -924,6 +991,26 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 
 			case config.PermissionAsk:
 				// Fall through to permission request below
+			}
+		}
+
+		// Check if it's an interactive tool (like AskUserQuestion)
+		if it, ok := t.(tool.InteractiveTool); ok && it.RequiresInteraction() {
+			// Prepare interaction request
+			req, err := it.PrepareInteraction(ctx, params, cwd)
+			if err != nil {
+				return toolResultMsg{
+					result: provider.ToolResult{
+						ToolCallID: tc.ID,
+						Content:    "Error: " + err.Error(),
+						IsError:    true,
+					},
+					toolName: tc.Name,
+				}
+			}
+			// Return question request for TUI to handle
+			if qr, ok := req.(*tool.QuestionRequest); ok {
+				return QuestionRequestMsg{Request: qr}
 			}
 		}
 
@@ -946,22 +1033,26 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 		}
 
 		// Execute regular tool directly
-		output, err := tool.ExecuteAndFormat(ctx, tc.Name, params, cwd)
-		if err != nil {
-			return toolResultMsg{
+		result := tool.Execute(ctx, tc.Name, params, cwd)
+
+		// Special handling for TodoWrite - need to send todo update
+		if tc.Name == "TodoWrite" && result.Success && len(result.TodoItems) > 0 {
+			return todoResultMsg{
 				result: provider.ToolResult{
 					ToolCallID: tc.ID,
-					Content:    "Error: " + err.Error(),
-					IsError:    true,
+					Content:    result.FormatForLLM(),
+					IsError:    !result.Success,
 				},
 				toolName: tc.Name,
+				todos:    result.TodoItems,
 			}
 		}
+
 		return toolResultMsg{
 			result: provider.ToolResult{
 				ToolCallID: tc.ID,
-				Content:    output,
-				IsError:    false,
+				Content:    result.FormatForLLM(),
+				IsError:    !result.Success,
 			},
 			toolName: tc.Name,
 		}
@@ -1012,10 +1103,73 @@ func executeApprovedTool(toolCalls []provider.ToolCall, idx int, cwd string) tea
 	}
 }
 
+// executeInteractiveTool executes an interactive tool with the user's response
+func executeInteractiveTool(tc provider.ToolCall, response *tool.QuestionResponse, cwd string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		// Parse the tool input JSON
+		var params map[string]any
+		if err := json.Unmarshal([]byte(tc.Input), &params); err != nil {
+			return toolResultMsg{
+				result: provider.ToolResult{
+					ToolCallID: tc.ID,
+					Content:    "Error parsing tool input: " + err.Error(),
+					IsError:    true,
+				},
+				toolName: tc.Name,
+			}
+		}
+
+		t, ok := tool.Get(tc.Name)
+		if !ok {
+			return toolResultMsg{
+				result: provider.ToolResult{
+					ToolCallID: tc.ID,
+					Content:    "Unknown tool: " + tc.Name,
+					IsError:    true,
+				},
+				toolName: tc.Name,
+			}
+		}
+
+		it, ok := t.(tool.InteractiveTool)
+		if !ok {
+			return toolResultMsg{
+				result: provider.ToolResult{
+					ToolCallID: tc.ID,
+					Content:    "Tool is not interactive: " + tc.Name,
+					IsError:    true,
+				},
+				toolName: tc.Name,
+			}
+		}
+
+		// Execute with the user's response
+		result := it.ExecuteWithResponse(ctx, params, response, cwd)
+
+		return toolResultMsg{
+			result: provider.ToolResult{
+				ToolCallID: tc.ID,
+				Content:    result.FormatForLLM(),
+				IsError:    !result.Success,
+			},
+			toolName: tc.Name,
+		}
+	}
+}
+
 // toolResultMsg is sent when a single tool completes execution
 type toolResultMsg struct {
 	result   provider.ToolResult
 	toolName string
+}
+
+// todoResultMsg is sent when TodoWrite tool completes (includes todo items for panel)
+type todoResultMsg struct {
+	result   provider.ToolResult
+	toolName string
+	todos    []toolui.TodoItem
 }
 
 // continueWithToolResults continues the conversation after tool execution
@@ -1086,6 +1240,17 @@ func (m model) View() string {
 	// Separator line
 	separator := separatorStyle.Render(strings.Repeat("─", m.width))
 
+	// Todo panel (persistent display above input)
+	todoView := ""
+	if m.todoPanel.IsVisible() {
+		todoView = m.todoPanel.Render() + "\n"
+	}
+
+	// Question prompt (if active, replaces input area)
+	if m.questionPrompt.IsActive() {
+		return fmt.Sprintf("%s\n%s\n%s%s", chat, separator, todoView, m.questionPrompt.Render())
+	}
+
 	// Render input area with prompt on first line only
 	prompt := inputPromptStyle.Render("❯ ")
 	inputView := prompt + m.textarea.View()
@@ -1093,10 +1258,10 @@ func (m model) View() string {
 	// Render suggestions if visible
 	suggestions := m.suggestions.Render(m.width)
 	if suggestions != "" {
-		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s", chat, separator, inputView, suggestions, separator)
+		return fmt.Sprintf("%s\n%s\n%s%s\n%s\n%s", chat, separator, todoView, inputView, suggestions, separator)
 	}
 
-	return fmt.Sprintf("%s\n%s\n%s\n%s", chat, separator, inputView, separator)
+	return fmt.Sprintf("%s\n%s\n%s%s\n%s", chat, separator, todoView, inputView, separator)
 }
 
 func (m model) renderWelcome() string {
@@ -1179,27 +1344,7 @@ func (m model) renderMessages() string {
 				}
 
 				// Format result size based on tool type
-				var sizeInfo string
-				content := msg.toolResult.Content
-				if toolName == "WebFetch" {
-					// Show size for WebFetch
-					size := len(content)
-					if size >= 1024*1024 {
-						sizeInfo = fmt.Sprintf("%.1f MB", float64(size)/(1024*1024))
-					} else if size >= 1024 {
-						sizeInfo = fmt.Sprintf("%.1f KB", float64(size)/1024)
-					} else {
-						sizeInfo = fmt.Sprintf("%d bytes", size)
-					}
-				} else {
-					// Show line count for other tools
-					trimmed := strings.TrimSuffix(content, "\n")
-					lineCount := 0
-					if trimmed != "" {
-						lineCount = strings.Count(trimmed, "\n") + 1
-					}
-					sizeInfo = fmt.Sprintf("%d lines", lineCount)
-				}
+				sizeInfo := formatToolResultSize(toolName, msg.toolResult.Content)
 
 				// Format: ⎿ Read → 76 lines
 				icon := "⎿"
@@ -1355,4 +1500,40 @@ func (m model) getModelID() string {
 		return m.currentModel.ModelID
 	}
 	return "claude-sonnet-4-20250514" // Default model
+}
+
+// formatToolResultSize formats the size information for a tool result
+func formatToolResultSize(toolName, content string) string {
+	switch toolName {
+	case "WebFetch":
+		size := len(content)
+		if size >= 1024*1024 {
+			return fmt.Sprintf("%.1f MB", float64(size)/(1024*1024))
+		}
+		if size >= 1024 {
+			return fmt.Sprintf("%.1f KB", float64(size)/1024)
+		}
+		return fmt.Sprintf("%d bytes", size)
+
+	case "Write", "Edit":
+		// Extract line count from status message like "Created /path (45 lines)"
+		start := strings.Index(content, "(")
+		if start == -1 {
+			return "completed"
+		}
+		end := strings.Index(content[start:], ")")
+		if end == -1 {
+			return "completed"
+		}
+		return content[start+1 : start+end]
+
+	default:
+		// Show line count for other tools
+		trimmed := strings.TrimSuffix(content, "\n")
+		if trimmed == "" {
+			return "0 lines"
+		}
+		lineCount := strings.Count(trimmed, "\n") + 1
+		return fmt.Sprintf("%d lines", lineCount)
+	}
 }

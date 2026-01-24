@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	version = "0.1.0"
+	version = "0.2.0"
 )
 
 func init() {
@@ -237,11 +237,12 @@ For more information, visit: https://github.com/yanmxa/gencode
 
 // getDefaultModel returns the default model for a provider and auth method
 func getDefaultModel(providerName string, authMethod provider.AuthMethod) string {
+	if providerName == "anthropic" && authMethod == provider.AuthVertex {
+		return "claude-sonnet-4-5@20250929" // Vertex AI format
+	}
+
 	switch providerName {
 	case "anthropic":
-		if authMethod == provider.AuthVertex {
-			return "claude-sonnet-4-5@20250929" // Vertex AI format
-		}
 		return "claude-sonnet-4-20250514" // API key format
 	case "openai":
 		return "gpt-4o"

@@ -1,8 +1,6 @@
 package tool
 
 import (
-	"context"
-
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -194,13 +192,99 @@ func GetToolSchemas() []provider.Tool {
 				"required": []string{"command"},
 			},
 		},
+		// TodoWrite is temporarily disabled for testing AskUserQuestion
+		// {
+		// 	Name:        "TodoWrite",
+		// 	Description: "Create and manage a structured task list for tracking progress on multi-step tasks. Use this tool to plan complex tasks and show progress to the user.",
+		// 	Parameters: map[string]any{
+		// 		"type": "object",
+		// 		"properties": map[string]any{
+		// 			"todos": map[string]any{
+		// 				"type":        "array",
+		// 				"description": "The updated todo list",
+		// 				"items": map[string]any{
+		// 					"type": "object",
+		// 					"properties": map[string]any{
+		// 						"content": map[string]any{
+		// 							"type":        "string",
+		// 							"minLength":   1,
+		// 							"description": "Task description in imperative form (e.g., 'Fix authentication bug')",
+		// 						},
+		// 						"status": map[string]any{
+		// 							"type":        "string",
+		// 							"enum":        []string{"pending", "in_progress", "completed"},
+		// 							"description": "Task status: pending, in_progress, or completed",
+		// 						},
+		// 						"activeForm": map[string]any{
+		// 							"type":        "string",
+		// 							"minLength":   1,
+		// 							"description": "Present continuous form shown during execution (e.g., 'Fixing authentication bug')",
+		// 						},
+		// 					},
+		// 					"required": []string{"content", "status", "activeForm"},
+		// 				},
+		// 			},
+		// 		},
+		// 		"required": []string{"todos"},
+		// 	},
+		// },
+		{
+			Name:        "AskUserQuestion",
+			Description: "Ask the user questions to gather preferences, clarify requirements, or get decisions on implementation choices. Use when you need user input to proceed.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"questions": map[string]any{
+						"type":        "array",
+						"description": "Questions to ask the user (1-4 questions)",
+						"minItems":    1,
+						"maxItems":    4,
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"question": map[string]any{
+									"type":        "string",
+									"description": "The complete question to ask the user",
+								},
+								"header": map[string]any{
+									"type":        "string",
+									"maxLength":   12,
+									"description": "Very short label displayed as a chip/tag (max 12 chars)",
+								},
+								"options": map[string]any{
+									"type":        "array",
+									"description": "The available choices (2-4 options). 'Other' option is added automatically.",
+									"minItems":    2,
+									"maxItems":    4,
+									"items": map[string]any{
+										"type": "object",
+										"properties": map[string]any{
+											"label": map[string]any{
+												"type":        "string",
+												"description": "The display text for this option (1-5 words)",
+											},
+											"description": map[string]any{
+												"type":        "string",
+												"description": "Explanation of what this option means",
+											},
+										},
+										"required": []string{"label", "description"},
+									},
+								},
+								"multiSelect": map[string]any{
+									"type":        "boolean",
+									"default":     false,
+									"description": "Set to true to allow multiple options to be selected",
+								},
+							},
+							"required": []string{"question", "header", "options", "multiSelect"},
+						},
+					},
+				},
+				"required": []string{"questions"},
+			},
+		},
 	}
 
 	return tools
-}
-
-// ExecuteAndFormat executes a tool and returns the result as a string for the LLM
-func ExecuteAndFormat(ctx context.Context, name string, params map[string]any, cwd string) (string, error) {
-	result := Execute(ctx, name, params, cwd)
-	return result.FormatForLLM(), nil
 }

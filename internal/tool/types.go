@@ -36,6 +36,21 @@ type PermissionAwareTool interface {
 	ExecuteApproved(ctx context.Context, params map[string]any, cwd string) ui.ToolResult
 }
 
+// InteractiveTool is a tool that requires user interaction (not just permission)
+// Examples: AskUserQuestion for collecting user input
+type InteractiveTool interface {
+	Tool
+
+	// RequiresInteraction returns true if the tool needs user interaction
+	RequiresInteraction() bool
+
+	// PrepareInteraction prepares an interaction request (e.g., question prompt)
+	PrepareInteraction(ctx context.Context, params map[string]any, cwd string) (interface{}, error)
+
+	// ExecuteWithResponse executes the tool with the user's response
+	ExecuteWithResponse(ctx context.Context, params map[string]any, response interface{}, cwd string) ui.ToolResult
+}
+
 // ToolInput represents parsed tool input
 type ToolInput struct {
 	Name   string         // Tool name
