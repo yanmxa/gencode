@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -854,7 +855,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.streaming {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
-			m.viewport.SetContent(m.renderMessages())
+			// Only re-render if spinner is actually visible:
+			// - Not executing tools (pendingToolCalls is nil)
+			// - Last message is assistant with no content and no tool calls
+			// This prevents flickering of static tool call displays like ⚡Bash(...)
+			if m.pendingToolCalls == nil && len(m.messages) > 0 {
+				lastMsg := m.messages[len(m.messages)-1]
+				if lastMsg.role == "assistant" && lastMsg.content == "" && len(lastMsg.toolCalls) == 0 {
+					m.viewport.SetContent(m.renderMessages())
+				}
+			}
 			return m, cmd
 		}
 	}
@@ -1476,9 +1486,14 @@ func extractToolArgs(input string) string {
 		return p
 	}
 
-	// Fallback: first string value
-	for _, v := range params {
-		if s, ok := v.(string); ok {
+	// Fallback: sort keys for deterministic iteration
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if s, ok := params[k].(string); ok {
 			if len(s) > 30 {
 				return s[:30] + "..."
 			}
