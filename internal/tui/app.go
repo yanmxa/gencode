@@ -78,13 +78,14 @@ func init() {
 }
 
 type chatMessage struct {
-	role       string
-	content    string
-	toolCalls  []provider.ToolCall  // For assistant messages with tool calls
-	toolResult *provider.ToolResult // For tool result messages
-	toolName   string               // Tool name for tool result display
-	expanded   bool                 // Whether tool result is expanded
-	todos      []toolui.TodoItem    // Snapshot of todos (for TodoWrite results)
+	role              string
+	content           string
+	toolCalls         []provider.ToolCall  // For assistant messages with tool calls
+	toolCallsExpanded bool                 // Whether tool calls are expanded (show full args)
+	toolResult        *provider.ToolResult // For tool result messages
+	toolName          string               // Tool name for tool result display
+	expanded          bool                 // Whether tool result is expanded
+	todos             []toolui.TodoItem    // Snapshot of todos (for TodoWrite results)
 }
 
 type (
@@ -540,10 +541,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			now := time.Now()
 			// Check for double-tap (within 500ms)
 			if now.Sub(m.lastCtrlOTime) < 500*time.Millisecond {
-				// Double-tap: toggle ALL tool results
+				// Double-tap: toggle ALL tool results and tool calls
 				anyExpanded := false
 				for _, msg := range m.messages {
-					if msg.toolResult != nil && msg.expanded {
+					if (msg.toolResult != nil && msg.expanded) || (len(msg.toolCalls) > 0 && msg.toolCallsExpanded) {
 						anyExpanded = true
 						break
 					}
@@ -552,17 +553,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.messages[i].toolResult != nil {
 						m.messages[i].expanded = !anyExpanded
 					}
+					if len(m.messages[i].toolCalls) > 0 {
+						m.messages[i].toolCallsExpanded = !anyExpanded
+					}
 				}
 				m.lastCtrlOTime = time.Time{} // Reset to prevent triple-tap
 				m.viewport.SetContent(m.renderMessages())
 				return m, nil
 			}
 
-			// Single tap: toggle last tool result
+			// Single tap: toggle last tool result or tool calls
 			m.lastCtrlOTime = now
 			for i := len(m.messages) - 1; i >= 0; i-- {
+				// First check for tool results
 				if m.messages[i].toolResult != nil {
 					m.messages[i].expanded = !m.messages[i].expanded
+					m.viewport.SetContent(m.renderMessages())
+					return m, nil
+				}
+				// Then check for tool calls (assistant messages with pending tools)
+				if len(m.messages[i].toolCalls) > 0 {
+					m.messages[i].toolCallsExpanded = !m.messages[i].toolCallsExpanded
 					m.viewport.SetContent(m.renderMessages())
 					return m, nil
 				}
@@ -1450,10 +1461,31 @@ func (m model) renderMessages() string {
 					if tc.Name == "TodoWrite" {
 						continue
 					}
-					// Extract key info from input for display
-					args := extractToolArgs(tc.Input)
-					toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s(%s)", tc.Name, args))
-					sb.WriteString(toolLine + "\n")
+					if msg.toolCallsExpanded {
+						// Expanded: show full tool input JSON formatted
+						toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s", tc.Name))
+						sb.WriteString(toolLine + "\n")
+						// Pretty print the JSON input
+						var params map[string]any
+						if err := json.Unmarshal([]byte(tc.Input), &params); err == nil {
+							for k, v := range params {
+								if s, ok := v.(string); ok {
+									// Wrap long strings
+									if len(s) > 80 {
+										sb.WriteString(toolResultExpandedStyle.Render(fmt.Sprintf("%s:", k)) + "\n")
+										sb.WriteString(toolResultExpandedStyle.Render(s) + "\n")
+									} else {
+										sb.WriteString(toolResultExpandedStyle.Render(fmt.Sprintf("%s: %s", k, s)) + "\n")
+									}
+								}
+							}
+						}
+					} else {
+						// Collapsed: show short summary
+						args := extractToolArgs(tc.Input)
+						toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s(%s)", tc.Name, args))
+						sb.WriteString(toolLine + "\n")
+					}
 				}
 			}
 		}
@@ -1494,8 +1526,8 @@ func extractToolArgs(input string) string {
 	sort.Strings(keys)
 	for _, k := range keys {
 		if s, ok := params[k].(string); ok {
-			if len(s) > 30 {
-				return s[:30] + "..."
+			if len(s) > 60 {
+				return s[:60] + "..."
 			}
 			return s
 		}

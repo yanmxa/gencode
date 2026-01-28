@@ -230,11 +230,7 @@ func (p *PermissionPrompt) RenderInline() string {
 		contentWidth = 40
 	}
 
-	// No header needed - tool call header (⚡Write(file.txt)) is already shown above
-	// Start directly with separator
-	solidSep := strings.Repeat("─", contentWidth)
-	sb.WriteString(getPermSeparatorStyle().Render(solidSep))
-	sb.WriteString("\n")
+	// Note: separator line is added by View() in app.go, not here
 
 	// Description with filename (e.g., "Create new file: world.txt")
 	description := p.getDescription()
@@ -276,6 +272,11 @@ func (p *PermissionPrompt) RenderInline() string {
 		footer += " · Ctrl+O expand"
 	}
 	sb.WriteString(getPermFooterStyle().Render(footer))
+	sb.WriteString("\n")
+
+	// Bottom separator line
+	solidSep := strings.Repeat("─", contentWidth)
+	sb.WriteString(getPermSeparatorStyle().Render(solidSep))
 
 	return sb.String()
 }
