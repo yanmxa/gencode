@@ -184,45 +184,38 @@ func (p *PermissionPrompt) confirmSelection() tea.Cmd {
 	return nil
 }
 
-// Permission prompt styles (initialized dynamically based on theme)
-var (
-	solidSeparatorStyle  lipgloss.Style
-	dottedSeparatorStyle lipgloss.Style
-	promptDescStyle      lipgloss.Style
-	promptQuestionStyle  lipgloss.Style
-	menuSelectedStyle    lipgloss.Style
-	menuUnselectedStyle  lipgloss.Style
-	menuHintStyle        lipgloss.Style
-	footerStyle          lipgloss.Style
-)
+// Permission prompt styles - use functions to get current theme dynamically
+// This ensures styles update when theme changes (same pattern as question prompt)
+func getPermSeparatorStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Separator)
+}
 
-func init() {
-	// Initialize permission prompt styles based on current theme
-	solidSeparatorStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Separator)
+func getPermDottedStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
+}
 
-	dottedSeparatorStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Muted)
+func getPermDescStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Text)
+}
 
-	promptDescStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Text)
+func getPermQuestionStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.TextDim)
+}
 
-	promptQuestionStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.TextDim)
+func getPermSelectedStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Success).Bold(true)
+}
 
-	menuSelectedStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Success).
-		Bold(true)
+func getPermUnselectedStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.TextDim)
+}
 
-	menuUnselectedStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Muted)
+func getPermHintStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Italic(true)
+}
 
-	menuHintStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.TextDisabled).
-		Italic(true)
-
-	footerStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Muted)
+func getPermFooterStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
 }
 
 // RenderInline renders the permission prompt inline with Claude Code style
@@ -240,18 +233,18 @@ func (p *PermissionPrompt) RenderInline() string {
 	// No header needed - tool call header (⚡Write(file.txt)) is already shown above
 	// Start directly with separator
 	solidSep := strings.Repeat("─", contentWidth)
-	sb.WriteString(solidSeparatorStyle.Render(solidSep))
+	sb.WriteString(getPermSeparatorStyle().Render(solidSep))
 	sb.WriteString("\n")
 
 	// Description with filename (e.g., "Create new file: world.txt")
 	description := p.getDescription()
 	sb.WriteString(" ")
-	sb.WriteString(promptDescStyle.Render(description))
+	sb.WriteString(getPermDescStyle().Render(description))
 	sb.WriteString("\n")
 
 	// Dotted separator before content
 	dottedSep := strings.Repeat("╌", contentWidth)
-	sb.WriteString(dottedSeparatorStyle.Render(dottedSep))
+	sb.WriteString(getPermDottedStyle().Render(dottedSep))
 	sb.WriteString("\n")
 
 	// Diff preview, Bash preview, or content preview
@@ -262,13 +255,13 @@ func (p *PermissionPrompt) RenderInline() string {
 	}
 
 	// Dotted separator after content
-	sb.WriteString(dottedSeparatorStyle.Render(dottedSep))
+	sb.WriteString(getPermDottedStyle().Render(dottedSep))
 	sb.WriteString("\n")
 
 	// Question
 	question := p.getQuestion()
 	sb.WriteString(" ")
-	sb.WriteString(promptQuestionStyle.Render(question))
+	sb.WriteString(getPermQuestionStyle().Render(question))
 	sb.WriteString("\n")
 
 	// Menu options
@@ -276,13 +269,13 @@ func (p *PermissionPrompt) RenderInline() string {
 	sb.WriteString("\n")
 
 	// Footer
-	footer := " Esc to cancel"
+	footer := " ↑/↓ navigate · Enter confirm · Esc cancel"
 	hasExpandableContent := (p.diffPreview != nil && len(p.diffPreview.diffMeta.Lines) > DefaultMaxVisibleLines) ||
 		(p.bashPreview != nil && p.bashPreview.NeedsExpand())
 	if hasExpandableContent {
-		footer += " · Ctrl+O to expand/collapse"
+		footer += " · Ctrl+O expand"
 	}
-	sb.WriteString(footerStyle.Render(footer))
+	sb.WriteString(getPermFooterStyle().Render(footer))
 
 	return sb.String()
 }
@@ -359,13 +352,13 @@ func (p *PermissionPrompt) renderMenu() string {
 
 	for i, opt := range options {
 		if i == p.selectedIdx {
-			sb.WriteString(menuSelectedStyle.Render(fmt.Sprintf(" ❯ %d. %s", i+1, opt.label)))
+			sb.WriteString(getPermSelectedStyle().Render(fmt.Sprintf(" ❯ %d. %s", i+1, opt.label)))
 		} else {
-			sb.WriteString(menuUnselectedStyle.Render(fmt.Sprintf("   %d. %s", i+1, opt.label)))
+			sb.WriteString(getPermUnselectedStyle().Render(fmt.Sprintf("   %d. %s", i+1, opt.label)))
 		}
 		if opt.hint != "" {
 			sb.WriteString(" ")
-			sb.WriteString(menuHintStyle.Render(opt.hint))
+			sb.WriteString(getPermHintStyle().Render(opt.hint))
 		}
 		sb.WriteString("\n")
 	}

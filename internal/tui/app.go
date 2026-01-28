@@ -22,7 +22,6 @@ import (
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tool/permission"
 	toolui "github.com/yanmxa/gencode/internal/tool/ui"
 )
 
@@ -78,14 +77,13 @@ func init() {
 }
 
 type chatMessage struct {
-	role              string
-	content           string
-	toolCalls         []provider.ToolCall           // For assistant messages with tool calls
-	toolResult        *provider.ToolResult          // For tool result messages
-	toolName          string                        // Tool name for tool result display
-	expanded          bool                          // Whether tool result is expanded
-	pendingPermission *permission.PermissionRequest // Pending permission request (inline display)
-	todos             []toolui.TodoItem             // Snapshot of todos (for TodoWrite results)
+	role       string
+	content    string
+	toolCalls  []provider.ToolCall  // For assistant messages with tool calls
+	toolResult *provider.ToolResult // For tool result messages
+	toolName   string               // Tool name for tool result display
+	expanded   bool                 // Whether tool result is expanded
+	todos      []toolui.TodoItem    // Snapshot of todos (for TodoWrite results)
 }
 
 type (
@@ -351,29 +349,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle permission request from tool
 	case PermissionRequestMsg:
-		// Add a message with pending permission for inline display
-		m.messages = append(m.messages, chatMessage{
-			role:              "permission",
-			toolName:          msg.Request.ToolName,
-			pendingPermission: msg.Request,
-		})
+		// Show permission prompt as a fixed footer (like question prompt)
+		// Don't add a message - the prompt is rendered in View()
 		m.permissionPrompt.Show(msg.Request, m.width, m.height)
-		// Update viewport to show permission prompt in chat
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
 		return m, nil
 
 	// Handle permission response (user approved/denied)
 	case PermissionResponseMsg:
-		// Find and update the pending permission message
-		for i := len(m.messages) - 1; i >= 0; i-- {
-			if m.messages[i].pendingPermission != nil {
-				// Clear the pending permission (no longer pending)
-				m.messages[i].pendingPermission = nil
-				break
-			}
-		}
-
 		if msg.Approved {
 			// If user selected "allow all", update session permissions
 			if msg.AllowAll && m.sessionPermissions != nil && msg.Request != nil {
@@ -390,23 +372,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			// Execute the approved tool
-			m.viewport.SetContent(m.renderMessages())
 			return m, executeApprovedTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd)
 		} else {
-			// Tool was denied - stop processing, don't continue to LLM
+			// Tool was denied - add error result and stop processing
 			tc := m.pendingToolCalls[m.pendingToolIdx]
-			// Find the permission message and convert it to a tool result (for display only)
-			for i := len(m.messages) - 1; i >= 0; i-- {
-				if m.messages[i].role == "permission" && m.messages[i].toolName == tc.Name {
-					m.messages[i].role = "user"
-					m.messages[i].toolResult = &provider.ToolResult{
-						ToolCallID: tc.ID,
-						Content:    "User denied permission",
-						IsError:    true,
-					}
-					break
-				}
-			}
+			m.messages = append(m.messages, chatMessage{
+				role:     "user",
+				toolName: tc.Name,
+				toolResult: &provider.ToolResult{
+					ToolCallID: tc.ID,
+					Content:    "User denied permission",
+					IsError:    true,
+				},
+			})
 			// Clear all pending tools - stop the flow completely
 			m.pendingToolCalls = nil
 			m.pendingToolIdx = 0
@@ -436,26 +414,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle single tool result
 	case toolResultMsg:
 		r := msg.result
-		// Check if there's a pending permission message to update
-		updated := false
-		for i := len(m.messages) - 1; i >= 0; i-- {
-			if m.messages[i].role == "permission" && m.messages[i].toolName == msg.toolName {
-				// Convert permission message to tool result
-				m.messages[i].role = "user"
-				m.messages[i].toolResult = &r
-				m.messages[i].pendingPermission = nil
-				updated = true
-				break
-			}
-		}
-		// If no permission message found, add as new message
-		if !updated {
-			m.messages = append(m.messages, chatMessage{
-				role:       "user",
-				toolResult: &r,
-				toolName:   msg.toolName,
-			})
-		}
+		m.messages = append(m.messages, chatMessage{
+			role:       "user",
+			toolResult: &r,
+			toolName:   msg.toolName,
+		})
 		m.pendingToolIdx++
 		m.viewport.SetContent(m.renderMessages())
 		m.viewport.GotoBottom()
@@ -524,6 +487,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle permission prompt
 		if m.permissionPrompt.IsActive() {
 			cmd := m.permissionPrompt.HandleKeypress(msg)
+			// No viewport update needed - View() renders the prompt as a footer
 			return m, cmd
 		}
 
@@ -568,8 +532,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.permissionPrompt.bashPreview != nil {
 					m.permissionPrompt.bashPreview.ToggleExpand()
 				}
-				m.viewport.SetContent(m.renderMessages())
-				m.viewport.GotoBottom()
+				// No viewport update needed - View() renders the prompt as a footer
 				return m, nil
 			}
 
@@ -1253,6 +1216,11 @@ func (m model) View() string {
 	// Separator line
 	separator := separatorStyle.Render(strings.Repeat("─", m.width))
 
+	// Permission prompt (if active, replaces input area)
+	if m.permissionPrompt.IsActive() {
+		return fmt.Sprintf("%s\n%s\n%s", chat, separator, m.permissionPrompt.Render())
+	}
+
 	// Question prompt (if active, replaces input area)
 	if m.questionPrompt.IsActive() {
 		return fmt.Sprintf("%s\n%s\n%s", chat, separator, m.questionPrompt.Render())
@@ -1389,8 +1357,8 @@ func (m model) renderMessages() string {
 				summary := toolResultStyle.Render(fmt.Sprintf("  %s  %s → %s", icon, toolName, sizeInfo))
 				sb.WriteString(summary + "\n")
 
-				// Show expanded content if expanded (no truncation)
-				if msg.expanded {
+				// Show expanded content if expanded or if it's an error (errors always shown)
+				if msg.expanded || msg.toolResult.IsError {
 					lines := strings.Split(msg.toolResult.Content, "\n")
 					for _, line := range lines {
 						sb.WriteString(toolResultExpandedStyle.Render(line) + "\n")
@@ -1406,11 +1374,8 @@ func (m model) renderMessages() string {
 			content := systemMsgStyle.Render(msg.content)
 			sb.WriteString(content + "\n")
 		case "permission":
-			// Pending permission request - render inline using new Claude Code style
-			if msg.pendingPermission != nil {
-				m.permissionPrompt.Show(msg.pendingPermission, m.width, m.height)
-				sb.WriteString(m.permissionPrompt.RenderInline())
-			}
+			// Permission prompt is rendered separately in View() as a fixed footer
+			// Skip rendering here to avoid calling Show() which resets selectedIdx
 		default: // assistant
 			aiIcon := aiPromptStyle.Render("◆ ")
 			aiIndent := "  " // Indent for continuation lines (same width as icon)
@@ -1451,6 +1416,11 @@ func (m model) renderMessages() string {
 
 			// Render tool calls if any
 			if len(msg.toolCalls) > 0 {
+				// Add blank line after content before tool calls (only if there was content)
+				if msg.content != "" {
+					sb.WriteString("\n")
+				}
+
 				// First, look ahead for TodoWrite results and render todos before other tools
 				for j := i + 1; j < len(m.messages); j++ {
 					nextMsg := m.messages[j]

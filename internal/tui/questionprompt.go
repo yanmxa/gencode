@@ -272,44 +272,38 @@ func (p *QuestionPrompt) confirmSelection() tea.Cmd {
 	}
 }
 
-// Question prompt styles (initialized dynamically based on theme)
-var (
-	questionSeparatorStyle lipgloss.Style
-	questionHeaderStyle    lipgloss.Style
-	questionTextStyle      lipgloss.Style
-	optionSelectedStyle    lipgloss.Style
-	optionUnselectedStyle  lipgloss.Style
-	optionDescStyle        lipgloss.Style
-	questionFooterStyle    lipgloss.Style
-)
+// Question prompt styles - use functions to get current theme dynamically
+// This ensures styles update when theme changes
+func getQuestionSeparatorStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Separator)
+}
 
-func init() {
-	// Initialize question prompt styles based on current theme
-	questionSeparatorStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Separator)
-
-	questionHeaderStyle = lipgloss.NewStyle().
+func getQuestionHeaderStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
 		Foreground(CurrentTheme.Primary).
 		Bold(true).
 		Padding(0, 1).
 		Background(CurrentTheme.Background)
+}
 
-	questionTextStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Text)
+func getQuestionTextStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Text)
+}
 
-	optionSelectedStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Success).
-		Bold(true)
+func getQuestionSelectedStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Success).Bold(true)
+}
 
-	optionUnselectedStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.TextDim)
+func getQuestionUnselectedStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.TextDim)
+}
 
-	optionDescStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Muted).
-		Italic(true)
+func getQuestionDescStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Italic(true)
+}
 
-	questionFooterStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Muted)
+func getQuestionFooterStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
 }
 
 // Render renders the question prompt
@@ -328,18 +322,18 @@ func (p *QuestionPrompt) Render() string {
 
 	// Solid separator
 	solidSep := strings.Repeat("─", contentWidth)
-	sb.WriteString(questionSeparatorStyle.Render(solidSep))
+	sb.WriteString(getQuestionSeparatorStyle().Render(solidSep))
 	sb.WriteString("\n")
 
 	// Header badge
-	header := questionHeaderStyle.Render(currentQ.Header)
+	header := getQuestionHeaderStyle().Render(currentQ.Header)
 	sb.WriteString(" ")
 	sb.WriteString(header)
 	sb.WriteString("\n")
 
 	// Question text
 	sb.WriteString(" ")
-	sb.WriteString(questionTextStyle.Render(currentQ.Question))
+	sb.WriteString(getQuestionTextStyle().Render(currentQ.Question))
 	sb.WriteString("\n\n")
 
 	// Options
@@ -375,9 +369,9 @@ func (p *QuestionPrompt) Render() string {
 		// Option line
 		var optStyle lipgloss.Style
 		if isHighlighted {
-			optStyle = optionSelectedStyle
+			optStyle = getQuestionSelectedStyle()
 		} else {
-			optStyle = optionUnselectedStyle
+			optStyle = getQuestionUnselectedStyle()
 		}
 
 		optLine := fmt.Sprintf("%s%s %d. %s", cursor, prefix, i+1, opt.Label)
@@ -386,7 +380,7 @@ func (p *QuestionPrompt) Render() string {
 		// Description
 		if opt.Description != "" {
 			sb.WriteString(" - ")
-			sb.WriteString(optionDescStyle.Render(opt.Description))
+			sb.WriteString(getQuestionDescStyle().Render(opt.Description))
 		}
 		sb.WriteString("\n")
 	}
@@ -400,9 +394,9 @@ func (p *QuestionPrompt) Render() string {
 		otherCursor = " ❯ "
 	}
 
-	otherStyle := optionUnselectedStyle
+	otherStyle := getQuestionUnselectedStyle()
 	if isOtherHighlighted {
-		otherStyle = optionSelectedStyle
+		otherStyle = getQuestionSelectedStyle()
 	}
 
 	otherPrefix := "( )"
@@ -412,7 +406,7 @@ func (p *QuestionPrompt) Render() string {
 
 	sb.WriteString(otherStyle.Render(fmt.Sprintf("%s%s %d. Other", otherCursor, otherPrefix, otherIdx+1)))
 	sb.WriteString(" - ")
-	sb.WriteString(optionDescStyle.Render("Type custom response"))
+	sb.WriteString(getQuestionDescStyle().Render("Type custom response"))
 	sb.WriteString("\n")
 
 	// Custom input (if showing)
@@ -425,7 +419,7 @@ func (p *QuestionPrompt) Render() string {
 
 	// Dotted separator
 	dottedSep := strings.Repeat("╌", contentWidth)
-	sb.WriteString(questionSeparatorStyle.Render(dottedSep))
+	sb.WriteString(getQuestionSeparatorStyle().Render(dottedSep))
 	sb.WriteString("\n")
 
 	// Footer with hints
@@ -437,7 +431,7 @@ func (p *QuestionPrompt) Render() string {
 	hints = append(hints, "Enter confirm", "Esc cancel")
 
 	footer := " " + strings.Join(hints, " · ")
-	sb.WriteString(questionFooterStyle.Render(footer))
+	sb.WriteString(getQuestionFooterStyle().Render(footer))
 
 	return sb.String()
 }

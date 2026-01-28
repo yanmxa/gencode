@@ -44,36 +44,30 @@ func (b *BashPreview) SetMaxVisible(n int) {
 	b.maxVisible = n
 }
 
-// Bash command rendering styles (initialized dynamically based on theme)
-var (
-	bashCommandStyle lipgloss.Style
-	bashLineNoStyle  lipgloss.Style
-	bashBgStyle      lipgloss.Style
-	bashDescStyle    lipgloss.Style
-)
+// Bash command rendering styles - use functions to get current theme dynamically
+func getBashCommandStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Text)
+}
 
-func init() {
-	// Initialize bash styles based on current theme
-	bashCommandStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Text)
-
-	bashLineNoStyle = lipgloss.NewStyle().
+func getBashLineNoStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
 		Foreground(CurrentTheme.TextDisabled).
 		Width(4).
 		Align(lipgloss.Right)
+}
 
-	bashBgStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Warning)
+func getBashBgStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Warning)
+}
 
-	bashDescStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.TextDim).
-		Italic(true)
+func getBashDescStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.TextDim).Italic(true)
 }
 
 // Render renders the bash command preview
 func (b *BashPreview) Render(width int) string {
 	if b.bashMeta == nil || b.bashMeta.Command == "" {
-		return bashCommandStyle.Render("  (no command)")
+		return getBashCommandStyle().Render("  (no command)")
 	}
 
 	var sb strings.Builder
@@ -81,14 +75,14 @@ func (b *BashPreview) Render(width int) string {
 	// Show description if provided
 	if b.bashMeta.Description != "" {
 		sb.WriteString(" ")
-		sb.WriteString(bashDescStyle.Render(b.bashMeta.Description))
+		sb.WriteString(getBashDescStyle().Render(b.bashMeta.Description))
 		sb.WriteString("\n")
 	}
 
 	// Show background indicator
 	if b.bashMeta.RunBackground {
 		sb.WriteString(" ")
-		sb.WriteString(bashBgStyle.Render("[background]"))
+		sb.WriteString(getBashBgStyle().Render("[background]"))
 		sb.WriteString("\n")
 	}
 
@@ -104,9 +98,9 @@ func (b *BashPreview) Render(width int) string {
 	// Render command lines with line numbers
 	for i := 0; i < showCount; i++ {
 		lineNo := fmt.Sprintf("%3d ", i+1)
-		sb.WriteString(bashLineNoStyle.Render(lineNo))
-		sb.WriteString(bashLineNoStyle.Render("│"))
-		sb.WriteString(bashCommandStyle.Render(" " + lines[i]))
+		sb.WriteString(getBashLineNoStyle().Render(lineNo))
+		sb.WriteString(getBashLineNoStyle().Render("│"))
+		sb.WriteString(getBashCommandStyle().Render(" " + lines[i]))
 		sb.WriteString("\n")
 	}
 
@@ -114,7 +108,7 @@ func (b *BashPreview) Render(width int) string {
 	if truncated {
 		remaining := len(lines) - b.maxVisible
 		msg := fmt.Sprintf("... %d more lines (Ctrl+O to expand)", remaining)
-		sb.WriteString(diffMoreStyle.Render(msg))
+		sb.WriteString(getDiffMoreStyle().Render(msg))
 		sb.WriteString("\n")
 	}
 

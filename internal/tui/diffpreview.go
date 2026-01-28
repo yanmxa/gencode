@@ -45,44 +45,38 @@ func (d *DiffPreview) SetMaxVisible(n int) {
 	d.maxVisible = n
 }
 
-// Diff rendering styles (initialized dynamically based on theme)
-var (
-	diffAddedStyle   lipgloss.Style
-	diffRemovedStyle lipgloss.Style
-	diffContextStyle lipgloss.Style
-	diffLineNoStyle  lipgloss.Style
-	diffSummaryStyle lipgloss.Style
-	diffMoreStyle    lipgloss.Style
-)
+// Diff rendering styles - use functions to get current theme dynamically
+func getDiffAddedStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Success)
+}
 
-func init() {
-	// Initialize diff styles based on current theme
-	diffAddedStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Success)
+func getDiffRemovedStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Error)
+}
 
-	diffRemovedStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Error)
+func getDiffContextStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
+}
 
-	diffContextStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Muted)
-
-	diffLineNoStyle = lipgloss.NewStyle().
+func getDiffLineNoStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
 		Foreground(CurrentTheme.TextDisabled).
 		Width(5).
 		Align(lipgloss.Right)
+}
 
-	diffSummaryStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.TextDim)
+func getDiffSummaryStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.TextDim)
+}
 
-	diffMoreStyle = lipgloss.NewStyle().
-		Foreground(CurrentTheme.Muted).
-		Italic(true)
+func getDiffMoreStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Italic(true)
 }
 
 // Render renders the diff preview
 func (d *DiffPreview) Render(width int) string {
 	if d.diffMeta == nil || len(d.diffMeta.Lines) == 0 {
-		return diffContextStyle.Render("  (no changes)")
+		return getDiffContextStyle().Render("  (no changes)")
 	}
 
 	// For new files or preview mode, use simple single-column format
@@ -114,16 +108,16 @@ func (d *DiffPreview) renderNewFilePreview(width int) string {
 			continue
 		}
 		lineNo := fmt.Sprintf("%4d", line.NewLineNo)
-		sb.WriteString(diffLineNoStyle.Render(lineNo))
-		sb.WriteString(diffLineNoStyle.Render(" │ "))
-		sb.WriteString(diffAddedStyle.Render(line.Content))
+		sb.WriteString(getDiffLineNoStyle().Render(lineNo))
+		sb.WriteString(getDiffLineNoStyle().Render(" │ "))
+		sb.WriteString(getDiffAddedStyle().Render(line.Content))
 		sb.WriteString("\n")
 	}
 
 	if truncated {
 		remaining := len(lines) - d.maxVisible
 		msg := fmt.Sprintf("... %d more lines (Ctrl+O to expand)", remaining)
-		sb.WriteString(diffMoreStyle.Render(msg))
+		sb.WriteString(getDiffMoreStyle().Render(msg))
 		sb.WriteString("\n")
 	}
 
@@ -139,7 +133,7 @@ func (d *DiffPreview) renderSideBySide(width int) string {
 
 	// Summary line: +5 -3 lines
 	summary := fmt.Sprintf("+%d -%d lines", d.diffMeta.AddedCount, d.diffMeta.RemovedCount)
-	sb.WriteString(diffSummaryStyle.Render(summary))
+	sb.WriteString(getDiffSummaryStyle().Render(summary))
 	sb.WriteString("\n")
 
 	// Collect removed and added lines
@@ -181,24 +175,24 @@ func (d *DiffPreview) renderSideBySide(width int) string {
 		// Left side: removed content (red)
 		if i < len(removed) {
 			lineNo := fmt.Sprintf("%4d", removed[i].OldLineNo)
-			sb.WriteString(diffLineNoStyle.Render(lineNo))
-			sb.WriteString(diffLineNoStyle.Render(" │ "))
+			sb.WriteString(getDiffLineNoStyle().Render(lineNo))
+			sb.WriteString(getDiffLineNoStyle().Render(" │ "))
 			content := truncateOrPad(removed[i].Content, colWidth)
-			sb.WriteString(diffRemovedStyle.Render(content))
+			sb.WriteString(getDiffRemovedStyle().Render(content))
 		} else {
 			// Empty placeholder for left side
 			sb.WriteString(strings.Repeat(" ", 7+colWidth))
 		}
 
 		// Arrow separator
-		sb.WriteString(diffContextStyle.Render(" → "))
+		sb.WriteString(getDiffContextStyle().Render(" → "))
 
 		// Right side: added content (green)
 		if i < len(added) {
 			lineNo := fmt.Sprintf("%4d", added[i].NewLineNo)
-			sb.WriteString(diffLineNoStyle.Render(lineNo))
-			sb.WriteString(diffLineNoStyle.Render(" │ "))
-			sb.WriteString(diffAddedStyle.Render(added[i].Content))
+			sb.WriteString(getDiffLineNoStyle().Render(lineNo))
+			sb.WriteString(getDiffLineNoStyle().Render(" │ "))
+			sb.WriteString(getDiffAddedStyle().Render(added[i].Content))
 		}
 
 		sb.WriteString("\n")
@@ -207,7 +201,7 @@ func (d *DiffPreview) renderSideBySide(width int) string {
 	if truncated {
 		remaining := maxRows - d.maxVisible
 		msg := fmt.Sprintf("... %d more lines (Ctrl+O to expand)", remaining)
-		sb.WriteString(diffMoreStyle.Render(msg))
+		sb.WriteString(getDiffMoreStyle().Render(msg))
 		sb.WriteString("\n")
 	}
 
