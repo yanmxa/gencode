@@ -92,6 +92,6 @@ func (t *TodoWriteTool) Execute(ctx context.Context, params map[string]any, cwd 
 	}
 }
 
-func init() {
-	Register(NewTodoWriteTool())
-}
+// func init() {
+// 	Register(NewTodoWriteTool())
+// }

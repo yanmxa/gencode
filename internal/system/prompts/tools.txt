@@ -10,9 +10,10 @@ Prefer specialized tools over Bash for file operations:
 ## Key rules
 
 1. **Read before Edit/Write**: Always read a file before modifying it.
-2. **Parallel calls**: Make independent tool calls in parallel.
-3. **Edit for updates, Write for new files only**: Use Edit to modify existing files. Use Write ONLY to create new files.
-4. **No unnecessary files**: Never create docs/README unless asked.
+2. **Parallel execution**: Run independent tool calls in parallel. If multiple operations don't depend on each other, execute them simultaneously.
+3. **Search extensively**: When exploring code, search thoroughly. Use multiple Glob/Grep calls in parallel to find all relevant files and patterns.
+4. **Edit for updates, Write for new files only**: Use Edit to modify existing files. Use Write ONLY to create new files.
+5. **No unnecessary files**: Never create docs/README unless asked.
 
 ## Git safety (Bash)
 

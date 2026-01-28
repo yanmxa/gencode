@@ -192,7 +192,7 @@ func GetToolSchemas() []provider.Tool {
 				"required": []string{"command"},
 			},
 		},
-		// TodoWrite is temporarily disabled for testing AskUserQuestion
+		// TodoWrite temporarily disabled
 		// {
 		// 	Name:        "TodoWrite",
 		// 	Description: "Create and manage a structured task list for tracking progress on multi-step tasks. Use this tool to plan complex tasks and show progress to the user.",

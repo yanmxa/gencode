@@ -48,74 +48,88 @@ func (p *TodoPanel) Clear() {
 	p.todos = []ui.TodoItem{}
 }
 
-// Styles for the todo panel
+// Styles for the todo panel (shared styles are in app.go)
 var (
-	todoPanelBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("#60A5FA")). // blue
-				Padding(0, 1)
-
 	todoHeaderStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#60A5FA")).
-			Bold(true)
-
-	todoPendingStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#6B7280")) // gray
-
-	todoInProgressStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#F59E0B")). // orange
-				Bold(true)
-
-	todoCompletedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#10B981")) // green
+		Foreground(lipgloss.Color("#6B7280")) // muted gray
 )
 
-// Status icons
-const (
-	iconPending    = "⬜"
-	iconInProgress = "🔄"
-	iconCompleted  = "✅"
-)
-
-// Render renders the todo panel
-func (p *TodoPanel) Render() string {
+// RenderInline renders the todo panel inline (not as overlay)
+// Format:
+//
+//	📋 Tasks [1/4]
+//	  completed task (strikethrough)
+//	  in progress task (orange highlight)
+//	  pending task (gray)
+//
+// Order: completed → in_progress → pending
+func (p *TodoPanel) RenderInline() string {
 	if !p.IsVisible() {
 		return ""
 	}
 
 	var sb strings.Builder
 
-	// Calculate content width (panel width minus border and padding)
-	contentWidth := p.width - 4
-	if contentWidth < 20 {
-		contentWidth = 20
-	}
-
-	// Header
-	header := todoHeaderStyle.Render("📋 Tasks")
-	sb.WriteString(header)
-	sb.WriteString("\n")
-
-	// Render each todo
+	// Count tasks for progress display
+	pending, inProgress, completed := 0, 0, 0
 	for _, todo := range p.todos {
-		icon, style, text := getTodoDisplay(todo)
-
-		// Truncate if too long
-		maxTextLen := contentWidth - 4 // icon + space + some padding
-		if len(text) > maxTextLen {
-			text = text[:maxTextLen-3] + "..."
+		switch todo.Status {
+		case "pending":
+			pending++
+		case "in_progress":
+			inProgress++
+		case "completed":
+			completed++
 		}
+	}
+	total := pending + inProgress + completed
 
-		line := fmt.Sprintf("%s %s", icon, style.Render(text))
-		sb.WriteString(line)
-		sb.WriteString("\n")
+	// Header line with clipboard icon: 📋 Tasks [2/5]
+	header := todoHeaderStyle.Render(fmt.Sprintf(" 📋 Tasks [%d/%d]", completed, total))
+	sb.WriteString(header + "\n")
+
+	// 2-space indent to align with header
+	indent := "  "
+
+	// Render in order: completed → in_progress → pending
+	for _, todo := range p.todos {
+		if todo.Status == "completed" {
+			sb.WriteString(indent + todoCompletedStyle.Render(todo.Content) + "\n")
+		}
+	}
+	for _, todo := range p.todos {
+		if todo.Status == "in_progress" {
+			sb.WriteString(indent + todoInProgressStyle.Render(todo.ActiveForm) + "\n")
+		}
+	}
+	for _, todo := range p.todos {
+		if todo.Status == "pending" {
+			sb.WriteString(indent + todoPendingStyle.Render(todo.Content) + "\n")
+		}
 	}
 
-	// Remove trailing newline
-	content := strings.TrimSuffix(sb.String(), "\n")
+	return sb.String()
+}
 
-	// Apply border
-	return todoPanelBorderStyle.Width(p.width).Render(content)
+// renderTodoLine renders a single todo item
+func (p *TodoPanel) renderTodoLine(todo ui.TodoItem) string {
+	indent := "      " // 6 spaces to align with header
+
+	switch todo.Status {
+	case "completed":
+		// Strikethrough style for completed
+		return indent + todoCompletedStyle.Render(todo.Content)
+	case "in_progress":
+		// Arrow prefix and highlight for in-progress
+		return indent + todoInProgressStyle.Render("→ "+todo.ActiveForm)
+	default: // pending
+		return indent + todoPendingStyle.Render(todo.Content)
+	}
+}
+
+// Render renders the todo panel (deprecated, use RenderInline)
+func (p *TodoPanel) Render() string {
+	return p.RenderInline()
 }
 
 // RenderCompact renders a compact single-line summary
@@ -150,20 +164,8 @@ func (p *TodoPanel) RenderCompact() string {
 		if len(currentTask) > maxLen {
 			currentTask = currentTask[:maxLen-3] + "..."
 		}
-		return fmt.Sprintf("📋 %s %s", progress, todoInProgressStyle.Render(currentTask))
+		return fmt.Sprintf("  📋 Tasks %s %s", progress, todoInProgressStyle.Render(currentTask))
 	}
 
-	return fmt.Sprintf("📋 %s", progress)
-}
-
-// getTodoDisplay returns the icon, style, and text for a todo item
-func getTodoDisplay(todo ui.TodoItem) (string, lipgloss.Style, string) {
-	switch todo.Status {
-	case "in_progress":
-		return iconInProgress, todoInProgressStyle, todo.ActiveForm
-	case "completed":
-		return iconCompleted, todoCompletedStyle, todo.Content
-	default: // "pending" or unknown
-		return iconPending, todoPendingStyle, todo.Content
-	}
+	return fmt.Sprintf("  📋 Tasks %s", progress)
 }

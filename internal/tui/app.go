@@ -79,6 +79,7 @@ type chatMessage struct {
 	toolName          string                     // Tool name for tool result display
 	expanded          bool                       // Whether tool result is expanded
 	pendingPermission *permission.PermissionRequest // Pending permission request (inline display)
+	todos             []toolui.TodoItem          // Snapshot of todos (for TodoWrite results)
 }
 
 type (
@@ -128,7 +129,8 @@ type model struct {
 	currentToolInput string // Accumulated tool input JSON
 
 	// Tool result expansion
-	selectedToolIdx int // Index of selected tool result for expansion (-1 = none)
+	selectedToolIdx int       // Index of selected tool result for expansion (-1 = none)
+	lastCtrlOTime   time.Time // Last Ctrl+O press time for double-tap detection
 
 	// Command suggestions
 	suggestions SuggestionState
@@ -439,8 +441,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			role:       "user",
 			toolResult: &r,
 			toolName:   msg.toolName,
+			todos:      msg.todos, // Store snapshot for inline rendering
 		})
-		// Update the todo panel
+		// Update the todo panel (for tracking current state)
 		m.todoPanel.Update(msg.todos)
 		m.todoPanel.SetWidth(m.width)
 		m.pendingToolIdx++
@@ -572,6 +575,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Handle Ctrl+O to toggle expansion
+		// Double-tap Ctrl+O (within 500ms) to toggle ALL tool results
+		// Single Ctrl+O toggles only the last tool result
 		if msg.Type == tea.KeyCtrlO {
 			// If permission prompt is active, toggle preview expansion (diff or bash)
 			if m.permissionPrompt != nil && m.permissionPrompt.IsActive() {
@@ -585,7 +590,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoBottom()
 				return m, nil
 			}
-			// Otherwise, find the last tool result message and toggle its expansion
+
+			now := time.Now()
+			// Check for double-tap (within 500ms)
+			if now.Sub(m.lastCtrlOTime) < 500*time.Millisecond {
+				// Double-tap: toggle ALL tool results
+				anyExpanded := false
+				for _, msg := range m.messages {
+					if msg.toolResult != nil && msg.expanded {
+						anyExpanded = true
+						break
+					}
+				}
+				for i := range m.messages {
+					if m.messages[i].toolResult != nil {
+						m.messages[i].expanded = !anyExpanded
+					}
+				}
+				m.lastCtrlOTime = time.Time{} // Reset to prevent triple-tap
+				m.viewport.SetContent(m.renderMessages())
+				return m, nil
+			}
+
+			// Single tap: toggle last tool result
+			m.lastCtrlOTime = now
 			for i := len(m.messages) - 1; i >= 0; i-- {
 				if m.messages[i].toolResult != nil {
 					m.messages[i].expanded = !m.messages[i].expanded
@@ -708,6 +736,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoBottom()
 				return m, nil
 			}
+
+			// Clear todo panel when starting new conversation
+			m.todoPanel.Clear()
 
 			m.messages = append(m.messages, chatMessage{role: "user", content: input})
 			m.textarea.Reset()
@@ -1240,15 +1271,9 @@ func (m model) View() string {
 	// Separator line
 	separator := separatorStyle.Render(strings.Repeat("─", m.width))
 
-	// Todo panel (persistent display above input)
-	todoView := ""
-	if m.todoPanel.IsVisible() {
-		todoView = m.todoPanel.Render() + "\n"
-	}
-
 	// Question prompt (if active, replaces input area)
 	if m.questionPrompt.IsActive() {
-		return fmt.Sprintf("%s\n%s\n%s%s", chat, separator, todoView, m.questionPrompt.Render())
+		return fmt.Sprintf("%s\n%s\n%s", chat, separator, m.questionPrompt.Render())
 	}
 
 	// Render input area with prompt on first line only
@@ -1258,10 +1283,10 @@ func (m model) View() string {
 	// Render suggestions if visible
 	suggestions := m.suggestions.Render(m.width)
 	if suggestions != "" {
-		return fmt.Sprintf("%s\n%s\n%s%s\n%s\n%s", chat, separator, todoView, inputView, suggestions, separator)
+		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s", chat, separator, inputView, suggestions, separator)
 	}
 
-	return fmt.Sprintf("%s\n%s\n%s%s\n%s", chat, separator, todoView, inputView, separator)
+	return fmt.Sprintf("%s\n%s\n%s\n%s", chat, separator, inputView, separator)
 }
 
 func (m model) renderWelcome() string {
@@ -1318,6 +1343,18 @@ var (
 	toolResultExpandedStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#9CA3AF")).
 				PaddingLeft(4)
+
+	// Todo styles for inline rendering
+	todoPendingStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#6B7280")) // gray
+
+	todoInProgressStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#F59E0B")). // orange
+				Bold(true)
+
+	todoCompletedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#4B5563")). // darker gray
+				Strikethrough(true)
 )
 
 func (m model) renderMessages() string {
@@ -1341,6 +1378,12 @@ func (m model) renderMessages() string {
 				toolName := msg.toolName
 				if toolName == "" {
 					toolName = "Tool"
+				}
+
+				// Render TodoWrite results inline with todos snapshot
+				if toolName == "TodoWrite" && len(msg.todos) > 0 {
+					sb.WriteString(renderTodosInline(msg.todos))
+					continue
 				}
 
 				// Format result size based on tool type
@@ -1416,7 +1459,25 @@ func (m model) renderMessages() string {
 
 			// Render tool calls if any
 			if len(msg.toolCalls) > 0 {
+				// First, look ahead for TodoWrite results and render todos before other tools
+				for j := i + 1; j < len(m.messages); j++ {
+					nextMsg := m.messages[j]
+					// Stop if we hit a non-tool-result message
+					if nextMsg.toolResult == nil {
+						break
+					}
+					// Found TodoWrite result with todos - render it first
+					if nextMsg.toolName == "TodoWrite" && len(nextMsg.todos) > 0 {
+						sb.WriteString(renderTodosInline(nextMsg.todos))
+						break
+					}
+				}
+
+				// Then render other tool calls (skip TodoWrite)
 				for _, tc := range msg.toolCalls {
+					if tc.Name == "TodoWrite" {
+						continue
+					}
 					// Extract key info from input for display
 					args := extractToolArgs(tc.Input)
 					toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s(%s)", tc.Name, args))
@@ -1536,4 +1597,61 @@ func formatToolResultSize(toolName, content string) string {
 		lineCount := strings.Count(trimmed, "\n") + 1
 		return fmt.Sprintf("%d lines", lineCount)
 	}
+}
+
+// renderTodosInline renders a snapshot of todos inline in the message flow
+// Format:
+//
+//	📋 Tasks [1/4]
+//	  completed task (strikethrough)
+//	  in progress task (orange highlight)
+//	  pending task (gray)
+//
+// Order: completed → in_progress → pending
+func renderTodosInline(todos []toolui.TodoItem) string {
+	if len(todos) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+
+	// Count tasks for progress display
+	pending, inProgress, completed := 0, 0, 0
+	for _, todo := range todos {
+		switch todo.Status {
+		case "pending":
+			pending++
+		case "in_progress":
+			inProgress++
+		case "completed":
+			completed++
+		}
+	}
+	total := pending + inProgress + completed
+
+	// Header line with clipboard icon: 📋 Tasks [2/5]
+	header := toolResultStyle.Render(fmt.Sprintf("  📋 Tasks [%d/%d]", completed, total))
+	sb.WriteString(header + "\n")
+
+	// 2-space indent to align with header
+	indent := "  "
+
+	// Render in order: completed → in_progress → pending
+	for _, todo := range todos {
+		if todo.Status == "completed" {
+			sb.WriteString(indent + todoCompletedStyle.Render(todo.Content) + "\n")
+		}
+	}
+	for _, todo := range todos {
+		if todo.Status == "in_progress" {
+			sb.WriteString(indent + todoInProgressStyle.Render(todo.ActiveForm) + "\n")
+		}
+	}
+	for _, todo := range todos {
+		if todo.Status == "pending" {
+			sb.WriteString(indent + todoPendingStyle.Render(todo.Content) + "\n")
+		}
+	}
+
+	return sb.String()
 }
