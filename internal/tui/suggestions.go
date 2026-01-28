@@ -7,26 +7,35 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Styles for suggestions
+// Suggestion styles (initialized dynamically based on theme)
 var (
+	suggestionBoxStyle      lipgloss.Style
+	selectedSuggestionStyle lipgloss.Style
+	normalSuggestionStyle   lipgloss.Style
+	commandNameStyle        lipgloss.Style
+	commandDescStyle        lipgloss.Style
+)
+
+func init() {
+	// Initialize suggestion styles based on current theme
 	suggestionBoxStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#374151")).
+		BorderForeground(CurrentTheme.Border).
 		Padding(0, 1)
 
 	selectedSuggestionStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFFFFF")).
+		Foreground(CurrentTheme.TextBright).
 		Bold(true)
 
 	normalSuggestionStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6B7280"))
+		Foreground(CurrentTheme.Muted)
 
 	commandNameStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#60A5FA"))
+		Foreground(CurrentTheme.Primary)
 
 	commandDescStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6B7280"))
-)
+		Foreground(CurrentTheme.Muted)
+}
 
 // SuggestionState holds the state for command suggestions
 type SuggestionState struct {

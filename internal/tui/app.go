@@ -41,45 +41,51 @@ func Run() error {
 }
 
 // Styles
+// Styles are initialized dynamically based on theme
 var (
-	mutedColor    = lipgloss.Color("#6B7280") // muted for placeholder
-	accentColor   = lipgloss.Color("#F59E0B") // accent for spinner
-	primaryColor  = lipgloss.Color("#60A5FA") // blue for user prompt
-	aiColor       = lipgloss.Color("#A78BFA") // purple for AI
+	userMsgStyle      lipgloss.Style
+	assistantMsgStyle lipgloss.Style
+	inputPromptStyle  lipgloss.Style
+	aiPromptStyle     lipgloss.Style
+	separatorStyle    lipgloss.Style
+	thinkingStyle     lipgloss.Style
+	systemMsgStyle    lipgloss.Style
+)
 
+func init() {
+	// Initialize styles based on current theme
 	userMsgStyle = lipgloss.NewStyle()
-
 	assistantMsgStyle = lipgloss.NewStyle()
 
 	inputPromptStyle = lipgloss.NewStyle().
-				Foreground(primaryColor).
-				Bold(true)
+		Foreground(CurrentTheme.Primary).
+		Bold(true)
 
 	aiPromptStyle = lipgloss.NewStyle().
-			Foreground(aiColor).
-			Bold(true)
+		Foreground(CurrentTheme.AI).
+		Bold(true)
 
 	separatorStyle = lipgloss.NewStyle().
-			Faint(true).
-			Foreground(lipgloss.Color("240"))
+		Faint(true).
+		Foreground(CurrentTheme.Separator)
 
 	thinkingStyle = lipgloss.NewStyle().
-			Foreground(accentColor)
+		Foreground(CurrentTheme.Accent)
 
 	systemMsgStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#9CA3AF")).
-			PaddingLeft(2)
-)
+		Foreground(CurrentTheme.TextDim).
+		PaddingLeft(2)
+}
 
 type chatMessage struct {
 	role              string
 	content           string
-	toolCalls         []provider.ToolCall        // For assistant messages with tool calls
-	toolResult        *provider.ToolResult       // For tool result messages
-	toolName          string                     // Tool name for tool result display
-	expanded          bool                       // Whether tool result is expanded
+	toolCalls         []provider.ToolCall           // For assistant messages with tool calls
+	toolResult        *provider.ToolResult          // For tool result messages
+	toolName          string                        // Tool name for tool result display
+	expanded          bool                          // Whether tool result is expanded
 	pendingPermission *permission.PermissionRequest // Pending permission request (inline display)
-	todos             []toolui.TodoItem          // Snapshot of todos (for TodoWrite results)
+	todos             []toolui.TodoItem             // Snapshot of todos (for TodoWrite results)
 }
 
 type (
@@ -187,16 +193,16 @@ func newModel() model {
 	ta := textarea.New()
 	ta.Placeholder = ""
 	ta.Focus()
-	ta.Prompt = ""                // No prompt per line, we render it manually
-	ta.CharLimit = 0              // No character limit (0 = unlimited)
+	ta.Prompt = ""   // No prompt per line, we render it manually
+	ta.CharLimit = 0 // No character limit (0 = unlimited)
 	ta.SetWidth(80)
 	ta.SetHeight(1)
 	ta.ShowLineNumbers = false
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ta.FocusedStyle.Base = lipgloss.NewStyle()
 	ta.FocusedStyle.Prompt = lipgloss.NewStyle()
-	ta.BlurredStyle.Base = lipgloss.NewStyle().Foreground(mutedColor)
-	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(mutedColor)
+	ta.BlurredStyle.Base = lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
+	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
 	ta.KeyMap.InsertNewline.SetEnabled(true)
 
 	sp := spinner.New()
@@ -1266,11 +1272,11 @@ func (m model) View() string {
 }
 
 func (m model) renderWelcome() string {
-	// Gradient colors for the logo
+	// Gradient colors for the logo (use theme colors)
 	gradient := []lipgloss.Color{
-		lipgloss.Color("#60A5FA"), // blue
-		lipgloss.Color("#818CF8"), // indigo
-		lipgloss.Color("#A78BFA"), // violet
+		CurrentTheme.Primary,
+		CurrentTheme.AI,
+		CurrentTheme.Accent,
 	}
 
 	logoLines := []string{
@@ -1286,9 +1292,9 @@ func (m model) renderWelcome() string {
 	}
 
 	subtitleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6B7280"))
+		Foreground(CurrentTheme.Muted)
 	hintStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#4B5563"))
+		Foreground(CurrentTheme.TextDisabled)
 
 	var sb strings.Builder
 	sb.WriteString("\n")
@@ -1308,30 +1314,40 @@ func (m model) renderWelcome() string {
 	return sb.String()
 }
 
-// Styles for tool display
+// Tool display styles (initialized in initToolStyles)
 var (
+	toolCallStyle           lipgloss.Style
+	toolResultStyle         lipgloss.Style
+	toolResultExpandedStyle lipgloss.Style
+	todoPendingStyle        lipgloss.Style
+	todoInProgressStyle     lipgloss.Style
+	todoCompletedStyle      lipgloss.Style
+)
+
+func init() {
+	// Initialize tool styles based on current theme
 	toolCallStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F59E0B"))
+		Foreground(CurrentTheme.Accent)
 
 	toolResultStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6B7280"))
+		Foreground(CurrentTheme.Muted)
 
 	toolResultExpandedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#9CA3AF")).
-				PaddingLeft(4)
+		Foreground(CurrentTheme.TextDim).
+		PaddingLeft(4)
 
 	// Todo styles for inline rendering
 	todoPendingStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#6B7280")) // gray
+		Foreground(CurrentTheme.Muted)
 
 	todoInProgressStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#F59E0B")). // orange
-				Bold(true)
+		Foreground(CurrentTheme.Warning).
+		Bold(true)
 
 	todoCompletedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#4B5563")). // darker gray
-				Strikethrough(true)
-)
+		Foreground(CurrentTheme.TextDisabled).
+		Strikethrough(true)
+}
 
 func (m model) renderMessages() string {
 	if len(m.messages) == 0 {

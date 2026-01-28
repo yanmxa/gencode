@@ -272,34 +272,45 @@ func (p *QuestionPrompt) confirmSelection() tea.Cmd {
 	}
 }
 
-// Styles for question prompt
+// Question prompt styles (initialized dynamically based on theme)
 var (
+	questionSeparatorStyle lipgloss.Style
+	questionHeaderStyle    lipgloss.Style
+	questionTextStyle      lipgloss.Style
+	optionSelectedStyle    lipgloss.Style
+	optionUnselectedStyle  lipgloss.Style
+	optionDescStyle        lipgloss.Style
+	questionFooterStyle    lipgloss.Style
+)
+
+func init() {
+	// Initialize question prompt styles based on current theme
 	questionSeparatorStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#4B5563"))
+		Foreground(CurrentTheme.Separator)
 
 	questionHeaderStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#60A5FA")).
-				Bold(true).
-				Padding(0, 1).
-				Background(lipgloss.Color("#1F2937"))
+		Foreground(CurrentTheme.Primary).
+		Bold(true).
+		Padding(0, 1).
+		Background(CurrentTheme.Background)
 
 	questionTextStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#D1D5DB"))
+		Foreground(CurrentTheme.Text)
 
 	optionSelectedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#10B981")).
-				Bold(true)
+		Foreground(CurrentTheme.Success).
+		Bold(true)
 
 	optionUnselectedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#9CA3AF"))
+		Foreground(CurrentTheme.TextDim)
 
 	optionDescStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6B7280")).
-			Italic(true)
+		Foreground(CurrentTheme.Muted).
+		Italic(true)
 
 	questionFooterStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#6B7280"))
-)
+		Foreground(CurrentTheme.Muted)
+}
 
 // Render renders the question prompt
 func (p *QuestionPrompt) Render() string {

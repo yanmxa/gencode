@@ -48,11 +48,14 @@ func (p *TodoPanel) Clear() {
 	p.todos = []ui.TodoItem{}
 }
 
-// Styles for the todo panel (shared styles are in app.go)
-var (
+// Todo panel header style (initialized dynamically based on theme)
+var todoHeaderStyle lipgloss.Style
+
+func init() {
+	// Initialize todo panel styles based on current theme
 	todoHeaderStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6B7280")) // muted gray
-)
+		Foreground(CurrentTheme.Muted)
+}
 
 // RenderInline renders the todo panel inline (not as overlay)
 // Format:

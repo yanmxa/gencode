@@ -184,39 +184,46 @@ func (p *PermissionPrompt) confirmSelection() tea.Cmd {
 	return nil
 }
 
-// Styles for permission prompt
+// Permission prompt styles (initialized dynamically based on theme)
 var (
-	// Separator styles
+	solidSeparatorStyle  lipgloss.Style
+	dottedSeparatorStyle lipgloss.Style
+	promptDescStyle      lipgloss.Style
+	promptQuestionStyle  lipgloss.Style
+	menuSelectedStyle    lipgloss.Style
+	menuUnselectedStyle  lipgloss.Style
+	menuHintStyle        lipgloss.Style
+	footerStyle          lipgloss.Style
+)
+
+func init() {
+	// Initialize permission prompt styles based on current theme
 	solidSeparatorStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#4B5563")) // gray-600
+		Foreground(CurrentTheme.Separator)
 
 	dottedSeparatorStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#6B7280")) // gray-500
+		Foreground(CurrentTheme.Muted)
 
-	// Description style
 	promptDescStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#D1D5DB")) // gray-300
+		Foreground(CurrentTheme.Text)
 
-	// Question style
 	promptQuestionStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#9CA3AF")) // gray-400
+		Foreground(CurrentTheme.TextDim)
 
-	// Menu styles
 	menuSelectedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#10B981")). // green
-				Bold(true)
+		Foreground(CurrentTheme.Success).
+		Bold(true)
 
 	menuUnselectedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#6B7280")) // gray-500
+		Foreground(CurrentTheme.Muted)
 
 	menuHintStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#4B5563")).
-			Italic(true)
+		Foreground(CurrentTheme.TextDisabled).
+		Italic(true)
 
-	// Footer style
 	footerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6B7280"))
-)
+		Foreground(CurrentTheme.Muted)
+}
 
 // RenderInline renders the permission prompt inline with Claude Code style
 func (p *PermissionPrompt) RenderInline() string {

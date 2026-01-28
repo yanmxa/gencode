@@ -45,29 +45,39 @@ func (d *DiffPreview) SetMaxVisible(n int) {
 	d.maxVisible = n
 }
 
-// Styles for diff rendering
+// Diff rendering styles (initialized dynamically based on theme)
 var (
+	diffAddedStyle   lipgloss.Style
+	diffRemovedStyle lipgloss.Style
+	diffContextStyle lipgloss.Style
+	diffLineNoStyle  lipgloss.Style
+	diffSummaryStyle lipgloss.Style
+	diffMoreStyle    lipgloss.Style
+)
+
+func init() {
+	// Initialize diff styles based on current theme
 	diffAddedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#10B981")) // green
+		Foreground(CurrentTheme.Success)
 
 	diffRemovedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#EF4444")) // red
+		Foreground(CurrentTheme.Error)
 
 	diffContextStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#6B7280")) // gray
+		Foreground(CurrentTheme.Muted)
 
 	diffLineNoStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#4B5563")). // dark gray
-			Width(5).
-			Align(lipgloss.Right)
+		Foreground(CurrentTheme.TextDisabled).
+		Width(5).
+		Align(lipgloss.Right)
 
 	diffSummaryStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#9CA3AF")) // light gray
+		Foreground(CurrentTheme.TextDim)
 
 	diffMoreStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6B7280")).
-			Italic(true)
-)
+		Foreground(CurrentTheme.Muted).
+		Italic(true)
+}
 
 // Render renders the diff preview
 func (d *DiffPreview) Render(width int) string {

@@ -13,43 +13,56 @@ import (
 	"github.com/yanmxa/gencode/internal/provider/search"
 )
 
-// Styles for selector
+// Selector styles (initialized dynamically based on theme)
 var (
+	selectorBorderStyle     lipgloss.Style
+	selectorTitleStyle      lipgloss.Style
+	selectorItemStyle       lipgloss.Style
+	selectorSelectedStyle   lipgloss.Style
+	selectorStatusConnected lipgloss.Style
+	selectorStatusReady     lipgloss.Style
+	selectorStatusNone      lipgloss.Style
+	selectorHintStyle       lipgloss.Style
+	selectorBreadcrumbStyle lipgloss.Style
+)
+
+func init() {
+	// Initialize selector styles based on current theme
 	selectorBorderStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#60A5FA")).
+		BorderForeground(CurrentTheme.Primary).
 		Padding(1, 2)
 
 	selectorTitleStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#60A5FA")).
+		Foreground(CurrentTheme.Primary).
 		Bold(true)
 
 	selectorItemStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6B7280")).
+		Foreground(CurrentTheme.Muted).
 		PaddingLeft(2)
 
 	selectorSelectedStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFFFFF")).
+		Foreground(CurrentTheme.TextBright).
 		Bold(true).
 		PaddingLeft(2)
 
 	selectorStatusConnected = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#10B981"))
+		Foreground(CurrentTheme.Success)
 
 	selectorStatusReady = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#F59E0B"))
+		Foreground(CurrentTheme.Warning)
 
 	selectorStatusNone = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6B7280"))
+		Foreground(CurrentTheme.Muted)
 
 	selectorHintStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6B7280")).
+		Foreground(CurrentTheme.Muted).
 		MarginTop(1)
 
 	selectorBreadcrumbStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#9CA3AF")).
+		Foreground(CurrentTheme.TextDim).
 		MarginBottom(1)
-)
+}
 
 // SelectorType represents what kind of selection we're doing
 type SelectorType int
@@ -808,7 +821,7 @@ func (s *SelectorState) renderModelSelector() string {
 
 		// Render visible models
 		currentProvider := ""
-		providerHeaderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#9CA3AF"))
+		providerHeaderStyle := lipgloss.NewStyle().Foreground(CurrentTheme.TextDim)
 		for i := s.scrollOffset; i < endIdx; i++ {
 			m := s.filteredModels[i]
 
@@ -946,7 +959,7 @@ func (s *SelectorState) renderProviderSelector() string {
 					if s.lastConnectSuccess {
 						resultStyle = selectorStatusConnected
 					} else if s.lastConnectResult != "Connecting..." {
-						resultStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")) // Red for error
+						resultStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Error)
 					}
 					sb.WriteString(selectorItemStyle.Render("    " + resultStyle.Render(s.lastConnectResult)))
 					sb.WriteString("\n")
@@ -975,10 +988,10 @@ func (s *SelectorState) renderProviderSelector() string {
 // renderTabHeader renders the tab header for the provider selector
 func (s *SelectorState) renderTabHeader() string {
 	activeStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#60A5FA")).
+		Foreground(CurrentTheme.Primary).
 		Bold(true)
 	inactiveStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6B7280"))
+		Foreground(CurrentTheme.Muted)
 
 	var llmTab, searchTab string
 
@@ -1040,7 +1053,7 @@ func (s *SelectorState) renderSearchProviders() string {
 			if s.lastConnectSuccess {
 				resultStyle = selectorStatusConnected
 			} else {
-				resultStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444"))
+				resultStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Error)
 			}
 			sb.WriteString(selectorItemStyle.Render("    " + resultStyle.Render(s.lastConnectResult)))
 			sb.WriteString("\n")

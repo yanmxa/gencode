@@ -44,23 +44,31 @@ func (b *BashPreview) SetMaxVisible(n int) {
 	b.maxVisible = n
 }
 
-// Styles for bash command rendering
+// Bash command rendering styles (initialized dynamically based on theme)
 var (
+	bashCommandStyle lipgloss.Style
+	bashLineNoStyle  lipgloss.Style
+	bashBgStyle      lipgloss.Style
+	bashDescStyle    lipgloss.Style
+)
+
+func init() {
+	// Initialize bash styles based on current theme
 	bashCommandStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#D1D5DB")) // gray-300
+		Foreground(CurrentTheme.Text)
 
 	bashLineNoStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#4B5563")). // dark gray
-			Width(4).
-			Align(lipgloss.Right)
+		Foreground(CurrentTheme.TextDisabled).
+		Width(4).
+		Align(lipgloss.Right)
 
 	bashBgStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F59E0B")) // amber
+		Foreground(CurrentTheme.Warning)
 
 	bashDescStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#9CA3AF")). // gray-400
-			Italic(true)
-)
+		Foreground(CurrentTheme.TextDim).
+		Italic(true)
+}
 
 // Render renders the bash command preview
 func (b *BashPreview) Render(width int) string {
