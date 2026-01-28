@@ -155,50 +155,26 @@ type model struct {
 	pendingQuestion *tool.QuestionRequest
 }
 
-// createMarkdownRenderer creates a glamour renderer with the specified width and compact styling
+// createMarkdownRenderer creates a glamour renderer with the specified width
 func createMarkdownRenderer(width int) *glamour.TermRenderer {
-	// Leave some margin for padding
 	wrapWidth := width - 4
 	if wrapWidth < 40 {
 		wrapWidth = 40
 	}
 
-	// Create compact style based on DarkStyleConfig with reduced margins
-	compactStyle := styles.DarkStyleConfig
+	// Auto-detect terminal background and select appropriate style
+	var compactStyle ansi.StyleConfig
+	if lipgloss.HasDarkBackground() {
+		compactStyle = styles.DarkStyleConfig
+	} else {
+		compactStyle = styles.LightStyleConfig
+	}
 
-	// Helpers for pointers
+	// Apply compact margins
 	uintPtr := func(u uint) *uint { return &u }
-	stringPtr := func(s string) *string { return &s }
-
-	// Remove document margins and block prefix/suffix newlines
-	compactStyle.Document = ansi.StyleBlock{
-		StylePrimitive: ansi.StylePrimitive{
-			Color: compactStyle.Document.Color,
-		},
-		Margin: uintPtr(0),
-	}
-
-	// Remove paragraph margins
-	compactStyle.Paragraph = ansi.StyleBlock{
-		Margin: uintPtr(0),
-	}
-
-	// Remove heading extra newlines
-	compactStyle.Heading = ansi.StyleBlock{
-		StylePrimitive: ansi.StylePrimitive{
-			Color: stringPtr("39"),
-			Bold:  func(b bool) *bool { return &b }(true),
-		},
-	}
-
-	// Remove code block margins
+	compactStyle.Document.Margin = uintPtr(0)
+	compactStyle.Paragraph.Margin = uintPtr(0)
 	compactStyle.CodeBlock.Margin = uintPtr(0)
-
-	// Compact horizontal rule
-	compactStyle.HorizontalRule = ansi.StylePrimitive{
-		Color:  stringPtr("240"),
-		Format: "--------",
-	}
 
 	renderer, _ := glamour.NewTermRenderer(
 		glamour.WithStyles(compactStyle),
