@@ -29,10 +29,9 @@ cd gencode && make install
 
 ## Features
 
-- Multi-provider support (Anthropic, OpenAI, Google)
-- Built-in tools (Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch)
-- Interactive TUI with diff preview for file changes
-- Non-interactive mode for scripting
+- **Multi-provider support** — Anthropic, OpenAI, Google Gemini, and more
+- **Built-in tools** — Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
+- **Flexible context** — Manage models, tools, and skills at runtime
 
 ## Usage
 

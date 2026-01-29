@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/yanmxa/gencode/internal/plan"
+	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/ui"
 )
@@ -60,6 +61,11 @@ func getCommandRegistry() map[string]Command {
 			Description: "Enter plan mode to explore and plan before execution",
 			Handler:     handlePlanCommand,
 		},
+		"skill": {
+			Name:        "skill",
+			Description: "Manage skills (enable/disable/activate)",
+			Handler:     handleSkillCommand,
+		},
 	}
 }
 
@@ -86,17 +92,44 @@ func ExecuteCommand(ctx context.Context, m *model, input string) (string, bool) 
 		return "", false
 	}
 
+	// First check built-in commands
 	registry := getCommandRegistry()
 	command, ok := registry[cmd]
-	if !ok {
-		return fmt.Sprintf("Unknown command: /%s\nType /help for available commands.", cmd), true
+	if ok {
+		result, err := command.Handler(ctx, m, args)
+		if err != nil {
+			return fmt.Sprintf("Error: %v", err), true
+		}
+		return result, true
 	}
 
-	result, err := command.Handler(ctx, m, args)
-	if err != nil {
-		return fmt.Sprintf("Error: %v", err), true
+	// Then check skill commands
+	if sk, ok := IsSkillCommand(cmd); ok {
+		return executeSkillCommand(m, sk, args), true
 	}
-	return result, true
+
+	return fmt.Sprintf("Unknown command: /%s\nType /help for available commands.", cmd), true
+}
+
+// executeSkillCommand executes a skill command by loading its instructions
+// and preparing them for the next LLM request.
+func executeSkillCommand(m *model, sk *skill.Skill, args string) string {
+	// Load full skill instructions for the next prompt (using FullName)
+	if skill.DefaultRegistry != nil {
+		m.pendingSkillInstructions = skill.DefaultRegistry.GetSkillInvocationPrompt(sk.FullName())
+	}
+
+	// Prepare user message (use FullName for display)
+	fullName := sk.FullName()
+	if args == "" && sk.ArgumentHint != "" {
+		m.pendingSkillArgs = fmt.Sprintf("Execute skill '%s'. %s", fullName, sk.ArgumentHint)
+	} else if args != "" {
+		m.pendingSkillArgs = args
+	} else {
+		m.pendingSkillArgs = fmt.Sprintf("Execute skill '%s'.", fullName)
+	}
+
+	return "" // Return empty to trigger LLM call with skill context
 }
 
 // GetMatchingCommands returns commands matching the prefix for fuzzy search
@@ -104,10 +137,22 @@ func GetMatchingCommands(prefix string) []Command {
 	prefix = strings.ToLower(strings.TrimPrefix(prefix, "/"))
 	matches := make([]Command, 0)
 
+	// Add matching built-in commands
 	registry := getCommandRegistry()
 	for name, cmd := range registry {
 		if strings.HasPrefix(name, prefix) {
 			matches = append(matches, cmd)
+		}
+	}
+
+	// Add matching skill commands
+	skillCmds := GetSkillCommands()
+	for _, cmd := range skillCmds {
+		if strings.HasPrefix(strings.ToLower(cmd.Name), prefix) {
+			// Avoid duplicates with built-in commands
+			if _, exists := registry[cmd.Name]; !exists {
+				matches = append(matches, cmd)
+			}
 		}
 	}
 
@@ -220,4 +265,54 @@ func handlePlanCommand(ctx context.Context, m *model, args string) (string, erro
 	m.planStore = store
 
 	return fmt.Sprintf("Entering plan mode for: %s\n\nI will explore the codebase and create an implementation plan. Only read-only tools are available until the plan is approved.", args), nil
+}
+
+// handleSkillCommand handles the /skill command
+func handleSkillCommand(ctx context.Context, m *model, args string) (string, error) {
+	if err := m.skillSelector.EnterSkillSelect(m.width, m.height); err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
+// IsSkillCommand checks if the command is a registered skill.
+// Returns the skill and true if found, nil and false otherwise.
+func IsSkillCommand(cmd string) (*skill.Skill, bool) {
+	if skill.DefaultRegistry == nil {
+		return nil, false
+	}
+
+	s, ok := skill.DefaultRegistry.Get(cmd)
+	if !ok {
+		return nil, false
+	}
+
+	// Only return enabled or active skills as commands
+	if !s.IsEnabled() {
+		return nil, false
+	}
+
+	return s, true
+}
+
+// GetSkillCommands returns skill commands for command suggestions.
+// Skill names use the format namespace:name (e.g., git:commit).
+func GetSkillCommands() []Command {
+	if skill.DefaultRegistry == nil {
+		return nil
+	}
+
+	var cmds []Command
+	for _, s := range skill.DefaultRegistry.GetEnabled() {
+		hint := ""
+		if s.ArgumentHint != "" {
+			hint = " " + s.ArgumentHint
+		}
+		// Use FullName (namespace:name) as command name
+		cmds = append(cmds, Command{
+			Name:        s.FullName(),
+			Description: s.Description + hint,
+		})
+	}
+	return cmds
 }

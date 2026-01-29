@@ -249,3 +249,27 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 	m.planMode = false
 	return m, executeInteractiveTool(tc, msg.Response, m.cwd)
 }
+
+// Enter Plan Mode handlers
+
+func (m *model) handleEnterPlanRequest(msg EnterPlanRequestMsg) (tea.Model, tea.Cmd) {
+	m.enterPlanPrompt.Show(msg.Request, m.width)
+	m.viewport.SetContent(m.renderMessages())
+	m.viewport.GotoBottom()
+	return m, nil
+}
+
+func (m *model) handleEnterPlanResponse(msg EnterPlanResponseMsg) (tea.Model, tea.Cmd) {
+	tc := m.pendingToolCalls[m.pendingToolIdx]
+
+	if msg.Approved {
+		// User approved entering plan mode
+		m.planMode = true
+		m.operationMode = modePlan
+		if m.planStore == nil {
+			m.planStore, _ = plan.NewStore()
+		}
+	}
+
+	return m, executeInteractiveTool(tc, msg.Response, m.cwd)
+}

@@ -13,10 +13,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/tool"
 	toolui "github.com/yanmxa/gencode/internal/tool/ui"
 )
@@ -115,6 +118,8 @@ type model struct {
 	questionPrompt  *QuestionPrompt
 	pendingQuestion *tool.QuestionRequest
 
+	enterPlanPrompt *EnterPlanPrompt
+
 	planMode   bool
 	planTask   string
 	planPrompt *PlanPrompt
@@ -126,6 +131,11 @@ type model struct {
 
 	disabledTools map[string]bool
 	toolSelector  ToolSelectorState
+
+	// Skill system
+	skillSelector            SkillSelectorState
+	pendingSkillInstructions string // Full skill content for next message
+	pendingSkillArgs         string // User args for skill invocation
 }
 
 func Run() error {
@@ -220,6 +230,11 @@ func newModel() model {
 
 	cwd, _ := os.Getwd()
 
+	// Initialize skill registry
+	if err := skill.Initialize(cwd); err != nil {
+		log.Logger().Warn("Failed to initialize skill registry", zap.Error(err))
+	}
+
 	mdRenderer := createMarkdownRenderer(defaultWidth)
 
 	settings, _ := config.Load()
@@ -245,10 +260,12 @@ func newModel() model {
 		sessionPermissions: config.NewSessionPermissions(),
 		todoPanel:          NewTodoPanel(),
 		questionPrompt:     NewQuestionPrompt(),
+		enterPlanPrompt:    NewEnterPlanPrompt(),
 		planPrompt:         NewPlanPrompt(),
 		operationMode:      modeNormal,
 		disabledTools:      config.GetDisabledTools(),
 		toolSelector:       NewToolSelectorState(),
+		skillSelector:      NewSkillSelectorState(),
 	}
 }
 
@@ -291,6 +308,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ToolSelectorCancelledMsg:
 		return m, nil
 
+	case SkillCycleMsg:
+		// Skill state cycle already handled in skillSelector.CycleState()
+		return m, nil
+
+	case SkillSelectorCancelledMsg:
+		return m, nil
+
+	case SkillInvokeMsg:
+		// A skill was invoked from the selector - trigger skill execution
+		if sk, ok := skill.DefaultRegistry.Get(msg.SkillName); ok {
+			executeSkillCommand(&m, sk, "")
+			return m.handleSkillInvocation()
+		}
+		return m, nil
+
 	case ModelSelectedMsg:
 		return m.handleModelSelected(msg)
 
@@ -328,6 +360,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PlanResponseMsg:
 		return m.handlePlanResponse(msg)
+
+	case EnterPlanRequestMsg:
+		return m.handleEnterPlanRequest(msg)
+
+	case EnterPlanResponseMsg:
+		return m.handleEnterPlanResponse(msg)
 
 	case tea.KeyMsg:
 		result, cmd := m.handleKeypress(msg)
@@ -393,6 +431,10 @@ func (m model) View() string {
 		return m.toolSelector.Render()
 	}
 
+	if m.skillSelector.IsActive() {
+		return m.skillSelector.Render()
+	}
+
 	chat := m.viewport.View()
 
 	separator := separatorStyle.Render(strings.Repeat("─", m.width))
@@ -408,6 +450,10 @@ func (m model) View() string {
 
 	if m.questionPrompt.IsActive() {
 		return fmt.Sprintf("%s\n%s\n%s", chat, separator, m.questionPrompt.Render())
+	}
+
+	if m.enterPlanPrompt.IsActive() {
+		return fmt.Sprintf("%s\n%s\n%s", chat, separator, m.enterPlanPrompt.Render())
 	}
 
 	prompt := inputPromptStyle.Render("❯ ")

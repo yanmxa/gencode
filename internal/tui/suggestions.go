@@ -129,15 +129,27 @@ func (s *SuggestionState) Render(width int) string {
 		items = items[:maxItems]
 	}
 
+	// Calculate box width: screen width - margins
+	boxWidth := width - 4
+	if boxWidth > 100 {
+		boxWidth = 100 // Cap at reasonable width
+	}
+	// Content width: box width - border(2) - padding(2)
+	contentWidth := boxWidth - 4
+
 	var lines []string
 	for i, cmd := range items {
 		// Format: /name - description
 		cmdName := fmt.Sprintf("/%s", cmd.Name)
 		desc := cmd.Description
 
-		// Truncate description if too long
-		maxDescLen := width - len(cmdName) - 8
-		if maxDescLen > 0 && len(desc) > maxDescLen {
+		// Calculate max description length to fit in one line
+		// Format: "/name - desc" = len(cmdName) + 3 + len(desc)
+		maxDescLen := contentWidth - len(cmdName) - 3
+		if maxDescLen < 10 {
+			maxDescLen = 10
+		}
+		if len(desc) > maxDescLen {
 			desc = desc[:maxDescLen-3] + "..."
 		}
 
@@ -155,5 +167,5 @@ func (s *SuggestionState) Render(width int) string {
 	}
 
 	content := strings.Join(lines, "\n")
-	return suggestionBoxStyle.Width(width - 4).Render(content)
+	return suggestionBoxStyle.Width(boxWidth).Render(content)
 }

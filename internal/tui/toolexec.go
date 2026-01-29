@@ -240,6 +240,9 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 			if pr, ok := req.(*tool.PlanRequest); ok {
 				return PlanRequestMsg{Request: pr}
 			}
+			if epr, ok := req.(*tool.EnterPlanRequest); ok {
+				return EnterPlanRequestMsg{Request: epr}
+			}
 		}
 
 		if pat, ok := t.(tool.PermissionAwareTool); ok && pat.RequiresPermission() {

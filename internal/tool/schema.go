@@ -288,7 +288,26 @@ func GetToolSchemas() []provider.Tool {
 		},
 	}
 
+	// Add EnterPlanMode to normal mode tools
+	tools = append(tools, EnterPlanModeSchema)
+
 	return tools
+}
+
+// EnterPlanModeSchema returns the schema for EnterPlanMode tool
+var EnterPlanModeSchema = provider.Tool{
+	Name:        "EnterPlanMode",
+	Description: "Request to enter plan mode for complex implementation tasks. Use this proactively when starting non-trivial tasks that require exploration and planning before making changes. The user must approve entering plan mode.",
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"message": map[string]any{
+				"type":        "string",
+				"description": "Optional message explaining why plan mode is needed for this task.",
+			},
+		},
+		"required": []string{},
+	},
 }
 
 // ExitPlanModeSchema returns the schema for ExitPlanMode tool

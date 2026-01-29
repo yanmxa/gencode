@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/system"
 )
 
@@ -37,6 +38,11 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.enterPlanPrompt.IsActive() {
+		cmd := m.enterPlanPrompt.HandleKeypress(msg)
+		return m, cmd
+	}
+
 	if m.selector.IsActive() {
 		cmd := m.selector.HandleKeypress(msg)
 		return m, cmd
@@ -44,6 +50,11 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.toolSelector.IsActive() {
 		cmd := m.toolSelector.HandleKeypress(msg)
+		return m, cmd
+	}
+
+	if m.skillSelector.IsActive() {
+		cmd := m.skillSelector.HandleKeypress(msg)
 		return m, cmd
 	}
 
@@ -295,6 +306,13 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		if result != "" {
 			m.messages = append(m.messages, chatMessage{role: "user", content: input})
 			m.messages = append(m.messages, chatMessage{role: "system", content: result})
+			m.viewport.SetContent(m.renderMessages())
+			m.viewport.GotoBottom()
+			return m, nil
+		}
+		// Check if this was a skill command (empty result with pending args)
+		if m.pendingSkillArgs != "" {
+			return m.handleSkillInvocation()
 		}
 		m.viewport.SetContent(m.renderMessages())
 		m.viewport.GotoBottom()
@@ -326,12 +344,23 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 	m.viewport.GotoBottom()
 	modelID := m.getModelID()
 
+	// Build extra context for system prompt
+	var extra []string
+
+	// Add available skills metadata for active skills (progressive loading)
+	if skill.DefaultRegistry != nil {
+		if metadata := skill.DefaultRegistry.GetAvailableSkillsPrompt(); metadata != "" {
+			extra = append(extra, metadata)
+		}
+	}
+
 	sysPrompt := system.Prompt(system.Config{
 		Provider: m.llmProvider.Name(),
 		Model:    modelID,
 		Cwd:      m.cwd,
 		IsGit:    isGitRepo(m.cwd),
 		PlanMode: m.planMode,
+		Extra:    extra,
 	})
 
 	tools := m.getToolsForMode()
@@ -363,4 +392,76 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.mdRenderer = createMarkdownRenderer(msg.Width)
 
 	return m, nil
+}
+
+// handleSkillInvocation handles skill command invocation by sending the skill
+// instructions and args to the LLM.
+func (m *model) handleSkillInvocation() (tea.Model, tea.Cmd) {
+	if m.llmProvider == nil {
+		m.messages = append(m.messages, chatMessage{role: "system", content: "No provider connected. Use /provider to connect."})
+		m.pendingSkillInstructions = ""
+		m.pendingSkillArgs = ""
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+		return m, nil
+	}
+
+	// Get the user message (skill args or skill name)
+	userMessage := m.pendingSkillArgs
+	if userMessage == "" {
+		userMessage = "Execute the skill."
+	}
+
+	m.todoPanel.Clear()
+	m.messages = append(m.messages, chatMessage{role: "user", content: userMessage})
+	m.streaming = true
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancelFunc = cancel
+
+	providerMsgs := m.convertMessagesToProvider()
+
+	m.messages = append(m.messages, chatMessage{role: "assistant", content: ""})
+	m.viewport.SetContent(m.renderMessages())
+	m.viewport.GotoBottom()
+	modelID := m.getModelID()
+
+	// Build extra context for system prompt
+	var extra []string
+
+	// Add available skills metadata for active skills
+	if skill.DefaultRegistry != nil {
+		if metadata := skill.DefaultRegistry.GetAvailableSkillsPrompt(); metadata != "" {
+			extra = append(extra, metadata)
+		}
+	}
+
+	// Add full skill instructions for this invocation
+	if m.pendingSkillInstructions != "" {
+		extra = append(extra, m.pendingSkillInstructions)
+		m.pendingSkillInstructions = ""
+	}
+
+	// Clear pending skill args
+	m.pendingSkillArgs = ""
+
+	sysPrompt := system.Prompt(system.Config{
+		Provider: m.llmProvider.Name(),
+		Model:    modelID,
+		Cwd:      m.cwd,
+		IsGit:    isGitRepo(m.cwd),
+		PlanMode: m.planMode,
+		Extra:    extra,
+	})
+
+	tools := m.getToolsForMode()
+
+	m.streamChan = m.llmProvider.Stream(ctx, provider.CompletionOptions{
+		Model:        modelID,
+		Messages:     providerMsgs,
+		MaxTokens:    defaultMaxTokens,
+		Tools:        tools,
+		SystemPrompt: sysPrompt,
+	})
+	return m, tea.Batch(m.waitForChunk(), m.spinner.Tick)
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -241,12 +242,23 @@ func (m *model) handleStreamContinue(msg streamContinueMsg) (tea.Model, tea.Cmd)
 	m.viewport.SetContent(m.renderMessages())
 	m.viewport.GotoBottom()
 
+	// Build extra context for system prompt
+	var extra []string
+
+	// Keep available skills metadata for active skills (don't re-inject full skill instructions)
+	if skill.DefaultRegistry != nil {
+		if metadata := skill.DefaultRegistry.GetAvailableSkillsPrompt(); metadata != "" {
+			extra = append(extra, metadata)
+		}
+	}
+
 	sysPrompt := system.Prompt(system.Config{
 		Provider: m.llmProvider.Name(),
 		Model:    msg.modelID,
 		Cwd:      m.cwd,
 		IsGit:    isGitRepo(m.cwd),
 		PlanMode: m.planMode,
+		Extra:    extra,
 	})
 
 	tools := m.getToolsForMode()
