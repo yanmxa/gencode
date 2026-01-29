@@ -297,8 +297,9 @@ func (s *SkillSelectorState) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 
 // calculateSkillBoxWidth returns the constrained box width for skill selector.
 func calculateSkillBoxWidth(screenWidth int) int {
-	boxWidth := screenWidth - 8
-	return max(50, min(boxWidth, 80))
+	// Use 80% of screen width
+	boxWidth := screenWidth * 80 / 100
+	return max(60, boxWidth)
 }
 
 // Render renders the skill selector.

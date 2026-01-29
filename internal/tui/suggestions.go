@@ -129,10 +129,10 @@ func (s *SuggestionState) Render(width int) string {
 		items = items[:maxItems]
 	}
 
-	// Calculate box width: screen width - margins
-	boxWidth := width - 4
-	if boxWidth > 100 {
-		boxWidth = 100 // Cap at reasonable width
+	// Calculate box width: 80% of screen width
+	boxWidth := width * 80 / 100
+	if boxWidth < 60 {
+		boxWidth = 60 // Minimum width
 	}
 	// Content width: box width - border(2) - padding(2)
 	contentWidth := boxWidth - 4

@@ -282,8 +282,9 @@ func (s *ToolSelectorState) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 // calculateToolBoxWidth returns the constrained box width for tool selector.
 // Uses a wider width than the default selector to show more description.
 func calculateToolBoxWidth(screenWidth int) int {
-	boxWidth := screenWidth - 8
-	return max(50, min(boxWidth, 80))
+	// Use 80% of screen width
+	boxWidth := screenWidth * 80 / 100
+	return max(60, boxWidth)
 }
 
 // Render renders the tool selector

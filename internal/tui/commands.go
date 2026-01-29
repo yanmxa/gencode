@@ -119,28 +119,27 @@ func executeSkillCommand(m *model, sk *skill.Skill, args string) string {
 		m.pendingSkillInstructions = skill.DefaultRegistry.GetSkillInvocationPrompt(sk.FullName())
 	}
 
-	// Prepare user message (use FullName for display)
-	fullName := sk.FullName()
-	if args == "" && sk.ArgumentHint != "" {
-		m.pendingSkillArgs = fmt.Sprintf("Execute skill '%s'. %s", fullName, sk.ArgumentHint)
-	} else if args != "" {
+	// Prepare user message - keep it clean and simple
+	if args != "" {
+		// User provided arguments, use them directly
 		m.pendingSkillArgs = args
 	} else {
-		m.pendingSkillArgs = fmt.Sprintf("Execute skill '%s'.", fullName)
+		// No arguments - just invoke the skill
+		m.pendingSkillArgs = fmt.Sprintf("Run /%s", sk.FullName())
 	}
 
 	return "" // Return empty to trigger LLM call with skill context
 }
 
-// GetMatchingCommands returns commands matching the prefix for fuzzy search
-func GetMatchingCommands(prefix string) []Command {
-	prefix = strings.ToLower(strings.TrimPrefix(prefix, "/"))
+// GetMatchingCommands returns commands matching the query using fuzzy search
+func GetMatchingCommands(query string) []Command {
+	query = strings.ToLower(strings.TrimPrefix(query, "/"))
 	matches := make([]Command, 0)
 
 	// Add matching built-in commands
 	registry := getCommandRegistry()
 	for name, cmd := range registry {
-		if strings.HasPrefix(name, prefix) {
+		if fuzzyMatch(name, query) {
 			matches = append(matches, cmd)
 		}
 	}
@@ -148,7 +147,7 @@ func GetMatchingCommands(prefix string) []Command {
 	// Add matching skill commands
 	skillCmds := GetSkillCommands()
 	for _, cmd := range skillCmds {
-		if strings.HasPrefix(strings.ToLower(cmd.Name), prefix) {
+		if fuzzyMatch(strings.ToLower(cmd.Name), query) {
 			// Avoid duplicates with built-in commands
 			if _, exists := registry[cmd.Name]; !exists {
 				matches = append(matches, cmd)
