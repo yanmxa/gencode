@@ -190,14 +190,6 @@ func getPermSeparatorStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(CurrentTheme.Separator)
 }
 
-func getPermDottedStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
-}
-
-func getPermDescStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(CurrentTheme.Text)
-}
-
 func getPermQuestionStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(CurrentTheme.TextDim)
 }
@@ -218,6 +210,10 @@ func getPermFooterStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
 }
 
+func getPermTitleStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Accent)
+}
+
 // RenderInline renders the permission prompt inline with Claude Code style
 func (p *PermissionPrompt) RenderInline() string {
 	if !p.active || p.request == nil {
@@ -232,40 +228,31 @@ func (p *PermissionPrompt) RenderInline() string {
 
 	// Note: separator line is added by View() in app.go, not here
 
-	// Description with filename (e.g., "Create new file: world.txt")
-	description := p.getDescription()
+	// Title with Accent color (e.g., "Bash command", "Edit file")
+	title := p.getTitle()
 	sb.WriteString(" ")
-	sb.WriteString(getPermDescStyle().Render(description))
-	sb.WriteString("\n")
+	sb.WriteString(getPermTitleStyle().Render(title))
+	sb.WriteString("\n\n")
 
-	// Dotted separator before content
-	dottedSep := strings.Repeat("╌", contentWidth)
-	sb.WriteString(getPermDottedStyle().Render(dottedSep))
-	sb.WriteString("\n")
-
-	// Diff preview, Bash preview, or content preview
+	// Diff preview, Bash preview, or content preview (no dotted separators)
 	if p.diffPreview != nil {
 		sb.WriteString(p.diffPreview.Render(contentWidth))
 	} else if p.bashPreview != nil {
 		sb.WriteString(p.bashPreview.Render(contentWidth))
 	}
-
-	// Dotted separator after content
-	sb.WriteString(getPermDottedStyle().Render(dottedSep))
 	sb.WriteString("\n")
 
 	// Question
-	question := p.getQuestion()
 	sb.WriteString(" ")
-	sb.WriteString(getPermQuestionStyle().Render(question))
+	sb.WriteString(getPermQuestionStyle().Render("Do you want to proceed?"))
 	sb.WriteString("\n")
 
 	// Menu options
 	sb.WriteString(p.renderMenu())
 	sb.WriteString("\n")
 
-	// Footer
-	footer := " ↑/↓ navigate · Enter confirm · Esc cancel"
+	// Simplified footer
+	footer := " Esc to cancel"
 	hasExpandableContent := (p.diffPreview != nil && len(p.diffPreview.diffMeta.Lines) > DefaultMaxVisibleLines) ||
 		(p.bashPreview != nil && p.bashPreview.NeedsExpand())
 	if hasExpandableContent {
@@ -281,46 +268,17 @@ func (p *PermissionPrompt) RenderInline() string {
 	return sb.String()
 }
 
-// getDescription returns the action description with filename
-func (p *PermissionPrompt) getDescription() string {
-	// Extract filename from full path
-	filename := p.request.FilePath
-	if idx := strings.LastIndex(filename, "/"); idx >= 0 {
-		filename = filename[idx+1:]
-	}
-
+// getTitle returns a simple action title (used with Accent color)
+func (p *PermissionPrompt) getTitle() string {
 	switch p.request.ToolName {
 	case "Edit":
-		return "Edit file: " + filename
+		return "Edit file"
 	case "Write":
-		if p.request.DiffMeta != nil && p.request.DiffMeta.IsNewFile {
-			return "Create new file: " + filename
-		}
-		return "Overwrite file: " + filename
+		return "Write to file"
 	case "Bash":
-		return "Execute command"
+		return "Bash command"
 	default:
-		if filename != "" {
-			return p.request.Description + ": " + filename
-		}
 		return p.request.Description
-	}
-}
-
-// getQuestion returns the confirmation question
-func (p *PermissionPrompt) getQuestion() string {
-	switch p.request.ToolName {
-	case "Edit":
-		return "Allow this edit?"
-	case "Write":
-		if p.request.DiffMeta != nil && p.request.DiffMeta.IsNewFile {
-			return "Allow creating this file?"
-		}
-		return "Allow overwriting this file?"
-	case "Bash":
-		return "Allow running this command?"
-	default:
-		return "Allow this action?"
 	}
 }
 

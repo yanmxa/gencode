@@ -49,13 +49,6 @@ func getBashCommandStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(CurrentTheme.Text)
 }
 
-func getBashLineNoStyle() lipgloss.Style {
-	return lipgloss.NewStyle().
-		Foreground(CurrentTheme.TextDisabled).
-		Width(4).
-		Align(lipgloss.Right)
-}
-
 func getBashBgStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(CurrentTheme.Warning)
 }
@@ -64,24 +57,17 @@ func getBashDescStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(CurrentTheme.TextDim).Italic(true)
 }
 
-// Render renders the bash command preview
+// Render renders the bash command preview with simplified format (3-space indent, no line numbers)
 func (b *BashPreview) Render(width int) string {
 	if b.bashMeta == nil || b.bashMeta.Command == "" {
-		return getBashCommandStyle().Render("  (no command)")
+		return getBashCommandStyle().Render("   (no command)")
 	}
 
 	var sb strings.Builder
 
-	// Show description if provided
-	if b.bashMeta.Description != "" {
-		sb.WriteString(" ")
-		sb.WriteString(getBashDescStyle().Render(b.bashMeta.Description))
-		sb.WriteString("\n")
-	}
-
-	// Show background indicator
+	// Show background indicator first if needed
 	if b.bashMeta.RunBackground {
-		sb.WriteString(" ")
+		sb.WriteString("   ")
 		sb.WriteString(getBashBgStyle().Render("[background]"))
 		sb.WriteString("\n")
 	}
@@ -95,19 +81,24 @@ func (b *BashPreview) Render(width int) string {
 		truncated = true
 	}
 
-	// Render command lines with line numbers
+	// Render command lines with 3-space indent (no line numbers)
 	for i := 0; i < showCount; i++ {
-		lineNo := fmt.Sprintf("%3d ", i+1)
-		sb.WriteString(getBashLineNoStyle().Render(lineNo))
-		sb.WriteString(getBashLineNoStyle().Render("│"))
-		sb.WriteString(getBashCommandStyle().Render(" " + lines[i]))
+		sb.WriteString("   ")
+		sb.WriteString(getBashCommandStyle().Render(lines[i]))
+		sb.WriteString("\n")
+	}
+
+	// Show description after command (3-space indent)
+	if b.bashMeta.Description != "" {
+		sb.WriteString("   ")
+		sb.WriteString(getBashDescStyle().Render(b.bashMeta.Description))
 		sb.WriteString("\n")
 	}
 
 	// Show truncation message
 	if truncated {
 		remaining := len(lines) - b.maxVisible
-		msg := fmt.Sprintf("... %d more lines (Ctrl+O to expand)", remaining)
+		msg := fmt.Sprintf("   ... %d more lines (Ctrl+O to expand)", remaining)
 		sb.WriteString(getDiffMoreStyle().Render(msg))
 		sb.WriteString("\n")
 	}

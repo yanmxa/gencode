@@ -51,29 +51,39 @@ func IsReadOnlyTool(toolName string) bool {
 
 // CheckPermission checks if a tool action is allowed based on settings and session permissions.
 // Priority:
-//  1. Session permissions (runtime, e.g., "allow all edits this session")
-//  2. Deny rules (highest priority in settings)
-//  3. Allow rules
-//  4. Ask rules
-//  5. Default behavior (read-only tools allowed, others need confirmation)
+//  1. Deny rules (highest priority - cannot be bypassed by session permissions)
+//  2. Destructive command protection (always ask for dangerous bash commands)
+//  3. Session permissions (runtime, e.g., "allow all edits this session")
+//  4. Allow rules
+//  5. Ask rules
+//  6. Default behavior (read-only tools allowed, others need confirmation)
 func (s *Settings) CheckPermission(toolName string, args map[string]any, session *SessionPermissions) PermissionResult {
 	// Build the rule string for this tool invocation
 	rule := BuildRule(toolName, args)
 
-	// Check session permissions first
+	// SECURITY: Check deny rules FIRST - deny rules cannot be bypassed by session permissions
+	for _, pattern := range s.Permissions.Deny {
+		if MatchRule(rule, pattern) {
+			return PermissionDeny
+		}
+	}
+
+	// SECURITY: Check for destructive Bash commands - always require confirmation
+	if toolName == "Bash" {
+		if cmd, ok := args["command"].(string); ok {
+			if IsDestructiveCommand(cmd) {
+				return PermissionAsk // Always ask for destructive commands
+			}
+		}
+	}
+
+	// Check session permissions (after security checks)
 	if session != nil {
 		if session.IsToolAllowed(toolName) {
 			return PermissionAllow
 		}
 		if session.IsPatternAllowed(rule) {
 			return PermissionAllow
-		}
-	}
-
-	// Check deny rules (highest priority)
-	for _, pattern := range s.Permissions.Deny {
-		if MatchRule(rule, pattern) {
-			return PermissionDeny
 		}
 	}
 
@@ -165,12 +175,13 @@ func BuildRule(toolName string, args map[string]any) string {
 //   - "npm install lodash" -> "npm:install lodash"
 //   - "git commit -m 'msg'" -> "git:commit -m 'msg'"
 //   - "ls -la" -> "ls:-la"
+//   - "/bin/rm -rf foo" -> "rm:-rf foo" (strips path prefix)
 func normalizeBashCommand(cmd string) string {
 	cmd = strings.TrimSpace(cmd)
-	parts := strings.SplitN(cmd, " ", 2)
-	if len(parts) == 0 {
-		return cmd
+	if cmd == "" {
+		return ""
 	}
+	parts := strings.SplitN(cmd, " ", 2)
 
 	// Get the base command (without path)
 	baseCmd := filepath.Base(parts[0])
@@ -206,14 +217,11 @@ func MatchRule(rule, pattern string) bool {
 // parseRule parses a rule string into tool name and arguments.
 // "Bash(npm install)" -> ("Bash", "npm install")
 func parseRule(s string) (tool, args string) {
-	idx := strings.Index(s, "(")
-	if idx < 0 {
+	tool, args, found := strings.Cut(s, "(")
+	if !found {
 		return s, ""
 	}
-
-	tool = s[:idx]
-	args = strings.TrimSuffix(s[idx+1:], ")")
-	return
+	return tool, strings.TrimSuffix(args, ")")
 }
 
 // matchGlob performs glob-like pattern matching.
@@ -352,6 +360,39 @@ var CommonDenyPatterns = []string{
 	"Edit(**/.env.*)",
 	"Write(**/.env)",
 	"Write(**/.env.*)",
+}
+
+// DestructiveCommands are patterns that should always require user confirmation,
+// even when session permissions like AllowAllBash are enabled.
+// These commands can cause irreversible data loss or system damage.
+var DestructiveCommands = []string{
+	"rm:-rf",
+	"rm:-fr",
+	"rm:-r",
+	"git:reset --hard",
+	"git:clean -fd",
+	"git:clean -f",
+	"git:push --force",
+	"git:push -f",
+	"chmod:777",
+	"chmod:-R 777",
+	":(){ :|:& };:", // fork bomb
+	"> /dev/",       // device writes
+	"dd:if=",        // direct disk access
+	"mkfs",          // filesystem creation
+	"fdisk",         // disk partitioning
+}
+
+// IsDestructiveCommand checks if a bash command matches any destructive pattern.
+// Returns true if the command should always require user confirmation.
+func IsDestructiveCommand(cmd string) bool {
+	normalized := normalizeBashCommand(cmd)
+	for _, pattern := range DestructiveCommands {
+		if strings.Contains(normalized, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 // CommonAllowPatterns contains commonly allowed patterns.

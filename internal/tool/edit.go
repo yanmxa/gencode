@@ -2,6 +2,8 @@ package tool
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -192,9 +194,15 @@ func itoa(n int) string {
 	return string(digits)
 }
 
-// generateRequestID generates a unique request ID
+// generateRequestID generates a unique request ID using cryptographic randomness.
+// This avoids collisions that could occur with time-based IDs in high-speed scenarios.
 func generateRequestID() string {
-	return "req_" + itoa(int(time.Now().UnixNano()%1000000))
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to time-based if crypto/rand fails (unlikely)
+		return "req_" + itoa(int(time.Now().UnixNano()%1000000))
+	}
+	return "req_" + hex.EncodeToString(b)
 }
 
 func init() {

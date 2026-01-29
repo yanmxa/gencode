@@ -219,3 +219,123 @@ func TestLoaderLoad(t *testing.T) {
 	}
 	// Just verify it loads without error - actual values depend on environment
 }
+
+func TestIsDestructiveCommand(t *testing.T) {
+	tests := []struct {
+		name    string
+		command string
+		want    bool
+	}{
+		// Destructive commands
+		{"rm -rf", "rm -rf /tmp/test", true},
+		{"rm -fr", "rm -fr /tmp/test", true},
+		{"rm -r", "rm -r /tmp/test", true},
+		{"git reset --hard", "git reset --hard HEAD", true},
+		{"git clean -fd", "git clean -fd", true},
+		{"git push --force", "git push --force origin main", true},
+		{"git push -f", "git push -f", true},
+		{"chmod 777", "chmod 777 /tmp/file", true},
+
+		// Path-qualified commands (should normalize to base command)
+		{"rm with full path", "/bin/rm -rf /tmp/test", true},
+		{"git with full path", "/usr/bin/git reset --hard HEAD", true},
+		{"rm with relative path", "./rm -rf /tmp", true},
+
+		// Safe commands
+		{"rm single file", "rm /tmp/file.txt", false},
+		{"git status", "git status", false},
+		{"git push", "git push origin main", false},
+		{"git commit", "git commit -m 'msg'", false},
+		{"chmod 644", "chmod 644 /tmp/file", false},
+		{"ls", "ls -la", false},
+		{"npm install", "npm install", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsDestructiveCommand(tt.command)
+			if got != tt.want {
+				t.Errorf("IsDestructiveCommand(%q) = %v, want %v", tt.command, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDenyRulesPriorityOverSession(t *testing.T) {
+	settings := &Settings{
+		Permissions: PermissionSettings{
+			Deny: []string{
+				"Read(**/.env)",
+				"Bash(rm:-rf *)",
+			},
+		},
+	}
+
+	// Test that deny rules take priority over session permissions
+	session := &SessionPermissions{
+		AllowAllBash: true,
+		AllowedTools: map[string]bool{"Read": true},
+	}
+
+	tests := []struct {
+		name     string
+		toolName string
+		args     map[string]any
+		want     PermissionResult
+	}{
+		{
+			"deny rule blocks even with session allow",
+			"Read",
+			map[string]any{"file_path": "/path/to/.env"},
+			PermissionDeny,
+		},
+		{
+			"normal bash allowed with session",
+			"Bash",
+			map[string]any{"command": "ls -la"},
+			PermissionAllow,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := settings.CheckPermission(tt.toolName, tt.args, session)
+			if got != tt.want {
+				t.Errorf("CheckPermission(%q, %v) = %v, want %v", tt.toolName, tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDestructiveCommandsRequireConfirmation(t *testing.T) {
+	settings := &Settings{
+		Permissions: PermissionSettings{},
+	}
+
+	// Even with AllowAllBash, destructive commands should require confirmation
+	session := &SessionPermissions{
+		AllowAllBash: true,
+	}
+
+	tests := []struct {
+		name    string
+		command string
+		want    PermissionResult
+	}{
+		{"rm -rf requires ask", "rm -rf /tmp/test", PermissionAsk},
+		{"git reset --hard requires ask", "git reset --hard HEAD", PermissionAsk},
+		{"git push --force requires ask", "git push --force", PermissionAsk},
+		{"normal git allowed", "git status", PermissionAllow},
+		{"normal ls allowed", "ls -la", PermissionAllow},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := map[string]any{"command": tt.command}
+			got := settings.CheckPermission("Bash", args, session)
+			if got != tt.want {
+				t.Errorf("CheckPermission(Bash, %q) = %v, want %v", tt.command, got, tt.want)
+			}
+		})
+	}
+}

@@ -51,8 +51,19 @@ func (t *WriteTool) PreparePermission(ctx context.Context, params map[string]any
 		return nil, &ToolError{Message: "failed to check file: " + err.Error()}
 	}
 
-	// Use preview mode for Write (show content directly, not diff)
-	diffMeta := permission.GeneratePreview(filePath, content, isNewFile)
+	// Generate appropriate preview based on whether file exists
+	var diffMeta *permission.DiffMetadata
+	if isNewFile {
+		// New file: use preview mode to show content directly
+		diffMeta = permission.GeneratePreview(filePath, content, true)
+	} else {
+		// Existing file: generate actual diff to show what will change
+		oldContent, readErr := os.ReadFile(filePath)
+		if readErr != nil {
+			return nil, &ToolError{Message: "failed to read existing file: " + readErr.Error()}
+		}
+		diffMeta = permission.GenerateDiff(filePath, string(oldContent), content)
+	}
 
 	description := "Create new file"
 	if !isNewFile {

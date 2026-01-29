@@ -1083,8 +1083,29 @@ func executeApprovedTool(toolCalls []provider.ToolCall, idx int, cwd string) tea
 			}
 		}
 
-		t, _ := tool.Get(tc.Name)
-		pat := t.(tool.PermissionAwareTool)
+		t, ok := tool.Get(tc.Name)
+		if !ok {
+			return toolResultMsg{
+				result: provider.ToolResult{
+					ToolCallID: tc.ID,
+					Content:    "Internal error: unknown tool: " + tc.Name,
+					IsError:    true,
+				},
+				toolName: tc.Name,
+			}
+		}
+
+		pat, ok := t.(tool.PermissionAwareTool)
+		if !ok {
+			return toolResultMsg{
+				result: provider.ToolResult{
+					ToolCallID: tc.ID,
+					Content:    "Internal error: tool does not implement PermissionAwareTool: " + tc.Name,
+					IsError:    true,
+				},
+				toolName: tc.Name,
+			}
+		}
 
 		// Execute approved tool
 		result := pat.ExecuteApproved(ctx, params, cwd)
