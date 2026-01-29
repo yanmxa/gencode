@@ -82,8 +82,25 @@ func (s *Settings) CheckPermission(toolName string, args map[string]any, session
 		if session.IsToolAllowed(toolName) {
 			return PermissionAllow
 		}
-		if session.IsPatternAllowed(rule) {
-			return PermissionAllow
+		// Check session allowed patterns using MatchRule
+		for pattern := range session.AllowedPatterns {
+			if MatchRule(rule, pattern) {
+				return PermissionAllow
+			}
+		}
+		// For Bash commands, also check each command in a chained command
+		if toolName == "Bash" {
+			if cmd, ok := args["command"].(string); ok {
+				commands := extractBashCommands(cmd)
+				for _, subCmd := range commands {
+					subRule := "Bash(" + normalizeBashCommand(subCmd) + ")"
+					for pattern := range session.AllowedPatterns {
+						if MatchRule(subRule, pattern) {
+							return PermissionAllow
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -192,6 +209,26 @@ func normalizeBashCommand(cmd string) string {
 
 	// Return "command:rest"
 	return baseCmd + ":" + parts[1]
+}
+
+// extractBashCommands extracts individual commands from a chained bash command.
+// It splits on && and ; to get each command separately.
+func extractBashCommands(cmd string) []string {
+	var commands []string
+
+	// Split on && first, then on ;
+	parts := strings.Split(cmd, "&&")
+	for _, part := range parts {
+		subParts := strings.Split(part, ";")
+		for _, subPart := range subParts {
+			trimmed := strings.TrimSpace(subPart)
+			if trimmed != "" {
+				commands = append(commands, trimmed)
+			}
+		}
+	}
+
+	return commands
 }
 
 // MatchRule checks if a rule matches a pattern.

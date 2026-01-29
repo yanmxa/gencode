@@ -520,7 +520,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle plan request from ExitPlanMode tool
 	case PlanRequestMsg:
 		m.planPrompt.Show(msg.Request, m.width, m.height)
-		m.viewport.SetContent(m.renderMessages())
+		// Append plan content to the chat viewport so PgUp/PgDn scrolling works
+		chatContent := m.renderMessages()
+		planContent := m.planPrompt.RenderContent()
+		m.viewport.SetContent(chatContent + "\n" + planContent)
 		m.viewport.GotoBottom()
 		return m, nil
 
@@ -574,6 +577,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = []chatMessage{}
 			m.sessionPermissions.AllowAllEdits = true
 			m.sessionPermissions.AllowAllWrites = true
+			// Add common safe bash patterns
+			for _, pattern := range config.CommonAllowPatterns {
+				m.sessionPermissions.AllowPattern(pattern)
+			}
 			m.operationMode = config.ModeAutoAccept
 			m.planMode = false
 
@@ -621,6 +628,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Keep context, auto-accept edits
 			m.sessionPermissions.AllowAllEdits = true
 			m.sessionPermissions.AllowAllWrites = true
+			// Add common safe bash patterns
+			for _, pattern := range config.CommonAllowPatterns {
+				m.sessionPermissions.AllowPattern(pattern)
+			}
 			m.operationMode = config.ModeAutoAccept
 		case "manual":
 			// Keep context, manual approval (default behavior)
@@ -639,6 +650,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		// Handle plan prompt first (highest priority)
 		if m.planPrompt != nil && m.planPrompt.IsActive() {
+			// For PgUp/PgDown/CtrlU/CtrlD, scroll the main viewport instead
+			if !m.planPrompt.IsEditing() {
+				switch msg.Type {
+				case tea.KeyPgUp, tea.KeyCtrlU:
+					m.viewport.HalfPageUp()
+					return m, nil
+				case tea.KeyPgDown, tea.KeyCtrlD:
+					m.viewport.HalfPageDown()
+					return m, nil
+				}
+			}
 			cmd := m.planPrompt.HandleKeypress(msg)
 			return m, cmd
 		}
@@ -1047,13 +1069,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.streaming {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
-			// Only re-render if spinner is actually visible:
-			// - Not executing tools (pendingToolCalls is nil)
-			// - Last message is assistant with no content and no tool calls
-			// This prevents flickering of static tool call displays like ⚡Bash(...)
-			if m.pendingToolCalls == nil && len(m.messages) > 0 {
+			// Re-render spinner in these cases:
+			// 1. "Thinking..." spinner: no content yet and no tool calls
+			// 2. Tool execution spinner: pendingToolCalls is not empty
+			if len(m.messages) > 0 {
 				lastMsg := m.messages[len(m.messages)-1]
-				if lastMsg.role == "assistant" && lastMsg.content == "" && len(lastMsg.toolCalls) == 0 {
+				showThinkingSpinner := lastMsg.role == "assistant" && lastMsg.content == "" && len(lastMsg.toolCalls) == 0
+				showToolSpinner := len(m.pendingToolCalls) > 0
+				if showThinkingSpinner || showToolSpinner {
 					m.viewport.SetContent(m.renderMessages())
 				}
 			}
@@ -1524,10 +1547,11 @@ func (m model) View() string {
 	separator := separatorStyle.Render(strings.Repeat("─", m.width))
 
 	// Plan prompt (if active, show content in chat area and menu below separator)
+	// The plan content is integrated into the main viewport so PgUp/PgDn works
 	if m.planPrompt != nil && m.planPrompt.IsActive() {
-		planContent := m.planPrompt.RenderContent()
 		planMenu := m.planPrompt.RenderMenu()
-		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s", chat, planContent, separator, planMenu, separator)
+		// Use the viewport's content directly (already includes plan content)
+		return fmt.Sprintf("%s\n%s\n%s\n%s", m.viewport.View(), separator, planMenu, separator)
 	}
 
 	// Permission prompt (if active, replaces input area)
@@ -1792,6 +1816,34 @@ func (m model) renderMessages() string {
 						sb.WriteString(toolLine + "\n")
 					}
 				}
+
+				// Show spinner if tools are being executed (this is the last message with pending tools)
+				if i == len(m.messages)-1 && len(m.pendingToolCalls) > 0 {
+					// Get the current tool being executed
+					currentTool := ""
+					if m.pendingToolIdx < len(m.pendingToolCalls) {
+						currentTool = m.pendingToolCalls[m.pendingToolIdx].Name
+					}
+					// Show appropriate spinner message based on tool
+					spinnerMsg := "Executing..."
+					switch currentTool {
+					case "ExitPlanMode":
+						spinnerMsg = "Preparing implementation plan..."
+					case "Read":
+						spinnerMsg = "Reading file..."
+					case "Glob":
+						spinnerMsg = "Searching files..."
+					case "Grep":
+						spinnerMsg = "Searching content..."
+					case "Bash":
+						spinnerMsg = "Running command..."
+					case "Edit", "Write":
+						spinnerMsg = "Writing file..."
+					case "AskUserQuestion":
+						spinnerMsg = "Preparing question..."
+					}
+					sb.WriteString(thinkingStyle.Render(fmt.Sprintf("  %s %s", m.spinner.View(), spinnerMsg)) + "\n")
+				}
 			}
 		}
 	}
@@ -1898,6 +1950,10 @@ func (m *model) cycleOperationMode() {
 	if m.operationMode == config.ModeAutoAccept {
 		m.sessionPermissions.AllowAllEdits = true
 		m.sessionPermissions.AllowAllWrites = true
+		// Add common safe bash patterns
+		for _, pattern := range config.CommonAllowPatterns {
+			m.sessionPermissions.AllowPattern(pattern)
+		}
 	}
 
 	m.planMode = (m.operationMode == config.ModePlan)

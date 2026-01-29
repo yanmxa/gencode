@@ -95,6 +95,11 @@ func (p *PlanPrompt) IsActive() bool {
 	return p.active
 }
 
+// IsEditing returns whether the prompt is in edit mode
+func (p *PlanPrompt) IsEditing() bool {
+	return p.editing
+}
+
 // GetRequest returns the current plan request
 func (p *PlanPrompt) GetRequest() *tool.PlanRequest {
 	return p.request
@@ -179,13 +184,11 @@ func (p *PlanPrompt) HandleKeypress(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case tea.KeyPgUp, tea.KeyCtrlU:
-		// Scroll viewport up
-		p.viewport.HalfPageUp()
+		// Let the main viewport handle scrolling (return nil to pass through)
 		return nil
 
 	case tea.KeyPgDown, tea.KeyCtrlD:
-		// Scroll viewport down
-		p.viewport.HalfPageDown()
+		// Let the main viewport handle scrolling (return nil to pass through)
 		return nil
 	}
 
@@ -288,6 +291,8 @@ func getPlanFooterStyle() lipgloss.Style {
 }
 
 // RenderContent renders the plan content for the chat viewport (above separator)
+// This returns the rendered markdown directly (not wrapped in a viewport),
+// allowing the main chat viewport to handle scrolling.
 func (p *PlanPrompt) RenderContent() string {
 	if !p.active || p.request == nil {
 		return ""
@@ -300,7 +305,7 @@ func (p *PlanPrompt) RenderContent() string {
 	sb.WriteString(getPlanTitleStyle().Render("📋 Implementation Plan"))
 	sb.WriteString("\n\n")
 
-	// Plan content (viewport) or editor
+	// Plan content or editor
 	if p.editing {
 		// Show editor
 		sb.WriteString(" ")
@@ -308,8 +313,14 @@ func (p *PlanPrompt) RenderContent() string {
 		sb.WriteString("\n\n")
 		sb.WriteString(p.editor.View())
 	} else {
-		// Show rendered plan
-		sb.WriteString(p.viewport.View())
+		// Render markdown directly (not via p.viewport) so the main viewport can scroll
+		content := p.request.Plan
+		if p.mdRenderer != nil {
+			if rendered, err := p.mdRenderer.Render(content); err == nil {
+				content = strings.TrimSpace(rendered)
+			}
+		}
+		sb.WriteString(content)
 	}
 
 	return sb.String()
