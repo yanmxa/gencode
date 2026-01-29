@@ -33,8 +33,18 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any, cwd strin
 		return ui.NewErrorResult(t.Name(), "pattern is required")
 	}
 
-	// Compile regex (case insensitive by default)
-	re, err := regexp.Compile("(?i)" + pattern)
+	// Check case sensitivity flag (default: case insensitive)
+	caseSensitive := false
+	if cs, ok := params["case_sensitive"].(bool); ok {
+		caseSensitive = cs
+	}
+
+	// Compile regex
+	regexPattern := pattern
+	if !caseSensitive {
+		regexPattern = "(?i)" + pattern
+	}
+	re, err := regexp.Compile(regexPattern)
 	if err != nil {
 		return ui.NewErrorResult(t.Name(), "invalid pattern: "+err.Error())
 	}

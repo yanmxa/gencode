@@ -40,35 +40,38 @@ func MergeSettings(base, overlay *Settings) *Settings {
 }
 
 // mergePermissionSettings merges two PermissionSettings.
-// Overlay values replace base values for each field.
+// Overlay values are appended to base values (deduplicated).
 func mergePermissionSettings(base, overlay PermissionSettings) PermissionSettings {
 	result := PermissionSettings{}
 
-	// Allow: overlay replaces base if non-empty
-	if len(overlay.Allow) > 0 {
-		result.Allow = make([]string, len(overlay.Allow))
-		copy(result.Allow, overlay.Allow)
-	} else if len(base.Allow) > 0 {
-		result.Allow = make([]string, len(base.Allow))
-		copy(result.Allow, base.Allow)
-	}
+	// Allow: merge both lists, deduplicate
+	result.Allow = mergeStringSlices(base.Allow, overlay.Allow)
 
-	// Deny: overlay replaces base if non-empty
-	if len(overlay.Deny) > 0 {
-		result.Deny = make([]string, len(overlay.Deny))
-		copy(result.Deny, overlay.Deny)
-	} else if len(base.Deny) > 0 {
-		result.Deny = make([]string, len(base.Deny))
-		copy(result.Deny, base.Deny)
-	}
+	// Deny: merge both lists, deduplicate
+	result.Deny = mergeStringSlices(base.Deny, overlay.Deny)
 
-	// Ask: overlay replaces base if non-empty
-	if len(overlay.Ask) > 0 {
-		result.Ask = make([]string, len(overlay.Ask))
-		copy(result.Ask, overlay.Ask)
-	} else if len(base.Ask) > 0 {
-		result.Ask = make([]string, len(base.Ask))
-		copy(result.Ask, base.Ask)
+	// Ask: merge both lists, deduplicate
+	result.Ask = mergeStringSlices(base.Ask, overlay.Ask)
+
+	return result
+}
+
+// mergeStringSlices merges two string slices, removing duplicates.
+func mergeStringSlices(base, overlay []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+
+	for _, s := range base {
+		if !seen[s] {
+			seen[s] = true
+			result = append(result, s)
+		}
+	}
+	for _, s := range overlay {
+		if !seen[s] {
+			seen[s] = true
+			result = append(result, s)
+		}
 	}
 
 	return result

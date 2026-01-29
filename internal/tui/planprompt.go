@@ -216,7 +216,7 @@ func (p *PlanPrompt) HandleKeypress(msg tea.KeyMsg) tea.Cmd {
 		// Quick "clear + auto" option
 		return p.selectOption(0)
 
-	case tea.KeyEsc:
+	case tea.KeyEsc, tea.KeyCtrlC:
 		// Reject plan
 		req := p.request
 		p.Hide()

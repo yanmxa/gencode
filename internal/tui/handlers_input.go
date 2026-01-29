@@ -319,8 +319,6 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.todoPanel.Clear()
-
 	m.messages = append(m.messages, chatMessage{role: "user", content: input})
 	m.textarea.Reset()
 	m.textarea.SetHeight(minTextareaHeight)
@@ -360,6 +358,7 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		Cwd:      m.cwd,
 		IsGit:    isGitRepo(m.cwd),
 		PlanMode: m.planMode,
+		Memory:   system.LoadMemory(m.cwd),
 		Extra:    extra,
 	})
 
@@ -412,7 +411,6 @@ func (m *model) handleSkillInvocation() (tea.Model, tea.Cmd) {
 		userMessage = "Execute the skill."
 	}
 
-	m.todoPanel.Clear()
 	m.messages = append(m.messages, chatMessage{role: "user", content: userMessage})
 	m.streaming = true
 
@@ -451,6 +449,7 @@ func (m *model) handleSkillInvocation() (tea.Model, tea.Cmd) {
 		Cwd:      m.cwd,
 		IsGit:    isGitRepo(m.cwd),
 		PlanMode: m.planMode,
+		Memory:   system.LoadMemory(m.cwd),
 		Extra:    extra,
 	})
 

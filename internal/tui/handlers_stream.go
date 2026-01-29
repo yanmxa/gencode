@@ -48,48 +48,6 @@ func (m *model) handleParallelToolResult(msg toolResultMsg) (tea.Model, tea.Cmd)
 	return m, nil
 }
 
-func (m *model) handleTodoResult(msg todoResultMsg) (tea.Model, tea.Cmd) {
-	// Check if we're in parallel mode
-	if m.parallelMode {
-		return m.handleParallelTodoResult(msg)
-	}
-
-	// Sequential mode - original behavior
-	r := msg.result
-	m.messages = append(m.messages, chatMessage{
-		role:       "user",
-		toolResult: &r,
-		toolName:   msg.toolName,
-		todos:      msg.todos,
-	})
-	m.todoPanel.Update(msg.todos)
-	m.todoPanel.SetWidth(m.width)
-	m.pendingToolIdx++
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-	return m, processNextTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd, m.settings, m.sessionPermissions)
-}
-
-func (m *model) handleParallelTodoResult(msg todoResultMsg) (tea.Model, tea.Cmd) {
-	// Store result in the parallel results map
-	if m.parallelResults == nil {
-		m.parallelResults = make(map[int]provider.ToolResult)
-	}
-	m.parallelResults[msg.index] = msg.result
-	m.parallelResultCount++
-
-	// Collect todos
-	m.parallelTodos = append(m.parallelTodos, msg.todos...)
-
-	// Check if all results are in
-	if m.parallelResultCount >= len(m.pendingToolCalls) {
-		return m.completeParallelExecution()
-	}
-
-	// More results pending
-	return m, nil
-}
-
 func (m *model) completeParallelExecution() (tea.Model, tea.Cmd) {
 	// Add all results as messages in order
 	for i := 0; i < len(m.pendingToolCalls); i++ {
@@ -103,16 +61,9 @@ func (m *model) completeParallelExecution() (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Update todo panel if we have todos
-	if len(m.parallelTodos) > 0 {
-		m.todoPanel.Update(m.parallelTodos)
-		m.todoPanel.SetWidth(m.width)
-	}
-
 	// Reset parallel execution state
 	m.parallelMode = false
 	m.parallelResults = nil
-	m.parallelTodos = nil
 	m.parallelResultCount = 0
 	m.pendingToolCalls = nil
 	m.pendingToolIdx = 0
@@ -135,7 +86,6 @@ func (m *model) handleStartToolExecution(msg startToolExecutionMsg) (tea.Model, 
 	if len(msg.toolCalls) > 1 && m.canRunToolsInParallel(msg.toolCalls) {
 		m.parallelMode = true
 		m.parallelResults = make(map[int]provider.ToolResult)
-		m.parallelTodos = nil
 		m.parallelResultCount = 0
 	}
 
@@ -181,7 +131,6 @@ func (m *model) handleAllToolsCompleted() (tea.Model, tea.Cmd) {
 	m.pendingToolIdx = 0
 	m.parallelMode = false
 	m.parallelResults = nil
-	m.parallelTodos = nil
 	m.parallelResultCount = 0
 	return m, m.continueWithToolResults()
 }
@@ -258,6 +207,7 @@ func (m *model) handleStreamContinue(msg streamContinueMsg) (tea.Model, tea.Cmd)
 		Cwd:      m.cwd,
 		IsGit:    isGitRepo(m.cwd),
 		PlanMode: m.planMode,
+		Memory:   system.LoadMemory(m.cwd),
 		Extra:    extra,
 	})
 

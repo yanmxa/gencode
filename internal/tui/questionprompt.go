@@ -146,7 +146,7 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) tea.Cmd {
 
 		return p.confirmSelection()
 
-	case tea.KeyEsc:
+	case tea.KeyEsc, tea.KeyCtrlC:
 		// Cancel
 		req := p.request
 		p.Hide()

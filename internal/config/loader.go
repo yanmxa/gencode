@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/yanmxa/gencode/internal/log"
+	"go.uber.org/zap"
 )
 
 // Loader handles loading and merging settings from multiple sources.
@@ -86,9 +89,13 @@ func (l *Loader) Load() (*Settings, error) {
 	for _, src := range sources {
 		if data, err := os.ReadFile(src); err == nil {
 			var s Settings
-			if err := json.Unmarshal(data, &s); err == nil {
-				settings = MergeSettings(settings, &s)
+			if err := json.Unmarshal(data, &s); err != nil {
+				log.Logger().Warn("failed to parse config file",
+					zap.String("path", src),
+					zap.Error(err))
+				continue
 			}
+			settings = MergeSettings(settings, &s)
 		}
 	}
 

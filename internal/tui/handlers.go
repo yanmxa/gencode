@@ -221,6 +221,7 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 			Cwd:      m.cwd,
 			IsGit:    isGitRepo(m.cwd),
 			PlanMode: false,
+			Memory:   system.LoadMemory(m.cwd),
 		})
 		tools := m.getToolsForMode()
 

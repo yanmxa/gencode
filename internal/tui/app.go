@@ -21,7 +21,6 @@ import (
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/tool"
-	toolui "github.com/yanmxa/gencode/internal/tool/ui"
 )
 
 type operationMode int
@@ -45,8 +44,7 @@ type chatMessage struct {
 	toolResult        *provider.ToolResult
 	toolName          string
 	expanded          bool
-	todos             []toolui.TodoItem
-	renderedInline    bool // marks this toolResult was rendered inline with its tool call
+	renderedInline bool // marks this toolResult was rendered inline with its tool call
 }
 
 type (
@@ -62,9 +60,6 @@ type (
 	streamContinueMsg struct {
 		messages []provider.Message
 		modelID  string
-	}
-	todoUpdateMsg struct {
-		todos []toolui.TodoItem
 	}
 )
 
@@ -107,15 +102,12 @@ type model struct {
 	// Parallel tool execution tracking
 	parallelMode        bool                       // True when executing tools in parallel
 	parallelResults     map[int]provider.ToolResult // Collected results by index
-	parallelTodos       []toolui.TodoItem          // Collected todos from parallel execution
 	parallelResultCount int                        // Number of results received
 
 	settings           *config.Settings
 	sessionPermissions *config.SessionPermissions
 
-	todoPanel *TodoPanel
-
-	questionPrompt  *QuestionPrompt
+	questionPrompt *QuestionPrompt
 	pendingQuestion *tool.QuestionRequest
 
 	enterPlanPrompt *EnterPlanPrompt
@@ -258,7 +250,6 @@ func newModel() model {
 		permissionPrompt:   NewPermissionPrompt(),
 		settings:           settings,
 		sessionPermissions: config.NewSessionPermissions(),
-		todoPanel:          NewTodoPanel(),
 		questionPrompt:     NewQuestionPrompt(),
 		enterPlanPrompt:    NewEnterPlanPrompt(),
 		planPrompt:         NewPlanPrompt(),
@@ -332,9 +323,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PermissionResponseMsg:
 		return m.handlePermissionResponse(msg)
 
-	case todoResultMsg:
-		return m.handleTodoResult(msg)
-
 	case toolResultMsg:
 		return m.handleToolResult(msg)
 
@@ -349,11 +337,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case QuestionResponseMsg:
 		return m.handleQuestionResponse(msg)
-
-	case todoUpdateMsg:
-		m.todoPanel.Update(msg.todos)
-		m.todoPanel.SetWidth(m.width)
-		return m, nil
 
 	case PlanRequestMsg:
 		return m.handlePlanRequest(msg)
@@ -598,7 +581,8 @@ func (m *model) updateViewportHeight() {
 		statusH = 1
 	}
 	chatH := m.height - inputH - separatorH - statusH
-	if chatH > 0 {
-		m.viewport.Height = chatH
+	if chatH < 1 {
+		chatH = 1
 	}
+	m.viewport.Height = chatH
 }

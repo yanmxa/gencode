@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -77,7 +78,7 @@ func (t *EditTool) PreparePermission(ctx context.Context, params map[string]any,
 
 	// If not replace_all, check uniqueness
 	if !replaceAll && count > 1 {
-		return nil, &ToolError{Message: "old_string is not unique in file (found " + itoa(count) + " occurrences). Use replace_all=true to replace all."}
+		return nil, &ToolError{Message: "old_string is not unique in file (found " + strconv.Itoa(count) + " occurrences). Use replace_all=true to replace all."}
 	}
 
 	// Calculate new content
@@ -148,7 +149,7 @@ func (t *EditTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 
 	return ui.ToolResult{
 		Success: true,
-		Output:  "Successfully edited " + filePath + " (" + itoa(replaceCount) + " replacement(s))",
+		Output:  "Successfully edited " + filePath + " (" + strconv.Itoa(replaceCount) + " replacement(s))",
 		Metadata: ui.ResultMetadata{
 			Title:    t.Name(),
 			Icon:     t.Icon(),
@@ -174,33 +175,13 @@ func (e *ToolError) Error() string {
 	return e.Message
 }
 
-// itoa converts int to string
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var digits []byte
-	negative := n < 0
-	if negative {
-		n = -n
-	}
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	if negative {
-		digits = append([]byte{'-'}, digits...)
-	}
-	return string(digits)
-}
-
 // generateRequestID generates a unique request ID using cryptographic randomness.
 // This avoids collisions that could occur with time-based IDs in high-speed scenarios.
 func generateRequestID() string {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
 		// Fallback to time-based if crypto/rand fails (unlikely)
-		return "req_" + itoa(int(time.Now().UnixNano()%1000000))
+		return "req_" + strconv.FormatInt(time.Now().UnixNano()%1000000, 10)
 	}
 	return "req_" + hex.EncodeToString(b)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/yanmxa/gencode/internal/tool/permission"
@@ -102,8 +103,16 @@ func (t *WriteTool) ExecuteApproved(ctx context.Context, params map[string]any, 
 	_, err := os.Stat(filePath)
 	isNewFile := os.IsNotExist(err)
 
+	// Get optional mode parameter (default 0644)
+	mode := os.FileMode(0644)
+	if modeVal, ok := params["mode"].(float64); ok && modeVal > 0 {
+		mode = os.FileMode(int(modeVal))
+	} else if modeVal, ok := params["mode"].(int); ok && modeVal > 0 {
+		mode = os.FileMode(modeVal)
+	}
+
 	// Write file
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(content), mode); err != nil {
 		return ui.NewErrorResult(t.Name(), "failed to write file: "+err.Error())
 	}
 
@@ -124,7 +133,7 @@ func (t *WriteTool) ExecuteApproved(ctx context.Context, params map[string]any, 
 
 	return ui.ToolResult{
 		Success: true,
-		Output:  action + " " + filePath + " (" + itoa(lineCount) + " lines)",
+		Output:  action + " " + filePath + " (" + strconv.Itoa(lineCount) + " lines)",
 		Metadata: ui.ResultMetadata{
 			Title:     t.Name(),
 			Icon:      t.Icon(),

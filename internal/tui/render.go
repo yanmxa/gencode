@@ -11,8 +11,6 @@ import (
 	"github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
-
-	toolui "github.com/yanmxa/gencode/internal/tool/ui"
 )
 
 
@@ -229,22 +227,7 @@ func (m model) renderToolCalls(msg chatMessage, msgIdx int) string {
 		resultMap[nextMsg.toolResult.ToolCallID] = nextMsg
 	}
 
-	// Check for TodoWrite results first and render inline
-	for j := msgIdx + 1; j < len(m.messages); j++ {
-		nextMsg := m.messages[j]
-		if nextMsg.toolResult == nil {
-			break
-		}
-		if nextMsg.toolName == "TodoWrite" && len(nextMsg.todos) > 0 {
-			sb.WriteString(renderTodosInline(nextMsg.todos))
-			break
-		}
-	}
-
 	for _, tc := range msg.toolCalls {
-		if tc.Name == "TodoWrite" {
-			continue
-		}
 		if msg.toolCallsExpanded {
 			toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s", tc.Name))
 			sb.WriteString(toolLine + "\n")
@@ -281,10 +264,6 @@ func (m model) renderToolResultInline(msg chatMessage) string {
 	toolName := msg.toolName
 	if toolName == "" {
 		toolName = "Tool"
-	}
-
-	if toolName == "TodoWrite" && len(msg.todos) > 0 {
-		return renderTodosInline(msg.todos)
 	}
 
 	sizeInfo := formatToolResultSize(toolName, msg.toolResult.Content)
@@ -431,46 +410,3 @@ func formatToolResultSize(toolName, content string) string {
 	}
 }
 
-func renderTodosInline(todos []toolui.TodoItem) string {
-	if len(todos) == 0 {
-		return ""
-	}
-
-	var sb strings.Builder
-
-	pending, inProgress, completed := 0, 0, 0
-	for _, todo := range todos {
-		switch todo.Status {
-		case "pending":
-			pending++
-		case "in_progress":
-			inProgress++
-		case "completed":
-			completed++
-		}
-	}
-	total := pending + inProgress + completed
-
-	header := toolResultStyle.Render(fmt.Sprintf("  📋 Tasks [%d/%d]", completed, total))
-	sb.WriteString(header + "\n")
-
-	indent := "  "
-
-	for _, todo := range todos {
-		if todo.Status == "completed" {
-			sb.WriteString(indent + todoCompletedStyle.Render(todo.Content) + "\n")
-		}
-	}
-	for _, todo := range todos {
-		if todo.Status == "in_progress" {
-			sb.WriteString(indent + todoInProgressStyle.Render(todo.ActiveForm) + "\n")
-		}
-	}
-	for _, todo := range todos {
-		if todo.Status == "pending" {
-			sb.WriteString(indent + todoPendingStyle.Render(todo.Content) + "\n")
-		}
-	}
-
-	return sb.String()
-}

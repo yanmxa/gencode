@@ -123,7 +123,7 @@ func (p *PermissionPrompt) HandleKeypress(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyEsc:
+	case tea.KeyEsc, tea.KeyCtrlC:
 		// Cancel/Deny
 		req := p.request
 		p.Hide()

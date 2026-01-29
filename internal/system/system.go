@@ -6,6 +6,8 @@ package system
 import (
 	"embed"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -143,4 +145,63 @@ func join(parts []string) string {
 		}
 	}
 	return strings.Join(filtered, "\n\n")
+}
+
+// LoadMemory loads memory content from standard locations.
+// Priority: GEN.md files first, falling back to CLAUDE.md if not found.
+//
+// User level (first found wins):
+//  1. ~/.gen/GEN.md (preferred)
+//  2. ~/.claude/CLAUDE.md (fallback)
+//
+// Project level (first found wins):
+//  1. .gen/GEN.md or GEN.md (preferred)
+//  2. .claude/CLAUDE.md or CLAUDE.md (fallback)
+//
+// Both user and project level content are concatenated.
+func LoadMemory(cwd string) string {
+	var parts []string
+	homeDir, _ := os.UserHomeDir()
+
+	// User level: try GEN.md first, fallback to CLAUDE.md
+	userSources := []string{
+		filepath.Join(homeDir, ".gen", "GEN.md"),
+		filepath.Join(homeDir, ".claude", "CLAUDE.md"),
+	}
+	if content := loadFirstFound(userSources); content != "" {
+		parts = append(parts, content)
+	}
+
+	// Project level: try GEN.md first, fallback to CLAUDE.md
+	projectSources := []string{
+		filepath.Join(cwd, ".gen", "GEN.md"),
+		filepath.Join(cwd, "GEN.md"),
+		filepath.Join(cwd, ".claude", "CLAUDE.md"),
+		filepath.Join(cwd, "CLAUDE.md"),
+	}
+	if content := loadFirstFound(projectSources); content != "" {
+		parts = append(parts, content)
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return strings.Join(parts, "\n\n")
+}
+
+// loadFirstFound tries to load content from the first file that exists.
+func loadFirstFound(sources []string) string {
+	for _, src := range sources {
+		if data, err := os.ReadFile(src); err == nil {
+			content := strings.TrimSpace(string(data))
+			if content != "" {
+				log.Logger().Info("Loaded memory file",
+					zap.String("path", src),
+					zap.Int("bytes", len(content)))
+				return fmt.Sprintf("<!-- Source: %s -->\n%s", src, content)
+			}
+		}
+	}
+	return ""
 }

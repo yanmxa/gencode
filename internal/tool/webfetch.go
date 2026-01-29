@@ -67,7 +67,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, params map[string]any, cwd s
 
 	// Check status code
 	if resp.StatusCode >= 400 {
-		return ui.NewErrorResult(t.Name(), fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Status))
+		return ui.NewErrorResult(t.Name(), fmt.Sprintf("HTTP %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode)))
 	}
 
 	// Read body with size limit

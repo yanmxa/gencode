@@ -9,7 +9,6 @@ import (
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
-	toolui "github.com/yanmxa/gencode/internal/tool/ui"
 )
 
 type (
@@ -21,12 +20,6 @@ type (
 		index    int
 		result   provider.ToolResult
 		toolName string
-	}
-	todoResultMsg struct {
-		index    int
-		result   provider.ToolResult
-		toolName string
-		todos    []toolui.TodoItem
 	}
 )
 
@@ -124,14 +117,6 @@ func executeToolAsync(tc provider.ToolCall, index int, cwd string, settings *con
 			switch permResult {
 			case config.PermissionAllow:
 				result := tool.Execute(ctx, tc.Name, params, cwd)
-				if tc.Name == "TodoWrite" && result.Success && len(result.TodoItems) > 0 {
-					return todoResultMsg{
-						index:    index,
-						result:   provider.ToolResult{ToolCallID: tc.ID, Content: result.FormatForLLM(), IsError: !result.Success},
-						toolName: tc.Name,
-						todos:    result.TodoItems,
-					}
-				}
 				return toolResultMsg{
 					index:    index,
 					result:   provider.ToolResult{ToolCallID: tc.ID, Content: result.FormatForLLM(), IsError: !result.Success},
@@ -148,15 +133,6 @@ func executeToolAsync(tc provider.ToolCall, index int, cwd string, settings *con
 
 		// Execute the tool
 		result := tool.Execute(ctx, tc.Name, params, cwd)
-
-		if tc.Name == "TodoWrite" && result.Success && len(result.TodoItems) > 0 {
-			return todoResultMsg{
-				index:    index,
-				result:   provider.ToolResult{ToolCallID: tc.ID, Content: result.FormatForLLM(), IsError: !result.Success},
-				toolName: tc.Name,
-				todos:    result.TodoItems,
-			}
-		}
 
 		return toolResultMsg{
 			index:    index,
@@ -201,14 +177,6 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 			switch permResult {
 			case config.PermissionAllow:
 				result := tool.Execute(ctx, tc.Name, params, cwd)
-				if tc.Name == "TodoWrite" && result.Success && len(result.TodoItems) > 0 {
-					return todoResultMsg{
-						index:    idx,
-						result:   provider.ToolResult{ToolCallID: tc.ID, Content: result.FormatForLLM(), IsError: !result.Success},
-						toolName: tc.Name,
-						todos:    result.TodoItems,
-					}
-				}
 				return toolResultMsg{
 					index:    idx,
 					result:   provider.ToolResult{ToolCallID: tc.ID, Content: result.FormatForLLM(), IsError: !result.Success},
@@ -258,15 +226,6 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 		}
 
 		result := tool.Execute(ctx, tc.Name, params, cwd)
-
-		if tc.Name == "TodoWrite" && result.Success && len(result.TodoItems) > 0 {
-			return todoResultMsg{
-				index:    idx,
-				result:   provider.ToolResult{ToolCallID: tc.ID, Content: result.FormatForLLM(), IsError: !result.Success},
-				toolName: tc.Name,
-				todos:    result.TodoItems,
-			}
-		}
 
 		return toolResultMsg{
 			index:    idx,

@@ -71,6 +71,28 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any, cwd strin
 	}
 	defer file.Close()
 
+	// Check for binary file by reading first 512 bytes
+	header := make([]byte, 512)
+	n, _ := file.Read(header)
+	if n > 0 {
+		for _, b := range header[:n] {
+			if b == 0 {
+				return ui.ToolResult{
+					Success: true,
+					Output:  "Binary file detected: " + filePath,
+					Metadata: ui.ResultMetadata{
+						Title:    t.Name(),
+						Icon:     t.Icon(),
+						Subtitle: filePath + " (binary)",
+						Size:     info.Size(),
+					},
+				}
+			}
+		}
+	}
+	// Reset file position to beginning
+	file.Seek(0, 0)
+
 	// Read lines
 	var lines []ui.ContentLine
 	scanner := bufio.NewScanner(file)

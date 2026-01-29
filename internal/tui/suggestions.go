@@ -129,13 +129,24 @@ func (s *SuggestionState) Render(width int) string {
 		items = items[:maxItems]
 	}
 
-	// Calculate box width: 80% of screen width
+	// Calculate box width: 80% of screen width, but capped to fit in terminal
 	boxWidth := width * 80 / 100
-	if boxWidth < 60 {
-		boxWidth = 60 // Minimum width
+	if boxWidth < 40 {
+		boxWidth = 40 // Minimum width
+	}
+	// Ensure box fits within terminal width (leave 4 chars margin)
+	maxWidth := width - 4
+	if maxWidth < 40 {
+		maxWidth = 40
+	}
+	if boxWidth > maxWidth {
+		boxWidth = maxWidth
 	}
 	// Content width: box width - border(2) - padding(2)
 	contentWidth := boxWidth - 4
+	if contentWidth < 20 {
+		contentWidth = 20
+	}
 
 	var lines []string
 	for i, cmd := range items {

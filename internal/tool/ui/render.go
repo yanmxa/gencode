@@ -6,13 +6,6 @@ import (
 	"time"
 )
 
-// TodoItem represents a single task in the todo list
-type TodoItem struct {
-	Content    string `json:"content"`    // Task description (imperative form)
-	Status     string `json:"status"`     // pending | in_progress | completed
-	ActiveForm string `json:"activeForm"` // Text shown during execution (present continuous)
-}
-
 // ToolResult represents the result of a tool execution
 type ToolResult struct {
 	Success   bool           // Whether the tool succeeded
@@ -20,8 +13,7 @@ type ToolResult struct {
 	Error     string         // Error message if failed
 	Metadata  ResultMetadata // Result metadata
 	Lines     []ContentLine  // Formatted content lines (optional)
-	Files     []string       // File list (for Glob)
-	TodoItems []TodoItem     // Todo items (for TodoWrite)
+	Files []string // File list (for Glob)
 }
 
 // RenderToolResult renders a complete tool result with header and content
