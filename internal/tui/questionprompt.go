@@ -15,11 +15,11 @@ type QuestionPrompt struct {
 	active          bool
 	request         *tool.QuestionRequest
 	width           int
-	currentQuestion int              // Current question index
-	selectedOption  int              // Currently highlighted option
-	selected        map[int][]int    // Question index -> selected option indices
-	customInput     textinput.Model  // For "Other" option
-	showingCustom   bool             // Whether custom input is visible
+	currentQuestion int             // Current question index
+	selectedOption  int             // Currently highlighted option
+	selected        map[int][]int   // Question index -> selected option indices
+	customInput     textinput.Model // For "Other" option
+	showingCustom   bool            // Whether custom input is visible
 }
 
 // NewQuestionPrompt creates a new QuestionPrompt

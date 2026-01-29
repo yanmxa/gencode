@@ -11,12 +11,12 @@ import (
 
 // PermissionPrompt manages the permission request UI with Claude Code style.
 type PermissionPrompt struct {
-	active       bool
-	request      *permission.PermissionRequest
-	diffPreview  *DiffPreview
-	bashPreview  *BashPreview
-	width        int
-	selectedIdx  int // Current menu selection (0=Yes, 1=Yes all, 2=No)
+	active      bool
+	request     *permission.PermissionRequest
+	diffPreview *DiffPreview
+	bashPreview *BashPreview
+	width       int
+	selectedIdx int // Current menu selection (0=Yes, 1=Yes all, 2=No)
 }
 
 // NewPermissionPrompt creates a new PermissionPrompt instance
@@ -74,9 +74,9 @@ type (
 
 	// PermissionResponseMsg is sent when the user responds to a permission request
 	PermissionResponseMsg struct {
-		Approved   bool
-		AllowAll   bool // True if user selected "allow all during session"
-		Request    *permission.PermissionRequest
+		Approved bool
+		AllowAll bool // True if user selected "allow all during session"
+		Request  *permission.PermissionRequest
 	}
 )
 

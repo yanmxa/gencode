@@ -31,9 +31,9 @@ type QuestionRequest struct {
 
 // QuestionResponse contains the user's answers
 type QuestionResponse struct {
-	RequestID string              // ID of the original request
-	Answers   map[int][]string    // Question index -> selected option labels
-	Cancelled bool                // True if user cancelled
+	RequestID string           // ID of the original request
+	Answers   map[int][]string // Question index -> selected option labels
+	Cancelled bool             // True if user cancelled
 }
 
 // AskUserQuestionTool prompts the user for input

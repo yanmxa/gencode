@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/ui"
 )
@@ -63,6 +65,11 @@ func getCommandRegistry() map[string]Command {
 			Name:        "fetch",
 			Description: "Fetch content from a URL",
 			Handler:     handleFetchCommand,
+		},
+		"plan": {
+			Name:        "plan",
+			Description: "Enter plan mode to explore and plan before execution",
+			Handler:     handlePlanCommand,
 		},
 	}
 }
@@ -238,4 +245,28 @@ func handleFetchCommand(ctx context.Context, m *model, args string) (string, err
 
 	result := tool.Execute(ctx, "webfetch", params, cwd)
 	return ui.RenderToolResult(result, m.width), nil
+}
+
+// handlePlanCommand handles the /plan command
+func handlePlanCommand(ctx context.Context, m *model, args string) (string, error) {
+	if args == "" {
+		return "Usage: /plan <task description>\n\nEnter plan mode to explore the codebase and create an implementation plan before making changes.", nil
+	}
+
+	m.operationMode = config.ModePlan
+	m.planMode = true
+	m.planTask = args
+
+	// Reset permissions (sync with mode)
+	m.sessionPermissions.AllowAllEdits = false
+	m.sessionPermissions.AllowAllWrites = false
+	m.sessionPermissions.AllowAllBash = false
+
+	store, err := plan.NewStore()
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize plan store: %w", err)
+	}
+	m.planStore = store
+
+	return fmt.Sprintf("Entering plan mode for: %s\n\nI will explore the codebase and create an implementation plan. Only read-only tools are available until the plan is approved.", args), nil
 }

@@ -55,6 +55,15 @@ Non-interactive mode:
   gen -p "prompt"          Use a custom prompt`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Check for plan mode flag
+		if planFlag != "" {
+			if err := tui.RunWithPlanMode(planFlag); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+
 		// Check for non-interactive input
 		message := getInputMessage(args)
 
@@ -78,8 +87,12 @@ Non-interactive mode:
 // promptFlag is the custom prompt flag
 var promptFlag string
 
+// planFlag is the plan mode task description
+var planFlag string
+
 func init() {
 	rootCmd.Flags().StringVarP(&promptFlag, "prompt", "p", "", "Custom prompt to send")
+	rootCmd.Flags().StringVar(&planFlag, "plan", "", "Enter plan mode with task description")
 }
 
 // getInputMessage gets input from args, flags, or stdin
@@ -206,6 +219,7 @@ Non-interactive Mode:
   gen "your message"         Send a message directly
   echo "message" | gen       Send a message via stdin
   gen -p "prompt"            Use a custom prompt
+  gen --plan "task"          Enter plan mode with task
 
 Commands:
   version      Print the version number

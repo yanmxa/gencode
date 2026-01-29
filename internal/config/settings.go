@@ -125,6 +125,32 @@ func (sp *SessionPermissions) IsPatternAllowed(pattern string) bool {
 	return sp.AllowedPatterns[pattern]
 }
 
+// OperationMode defines the current operation mode
+type OperationMode int
+
+const (
+	ModeNormal     OperationMode = iota // Normal: permission prompts enabled
+	ModeAutoAccept                      // Auto-accept: auto-approve edits/writes
+	ModePlan                            // Plan: read-only tools only
+)
+
+// String returns the display name for the mode
+func (m OperationMode) String() string {
+	switch m {
+	case ModeAutoAccept:
+		return "accept edits"
+	case ModePlan:
+		return "plan mode"
+	default:
+		return "normal"
+	}
+}
+
+// Next returns the next mode in the cycle
+func (m OperationMode) Next() OperationMode {
+	return (m + 1) % 3
+}
+
 // NewSettings creates a new Settings instance with default values
 func NewSettings() *Settings {
 	return &Settings{

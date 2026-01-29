@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -30,6 +31,32 @@ import (
 func Run() error {
 	p := tea.NewProgram(
 		newModel(),
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	)
+
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("failed to run TUI: %w", err)
+	}
+	return nil
+}
+
+// RunWithPlanMode starts the TUI application in plan mode
+func RunWithPlanMode(task string) error {
+	m := newModel()
+	m.planMode = true
+	m.planTask = task
+	m.operationMode = config.ModePlan
+
+	// Initialize plan store
+	store, err := plan.NewStore()
+	if err != nil {
+		return fmt.Errorf("failed to initialize plan store: %w", err)
+	}
+	m.planStore = store
+
+	p := tea.NewProgram(
+		m,
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
@@ -159,6 +186,15 @@ type model struct {
 	// Question prompt (interactive)
 	questionPrompt  *QuestionPrompt
 	pendingQuestion *tool.QuestionRequest
+
+	// Plan mode
+	planMode   bool        // Whether in plan mode
+	planTask   string      // The task description for plan mode
+	planPrompt *PlanPrompt // Plan approval UI
+	planStore  *plan.Store // Plan file storage
+
+	// Operation mode for mode cycling (Normal -> AutoAccept -> Plan -> Normal)
+	operationMode config.OperationMode
 }
 
 // createMarkdownRenderer creates a glamour renderer with the specified width
@@ -271,6 +307,8 @@ func newModel() model {
 		sessionPermissions: config.NewSessionPermissions(),
 		todoPanel:          NewTodoPanel(),
 		questionPrompt:     NewQuestionPrompt(),
+		planPrompt:         NewPlanPrompt(),
+		operationMode:      config.ModeNormal,
 	}
 }
 
@@ -479,8 +517,133 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.todoPanel.SetWidth(m.width)
 		return m, nil
 
+	// Handle plan request from ExitPlanMode tool
+	case PlanRequestMsg:
+		m.planPrompt.Show(msg.Request, m.width, m.height)
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+		return m, nil
+
+	// Handle plan response (user approved/rejected/modified)
+	case PlanResponseMsg:
+		if !msg.Approved {
+			// Plan was rejected - add error result and stop
+			tc := m.pendingToolCalls[m.pendingToolIdx]
+			m.messages = append(m.messages, chatMessage{
+				role:     "user",
+				toolName: tc.Name,
+				toolResult: &provider.ToolResult{
+					ToolCallID: tc.ID,
+					Content:    "Plan was rejected by the user. Please ask for clarification or modify your approach.",
+					IsError:    true,
+				},
+			})
+			m.pendingToolCalls = nil
+			m.pendingToolIdx = 0
+			m.streaming = false
+			m.planMode = false
+			m.operationMode = config.ModeNormal
+			m.viewport.SetContent(m.renderMessages())
+			return m, nil
+		}
+
+		// Plan was approved - handle based on mode
+		tc := m.pendingToolCalls[m.pendingToolIdx]
+
+		// Save plan to file
+		if m.planStore == nil {
+			m.planStore, _ = plan.NewStore()
+		}
+		if m.planStore != nil {
+			planContent := msg.ModifiedPlan
+			if planContent == "" && msg.Request != nil {
+				planContent = msg.Request.Plan
+			}
+			savedPlan := &plan.Plan{
+				Task:    m.planTask,
+				Status:  plan.StatusApproved,
+				Content: planContent,
+			}
+			m.planStore.Save(savedPlan)
+		}
+
+		// Handle different approval modes
+		switch msg.ApproveMode {
+		case "clear-auto":
+			// Clear context and auto-accept edits
+			m.messages = []chatMessage{}
+			m.sessionPermissions.AllowAllEdits = true
+			m.sessionPermissions.AllowAllWrites = true
+			m.operationMode = config.ModeAutoAccept
+			m.planMode = false
+
+			// Clear pending tools to avoid sending orphan tool_result
+			m.pendingToolCalls = nil
+			m.pendingToolIdx = 0
+
+			// Start fresh conversation with plan as context
+			planContent := msg.ModifiedPlan
+			if planContent == "" && msg.Request != nil {
+				planContent = msg.Request.Plan
+			}
+			userMsg := fmt.Sprintf("Please implement the following plan:\n\n%s", planContent)
+			m.messages = append(m.messages, chatMessage{role: "user", content: userMsg})
+
+			// Start streaming
+			m.streaming = true
+			ctx, cancel := context.WithCancel(context.Background())
+			m.cancelFunc = cancel
+			providerMsgs := m.convertMessagesToProvider()
+			m.messages = append(m.messages, chatMessage{role: "assistant", content: ""})
+			m.viewport.SetContent(m.renderMessages())
+			m.viewport.GotoBottom()
+
+			modelID := m.getModelID()
+			sysPrompt := system.Prompt(system.Config{
+				Provider: m.llmProvider.Name(),
+				Model:    modelID,
+				Cwd:      m.cwd,
+				IsGit:    isGitRepo(m.cwd),
+				PlanMode: false,
+			})
+			tools := m.getToolsForMode()
+
+			m.streamChan = m.llmProvider.Stream(ctx, provider.CompletionOptions{
+				Model:        modelID,
+				Messages:     providerMsgs,
+				MaxTokens:    8192,
+				Tools:        tools,
+				SystemPrompt: sysPrompt,
+			})
+			return m, tea.Batch(m.waitForChunk(), m.spinner.Tick)
+
+		case "auto":
+			// Keep context, auto-accept edits
+			m.sessionPermissions.AllowAllEdits = true
+			m.sessionPermissions.AllowAllWrites = true
+			m.operationMode = config.ModeAutoAccept
+		case "manual":
+			// Keep context, manual approval (default behavior)
+			m.operationMode = config.ModeNormal
+		case "modify":
+			// Plan was modified - use modified content
+			m.operationMode = config.ModeNormal
+		}
+
+		// Exit plan mode
+		m.planMode = false
+
+		// Execute the tool with the response
+		return m, executePlanTool(tc, msg.Response, m.cwd)
+
 	case tea.KeyMsg:
-		// Handle question prompt first (highest priority)
+		// Handle plan prompt first (highest priority)
+		if m.planPrompt != nil && m.planPrompt.IsActive() {
+			cmd := m.planPrompt.HandleKeypress(msg)
+			return m, cmd
+		}
+
+		// Handle question prompt
 		if m.questionPrompt.IsActive() {
 			cmd := m.questionPrompt.HandleKeypress(msg)
 			return m, cmd
@@ -518,6 +681,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case tea.KeyEsc:
 				m.suggestions.Hide()
+				return m, nil
+			}
+		}
+
+		// Global Shift+Tab for mode cycling
+		if msg.Type == tea.KeyShiftTab {
+			if !m.streaming && !m.permissionPrompt.IsActive() &&
+				!m.questionPrompt.IsActive() &&
+				(m.planPrompt == nil || !m.planPrompt.IsActive()) &&
+				!m.selector.IsActive() && !m.suggestions.IsVisible() {
+				m.cycleOperationMode()
+				m.viewport.SetContent(m.renderMessages())
 				return m, nil
 			}
 		}
@@ -724,19 +899,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 			modelID := m.getModelID()
 
-			// Build system prompt
+			// Build system prompt and select tools based on mode
 			sysPrompt := system.Prompt(system.Config{
 				Provider: m.llmProvider.Name(),
 				Model:    modelID,
 				Cwd:      m.cwd,
 				IsGit:    isGitRepo(m.cwd),
+				PlanMode: m.planMode,
 			})
+
+			tools := m.getToolsForMode()
 
 			m.streamChan = m.llmProvider.Stream(ctx, provider.CompletionOptions{
 				Model:        modelID,
 				Messages:     providerMsgs,
 				MaxTokens:    8192,
-				Tools:        tool.GetToolSchemas(),
+				Tools:        tools,
 				SystemPrompt: sysPrompt,
 			})
 			return m, tea.Batch(m.waitForChunk(), m.spinner.Tick)
@@ -837,20 +1015,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.renderMessages())
 		m.viewport.GotoBottom()
 
-		// Build system prompt
+		// Build system prompt and select tools based on mode
 		sysPrompt := system.Prompt(system.Config{
 			Provider: m.llmProvider.Name(),
 			Model:    msg.modelID,
 			Cwd:      m.cwd,
 			IsGit:    isGitRepo(m.cwd),
+			PlanMode: m.planMode,
 		})
+
+		tools := m.getToolsForMode()
 
 		// Start streaming with tools
 		m.streamChan = m.llmProvider.Stream(ctx, provider.CompletionOptions{
 			Model:        msg.modelID,
 			Messages:     msg.messages,
 			MaxTokens:    8192,
-			Tools:        tool.GetToolSchemas(),
+			Tools:        tools,
 			SystemPrompt: sysPrompt,
 		})
 		return m, tea.Batch(m.waitForChunk(), m.spinner.Tick)
@@ -991,7 +1172,7 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 			}
 		}
 
-		// Check if it's an interactive tool (like AskUserQuestion)
+		// Check if it's an interactive tool (like AskUserQuestion or ExitPlanMode)
 		if it, ok := t.(tool.InteractiveTool); ok && it.RequiresInteraction() {
 			// Prepare interaction request
 			req, err := it.PrepareInteraction(ctx, params, cwd)
@@ -1008,6 +1189,10 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 			// Return question request for TUI to handle
 			if qr, ok := req.(*tool.QuestionRequest); ok {
 				return QuestionRequestMsg{Request: qr}
+			}
+			// Return plan request for TUI to handle (ExitPlanMode)
+			if pr, ok := req.(*tool.PlanRequest); ok {
+				return PlanRequestMsg{Request: pr}
 			}
 		}
 
@@ -1177,6 +1362,62 @@ func executeInteractiveTool(tc provider.ToolCall, response *tool.QuestionRespons
 	}
 }
 
+// executePlanTool executes the ExitPlanMode tool with the user's response
+func executePlanTool(tc provider.ToolCall, response *tool.PlanResponse, cwd string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		// Parse the tool input JSON
+		var params map[string]any
+		if err := json.Unmarshal([]byte(tc.Input), &params); err != nil {
+			return toolResultMsg{
+				result: provider.ToolResult{
+					ToolCallID: tc.ID,
+					Content:    "Error parsing tool input: " + err.Error(),
+					IsError:    true,
+				},
+				toolName: tc.Name,
+			}
+		}
+
+		t, ok := tool.Get(tc.Name)
+		if !ok {
+			return toolResultMsg{
+				result: provider.ToolResult{
+					ToolCallID: tc.ID,
+					Content:    "Unknown tool: " + tc.Name,
+					IsError:    true,
+				},
+				toolName: tc.Name,
+			}
+		}
+
+		it, ok := t.(tool.InteractiveTool)
+		if !ok {
+			return toolResultMsg{
+				result: provider.ToolResult{
+					ToolCallID: tc.ID,
+					Content:    "Tool is not interactive: " + tc.Name,
+					IsError:    true,
+				},
+				toolName: tc.Name,
+			}
+		}
+
+		// Execute with the user's response
+		result := it.ExecuteWithResponse(ctx, params, response, cwd)
+
+		return toolResultMsg{
+			result: provider.ToolResult{
+				ToolCallID: tc.ID,
+				Content:    result.FormatForLLM(),
+				IsError:    !result.Success,
+			},
+			toolName: tc.Name,
+		}
+	}
+}
+
 // toolResultMsg is sent when a single tool completes execution
 type toolResultMsg struct {
 	result   provider.ToolResult
@@ -1243,6 +1484,30 @@ func (m model) waitForChunk() tea.Cmd {
 	}
 }
 
+// renderModeStatus renders the current mode indicator
+func (m model) renderModeStatus() string {
+	var icon, label string
+	var color lipgloss.Color
+
+	if m.operationMode == config.ModeAutoAccept {
+		icon = "⏵⏵"
+		label = " accept edits on"
+		color = CurrentTheme.Success
+	} else if m.operationMode == config.ModePlan {
+		icon = "⏸"
+		label = " plan mode on"
+		color = CurrentTheme.Warning
+	} else {
+		return ""
+	}
+
+	styledIcon := lipgloss.NewStyle().Foreground(color).Render(icon)
+	styledLabel := lipgloss.NewStyle().Foreground(color).Render(label)
+	hint := lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Render("  shift+tab to toggle")
+
+	return "  " + styledIcon + styledLabel + hint
+}
+
 func (m model) View() string {
 	if !m.ready {
 		return "\n  Loading..."
@@ -1258,6 +1523,13 @@ func (m model) View() string {
 	// Separator line
 	separator := separatorStyle.Render(strings.Repeat("─", m.width))
 
+	// Plan prompt (if active, show content in chat area and menu below separator)
+	if m.planPrompt != nil && m.planPrompt.IsActive() {
+		planContent := m.planPrompt.RenderContent()
+		planMenu := m.planPrompt.RenderMenu()
+		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s", chat, planContent, separator, planMenu, separator)
+	}
+
 	// Permission prompt (if active, replaces input area)
 	if m.permissionPrompt.IsActive() {
 		return fmt.Sprintf("%s\n%s\n%s", chat, separator, m.permissionPrompt.Render())
@@ -1272,10 +1544,22 @@ func (m model) View() string {
 	prompt := inputPromptStyle.Render("❯ ")
 	inputView := prompt + m.textarea.View()
 
+	// Mode status line (displayed below bottom separator)
+	statusLine := m.renderModeStatus()
+
 	// Render suggestions if visible
 	suggestions := m.suggestions.Render(m.width)
 	if suggestions != "" {
+		if statusLine != "" {
+			return fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s",
+				chat, separator, inputView, suggestions, separator, statusLine)
+		}
 		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s", chat, separator, inputView, suggestions, separator)
+	}
+
+	if statusLine != "" {
+		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s",
+			chat, separator, inputView, separator, statusLine)
 	}
 
 	return fmt.Sprintf("%s\n%s\n%s\n%s", chat, separator, inputView, separator)
@@ -1319,7 +1603,7 @@ func (m model) renderWelcome() string {
 	sb.WriteString("\n")
 	sb.WriteString("   " + subtitleStyle.Render("AI-powered coding assistant") + "\n")
 	sb.WriteString("\n")
-	sb.WriteString("   " + hintStyle.Render("Enter to send · Esc to stop · Ctrl+C to exit") + "\n")
+	sb.WriteString("   " + hintStyle.Render("Enter to send · Esc to stop · Shift+Tab mode · Ctrl+C exit") + "\n")
 
 	return sb.String()
 }
@@ -1591,6 +1875,32 @@ func (m model) getModelID() string {
 		return m.currentModel.ModelID
 	}
 	return "claude-sonnet-4-20250514" // Default model
+}
+
+// getToolsForMode returns the appropriate tool set based on plan mode
+func (m model) getToolsForMode() []provider.Tool {
+	if m.planMode {
+		return tool.GetPlanModeToolSchemas()
+	}
+	return tool.GetToolSchemas()
+}
+
+// cycleOperationMode cycles through Normal -> AutoAccept -> Plan -> Normal
+func (m *model) cycleOperationMode() {
+	m.operationMode = m.operationMode.Next()
+
+	// Reset all permissions
+	m.sessionPermissions.AllowAllEdits = false
+	m.sessionPermissions.AllowAllWrites = false
+	m.sessionPermissions.AllowAllBash = false
+
+	// Configure based on mode
+	if m.operationMode == config.ModeAutoAccept {
+		m.sessionPermissions.AllowAllEdits = true
+		m.sessionPermissions.AllowAllWrites = true
+	}
+
+	m.planMode = (m.operationMode == config.ModePlan)
 }
 
 // formatToolResultSize formats the size information for a tool result

@@ -60,6 +60,14 @@ func Prompt(cfg Config) string {
 
 	parts := []string{base, tools, providerPrompt, env}
 
+	// Plan mode: add plan mode instructions
+	if cfg.PlanMode {
+		planPrompt := load("planmode.txt")
+		if planPrompt != "" {
+			parts = append(parts, planPrompt)
+		}
+	}
+
 	// Extension points
 	if cfg.Memory != "" {
 		parts = append(parts, formatMemory(cfg.Memory))

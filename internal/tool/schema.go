@@ -288,3 +288,47 @@ func GetToolSchemas() []provider.Tool {
 
 	return tools
 }
+
+// ExitPlanModeSchema returns the schema for ExitPlanMode tool
+var ExitPlanModeSchema = provider.Tool{
+	Name:        "ExitPlanMode",
+	Description: "Exit plan mode and submit your implementation plan for user approval. Call this when you have finished exploring the codebase and created a complete implementation plan.",
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"plan": map[string]any{
+				"type":        "string",
+				"description": "The complete implementation plan in Markdown format. Should include: Summary, Analysis, Implementation Steps, Testing Strategy, and Risks.",
+			},
+		},
+		"required": []string{"plan"},
+	},
+}
+
+// GetPlanModeToolSchemas returns only the tools available in plan mode
+// Plan mode restricts to read-only tools plus ExitPlanMode
+func GetPlanModeToolSchemas() []provider.Tool {
+	// Read-only tools allowed in plan mode
+	allowedTools := map[string]bool{
+		"Read":      true,
+		"Glob":      true,
+		"Grep":      true,
+		"WebFetch":  true,
+		"WebSearch": true,
+	}
+
+	// Filter to allowed tools
+	allTools := GetToolSchemas()
+	tools := make([]provider.Tool, 0, len(allowedTools)+1)
+
+	for _, t := range allTools {
+		if allowedTools[t.Name] {
+			tools = append(tools, t)
+		}
+	}
+
+	// Add ExitPlanMode
+	tools = append(tools, ExitPlanModeSchema)
+
+	return tools
+}
