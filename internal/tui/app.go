@@ -117,11 +117,12 @@ type chatMessage struct {
 
 type (
 	streamChunkMsg struct {
-		text       string
-		done       bool
-		err        error
-		toolCalls  []provider.ToolCall // Tool calls when done
-		stopReason string              // Stop reason (end_turn, tool_use, etc.)
+		text             string
+		done             bool
+		err              error
+		toolCalls        []provider.ToolCall // Tool calls when done
+		stopReason       string              // Stop reason (end_turn, tool_use, etc.)
+		buildingToolName string              // Tool name being built (during streaming)
 	}
 	streamDoneMsg   struct{}
 	toolExecutedMsg struct {
@@ -195,6 +196,9 @@ type model struct {
 
 	// Operation mode for mode cycling (Normal -> AutoAccept -> Plan -> Normal)
 	operationMode config.OperationMode
+
+	// Tool building tracking (during streaming)
+	buildingToolName string // Tool name being built (empty when not building)
 }
 
 // createMarkdownRenderer creates a glamour renderer with the specified width
@@ -519,7 +523,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle plan request from ExitPlanMode tool
 	case PlanRequestMsg:
-		m.planPrompt.Show(msg.Request, m.width, m.height)
+		// Get plan path from store
+		var planPath string
+		if m.planStore != nil {
+			planPath = m.planStore.GetPath(plan.GeneratePlanName(m.planTask))
+		}
+		m.planPrompt.Show(msg.Request, planPath, m.width, m.height)
 		// Append plan content to the chat viewport so PgUp/PgDn scrolling works
 		chatContent := m.renderMessages()
 		planContent := m.planPrompt.RenderContent()
@@ -802,12 +811,58 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.streaming = false
 				m.streamChan = nil
 				m.cancelFunc = nil
-				if len(m.messages) > 0 {
+				m.buildingToolName = "" // Reset tool building state
+
+				// Add cancellation results for any pending tool calls
+				if m.pendingToolCalls != nil {
+					for i := m.pendingToolIdx; i < len(m.pendingToolCalls); i++ {
+						tc := m.pendingToolCalls[i]
+						m.messages = append(m.messages, chatMessage{
+							role:     "user",
+							toolName: tc.Name,
+							toolResult: &provider.ToolResult{
+								ToolCallID: tc.ID,
+								Content:    "Tool execution cancelled by user",
+								IsError:    true,
+							},
+						})
+					}
+					m.pendingToolCalls = nil
+					m.pendingToolIdx = 0
+				} else if len(m.messages) > 0 {
+					// Check if last assistant message has tool calls without results
+					// This can happen if cancelled between tool call save and execution start
 					idx := len(m.messages) - 1
-					if m.messages[idx].content == "" {
-						m.messages[idx].content = "[Interrupted]"
-					} else {
-						m.messages[idx].content += " [Interrupted]"
+					lastMsg := m.messages[idx]
+					if lastMsg.role == "assistant" && len(lastMsg.toolCalls) > 0 {
+						// Add cancellation results for these tool calls
+						for _, tc := range lastMsg.toolCalls {
+							m.messages = append(m.messages, chatMessage{
+								role:     "user",
+								toolName: tc.Name,
+								toolResult: &provider.ToolResult{
+									ToolCallID: tc.ID,
+									Content:    "Tool execution cancelled by user",
+									IsError:    true,
+								},
+							})
+						}
+					}
+				}
+
+				// Mark assistant message as interrupted (if no tool calls)
+				if len(m.messages) > 0 {
+					for i := len(m.messages) - 1; i >= 0; i-- {
+						if m.messages[i].role == "assistant" {
+							if len(m.messages[i].toolCalls) == 0 {
+								if m.messages[i].content == "" {
+									m.messages[i].content = "[Interrupted]"
+								} else {
+									m.messages[i].content += " [Interrupted]"
+								}
+							}
+							break
+						}
 					}
 				}
 				m.viewport.SetContent(m.renderMessages())
@@ -965,7 +1020,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mdRenderer = createMarkdownRenderer(msg.Width)
 
 	case streamChunkMsg:
+		// Track tool building state for spinner display
+		if msg.buildingToolName != "" {
+			m.buildingToolName = msg.buildingToolName
+			// spinner
+			m.viewport.SetContent(m.renderMessages())
+			m.viewport.GotoBottom()
+		}
+
 		if msg.done {
+			// Reset tool building state on completion
+			m.buildingToolName = ""
+
 			// Check if we have tool calls to execute
 			if len(msg.toolCalls) > 0 {
 				// Save tool calls to the current assistant message
@@ -1069,11 +1135,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.streaming {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
-			// Only re-render if spinner is actually visible:
-			// - Not executing tools (pendingToolCalls is nil)
-			// - Last message is assistant with no content and no tool calls
-			// This prevents flickering of static tool call displays like ⚡Bash(...)
-			if m.pendingToolCalls == nil && len(m.messages) > 0 {
+
+			// Don't re-render if interactive prompts are active (they manage their own content)
+			interactiveActive := m.questionPrompt.IsActive() || (m.planPrompt != nil && m.planPrompt.IsActive())
+			if interactiveActive {
+				return m, cmd
+			}
+
+			// Re-render if spinner is visible:
+			// 1. Tool building in progress (during streaming)
+			// 2. Pending tool calls being executed (show tool execution spinner)
+			// 3. Assistant thinking (no content and no tool calls yet)
+			if m.buildingToolName != "" {
+				// Tool building in progress - show spinner
+				m.viewport.SetContent(m.renderMessages())
+			} else if m.pendingToolCalls != nil && m.pendingToolIdx < len(m.pendingToolCalls) {
+				// Tool execution in progress - show spinner
+				m.viewport.SetContent(m.renderMessages())
+			} else if len(m.messages) > 0 {
 				lastMsg := m.messages[len(m.messages)-1]
 				if lastMsg.role == "assistant" && lastMsg.content == "" && len(lastMsg.toolCalls) == 0 {
 					m.viewport.SetContent(m.renderMessages())
@@ -1495,8 +1574,8 @@ func (m model) waitForChunk() tea.Cmd {
 		case provider.ChunkTypeError:
 			return streamChunkMsg{err: chunk.Error}
 		case provider.ChunkTypeToolStart:
-			// Tool call started - we'll handle this when done
-			return streamChunkMsg{text: ""}
+			// Tool call started - track it for spinner display
+			return streamChunkMsg{text: "", buildingToolName: chunk.ToolName}
 		case provider.ChunkTypeToolInput:
 			// Tool input chunk - we'll handle this when done
 			return streamChunkMsg{text: ""}
@@ -1819,7 +1898,66 @@ func (m model) renderMessages() string {
 		}
 	}
 
+	// Check if interactive prompts are active (they handle their own display)
+	interactivePromptActive := m.questionPrompt.IsActive() || (m.planPrompt != nil && m.planPrompt.IsActive())
+
+	// Show spinner for tool building (during streaming, before tool execution starts)
+	// Don't show if interactive prompts are active
+	if m.buildingToolName != "" && !interactivePromptActive {
+		sb.WriteString("\n")
+		// Just show tool name without args (still streaming)
+		toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s", m.buildingToolName))
+		sb.WriteString(toolLine + "\n")
+
+		// Show spinner with description
+		desc := getToolExecutionDesc(m.buildingToolName)
+		spinnerLine := thinkingStyle.Render(fmt.Sprintf("  %s %s", m.spinner.View(), desc))
+		sb.WriteString(spinnerLine + "\n")
+	}
+
+	// Show spinner for pending tool execution (after tool is fully built)
+	// Don't show if interactive prompts are active
+	if m.pendingToolCalls != nil && m.pendingToolIdx < len(m.pendingToolCalls) && !interactivePromptActive {
+		tc := m.pendingToolCalls[m.pendingToolIdx]
+		sb.WriteString("\n")
+		toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s", tc.Name))
+		sb.WriteString(toolLine + "\n")
+
+		// Show spinner with description
+		desc := getToolExecutionDesc(tc.Name)
+		spinnerLine := thinkingStyle.Render(fmt.Sprintf("  %s %s", m.spinner.View(), desc))
+		sb.WriteString(spinnerLine + "\n")
+	}
+
 	return sb.String()
+}
+
+// getToolExecutionDesc returns a description for tool execution spinner
+func getToolExecutionDesc(toolName string) string {
+	switch toolName {
+	case "ExitPlanMode":
+		return "Preparing implementation plan..."
+	case "Read":
+		return "Reading file..."
+	case "Write":
+		return "Writing file..."
+	case "Edit":
+		return "Editing file..."
+	case "Bash":
+		return "Executing command..."
+	case "Glob":
+		return "Finding files..."
+	case "Grep":
+		return "Searching files..."
+	case "WebFetch":
+		return "Fetching web content..."
+	case "WebSearch":
+		return "Searching the web..."
+	case "AskUserQuestion":
+		return "Preparing question..."
+	default:
+		return "Executing..."
+	}
 }
 
 // isGitRepo checks if the given directory is inside a git repository

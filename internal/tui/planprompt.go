@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -23,6 +24,8 @@ type PlanPrompt struct {
 	editing     bool           // Whether in edit mode
 	editor      textarea.Model // For modifying plan
 	mdRenderer  *glamour.TermRenderer
+	planPath    string         // Path to the plan file (displayed in footer)
+	inlineInput textarea.Model // Inline input for option 4
 }
 
 // NewPlanPrompt creates a new PlanPrompt
@@ -32,15 +35,24 @@ func NewPlanPrompt() *PlanPrompt {
 	ta.CharLimit = 0 // No limit
 	ta.ShowLineNumbers = true
 
+	// Inline input for option 4 (single line)
+	inlineTA := textarea.New()
+	inlineTA.Placeholder = ""
+	inlineTA.CharLimit = 0
+	inlineTA.ShowLineNumbers = false
+	inlineTA.SetHeight(1)
+
 	return &PlanPrompt{
-		editor: ta,
+		editor:      ta,
+		inlineInput: inlineTA,
 	}
 }
 
 // Show displays the plan prompt with the given request
-func (p *PlanPrompt) Show(req *tool.PlanRequest, width, height int) {
+func (p *PlanPrompt) Show(req *tool.PlanRequest, planPath string, width, height int) {
 	p.active = true
 	p.request = req
+	p.planPath = planPath
 	p.width = width
 	p.height = height
 	p.selectedIdx = 0
@@ -66,6 +78,10 @@ func (p *PlanPrompt) Show(req *tool.PlanRequest, width, height int) {
 	p.editor.SetValue(req.Plan)
 	p.editor.SetWidth(width - 6)
 	p.editor.SetHeight(viewportHeight - 2)
+
+	// Initialize inline input
+	p.inlineInput.SetValue("")
+	p.inlineInput.SetWidth(width - 20)
 }
 
 // updateViewportContent renders the plan content to the viewport
@@ -88,6 +104,9 @@ func (p *PlanPrompt) Hide() {
 	p.active = false
 	p.request = nil
 	p.editing = false
+	p.planPath = ""
+	p.inlineInput.Blur()
+	p.inlineInput.SetValue("")
 }
 
 // IsActive returns whether the prompt is visible
@@ -128,7 +147,7 @@ func (p *PlanPrompt) HandleKeypress(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	// If in edit mode, handle editor keys
+	// If in edit mode (full editor), handle editor keys
 	if p.editing {
 		switch msg.Type {
 		case tea.KeyCtrlS:
@@ -147,6 +166,31 @@ func (p *PlanPrompt) HandleKeypress(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	// If option 4 is selected (inline input mode), handle inline input keys
+	if p.selectedIdx == 3 {
+		switch msg.Type {
+		case tea.KeyEnter:
+			// Submit inline input
+			return p.submitInlineInput()
+		case tea.KeyEsc:
+			// Exit inline input, deselect option 4
+			p.inlineInput.Blur()
+			p.inlineInput.SetValue("")
+			p.selectedIdx = 0
+			return nil
+		case tea.KeyUp, tea.KeyCtrlP:
+			// Move to option 3
+			p.inlineInput.Blur()
+			p.selectedIdx = 2
+			return nil
+		default:
+			// Forward to inline input
+			var cmd tea.Cmd
+			p.inlineInput, cmd = p.inlineInput.Update(msg)
+			return cmd
+		}
+	}
+
 	// Normal mode (menu navigation)
 	switch msg.Type {
 	case tea.KeyUp, tea.KeyCtrlP:
@@ -158,6 +202,10 @@ func (p *PlanPrompt) HandleKeypress(msg tea.KeyMsg) tea.Cmd {
 	case tea.KeyDown, tea.KeyCtrlN:
 		if p.selectedIdx < 3 {
 			p.selectedIdx++
+			// Focus inline input when moving to option 4
+			if p.selectedIdx == 3 {
+				p.inlineInput.Focus()
+			}
 		}
 		return nil
 
@@ -201,7 +249,10 @@ func (p *PlanPrompt) HandleKeypress(msg tea.KeyMsg) tea.Cmd {
 	case "3":
 		return p.selectOption(2)
 	case "4":
-		return p.selectOption(3)
+		// Focus inline input
+		p.selectedIdx = 3
+		p.inlineInput.Focus()
+		return nil
 	}
 
 	return nil
@@ -215,8 +266,9 @@ func (p *PlanPrompt) confirmSelection() tea.Cmd {
 // selectOption handles selection of a specific option
 func (p *PlanPrompt) selectOption(idx int) tea.Cmd {
 	if idx == 3 {
-		p.editing = true
-		p.editor.Focus()
+		// Option 4: Focus inline input instead of full editor
+		p.selectedIdx = 3
+		p.inlineInput.Focus()
 		return nil
 	}
 
@@ -265,6 +317,34 @@ func (p *PlanPrompt) submitModifiedPlan() tea.Cmd {
 	}
 }
 
+// submitInlineInput submits the inline feedback for plan modification
+func (p *PlanPrompt) submitInlineInput() tea.Cmd {
+	req := p.request
+	feedback := strings.TrimSpace(p.inlineInput.Value())
+	if feedback == "" {
+		return nil // Don't submit empty feedback
+	}
+	p.Hide()
+
+	// Create a modified plan that includes the feedback as instructions
+	modifiedPlan := req.Plan + "\n\n---\n\n**User Feedback:**\n" + feedback
+
+	return func() tea.Msg {
+		return PlanResponseMsg{
+			Request:      req,
+			Approved:     true,
+			ApproveMode:  "modify",
+			ModifiedPlan: modifiedPlan,
+			Response: &tool.PlanResponse{
+				RequestID:    req.ID,
+				Approved:     true,
+				ApproveMode:  "modify",
+				ModifiedPlan: modifiedPlan,
+			},
+		}
+	}
+}
+
 // Plan prompt styles
 func getPlanSeparatorStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(CurrentTheme.Separator)
@@ -290,6 +370,18 @@ func getPlanFooterStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
 }
 
+// shortenPath shortens a path by replacing home directory with ~
+func shortenPath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if strings.HasPrefix(path, home) {
+		return "~" + path[len(home):]
+	}
+	return path
+}
+
 // RenderContent renders the plan content for the chat viewport (above separator)
 // This returns the rendered markdown directly (not wrapped in a viewport),
 // allowing the main chat viewport to handle scrolling.
@@ -300,14 +392,12 @@ func (p *PlanPrompt) RenderContent() string {
 
 	var sb strings.Builder
 
-	// Title
-	sb.WriteString("\n ")
-	sb.WriteString(getPlanTitleStyle().Render("📋 Implementation Plan"))
-	sb.WriteString("\n\n")
-
 	// Plan content or editor
 	if p.editing {
-		// Show editor
+		// Show editor without border
+		sb.WriteString("\n ")
+		sb.WriteString(getPlanTitleStyle().Render("📋 Implementation Plan"))
+		sb.WriteString("\n\n")
 		sb.WriteString(" ")
 		sb.WriteString(getPlanHintStyle().Render("Edit the plan below. Ctrl+S to save, Esc to cancel."))
 		sb.WriteString("\n\n")
@@ -320,7 +410,21 @@ func (p *PlanPrompt) RenderContent() string {
 				content = strings.TrimSpace(rendered)
 			}
 		}
-		sb.WriteString(content)
+
+		// Wrap plan content in a bordered box
+		borderStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(CurrentTheme.Accent).
+			Padding(1, 2).
+			Width(p.width - 4)
+
+		// Add title inside border
+		title := getPlanTitleStyle().Render("📋 Implementation Plan")
+		boxContent := title + "\n\n" + content
+
+		sb.WriteString("\n")
+		sb.WriteString(borderStyle.Render(boxContent))
+		sb.WriteString("\n")
 	}
 
 	return sb.String()
@@ -334,20 +438,22 @@ func (p *PlanPrompt) RenderMenu() string {
 
 	var sb strings.Builder
 
-	// Question
-	sb.WriteString(" ")
-	sb.WriteString(getPlanUnselectedStyle().Render("How would you like to proceed?"))
+	// Question with blank line after
 	sb.WriteString("\n")
+	sb.WriteString(" ")
+	sb.WriteString(getPlanUnselectedStyle().Render("Would you like to proceed?"))
+	sb.WriteString("\n\n")
 
 	// Menu options
 	if !p.editing {
 		sb.WriteString(p.renderMenu())
 	}
+	sb.WriteString("\n")
 
-	// Footer
+	// Footer: simple hint + plan path
 	footer := " Esc to reject"
-	if !p.editing {
-		footer += " · ↑/↓ navigate · PgUp/PgDn scroll"
+	if p.planPath != "" {
+		footer += " · " + shortenPath(p.planPath)
 	}
 	sb.WriteString(getPlanFooterStyle().Render(footer))
 
@@ -418,10 +524,9 @@ func (p *PlanPrompt) renderMenu() string {
 		label string
 		hint  string
 	}{
-		{"Clear context, auto-accept edits", "(shift+tab)"},
-		{"Keep context, auto-accept edits", ""},
-		{"Keep context, manually approve each edit", ""},
-		{"Modify this plan", ""},
+		{"Yes, clear context and auto-accept edits", "(shift+tab)"},
+		{"Yes, auto-accept edits", ""},
+		{"Yes, manually approve edits", ""},
 	}
 
 	for i, opt := range options {
@@ -436,6 +541,15 @@ func (p *PlanPrompt) renderMenu() string {
 		}
 		sb.WriteString("\n")
 	}
+
+	// Option 4: Inline input prompt
+	if p.selectedIdx == 3 {
+		sb.WriteString(getPlanSelectedStyle().Render(" ❯ 4. "))
+		sb.WriteString(p.inlineInput.View())
+	} else {
+		sb.WriteString(getPlanHintStyle().Render("   4. Type here to tell Claude what to change"))
+	}
+	sb.WriteString("\n")
 
 	return sb.String()
 }
@@ -454,6 +568,7 @@ func (p *PlanPrompt) SetSize(width, height int) {
 		p.viewport.Height = viewportHeight
 		p.editor.SetWidth(width - 6)
 		p.editor.SetHeight(viewportHeight - 2)
+		p.inlineInput.SetWidth(width - 20)
 
 		// Update markdown renderer
 		p.mdRenderer = createMarkdownRenderer(width - 4)
