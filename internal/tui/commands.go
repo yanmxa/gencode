@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/ui"
@@ -253,7 +252,7 @@ func handlePlanCommand(ctx context.Context, m *model, args string) (string, erro
 		return "Usage: /plan <task description>\n\nEnter plan mode to explore the codebase and create an implementation plan before making changes.", nil
 	}
 
-	m.operationMode = config.ModePlan
+	m.operationMode = modePlan
 	m.planMode = true
 	m.planTask = args
 
