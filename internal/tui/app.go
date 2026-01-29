@@ -1069,14 +1069,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.streaming {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
-			// Re-render spinner in these cases:
-			// 1. "Thinking..." spinner: no content yet and no tool calls
-			// 2. Tool execution spinner: pendingToolCalls is not empty
-			if len(m.messages) > 0 {
+			// Only re-render if spinner is actually visible:
+			// - Not executing tools (pendingToolCalls is nil)
+			// - Last message is assistant with no content and no tool calls
+			// This prevents flickering of static tool call displays like ⚡Bash(...)
+			if m.pendingToolCalls == nil && len(m.messages) > 0 {
 				lastMsg := m.messages[len(m.messages)-1]
-				showThinkingSpinner := lastMsg.role == "assistant" && lastMsg.content == "" && len(lastMsg.toolCalls) == 0
-				showToolSpinner := len(m.pendingToolCalls) > 0
-				if showThinkingSpinner || showToolSpinner {
+				if lastMsg.role == "assistant" && lastMsg.content == "" && len(lastMsg.toolCalls) == 0 {
 					m.viewport.SetContent(m.renderMessages())
 				}
 			}
@@ -1815,34 +1814,6 @@ func (m model) renderMessages() string {
 						toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s(%s)", tc.Name, args))
 						sb.WriteString(toolLine + "\n")
 					}
-				}
-
-				// Show spinner if tools are being executed (this is the last message with pending tools)
-				if i == len(m.messages)-1 && len(m.pendingToolCalls) > 0 {
-					// Get the current tool being executed
-					currentTool := ""
-					if m.pendingToolIdx < len(m.pendingToolCalls) {
-						currentTool = m.pendingToolCalls[m.pendingToolIdx].Name
-					}
-					// Show appropriate spinner message based on tool
-					spinnerMsg := "Executing..."
-					switch currentTool {
-					case "ExitPlanMode":
-						spinnerMsg = "Preparing implementation plan..."
-					case "Read":
-						spinnerMsg = "Reading file..."
-					case "Glob":
-						spinnerMsg = "Searching files..."
-					case "Grep":
-						spinnerMsg = "Searching content..."
-					case "Bash":
-						spinnerMsg = "Running command..."
-					case "Edit", "Write":
-						spinnerMsg = "Writing file..."
-					case "AskUserQuestion":
-						spinnerMsg = "Preparing question..."
-					}
-					sb.WriteString(thinkingStyle.Render(fmt.Sprintf("  %s %s", m.spinner.View(), spinnerMsg)) + "\n")
 				}
 			}
 		}
