@@ -43,6 +43,7 @@ type chatMessage struct {
 	toolName          string
 	expanded          bool
 	todos             []toolui.TodoItem
+	renderedInline    bool // marks this toolResult was rendered inline with its tool call
 }
 
 type (
@@ -99,6 +100,12 @@ type model struct {
 	permissionPrompt *PermissionPrompt
 	pendingToolCalls []provider.ToolCall
 	pendingToolIdx   int
+
+	// Parallel tool execution tracking
+	parallelMode        bool                       // True when executing tools in parallel
+	parallelResults     map[int]provider.ToolResult // Collected results by index
+	parallelTodos       []toolui.TodoItem          // Collected todos from parallel execution
+	parallelResultCount int                        // Number of results received
 
 	settings           *config.Settings
 	sessionPermissions *config.SessionPermissions

@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool/permission"
 	"github.com/yanmxa/gencode/internal/tool/ui"
 )
@@ -60,14 +63,17 @@ func (t *BashTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 
 	command, _ := params["command"].(string)
 	description, _ := params["description"].(string)
+	runBackground, _ := params["run_in_background"].(bool)
 
 	// Get timeout (default 120 seconds, max 600 seconds)
 	timeout := 120 * time.Second
 	if timeoutMs, ok := params["timeout"].(float64); ok && timeoutMs > 0 {
-		timeout = time.Duration(timeoutMs) * time.Millisecond
-		if timeout > 600*time.Second {
-			timeout = 600 * time.Second
-		}
+		timeout = min(time.Duration(timeoutMs)*time.Millisecond, 600*time.Second)
+	}
+
+	// Handle background execution
+	if runBackground {
+		return t.executeBackground(ctx, command, description, cwd, timeout)
 	}
 
 	// Create context with timeout
@@ -184,6 +190,113 @@ func (t *BashTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 func (t *BashTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	// This will be called if permission flow is bypassed
 	return t.ExecuteApproved(ctx, params, cwd)
+}
+
+// executeBackground runs the command in the background and returns immediately
+func (t *BashTool) executeBackground(ctx context.Context, command, description, cwd string, timeout time.Duration) ui.ToolResult {
+	// Create context with timeout for background task
+	taskCtx, cancel := context.WithTimeout(context.Background(), timeout)
+
+	// Create command
+	cmd := exec.CommandContext(taskCtx, "bash", "-c", command)
+	cmd.Dir = cwd
+
+	// Set process group so we can kill all child processes
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	// Set up pipes for stdout and stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		cancel()
+		return ui.ToolResult{
+			Success: false,
+			Error:   fmt.Sprintf("failed to create stdout pipe: %v", err),
+			Metadata: ui.ResultMetadata{
+				Title: t.Name(),
+				Icon:  t.Icon(),
+			},
+		}
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		cancel()
+		return ui.ToolResult{
+			Success: false,
+			Error:   fmt.Sprintf("failed to create stderr pipe: %v", err),
+			Metadata: ui.ResultMetadata{
+				Title: t.Name(),
+				Icon:  t.Icon(),
+			},
+		}
+	}
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		cancel()
+		return ui.ToolResult{
+			Success: false,
+			Error:   fmt.Sprintf("failed to start command: %v", err),
+			Metadata: ui.ResultMetadata{
+				Title: t.Name(),
+				Icon:  t.Icon(),
+			},
+		}
+	}
+
+	// Register with task manager
+	bgTask := task.DefaultManager.Create(cmd, command, description, taskCtx, cancel)
+
+	// Start goroutine to collect output and wait for completion
+	go func() {
+		defer cancel()
+
+		// Read stdout and stderr concurrently
+		var stdoutBuf bytes.Buffer
+		go func() {
+			io.Copy(&stdoutBuf, stdout)
+		}()
+
+		var stderrBuf bytes.Buffer
+		go func() {
+			io.Copy(&stderrBuf, stderr)
+		}()
+
+		// Wait for command to complete
+		err := cmd.Wait()
+
+		// Combine output
+		output := stdoutBuf.String()
+		if stderrBuf.Len() > 0 {
+			if output != "" {
+				output += "\n"
+			}
+			output += stderrBuf.String()
+		}
+		bgTask.AppendOutput([]byte(output))
+
+		// Get exit code
+		exitCode := 0
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				exitCode = exitErr.ExitCode()
+			}
+		}
+
+		// Mark task as complete
+		bgTask.Complete(exitCode, err)
+	}()
+
+	// Return immediately with task ID
+	return ui.ToolResult{
+		Success: true,
+		Output:  fmt.Sprintf("Task started in background.\nTask ID: %s\nPID: %d\nCommand: %s", bgTask.ID, bgTask.PID, command),
+		Metadata: ui.ResultMetadata{
+			Title:    t.Name(),
+			Icon:     t.Icon(),
+			Subtitle: fmt.Sprintf("[background] %s", bgTask.ID),
+		},
+	}
 }
 
 func init() {

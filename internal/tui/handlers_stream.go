@@ -5,11 +5,19 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 func (m *model) handleToolResult(msg toolResultMsg) (tea.Model, tea.Cmd) {
+	// Check if we're in parallel mode
+	if m.parallelMode {
+		return m.handleParallelToolResult(msg)
+	}
+
+	// Sequential mode - original behavior
 	r := msg.result
 	m.messages = append(m.messages, chatMessage{
 		role:       "user",
@@ -22,7 +30,30 @@ func (m *model) handleToolResult(msg toolResultMsg) (tea.Model, tea.Cmd) {
 	return m, processNextTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd, m.settings, m.sessionPermissions)
 }
 
+func (m *model) handleParallelToolResult(msg toolResultMsg) (tea.Model, tea.Cmd) {
+	// Store result in the parallel results map
+	if m.parallelResults == nil {
+		m.parallelResults = make(map[int]provider.ToolResult)
+	}
+	m.parallelResults[msg.index] = msg.result
+	m.parallelResultCount++
+
+	// Check if all results are in
+	if m.parallelResultCount >= len(m.pendingToolCalls) {
+		return m.completeParallelExecution()
+	}
+
+	// More results pending
+	return m, nil
+}
+
 func (m *model) handleTodoResult(msg todoResultMsg) (tea.Model, tea.Cmd) {
+	// Check if we're in parallel mode
+	if m.parallelMode {
+		return m.handleParallelTodoResult(msg)
+	}
+
+	// Sequential mode - original behavior
 	r := msg.result
 	m.messages = append(m.messages, chatMessage{
 		role:       "user",
@@ -38,15 +69,119 @@ func (m *model) handleTodoResult(msg todoResultMsg) (tea.Model, tea.Cmd) {
 	return m, processNextTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd, m.settings, m.sessionPermissions)
 }
 
+func (m *model) handleParallelTodoResult(msg todoResultMsg) (tea.Model, tea.Cmd) {
+	// Store result in the parallel results map
+	if m.parallelResults == nil {
+		m.parallelResults = make(map[int]provider.ToolResult)
+	}
+	m.parallelResults[msg.index] = msg.result
+	m.parallelResultCount++
+
+	// Collect todos
+	m.parallelTodos = append(m.parallelTodos, msg.todos...)
+
+	// Check if all results are in
+	if m.parallelResultCount >= len(m.pendingToolCalls) {
+		return m.completeParallelExecution()
+	}
+
+	// More results pending
+	return m, nil
+}
+
+func (m *model) completeParallelExecution() (tea.Model, tea.Cmd) {
+	// Add all results as messages in order
+	for i := 0; i < len(m.pendingToolCalls); i++ {
+		tc := m.pendingToolCalls[i]
+		if result, ok := m.parallelResults[i]; ok {
+			m.messages = append(m.messages, chatMessage{
+				role:       "user",
+				toolResult: &result,
+				toolName:   tc.Name,
+			})
+		}
+	}
+
+	// Update todo panel if we have todos
+	if len(m.parallelTodos) > 0 {
+		m.todoPanel.Update(m.parallelTodos)
+		m.todoPanel.SetWidth(m.width)
+	}
+
+	// Reset parallel execution state
+	m.parallelMode = false
+	m.parallelResults = nil
+	m.parallelTodos = nil
+	m.parallelResultCount = 0
+	m.pendingToolCalls = nil
+	m.pendingToolIdx = 0
+
+	m.viewport.SetContent(m.renderMessages())
+	m.viewport.GotoBottom()
+
+	return m, m.continueWithToolResults()
+}
+
 func (m *model) handleStartToolExecution(msg startToolExecutionMsg) (tea.Model, tea.Cmd) {
 	m.pendingToolCalls = msg.toolCalls
 	m.pendingToolIdx = 0
-	return m, processNextTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd, m.settings, m.sessionPermissions)
+
+	// Try parallel execution
+	cmd := executeToolsParallel(m.pendingToolCalls, m.cwd, m.settings, m.sessionPermissions)
+
+	// Check if parallel execution was used by examining if tea.Batch was returned
+	// If it's parallel, we need to set up tracking
+	if len(msg.toolCalls) > 1 && m.canRunToolsInParallel(msg.toolCalls) {
+		m.parallelMode = true
+		m.parallelResults = make(map[int]provider.ToolResult)
+		m.parallelTodos = nil
+		m.parallelResultCount = 0
+	}
+
+	return m, cmd
+}
+
+// canRunToolsInParallel checks if all tools can run without user interaction
+func (m *model) canRunToolsInParallel(toolCalls []provider.ToolCall) bool {
+	for _, tc := range toolCalls {
+		params, err := parseToolInput(tc.Input)
+		if err != nil {
+			return false
+		}
+
+		t, ok := tool.Get(tc.Name)
+		if !ok {
+			return false
+		}
+
+		// Check settings
+		if m.settings != nil {
+			permResult := m.settings.CheckPermission(tc.Name, params, m.sessionPermissions)
+			if permResult == config.PermissionAsk {
+				return false
+			}
+		}
+
+		// Check permission-aware tool
+		if pat, ok := t.(tool.PermissionAwareTool); ok && pat.RequiresPermission() {
+			return false
+		}
+
+		// Check interactive tool
+		if it, ok := t.(tool.InteractiveTool); ok && it.RequiresInteraction() {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *model) handleAllToolsCompleted() (tea.Model, tea.Cmd) {
 	m.pendingToolCalls = nil
 	m.pendingToolIdx = 0
+	m.parallelMode = false
+	m.parallelResults = nil
+	m.parallelTodos = nil
+	m.parallelResultCount = 0
 	return m, m.continueWithToolResults()
 }
 

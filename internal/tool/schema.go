@@ -192,42 +192,44 @@ func GetToolSchemas() []provider.Tool {
 				"required": []string{"command"},
 			},
 		},
-		// TodoWrite temporarily disabled
-		// {
-		// 	Name:        "TodoWrite",
-		// 	Description: "Create and manage a structured task list for tracking progress on multi-step tasks. Use this tool to plan complex tasks and show progress to the user.",
-		// 	Parameters: map[string]any{
-		// 		"type": "object",
-		// 		"properties": map[string]any{
-		// 			"todos": map[string]any{
-		// 				"type":        "array",
-		// 				"description": "The updated todo list",
-		// 				"items": map[string]any{
-		// 					"type": "object",
-		// 					"properties": map[string]any{
-		// 						"content": map[string]any{
-		// 							"type":        "string",
-		// 							"minLength":   1,
-		// 							"description": "Task description in imperative form (e.g., 'Fix authentication bug')",
-		// 						},
-		// 						"status": map[string]any{
-		// 							"type":        "string",
-		// 							"enum":        []string{"pending", "in_progress", "completed"},
-		// 							"description": "Task status: pending, in_progress, or completed",
-		// 						},
-		// 						"activeForm": map[string]any{
-		// 							"type":        "string",
-		// 							"minLength":   1,
-		// 							"description": "Present continuous form shown during execution (e.g., 'Fixing authentication bug')",
-		// 						},
-		// 					},
-		// 					"required": []string{"content", "status", "activeForm"},
-		// 				},
-		// 			},
-		// 		},
-		// 		"required": []string{"todos"},
-		// 	},
-		// },
+		{
+			Name:        "TaskOutput",
+			Description: "Retrieve output from a running or completed background task. Use this to check on background tasks started with Bash run_in_background=true.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"task_id": map[string]any{
+						"type":        "string",
+						"description": "The ID of the background task to get output from",
+					},
+					"block": map[string]any{
+						"type":        "boolean",
+						"description": "If true (default), wait for task completion. If false, return current output immediately.",
+						"default":     true,
+					},
+					"timeout": map[string]any{
+						"type":        "integer",
+						"description": "Maximum time to wait in milliseconds when block=true (default: 30000, max: 600000)",
+						"default":     30000,
+					},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "KillShell",
+			Description: "Terminate a running background task. Use this to stop long-running or stuck background tasks.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"shell_id": map[string]any{
+						"type":        "string",
+						"description": "The ID of the background task to terminate",
+					},
+				},
+				"required": []string{"shell_id"},
+			},
+		},
 		{
 			Name:        "AskUserQuestion",
 			Description: "Ask the user questions to gather preferences, clarify requirements, or get decisions on implementation choices. Use when you need user input to proceed.",

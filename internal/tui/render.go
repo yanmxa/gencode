@@ -17,10 +17,7 @@ import (
 
 
 func createMarkdownRenderer(width int) *glamour.TermRenderer {
-	wrapWidth := width - 4
-	if wrapWidth < minWrapWidth {
-		wrapWidth = minWrapWidth
-	}
+	wrapWidth := max(width-4, minWrapWidth)
 
 	var compactStyle ansi.StyleConfig
 	if lipgloss.HasDarkBackground() {
@@ -109,9 +106,36 @@ func (m model) renderMessages() string {
 		return m.renderWelcome()
 	}
 
+	// Build a set of message indices to skip (tool results rendered inline with tool calls)
+	skipIndices := make(map[int]bool)
+	for i, msg := range m.messages {
+		if msg.role == "assistant" && len(msg.toolCalls) > 0 {
+			// Build set of ToolCall IDs for this assistant message
+			toolCallIDs := make(map[string]bool)
+			for _, tc := range msg.toolCalls {
+				toolCallIDs[tc.ID] = true
+			}
+			// Mark subsequent tool result messages that match these IDs
+			for j := i + 1; j < len(m.messages); j++ {
+				nextMsg := m.messages[j]
+				if nextMsg.toolResult == nil {
+					break
+				}
+				if toolCallIDs[nextMsg.toolResult.ToolCallID] {
+					skipIndices[j] = true
+				}
+			}
+		}
+	}
+
 	var sb strings.Builder
 
 	for i, msg := range m.messages {
+		// Skip tool results that were rendered inline with their tool calls
+		if skipIndices[i] {
+			continue
+		}
+
 		if msg.toolResult == nil {
 			sb.WriteString("\n")
 		}
@@ -148,34 +172,7 @@ func (m model) renderSystemMessage(msg chatMessage) string {
 }
 
 func (m model) renderToolResult(msg chatMessage) string {
-	toolName := msg.toolName
-	if toolName == "" {
-		toolName = "Tool"
-	}
-
-	if toolName == "TodoWrite" && len(msg.todos) > 0 {
-		return renderTodosInline(msg.todos)
-	}
-
-	sizeInfo := formatToolResultSize(toolName, msg.toolResult.Content)
-
-	icon := "⎿"
-	if msg.toolResult.IsError {
-		icon = "✗"
-	}
-
-	var sb strings.Builder
-	summary := toolResultStyle.Render(fmt.Sprintf("  %s  %s → %s", icon, toolName, sizeInfo))
-	sb.WriteString(summary + "\n")
-
-	if msg.expanded || msg.toolResult.IsError {
-		lines := strings.Split(msg.toolResult.Content, "\n")
-		for _, line := range lines {
-			sb.WriteString(toolResultExpandedStyle.Render(line) + "\n")
-		}
-	}
-
-	return sb.String()
+	return m.renderToolResultInline(msg)
 }
 
 func (m model) renderAssistantMessage(msg chatMessage, idx int, isLast bool) string {
@@ -222,6 +219,17 @@ func (m model) renderToolCalls(msg chatMessage, msgIdx int) string {
 		sb.WriteString("\n")
 	}
 
+	// Build a map from ToolCallID to the corresponding toolResult message
+	resultMap := make(map[string]chatMessage)
+	for j := msgIdx + 1; j < len(m.messages); j++ {
+		nextMsg := m.messages[j]
+		if nextMsg.toolResult == nil {
+			break
+		}
+		resultMap[nextMsg.toolResult.ToolCallID] = nextMsg
+	}
+
+	// Check for TodoWrite results first and render inline
 	for j := msgIdx + 1; j < len(m.messages); j++ {
 		nextMsg := m.messages[j]
 		if nextMsg.toolResult == nil {
@@ -257,6 +265,43 @@ func (m model) renderToolCalls(msg chatMessage, msgIdx int) string {
 			args := extractToolArgs(tc.Input)
 			toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s(%s)", tc.Name, args))
 			sb.WriteString(toolLine + "\n")
+		}
+
+		// Render the corresponding result inline if found
+		if resultMsg, ok := resultMap[tc.ID]; ok {
+			sb.WriteString(m.renderToolResultInline(resultMsg))
+		}
+	}
+
+	return sb.String()
+}
+
+// renderToolResultInline renders a tool result inline (without leading newline)
+func (m model) renderToolResultInline(msg chatMessage) string {
+	toolName := msg.toolName
+	if toolName == "" {
+		toolName = "Tool"
+	}
+
+	if toolName == "TodoWrite" && len(msg.todos) > 0 {
+		return renderTodosInline(msg.todos)
+	}
+
+	sizeInfo := formatToolResultSize(toolName, msg.toolResult.Content)
+
+	icon := "⎿"
+	if msg.toolResult.IsError {
+		icon = "✗"
+	}
+
+	var sb strings.Builder
+	summary := toolResultStyle.Render(fmt.Sprintf("  %s  %s → %s", icon, toolName, sizeInfo))
+	sb.WriteString(summary + "\n")
+
+	if msg.expanded || msg.toolResult.IsError {
+		lines := strings.Split(msg.toolResult.Content, "\n")
+		for _, line := range lines {
+			sb.WriteString(toolResultExpandedStyle.Render(line) + "\n")
 		}
 	}
 
