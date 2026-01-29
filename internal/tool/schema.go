@@ -217,17 +217,17 @@ func GetToolSchemas() []provider.Tool {
 			},
 		},
 		{
-			Name:        "KillShell",
-			Description: "Terminate a running background task. Use this to stop long-running or stuck background tasks.",
+			Name:        "TaskStop",
+			Description: "Stops a running background task by its ID. Takes a task_id parameter identifying the task to stop. Returns a success or failure status. Use this tool when you need to terminate a long-running task.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"shell_id": map[string]any{
+					"task_id": map[string]any{
 						"type":        "string",
-						"description": "The ID of the background task to terminate",
+						"description": "The ID of the background task to stop",
 					},
 				},
-				"required": []string{"shell_id"},
+				"required": []string{"task_id"},
 			},
 		},
 		{

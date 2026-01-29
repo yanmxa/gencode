@@ -10,25 +10,25 @@ import (
 )
 
 const (
-	IconKillShell = "x"
+	IconTaskStop = "x"
 )
 
-// KillShellTool terminates a background task
-type KillShellTool struct{}
+// TaskStopTool stops a running background task
+type TaskStopTool struct{}
 
-func (t *KillShellTool) Name() string        { return "KillShell" }
-func (t *KillShellTool) Description() string { return "Terminate a background task" }
-func (t *KillShellTool) Icon() string        { return IconKillShell }
+func (t *TaskStopTool) Name() string        { return "TaskStop" }
+func (t *TaskStopTool) Description() string { return "Stops a running background task by its ID" }
+func (t *TaskStopTool) Icon() string        { return IconTaskStop }
 
-// Execute terminates a background task
-func (t *KillShellTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
+// Execute stops a running background task
+func (t *TaskStopTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
-	shellID, ok := params["shell_id"].(string)
-	if !ok || shellID == "" {
+	taskID, ok := params["task_id"].(string)
+	if !ok || taskID == "" {
 		return ui.ToolResult{
 			Success: false,
-			Error:   "shell_id is required",
+			Error:   "task_id is required",
 			Metadata: ui.ResultMetadata{
 				Title: t.Name(),
 				Icon:  t.Icon(),
@@ -36,12 +36,12 @@ func (t *KillShellTool) Execute(ctx context.Context, params map[string]any, cwd 
 		}
 	}
 
-	// Get task to check status before killing
-	bgTask, found := task.DefaultManager.Get(shellID)
+	// Get task to check status before stopping
+	bgTask, found := task.DefaultManager.Get(taskID)
 	if !found {
 		return ui.ToolResult{
 			Success: false,
-			Error:   fmt.Sprintf("task not found: %s", shellID),
+			Error:   fmt.Sprintf("task not found: %s", taskID),
 			Metadata: ui.ResultMetadata{
 				Title: t.Name(),
 				Icon:  t.Icon(),
@@ -63,11 +63,11 @@ func (t *KillShellTool) Execute(ctx context.Context, params map[string]any, cwd 
 		}
 	}
 
-	// Get task info before killing
+	// Get task info before stopping
 	info := bgTask.GetStatus()
 
-	// Kill the task
-	err := task.DefaultManager.Kill(shellID)
+	// Stop the task
+	err := task.DefaultManager.Kill(taskID)
 	duration := time.Since(start)
 
 	if err != nil {
@@ -85,9 +85,9 @@ func (t *KillShellTool) Execute(ctx context.Context, params map[string]any, cwd 
 	// Get final status
 	finalInfo := bgTask.GetStatus()
 
-	output := fmt.Sprintf("Task killed successfully.\nTask ID: %s\nPID: %d\nStatus: %s", shellID, info.PID, finalInfo.Status)
+	output := fmt.Sprintf("Task stopped successfully.\nTask ID: %s\nPID: %d\nStatus: %s", taskID, info.PID, finalInfo.Status)
 	if finalInfo.Output != "" {
-		output += fmt.Sprintf("\n\nOutput before kill:\n%s", finalInfo.Output)
+		output += fmt.Sprintf("\n\nOutput before stop:\n%s", finalInfo.Output)
 	}
 
 	return ui.ToolResult{
@@ -96,12 +96,12 @@ func (t *KillShellTool) Execute(ctx context.Context, params map[string]any, cwd 
 		Metadata: ui.ResultMetadata{
 			Title:    t.Name(),
 			Icon:     t.Icon(),
-			Subtitle: fmt.Sprintf("Killed: %s", shellID),
+			Subtitle: fmt.Sprintf("Stopped: %s", taskID),
 			Duration: duration,
 		},
 	}
 }
 
 func init() {
-	Register(&KillShellTool{})
+	Register(&TaskStopTool{})
 }
