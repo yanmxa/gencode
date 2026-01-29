@@ -123,6 +123,9 @@ type model struct {
 	operationMode operationMode
 
 	buildingToolName string
+
+	disabledTools map[string]bool
+	toolSelector  ToolSelectorState
 }
 
 func Run() error {
@@ -244,6 +247,8 @@ func newModel() model {
 		questionPrompt:     NewQuestionPrompt(),
 		planPrompt:         NewPlanPrompt(),
 		operationMode:      modeNormal,
+		disabledTools:      config.GetDisabledTools(),
+		toolSelector:       NewToolSelectorState(),
 	}
 }
 
@@ -277,6 +282,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleProviderSelected(msg)
 
 	case SelectorCancelledMsg:
+		return m, nil
+
+	case ToolToggleMsg:
+		// Tool toggle already handled in toolSelector.Toggle()
+		return m, nil
+
+	case ToolSelectorCancelledMsg:
 		return m, nil
 
 	case ModelSelectedMsg:
@@ -375,6 +387,10 @@ func (m model) View() string {
 
 	if m.selector.IsActive() {
 		return m.selector.Render()
+	}
+
+	if m.toolSelector.IsActive() {
+		return m.toolSelector.Render()
 	}
 
 	chat := m.viewport.View()
@@ -499,9 +515,9 @@ func (m model) getModelID() string {
 
 func (m model) getToolsForMode() []provider.Tool {
 	if m.planMode {
-		return tool.GetPlanModeToolSchemas()
+		return tool.GetPlanModeToolSchemasFiltered(m.disabledTools)
 	}
-	return tool.GetToolSchemas()
+	return tool.GetToolSchemasFiltered(m.disabledTools)
 }
 
 func (m *model) cycleOperationMode() {

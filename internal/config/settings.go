@@ -27,6 +27,11 @@ type Settings struct {
 
 	// EnabledPlugins defines which plugins are enabled
 	EnabledPlugins map[string]bool `json:"enabledPlugins,omitempty"`
+
+	// DisabledTools defines which tools are disabled
+	// Key is tool name, value true means disabled
+	// Project-level settings can override user-level by setting to false
+	DisabledTools map[string]bool `json:"disabledTools,omitempty"`
 }
 
 // PermissionSettings defines permission rules for tool execution.
@@ -162,5 +167,6 @@ func NewSettings() *Settings {
 		Hooks:          make(map[string][]Hook),
 		Env:            make(map[string]string),
 		EnabledPlugins: make(map[string]bool),
+		DisabledTools:  make(map[string]bool),
 	}
 }

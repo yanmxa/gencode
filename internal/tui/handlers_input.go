@@ -42,6 +42,11 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.toolSelector.IsActive() {
+		cmd := m.toolSelector.HandleKeypress(msg)
+		return m, cmd
+	}
+
 	if m.suggestions.IsVisible() {
 		switch msg.Type {
 		case tea.KeyUp, tea.KeyCtrlP:

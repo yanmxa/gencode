@@ -130,6 +130,52 @@ func (l *Loader) EnsureProjectDir() error {
 	return os.MkdirAll(l.projectDir, 0755)
 }
 
+// SaveToProject saves settings to the project-level settings file.
+// It merges with existing settings if the file exists.
+func (l *Loader) SaveToProject(settings *Settings) error {
+	return l.saveToFile(filepath.Join(l.projectDir, "settings.json"), settings)
+}
+
+// SaveToUser saves settings to the user-level settings file.
+// It merges with existing settings if the file exists.
+func (l *Loader) SaveToUser(settings *Settings) error {
+	return l.saveToFile(filepath.Join(l.userDir, "settings.json"), settings)
+}
+
+// saveToFile saves settings to a specific file, merging with existing content.
+func (l *Loader) saveToFile(path string, settings *Settings) error {
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	// Load existing settings if file exists
+	var existing *Settings
+	if data, err := os.ReadFile(path); err == nil {
+		existing = NewSettings()
+		if err := json.Unmarshal(data, existing); err != nil {
+			existing = nil
+		}
+	}
+
+	// Merge with existing settings
+	var toSave *Settings
+	if existing != nil {
+		toSave = MergeSettings(existing, settings)
+	} else {
+		toSave = settings
+	}
+
+	// Write to file with pretty formatting
+	data, err := json.MarshalIndent(toSave, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
 // defaultSettings is a cached instance of the default settings
 var defaultSettings *Settings
 
@@ -162,4 +208,76 @@ func Default() *Settings {
 		defaultSettings = NewSettings()
 	}
 	return defaultSettings
+}
+
+// UpdateDisabledTools updates the disabled tools in project-level settings.
+// It only saves the DisabledTools field, preserving other settings.
+func UpdateDisabledTools(disabledTools map[string]bool) error {
+	return UpdateDisabledToolsAt(disabledTools, false)
+}
+
+// UpdateDisabledToolsAt updates the disabled tools at the specified level.
+// If userLevel is true, saves to ~/.gen/settings.json, otherwise to .gen/settings.json.
+func UpdateDisabledToolsAt(disabledTools map[string]bool, userLevel bool) error {
+	loader := NewLoader()
+
+	// Create settings with only DisabledTools
+	settings := &Settings{
+		DisabledTools: disabledTools,
+	}
+
+	// Save to appropriate level
+	var err error
+	if userLevel {
+		err = loader.SaveToUser(settings)
+	} else {
+		err = loader.SaveToProject(settings)
+	}
+	if err != nil {
+		return err
+	}
+
+	// Clear cache so next Load() picks up changes
+	loadedSettings = nil
+	return nil
+}
+
+// GetDisabledTools returns the disabled tools from loaded settings.
+func GetDisabledTools() map[string]bool {
+	settings, err := Load()
+	if err != nil {
+		return make(map[string]bool)
+	}
+	if settings.DisabledTools == nil {
+		return make(map[string]bool)
+	}
+	return settings.DisabledTools
+}
+
+// GetDisabledToolsAt returns the disabled tools from a specific level (not merged).
+// If userLevel is true, loads from ~/.gen/settings.json, otherwise from .gen/settings.json.
+func GetDisabledToolsAt(userLevel bool) map[string]bool {
+	loader := NewLoader()
+
+	var path string
+	if userLevel {
+		path = filepath.Join(loader.userDir, "settings.json")
+	} else {
+		path = filepath.Join(loader.projectDir, "settings.json")
+	}
+
+	settings, err := loader.LoadFile(path)
+	if err != nil {
+		return make(map[string]bool)
+	}
+	if settings.DisabledTools == nil {
+		return make(map[string]bool)
+	}
+
+	// Return a copy to avoid mutation
+	result := make(map[string]bool)
+	for k, v := range settings.DisabledTools {
+		result[k] = v
+	}
+	return result
 }

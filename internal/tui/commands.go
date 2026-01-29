@@ -45,25 +45,15 @@ func getCommandRegistry() map[string]Command {
 			Description: "Show available commands",
 			Handler:     handleHelpCommand,
 		},
-		"read": {
-			Name:        "read",
-			Description: "Read file contents",
-			Handler:     handleReadCommand,
-		},
 		"glob": {
 			Name:        "glob",
 			Description: "Find files matching a pattern",
 			Handler:     handleGlobCommand,
 		},
-		"grep": {
-			Name:        "grep",
-			Description: "Search for patterns in files",
-			Handler:     handleGrepCommand,
-		},
-		"fetch": {
-			Name:        "fetch",
-			Description: "Fetch content from a URL",
-			Handler:     handleFetchCommand,
+		"tool": {
+			Name:        "tool",
+			Description: "Manage available tools (enable/disable)",
+			Handler:     handleToolCommand,
 		},
 		"plan": {
 			Name:        "plan",
@@ -180,19 +170,6 @@ func handleClearCommand(ctx context.Context, m *model, args string) (string, err
 	return "", nil
 }
 
-// handleReadCommand handles the /read command
-func handleReadCommand(ctx context.Context, m *model, args string) (string, error) {
-	if args == "" {
-		return "Usage: /read <file_path>", nil
-	}
-
-	cwd, _ := os.Getwd()
-	params := map[string]any{"file_path": args}
-
-	result := tool.Execute(ctx, "read", params, cwd)
-	return ui.RenderToolResult(result, m.width), nil
-}
-
 // handleGlobCommand handles the /glob command
 func handleGlobCommand(ctx context.Context, m *model, args string) (string, error) {
 	if args == "" {
@@ -213,37 +190,12 @@ func handleGlobCommand(ctx context.Context, m *model, args string) (string, erro
 	return ui.RenderToolResult(result, m.width), nil
 }
 
-// handleGrepCommand handles the /grep command
-func handleGrepCommand(ctx context.Context, m *model, args string) (string, error) {
-	if args == "" {
-		return "Usage: /grep <pattern> [path]", nil
+// handleToolCommand handles the /tool command
+func handleToolCommand(ctx context.Context, m *model, args string) (string, error) {
+	if err := m.toolSelector.EnterToolSelect(m.width, m.height, m.disabledTools); err != nil {
+		return "", err
 	}
-
-	cwd, _ := os.Getwd()
-	params := map[string]any{"pattern": args}
-
-	// Check if a path is specified
-	parts := strings.SplitN(args, " ", 2)
-	if len(parts) == 2 {
-		params["pattern"] = parts[0]
-		params["path"] = parts[1]
-	}
-
-	result := tool.Execute(ctx, "grep", params, cwd)
-	return ui.RenderToolResult(result, m.width), nil
-}
-
-// handleFetchCommand handles the /fetch command
-func handleFetchCommand(ctx context.Context, m *model, args string) (string, error) {
-	if args == "" {
-		return "Usage: /fetch <url>", nil
-	}
-
-	cwd, _ := os.Getwd()
-	params := map[string]any{"url": args}
-
-	result := tool.Execute(ctx, "webfetch", params, cwd)
-	return ui.RenderToolResult(result, m.width), nil
+	return "", nil
 }
 
 // handlePlanCommand handles the /plan command

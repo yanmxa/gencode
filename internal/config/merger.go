@@ -33,6 +33,9 @@ func MergeSettings(base, overlay *Settings) *Settings {
 	// Merge EnabledPlugins (map merge)
 	result.EnabledPlugins = mergeBoolMaps(base.EnabledPlugins, overlay.EnabledPlugins)
 
+	// Merge DisabledTools (map merge)
+	result.DisabledTools = mergeBoolMaps(base.DisabledTools, overlay.DisabledTools)
+
 	return result
 }
 

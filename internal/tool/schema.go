@@ -307,6 +307,21 @@ var ExitPlanModeSchema = provider.Tool{
 	},
 }
 
+// GetToolSchemasFiltered returns tool schemas excluding disabled tools
+func GetToolSchemasFiltered(disabled map[string]bool) []provider.Tool {
+	all := GetToolSchemas()
+	if len(disabled) == 0 {
+		return all
+	}
+	filtered := make([]provider.Tool, 0, len(all))
+	for _, t := range all {
+		if !disabled[t.Name] {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
+}
+
 // GetPlanModeToolSchemas returns only the tools available in plan mode
 // Plan mode restricts to read-only tools plus ExitPlanMode
 func GetPlanModeToolSchemas() []provider.Tool {
@@ -333,4 +348,19 @@ func GetPlanModeToolSchemas() []provider.Tool {
 	tools = append(tools, ExitPlanModeSchema)
 
 	return tools
+}
+
+// GetPlanModeToolSchemasFiltered returns plan mode tools excluding disabled tools
+func GetPlanModeToolSchemasFiltered(disabled map[string]bool) []provider.Tool {
+	all := GetPlanModeToolSchemas()
+	if len(disabled) == 0 {
+		return all
+	}
+	filtered := make([]provider.Tool, 0, len(all))
+	for _, t := range all {
+		if !disabled[t.Name] {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
 }
