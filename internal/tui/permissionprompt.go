@@ -211,7 +211,7 @@ func getPermFooterStyle() lipgloss.Style {
 }
 
 func getPermTitleStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(CurrentTheme.Accent)
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
 }
 
 // RenderInline renders the permission prompt inline with Claude Code style

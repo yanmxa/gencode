@@ -44,7 +44,7 @@ var DarkTheme = Theme{
 
 	Success: lipgloss.Color("#10B981"),
 	Error:   lipgloss.Color("#EF4444"),
-	Warning: lipgloss.Color("#F59E0B"),
+	Warning: lipgloss.Color("#FBBF24"), // Brighter amber to distinguish from Accent
 
 	Border:     lipgloss.Color("#374151"),
 	Background: lipgloss.Color("#1F2937"),
@@ -65,7 +65,7 @@ var LightTheme = Theme{
 
 	Success: lipgloss.Color("#059669"),
 	Error:   lipgloss.Color("#DC2626"),
-	Warning: lipgloss.Color("#D97706"),
+	Warning: lipgloss.Color("#B45309"), // Deeper amber to distinguish from Accent
 
 	Border:     lipgloss.Color("#E5E7EB"),
 	Background: lipgloss.Color("#F3F4F6"),

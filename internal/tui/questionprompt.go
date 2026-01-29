@@ -281,9 +281,7 @@ func getQuestionSeparatorStyle() lipgloss.Style {
 func getQuestionHeaderStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(CurrentTheme.Primary).
-		Bold(true).
-		Padding(0, 1).
-		Background(CurrentTheme.Background)
+		Bold(true)
 }
 
 func getQuestionTextStyle() lipgloss.Style {

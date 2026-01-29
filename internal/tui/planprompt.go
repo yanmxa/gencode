@@ -351,7 +351,7 @@ func getPlanSeparatorStyle() lipgloss.Style {
 }
 
 func getPlanTitleStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(CurrentTheme.Accent).Bold(true)
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
 }
 
 func getPlanSelectedStyle() lipgloss.Style {
