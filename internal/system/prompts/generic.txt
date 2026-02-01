@@ -1,9 +1,8 @@
-# Doing tasks
+# Task execution
 
-For software engineering tasks:
-1. Search and understand the codebase first
-2. Implement the solution
-3. Verify with tests if possible
-4. Run lint/typecheck commands if available
+1. **Read before modify**: Never change code you haven't read.
+2. **Keep it simple**: Only make requested changes. No extra features, refactors, or "improvements".
+3. **Verify**: Run tests or linters if available.
+4. **Clean up**: Delete unused code completely, don't comment it out.
 
-NEVER commit changes unless explicitly asked.
+NEVER commit unless explicitly asked.

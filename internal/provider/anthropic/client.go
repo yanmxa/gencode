@@ -69,6 +69,9 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 							if err := json.Unmarshal([]byte(tc.Input), &input); err != nil {
 								input = tc.Input // fallback to string if parse fails
 							}
+						} else {
+							// For tools with no parameters, use empty object instead of nil
+							input = map[string]any{}
 						}
 						blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
 					}
