@@ -83,6 +83,9 @@ type SessionPermissions struct {
 	// AllowAllBash allows all bash commands without prompting
 	AllowAllBash bool
 
+	// AllowAllSkills allows all skill invocations without prompting
+	AllowAllSkills bool
+
 	// AllowedTools contains tools that have been allowed for this session
 	AllowedTools map[string]bool
 
@@ -120,6 +123,9 @@ func (sp *SessionPermissions) IsToolAllowed(toolName string) bool {
 		return true
 	}
 	if toolName == "Bash" && sp.AllowAllBash {
+		return true
+	}
+	if toolName == "Skill" && sp.AllowAllSkills {
 		return true
 	}
 	return false

@@ -2,12 +2,13 @@ package permission
 
 // PermissionRequest represents a request for user permission before executing a tool
 type PermissionRequest struct {
-	ID          string        // Unique request ID
-	ToolName    string        // Name of the tool requesting permission
-	FilePath    string        // File path being modified
-	Description string        // Human-readable description of the action
-	DiffMeta    *DiffMetadata // Diff metadata (for Edit/Write tools)
-	BashMeta    *BashMetadata // Bash metadata (for Bash tool)
+	ID          string         // Unique request ID
+	ToolName    string         // Name of the tool requesting permission
+	FilePath    string         // File path being modified
+	Description string         // Human-readable description of the action
+	DiffMeta    *DiffMetadata  // Diff metadata (for Edit/Write tools)
+	BashMeta    *BashMetadata  // Bash metadata (for Bash tool)
+	SkillMeta   *SkillMetadata // Skill metadata (for Skill tool)
 }
 
 // DiffMetadata contains diff information for file modifications
@@ -28,6 +29,17 @@ type BashMetadata struct {
 	Description   string // Optional description of what the command does
 	RunBackground bool   // Whether to run in background
 	LineCount     int    // Number of lines in the command
+}
+
+// SkillMetadata contains metadata for Skill permission requests
+type SkillMetadata struct {
+	SkillName   string   // Full skill name (namespace:name)
+	Description string   // Skill description
+	Args        string   // Optional arguments passed to the skill
+	ScriptCount int      // Number of available scripts
+	RefCount    int      // Number of reference files
+	Scripts     []string // Script file names
+	References  []string // Reference file names
 }
 
 // DiffLine represents a single line in a diff

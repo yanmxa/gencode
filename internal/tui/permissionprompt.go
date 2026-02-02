@@ -11,12 +11,13 @@ import (
 
 // PermissionPrompt manages the permission request UI with Claude Code style.
 type PermissionPrompt struct {
-	active      bool
-	request     *permission.PermissionRequest
-	diffPreview *DiffPreview
-	bashPreview *BashPreview
-	width       int
-	selectedIdx int // Current menu selection (0=Yes, 1=Yes all, 2=No)
+	active       bool
+	request      *permission.PermissionRequest
+	diffPreview  *DiffPreview
+	bashPreview  *BashPreview
+	skillPreview *SkillPreview
+	width        int
+	selectedIdx  int // Current menu selection (0=Yes, 1=Yes all, 2=No)
 }
 
 // NewPermissionPrompt creates a new PermissionPrompt instance
@@ -44,6 +45,12 @@ func (p *PermissionPrompt) Show(req *permission.PermissionRequest, width, height
 	} else {
 		p.bashPreview = nil
 	}
+
+	if req.SkillMeta != nil {
+		p.skillPreview = NewSkillPreview(req.SkillMeta)
+	} else {
+		p.skillPreview = nil
+	}
 }
 
 // Hide hides the permission prompt
@@ -52,6 +59,7 @@ func (p *PermissionPrompt) Hide() {
 	p.request = nil
 	p.diffPreview = nil
 	p.bashPreview = nil
+	p.skillPreview = nil
 }
 
 // IsActive returns whether the prompt is visible
@@ -234,11 +242,13 @@ func (p *PermissionPrompt) RenderInline() string {
 	sb.WriteString(getPermTitleStyle().Render(title))
 	sb.WriteString("\n\n")
 
-	// Diff preview, Bash preview, or content preview (no dotted separators)
+	// Diff preview, Bash preview, Skill preview, or content preview (no dotted separators)
 	if p.diffPreview != nil {
 		sb.WriteString(p.diffPreview.Render(contentWidth))
 	} else if p.bashPreview != nil {
 		sb.WriteString(p.bashPreview.Render(contentWidth))
+	} else if p.skillPreview != nil {
+		sb.WriteString(p.skillPreview.Render(contentWidth))
 	}
 	sb.WriteString("\n")
 
@@ -277,6 +287,8 @@ func (p *PermissionPrompt) getTitle() string {
 		return "Write to file"
 	case "Bash":
 		return "Bash command"
+	case "Skill":
+		return "Load skill"
 	default:
 		return p.request.Description
 	}
@@ -291,6 +303,8 @@ func (p *PermissionPrompt) getAllSessionLabel() string {
 		return "Yes, allow all writes during this session"
 	case "Bash":
 		return "Yes, allow all commands during this session"
+	case "Skill":
+		return "Yes, allow all skills during this session"
 	default:
 		return "Yes, allow all during this session"
 	}

@@ -74,6 +74,8 @@ func (m *model) handlePermissionResponse(msg PermissionResponseMsg) (tea.Model, 
 				m.sessionPermissions.AllowAllWrites = true
 			case "Bash":
 				m.sessionPermissions.AllowAllBash = true
+			case "Skill":
+				m.sessionPermissions.AllowAllSkills = true
 			default:
 				m.sessionPermissions.AllowTool(toolName)
 			}

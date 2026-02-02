@@ -555,6 +555,7 @@ func (m *model) cycleOperationMode() {
 	m.sessionPermissions.AllowAllEdits = false
 	m.sessionPermissions.AllowAllWrites = false
 	m.sessionPermissions.AllowAllBash = false
+	m.sessionPermissions.AllowAllSkills = false
 
 	if m.operationMode == modeAutoAccept {
 		m.sessionPermissions.AllowAllEdits = true

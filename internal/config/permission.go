@@ -173,6 +173,13 @@ func BuildRule(toolName string, args map[string]any) string {
 			}
 		}
 
+	case "Skill":
+		// For Skill, use the skill name
+		// Supports patterns like "Skill(git:*)", "Skill(test-skill)"
+		if s, ok := args["skill"].(string); ok {
+			argStr = s
+		}
+
 	default:
 		// Generic: try common field names
 		if fp, ok := args["file_path"].(string); ok {

@@ -256,6 +256,7 @@ func handlePlanCommand(ctx context.Context, m *model, args string) (string, erro
 	m.sessionPermissions.AllowAllEdits = false
 	m.sessionPermissions.AllowAllWrites = false
 	m.sessionPermissions.AllowAllBash = false
+	m.sessionPermissions.AllowAllSkills = false
 
 	store, err := plan.NewStore()
 	if err != nil {
