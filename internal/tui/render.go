@@ -266,6 +266,11 @@ func (m model) renderToolResultInline(msg chatMessage) string {
 		toolName = "Tool"
 	}
 
+	// Special handling for Skill tool - show clean summary
+	if toolName == "Skill" {
+		return m.renderSkillResultInline(msg)
+	}
+
 	sizeInfo := formatToolResultSize(toolName, msg.toolResult.Content)
 
 	icon := "⎿"
@@ -285,6 +290,107 @@ func (m model) renderToolResultInline(msg chatMessage) string {
 	}
 
 	return sb.String()
+}
+
+// renderSkillResultInline renders a skill result with clean formatting
+// Shows: ⎿  Loaded: git:commit [2 scripts, 1 ref]
+func (m model) renderSkillResultInline(msg chatMessage) string {
+	icon := "⎿"
+	if msg.toolResult.IsError {
+		icon = "✗"
+	}
+
+	var sb strings.Builder
+
+	if msg.toolResult.IsError {
+		// For errors, show the error message
+		summary := toolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, msg.toolResult.Content))
+		sb.WriteString(summary + "\n")
+		return sb.String()
+	}
+
+	// Parse skill info from content
+	skillName, scriptCount, refCount := parseSkillResultContent(msg.toolResult.Content)
+
+	// Build resource summary
+	var resources []string
+	if scriptCount > 0 {
+		if scriptCount == 1 {
+			resources = append(resources, "1 script")
+		} else {
+			resources = append(resources, fmt.Sprintf("%d scripts", scriptCount))
+		}
+	}
+	if refCount > 0 {
+		if refCount == 1 {
+			resources = append(resources, "1 ref")
+		} else {
+			resources = append(resources, fmt.Sprintf("%d refs", refCount))
+		}
+	}
+
+	// Format: Loaded: skill-name [resources]
+	result := fmt.Sprintf("Loaded: %s", skillName)
+	if len(resources) > 0 {
+		result += fmt.Sprintf(" [%s]", strings.Join(resources, ", "))
+	}
+
+	summary := toolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, result))
+	sb.WriteString(summary + "\n")
+
+	// Show expanded content if requested
+	if msg.expanded {
+		lines := strings.Split(msg.toolResult.Content, "\n")
+		for _, line := range lines {
+			sb.WriteString(toolResultExpandedStyle.Render(line) + "\n")
+		}
+	}
+
+	return sb.String()
+}
+
+// parseSkillResultContent extracts skill info from skill-invocation content
+func parseSkillResultContent(content string) (skillName string, scriptCount, refCount int) {
+	skillName = "skill"
+
+	// Extract skill name from <skill-invocation name="...">
+	if idx := strings.Index(content, `<skill-invocation name="`); idx != -1 {
+		start := idx + len(`<skill-invocation name="`)
+		if end := strings.Index(content[start:], `"`); end != -1 {
+			skillName = content[start : start+end]
+		}
+	}
+
+	// Count scripts from "Available scripts" section
+	if idx := strings.Index(content, "Available scripts"); idx != -1 {
+		section := content[idx:]
+		// Count lines starting with "  - " until we hit an empty line or end
+		lines := strings.Split(section, "\n")
+		for i := 1; i < len(lines); i++ {
+			line := lines[i]
+			if strings.HasPrefix(line, "  - ") {
+				scriptCount++
+			} else if line == "" || !strings.HasPrefix(line, " ") {
+				break
+			}
+		}
+	}
+
+	// Count refs from "Reference files" section
+	if idx := strings.Index(content, "Reference files"); idx != -1 {
+		section := content[idx:]
+		lines := strings.Split(section, "\n")
+		for i := 1; i < len(lines); i++ {
+			line := lines[i]
+			if strings.HasPrefix(line, "  - ") {
+				refCount++
+			} else if line == "" || !strings.HasPrefix(line, " ") {
+				break
+			}
+		}
+	}
+
+	return
 }
 
 func (m model) renderPendingToolSpinner() string {

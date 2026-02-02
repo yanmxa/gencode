@@ -8,12 +8,13 @@ import (
 
 // ToolResult represents the result of a tool execution
 type ToolResult struct {
-	Success   bool           // Whether the tool succeeded
-	Output    string         // Main output content
-	Error     string         // Error message if failed
-	Metadata  ResultMetadata // Result metadata
-	Lines     []ContentLine  // Formatted content lines (optional)
-	Files []string // File list (for Glob)
+	Success   bool             // Whether the tool succeeded
+	Output    string           // Main output content
+	Error     string           // Error message if failed
+	Metadata  ResultMetadata   // Result metadata
+	Lines     []ContentLine    // Formatted content lines (optional)
+	Files     []string         // File list (for Glob)
+	SkillInfo *SkillResultInfo // Skill-specific info (for Skill tool)
 }
 
 // RenderToolResult renders a complete tool result with header and content

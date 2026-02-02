@@ -95,14 +95,25 @@ func (t *SkillTool) Execute(ctx context.Context, params map[string]any, cwd stri
 
 	duration := time.Since(start)
 
+	// Count resources for display
+	scriptCount := len(sk.Scripts)
+	refCount := len(sk.References)
+
 	return ui.ToolResult{
 		Success: true,
 		Output:  sb.String(),
 		Metadata: ui.ResultMetadata{
-			Title:    t.Name(),
-			Icon:     t.Icon(),
-			Subtitle: fmt.Sprintf("Loaded: %s", sk.FullName()),
-			Duration: duration,
+			Title:     t.Name(),
+			Icon:      t.Icon(),
+			Subtitle:  sk.FullName(),
+			Duration:  duration,
+			ItemCount: scriptCount + refCount,
+		},
+		// Store skill-specific info for custom rendering
+		SkillInfo: &ui.SkillResultInfo{
+			SkillName:   sk.FullName(),
+			ScriptCount: scriptCount,
+			RefCount:    refCount,
 		},
 	}
 }
