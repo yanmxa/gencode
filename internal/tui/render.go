@@ -340,6 +340,8 @@ func getToolExecutionDesc(toolName string) string {
 		return "Searching the web..."
 	case "AskUserQuestion":
 		return "Preparing question..."
+	case "Skill":
+		return "Loading skill..."
 	default:
 		return "Executing..."
 	}

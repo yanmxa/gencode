@@ -103,10 +103,16 @@ type Skill struct {
 
 	// Runtime fields
 	FilePath     string     // Full path to the skill file
+	SkillDir     string     // Directory containing the skill
 	Scope        SkillScope // Where the skill was loaded from
 	Instructions string     // Full markdown content (lazy loaded)
 	State        SkillState // Current state (persisted separately)
 	loaded       bool       // Whether full instructions have been loaded
+
+	// Resource directories (Agent Skills spec)
+	Scripts    []string // Files in scripts/ directory
+	References []string // Files in references/ directory
+	Assets     []string // Files in assets/ directory
 }
 
 // FullName returns the namespaced skill name (namespace:name or just name).
@@ -137,4 +143,33 @@ func (s *Skill) GetInstructions() string {
 		}
 	}
 	return s.Instructions
+}
+
+// GetScriptPath returns the full path to a script file.
+func (s *Skill) GetScriptPath(name string) string {
+	if s.SkillDir == "" {
+		return ""
+	}
+	return s.SkillDir + "/scripts/" + name
+}
+
+// GetReferencePath returns the full path to a reference file.
+func (s *Skill) GetReferencePath(name string) string {
+	if s.SkillDir == "" {
+		return ""
+	}
+	return s.SkillDir + "/references/" + name
+}
+
+// GetAssetPath returns the full path to an asset file.
+func (s *Skill) GetAssetPath(name string) string {
+	if s.SkillDir == "" {
+		return ""
+	}
+	return s.SkillDir + "/assets/" + name
+}
+
+// HasResources returns true if the skill has any bundled resources.
+func (s *Skill) HasResources() bool {
+	return len(s.Scripts) > 0 || len(s.References) > 0 || len(s.Assets) > 0
 }

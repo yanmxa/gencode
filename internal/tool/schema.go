@@ -291,7 +291,48 @@ func GetToolSchemas() []provider.Tool {
 	// Add EnterPlanMode to normal mode tools
 	tools = append(tools, EnterPlanModeSchema)
 
+	// Add Skill tool
+	tools = append(tools, SkillToolSchema)
+
 	return tools
+}
+
+// SkillToolSchema returns the schema for the Skill tool
+var SkillToolSchema = provider.Tool{
+	Name: "Skill",
+	Description: `Execute a skill within the main conversation.
+
+When users ask to perform tasks, check if available skills can help.
+Skills provide specialized capabilities and domain knowledge.
+
+When users reference "/<skill-name>" (e.g., "/commit", "/review-pr"), use this tool to invoke it.
+
+Example:
+  User: "run /commit"
+  Assistant: [Calls Skill tool with skill: "commit"]
+
+How to invoke:
+- skill: "pdf" - invoke the pdf skill
+- skill: "commit", args: "-m 'Fix bug'" - invoke with arguments
+- skill: "git:pr" - invoke using namespace:name format
+
+Important:
+- Invoke this tool IMMEDIATELY when a skill is relevant
+- Do not invoke a skill that is already running`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"skill": map[string]any{
+				"type":        "string",
+				"description": "The skill name (e.g., 'commit', 'git:pr', 'pdf')",
+			},
+			"args": map[string]any{
+				"type":        "string",
+				"description": "Optional arguments for the skill",
+			},
+		},
+		"required": []string{"skill"},
+	},
 }
 
 // EnterPlanModeSchema returns the schema for EnterPlanMode tool

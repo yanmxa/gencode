@@ -258,8 +258,12 @@ func (l *Loader) loadSkillFile(path string, scope SkillScope, defaultNamespace s
 		return nil, err
 	}
 
+	// Get skill directory
+	skillDir := filepath.Dir(path)
+
 	skill := &Skill{
 		FilePath: path,
+		SkillDir: skillDir,
 		Scope:    scope,
 		State:    StateEnable, // Default state
 	}
@@ -273,7 +277,7 @@ func (l *Loader) loadSkillFile(path string, scope SkillScope, defaultNamespace s
 
 	// If no name in frontmatter, derive from directory name
 	if skill.Name == "" {
-		skill.Name = filepath.Base(filepath.Dir(path))
+		skill.Name = filepath.Base(skillDir)
 	}
 
 	// Apply default namespace if not set in frontmatter (e.g., from plugin dir)
@@ -281,12 +285,33 @@ func (l *Loader) loadSkillFile(path string, scope SkillScope, defaultNamespace s
 		skill.Namespace = defaultNamespace
 	}
 
+	// Scan resource directories (Agent Skills spec)
+	skill.Scripts = scanResourceDir(filepath.Join(skillDir, "scripts"))
+	skill.References = scanResourceDir(filepath.Join(skillDir, "references"))
+	skill.Assets = scanResourceDir(filepath.Join(skillDir, "assets"))
+
 	// Don't load instructions yet (lazy loading)
 	// Just store that we have content available
 	skill.Instructions = strings.TrimSpace(content.String())
 	skill.loaded = true
 
 	return skill, nil
+}
+
+// scanResourceDir scans a directory and returns file names.
+func scanResourceDir(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var files []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			files = append(files, e.Name())
+		}
+	}
+	return files
 }
 
 // loadInstructions loads the full instructions from a skill file.

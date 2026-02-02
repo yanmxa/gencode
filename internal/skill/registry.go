@@ -161,6 +161,36 @@ func (r *Registry) Get(name string) (*Skill, bool) {
 	return skill, ok
 }
 
+// FindByPartialName finds a skill by partial name match.
+// It tries exact match first, then checks if name is a suffix (e.g., "commit" matches "git:commit").
+func (r *Registry) FindByPartialName(name string) *Skill {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Exact match first
+	if skill, ok := r.skills[name]; ok {
+		return skill
+	}
+
+	// Try suffix match (e.g., "commit" -> "git:commit")
+	name = strings.ToLower(name)
+	for fullName, skill := range r.skills {
+		// Check if name matches the part after ":"
+		if idx := strings.LastIndex(fullName, ":"); idx >= 0 {
+			shortName := strings.ToLower(fullName[idx+1:])
+			if shortName == name {
+				return skill
+			}
+		}
+		// Also try lowercase full match
+		if strings.ToLower(fullName) == name {
+			return skill
+		}
+	}
+
+	return nil
+}
+
 // List returns all skills sorted by full name (namespace:name).
 func (r *Registry) List() []*Skill {
 	r.mu.RLock()
@@ -245,8 +275,10 @@ func (r *Registry) GetStatesAt(userLevel bool) map[string]SkillState {
 	return r.projectStore.states
 }
 
-// GetAvailableSkillsPrompt generates the <available_skills> section for the system prompt.
+// GetAvailableSkillsPrompt generates the available skills section for the system prompt.
 // Only includes active skills (state = active).
+// Uses progressive loading: only name + description are included here.
+// Full instructions are loaded when the Skill tool is invoked.
 func (r *Registry) GetAvailableSkillsPrompt() string {
 	active := r.GetActive()
 	if len(active) == 0 {
@@ -254,19 +286,30 @@ func (r *Registry) GetAvailableSkillsPrompt() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("<available_skills>\n")
-	sb.WriteString("The following skills are available. You can invoke these when appropriate by mentioning the skill name.\n\n")
+	sb.WriteString("# Available Skills\n\n")
+	sb.WriteString("Use the Skill tool to invoke these capabilities:\n\n")
 
 	for _, skill := range active {
-		hint := ""
+		// Only include name and description (progressive loading)
+		sb.WriteString(fmt.Sprintf("- **%s**: %s", skill.FullName(), skill.Description))
 		if skill.ArgumentHint != "" {
-			hint = " " + skill.ArgumentHint
+			sb.WriteString(fmt.Sprintf(" %s", skill.ArgumentHint))
 		}
-		// Use FullName (namespace:name) in the prompt
-		sb.WriteString(fmt.Sprintf("- %s: %s%s\n", skill.FullName(), skill.Description, hint))
+		// Indicate if skill has resources
+		if skill.HasResources() {
+			resources := []string{}
+			if len(skill.Scripts) > 0 {
+				resources = append(resources, fmt.Sprintf("%d scripts", len(skill.Scripts)))
+			}
+			if len(skill.References) > 0 {
+				resources = append(resources, fmt.Sprintf("%d refs", len(skill.References)))
+			}
+			sb.WriteString(fmt.Sprintf(" [%s]", strings.Join(resources, ", ")))
+		}
+		sb.WriteString("\n")
 	}
 
-	sb.WriteString("</available_skills>")
+	sb.WriteString("\nInvoke with: Skill(skill=\"name\", args=\"optional args\")")
 	return sb.String()
 }
 
