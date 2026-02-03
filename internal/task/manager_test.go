@@ -16,7 +16,7 @@ func TestManager_CreateAndGet(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "echo", "test")
 	cmd.Start()
 
-	task := m.Create(cmd, "echo test", "Test task", ctx, cancel)
+	task := m.CreateBashTask(cmd, "echo test", "Test task", ctx, cancel)
 
 	if task.ID == "" {
 		t.Error("task ID should not be empty")
@@ -26,7 +26,7 @@ func TestManager_CreateAndGet(t *testing.T) {
 	if !ok {
 		t.Error("should find created task")
 	}
-	if retrieved.ID != task.ID {
+	if retrieved.GetID() != task.ID {
 		t.Error("retrieved task should match created task")
 	}
 }
@@ -50,7 +50,7 @@ func TestManager_List(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		cmd := exec.CommandContext(ctx, "echo", "test")
 		cmd.Start()
-		m.Create(cmd, "echo test", "Test task", ctx, cancel)
+		m.CreateBashTask(cmd, "echo test", "Test task", ctx, cancel)
 	}
 
 	tasks := m.List()
@@ -66,11 +66,11 @@ func TestManager_ListRunning(t *testing.T) {
 	defer cancel()
 
 	// Create 3 tasks
-	var tasks []*Task
+	var tasks []*BashTask
 	for i := 0; i < 3; i++ {
 		cmd := exec.CommandContext(ctx, "echo", "test")
 		cmd.Start()
-		task := m.Create(cmd, "echo test", "Test task", ctx, cancel)
+		task := m.CreateBashTask(cmd, "echo test", "Test task", ctx, cancel)
 		tasks = append(tasks, task)
 	}
 
@@ -92,7 +92,7 @@ func TestManager_Remove(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "echo", "test")
 	cmd.Start()
 
-	task := m.Create(cmd, "echo test", "Test task", ctx, cancel)
+	task := m.CreateBashTask(cmd, "echo test", "Test task", ctx, cancel)
 	taskID := task.ID
 
 	m.Remove(taskID)
@@ -113,7 +113,7 @@ func TestManager_Cleanup(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "echo", "test")
 	cmd.Start()
 
-	task := m.Create(cmd, "echo test", "Test task", ctx, cancel)
+	task := m.CreateBashTask(cmd, "echo test", "Test task", ctx, cancel)
 	task.Complete(0, nil)
 
 	// Set EndTime to past
@@ -139,7 +139,7 @@ func TestManager_CleanupKeepsRecent(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "echo", "test")
 	cmd.Start()
 
-	task := m.Create(cmd, "echo test", "Test task", ctx, cancel)
+	task := m.CreateBashTask(cmd, "echo test", "Test task", ctx, cancel)
 	task.Complete(0, nil)
 
 	// Cleanup with 1 hour threshold - task just completed so should be kept
@@ -160,7 +160,7 @@ func TestManager_CleanupKeepsRunning(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "echo", "test")
 	cmd.Start()
 
-	task := m.Create(cmd, "echo test", "Test task", ctx, cancel)
+	task := m.CreateBashTask(cmd, "echo test", "Test task", ctx, cancel)
 
 	// Don't complete, keep it running
 	m.Cleanup(0) // Cleanup all old tasks
@@ -182,11 +182,53 @@ func TestManager_GenerateUniqueIDs(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		cmd := exec.CommandContext(ctx, "echo", "test")
 		cmd.Start()
-		task := m.Create(cmd, "echo test", "Test task", ctx, cancel)
+		task := m.CreateBashTask(cmd, "echo test", "Test task", ctx, cancel)
 
 		if ids[task.ID] {
 			t.Errorf("duplicate ID generated: %s", task.ID)
 		}
 		ids[task.ID] = true
+	}
+}
+
+func TestManager_RegisterTask(t *testing.T) {
+	m := NewManager()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "echo", "test")
+	cmd.Start()
+
+	// Create task manually and register
+	task := NewBashTask("manual-id", "echo test", "Manual task", cmd, ctx, cancel)
+	m.RegisterTask(task)
+
+	retrieved, ok := m.Get("manual-id")
+	if !ok {
+		t.Error("should find registered task")
+	}
+	if retrieved.GetID() != "manual-id" {
+		t.Error("retrieved task should match registered task")
+	}
+}
+
+func TestManager_GetBashTask(t *testing.T) {
+	m := NewManager()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "echo", "test")
+	cmd.Start()
+
+	created := m.CreateBashTask(cmd, "echo test", "Test task", ctx, cancel)
+
+	task, ok := m.GetBashTask(created.ID)
+	if !ok {
+		t.Error("should find bash task")
+	}
+	if task.ID != created.ID {
+		t.Error("retrieved task should match created task")
 	}
 }

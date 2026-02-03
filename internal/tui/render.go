@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/glamour"
@@ -245,9 +246,15 @@ func (m model) renderToolCalls(msg chatMessage, msgIdx int) string {
 				}
 			}
 		} else {
-			args := extractToolArgs(tc.Input)
-			toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s(%s)", tc.Name, args))
-			sb.WriteString(toolLine + "\n")
+			// Special formatting for Task tool
+			if tc.Name == "Task" {
+				toolLine := formatTaskToolCall(tc.Input)
+				sb.WriteString(toolCallStyle.Render(toolLine) + "\n")
+			} else {
+				args := extractToolArgs(tc.Input)
+				toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s(%s)", tc.Name, args))
+				sb.WriteString(toolLine + "\n")
+			}
 		}
 
 		// Render the corresponding result inline if found
@@ -269,6 +276,16 @@ func (m model) renderToolResultInline(msg chatMessage) string {
 	// Special handling for Skill tool - show clean summary
 	if toolName == "Skill" {
 		return m.renderSkillResultInline(msg)
+	}
+
+	// Special handling for Task tool - show agent result summary
+	if toolName == "Task" {
+		return m.renderTaskResultInline(msg)
+	}
+
+	// Special handling for TaskOutput - show agent output summary
+	if toolName == "TaskOutput" {
+		return m.renderTaskOutputResultInline(msg)
 	}
 
 	sizeInfo := formatToolResultSize(toolName, msg.toolResult.Content)
@@ -349,6 +366,145 @@ func (m model) renderSkillResultInline(msg chatMessage) string {
 	return sb.String()
 }
 
+// renderTaskResultInline renders a Task tool result with agent-specific formatting
+func (m model) renderTaskResultInline(msg chatMessage) string {
+	icon := "⎿"
+	if msg.toolResult.IsError {
+		icon = "✗"
+	}
+
+	var sb strings.Builder
+	content := msg.toolResult.Content
+
+	if msg.toolResult.IsError {
+		sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  Task → Error", icon)) + "\n")
+		sb.WriteString(toolResultExpandedStyle.Render("    "+content) + "\n")
+		return sb.String()
+	}
+
+	// Parse task info using helper
+	agentName := extractField(content, "Agent: ", "Agent")
+	taskID := extractField(content, "Task ID: ", "")
+	isBackground := strings.Contains(content, "started in background")
+
+	if isBackground && taskID != "" {
+		sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  %s → background", icon, agentName)) + "\n")
+		sb.WriteString(toolResultExpandedStyle.Render(fmt.Sprintf("     Task ID: %s", taskID)) + "\n")
+		sb.WriteString(toolResultExpandedStyle.Render(fmt.Sprintf("     Check:   TaskOutput(\"%s\")", taskID)) + "\n")
+	} else {
+		turns := extractIntField(content, "Turns: ")
+		if turns > 0 {
+			sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  %s → Done (%d turns)", icon, agentName, turns)) + "\n")
+		} else {
+			sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  %s → Done", icon, agentName)) + "\n")
+		}
+	}
+
+	if msg.expanded {
+		for _, line := range strings.Split(content, "\n") {
+			sb.WriteString(toolResultExpandedStyle.Render("    "+line) + "\n")
+		}
+	}
+
+	return sb.String()
+}
+
+// extractField extracts a field value from content by prefix, returning defaultVal if not found
+func extractField(content, prefix, defaultVal string) string {
+	idx := strings.Index(content, prefix)
+	if idx == -1 {
+		return defaultVal
+	}
+	start := idx + len(prefix)
+	end := strings.Index(content[start:], "\n")
+	if end == -1 {
+		return content[start:]
+	}
+	return content[start : start+end]
+}
+
+// extractIntField extracts an integer field value from content by prefix
+func extractIntField(content, prefix string) int {
+	val := extractField(content, prefix, "")
+	if val == "" {
+		return 0
+	}
+	// Parse only leading digits
+	end := 0
+	for end < len(val) && val[end] >= '0' && val[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0
+	}
+	n, _ := strconv.Atoi(val[:end])
+	return n
+}
+
+// renderTaskOutputResultInline renders a TaskOutput result with agent-specific formatting
+func (m model) renderTaskOutputResultInline(msg chatMessage) string {
+	icon := "⎿"
+	if msg.toolResult.IsError {
+		icon = "✗"
+	}
+
+	var sb strings.Builder
+	content := msg.toolResult.Content
+
+	if msg.toolResult.IsError {
+		sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  TaskOutput → Error", icon)) + "\n")
+		if content != "" {
+			sb.WriteString(toolResultExpandedStyle.Render("    "+content) + "\n")
+		}
+		return sb.String()
+	}
+
+	// Parse task info using extractField helper
+	agentName := extractField(content, "Agent: ", "")
+	status := extractField(content, "Status: ", "")
+	turns := extractIntField(content, "Turns: ")
+
+	// Build summary from parsed fields
+	var info []string
+	if agentName != "" {
+		info = append(info, agentName)
+	}
+	if status != "" {
+		info = append(info, status)
+	}
+	if turns > 0 {
+		info = append(info, fmt.Sprintf("%d turns", turns))
+	}
+
+	summaryText := "completed"
+	if len(info) > 0 {
+		summaryText = strings.Join(info, ", ")
+	}
+
+	sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  TaskOutput → %s", icon, summaryText)) + "\n")
+
+	// Show output content if present
+	if idx := strings.Index(content, "Output:\n"); idx != -1 {
+		outputContent := content[idx+8:]
+		outputLines := strings.Split(outputContent, "\n")
+
+		maxLines := 10
+		if msg.expanded {
+			maxLines = len(outputLines)
+		}
+
+		for i, line := range outputLines {
+			if i >= maxLines {
+				sb.WriteString(toolResultExpandedStyle.Render("    ...") + "\n")
+				break
+			}
+			sb.WriteString(toolResultExpandedStyle.Render("    "+line) + "\n")
+		}
+	}
+
+	return sb.String()
+}
+
 // parseSkillResultContent extracts skill info from skill-invocation content
 func parseSkillResultContent(content string) (skillName string, scriptCount, refCount int) {
 	skillName = "skill"
@@ -395,33 +551,40 @@ func parseSkillResultContent(content string) (skillName string, scriptCount, ref
 
 func (m model) renderPendingToolSpinner() string {
 	interactivePromptActive := m.questionPrompt.IsActive() || (m.planPrompt != nil && m.planPrompt.IsActive())
+	if interactivePromptActive {
+		return ""
+	}
 
-	if m.buildingToolName != "" && !interactivePromptActive {
-		var sb strings.Builder
-		sb.WriteString("\n")
-		toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s", m.buildingToolName))
-		sb.WriteString(toolLine + "\n")
+	// Determine which tool is active
+	var toolName string
+	if m.buildingToolName != "" {
+		toolName = m.buildingToolName
+	} else if m.pendingToolCalls != nil && m.pendingToolIdx < len(m.pendingToolCalls) {
+		toolName = m.pendingToolCalls[m.pendingToolIdx].Name
+	} else {
+		return ""
+	}
 
-		desc := getToolExecutionDesc(m.buildingToolName)
-		spinnerLine := thinkingStyle.Render(fmt.Sprintf("  %s %s", m.spinner.View(), desc))
-		sb.WriteString(spinnerLine + "\n")
+	var sb strings.Builder
+
+	// Task tool has special rendering with progress
+	if toolName == "Task" {
+		status := "Agent starting..."
+		if len(m.taskProgress) > 0 {
+			status = "Agent running..."
+		}
+		sb.WriteString(thinkingStyle.Render(fmt.Sprintf("  %s %s", m.spinner.View(), status)) + "\n")
+		for _, p := range m.taskProgress {
+			sb.WriteString(toolResultExpandedStyle.Render(fmt.Sprintf("     %s", p)) + "\n")
+		}
 		return sb.String()
 	}
 
-	if m.pendingToolCalls != nil && m.pendingToolIdx < len(m.pendingToolCalls) && !interactivePromptActive {
-		tc := m.pendingToolCalls[m.pendingToolIdx]
-		var sb strings.Builder
-		sb.WriteString("\n")
-		toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s", tc.Name))
-		sb.WriteString(toolLine + "\n")
-
-		desc := getToolExecutionDesc(tc.Name)
-		spinnerLine := thinkingStyle.Render(fmt.Sprintf("  %s %s", m.spinner.View(), desc))
-		sb.WriteString(spinnerLine + "\n")
-		return sb.String()
-	}
-
-	return ""
+	// Standard tool spinner
+	sb.WriteString("\n")
+	sb.WriteString(toolCallStyle.Render(fmt.Sprintf("⚡%s", toolName)) + "\n")
+	sb.WriteString(thinkingStyle.Render(fmt.Sprintf("  %s %s", m.spinner.View(), getToolExecutionDesc(toolName))) + "\n")
+	return sb.String()
 }
 
 func getToolExecutionDesc(toolName string) string {
@@ -451,6 +614,41 @@ func getToolExecutionDesc(toolName string) string {
 	default:
 		return "Executing..."
 	}
+}
+
+// formatTaskToolCall formats a Task tool call with agent type and description
+func formatTaskToolCall(input string) string {
+	var params map[string]any
+	if err := json.Unmarshal([]byte(input), &params); err != nil {
+		return "⚡Task(...)"
+	}
+
+	agentType := "Agent"
+	if a, ok := params["subagent_type"].(string); ok {
+		agentType = a
+	}
+
+	desc := ""
+	if d, ok := params["description"].(string); ok {
+		desc = d
+	} else if p, ok := params["prompt"].(string); ok {
+		// Use first 40 chars of prompt if no description
+		desc = p
+		if len(desc) > 40 {
+			desc = desc[:40] + "..."
+		}
+	}
+
+	// Check for background mode
+	bgSuffix := ""
+	if bg, ok := params["run_in_background"].(bool); ok && bg {
+		bgSuffix = " ⏳"
+	}
+
+	if desc != "" {
+		return fmt.Sprintf("⚡Task(%s: %s)%s", agentType, desc, bgSuffix)
+	}
+	return fmt.Sprintf("⚡Task(%s)%s", agentType, bgSuffix)
 }
 
 func extractToolArgs(input string) string {

@@ -56,6 +56,11 @@ func getCommandRegistry() map[string]Command {
 			Description: "Manage available tools (enable/disable)",
 			Handler:     handleToolCommand,
 		},
+		"tools": {
+			Name:        "tools",
+			Description: "Manage available tools (enable/disable)",
+			Handler:     handleToolCommand,
+		},
 		"plan": {
 			Name:        "plan",
 			Description: "Enter plan mode to explore and plan before execution",

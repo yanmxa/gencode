@@ -345,8 +345,11 @@ func (s *ToolSelectorState) Render() string {
 				statusStyle = selectorStatusNone
 			}
 
-			// Truncate description if too long
+			// Use only the first line of description, then truncate if needed
 			desc := t.Description
+			if idx := strings.Index(desc, "\n"); idx != -1 {
+				desc = desc[:idx]
+			}
 			if len(desc) > maxDescLen {
 				desc = desc[:maxDescLen-3] + "..."
 			}

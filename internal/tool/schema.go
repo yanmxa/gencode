@@ -294,7 +294,68 @@ func GetToolSchemas() []provider.Tool {
 	// Add Skill tool
 	tools = append(tools, SkillToolSchema)
 
+	// Add Task tool
+	tools = append(tools, TaskToolSchema)
+
 	return tools
+}
+
+// TaskToolSchema returns the schema for the Task tool
+var TaskToolSchema = provider.Tool{
+	Name: "Task",
+	Description: `Launch a subagent to handle complex, multi-step tasks autonomously.
+
+The Task tool launches specialized agents that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
+
+Available agent types and the tools they have access to:
+- Bash: Command execution specialist for running bash commands. Use this for git operations, command execution, and other terminal tasks. (Tools: Bash, Read, Glob, Grep)
+- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns, search code for keywords, or answer questions about the codebase. (Tools: Read, Glob, Grep, WebFetch, WebSearch)
+- Plan: Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs. (Tools: Read, Glob, Grep, WebFetch, WebSearch)
+- Review: Code review specialist for analyzing code changes, identifying issues, and suggesting improvements. (Tools: Read, Glob, Grep, Bash)
+- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for something and are not confident that you will find the right match quickly, use this agent. (Tools: all except Task)
+
+Usage notes:
+- Always include a short description (3-5 words) summarizing what the agent will do
+- Launch multiple agents concurrently whenever possible using run_in_background=true
+- Use TaskOutput to check on background agents, TaskStop to stop them
+- Agents can be resumed using the resume parameter with a previous agent ID
+- Each agent runs in isolated context - only final result returns to main conversation`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"subagent_type": map[string]any{
+				"type":        "string",
+				"description": "The type of agent to spawn (Bash, Explore, Plan, Review, general-purpose, or custom agent name)",
+			},
+			"prompt": map[string]any{
+				"type":        "string",
+				"description": "The task for the agent to perform",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "A short (3-5 word) description of the task",
+			},
+			"run_in_background": map[string]any{
+				"type":        "boolean",
+				"description": "Run the agent in background (default: false). Returns task_id immediately.",
+				"default":     false,
+			},
+			"resume": map[string]any{
+				"type":        "string",
+				"description": "Optional agent ID to resume from a previous execution. When resumed, agent continues with full previous context preserved.",
+			},
+			"model": map[string]any{
+				"type":        "string",
+				"description": "Override model: sonnet, opus, haiku. If not specified, inherits from parent conversation.",
+				"enum":        []string{"sonnet", "opus", "haiku"},
+			},
+			"max_turns": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of conversation turns before stopping",
+			},
+		},
+		"required": []string{"subagent_type", "prompt"},
+	},
 }
 
 // SkillToolSchema returns the schema for the Skill tool

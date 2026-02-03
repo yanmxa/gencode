@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"go.uber.org/zap"
 
+	"github.com/yanmxa/gencode/internal/agent"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/plan"
@@ -128,6 +129,10 @@ type model struct {
 	skillSelector            SkillSelectorState
 	pendingSkillInstructions string // Full skill content for next message
 	pendingSkillArgs         string // User args for skill invocation
+
+	// Task progress tracking
+	activeTaskID   string   // Currently executing Task ID (for progress display)
+	taskProgress   []string // Recent progress messages from Task
 }
 
 func Run() error {
@@ -225,6 +230,18 @@ func newModel() model {
 	// Initialize skill registry
 	if err := skill.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize skill registry", zap.Error(err))
+	}
+
+	// Load custom agents
+	agent.LoadCustomAgents(cwd)
+
+	// Configure Task tool if provider is available
+	if llmProvider != nil {
+		modelID := ""
+		if currentModel != nil {
+			modelID = currentModel.ModelID
+		}
+		configureTaskTool(llmProvider, cwd, modelID)
 	}
 
 	mdRenderer := createMarkdownRenderer(defaultWidth)
@@ -325,6 +342,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case toolResultMsg:
 		return m.handleToolResult(msg)
+
+	case TaskProgressMsg:
+		return m.handleTaskProgress(msg)
 
 	case startToolExecutionMsg:
 		return m.handleStartToolExecution(msg)

@@ -5,21 +5,13 @@ import (
 	"context"
 	"os/exec"
 	"sync"
+	"syscall"
 	"time"
 )
 
-// TaskStatus represents the status of a background task
-type TaskStatus string
-
-const (
-	StatusRunning   TaskStatus = "running"
-	StatusCompleted TaskStatus = "completed"
-	StatusFailed    TaskStatus = "failed"
-	StatusKilled    TaskStatus = "killed"
-)
-
-// Task represents a background task
-type Task struct {
+// BashTask represents a background bash command task
+// It implements the BackgroundTask interface
+type BashTask struct {
 	ID          string             // Unique task ID
 	Command     string             // The command being executed
 	Description string             // Brief description
@@ -33,13 +25,16 @@ type Task struct {
 	Ctx         context.Context    // Task context
 	Cancel      context.CancelFunc // Cancel function
 
-	mu     sync.RWMutex // Protects output buffer
-	output bytes.Buffer  // Collected stdout/stderr
+	mu     sync.RWMutex // Protects output buffer and status
+	output bytes.Buffer // Collected stdout/stderr
 }
 
-// NewTask creates a new task
-func NewTask(id, command, description string, cmd *exec.Cmd, ctx context.Context, cancel context.CancelFunc) *Task {
-	return &Task{
+// Verify BashTask implements BackgroundTask
+var _ BackgroundTask = (*BashTask)(nil)
+
+// NewBashTask creates a new bash task
+func NewBashTask(id, command, description string, cmd *exec.Cmd, ctx context.Context, cancel context.CancelFunc) *BashTask {
+	return &BashTask{
 		ID:          id,
 		Command:     command,
 		Description: description,
@@ -52,22 +47,37 @@ func NewTask(id, command, description string, cmd *exec.Cmd, ctx context.Context
 	}
 }
 
+// GetID returns the unique task identifier
+func (t *BashTask) GetID() string {
+	return t.ID
+}
+
+// GetType returns the task type
+func (t *BashTask) GetType() TaskType {
+	return TaskTypeBash
+}
+
+// GetDescription returns the task description
+func (t *BashTask) GetDescription() string {
+	return t.Description
+}
+
 // AppendOutput appends data to the output buffer
-func (t *Task) AppendOutput(data []byte) {
+func (t *BashTask) AppendOutput(data []byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.output.Write(data)
 }
 
 // GetOutput returns the current output
-func (t *Task) GetOutput() string {
+func (t *BashTask) GetOutput() string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.output.String()
 }
 
 // Complete marks the task as completed
-func (t *Task) Complete(exitCode int, err error) {
+func (t *BashTask) Complete(exitCode int, err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -84,8 +94,8 @@ func (t *Task) Complete(exitCode int, err error) {
 	}
 }
 
-// Kill marks the task as killed
-func (t *Task) Kill() {
+// MarkKilled marks the task as killed (internal use)
+func (t *BashTask) MarkKilled() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -94,7 +104,7 @@ func (t *Task) Kill() {
 }
 
 // IsRunning returns true if the task is still running
-func (t *Task) IsRunning() bool {
+func (t *BashTask) IsRunning() bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.Status == StatusRunning
@@ -102,7 +112,7 @@ func (t *Task) IsRunning() bool {
 
 // WaitForCompletion waits until the task completes or timeout
 // Returns true if completed, false if timeout
-func (t *Task) WaitForCompletion(timeout time.Duration) bool {
+func (t *BashTask) WaitForCompletion(timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 
 	for {
@@ -123,13 +133,55 @@ func (t *Task) WaitForCompletion(timeout time.Duration) bool {
 	}
 }
 
+// Stop gracefully stops the task (SIGTERM)
+func (t *BashTask) Stop() error {
+	// Cancel the context first
+	if t.Cancel != nil {
+		t.Cancel()
+	}
+
+	// Send SIGTERM to process group
+	if t.PID > 0 {
+		if err := syscall.Kill(-t.PID, syscall.SIGTERM); err != nil {
+			// Ignore if process already exited
+			if err != syscall.ESRCH {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// Kill forcefully terminates the task (SIGKILL)
+func (t *BashTask) Kill() error {
+	// Cancel the context
+	if t.Cancel != nil {
+		t.Cancel()
+	}
+
+	// Send SIGKILL to process group
+	if t.PID > 0 {
+		if err := syscall.Kill(-t.PID, syscall.SIGKILL); err != nil {
+			// Ignore if process already exited
+			if err != syscall.ESRCH {
+				return err
+			}
+		}
+	}
+
+	t.MarkKilled()
+	return nil
+}
+
 // GetStatus returns the current task status info
-func (t *Task) GetStatus() TaskInfo {
+func (t *BashTask) GetStatus() TaskInfo {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
 	return TaskInfo{
 		ID:          t.ID,
+		Type:        TaskTypeBash,
 		Command:     t.Command,
 		Description: t.Description,
 		Status:      t.Status,
@@ -140,18 +192,4 @@ func (t *Task) GetStatus() TaskInfo {
 		Error:       t.Error,
 		Output:      t.output.String(),
 	}
-}
-
-// TaskInfo is a snapshot of task information
-type TaskInfo struct {
-	ID          string
-	Command     string
-	Description string
-	Status      TaskStatus
-	PID         int
-	StartTime   time.Time
-	EndTime     time.Time
-	ExitCode    int
-	Error       string
-	Output      string
 }

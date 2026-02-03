@@ -66,14 +66,14 @@ func (t *TaskStopTool) Execute(ctx context.Context, params map[string]any, cwd s
 	// Get task info before stopping
 	info := bgTask.GetStatus()
 
-	// Stop the task
+	// Stop the task using the interface method
 	err := task.DefaultManager.Kill(taskID)
 	duration := time.Since(start)
 
 	if err != nil {
 		return ui.ToolResult{
 			Success: false,
-			Error:   fmt.Sprintf("failed to kill task: %v", err),
+			Error:   fmt.Sprintf("failed to stop task: %v", err),
 			Metadata: ui.ResultMetadata{
 				Title:    t.Name(),
 				Icon:     t.Icon(),
@@ -85,7 +85,20 @@ func (t *TaskStopTool) Execute(ctx context.Context, params map[string]any, cwd s
 	// Get final status
 	finalInfo := bgTask.GetStatus()
 
-	output := fmt.Sprintf("Task stopped successfully.\nTask ID: %s\nPID: %d\nStatus: %s", taskID, info.PID, finalInfo.Status)
+	// Build output based on task type
+	var output string
+	switch info.Type {
+	case task.TaskTypeBash:
+		output = fmt.Sprintf("Task stopped successfully.\nTask ID: %s\nType: bash\nPID: %d\nStatus: %s",
+			taskID, info.PID, finalInfo.Status)
+	case task.TaskTypeAgent:
+		output = fmt.Sprintf("Task stopped successfully.\nTask ID: %s\nType: agent\nAgent: %s\nTurns: %d\nStatus: %s",
+			taskID, info.AgentName, info.TurnCount, finalInfo.Status)
+	default:
+		output = fmt.Sprintf("Task stopped successfully.\nTask ID: %s\nStatus: %s",
+			taskID, finalInfo.Status)
+	}
+
 	if finalInfo.Output != "" {
 		output += fmt.Sprintf("\n\nOutput before stop:\n%s", finalInfo.Output)
 	}

@@ -16,6 +16,7 @@ type PermissionPrompt struct {
 	diffPreview  *DiffPreview
 	bashPreview  *BashPreview
 	skillPreview *SkillPreview
+	agentPreview *AgentPreview
 	width        int
 	selectedIdx  int // Current menu selection (0=Yes, 1=Yes all, 2=No)
 }
@@ -51,6 +52,12 @@ func (p *PermissionPrompt) Show(req *permission.PermissionRequest, width, height
 	} else {
 		p.skillPreview = nil
 	}
+
+	if req.AgentMeta != nil {
+		p.agentPreview = NewAgentPreview(req.AgentMeta)
+	} else {
+		p.agentPreview = nil
+	}
 }
 
 // Hide hides the permission prompt
@@ -60,6 +67,7 @@ func (p *PermissionPrompt) Hide() {
 	p.diffPreview = nil
 	p.bashPreview = nil
 	p.skillPreview = nil
+	p.agentPreview = nil
 }
 
 // IsActive returns whether the prompt is visible
@@ -242,13 +250,15 @@ func (p *PermissionPrompt) RenderInline() string {
 	sb.WriteString(getPermTitleStyle().Render(title))
 	sb.WriteString("\n\n")
 
-	// Diff preview, Bash preview, Skill preview, or content preview (no dotted separators)
+	// Diff preview, Bash preview, Skill preview, Agent preview, or content preview (no dotted separators)
 	if p.diffPreview != nil {
 		sb.WriteString(p.diffPreview.Render(contentWidth))
 	} else if p.bashPreview != nil {
 		sb.WriteString(p.bashPreview.Render(contentWidth))
 	} else if p.skillPreview != nil {
 		sb.WriteString(p.skillPreview.Render(contentWidth))
+	} else if p.agentPreview != nil {
+		sb.WriteString(p.agentPreview.Render(contentWidth))
 	}
 	sb.WriteString("\n")
 
@@ -289,6 +299,8 @@ func (p *PermissionPrompt) getTitle() string {
 		return "Bash command"
 	case "Skill":
 		return "Load skill"
+	case "Task":
+		return "Spawn agent"
 	default:
 		return p.request.Description
 	}
@@ -305,6 +317,8 @@ func (p *PermissionPrompt) getAllSessionLabel() string {
 		return "Yes, allow all commands during this session"
 	case "Skill":
 		return "Yes, allow all skills during this session"
+	case "Task":
+		return "Yes, allow all agents during this session"
 	default:
 		return "Yes, allow all during this session"
 	}

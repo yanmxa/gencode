@@ -18,6 +18,11 @@ func (m *model) handleToolResult(msg toolResultMsg) (tea.Model, tea.Cmd) {
 		return m.handleParallelToolResult(msg)
 	}
 
+	// Clear task progress when Task tool completes
+	if msg.toolName == "Task" {
+		m.taskProgress = nil
+	}
+
 	// Sequential mode - original behavior
 	r := msg.result
 	m.messages = append(m.messages, chatMessage{
@@ -231,6 +236,23 @@ func (m *model) handleSpinnerTick(msg tea.Msg) (tea.Model, tea.Cmd) {
 		interactiveActive := m.questionPrompt.IsActive() || (m.planPrompt != nil && m.planPrompt.IsActive())
 		if interactiveActive {
 			return m, cmd
+		}
+
+		// Check for Task progress updates
+		if m.pendingToolCalls != nil && m.pendingToolIdx < len(m.pendingToolCalls) {
+			tc := m.pendingToolCalls[m.pendingToolIdx]
+			if tc.Name == "Task" {
+				// Check for progress messages
+				ch := GetTaskProgressChan()
+				select {
+				case progressMsg := <-ch:
+					m.taskProgress = append(m.taskProgress, progressMsg)
+					if len(m.taskProgress) > 5 {
+						m.taskProgress = m.taskProgress[1:]
+					}
+				default:
+				}
+			}
 		}
 
 		if m.buildingToolName != "" {

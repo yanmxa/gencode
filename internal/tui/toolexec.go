@@ -254,6 +254,13 @@ func executeApprovedTool(toolCalls []provider.ToolCall, idx int, cwd string) tea
 			}
 		}
 
+		// For Task tool, set up progress callback
+		if tc.Name == "Task" {
+			params["_onProgress"] = tool.ProgressFunc(func(msg string) {
+				SendTaskProgress(msg)
+			})
+		}
+
 		t, ok := tool.Get(tc.Name)
 		if !ok {
 			return toolResultMsg{

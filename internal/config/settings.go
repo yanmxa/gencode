@@ -86,6 +86,9 @@ type SessionPermissions struct {
 	// AllowAllSkills allows all skill invocations without prompting
 	AllowAllSkills bool
 
+	// AllowAllTasks allows all task/agent spawning without prompting
+	AllowAllTasks bool
+
 	// AllowedTools contains tools that have been allowed for this session
 	AllowedTools map[string]bool
 
@@ -126,6 +129,9 @@ func (sp *SessionPermissions) IsToolAllowed(toolName string) bool {
 		return true
 	}
 	if toolName == "Skill" && sp.AllowAllSkills {
+		return true
+	}
+	if toolName == "Task" && sp.AllowAllTasks {
 		return true
 	}
 	return false

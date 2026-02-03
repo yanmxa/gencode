@@ -7,14 +7,13 @@ import (
 	"fmt"
 	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 )
 
 // Manager manages background tasks
 type Manager struct {
 	mu    sync.RWMutex
-	tasks map[string]*Task
+	tasks map[string]BackgroundTask
 }
 
 // DefaultManager is the global default task manager
@@ -23,21 +22,34 @@ var DefaultManager = NewManager()
 // NewManager creates a new task manager
 func NewManager() *Manager {
 	return &Manager{
-		tasks: make(map[string]*Task),
+		tasks: make(map[string]BackgroundTask),
 	}
 }
 
-// Create creates and registers a new task
-func (m *Manager) Create(cmd *exec.Cmd, command, description string, ctx context.Context, cancel context.CancelFunc) *Task {
+// CreateBashTask creates and registers a new bash task
+func (m *Manager) CreateBashTask(cmd *exec.Cmd, command, description string, ctx context.Context, cancel context.CancelFunc) *BashTask {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	id := generateID()
-	task := NewTask(id, command, description, cmd, ctx, cancel)
+	task := NewBashTask(id, command, description, cmd, ctx, cancel)
 
 	m.tasks[id] = task
 
 	return task
+}
+
+// Create is an alias for CreateBashTask for backward compatibility
+// Deprecated: Use CreateBashTask instead
+func (m *Manager) Create(cmd *exec.Cmd, command, description string, ctx context.Context, cancel context.CancelFunc) *BashTask {
+	return m.CreateBashTask(cmd, command, description, ctx, cancel)
+}
+
+// RegisterTask registers an existing task (used for agent tasks)
+func (m *Manager) RegisterTask(task BackgroundTask) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tasks[task.GetID()] = task
 }
 
 // generateID creates a short random ID
@@ -47,20 +59,37 @@ func generateID() string {
 	return hex.EncodeToString(b)
 }
 
+// GenerateID creates a short random ID (exported for agent tasks)
+func GenerateID() string {
+	return generateID()
+}
+
 // Get retrieves a task by ID
-func (m *Manager) Get(id string) (*Task, bool) {
+func (m *Manager) Get(id string) (BackgroundTask, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	task, ok := m.tasks[id]
 	return task, ok
 }
 
+// GetBashTask retrieves a bash task by ID (for backward compatibility)
+func (m *Manager) GetBashTask(id string) (*BashTask, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	task, ok := m.tasks[id]
+	if !ok {
+		return nil, false
+	}
+	bashTask, ok := task.(*BashTask)
+	return bashTask, ok
+}
+
 // List returns all tasks
-func (m *Manager) List() []*Task {
+func (m *Manager) List() []BackgroundTask {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	tasks := make([]*Task, 0, len(m.tasks))
+	tasks := make([]BackgroundTask, 0, len(m.tasks))
 	for _, t := range m.tasks {
 		tasks = append(tasks, t)
 	}
@@ -68,11 +97,11 @@ func (m *Manager) List() []*Task {
 }
 
 // ListRunning returns all running tasks
-func (m *Manager) ListRunning() []*Task {
+func (m *Manager) ListRunning() []BackgroundTask {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	tasks := make([]*Task, 0)
+	tasks := make([]BackgroundTask, 0)
 	for _, t := range m.tasks {
 		if t.IsRunning() {
 			tasks = append(tasks, t)
@@ -95,18 +124,10 @@ func (m *Manager) Kill(id string) error {
 		return fmt.Errorf("task already completed: %s", id)
 	}
 
-	// Cancel the context first
-	if task.Cancel != nil {
-		task.Cancel()
-	}
-
-	// Try graceful termination first (SIGTERM to process group)
-	if task.PID > 0 {
-		// Use negative PID to kill the process group
-		if err := syscall.Kill(-task.PID, syscall.SIGTERM); err != nil {
-			// If SIGTERM fails, try SIGKILL
-			syscall.Kill(-task.PID, syscall.SIGKILL)
-		}
+	// Try graceful stop first
+	if err := task.Stop(); err != nil {
+		// If stop fails, try kill
+		return task.Kill()
 	}
 
 	// Wait for graceful exit
@@ -123,16 +144,11 @@ func (m *Manager) Kill(id string) error {
 		// Already terminated
 	case <-time.After(2 * time.Second):
 		// Force kill
-		if task.PID > 0 {
-			syscall.Kill(-task.PID, syscall.SIGKILL)
+		if err := task.Kill(); err != nil {
+			return err
 		}
 		// Wait a bit more
 		time.Sleep(500 * time.Millisecond)
-	}
-
-	// Mark as killed if still running
-	if task.IsRunning() {
-		task.Kill()
 	}
 
 	return nil
@@ -152,7 +168,8 @@ func (m *Manager) Cleanup(maxAge time.Duration) {
 
 	now := time.Now()
 	for id, task := range m.tasks {
-		if !task.IsRunning() && now.Sub(task.EndTime) > maxAge {
+		info := task.GetStatus()
+		if !task.IsRunning() && now.Sub(info.EndTime) > maxAge {
 			delete(m.tasks, id)
 		}
 	}

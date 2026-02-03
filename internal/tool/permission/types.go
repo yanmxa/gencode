@@ -2,13 +2,14 @@ package permission
 
 // PermissionRequest represents a request for user permission before executing a tool
 type PermissionRequest struct {
-	ID          string         // Unique request ID
-	ToolName    string         // Name of the tool requesting permission
-	FilePath    string         // File path being modified
-	Description string         // Human-readable description of the action
-	DiffMeta    *DiffMetadata  // Diff metadata (for Edit/Write tools)
-	BashMeta    *BashMetadata  // Bash metadata (for Bash tool)
-	SkillMeta   *SkillMetadata // Skill metadata (for Skill tool)
+	ID          string          // Unique request ID
+	ToolName    string          // Name of the tool requesting permission
+	FilePath    string          // File path being modified
+	Description string          // Human-readable description of the action
+	DiffMeta    *DiffMetadata   // Diff metadata (for Edit/Write tools)
+	BashMeta    *BashMetadata   // Bash metadata (for Bash tool)
+	SkillMeta   *SkillMetadata  // Skill metadata (for Skill tool)
+	AgentMeta   *AgentMetadata  // Agent metadata (for Task tool)
 }
 
 // DiffMetadata contains diff information for file modifications
@@ -40,6 +41,17 @@ type SkillMetadata struct {
 	RefCount    int      // Number of reference files
 	Scripts     []string // Script file names
 	References  []string // Reference file names
+}
+
+// AgentMetadata contains metadata for Task permission requests
+type AgentMetadata struct {
+	AgentName      string   // Name of the agent type (Explore, Plan, etc.)
+	Description    string   // Agent description
+	Model          string   // Model to be used by the agent
+	PermissionMode string   // Permission mode (plan, default, dontAsk, etc.)
+	Tools          []string // List of tools available to the agent
+	Prompt         string   // The task prompt
+	Background     bool     // Whether running in background
 }
 
 // DiffLine represents a single line in a diff

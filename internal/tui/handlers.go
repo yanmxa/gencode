@@ -6,10 +6,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/agent"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 // Provider and model selection handlers
@@ -28,6 +30,12 @@ func (m *model) handleProviderSelected(msg ProviderSelectedMsg) (tea.Model, tea.
 		m.messages = append(m.messages, chatMessage{role: "system", content: result})
 		if p, err := provider.GetProvider(ctx, msg.Provider, msg.AuthMethod); err == nil {
 			m.llmProvider = p
+			// Configure Task tool with executor (use current model if available)
+			modelID := ""
+			if m.currentModel != nil {
+				modelID = m.currentModel.ModelID
+			}
+			configureTaskTool(p, m.cwd, modelID)
 		}
 	}
 	m.viewport.SetContent(m.renderMessages())
@@ -49,11 +57,26 @@ func (m *model) handleModelSelected(msg ModelSelectedMsg) (tea.Model, tea.Cmd) {
 		ctx := context.Background()
 		if p, err := provider.GetProvider(ctx, provider.Provider(msg.ProviderName), msg.AuthMethod); err == nil {
 			m.llmProvider = p
+			// Configure Task tool with executor
+			configureTaskTool(p, m.cwd, msg.ModelID)
 		}
 	}
 	m.viewport.SetContent(m.renderMessages())
 	m.viewport.GotoBottom()
 	return m, nil
+}
+
+// configureTaskTool sets up the Task tool with the agent executor
+func configureTaskTool(llmProvider provider.LLMProvider, cwd string, modelID string) {
+	// Get Task tool from registry
+	if t, ok := tool.Get("Task"); ok {
+		if taskTool, ok := t.(*tool.TaskTool); ok {
+			// Create executor and adapter
+			executor := agent.NewExecutor(llmProvider, cwd, modelID)
+			adapter := agent.NewExecutorAdapter(executor)
+			taskTool.SetExecutor(adapter)
+		}
+	}
 }
 
 // Permission handlers
@@ -76,10 +99,22 @@ func (m *model) handlePermissionResponse(msg PermissionResponseMsg) (tea.Model, 
 				m.sessionPermissions.AllowAllBash = true
 			case "Skill":
 				m.sessionPermissions.AllowAllSkills = true
+			case "Task":
+				m.sessionPermissions.AllowAllTasks = true
 			default:
 				m.sessionPermissions.AllowTool(toolName)
 			}
 		}
+
+		// For Task tool, clear progress and start checking for updates
+		if msg.Request != nil && msg.Request.ToolName == "Task" {
+			m.taskProgress = nil
+			return m, tea.Batch(
+				executeApprovedTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd),
+				checkTaskProgress(),
+			)
+		}
+
 		return m, executeApprovedTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd)
 	}
 
