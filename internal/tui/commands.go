@@ -51,11 +51,6 @@ func getCommandRegistry() map[string]Command {
 			Description: "Find files matching a pattern",
 			Handler:     handleGlobCommand,
 		},
-		"tool": {
-			Name:        "tool",
-			Description: "Manage available tools (enable/disable)",
-			Handler:     handleToolCommand,
-		},
 		"tools": {
 			Name:        "tools",
 			Description: "Manage available tools (enable/disable)",
@@ -66,8 +61,8 @@ func getCommandRegistry() map[string]Command {
 			Description: "Enter plan mode to explore and plan before execution",
 			Handler:     handlePlanCommand,
 		},
-		"skill": {
-			Name:        "skill",
+		"skills": {
+			Name:        "skills",
 			Description: "Manage skills (enable/disable/activate)",
 			Handler:     handleSkillCommand,
 		},
@@ -272,7 +267,7 @@ func handlePlanCommand(ctx context.Context, m *model, args string) (string, erro
 	return fmt.Sprintf("Entering plan mode for: %s\n\nI will explore the codebase and create an implementation plan. Only read-only tools are available until the plan is approved.", args), nil
 }
 
-// handleSkillCommand handles the /skill command
+// handleSkillCommand handles the /skills command
 func handleSkillCommand(ctx context.Context, m *model, args string) (string, error) {
 	if err := m.skillSelector.EnterSkillSelect(m.width, m.height); err != nil {
 		return "", err
