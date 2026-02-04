@@ -265,7 +265,7 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 		m.streamChan = m.llmProvider.Stream(ctx, provider.CompletionOptions{
 			Model:        modelID,
 			Messages:     providerMsgs,
-			MaxTokens:    defaultMaxTokens,
+			MaxTokens:    m.getMaxTokens(),
 			Tools:        tools,
 			SystemPrompt: sysPrompt,
 		})
@@ -316,11 +316,13 @@ func (m *model) handleEnterPlanResponse(msg EnterPlanResponseMsg) (tea.Model, te
 
 func (m *model) handleCompactResult(msg CompactResultMsg) (tea.Model, tea.Cmd) {
 	m.compacting = false
+	m.compactFocus = ""      // Reset focus
+	m.autoCompactNext = false // Reset auto-compact flag
 
 	if msg.Error != nil {
 		m.messages = append(m.messages, chatMessage{
 			role:    "system",
-			content: fmt.Sprintf("Compact failed: %v", msg.Error),
+			content: fmt.Sprintf("⚠ Compact failed: %v", msg.Error),
 		})
 		m.viewport.SetContent(m.renderMessages())
 		m.viewport.GotoBottom()
@@ -330,9 +332,13 @@ func (m *model) handleCompactResult(msg CompactResultMsg) (tea.Model, tea.Cmd) {
 	// Replace message history with the summary as a user message
 	// This ensures the summary is sent to LLM as context for future messages
 	m.messages = []chatMessage{{
-		role:    "user",
-		content: fmt.Sprintf("Here is a summary of our previous conversation:\n\n%s", msg.Summary),
+		role:         "user",
+		content:      fmt.Sprintf("Here is a summary of our previous conversation:\n\n%s", msg.Summary),
+		isSummary:    true,
+		summaryCount: msg.OriginalCount,
+		expanded:     false, // Collapsed by default
 	}}
+
 	m.lastInputTokens = 0
 	m.lastOutputTokens = 0
 
@@ -355,6 +361,23 @@ func (m *model) handleTokenLimitResult(msg TokenLimitResultMsg) (tea.Model, tea.
 	}
 	m.messages = append(m.messages, chatMessage{role: "system", content: content})
 
+	m.viewport.SetContent(m.renderMessages())
+	m.viewport.GotoBottom()
+	return m, nil
+}
+
+// Editor finished handler
+
+func (m *model) handleEditorFinished(msg EditorFinishedMsg) (tea.Model, tea.Cmd) {
+	filePath := m.editingMemoryFile
+	m.editingMemoryFile = ""
+
+	content := fmt.Sprintf("Saved: %s", filePath)
+	if msg.Err != nil {
+		content = fmt.Sprintf("Editor error: %v", msg.Err)
+	}
+
+	m.messages = append(m.messages, chatMessage{role: "system", content: content})
 	m.viewport.SetContent(m.renderMessages())
 	m.viewport.GotoBottom()
 	return m, nil

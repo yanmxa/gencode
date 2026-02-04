@@ -169,6 +169,14 @@ func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 		m.streamChan = nil
 		m.cancelFunc = nil
 		m.viewport.SetContent(m.renderMessages())
+
+		// Auto-save session after assistant response completes
+		_ = m.saveSession()
+
+		// Check for auto-compact trigger (>= 95% context usage)
+		if m.shouldAutoCompact() {
+			return m, m.triggerAutoCompact()
+		}
 		return m, nil
 	}
 
@@ -218,7 +226,7 @@ func (m *model) handleStreamContinue(msg streamContinueMsg) (tea.Model, tea.Cmd)
 	m.streamChan = m.llmProvider.Stream(ctx, provider.CompletionOptions{
 		Model:        msg.modelID,
 		Messages:     msg.messages,
-		MaxTokens:    defaultMaxTokens,
+		MaxTokens:    m.getMaxTokens(),
 		Tools:        tools,
 		SystemPrompt: sysPrompt,
 	})

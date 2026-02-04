@@ -3,12 +3,15 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/ui"
 )
 
 type (
@@ -26,6 +29,24 @@ type (
 func (m model) executeTools(toolCalls []provider.ToolCall) tea.Cmd {
 	return func() tea.Msg {
 		return startToolExecutionMsg{toolCalls: toolCalls}
+	}
+}
+
+// newToolResult creates a toolResultMsg with the given parameters
+func newToolResult(tc provider.ToolCall, index int, content string, isError bool) toolResultMsg {
+	return toolResultMsg{
+		index:    index,
+		result:   provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isError},
+		toolName: tc.Name,
+	}
+}
+
+// newToolResultFromOutput creates a toolResultMsg from a ui.ToolResult
+func newToolResultFromOutput(tc provider.ToolCall, index int, output ui.ToolResult) toolResultMsg {
+	return toolResultMsg{
+		index:    index,
+		result:   provider.ToolResult{ToolCallID: tc.ID, Content: output.FormatForLLM(), IsError: !output.Success},
+		toolName: tc.Name,
 	}
 }
 
@@ -95,20 +116,11 @@ func executeToolAsync(tc provider.ToolCall, index int, cwd string, settings *con
 
 		params, err := parseToolInput(tc.Input)
 		if err != nil {
-			return toolResultMsg{
-				index:    index,
-				result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Error parsing tool input: " + err.Error(), IsError: true},
-				toolName: tc.Name,
-			}
+			return newToolResult(tc, index, "Error parsing tool input: "+err.Error(), true)
 		}
 
-		// Check if tool exists
 		if _, ok := tool.Get(tc.Name); !ok {
-			return toolResultMsg{
-				index:    index,
-				result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Unknown tool: " + tc.Name, IsError: true},
-				toolName: tc.Name,
-			}
+			return newToolResult(tc, index, "Unknown tool: "+tc.Name, true)
 		}
 
 		// Check permission - if auto-allowed or denied, handle here
@@ -116,29 +128,19 @@ func executeToolAsync(tc provider.ToolCall, index int, cwd string, settings *con
 			permResult := settings.CheckPermission(tc.Name, params, sessionPerms)
 			switch permResult {
 			case config.PermissionAllow:
+				start := time.Now()
 				result := tool.Execute(ctx, tc.Name, params, cwd)
-				return toolResultMsg{
-					index:    index,
-					result:   provider.ToolResult{ToolCallID: tc.ID, Content: result.FormatForLLM(), IsError: !result.Success},
-					toolName: tc.Name,
-				}
+				log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
+				return newToolResultFromOutput(tc, index, result)
 			case config.PermissionDeny:
-				return toolResultMsg{
-					index:    index,
-					result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Permission denied by settings", IsError: true},
-					toolName: tc.Name,
-				}
+				return newToolResult(tc, index, "Permission denied by settings", true)
 			}
 		}
 
-		// Execute the tool
+		start := time.Now()
 		result := tool.Execute(ctx, tc.Name, params, cwd)
-
-		return toolResultMsg{
-			index:    index,
-			result:   provider.ToolResult{ToolCallID: tc.ID, Content: result.FormatForLLM(), IsError: !result.Success},
-			toolName: tc.Name,
-		}
+		log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
+		return newToolResultFromOutput(tc, index, result)
 	}
 }
 
@@ -156,38 +158,24 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 
 		params, err := parseToolInput(tc.Input)
 		if err != nil {
-			return toolResultMsg{
-				index:    idx,
-				result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Error parsing tool input: " + err.Error(), IsError: true},
-				toolName: tc.Name,
-			}
+			return newToolResult(tc, idx, "Error parsing tool input: "+err.Error(), true)
 		}
 
 		t, ok := tool.Get(tc.Name)
 		if !ok {
-			return toolResultMsg{
-				index:    idx,
-				result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Unknown tool: " + tc.Name, IsError: true},
-				toolName: tc.Name,
-			}
+			return newToolResult(tc, idx, "Unknown tool: "+tc.Name, true)
 		}
 
 		if settings != nil {
 			permResult := settings.CheckPermission(tc.Name, params, sessionPerms)
 			switch permResult {
 			case config.PermissionAllow:
+				start := time.Now()
 				result := tool.Execute(ctx, tc.Name, params, cwd)
-				return toolResultMsg{
-					index:    idx,
-					result:   provider.ToolResult{ToolCallID: tc.ID, Content: result.FormatForLLM(), IsError: !result.Success},
-					toolName: tc.Name,
-				}
+				log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
+				return newToolResultFromOutput(tc, idx, result)
 			case config.PermissionDeny:
-				return toolResultMsg{
-					index:    idx,
-					result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Permission denied by settings", IsError: true},
-					toolName: tc.Name,
-				}
+				return newToolResult(tc, idx, "Permission denied by settings", true)
 			case config.PermissionAsk:
 				// Fall through
 			}
@@ -196,11 +184,7 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 		if it, ok := t.(tool.InteractiveTool); ok && it.RequiresInteraction() {
 			req, err := it.PrepareInteraction(ctx, params, cwd)
 			if err != nil {
-				return toolResultMsg{
-					index:    idx,
-					result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Error: " + err.Error(), IsError: true},
-					toolName: tc.Name,
-				}
+				return newToolResult(tc, idx, "Error: "+err.Error(), true)
 			}
 			if qr, ok := req.(*tool.QuestionRequest); ok {
 				return QuestionRequestMsg{Request: qr}
@@ -216,22 +200,15 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 		if pat, ok := t.(tool.PermissionAwareTool); ok && pat.RequiresPermission() {
 			req, err := pat.PreparePermission(ctx, params, cwd)
 			if err != nil {
-				return toolResultMsg{
-					index:    idx,
-					result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Error: " + err.Error(), IsError: true},
-					toolName: tc.Name,
-				}
+				return newToolResult(tc, idx, "Error: "+err.Error(), true)
 			}
 			return PermissionRequestMsg{Request: req}
 		}
 
+		start := time.Now()
 		result := tool.Execute(ctx, tc.Name, params, cwd)
-
-		return toolResultMsg{
-			index:    idx,
-			result:   provider.ToolResult{ToolCallID: tc.ID, Content: result.FormatForLLM(), IsError: !result.Success},
-			toolName: tc.Name,
-		}
+		log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
+		return newToolResultFromOutput(tc, idx, result)
 	}
 }
 
@@ -247,11 +224,7 @@ func executeApprovedTool(toolCalls []provider.ToolCall, idx int, cwd string) tea
 
 		params, err := parseToolInput(tc.Input)
 		if err != nil {
-			return toolResultMsg{
-				index:    idx,
-				result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Error parsing tool input: " + err.Error(), IsError: true},
-				toolName: tc.Name,
-			}
+			return newToolResult(tc, idx, "Error parsing tool input: "+err.Error(), true)
 		}
 
 		// For Task tool, set up progress callback
@@ -263,29 +236,18 @@ func executeApprovedTool(toolCalls []provider.ToolCall, idx int, cwd string) tea
 
 		t, ok := tool.Get(tc.Name)
 		if !ok {
-			return toolResultMsg{
-				index:    idx,
-				result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Internal error: unknown tool: " + tc.Name, IsError: true},
-				toolName: tc.Name,
-			}
+			return newToolResult(tc, idx, "Internal error: unknown tool: "+tc.Name, true)
 		}
 
 		pat, ok := t.(tool.PermissionAwareTool)
 		if !ok {
-			return toolResultMsg{
-				index:    idx,
-				result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Internal error: tool does not implement PermissionAwareTool: " + tc.Name, IsError: true},
-				toolName: tc.Name,
-			}
+			return newToolResult(tc, idx, "Internal error: tool does not implement PermissionAwareTool: "+tc.Name, true)
 		}
 
+		start := time.Now()
 		result := pat.ExecuteApproved(ctx, params, cwd)
-
-		return toolResultMsg{
-			index:    idx,
-			result:   provider.ToolResult{ToolCallID: tc.ID, Content: result.FormatForLLM(), IsError: !result.Success},
-			toolName: tc.Name,
-		}
+		log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
+		return newToolResultFromOutput(tc, idx, result)
 	}
 }
 
@@ -295,34 +257,23 @@ func executeInteractiveTool[T any](tc provider.ToolCall, response T, cwd string)
 
 		params, err := parseToolInput(tc.Input)
 		if err != nil {
-			return toolResultMsg{
-				result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Error parsing tool input: " + err.Error(), IsError: true},
-				toolName: tc.Name,
-			}
+			return newToolResult(tc, 0, "Error parsing tool input: "+err.Error(), true)
 		}
 
 		t, ok := tool.Get(tc.Name)
 		if !ok {
-			return toolResultMsg{
-				result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Unknown tool: " + tc.Name, IsError: true},
-				toolName: tc.Name,
-			}
+			return newToolResult(tc, 0, "Unknown tool: "+tc.Name, true)
 		}
 
 		it, ok := t.(tool.InteractiveTool)
 		if !ok {
-			return toolResultMsg{
-				result:   provider.ToolResult{ToolCallID: tc.ID, Content: "Tool is not interactive: " + tc.Name, IsError: true},
-				toolName: tc.Name,
-			}
+			return newToolResult(tc, 0, "Tool is not interactive: "+tc.Name, true)
 		}
 
+		start := time.Now()
 		result := it.ExecuteWithResponse(ctx, params, response, cwd)
-
-		return toolResultMsg{
-			result:   provider.ToolResult{ToolCallID: tc.ID, Content: result.FormatForLLM(), IsError: !result.Success},
-			toolName: tc.Name,
-		}
+		log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
+		return newToolResultFromOutput(tc, 0, result)
 	}
 }
 

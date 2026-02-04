@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/openai/openai-go"
 
@@ -128,9 +129,14 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		toolCalls := make(map[int]*provider.ToolCall)
 		var response provider.CompletionResponse
 
+		// Stream timing and counting
+		streamStart := time.Now()
+		chunkCount := 0
+
 		// Read stream events
 		for stream.Next() {
 			chunk := stream.Current()
+			chunkCount++
 
 			for _, choice := range chunk.Choices {
 				// Handle text delta
@@ -193,6 +199,9 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				response.Usage.OutputTokens = int(chunk.Usage.CompletionTokens)
 			}
 		}
+
+		// Log stream done
+		log.LogStreamDone(c.name, time.Since(streamStart), chunkCount)
 
 		if err := stream.Err(); err != nil {
 			log.LogError(c.name, err)

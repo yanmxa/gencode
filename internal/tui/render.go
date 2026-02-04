@@ -45,18 +45,13 @@ func (m model) renderWelcome() string {
 	}
 
 	logoLines := []string{
-		"   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄",
-		"   █                             █",
-		"   █   ╋╋╋╋╋   ╋╋╋╋   ╋   ╋      █",
-		"   █   ╋       ╋      ╋╋  ╋      █",
-		"   █   ╋  ╋╋╋  ╋╋╋╋   ╋ ╋ ╋      █",
-		"   █   ╋    ╋  ╋      ╋  ╋╋      █",
-		"   █   ╋╋╋╋╋   ╋╋╋╋   ╋   ╋      █",
-		"   █                             █",
-		"   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀",
+		"   ╋╋╋╋╋   ╋╋╋╋╋   ╋   ╋       ╋╋╋╋╋   ╋╋╋╋╋   ╋╋╋╋    ╋╋╋╋╋",
+		"   ╋       ╋       ╋╋  ╋       ╋       ╋   ╋   ╋   ╋   ╋    ",
+		"   ╋  ╋╋╋  ╋╋╋╋    ╋ ╋ ╋       ╋       ╋   ╋   ╋   ╋   ╋╋╋╋ ",
+		"   ╋    ╋  ╋       ╋  ╋╋       ╋       ╋   ╋   ╋   ╋   ╋    ",
+		"   ╋╋╋╋╋   ╋╋╋╋╋   ╋   ╋       ╋╋╋╋╋   ╋╋╋╋╋   ╋╋╋╋    ╋╋╋╋╋",
 	}
 
-	subtitleStyle := lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
 	hintStyle := lipgloss.NewStyle().Foreground(CurrentTheme.TextDisabled)
 
 	var sb strings.Builder
@@ -68,8 +63,6 @@ func (m model) renderWelcome() string {
 		sb.WriteString(style.Render(line) + "\n")
 	}
 
-	sb.WriteString("\n")
-	sb.WriteString("   " + subtitleStyle.Render("AI-powered coding assistant") + "\n")
 	sb.WriteString("\n")
 	sb.WriteString("   " + hintStyle.Render("Enter to send · Esc to stop · Shift+Tab mode · Ctrl+C exit") + "\n")
 
@@ -114,7 +107,11 @@ func (m model) renderModeStatus() string {
 	return strings.Join(parts, "  ")
 }
 
-// renderTokenUsage returns token usage indicator when >= 80% of limit
+// Auto-compact threshold (percentage of context usage)
+const autoCompactThreshold = 95
+
+// renderTokenUsage returns token usage indicator
+// Shows context usage with color coding and auto-compact warnings
 func (m model) renderTokenUsage() string {
 	inputLimit := m.getEffectiveInputLimit()
 	if inputLimit == 0 || m.lastInputTokens == 0 {
@@ -122,26 +119,38 @@ func (m model) renderTokenUsage() string {
 	}
 
 	percent := float64(m.lastInputTokens) / float64(inputLimit) * 100
-	if percent < 80 {
+
+	// Always show when >= 50% for awareness
+	if percent < 50 {
 		return ""
 	}
 
-	// Format: ⚡ 180K/200K (90%)
 	used := formatTokenCount(m.lastInputTokens)
 	limit := formatTokenCount(inputLimit)
 
-	color := CurrentTheme.Warning // >= 80%
-	if percent >= 95 {
-		color = CurrentTheme.Error // Red at 95%+
+	// Color based on usage level
+	var color lipgloss.Color
+	var hint string
+
+	switch {
+	case percent >= autoCompactThreshold:
+		color = CurrentTheme.Error // Critical - will auto-compact
+		hint = " ⚠ auto-compact"
+	case percent >= 85:
+		color = CurrentTheme.Warning // Warning - approaching limit
+		hint = fmt.Sprintf(" (compact at %d%%)", autoCompactThreshold)
+	case percent >= 70:
+		color = CurrentTheme.Accent // Getting high
+	default:
+		color = CurrentTheme.Muted // Normal
 	}
 
 	style := lipgloss.NewStyle().Foreground(color)
 	indicator := style.Render(fmt.Sprintf("⚡ %s/%s (%.0f%%)", used, limit, percent))
 
-	// Add /compact hint when >= 90%
-	if percent >= 90 {
-		hint := lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Render(" (try /compact)")
-		indicator += hint
+	if hint != "" {
+		// Use same color for hint as the main indicator
+		indicator += lipgloss.NewStyle().Foreground(color).Render(hint)
 	}
 
 	return indicator
@@ -208,9 +217,41 @@ func (m model) renderMessages() string {
 }
 
 func (m model) renderUserMessage(msg chatMessage) string {
+	// Handle compact summary messages with collapse/expand
+	if msg.isSummary {
+		return m.renderSummaryMessage(msg)
+	}
+
 	prompt := inputPromptStyle.Render("❯ ")
 	content := userMsgStyle.Render(msg.content)
 	return prompt + content + "\n"
+}
+
+// renderSummaryMessage renders a compact summary with collapse/expand support
+func (m model) renderSummaryMessage(msg chatMessage) string {
+	var sb strings.Builder
+
+	icon := aiPromptStyle.Render("◆ ")
+	title := fmt.Sprintf("Compacted %d messages → 1 summary", msg.summaryCount)
+	header := icon + toolCallStyle.Render(title)
+
+	hintText := " (Ctrl+O to expand)"
+	if msg.expanded {
+		hintText = " (Ctrl+O to collapse)"
+	}
+	sb.WriteString(header + toolResultStyle.Render(hintText) + "\n")
+
+	if msg.expanded {
+		content := msg.content
+		if m.mdRenderer != nil {
+			if rendered, err := m.mdRenderer.Render(msg.content); err == nil {
+				content = strings.TrimSpace(rendered)
+			}
+		}
+		sb.WriteString(toolResultExpandedStyle.Render(content) + "\n")
+	}
+
+	return sb.String()
 }
 
 func (m model) renderSystemMessage(msg chatMessage) string {
@@ -347,8 +388,7 @@ func (m model) renderToolResultInline(msg chatMessage) string {
 	sb.WriteString(summary + "\n")
 
 	if msg.expanded || msg.toolResult.IsError {
-		lines := strings.Split(msg.toolResult.Content, "\n")
-		for _, line := range lines {
+		for line := range strings.SplitSeq(msg.toolResult.Content, "\n") {
 			sb.WriteString(toolResultExpandedStyle.Render(line) + "\n")
 		}
 	}
@@ -404,8 +444,7 @@ func (m model) renderSkillResultInline(msg chatMessage) string {
 
 	// Show expanded content if requested
 	if msg.expanded {
-		lines := strings.Split(msg.toolResult.Content, "\n")
-		for _, line := range lines {
+		for line := range strings.SplitSeq(msg.toolResult.Content, "\n") {
 			sb.WriteString(toolResultExpandedStyle.Render(line) + "\n")
 		}
 	}
@@ -448,7 +487,7 @@ func (m model) renderTaskResultInline(msg chatMessage) string {
 	}
 
 	if msg.expanded {
-		for _, line := range strings.Split(content, "\n") {
+		for line := range strings.SplitSeq(content, "\n") {
 			sb.WriteString(toolResultExpandedStyle.Render("    "+line) + "\n")
 		}
 	}
@@ -477,14 +516,17 @@ func extractIntField(content, prefix string) int {
 		return 0
 	}
 	// Parse only leading digits
-	end := 0
+	var end int
 	for end < len(val) && val[end] >= '0' && val[end] <= '9' {
 		end++
 	}
 	if end == 0 {
 		return 0
 	}
-	n, _ := strconv.Atoi(val[:end])
+	n, err := strconv.Atoi(val[:end])
+	if err != nil {
+		return 0
+	}
 	return n
 }
 
@@ -531,8 +573,7 @@ func (m model) renderTaskOutputResultInline(msg chatMessage) string {
 	sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  TaskOutput → %s", icon, summaryText)) + "\n")
 
 	// Show output content if present
-	if idx := strings.Index(content, "Output:\n"); idx != -1 {
-		outputContent := content[idx+8:]
+	if _, outputContent, found := strings.Cut(content, "Output:\n"); found {
 		outputLines := strings.Split(outputContent, "\n")
 
 		maxLines := 10

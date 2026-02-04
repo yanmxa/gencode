@@ -64,6 +64,24 @@ Non-interactive mode:
 			return
 		}
 
+		// Check for --continue flag (resume most recent session)
+		if continueFlag {
+			if err := tui.RunWithContinue(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+
+		// Check for --resume flag (session selector)
+		if resumeFlag {
+			if err := tui.RunWithResume(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+
 		// Check for non-interactive input
 		message := getInputMessage(args)
 
@@ -90,9 +108,17 @@ var promptFlag string
 // planFlag is the plan mode task description
 var planFlag string
 
+// continueFlag resumes the most recent session
+var continueFlag bool
+
+// resumeFlag opens the session selector to choose a session
+var resumeFlag bool
+
 func init() {
 	rootCmd.Flags().StringVarP(&promptFlag, "prompt", "p", "", "Custom prompt to send")
 	rootCmd.Flags().StringVar(&planFlag, "plan", "", "Enter plan mode with task description")
+	rootCmd.Flags().BoolVarP(&continueFlag, "continue", "c", false, "Resume the most recent session")
+	rootCmd.Flags().BoolVarP(&resumeFlag, "resume", "r", false, "Select and resume a previous session")
 }
 
 // getInputMessage gets input from args, flags, or stdin
@@ -221,6 +247,10 @@ Non-interactive Mode:
   gen -p "prompt"            Use a custom prompt
   gen --plan "task"          Enter plan mode with task
 
+Session Persistence:
+  gen -c, --continue         Resume the most recent session
+  gen -r, --resume           Select and resume a previous session
+
 Commands:
   version      Print the version number
   help         Show this help message
@@ -235,12 +265,15 @@ Interactive Mode:
 Interactive Commands:
   /provider    Select and connect to a provider
   /model       Select a model
+  /sessions    List and resume previous sessions
+  /save        Manually save current session
   /clear       Clear chat history
   /help        Show help
 
 Examples:
   gen                        Start interactive chat
   gen "Explain this code"    Quick question
+  gen --continue             Resume previous session
   cat file.go | gen "Review" Review file via pipe
   gen version                Show version
 

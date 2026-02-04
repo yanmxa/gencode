@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/skill"
@@ -97,6 +100,26 @@ func getCommandRegistry() map[string]Command {
 			Name:        "compact",
 			Description: "Summarize conversation to reduce context size",
 			Handler:     handleCompactCommand,
+		},
+		"sessions": {
+			Name:        "sessions",
+			Description: "List and resume previous sessions",
+			Handler:     handleSessionsCommand,
+		},
+		"save": {
+			Name:        "save",
+			Description: "Manually save the current session",
+			Handler:     handleSaveCommand,
+		},
+		"init": {
+			Name:        "init",
+			Description: "Initialize project memory file (GEN.md)",
+			Handler:     handleInitCommand,
+		},
+		"memory": {
+			Name:        "memory",
+			Description: "View and manage memory files (list/show/edit)",
+			Handler:     handleMemoryCommand,
 		},
 	}
 }
@@ -591,6 +614,34 @@ func (m *model) getEffectiveInputLimit() int {
 	return inputLimit
 }
 
+// getEffectiveOutputLimit returns the effective output token limit for the current model
+// Priority: 1. Custom override, 2. Model cache, 3. Return 0 (no limit)
+func (m *model) getEffectiveOutputLimit() int {
+	if m.currentModel == nil {
+		return 0
+	}
+
+	// Check custom override first
+	if m.store != nil {
+		if _, outputLimit, ok := m.store.GetTokenLimit(m.currentModel.ModelID); ok {
+			return outputLimit
+		}
+	}
+
+	// Check model cache
+	_, outputLimit := getModelTokenLimits(m)
+	return outputLimit
+}
+
+// getMaxTokens returns the max tokens to use for API requests
+// Uses effective output limit if available, otherwise falls back to default
+func (m *model) getMaxTokens() int {
+	if limit := m.getEffectiveOutputLimit(); limit > 0 {
+		return limit
+	}
+	return defaultMaxTokens
+}
+
 // formatTokenCount formats a token count for display (e.g., 200000 -> "200K")
 func formatTokenCount(count int) string {
 	if count >= 1000000 {
@@ -603,6 +654,7 @@ func formatTokenCount(count int) string {
 }
 
 // handleCompactCommand handles the /compact command
+// Usage: /compact [focus] - optionally specify what to focus on in the summary
 func handleCompactCommand(ctx context.Context, m *model, args string) (string, error) {
 	if m.llmProvider == nil {
 		return "No provider connected. Use /provider to connect.", nil
@@ -614,22 +666,29 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, e
 		return "Cannot compact while streaming.", nil
 	}
 	m.compacting = true
+	m.compactFocus = strings.TrimSpace(args) // Store optional focus
 	return "", nil
 }
 
 // startCompact returns a tea.Cmd that compacts the conversation in background
 func startCompact(m *model) tea.Cmd {
+	focus := m.compactFocus // Capture focus before async execution
 	return func() tea.Msg {
 		ctx := context.Background()
-		summary, count, err := compactConversation(ctx, m)
+		summary, count, err := compactConversation(ctx, m, focus)
 		return CompactResultMsg{Summary: summary, OriginalCount: count, Error: err}
 	}
 }
 
 // compactConversation calls the LLM to generate a summary of the conversation
-func compactConversation(ctx context.Context, m *model) (summary string, count int, err error) {
+func compactConversation(ctx context.Context, m *model, focus string) (summary string, count int, err error) {
 	count = len(m.messages)
 	conversationText := buildConversationForSummary(m.messages)
+
+	// Add focus instruction if provided
+	if focus != "" {
+		conversationText += fmt.Sprintf("\n\n**Important**: Focus the summary on: %s", focus)
+	}
 
 	response, err := provider.Complete(ctx, m.llmProvider, provider.CompletionOptions{
 		Model:        m.getModelID(),
@@ -654,25 +713,26 @@ func buildConversationForSummary(messages []chatMessage) string {
 		case "user":
 			if msg.toolResult != nil {
 				content := truncateToolResult(msg.toolResult.Content, 500)
-				sb.WriteString(fmt.Sprintf("[Tool Result: %s]\n%s\n\n", msg.toolName, content))
+				fmt.Fprintf(&sb, "[Tool Result: %s]\n%s\n\n", msg.toolName, content)
 			} else {
-				sb.WriteString(fmt.Sprintf("User: %s\n\n", msg.content))
+				fmt.Fprintf(&sb, "User: %s\n\n", msg.content)
 			}
 
 		case "assistant":
 			if msg.content != "" {
-				sb.WriteString(fmt.Sprintf("Assistant: %s\n\n", msg.content))
-			}
-			for _, tc := range msg.toolCalls {
-				sb.WriteString(fmt.Sprintf("[Tool Call: %s]\n", tc.Name))
+				fmt.Fprintf(&sb, "Assistant: %s\n\n", msg.content)
 			}
 			if len(msg.toolCalls) > 0 {
+				for _, tc := range msg.toolCalls {
+					fmt.Fprintf(&sb, "[Tool Call: %s]\n", tc.Name)
+				}
 				sb.WriteString("\n")
 			}
 
 		case "system":
+			// Skip welcome messages
 			if msg.content != "" && !strings.Contains(msg.content, "AI-powered coding assistant") {
-				sb.WriteString(fmt.Sprintf("System: %s\n\n", msg.content))
+				fmt.Fprintf(&sb, "System: %s\n\n", msg.content)
 			}
 		}
 	}
@@ -686,6 +746,37 @@ func truncateToolResult(content string, maxLen int) string {
 		return content
 	}
 	return content[:maxLen] + "...[truncated]"
+}
+
+// getContextUsagePercent returns the current context usage as a percentage.
+// Returns 0 if limits are not available.
+func (m *model) getContextUsagePercent() float64 {
+	inputLimit := m.getEffectiveInputLimit()
+	if inputLimit == 0 || m.lastInputTokens == 0 {
+		return 0
+	}
+	return float64(m.lastInputTokens) / float64(inputLimit) * 100
+}
+
+// shouldAutoCompact checks if auto-compact should be triggered
+func (m *model) shouldAutoCompact() bool {
+	if m.llmProvider == nil || len(m.messages) < 3 {
+		return false
+	}
+	return m.getContextUsagePercent() >= autoCompactThreshold
+}
+
+// triggerAutoCompact initiates auto-compact with a system message
+func (m *model) triggerAutoCompact() tea.Cmd {
+	m.compacting = true
+	m.compactFocus = ""
+	m.messages = append(m.messages, chatMessage{
+		role:    "system",
+		content: fmt.Sprintf("⚡ Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()),
+	})
+	m.viewport.SetContent(m.renderMessages())
+	m.viewport.GotoBottom()
+	return tea.Batch(m.spinner.Tick, startCompact(m))
 }
 
 // IsSkillCommand checks if the command is a registered skill.
@@ -728,4 +819,227 @@ func GetSkillCommands() []Command {
 		})
 	}
 	return cmds
+}
+
+// handleSessionsCommand handles the /sessions command
+func handleSessionsCommand(ctx context.Context, m *model, args string) (string, error) {
+	if err := m.ensureSessionStore(); err != nil {
+		return "", fmt.Errorf("failed to initialize session store: %w", err)
+	}
+
+	if err := m.sessionSelector.EnterSessionSelect(m.width, m.height, m.sessionStore); err != nil {
+		return "", err
+	}
+
+	return "", nil
+}
+
+// handleSaveCommand handles the /save command
+func handleSaveCommand(ctx context.Context, m *model, args string) (string, error) {
+	if len(m.messages) == 0 {
+		return "No messages to save.", nil
+	}
+
+	if err := m.saveSession(); err != nil {
+		return "", fmt.Errorf("failed to save session: %w", err)
+	}
+
+	return fmt.Sprintf("Session saved: %s", m.currentSessionID), nil
+}
+
+// handleInitCommand handles the /init command
+// Usage: /init [--claude]
+func handleInitCommand(ctx context.Context, m *model, args string) (string, error) {
+	isClaude := strings.Contains(args, "--claude")
+
+	// Determine file paths based on format
+	var targetDir, fileName string
+	if isClaude {
+		targetDir = filepath.Join(m.cwd, ".claude")
+		fileName = "CLAUDE.md"
+	} else {
+		targetDir = filepath.Join(m.cwd, ".gen")
+		fileName = "GEN.md"
+	}
+	filePath := filepath.Join(targetDir, fileName)
+
+	// Check if file already exists
+	if _, err := os.Stat(filePath); err == nil {
+		return fmt.Sprintf("File already exists: %s\nUse /memory edit to modify it.", filePath), nil
+	}
+
+	// Create directory and write file
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create directory %s: %w", targetDir, err)
+	}
+	if err := os.WriteFile(filePath, []byte(getProjectTemplate(m.cwd)), 0644); err != nil {
+		return "", fmt.Errorf("failed to write file %s: %w", filePath, err)
+	}
+
+	return fmt.Sprintf("Created %s\n\nEdit with: /memory edit", filePath), nil
+}
+
+// handleMemoryCommand handles the /memory command
+// Usage: /memory [list|show|edit] [user|project]
+func handleMemoryCommand(ctx context.Context, m *model, args string) (string, error) {
+	args = strings.TrimSpace(args)
+	parts := strings.Fields(args)
+
+	subCmd := "list"
+	if len(parts) > 0 {
+		subCmd = strings.ToLower(parts[0])
+	}
+
+	scope := "project"
+	if len(parts) > 1 {
+		scope = strings.ToLower(parts[1])
+	}
+
+	switch subCmd {
+	case "list", "":
+		return handleMemoryList(m)
+	case "show":
+		return handleMemoryShow(m)
+	case "edit":
+		return handleMemoryEdit(m, scope)
+	default:
+		return "Usage: /memory [list|show|edit] [user|project]", nil
+	}
+}
+
+// handleMemoryList lists all loaded memory files
+func handleMemoryList(m *model) (string, error) {
+	userPaths, projectPaths := system.GetMemoryPaths(m.cwd)
+
+	var sb strings.Builder
+	sb.WriteString("Memory Files:\n\n")
+
+	// Helper to format a memory level section
+	formatLevel := func(label string, paths []string, createHint string) {
+		sb.WriteString(label + ":\n")
+		if found := system.FindMemoryFile(paths); found != "" {
+			fmt.Fprintf(&sb, "  + %s\n", found)
+		} else {
+			sb.WriteString("  (none)\n")
+			fmt.Fprintf(&sb, "  Create with: %s\n", createHint)
+		}
+	}
+
+	formatLevel("User level", userPaths, "/init --claude or manually at "+userPaths[0])
+	sb.WriteString("\n")
+	formatLevel("Project level", projectPaths, "/init")
+
+	return sb.String(), nil
+}
+
+// handleMemoryShow displays current memory content
+func handleMemoryShow(m *model) (string, error) {
+	content := system.LoadMemory(m.cwd)
+	if content == "" {
+		return "No memory files loaded.\n\nCreate project memory with: /init", nil
+	}
+
+	// Truncate if too long
+	const maxShow = 2000
+	if len(content) > maxShow {
+		content = content[:maxShow] + "\n\n... (truncated)"
+	}
+
+	return fmt.Sprintf("Current Memory:\n\n%s", content), nil
+}
+
+// handleMemoryEdit opens memory file in editor
+func handleMemoryEdit(m *model, scope string) (string, error) {
+	userPaths, projectPaths := system.GetMemoryPaths(m.cwd)
+
+	var filePath string
+	if scope == "user" {
+		filePath = system.FindMemoryFile(userPaths)
+		if filePath == "" {
+			// Create default user memory file
+			filePath = userPaths[0]
+			if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+				return "", fmt.Errorf("failed to create directory: %w", err)
+			}
+			if err := os.WriteFile(filePath, []byte(getUserTemplate()), 0644); err != nil {
+				return "", fmt.Errorf("failed to create file: %w", err)
+			}
+		}
+	} else {
+		filePath = system.FindMemoryFile(projectPaths)
+		if filePath == "" {
+			return "No project memory file found.\n\nCreate with: /init", nil
+		}
+	}
+
+	m.editingMemoryFile = filePath
+	return "", nil // Signal to start editor
+}
+
+// getProjectTemplate returns the default project memory template
+func getProjectTemplate(cwd string) string {
+	projectName := filepath.Base(cwd)
+	return fmt.Sprintf(`# GEN.md
+
+This file provides guidance to GenCode when working with code in this repository.
+
+## Project Overview
+
+%s - Describe what this project does.
+
+## Build & Run
+
+`+"```bash"+`
+# Add your build commands here
+`+"```"+`
+
+## Architecture
+
+<!-- Key directories and their purpose -->
+
+## Key Patterns
+
+<!-- Important conventions to follow -->
+`, projectName)
+}
+
+// getUserTemplate returns the default user memory template
+func getUserTemplate() string {
+	return `# GEN.md
+
+User-level instructions for GenCode.
+
+## Coding Preferences
+
+<!-- Your preferred coding style -->
+
+## Security
+
+<!-- Security practices to follow -->
+`
+}
+
+// startExternalEditor returns a tea.Cmd that launches an external editor
+func startExternalEditor(filePath string) tea.Cmd {
+	editor := getEditor()
+	cmd := exec.Command(editor, filePath)
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return EditorFinishedMsg{Err: err}
+	})
+}
+
+// getEditor returns the user's preferred editor from environment or a fallback
+func getEditor() string {
+	if editor := os.Getenv("EDITOR"); editor != "" {
+		return editor
+	}
+	if editor := os.Getenv("VISUAL"); editor != "" {
+		return editor
+	}
+	for _, e := range []string{"vim", "nano", "vi"} {
+		if _, err := exec.LookPath(e); err == nil {
+			return e
+		}
+	}
+	return "vi" // Last resort fallback
 }

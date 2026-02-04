@@ -1,10 +1,12 @@
 package log
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -128,4 +130,24 @@ func escapeForLog(s string) string {
 	s = strings.ReplaceAll(s, "\r", "")
 	s = strings.ReplaceAll(s, "\t", "\\t")
 	return s
+}
+
+// LogStreamDone logs stream completion stats
+func LogStreamDone(provider string, duration time.Duration, chunks int) {
+	if !enabled {
+		return
+	}
+	logger.Info(fmt.Sprintf("[stream] %s done duration=%s chunks=%d", provider, duration.Round(time.Millisecond), chunks))
+}
+
+// LogTool logs tool execution with timing
+func LogTool(name, id string, durationMs int64, success bool) {
+	if !enabled {
+		return
+	}
+	status := "ok"
+	if !success {
+		status = "error"
+	}
+	logger.Info(fmt.Sprintf("[tool] %s id=%s %dms %s", name, id, durationMs, status))
 }

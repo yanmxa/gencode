@@ -18,7 +18,6 @@ func LogResponse(providerName string, resp provider.CompletionResponse) {
 
 	if resp.Content != "" {
 		sb.WriteString("    Content:\n")
-		// Indent each line of content to preserve markdown formatting
 		for _, line := range strings.Split(resp.Content, "\n") {
 			fmt.Fprintf(&sb, "        %s\n", line)
 		}

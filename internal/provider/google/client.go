@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"google.golang.org/genai"
 
@@ -141,6 +142,10 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		// Create streaming request
 		var response provider.CompletionResponse
 
+		// Stream timing and counting
+		streamStart := time.Now()
+		chunkCount := 0
+
 		for result, err := range c.client.Models.GenerateContentStream(ctx, opts.Model, contents, config) {
 			if err != nil {
 				log.LogError(c.name, err)
@@ -150,6 +155,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				}
 				return
 			}
+			chunkCount++
 
 			// Process candidates
 			for _, candidate := range result.Candidates {
@@ -211,6 +217,9 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				response.Usage.OutputTokens = int(result.UsageMetadata.CandidatesTokenCount)
 			}
 		}
+
+		// Log stream done
+		log.LogStreamDone(c.name, time.Since(streamStart), chunkCount)
 
 		// Check for tool calls stop reason
 		if len(response.ToolCalls) > 0 && response.StopReason == "" {

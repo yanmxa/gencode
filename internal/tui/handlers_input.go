@@ -62,6 +62,11 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.sessionSelector.IsActive() {
+		cmd := m.sessionSelector.HandleKeypress(msg)
+		return m, cmd
+	}
+
 	if m.suggestions.IsVisible() {
 		switch msg.Type {
 		case tea.KeyUp, tea.KeyCtrlP:
@@ -158,9 +163,12 @@ func (m *model) handleCtrlO() (tea.Model, tea.Cmd) {
 
 	now := time.Now()
 	if now.Sub(m.lastCtrlOTime) < doubleTapThreshold {
+		// Double-tap: toggle all expandable items
 		anyExpanded := false
 		for _, msg := range m.messages {
-			if (msg.toolResult != nil && msg.expanded) || (len(msg.toolCalls) > 0 && msg.toolCallsExpanded) {
+			if (msg.toolResult != nil && msg.expanded) ||
+				(len(msg.toolCalls) > 0 && msg.toolCallsExpanded) ||
+				(msg.isSummary && msg.expanded) {
 				anyExpanded = true
 				break
 			}
@@ -172,14 +180,23 @@ func (m *model) handleCtrlO() (tea.Model, tea.Cmd) {
 			if len(m.messages[i].toolCalls) > 0 {
 				m.messages[i].toolCallsExpanded = !anyExpanded
 			}
+			if m.messages[i].isSummary {
+				m.messages[i].expanded = !anyExpanded
+			}
 		}
 		m.lastCtrlOTime = time.Time{}
 		m.viewport.SetContent(m.renderMessages())
 		return m, nil
 	}
 
+	// Single tap: toggle most recent expandable item
 	m.lastCtrlOTime = now
 	for i := len(m.messages) - 1; i >= 0; i-- {
+		if m.messages[i].isSummary {
+			m.messages[i].expanded = !m.messages[i].expanded
+			m.viewport.SetContent(m.renderMessages())
+			return m, nil
+		}
 		if m.messages[i].toolResult != nil {
 			m.messages[i].expanded = !m.messages[i].expanded
 			m.viewport.SetContent(m.renderMessages())
@@ -318,6 +335,11 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.spinner.Tick, startCompact(m))
 		}
 
+		// Check if external editor was requested
+		if m.editingMemoryFile != "" {
+			return m, startExternalEditor(m.editingMemoryFile)
+		}
+
 		if result != "" {
 			m.messages = append(m.messages, chatMessage{role: "user", content: input})
 			m.messages = append(m.messages, chatMessage{role: "system", content: result})
@@ -345,19 +367,56 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.streaming = true
+	return m, m.startLLMStream(m.buildExtraContext())
+}
 
+func (m *model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	m.width = msg.Width
+	m.height = msg.Height
+
+	if !m.ready {
+		m.viewport = newViewport(msg.Width, msg.Height-5)
+		// If resuming a session with messages, render them instead of welcome
+		if len(m.messages) > 0 {
+			m.viewport.SetContent(m.renderMessages())
+			m.viewport.GotoBottom()
+		} else {
+			m.viewport.SetContent(m.renderWelcome())
+		}
+		m.ready = true
+
+		// Open session selector if pending (for --resume flag)
+		if m.pendingSessionSelector {
+			m.pendingSessionSelector = false
+			if m.sessionStore != nil {
+				_ = m.sessionSelector.EnterSessionSelect(m.width, m.height, m.sessionStore)
+			}
+		}
+	} else {
+		m.viewport.Width = msg.Width
+	}
+	m.updateViewportHeight()
+	m.textarea.SetWidth(msg.Width - 4 - 2)
+
+	m.mdRenderer = createMarkdownRenderer(msg.Width)
+
+	return m, nil
+}
+
+// startLLMStream sets up and starts an LLM streaming request with the given extra context.
+// It appends an empty assistant message, sets up cancellation, and starts streaming.
+func (m *model) startLLMStream(extra []string) tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelFunc = cancel
+	m.streaming = true
 
 	providerMsgs := m.convertMessagesToProvider()
 
 	m.messages = append(m.messages, chatMessage{role: "assistant", content: ""})
 	m.viewport.SetContent(m.renderMessages())
 	m.viewport.GotoBottom()
-	modelID := m.getModelID()
-	extra := m.buildExtraContext()
 
+	modelID := m.getModelID()
 	sysPrompt := system.Prompt(system.Config{
 		Provider: m.llmProvider.Name(),
 		Model:    modelID,
@@ -368,35 +427,15 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		Extra:    extra,
 	})
 
-	tools := m.getToolsForMode()
-
 	m.streamChan = m.llmProvider.Stream(ctx, provider.CompletionOptions{
 		Model:        modelID,
 		Messages:     providerMsgs,
-		MaxTokens:    defaultMaxTokens,
-		Tools:        tools,
+		MaxTokens:    m.getMaxTokens(),
+		Tools:        m.getToolsForMode(),
 		SystemPrompt: sysPrompt,
 	})
-	return m, tea.Batch(m.waitForChunk(), m.spinner.Tick)
-}
 
-func (m *model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
-	m.width = msg.Width
-	m.height = msg.Height
-
-	if !m.ready {
-		m.viewport = newViewport(msg.Width, msg.Height-5)
-		m.viewport.SetContent(m.renderWelcome())
-		m.ready = true
-	} else {
-		m.viewport.Width = msg.Width
-	}
-	m.updateViewportHeight()
-	m.textarea.SetWidth(msg.Width - 4 - 2)
-
-	m.mdRenderer = createMarkdownRenderer(msg.Width)
-
-	return m, nil
+	return tea.Batch(m.waitForChunk(), m.spinner.Tick)
 }
 
 // handleSkillInvocation handles skill command invocation by sending the skill
@@ -418,44 +457,14 @@ func (m *model) handleSkillInvocation() (tea.Model, tea.Cmd) {
 	}
 
 	m.messages = append(m.messages, chatMessage{role: "user", content: userMessage})
-	m.streaming = true
 
-	ctx, cancel := context.WithCancel(context.Background())
-	m.cancelFunc = cancel
-
-	providerMsgs := m.convertMessagesToProvider()
-
-	m.messages = append(m.messages, chatMessage{role: "assistant", content: ""})
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-	modelID := m.getModelID()
+	// Build extra context with skill instructions
 	extra := m.buildExtraContext()
-
-	// Add full skill instructions for this invocation
 	if m.pendingSkillInstructions != "" {
 		extra = append(extra, m.pendingSkillInstructions)
 		m.pendingSkillInstructions = ""
 	}
 	m.pendingSkillArgs = ""
 
-	sysPrompt := system.Prompt(system.Config{
-		Provider: m.llmProvider.Name(),
-		Model:    modelID,
-		Cwd:      m.cwd,
-		IsGit:    isGitRepo(m.cwd),
-		PlanMode: m.planMode,
-		Memory:   system.LoadMemory(m.cwd),
-		Extra:    extra,
-	})
-
-	tools := m.getToolsForMode()
-
-	m.streamChan = m.llmProvider.Stream(ctx, provider.CompletionOptions{
-		Model:        modelID,
-		Messages:     providerMsgs,
-		MaxTokens:    defaultMaxTokens,
-		Tools:        tools,
-		SystemPrompt: sysPrompt,
-	})
-	return m, tea.Batch(m.waitForChunk(), m.spinner.Tick)
+	return m, m.startLLMStream(extra)
 }

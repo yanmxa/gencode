@@ -210,3 +210,34 @@ func loadFirstFound(sources []string) string {
 	}
 	return ""
 }
+
+// GetMemoryPaths returns the search paths for memory files.
+// Returns user-level paths and project-level paths separately.
+func GetMemoryPaths(cwd string) (userPaths, projectPaths []string) {
+	homeDir, _ := os.UserHomeDir()
+
+	userPaths = []string{
+		filepath.Join(homeDir, ".gen", "GEN.md"),
+		filepath.Join(homeDir, ".claude", "CLAUDE.md"),
+	}
+
+	projectPaths = []string{
+		filepath.Join(cwd, ".gen", "GEN.md"),
+		filepath.Join(cwd, "GEN.md"),
+		filepath.Join(cwd, ".claude", "CLAUDE.md"),
+		filepath.Join(cwd, "CLAUDE.md"),
+	}
+
+	return userPaths, projectPaths
+}
+
+// FindMemoryFile returns the first existing file path from the given list.
+// Returns empty string if no file exists.
+func FindMemoryFile(paths []string) string {
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}

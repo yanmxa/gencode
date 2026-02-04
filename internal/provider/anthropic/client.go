@@ -3,6 +3,7 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 
@@ -144,9 +145,14 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		var currentToolInput string
 		var response provider.CompletionResponse
 
+		// Stream timing and counting
+		streamStart := time.Now()
+		chunkCount := 0
+
 		// Read stream events
 		for stream.Next() {
 			event := stream.Current()
+			chunkCount++
 
 			switch event.Type {
 			case "content_block_start":
@@ -207,6 +213,9 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				response.Usage.InputTokens = int(msgStart.Message.Usage.InputTokens)
 			}
 		}
+
+		// Log stream done
+		log.LogStreamDone(c.name, time.Since(streamStart), chunkCount)
 
 		if err := stream.Err(); err != nil {
 			log.LogError(c.name, err)

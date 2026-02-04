@@ -20,6 +20,7 @@ import (
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -45,7 +46,9 @@ type chatMessage struct {
 	toolResult        *provider.ToolResult
 	toolName          string
 	expanded          bool
-	renderedInline bool // marks this toolResult was rendered inline with its tool call
+	renderedInline    bool // marks this toolResult was rendered inline with its tool call
+	isSummary         bool // marks this as a compact summary message
+	summaryCount      int  // original message count before compaction
 }
 
 type (
@@ -62,6 +65,10 @@ type (
 	streamContinueMsg struct {
 		messages []provider.Message
 		modelID  string
+	}
+	// EditorFinishedMsg is sent when an external editor process completes
+	EditorFinishedMsg struct {
+		Err error
 	}
 )
 
@@ -146,7 +153,18 @@ type model struct {
 	fetchingTokenLimits bool // True when auto-fetching token limits
 
 	// Compact state
-	compacting bool // True when compacting conversation
+	compacting      bool   // True when compacting conversation
+	compactFocus    string // Optional focus for compact (e.g., "current task only")
+	autoCompactNext bool   // True when auto-compact should trigger after current operation
+
+	// Session persistence
+	sessionStore           *session.Store
+	currentSessionID       string
+	sessionSelector        SessionSelectorState
+	pendingSessionSelector bool // Open session selector after window ready
+
+	// Memory file editing
+	editingMemoryFile string // Path to memory file being edited
 }
 
 func Run() error {
@@ -173,6 +191,65 @@ func RunWithPlanMode(task string) error {
 		return fmt.Errorf("failed to initialize plan store: %w", err)
 	}
 	m.planStore = store
+
+	p := tea.NewProgram(
+		m,
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	)
+
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("failed to run TUI: %w", err)
+	}
+	return nil
+}
+
+// RunWithContinue runs TUI and resumes the most recent session
+func RunWithContinue() error {
+	m := newModel()
+
+	// Initialize session store
+	sessionStore, err := session.NewStore()
+	if err != nil {
+		return fmt.Errorf("failed to initialize session store: %w", err)
+	}
+	m.sessionStore = sessionStore
+
+	// Load the latest session
+	sess, err := sessionStore.GetLatest()
+	if err != nil {
+		return fmt.Errorf("no previous session to continue: %w", err)
+	}
+
+	// Restore messages from session
+	m.messages = convertFromStoredMessages(sess.Messages)
+	m.currentSessionID = sess.Metadata.ID
+
+	p := tea.NewProgram(
+		m,
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	)
+
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("failed to run TUI: %w", err)
+	}
+	return nil
+}
+
+// RunWithResume runs TUI with the session selector to choose a session to resume
+func RunWithResume() error {
+	m := newModel()
+
+	// Initialize session store
+	sessionStore, err := session.NewStore()
+	if err != nil {
+		return fmt.Errorf("failed to initialize session store: %w", err)
+	}
+	m.sessionStore = sessionStore
+
+	// Set flag to open session selector after window is ready
+	m.pendingSessionSelector = true
 
 	p := tea.NewProgram(
 		m,
@@ -289,6 +366,7 @@ func newModel() model {
 		toolSelector:       NewToolSelectorState(),
 		skillSelector:      NewSkillSelectorState(),
 		agentSelector:      NewAgentSelectorState(),
+		sessionSelector:    NewSessionSelectorState(),
 	}
 }
 
@@ -345,6 +423,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AgentSelectorCancelledMsg:
 		return m, nil
 
+	case SessionSelectedMsg:
+		return m.handleSessionSelected(msg)
+
+	case SessionSelectorCancelledMsg:
+		return m, nil
+
 	case SkillInvokeMsg:
 		// A skill was invoked from the selector - trigger skill execution
 		if sk, ok := skill.DefaultRegistry.Get(msg.SkillName); ok {
@@ -397,6 +481,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case CompactResultMsg:
 		return m.handleCompactResult(msg)
+
+	case EditorFinishedMsg:
+		return m.handleEditorFinished(msg)
 
 	case tea.KeyMsg:
 		result, cmd := m.handleKeypress(msg)
@@ -468,6 +555,10 @@ func (m model) View() string {
 
 	if m.agentSelector.IsActive() {
 		return m.agentSelector.Render()
+	}
+
+	if m.sessionSelector.IsActive() {
+		return m.sessionSelector.Render()
 	}
 
 	chat := m.viewport.View()
