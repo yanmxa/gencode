@@ -312,6 +312,35 @@ func (m *model) handleEnterPlanResponse(msg EnterPlanResponseMsg) (tea.Model, te
 	return m, executeInteractiveTool(tc, msg.Response, m.cwd)
 }
 
+// Compact handlers
+
+func (m *model) handleCompactResult(msg CompactResultMsg) (tea.Model, tea.Cmd) {
+	m.compacting = false
+
+	if msg.Error != nil {
+		m.messages = append(m.messages, chatMessage{
+			role:    "system",
+			content: fmt.Sprintf("Compact failed: %v", msg.Error),
+		})
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+		return m, nil
+	}
+
+	// Replace message history with the summary as a user message
+	// This ensures the summary is sent to LLM as context for future messages
+	m.messages = []chatMessage{{
+		role:    "user",
+		content: fmt.Sprintf("Here is a summary of our previous conversation:\n\n%s", msg.Summary),
+	}}
+	m.lastInputTokens = 0
+	m.lastOutputTokens = 0
+
+	m.viewport.SetContent(m.renderMessages())
+	m.viewport.GotoBottom()
+	return m, nil
+}
+
 // Token Limit handlers
 
 func (m *model) handleTokenLimitResult(msg TokenLimitResultMsg) (tea.Model, tea.Cmd) {

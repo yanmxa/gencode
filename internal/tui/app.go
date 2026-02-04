@@ -144,6 +144,9 @@ type model struct {
 
 	// Token limit fetching state
 	fetchingTokenLimits bool // True when auto-fetching token limits
+
+	// Compact state
+	compacting bool // True when compacting conversation
 }
 
 func Run() error {
@@ -392,6 +395,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TokenLimitResultMsg:
 		return m.handleTokenLimitResult(msg)
 
+	case CompactResultMsg:
+		return m.handleCompactResult(msg)
+
 	case tea.KeyMsg:
 		result, cmd := m.handleKeypress(msg)
 		if cmd != nil || result != nil {
@@ -435,7 +441,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
-	if m.streaming || m.fetchingTokenLimits {
+	if m.streaming || m.fetchingTokenLimits || m.compacting {
 		m.spinner, cmd = m.spinner.Update(msg)
 		cmds = append(cmds, cmd)
 	}
@@ -491,6 +497,13 @@ func (m model) View() string {
 	// Show spinner in chat area when fetching token limits
 	if m.fetchingTokenLimits {
 		spinnerView := thinkingStyle.Render(m.spinner.View() + " Fetching token limits...")
+		chatWithSpinner := chat + "\n" + spinnerView
+		return fmt.Sprintf("%s\n%s\n%s\n%s", chatWithSpinner, separator, inputView, separator)
+	}
+
+	// Show spinner in chat area when compacting conversation
+	if m.compacting {
+		spinnerView := thinkingStyle.Render(m.spinner.View() + " Compacting conversation...")
 		chatWithSpinner := chat + "\n" + spinnerView
 		return fmt.Sprintf("%s\n%s\n%s\n%s", chatWithSpinner, separator, inputView, separator)
 	}

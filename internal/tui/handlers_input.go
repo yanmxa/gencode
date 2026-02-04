@@ -313,6 +313,11 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.spinner.Tick, startTokenLimitFetch(m))
 		}
 
+		// Check if async compact was started
+		if m.compacting {
+			return m, tea.Batch(m.spinner.Tick, startCompact(m))
+		}
+
 		if result != "" {
 			m.messages = append(m.messages, chatMessage{role: "user", content: input})
 			m.messages = append(m.messages, chatMessage{role: "system", content: result})

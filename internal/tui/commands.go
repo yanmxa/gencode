@@ -12,6 +12,7 @@ import (
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/ui"
 )
@@ -20,6 +21,13 @@ import (
 type TokenLimitResultMsg struct {
 	Result string
 	Error  error
+}
+
+// CompactResultMsg is sent when conversation compaction completes
+type CompactResultMsg struct {
+	Summary       string
+	OriginalCount int
+	Error         error
 }
 
 // Command represents a slash command
@@ -84,6 +92,11 @@ func getCommandRegistry() map[string]Command {
 			Name:        "tokenlimit",
 			Description: "View or set token limits for current model",
 			Handler:     handleTokenLimitCommand,
+		},
+		"compact": {
+			Name:        "compact",
+			Description: "Summarize conversation to reduce context size",
+			Handler:     handleCompactCommand,
 		},
 	}
 }
@@ -587,6 +600,92 @@ func formatTokenCount(count int) string {
 		return fmt.Sprintf("%dK", count/1000)
 	}
 	return fmt.Sprintf("%d", count)
+}
+
+// handleCompactCommand handles the /compact command
+func handleCompactCommand(ctx context.Context, m *model, args string) (string, error) {
+	if m.llmProvider == nil {
+		return "No provider connected. Use /provider to connect.", nil
+	}
+	if len(m.messages) < 3 {
+		return "Not enough conversation history to compact.", nil
+	}
+	if m.streaming {
+		return "Cannot compact while streaming.", nil
+	}
+	m.compacting = true
+	return "", nil
+}
+
+// startCompact returns a tea.Cmd that compacts the conversation in background
+func startCompact(m *model) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		summary, count, err := compactConversation(ctx, m)
+		return CompactResultMsg{Summary: summary, OriginalCount: count, Error: err}
+	}
+}
+
+// compactConversation calls the LLM to generate a summary of the conversation
+func compactConversation(ctx context.Context, m *model) (summary string, count int, err error) {
+	count = len(m.messages)
+	conversationText := buildConversationForSummary(m.messages)
+
+	response, err := provider.Complete(ctx, m.llmProvider, provider.CompletionOptions{
+		Model:        m.getModelID(),
+		SystemPrompt: system.CompactPrompt(),
+		Messages:     []provider.Message{{Role: "user", Content: conversationText}},
+		MaxTokens:    2048,
+	})
+	if err != nil {
+		return "", count, fmt.Errorf("failed to generate summary: %w", err)
+	}
+
+	return strings.TrimSpace(response.Content), count, nil
+}
+
+// buildConversationForSummary converts messages to text for summarization
+func buildConversationForSummary(messages []chatMessage) string {
+	var sb strings.Builder
+	sb.WriteString("Please summarize this coding conversation:\n\n")
+
+	for _, msg := range messages {
+		switch msg.role {
+		case "user":
+			if msg.toolResult != nil {
+				content := truncateToolResult(msg.toolResult.Content, 500)
+				sb.WriteString(fmt.Sprintf("[Tool Result: %s]\n%s\n\n", msg.toolName, content))
+			} else {
+				sb.WriteString(fmt.Sprintf("User: %s\n\n", msg.content))
+			}
+
+		case "assistant":
+			if msg.content != "" {
+				sb.WriteString(fmt.Sprintf("Assistant: %s\n\n", msg.content))
+			}
+			for _, tc := range msg.toolCalls {
+				sb.WriteString(fmt.Sprintf("[Tool Call: %s]\n", tc.Name))
+			}
+			if len(msg.toolCalls) > 0 {
+				sb.WriteString("\n")
+			}
+
+		case "system":
+			if msg.content != "" && !strings.Contains(msg.content, "AI-powered coding assistant") {
+				sb.WriteString(fmt.Sprintf("System: %s\n\n", msg.content))
+			}
+		}
+	}
+
+	return sb.String()
+}
+
+// truncateToolResult truncates tool result content to maxLen characters
+func truncateToolResult(content string, maxLen int) string {
+	if len(content) <= maxLen {
+		return content
+	}
+	return content[:maxLen] + "...[truncated]"
 }
 
 // IsSkillCommand checks if the command is a registered skill.

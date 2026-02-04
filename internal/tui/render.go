@@ -136,7 +136,15 @@ func (m model) renderTokenUsage() string {
 	}
 
 	style := lipgloss.NewStyle().Foreground(color)
-	return style.Render(fmt.Sprintf("⚡ %s/%s (%.0f%%)", used, limit, percent))
+	indicator := style.Render(fmt.Sprintf("⚡ %s/%s (%.0f%%)", used, limit, percent))
+
+	// Add /compact hint when >= 90%
+	if percent >= 90 {
+		hint := lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Render(" (try /compact)")
+		indicator += hint
+	}
+
+	return indicator
 }
 
 func (m model) renderMessages() string {

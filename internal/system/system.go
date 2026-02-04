@@ -190,6 +190,11 @@ func LoadMemory(cwd string) string {
 	return strings.Join(parts, "\n\n")
 }
 
+// CompactPrompt returns the prompt for conversation compaction.
+func CompactPrompt() string {
+	return load("compact.txt")
+}
+
 // loadFirstFound tries to load content from the first file that exists.
 func loadFirstFound(sources []string) string {
 	for _, src := range sources {
