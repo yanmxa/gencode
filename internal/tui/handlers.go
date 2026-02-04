@@ -311,3 +311,22 @@ func (m *model) handleEnterPlanResponse(msg EnterPlanResponseMsg) (tea.Model, te
 
 	return m, executeInteractiveTool(tc, msg.Response, m.cwd)
 }
+
+// Token Limit handlers
+
+func (m *model) handleTokenLimitResult(msg TokenLimitResultMsg) (tea.Model, tea.Cmd) {
+	m.fetchingTokenLimits = false
+
+	// Add result message
+	var content string
+	if msg.Error != nil {
+		content = "Error: " + msg.Error.Error()
+	} else {
+		content = msg.Result
+	}
+	m.messages = append(m.messages, chatMessage{role: "system", content: content})
+
+	m.viewport.SetContent(m.renderMessages())
+	m.viewport.GotoBottom()
+	return m, nil
+}

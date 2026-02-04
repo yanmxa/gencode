@@ -2,16 +2,25 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/yanmxa/gencode/internal/plan"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/ui"
 )
+
+// TokenLimitResultMsg is sent when token limit fetching completes
+type TokenLimitResultMsg struct {
+	Result string
+	Error  error
+}
 
 // Command represents a slash command
 type Command struct {
@@ -70,6 +79,11 @@ func getCommandRegistry() map[string]Command {
 			Name:        "agents",
 			Description: "Manage available agents (enable/disable)",
 			Handler:     handleAgentCommand,
+		},
+		"tokenlimit": {
+			Name:        "tokenlimit",
+			Description: "View or set token limits for current model",
+			Handler:     handleTokenLimitCommand,
 		},
 	}
 }
@@ -214,8 +228,10 @@ func handleHelpCommand(ctx context.Context, m *model, args string) (string, erro
 
 // handleClearCommand handles the /clear command
 func handleClearCommand(ctx context.Context, m *model, args string) (string, error) {
-	// Clear all messages
+	// Clear all messages and reset token tracking
 	m.messages = []chatMessage{}
+	m.lastInputTokens = 0
+	m.lastOutputTokens = 0
 	return "", nil
 }
 
@@ -286,6 +302,291 @@ func handleAgentCommand(ctx context.Context, m *model, args string) (string, err
 		return "", err
 	}
 	return "", nil
+}
+
+// handleTokenLimitCommand handles the /tokenlimit command
+func handleTokenLimitCommand(ctx context.Context, m *model, args string) (string, error) {
+	if m.currentModel == nil {
+		return "No model selected. Use /model to select a model first.", nil
+	}
+
+	modelID := m.currentModel.ModelID
+	args = strings.TrimSpace(args)
+
+	// Set custom limits: /tokenlimit <input> <output>
+	if args != "" {
+		return setTokenLimits(m, modelID, args)
+	}
+
+	// Show existing limits or auto-fetch
+	return showOrFetchTokenLimits(ctx, m, modelID)
+}
+
+// setTokenLimits parses and saves custom token limits
+func setTokenLimits(m *model, modelID, args string) (string, error) {
+	var inputLimit, outputLimit int
+	if _, err := fmt.Sscanf(args, "%d %d", &inputLimit, &outputLimit); err != nil {
+		return "Usage:\n  /tokenlimit              - Show or auto-fetch limits\n  /tokenlimit <input> <output> - Set custom limits", nil
+	}
+
+	if inputLimit <= 0 || outputLimit <= 0 {
+		return "Token limits must be positive integers", nil
+	}
+
+	if m.store != nil {
+		if err := m.store.SetTokenLimit(modelID, inputLimit, outputLimit); err != nil {
+			return "", fmt.Errorf("failed to set token limits: %w", err)
+		}
+	}
+
+	return fmt.Sprintf("Set token limits for %s:\n  Input:  %s tokens\n  Output: %s tokens",
+		modelID, formatTokenCount(inputLimit), formatTokenCount(outputLimit)), nil
+}
+
+// showOrFetchTokenLimits displays existing limits or starts async auto-fetch
+func showOrFetchTokenLimits(ctx context.Context, m *model, modelID string) (string, error) {
+	// Check model cache (built-in limits from provider)
+	inputLimit, outputLimit := getModelTokenLimits(m)
+	if inputLimit > 0 || outputLimit > 0 {
+		// Check if there's a custom override to display instead
+		if m.store != nil {
+			if customInput, customOutput, ok := m.store.GetTokenLimit(modelID); ok {
+				return formatTokenLimitDisplay(modelID, customInput, customOutput, true, m), nil
+			}
+		}
+		return formatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m), nil
+	}
+
+	// Model cache has no limits - start async auto-fetch
+	m.fetchingTokenLimits = true
+	return "", nil // Empty result triggers async fetch
+}
+
+// startTokenLimitFetch returns a tea.Cmd that fetches token limits in background
+func startTokenLimitFetch(m *model) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		result, err := autoFetchTokenLimits(ctx, m)
+		return TokenLimitResultMsg{Result: result, Error: err}
+	}
+}
+
+// formatTokenLimitDisplay formats token limits for display
+func formatTokenLimitDisplay(modelID string, inputLimit, outputLimit int, isCustom bool, m *model) string {
+	result := fmt.Sprintf("Token Limits for %s:\n\n  Input:  %s tokens\n  Output: %s tokens",
+		modelID, formatTokenCount(inputLimit), formatTokenCount(outputLimit))
+
+	if isCustom {
+		result += "\n\n(custom override)"
+	}
+
+	if m.lastInputTokens > 0 && inputLimit > 0 {
+		percent := float64(m.lastInputTokens) / float64(inputLimit) * 100
+		result += fmt.Sprintf("\n\nCurrent usage: %s tokens (%.1f%%)", formatTokenCount(m.lastInputTokens), percent)
+	}
+
+	return result
+}
+
+// autoFetchTokenLimits uses an agent loop to search and extract token limits
+func autoFetchTokenLimits(ctx context.Context, m *model) (string, error) {
+	if m.llmProvider == nil {
+		return "No provider connected. Use /tokenlimit <input> <output> to set manually.", nil
+	}
+
+	modelID := m.currentModel.ModelID
+	providerName := string(m.currentModel.Provider)
+
+	systemPrompt := buildTokenLimitAgentPrompt(modelID, providerName, string(m.currentModel.AuthMethod))
+	messages := []provider.Message{
+		{Role: "user", Content: fmt.Sprintf("Find the token limits for model: %s (provider: %s)", modelID, providerName)},
+	}
+
+	cwd, _ := os.Getwd()
+	const maxTurns = 5
+
+	for turn := 0; turn < maxTurns; turn++ {
+		response, err := provider.Complete(ctx, m.llmProvider, provider.CompletionOptions{
+			Model:        m.getModelID(),
+			SystemPrompt: systemPrompt,
+			Messages:     messages,
+			Tools:        getTokenLimitAgentTools(),
+			MaxTokens:    1024,
+		})
+		if err != nil {
+			return "", fmt.Errorf("agent error: %w", err)
+		}
+
+		// Execute tool calls if present
+		if len(response.ToolCalls) > 0 {
+			messages = appendToolCallMessages(ctx, messages, response.ToolCalls, cwd)
+			continue
+		}
+
+		// Parse final response
+		content := strings.TrimSpace(response.Content)
+		if result, done := parseTokenLimitResponse(content, modelID, m); done {
+			return result, nil
+		}
+
+		// Continue conversation
+		messages = append(messages,
+			provider.Message{Role: "assistant", Content: content},
+			provider.Message{Role: "user", Content: "Please continue searching or respond with FOUND or NOT_FOUND."})
+	}
+
+	return tokenLimitNotFoundMessage(modelID), nil
+}
+
+// buildTokenLimitAgentPrompt creates the system prompt for the token limit agent
+func buildTokenLimitAgentPrompt(modelID, providerName, authMethod string) string {
+	return fmt.Sprintf(`You are a helpful assistant that finds token limits for AI models.
+
+Your task is to find the maximum input tokens (context window) and maximum output tokens for this model:
+- Model ID: %s
+- Provider: %s
+- Auth Method: %s
+
+Use the WebSearch tool to search for this information, then use WebFetch to read relevant documentation pages if needed.
+
+When you find the limits, respond with EXACTLY this format:
+FOUND: <input_tokens> <output_tokens>
+
+For example: FOUND: 200000 16000
+
+If you cannot find the information after searching, respond with:
+NOT_FOUND
+
+Do not include any other text in your final response.`, modelID, providerName, authMethod)
+}
+
+// getTokenLimitAgentTools returns the tools available to the token limit agent
+func getTokenLimitAgentTools() []provider.Tool {
+	return []provider.Tool{
+		{
+			Name:        "WebSearch",
+			Description: "Search the web for information about model token limits",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string", "description": "The search query"},
+				},
+				"required": []string{"query"},
+			},
+		},
+		{
+			Name:        "WebFetch",
+			Description: "Fetch content from a URL to read documentation",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"url": map[string]any{"type": "string", "description": "The URL to fetch"},
+				},
+				"required": []string{"url"},
+			},
+		},
+	}
+}
+
+// appendToolCallMessages executes tool calls and appends results to messages
+func appendToolCallMessages(ctx context.Context, messages []provider.Message, toolCalls []provider.ToolCall, cwd string) []provider.Message {
+	messages = append(messages, provider.Message{
+		Role:      "assistant",
+		ToolCalls: toolCalls,
+	})
+
+	for _, tc := range toolCalls {
+		var params map[string]any
+		if err := json.Unmarshal([]byte(tc.Input), &params); err != nil {
+			params = map[string]any{}
+		}
+
+		result := tool.Execute(ctx, tc.Name, params, cwd)
+		messages = append(messages, provider.Message{
+			Role: "user",
+			ToolResult: &provider.ToolResult{
+				ToolCallID: tc.ID,
+				ToolName:   tc.Name,
+				Content:    result.Output,
+				IsError:    !result.Success,
+			},
+		})
+	}
+	return messages
+}
+
+// parseTokenLimitResponse parses the agent response and saves limits if found
+func parseTokenLimitResponse(content, modelID string, m *model) (string, bool) {
+	if strings.HasPrefix(content, "FOUND:") {
+		var inputLimit, outputLimit int
+		if _, err := fmt.Sscanf(content, "FOUND: %d %d", &inputLimit, &outputLimit); err == nil && inputLimit > 0 {
+			if m.store != nil {
+				_ = m.store.SetTokenLimit(modelID, inputLimit, outputLimit)
+			}
+			return fmt.Sprintf("Found and saved token limits for %s:\n  Input:  %s tokens\n  Output: %s tokens",
+				modelID, formatTokenCount(inputLimit), formatTokenCount(outputLimit)), true
+		}
+	}
+
+	if strings.Contains(content, "NOT_FOUND") {
+		return tokenLimitNotFoundMessage(modelID), true
+	}
+
+	return "", false
+}
+
+// tokenLimitNotFoundMessage returns the standard not-found message
+func tokenLimitNotFoundMessage(modelID string) string {
+	return fmt.Sprintf("Could not find token limits for %s.\n\nSet manually with: /tokenlimit <input> <output>", modelID)
+}
+
+// getModelTokenLimits returns token limits from model cache
+func getModelTokenLimits(m *model) (inputLimit, outputLimit int) {
+	if m.store == nil || m.currentModel == nil {
+		return 0, 0
+	}
+
+	models, ok := m.store.GetCachedModels(m.currentModel.Provider, m.currentModel.AuthMethod)
+	if !ok {
+		return 0, 0
+	}
+
+	for _, model := range models {
+		if model.ID == m.currentModel.ModelID {
+			return model.InputTokenLimit, model.OutputTokenLimit
+		}
+	}
+	return 0, 0
+}
+
+// getEffectiveInputLimit returns the effective input token limit for the current model
+// Priority: 1. Custom override, 2. Model cache, 3. Return 0 (no limit)
+func (m *model) getEffectiveInputLimit() int {
+	if m.currentModel == nil {
+		return 0
+	}
+
+	// Check custom override first
+	if m.store != nil {
+		if inputLimit, _, ok := m.store.GetTokenLimit(m.currentModel.ModelID); ok {
+			return inputLimit
+		}
+	}
+
+	// Check model cache
+	inputLimit, _ := getModelTokenLimits(m)
+	return inputLimit
+}
+
+// formatTokenCount formats a token count for display (e.g., 200000 -> "200K")
+func formatTokenCount(count int) string {
+	if count >= 1000000 {
+		return fmt.Sprintf("%.1fM", float64(count)/1000000)
+	}
+	if count >= 1000 {
+		return fmt.Sprintf("%dK", count/1000)
+	}
+	return fmt.Sprintf("%d", count)
 }
 
 // IsSkillCommand checks if the command is a registered skill.

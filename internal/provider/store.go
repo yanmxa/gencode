@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -23,6 +24,7 @@ type ConnectionInfo struct {
 type ModelCache struct {
 	CachedAt time.Time   `json:"cachedAt"`
 	Models   []ModelInfo `json:"models"`
+	NoExpire bool        `json:"noExpire,omitempty"` // Skip TTL for providers without API
 }
 
 // CurrentModelInfo stores the current model with its provider info
@@ -32,12 +34,19 @@ type CurrentModelInfo struct {
 	AuthMethod AuthMethod `json:"authMethod"`
 }
 
+// TokenLimitOverride stores custom token limits for a model
+type TokenLimitOverride struct {
+	InputTokenLimit  int `json:"inputTokenLimit"`
+	OutputTokenLimit int `json:"outputTokenLimit"`
+}
+
 // StoreData is the persisted data structure
 type StoreData struct {
-	Connections    map[string]ConnectionInfo `json:"connections"`              // key: provider
-	Models         map[string]ModelCache     `json:"models"`                   // key: provider:authMethod
-	Current        *CurrentModelInfo         `json:"current"`                  // current model with provider info
-	SearchProvider *string                   `json:"searchProvider,omitempty"` // search provider name (exa, serper, brave)
+	Connections    map[string]ConnectionInfo      `json:"connections"`              // key: provider
+	Models         map[string]ModelCache          `json:"models"`                   // key: provider:authMethod
+	Current        *CurrentModelInfo              `json:"current"`                  // current model with provider info
+	SearchProvider *string                        `json:"searchProvider,omitempty"` // search provider name (exa, serper, brave)
+	TokenLimits    map[string]TokenLimitOverride  `json:"tokenLimits,omitempty"`    // key: modelID
 }
 
 // Store manages provider configuration persistence
@@ -101,6 +110,9 @@ func (s *Store) ensureMapsInitialized() {
 	}
 	if s.data.Models == nil {
 		s.data.Models = make(map[string]ModelCache)
+	}
+	if s.data.TokenLimits == nil {
+		s.data.TokenLimits = make(map[string]TokenLimitOverride)
 	}
 }
 
@@ -168,14 +180,26 @@ func (s *Store) GetConnections() map[string]ConnectionInfo {
 	return result
 }
 
-// CacheModels saves model information for a provider
-func (s *Store) CacheModels(provider Provider, authMethod AuthMethod, models []ModelInfo) error {
+// CacheModels saves model information for a provider.
+// If noExpire is true, the cache will never expire (for providers without list API).
+func (s *Store) CacheModels(provider Provider, authMethod AuthMethod, models []ModelInfo, noExpire ...bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.data.Models[makeModelCacheKey(provider, authMethod)] = ModelCache{
+	key := makeModelCacheKey(provider, authMethod)
+
+	// Determine noExpire value: explicit parameter > preserve existing > false
+	expire := false
+	if len(noExpire) > 0 {
+		expire = noExpire[0]
+	} else if existing, ok := s.data.Models[key]; ok {
+		expire = existing.NoExpire
+	}
+
+	s.data.Models[key] = ModelCache{
 		CachedAt: time.Now(),
 		Models:   models,
+		NoExpire: expire,
 	}
 
 	return s.save()
@@ -187,7 +211,11 @@ func (s *Store) GetCachedModels(provider Provider, authMethod AuthMethod) ([]Mod
 	defer s.mu.RUnlock()
 
 	cache, ok := s.data.Models[makeModelCacheKey(provider, authMethod)]
-	if !ok || time.Since(cache.CachedAt) > ModelCacheTTL {
+	if !ok {
+		return nil, false
+	}
+	// Skip TTL check if NoExpire is set OR provider uses static model list
+	if !cache.NoExpire && !provider.UsesStaticModelList() && time.Since(cache.CachedAt) > ModelCacheTTL {
 		return nil, false
 	}
 
@@ -206,8 +234,15 @@ func (s *Store) GetAllCachedModels() map[string][]ModelInfo {
 
 	result := make(map[string][]ModelInfo)
 	for key, cache := range s.data.Models {
-		// Skip expired caches
-		if time.Since(cache.CachedAt) > ModelCacheTTL {
+		// Extract provider from key (format: "provider:authMethod")
+		providerName := key
+		if idx := strings.Index(key, ":"); idx > 0 {
+			providerName = key[:idx]
+		}
+		provider := Provider(providerName)
+
+		// Skip expired caches (unless NoExpire is set or provider uses static model list)
+		if !cache.NoExpire && !provider.UsesStaticModelList() && time.Since(cache.CachedAt) > ModelCacheTTL {
 			continue
 		}
 		result[key] = cache.Models
@@ -271,5 +306,41 @@ func (s *Store) ClearSearchProvider() error {
 	defer s.mu.Unlock()
 
 	s.data.SearchProvider = nil
+	return s.save()
+}
+
+// SetTokenLimit sets custom token limits for a model
+func (s *Store) SetTokenLimit(modelID string, inputLimit, outputLimit int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.ensureMapsInitialized()
+	s.data.TokenLimits[modelID] = TokenLimitOverride{
+		InputTokenLimit:  inputLimit,
+		OutputTokenLimit: outputLimit,
+	}
+	return s.save()
+}
+
+// GetTokenLimit returns custom token limits for a model
+func (s *Store) GetTokenLimit(modelID string) (inputLimit, outputLimit int, ok bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	override, exists := s.data.TokenLimits[modelID]
+	if !exists {
+		return 0, 0, false
+	}
+	return override.InputTokenLimit, override.OutputTokenLimit, true
+}
+
+// ClearTokenLimit removes custom token limits for a model
+func (s *Store) ClearTokenLimit(modelID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.data.TokenLimits != nil {
+		delete(s.data.TokenLimits, modelID)
+	}
 	return s.save()
 }

@@ -149,6 +149,12 @@ func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 	if msg.done {
 		m.buildingToolName = ""
 
+		// Update token usage from the most recent API response
+		if msg.usage != nil {
+			m.lastInputTokens = msg.usage.InputTokens
+			m.lastOutputTokens = msg.usage.OutputTokens
+		}
+
 		if len(msg.toolCalls) > 0 {
 			if len(m.messages) > 0 {
 				idx := len(m.messages) - 1
@@ -220,43 +226,53 @@ func (m *model) handleStreamContinue(msg streamContinueMsg) (tea.Model, tea.Cmd)
 }
 
 func (m *model) handleSpinnerTick(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.streaming {
+	// Handle token limit fetching spinner (no additional processing needed)
+	if m.fetchingTokenLimits {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
-
-		interactiveActive := m.questionPrompt.IsActive() || (m.planPrompt != nil && m.planPrompt.IsActive())
-		if interactiveActive {
-			return m, cmd
-		}
-
-		// Check for Task progress updates
-		if m.pendingToolCalls != nil && m.pendingToolIdx < len(m.pendingToolCalls) {
-			tc := m.pendingToolCalls[m.pendingToolIdx]
-			if tc.Name == "Task" {
-				// Check for progress messages
-				ch := GetTaskProgressChan()
-				select {
-				case progressMsg := <-ch:
-					m.taskProgress = append(m.taskProgress, progressMsg)
-					if len(m.taskProgress) > 5 {
-						m.taskProgress = m.taskProgress[1:]
-					}
-				default:
-				}
-			}
-		}
-
-		if m.buildingToolName != "" {
-			m.viewport.SetContent(m.renderMessages())
-		} else if m.pendingToolCalls != nil && m.pendingToolIdx < len(m.pendingToolCalls) {
-			m.viewport.SetContent(m.renderMessages())
-		} else if len(m.messages) > 0 {
-			lastMsg := m.messages[len(m.messages)-1]
-			if lastMsg.role == "assistant" && lastMsg.content == "" && len(lastMsg.toolCalls) == 0 {
-				m.viewport.SetContent(m.renderMessages())
-			}
-		}
 		return m, cmd
 	}
-	return m, nil
+
+	if !m.streaming {
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.spinner, cmd = m.spinner.Update(msg)
+
+	interactiveActive := m.questionPrompt.IsActive() || (m.planPrompt != nil && m.planPrompt.IsActive())
+	if interactiveActive {
+		return m, cmd
+	}
+
+	// Check for Task progress updates
+	if m.pendingToolCalls != nil && m.pendingToolIdx < len(m.pendingToolCalls) {
+		tc := m.pendingToolCalls[m.pendingToolIdx]
+		if tc.Name == "Task" {
+			// Check for progress messages
+			ch := GetTaskProgressChan()
+			select {
+			case progressMsg := <-ch:
+				m.taskProgress = append(m.taskProgress, progressMsg)
+				if len(m.taskProgress) > 5 {
+					m.taskProgress = m.taskProgress[1:]
+				}
+			default:
+			}
+		}
+	}
+
+	// Determine if viewport needs update
+	needsUpdate := m.buildingToolName != "" ||
+		(m.pendingToolCalls != nil && m.pendingToolIdx < len(m.pendingToolCalls))
+
+	if !needsUpdate && len(m.messages) > 0 {
+		lastMsg := m.messages[len(m.messages)-1]
+		needsUpdate = lastMsg.role == "assistant" && lastMsg.content == "" && len(lastMsg.toolCalls) == 0
+	}
+
+	if needsUpdate {
+		m.viewport.SetContent(m.renderMessages())
+	}
+	return m, cmd
 }

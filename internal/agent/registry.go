@@ -234,23 +234,31 @@ func (r *Registry) ListEnabled() []*AgentConfig {
 // GetAgentPromptForLLM returns a formatted string describing available agents.
 // This is used to inform the LLM about what agents are available.
 // Only includes enabled agents.
+// Returns content wrapped in <available-agents> XML tags for consistency.
 func (r *Registry) GetAgentPromptForLLM() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var sb strings.Builder
-	sb.WriteString("Available agent types:\n")
-
+	var lines []string
 	for name, config := range r.agents {
 		if r.isDisabledInternal(name) {
 			continue
 		}
-		sb.WriteString("- ")
-		sb.WriteString(config.Name)
-		sb.WriteString(": ")
-		sb.WriteString(config.Description)
+		lines = append(lines, "- "+config.Name+": "+config.Description)
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("<available-agents>\n")
+	sb.WriteString("Available agent types for the Task tool:\n\n")
+	for _, line := range lines {
+		sb.WriteString(line)
 		sb.WriteString("\n")
 	}
+	sb.WriteString("</available-agents>")
 
 	return sb.String()
 }

@@ -279,6 +279,7 @@ func (r *Registry) GetStatesAt(userLevel bool) map[string]SkillState {
 // Only includes active skills (state = active).
 // Uses progressive loading: only name + description are included here.
 // Full instructions are loaded when the Skill tool is invoked.
+// Returns content wrapped in <available-skills> XML tags for consistency.
 func (r *Registry) GetAvailableSkillsPrompt() string {
 	active := r.GetActive()
 	if len(active) == 0 {
@@ -286,12 +287,12 @@ func (r *Registry) GetAvailableSkillsPrompt() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("# Available Skills\n\n")
+	sb.WriteString("<available-skills>\n")
 	sb.WriteString("Use the Skill tool to invoke these capabilities:\n\n")
 
 	for _, skill := range active {
 		// Only include name and description (progressive loading)
-		sb.WriteString(fmt.Sprintf("- **%s**: %s", skill.FullName(), skill.Description))
+		sb.WriteString(fmt.Sprintf("- %s: %s", skill.FullName(), skill.Description))
 		if skill.ArgumentHint != "" {
 			sb.WriteString(fmt.Sprintf(" %s", skill.ArgumentHint))
 		}
@@ -309,7 +310,8 @@ func (r *Registry) GetAvailableSkillsPrompt() string {
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("\nInvoke with: Skill(skill=\"name\", args=\"optional args\")")
+	sb.WriteString("\nInvoke with: Skill(skill=\"name\", args=\"optional args\")\n")
+	sb.WriteString("</available-skills>")
 	return sb.String()
 }
 

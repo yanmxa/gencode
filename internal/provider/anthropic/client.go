@@ -230,15 +230,15 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 }
 
 // ListModels returns the available models for Anthropic
+// Anthropic doesn't have a list models API, so we return defaults.
+// The caller is responsible for caching via Store.CacheModels.
 func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
-	// Anthropic doesn't have a list models API, so we return known models
-	models := []provider.ModelInfo{
+	return []provider.ModelInfo{
 		{ID: "claude-opus-4-5@20251101", Name: "Claude Opus 4.5", DisplayName: "Claude Opus 4.5 (Most Capable)"},
 		{ID: "claude-sonnet-4-5@20250929", Name: "Claude Sonnet 4.5", DisplayName: "Claude Sonnet 4.5 (Balanced)"},
 		{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4", DisplayName: "Claude Sonnet 4"},
 		{ID: "claude-haiku-3-5@20241022", Name: "Claude Haiku 3.5", DisplayName: "Claude Haiku 3.5 (Fast)"},
-	}
-	return models, nil
+	}, nil
 }
 
 // Ensure Client implements LLMProvider

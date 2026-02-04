@@ -56,6 +56,7 @@ type (
 		toolCalls        []provider.ToolCall
 		stopReason       string
 		buildingToolName string
+		usage            *provider.Usage
 	}
 	streamDoneMsg     struct{}
 	streamContinueMsg struct {
@@ -136,6 +137,13 @@ type model struct {
 	// Task progress tracking
 	activeTaskID   string   // Currently executing Task ID (for progress display)
 	taskProgress   []string // Recent progress messages from Task
+
+	// Token usage tracking (from most recent API response)
+	lastInputTokens  int // Input tokens from last API call (represents current context size)
+	lastOutputTokens int // Output tokens from last API call
+
+	// Token limit fetching state
+	fetchingTokenLimits bool // True when auto-fetching token limits
 }
 
 func Run() error {
@@ -381,6 +389,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case EnterPlanResponseMsg:
 		return m.handleEnterPlanResponse(msg)
 
+	case TokenLimitResultMsg:
+		return m.handleTokenLimitResult(msg)
+
 	case tea.KeyMsg:
 		result, cmd := m.handleKeypress(msg)
 		if cmd != nil || result != nil {
@@ -424,7 +435,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
-	if m.streaming {
+	if m.streaming || m.fetchingTokenLimits {
 		m.spinner, cmd = m.spinner.Update(msg)
 		cmds = append(cmds, cmd)
 	}
@@ -477,6 +488,13 @@ func (m model) View() string {
 	prompt := inputPromptStyle.Render("❯ ")
 	inputView := prompt + m.textarea.View()
 
+	// Show spinner in chat area when fetching token limits
+	if m.fetchingTokenLimits {
+		spinnerView := thinkingStyle.Render(m.spinner.View() + " Fetching token limits...")
+		chatWithSpinner := chat + "\n" + spinnerView
+		return fmt.Sprintf("%s\n%s\n%s\n%s", chatWithSpinner, separator, inputView, separator)
+	}
+
 	statusLine := m.renderModeStatus()
 
 	suggestions := m.suggestions.Render(m.width)
@@ -519,14 +537,19 @@ func (m model) waitForChunk() tea.Cmd {
 		case provider.ChunkTypeText:
 			return streamChunkMsg{text: chunk.Text}
 		case provider.ChunkTypeDone:
+			var usage *provider.Usage
+			if chunk.Response != nil {
+				usage = &chunk.Response.Usage
+			}
 			if chunk.Response != nil && len(chunk.Response.ToolCalls) > 0 {
 				return streamChunkMsg{
 					done:       true,
 					toolCalls:  chunk.Response.ToolCalls,
 					stopReason: chunk.Response.StopReason,
+					usage:      usage,
 				}
 			}
-			return streamChunkMsg{done: true}
+			return streamChunkMsg{done: true, usage: usage}
 		case provider.ChunkTypeError:
 			return streamChunkMsg{err: chunk.Error}
 		case provider.ChunkTypeToolStart:

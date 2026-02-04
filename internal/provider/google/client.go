@@ -256,9 +256,11 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 			}
 
 			models = append(models, provider.ModelInfo{
-				ID:          id,
-				Name:        displayName,
-				DisplayName: displayName,
+				ID:               id,
+				Name:             displayName,
+				DisplayName:      displayName,
+				InputTokenLimit:  int(m.InputTokenLimit),
+				OutputTokenLimit: int(m.OutputTokenLimit),
 			})
 		}
 	}

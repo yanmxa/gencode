@@ -77,6 +77,9 @@ func (m model) renderWelcome() string {
 }
 
 func (m model) renderModeStatus() string {
+	var parts []string
+
+	// Mode status
 	var icon, label string
 	var color lipgloss.Color
 
@@ -89,15 +92,51 @@ func (m model) renderModeStatus() string {
 		icon = "⏸"
 		label = " plan mode on"
 		color = CurrentTheme.Warning
-	default:
+	}
+
+	if icon != "" {
+		styledIcon := lipgloss.NewStyle().Foreground(color).Render(icon)
+		styledLabel := lipgloss.NewStyle().Foreground(color).Render(label)
+		hint := lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Render("  shift+tab to toggle")
+		parts = append(parts, "  "+styledIcon+styledLabel+hint)
+	}
+
+	// Token usage indicator (show when >= 80% of limit)
+	tokenUsage := m.renderTokenUsage()
+	if tokenUsage != "" {
+		parts = append(parts, tokenUsage)
+	}
+
+	if len(parts) == 0 {
 		return ""
 	}
 
-	styledIcon := lipgloss.NewStyle().Foreground(color).Render(icon)
-	styledLabel := lipgloss.NewStyle().Foreground(color).Render(label)
-	hint := lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Render("  shift+tab to toggle")
+	return strings.Join(parts, "  ")
+}
 
-	return "  " + styledIcon + styledLabel + hint
+// renderTokenUsage returns token usage indicator when >= 80% of limit
+func (m model) renderTokenUsage() string {
+	inputLimit := m.getEffectiveInputLimit()
+	if inputLimit == 0 || m.lastInputTokens == 0 {
+		return ""
+	}
+
+	percent := float64(m.lastInputTokens) / float64(inputLimit) * 100
+	if percent < 80 {
+		return ""
+	}
+
+	// Format: ⚡ 180K/200K (90%)
+	used := formatTokenCount(m.lastInputTokens)
+	limit := formatTokenCount(inputLimit)
+
+	color := CurrentTheme.Warning // >= 80%
+	if percent >= 95 {
+		color = CurrentTheme.Error // Red at 95%+
+	}
+
+	style := lipgloss.NewStyle().Foreground(color)
+	return style.Render(fmt.Sprintf("⚡ %s/%s (%.0f%%)", used, limit, percent))
 }
 
 func (m model) renderMessages() string {

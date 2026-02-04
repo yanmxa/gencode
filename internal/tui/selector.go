@@ -106,12 +106,14 @@ type AuthMethodItem struct {
 
 // ModelItem represents a model in the model selector
 type ModelItem struct {
-	ID           string
-	Name         string
-	DisplayName  string
-	ProviderName string
-	AuthMethod   provider.AuthMethod
-	IsCurrent    bool
+	ID               string
+	Name             string
+	DisplayName      string
+	ProviderName     string
+	AuthMethod       provider.AuthMethod
+	IsCurrent        bool
+	InputTokenLimit  int
+	OutputTokenLimit int
 }
 
 // SearchProviderItem represents a search provider in the selector
@@ -340,16 +342,19 @@ func (s *SelectorState) EnterModelSelect(ctx context.Context, width, height int)
 			}
 
 			// Cache the models
-			_ = store.CacheModels(provider.Provider(providerName), conn.AuthMethod, models)
+			prov := provider.Provider(providerName)
+			_ = store.CacheModels(prov, conn.AuthMethod, models, prov.UsesStaticModelList())
 
 			for _, mdl := range models {
 				s.models = append(s.models, ModelItem{
-					ID:           mdl.ID,
-					Name:         mdl.Name,
-					DisplayName:  mdl.DisplayName,
-					ProviderName: providerName,
-					AuthMethod:   conn.AuthMethod,
-					IsCurrent:    mdl.ID == currentModelID,
+					ID:               mdl.ID,
+					Name:             mdl.Name,
+					DisplayName:      mdl.DisplayName,
+					ProviderName:     providerName,
+					AuthMethod:       conn.AuthMethod,
+					IsCurrent:        mdl.ID == currentModelID,
+					InputTokenLimit:  mdl.InputTokenLimit,
+					OutputTokenLimit: mdl.OutputTokenLimit,
 				})
 			}
 		}
@@ -366,12 +371,14 @@ func (s *SelectorState) EnterModelSelect(ctx context.Context, width, height int)
 
 			for _, mdl := range models {
 				s.models = append(s.models, ModelItem{
-					ID:           mdl.ID,
-					Name:         mdl.Name,
-					DisplayName:  mdl.DisplayName,
-					ProviderName: providerName,
-					AuthMethod:   authMethod,
-					IsCurrent:    mdl.ID == currentModelID,
+					ID:               mdl.ID,
+					Name:             mdl.Name,
+					DisplayName:      mdl.DisplayName,
+					ProviderName:     providerName,
+					AuthMethod:       authMethod,
+					IsCurrent:        mdl.ID == currentModelID,
+					InputTokenLimit:  mdl.InputTokenLimit,
+					OutputTokenLimit: mdl.OutputTokenLimit,
 				})
 			}
 		}
@@ -653,7 +660,7 @@ func (s *SelectorState) Select() tea.Cmd {
 		// Save connection using a new store instance
 		store, _ := provider.NewStore()
 		if store != nil {
-			_ = store.CacheModels(item.Provider, item.AuthMethod, models)
+			_ = store.CacheModels(item.Provider, item.AuthMethod, models, item.Provider.UsesStaticModelList())
 			_ = store.Connect(item.Provider, item.AuthMethod)
 		}
 
@@ -822,6 +829,7 @@ func (s *SelectorState) renderModelSelector() string {
 		// Render visible models
 		currentProvider := ""
 		providerHeaderStyle := lipgloss.NewStyle().Foreground(CurrentTheme.TextDim)
+		warningStyle := lipgloss.NewStyle().Foreground(CurrentTheme.Warning)
 		for i := s.scrollOffset; i < endIdx; i++ {
 			m := s.filteredModels[i]
 
@@ -852,7 +860,13 @@ func (s *SelectorState) renderModelSelector() string {
 				displayName = m.ID
 			}
 
-			line := fmt.Sprintf("%s %s", indicatorStyle.Render(indicator), displayName)
+			// Add warning for models without token limits
+			warning := ""
+			if m.InputTokenLimit == 0 && m.OutputTokenLimit == 0 {
+				warning = warningStyle.Render(" ⚠")
+			}
+
+			line := fmt.Sprintf("%s %s%s", indicatorStyle.Render(indicator), displayName, warning)
 
 			if i == s.selectedIdx {
 				sb.WriteString(selectorSelectedStyle.Render("> " + line))
@@ -871,6 +885,9 @@ func (s *SelectorState) renderModelSelector() string {
 
 	sb.WriteString("\n")
 	sb.WriteString(selectorHintStyle.Render("↑/↓ navigate · Enter select · Esc clear/cancel"))
+	sb.WriteString("\n")
+	warningIcon := lipgloss.NewStyle().Foreground(CurrentTheme.Warning).Render("⚠")
+	sb.WriteString(selectorHintStyle.Render(warningIcon + " = No token limits (use /tokenlimit to set)"))
 
 	// Wrap in border
 	content := sb.String()
@@ -1102,7 +1119,7 @@ func (s *SelectorState) ConnectProvider(ctx context.Context, p provider.Provider
 	}
 
 	// Cache the models
-	_ = s.store.CacheModels(p, authMethod, models)
+	_ = s.store.CacheModels(p, authMethod, models, p.UsesStaticModelList())
 
 	// Save connection
 	if err := s.store.Connect(p, authMethod); err != nil {

@@ -307,6 +307,12 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 	if result, isCmd := ExecuteCommand(context.Background(), m, input); isCmd {
 		m.textarea.Reset()
 		m.textarea.SetHeight(minTextareaHeight)
+
+		// Check if async token limit fetch was started (don't add to messages to avoid polluting main loop)
+		if m.fetchingTokenLimits {
+			return m, tea.Batch(m.spinner.Tick, startTokenLimitFetch(m))
+		}
+
 		if result != "" {
 			m.messages = append(m.messages, chatMessage{role: "user", content: input})
 			m.messages = append(m.messages, chatMessage{role: "system", content: result})
