@@ -31,7 +31,9 @@ cd gencode && make install
 
 - **Multi-provider support** — Anthropic, OpenAI, Google Gemini, and more
 - **Built-in tools** — Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
-- **Flexible context** — Manage models, tools, and skills at runtime
+- **Skills** — Markdown prompts with 3 states: disable, enable (slash command), active (model-aware)
+- **Agents** — Specialized subagents for autonomous task execution
+- **Runtime management** — `/tools`, `/skills`, `/agents` to manage at runtime
 
 ## Usage
 
