@@ -211,10 +211,16 @@ func (f *AgentFrontmatter) toAgentConfig() *AgentConfig {
 	return config
 }
 
-// Init is called to initialize the agent loader
+// Init is called to initialize the agent system
 // This should be called during application startup
+// It loads custom agents and initializes the enabled/disabled state stores
 func Init(cwd string) {
 	LoadCustomAgents(cwd)
+
+	// Initialize stores for enabled/disabled state persistence
+	if err := DefaultRegistry.InitStores(cwd); err != nil {
+		log.Logger().Warn("Failed to initialize agent stores", zap.Error(err))
+	}
 }
 
 // validateAgentName checks if an agent name is valid

@@ -130,6 +130,9 @@ type model struct {
 	pendingSkillInstructions string // Full skill content for next message
 	pendingSkillArgs         string // User args for skill invocation
 
+	// Agent management
+	agentSelector AgentSelectorState
+
 	// Task progress tracking
 	activeTaskID   string   // Currently executing Task ID (for progress display)
 	taskProgress   []string // Recent progress messages from Task
@@ -232,8 +235,8 @@ func newModel() model {
 		log.Logger().Warn("Failed to initialize skill registry", zap.Error(err))
 	}
 
-	// Load custom agents
-	agent.LoadCustomAgents(cwd)
+	// Initialize agent system (loads custom agents and state stores)
+	agent.Init(cwd)
 
 	// Configure Task tool if provider is available
 	if llmProvider != nil {
@@ -274,6 +277,7 @@ func newModel() model {
 		disabledTools:      config.GetDisabledTools(),
 		toolSelector:       NewToolSelectorState(),
 		skillSelector:      NewSkillSelectorState(),
+		agentSelector:      NewAgentSelectorState(),
 	}
 }
 
@@ -321,6 +325,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case SkillSelectorCancelledMsg:
+		return m, nil
+
+	case AgentToggleMsg:
+		// Agent toggle already handled in agentSelector.Toggle()
+		return m, nil
+
+	case AgentSelectorCancelledMsg:
 		return m, nil
 
 	case SkillInvokeMsg:
@@ -436,6 +447,10 @@ func (m model) View() string {
 
 	if m.skillSelector.IsActive() {
 		return m.skillSelector.Render()
+	}
+
+	if m.agentSelector.IsActive() {
+		return m.agentSelector.Render()
 	}
 
 	chat := m.viewport.View()
@@ -567,6 +582,23 @@ func (m model) getToolsForMode() []provider.Tool {
 		return tool.GetPlanModeToolSchemasFiltered(m.disabledTools)
 	}
 	return tool.GetToolSchemasFiltered(m.disabledTools)
+}
+
+// buildExtraContext returns additional context for the system prompt including
+// available skills and agents metadata.
+func (m model) buildExtraContext() []string {
+	var extra []string
+	if skill.DefaultRegistry != nil {
+		if metadata := skill.DefaultRegistry.GetAvailableSkillsPrompt(); metadata != "" {
+			extra = append(extra, metadata)
+		}
+	}
+	if agent.DefaultRegistry != nil {
+		if metadata := agent.DefaultRegistry.GetAgentPromptForLLM(); metadata != "" {
+			extra = append(extra, metadata)
+		}
+	}
+	return extra
 }
 
 func (m *model) cycleOperationMode() {

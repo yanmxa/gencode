@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/system"
 )
 
@@ -55,6 +54,11 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.skillSelector.IsActive() {
 		cmd := m.skillSelector.HandleKeypress(msg)
+		return m, cmd
+	}
+
+	if m.agentSelector.IsActive() {
+		cmd := m.agentSelector.HandleKeypress(msg)
 		return m, cmd
 	}
 
@@ -341,16 +345,7 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 	m.viewport.SetContent(m.renderMessages())
 	m.viewport.GotoBottom()
 	modelID := m.getModelID()
-
-	// Build extra context for system prompt
-	var extra []string
-
-	// Add available skills metadata for active skills (progressive loading)
-	if skill.DefaultRegistry != nil {
-		if metadata := skill.DefaultRegistry.GetAvailableSkillsPrompt(); metadata != "" {
-			extra = append(extra, metadata)
-		}
-	}
+	extra := m.buildExtraContext()
 
 	sysPrompt := system.Prompt(system.Config{
 		Provider: m.llmProvider.Name(),
@@ -423,24 +418,13 @@ func (m *model) handleSkillInvocation() (tea.Model, tea.Cmd) {
 	m.viewport.SetContent(m.renderMessages())
 	m.viewport.GotoBottom()
 	modelID := m.getModelID()
-
-	// Build extra context for system prompt
-	var extra []string
-
-	// Add available skills metadata for active skills
-	if skill.DefaultRegistry != nil {
-		if metadata := skill.DefaultRegistry.GetAvailableSkillsPrompt(); metadata != "" {
-			extra = append(extra, metadata)
-		}
-	}
+	extra := m.buildExtraContext()
 
 	// Add full skill instructions for this invocation
 	if m.pendingSkillInstructions != "" {
 		extra = append(extra, m.pendingSkillInstructions)
 		m.pendingSkillInstructions = ""
 	}
-
-	// Clear pending skill args
 	m.pendingSkillArgs = ""
 
 	sysPrompt := system.Prompt(system.Config{

@@ -7,8 +7,11 @@ import (
 
 // Registry manages agent type definitions
 type Registry struct {
-	mu     sync.RWMutex
-	agents map[string]*AgentConfig
+	mu           sync.RWMutex
+	agents       map[string]*AgentConfig
+	userStore    *AgentStore // User-level enabled/disabled states
+	projectStore *AgentStore // Project-level enabled/disabled states
+	cwd          string      // Current working directory
 }
 
 // NewRegistry creates a new agent registry
@@ -134,8 +137,103 @@ func (r *Registry) registerBuiltins() {
 	}
 }
 
-// GetAgentPromptForLLM returns a formatted string describing available agents
-// This is used to inform the LLM about what agents are available
+// InitStores initializes the user and project stores for enabled/disabled state
+func (r *Registry) InitStores(cwd string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.cwd = cwd
+	r.userStore = NewUserAgentStore()
+	r.projectStore = NewProjectAgentStore(cwd)
+	return nil
+}
+
+// IsEnabled returns whether an agent is enabled
+// An agent is enabled unless explicitly disabled in either store
+// Project-level settings take priority over user-level
+func (r *Registry) IsEnabled(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	lowerName := strings.ToLower(name)
+
+	// Check project store first (higher priority)
+	if r.projectStore != nil && r.projectStore.IsDisabled(lowerName) {
+		return false
+	}
+
+	// Check user store
+	if r.userStore != nil && r.userStore.IsDisabled(lowerName) {
+		return false
+	}
+
+	return true
+}
+
+// SetEnabled sets the enabled state for an agent at the specified level
+func (r *Registry) SetEnabled(name string, enabled bool, userLevel bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	lowerName := strings.ToLower(name)
+
+	if userLevel {
+		if r.userStore != nil {
+			return r.userStore.SetDisabled(lowerName, !enabled)
+		}
+	} else {
+		if r.projectStore != nil {
+			return r.projectStore.SetDisabled(lowerName, !enabled)
+		}
+	}
+	return nil
+}
+
+// GetDisabledAt returns the disabled agents from the specified level
+func (r *Registry) GetDisabledAt(userLevel bool) map[string]bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if userLevel {
+		if r.userStore != nil {
+			return r.userStore.GetDisabled()
+		}
+	} else {
+		if r.projectStore != nil {
+			return r.projectStore.GetDisabled()
+		}
+	}
+	return make(map[string]bool)
+}
+
+// isDisabledInternal checks if an agent is disabled (must be called with lock held)
+func (r *Registry) isDisabledInternal(name string) bool {
+	if r.projectStore != nil && r.projectStore.IsDisabled(name) {
+		return true
+	}
+	if r.userStore != nil && r.userStore.IsDisabled(name) {
+		return true
+	}
+	return false
+}
+
+// ListEnabled returns only enabled agent configurations
+func (r *Registry) ListEnabled() []*AgentConfig {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	configs := make([]*AgentConfig, 0, len(r.agents))
+	for name, config := range r.agents {
+		if !r.isDisabledInternal(name) {
+			configs = append(configs, config)
+		}
+	}
+	return configs
+}
+
+// GetAgentPromptForLLM returns a formatted string describing available agents.
+// This is used to inform the LLM about what agents are available.
+// Only includes enabled agents.
 func (r *Registry) GetAgentPromptForLLM() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -143,7 +241,10 @@ func (r *Registry) GetAgentPromptForLLM() string {
 	var sb strings.Builder
 	sb.WriteString("Available agent types:\n")
 
-	for _, config := range r.agents {
+	for name, config := range r.agents {
+		if r.isDisabledInternal(name) {
+			continue
+		}
 		sb.WriteString("- ")
 		sb.WriteString(config.Name)
 		sb.WriteString(": ")

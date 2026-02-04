@@ -66,6 +66,11 @@ func getCommandRegistry() map[string]Command {
 			Description: "Manage skills (enable/disable/activate)",
 			Handler:     handleSkillCommand,
 		},
+		"agents": {
+			Name:        "agents",
+			Description: "Manage available agents (enable/disable)",
+			Handler:     handleAgentCommand,
+		},
 	}
 }
 
@@ -270,6 +275,14 @@ func handlePlanCommand(ctx context.Context, m *model, args string) (string, erro
 // handleSkillCommand handles the /skills command
 func handleSkillCommand(ctx context.Context, m *model, args string) (string, error) {
 	if err := m.skillSelector.EnterSkillSelect(m.width, m.height); err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
+// handleAgentCommand handles the /agent and /agents commands
+func handleAgentCommand(ctx context.Context, m *model, args string) (string, error) {
+	if err := m.agentSelector.EnterAgentSelect(m.width, m.height); err != nil {
 		return "", err
 	}
 	return "", nil
