@@ -93,6 +93,21 @@ type PermissionAwareTool interface {
 - TUI uses Bubble Tea with viewport, textarea, and spinner components
 - Markdown rendered via glamour
 
+## Token Limits
+
+Token limits track context window usage and prevent exceeding model limits.
+
+| Command | Action |
+|---------|--------|
+| `/tokenlimit` | Show limits or auto-fetch if not available |
+| `/tokenlimit <input> <output>` | Set custom limits |
+
+**Read Priority:** `tokenLimits` (custom) → Model Cache (API) → 0
+
+**Usage Indicator:** Shows `⚡ 180K/200K (90%)` when >= 80% of limit.
+
+See [docs/token-limits.md](docs/token-limits.md) for detailed documentation.
+
 ## Debug Logging
 
 Set `GEN_DEBUG=1` to enable debug logging to `~/.gen/debug.log`.
