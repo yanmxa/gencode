@@ -668,9 +668,7 @@ func (m model) renderPendingToolSpinner() string {
 		return sb.String()
 	}
 
-	// Standard tool spinner
-	sb.WriteString("\n")
-	sb.WriteString(toolCallStyle.Render(fmt.Sprintf("⚡%s", toolName)) + "\n")
+	// Standard tool spinner (tool name already rendered by renderToolCalls)
 	sb.WriteString(thinkingStyle.Render(fmt.Sprintf("  %s %s", m.spinner.View(), getToolExecutionDesc(toolName))) + "\n")
 	return sb.String()
 }
