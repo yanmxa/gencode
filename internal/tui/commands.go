@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -101,24 +102,14 @@ func getCommandRegistry() map[string]Command {
 			Description: "Summarize conversation to reduce context size",
 			Handler:     handleCompactCommand,
 		},
-		"sessions": {
-			Name:        "sessions",
-			Description: "List and resume previous sessions",
-			Handler:     handleSessionsCommand,
-		},
-		"save": {
-			Name:        "save",
-			Description: "Manually save the current session",
-			Handler:     handleSaveCommand,
-		},
 		"init": {
 			Name:        "init",
-			Description: "Initialize project memory file (GEN.md)",
+			Description: "Initialize memory files (GEN.md, local, rules)",
 			Handler:     handleInitCommand,
 		},
 		"memory": {
 			Name:        "memory",
-			Description: "View and manage memory files (list/show/edit)",
+			Description: "View and manage memory files (list/show/edit) with @import support",
 			Handler:     handleMemoryCommand,
 		},
 	}
@@ -595,42 +586,34 @@ func getModelTokenLimits(m *model) (inputLimit, outputLimit int) {
 	return 0, 0
 }
 
-// getEffectiveInputLimit returns the effective input token limit for the current model
+// getEffectiveTokenLimits returns effective input and output token limits.
 // Priority: 1. Custom override, 2. Model cache, 3. Return 0 (no limit)
-func (m *model) getEffectiveInputLimit() int {
+func (m *model) getEffectiveTokenLimits() (inputLimit, outputLimit int) {
 	if m.currentModel == nil {
-		return 0
+		return 0, 0
 	}
 
 	// Check custom override first
 	if m.store != nil {
-		if inputLimit, _, ok := m.store.GetTokenLimit(m.currentModel.ModelID); ok {
-			return inputLimit
+		if input, output, ok := m.store.GetTokenLimit(m.currentModel.ModelID); ok {
+			return input, output
 		}
 	}
 
-	// Check model cache
-	inputLimit, _ := getModelTokenLimits(m)
-	return inputLimit
+	// Fall back to model cache
+	return getModelTokenLimits(m)
 }
 
-// getEffectiveOutputLimit returns the effective output token limit for the current model
-// Priority: 1. Custom override, 2. Model cache, 3. Return 0 (no limit)
+// getEffectiveInputLimit returns the effective input token limit for the current model.
+func (m *model) getEffectiveInputLimit() int {
+	input, _ := m.getEffectiveTokenLimits()
+	return input
+}
+
+// getEffectiveOutputLimit returns the effective output token limit for the current model.
 func (m *model) getEffectiveOutputLimit() int {
-	if m.currentModel == nil {
-		return 0
-	}
-
-	// Check custom override first
-	if m.store != nil {
-		if _, outputLimit, ok := m.store.GetTokenLimit(m.currentModel.ModelID); ok {
-			return outputLimit
-		}
-	}
-
-	// Check model cache
-	_, outputLimit := getModelTokenLimits(m)
-	return outputLimit
+	_, output := m.getEffectiveTokenLimits()
+	return output
 }
 
 // getMaxTokens returns the max tokens to use for API requests
@@ -821,38 +804,32 @@ func GetSkillCommands() []Command {
 	return cmds
 }
 
-// handleSessionsCommand handles the /sessions command
-func handleSessionsCommand(ctx context.Context, m *model, args string) (string, error) {
-	if err := m.ensureSessionStore(); err != nil {
-		return "", fmt.Errorf("failed to initialize session store: %w", err)
-	}
-
-	if err := m.sessionSelector.EnterSessionSelect(m.width, m.height, m.sessionStore); err != nil {
-		return "", err
-	}
-
-	return "", nil
-}
-
-// handleSaveCommand handles the /save command
-func handleSaveCommand(ctx context.Context, m *model, args string) (string, error) {
-	if len(m.messages) == 0 {
-		return "No messages to save.", nil
-	}
-
-	if err := m.saveSession(); err != nil {
-		return "", fmt.Errorf("failed to save session: %w", err)
-	}
-
-	return fmt.Sprintf("Session saved: %s", m.currentSessionID), nil
-}
-
 // handleInitCommand handles the /init command
-// Usage: /init [--claude]
+// Usage: /init [local|rules] [--claude]
 func handleInitCommand(ctx context.Context, m *model, args string) (string, error) {
+	args = strings.TrimSpace(args)
+	parts := strings.Fields(args)
+
 	isClaude := strings.Contains(args, "--claude")
 
-	// Determine file paths based on format
+	// Parse subcommand
+	subCmd := ""
+	if len(parts) > 0 && !strings.HasPrefix(parts[0], "--") {
+		subCmd = strings.ToLower(parts[0])
+	}
+
+	switch subCmd {
+	case "local":
+		return handleInitLocal(m)
+	case "rules":
+		return handleInitRules(m, isClaude)
+	default:
+		return handleInitProject(m, isClaude)
+	}
+}
+
+// handleInitProject creates the main project memory file
+func handleInitProject(m *model, isClaude bool) (string, error) {
 	var targetDir, fileName string
 	if isClaude {
 		targetDir = filepath.Join(m.cwd, ".claude")
@@ -879,16 +856,92 @@ func handleInitCommand(ctx context.Context, m *model, args string) (string, erro
 	return fmt.Sprintf("Created %s\n\nEdit with: /memory edit", filePath), nil
 }
 
+// handleInitLocal creates the local memory file (not committed to git)
+func handleInitLocal(m *model) (string, error) {
+	targetDir := filepath.Join(m.cwd, ".gen")
+	filePath := filepath.Join(targetDir, "GEN.local.md")
+
+	// Check if file already exists
+	if _, err := os.Stat(filePath); err == nil {
+		return fmt.Sprintf("File already exists: %s\nUse /memory edit local to modify it.", filePath), nil
+	}
+
+	// Create directory and write file
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create directory %s: %w", targetDir, err)
+	}
+	if err := os.WriteFile(filePath, []byte(getLocalTemplate()), 0644); err != nil {
+		return "", fmt.Errorf("failed to write file %s: %w", filePath, err)
+	}
+
+	// Add to .gitignore if it exists
+	addToGitignore(m.cwd, "GEN.local.md")
+
+	return fmt.Sprintf("Created %s (added to .gitignore)\n\nEdit with: /memory edit local", filePath), nil
+}
+
+// handleInitRules creates the rules directory structure
+func handleInitRules(m *model, isClaude bool) (string, error) {
+	var rulesDir string
+	if isClaude {
+		rulesDir = filepath.Join(m.cwd, ".claude", "rules")
+	} else {
+		rulesDir = filepath.Join(m.cwd, ".gen", "rules")
+	}
+
+	// Check if directory already exists
+	if _, err := os.Stat(rulesDir); err == nil {
+		return fmt.Sprintf("Directory already exists: %s", rulesDir), nil
+	}
+
+	// Create directory
+	if err := os.MkdirAll(rulesDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create directory %s: %w", rulesDir, err)
+	}
+
+	// Create example rule file
+	examplePath := filepath.Join(rulesDir, "example.md")
+	if err := os.WriteFile(examplePath, []byte(getRulesTemplate()), 0644); err != nil {
+		return "", fmt.Errorf("failed to write example rule: %w", err)
+	}
+
+	return fmt.Sprintf("Created %s\n\nAdd .md files to this directory to define rules.\nExample created: %s", rulesDir, examplePath), nil
+}
+
+// addToGitignore adds an entry to .gitignore if it exists
+func addToGitignore(cwd, entry string) {
+	gitignorePath := filepath.Join(cwd, ".gitignore")
+	data, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		return // .gitignore doesn't exist, skip
+	}
+
+	content := string(data)
+	if strings.Contains(content, entry) {
+		return // Already present
+	}
+
+	// Append entry
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += entry + "\n"
+	os.WriteFile(gitignorePath, []byte(content), 0644)
+}
+
 // handleMemoryCommand handles the /memory command
-// Usage: /memory [list|show|edit] [user|project]
+// Usage: /memory [list|show|edit] [global|project|local]
 func handleMemoryCommand(ctx context.Context, m *model, args string) (string, error) {
 	args = strings.TrimSpace(args)
 	parts := strings.Fields(args)
 
-	subCmd := "list"
-	if len(parts) > 0 {
-		subCmd = strings.ToLower(parts[0])
+	// No arguments: show interactive selector (like Claude Code)
+	if len(parts) == 0 {
+		m.memorySelector.EnterMemorySelect(m.cwd, m.width, m.height)
+		return "", nil
 	}
+
+	subCmd := strings.ToLower(parts[0])
 
 	scope := "project"
 	if len(parts) > 1 {
@@ -896,40 +949,152 @@ func handleMemoryCommand(ctx context.Context, m *model, args string) (string, er
 	}
 
 	switch subCmd {
-	case "list", "":
+	case "list":
 		return handleMemoryList(m)
 	case "show":
 		return handleMemoryShow(m)
 	case "edit":
 		return handleMemoryEdit(m, scope)
 	default:
-		return "Usage: /memory [list|show|edit] [user|project]", nil
+		return "Usage: /memory [list|show|edit] [global|project|local]", nil
 	}
 }
 
-// handleMemoryList lists all loaded memory files
+// memoryListState holds state for rendering memory list
+type memoryListState struct {
+	cwd        string
+	totalFiles int
+	totalSize  int64
+}
+
+const (
+	memoryBoxWidth  = 53
+	memoryMaxPath   = 36
+)
+
+// handleMemoryList lists all loaded memory files with beautiful UI
 func handleMemoryList(m *model) (string, error) {
-	userPaths, projectPaths := system.GetMemoryPaths(m.cwd)
+	paths := system.GetAllMemoryPaths(m.cwd)
+	state := &memoryListState{cwd: m.cwd}
 
 	var sb strings.Builder
-	sb.WriteString("Memory Files:\n\n")
 
-	// Helper to format a memory level section
-	formatLevel := func(label string, paths []string, createHint string) {
-		sb.WriteString(label + ":\n")
-		if found := system.FindMemoryFile(paths); found != "" {
-			fmt.Fprintf(&sb, "  + %s\n", found)
-		} else {
-			sb.WriteString("  (none)\n")
-			fmt.Fprintf(&sb, "  Create with: %s\n", createHint)
-		}
+	sb.WriteString("╭─ Memory Files ─────────────────────────────────────╮\n")
+	sb.WriteString(formatBoxLine(""))
+
+	// Global section
+	state.writeSection(&sb, "Global", paths.Global, paths.GlobalRules, paths.Global[0], false)
+
+	// Project section
+	state.writeSection(&sb, "Project", paths.Project, paths.ProjectRules, "/init", true)
+
+	// Local section
+	state.writeLocalSection(&sb, paths.Local)
+
+	sb.WriteString("╰────────────────────────────────────────────────────╯\n")
+
+	// Summary
+	if state.totalFiles > 0 {
+		fmt.Fprintf(&sb, "  Total: %d file(s) loaded (%s)\n", state.totalFiles, system.FormatFileSize(state.totalSize))
+	} else {
+		sb.WriteString("  No memory files loaded. Create with /init\n")
 	}
 
-	formatLevel("User level", userPaths, "/init --claude or manually at "+userPaths[0])
-	sb.WriteString("\n")
-	formatLevel("Project level", projectPaths, "/init")
+	sb.WriteString("\n  Tip: Use @path/to/file.md in memory files to import other files.\n")
 
 	return sb.String(), nil
+}
+
+// writeSection writes a memory section (Global or Project) to the builder
+func (s *memoryListState) writeSection(sb *strings.Builder, label string, mainPaths []string, rulesDir, createHint string, isProject bool) {
+	mainFound := system.FindMemoryFile(mainPaths)
+	rulesFiles := system.ListRulesFiles(rulesDir)
+
+	if mainFound != "" || len(rulesFiles) > 0 {
+		sb.WriteString(formatBoxLine(fmt.Sprintf(" ● %s", label)))
+		if mainFound != "" {
+			s.writeFileLine(sb, mainFound, isProject)
+		}
+		for _, rf := range rulesFiles {
+			s.writeFileLine(sb, rf, isProject)
+		}
+	} else {
+		sb.WriteString(formatBoxLine(fmt.Sprintf(" ○ %s (not found)", label)))
+		sb.WriteString(formatBoxLine(fmt.Sprintf("   Create: %s", createHint)))
+	}
+	sb.WriteString(formatBoxLine(""))
+}
+
+// writeLocalSection writes the local memory section
+func (s *memoryListState) writeLocalSection(sb *strings.Builder, localPaths []string) {
+	localFound := system.FindMemoryFile(localPaths)
+	if localFound != "" {
+		sb.WriteString(formatBoxLine(" ● Local (git-ignored)"))
+		s.writeFileLine(sb, localFound, true)
+	} else {
+		sb.WriteString(formatBoxLine(" ○ Local (not found)"))
+		sb.WriteString(formatBoxLine("   Create: /init local"))
+	}
+	sb.WriteString(formatBoxLine(""))
+}
+
+// writeFileLine writes a file entry line with size
+func (s *memoryListState) writeFileLine(sb *strings.Builder, path string, isProject bool) {
+	size := system.GetFileSize(path)
+	s.totalFiles++
+	s.totalSize += size
+
+	displayPath := shortenPathForDisplay(path, s.cwd, isProject)
+	displayPath = truncatePathKeepFilename(displayPath, memoryMaxPath)
+	sizeStr := fmt.Sprintf("(%s)", system.FormatFileSize(size))
+	sb.WriteString(formatBoxLine(fmt.Sprintf("   %s %s", padRight(displayPath, memoryMaxPath), sizeStr)))
+}
+
+// formatBoxLine formats a line with proper box alignment
+func formatBoxLine(content string) string {
+	visibleLen := utf8.RuneCountInString(content)
+	padding := max(memoryBoxWidth-visibleLen-2, 0)
+	return fmt.Sprintf("│ %s%s│\n", content, strings.Repeat(" ", padding))
+}
+
+// shortenPathForDisplay shortens a path for display
+func shortenPathForDisplay(path, cwd string, isProject bool) string {
+	if isProject {
+		if rel, err := filepath.Rel(cwd, path); err == nil {
+			return rel
+		}
+	}
+	return shortenPath(path)
+}
+
+// truncatePathKeepFilename truncates a path while keeping the filename visible
+func truncatePathKeepFilename(path string, maxLen int) string {
+	if len(path) <= maxLen {
+		return path
+	}
+
+	base := filepath.Base(path)
+	if len(base) >= maxLen-3 {
+		return base[:maxLen-3] + "..."
+	}
+
+	remaining := maxLen - len(base) - 4
+	if remaining > 0 {
+		dir := filepath.Dir(path)
+		if len(dir) > remaining {
+			dir = dir[len(dir)-remaining:]
+		}
+		return "..." + dir + "/" + base
+	}
+	return base
+}
+
+// padRight pads a string to the right with spaces
+func padRight(s string, length int) string {
+	if len(s) >= length {
+		return s[:length]
+	}
+	return s + strings.Repeat(" ", length-len(s))
 }
 
 // handleMemoryShow displays current memory content
@@ -950,30 +1115,53 @@ func handleMemoryShow(m *model) (string, error) {
 
 // handleMemoryEdit opens memory file in editor
 func handleMemoryEdit(m *model, scope string) (string, error) {
-	userPaths, projectPaths := system.GetMemoryPaths(m.cwd)
+	paths := system.GetAllMemoryPaths(m.cwd)
 
-	var filePath string
-	if scope == "user" {
-		filePath = system.FindMemoryFile(userPaths)
-		if filePath == "" {
-			// Create default user memory file
-			filePath = userPaths[0]
-			if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-				return "", fmt.Errorf("failed to create directory: %w", err)
-			}
-			if err := os.WriteFile(filePath, []byte(getUserTemplate()), 0644); err != nil {
-				return "", fmt.Errorf("failed to create file: %w", err)
-			}
+	switch scope {
+	case "global", "user":
+		filePath, err := ensureMemoryFile(paths.Global, getGlobalTemplate())
+		if err != nil {
+			return "", err
 		}
-	} else {
-		filePath = system.FindMemoryFile(projectPaths)
+		m.editingMemoryFile = filePath
+		return "", nil
+
+	case "local":
+		filePath, err := ensureMemoryFile(paths.Local, getLocalTemplate())
+		if err != nil {
+			return "", err
+		}
+		addToGitignore(m.cwd, "GEN.local.md")
+		m.editingMemoryFile = filePath
+		return "", nil
+
+	default: // project
+		filePath := system.FindMemoryFile(paths.Project)
 		if filePath == "" {
 			return "No project memory file found.\n\nCreate with: /init", nil
 		}
+		m.editingMemoryFile = filePath
+		return "", nil
+	}
+}
+
+// ensureMemoryFile finds or creates a memory file from the given paths.
+// Returns the file path that was found or created.
+func ensureMemoryFile(searchPaths []string, template string) (string, error) {
+	filePath := system.FindMemoryFile(searchPaths)
+	if filePath != "" {
+		return filePath, nil
 	}
 
-	m.editingMemoryFile = filePath
-	return "", nil // Signal to start editor
+	// Create the first path in the list
+	filePath = searchPaths[0]
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return "", fmt.Errorf("failed to create directory: %w", err)
+	}
+	if err := os.WriteFile(filePath, []byte(template), 0644); err != nil {
+		return "", fmt.Errorf("failed to create file: %w", err)
+	}
+	return filePath, nil
 }
 
 // getProjectTemplate returns the default project memory template
@@ -1003,11 +1191,11 @@ This file provides guidance to GenCode when working with code in this repository
 `, projectName)
 }
 
-// getUserTemplate returns the default user memory template
-func getUserTemplate() string {
+// getGlobalTemplate returns the default global/user memory template
+func getGlobalTemplate() string {
 	return `# GEN.md
 
-User-level instructions for GenCode.
+Global instructions for GenCode (applies to all projects).
 
 ## Coding Preferences
 
@@ -1016,6 +1204,42 @@ User-level instructions for GenCode.
 ## Security
 
 <!-- Security practices to follow -->
+`
+}
+
+// getLocalTemplate returns the default local memory template (git-ignored)
+func getLocalTemplate() string {
+	return `# GEN.local.md
+
+Local instructions for this project (not committed to git).
+
+Use this file for:
+- Personal notes and reminders
+- Environment-specific settings
+- Credentials and secrets (keep these safe!)
+- Work-in-progress ideas
+
+## Notes
+
+<!-- Your local notes here -->
+`
+}
+
+// getRulesTemplate returns the default rules file template
+func getRulesTemplate() string {
+	return `# Example Rule
+
+This file defines specific rules for GenCode to follow.
+
+## Guidelines
+
+- Add specific guidelines here
+- Each rule file should focus on one topic
+- Rules are loaded alphabetically by filename
+
+## Example
+
+<!-- Remove this example and add your actual rules -->
 `
 }
 
@@ -1042,4 +1266,70 @@ func getEditor() string {
 		}
 	}
 	return "vi" // Last resort fallback
+}
+
+// handleMemorySelected handles when a memory file is selected from the selector
+func (m model) handleMemorySelected(msg MemorySelectedMsg) (tea.Model, tea.Cmd) {
+	filePath := msg.Path
+
+	// Create file if it doesn't exist
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		if err := createMemoryFile(filePath, msg.Level, m.cwd); err != nil {
+			m.messages = append(m.messages, chatMessage{
+				role:    "system",
+				content: fmt.Sprintf("Error: %v", err),
+			})
+			m.viewport.SetContent(m.renderMessages())
+			return m, nil
+		}
+	}
+
+	m.editingMemoryFile = filePath
+
+	// Format display path based on level
+	displayPath := formatMemoryDisplayPath(filePath, msg.Level, m.cwd)
+
+	m.messages = append(m.messages, chatMessage{
+		role:    "system",
+		content: fmt.Sprintf("Opening %s memory: %s", msg.Level, displayPath),
+	})
+	m.viewport.SetContent(m.renderMessages())
+
+	return m, startExternalEditor(filePath)
+}
+
+// createMemoryFile creates a new memory file with the appropriate template
+func createMemoryFile(filePath, level, cwd string) error {
+	template := getTemplateForLevel(level, cwd)
+	if _, err := ensureMemoryFile([]string{filePath}, template); err != nil {
+		return err
+	}
+	if level == "local" {
+		addToGitignore(cwd, "GEN.local.md")
+	}
+	return nil
+}
+
+// getTemplateForLevel returns the appropriate template for the given memory level.
+func getTemplateForLevel(level, cwd string) string {
+	switch level {
+	case "global":
+		return getGlobalTemplate()
+	case "project":
+		return getProjectTemplate(cwd)
+	case "local":
+		return getLocalTemplate()
+	default:
+		return ""
+	}
+}
+
+// formatMemoryDisplayPath formats a memory file path for display
+func formatMemoryDisplayPath(filePath, level, cwd string) string {
+	if level == "project" || level == "local" {
+		if rel, err := filepath.Rel(cwd, filePath); err == nil {
+			return rel
+		}
+	}
+	return shortenPath(filePath)
 }

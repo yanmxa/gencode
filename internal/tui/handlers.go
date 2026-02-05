@@ -8,10 +8,12 @@ import (
 
 	"github.com/yanmxa/gencode/internal/agent"
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/permission"
 )
 
 // Provider and model selection handlers
@@ -82,8 +84,47 @@ func configureTaskTool(llmProvider provider.LLMProvider, cwd string, modelID str
 // Permission handlers
 
 func (m *model) handlePermissionRequest(msg PermissionRequestMsg) (tea.Model, tea.Cmd) {
+	if blocked, reason := m.checkPermissionHook(msg.Request); blocked {
+		tc := m.pendingToolCalls[m.pendingToolIdx]
+		m.messages = append(m.messages, chatMessage{
+			role:     "user",
+			toolName: tc.Name,
+			toolResult: &provider.ToolResult{
+				ToolCallID: tc.ID,
+				Content:    "Blocked by hook: " + reason,
+				IsError:    true,
+			},
+		})
+		m.pendingToolCalls = nil
+		m.pendingToolIdx = 0
+		m.streaming = false
+		m.viewport.SetContent(m.renderMessages())
+		return m, nil
+	}
+
 	m.permissionPrompt.Show(msg.Request, m.width, m.height)
 	return m, nil
+}
+
+// checkPermissionHook runs PermissionRequest hook and returns (blocked, reason).
+func (m *model) checkPermissionHook(req *permission.PermissionRequest) (bool, string) {
+	if m.hookEngine == nil || req == nil {
+		return false, ""
+	}
+
+	toolInput := make(map[string]any)
+	if req.FilePath != "" {
+		toolInput["file_path"] = req.FilePath
+	}
+	if req.BashMeta != nil {
+		toolInput["command"] = req.BashMeta.Command
+	}
+
+	outcome := m.hookEngine.Execute(context.Background(), hooks.PermissionRequest, hooks.HookInput{
+		ToolName:  req.ToolName,
+		ToolInput: toolInput,
+	})
+	return outcome.ShouldBlock, outcome.BlockReason
 }
 
 func (m *model) handlePermissionResponse(msg PermissionResponseMsg) (tea.Model, tea.Cmd) {

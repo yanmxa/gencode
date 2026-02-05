@@ -265,8 +265,6 @@ Interactive Mode:
 Interactive Commands:
   /provider    Select and connect to a provider
   /model       Select a model
-  /sessions    List and resume previous sessions
-  /save        Manually save current session
   /clear       Clear chat history
   /help        Show help
 

@@ -17,6 +17,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/agent"
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
@@ -102,7 +103,8 @@ type model struct {
 
 	suggestions SuggestionState
 
-	selector SelectorState
+	selector       SelectorState
+	memorySelector MemorySelectorState
 
 	permissionPrompt *PermissionPrompt
 	pendingToolCalls []provider.ToolCall
@@ -165,6 +167,9 @@ type model struct {
 
 	// Memory file editing
 	editingMemoryFile string // Path to memory file being edited
+
+	// Hooks engine
+	hookEngine *hooks.Engine
 }
 
 func Run() error {
@@ -342,6 +347,14 @@ func newModel() model {
 		settings = config.Default()
 	}
 
+	// Initialize hooks engine
+	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
+	hookEngine := hooks.NewEngine(settings, sessionID, cwd, "")
+
+	// Initialize suggestions with cwd for @ file completion
+	suggestions := NewSuggestionState()
+	suggestions.SetCwd(cwd)
+
 	return model{
 		textarea:           ta,
 		spinner:            sp,
@@ -353,8 +366,9 @@ func newModel() model {
 		historyIndex:       -1,
 		cwd:                cwd,
 		mdRenderer:         mdRenderer,
-		suggestions:        NewSuggestionState(),
+		suggestions:        suggestions,
 		selector:           NewSelectorState(),
+		memorySelector:     NewMemorySelectorState(),
 		permissionPrompt:   NewPermissionPrompt(),
 		settings:           settings,
 		sessionPermissions: config.NewSessionPermissions(),
@@ -367,10 +381,22 @@ func newModel() model {
 		skillSelector:      NewSkillSelectorState(),
 		agentSelector:      NewAgentSelectorState(),
 		sessionSelector:    NewSessionSelectorState(),
+		hookEngine:         hookEngine,
 	}
 }
 
 func (m model) Init() tea.Cmd {
+	// Execute SessionStart hook asynchronously
+	if m.hookEngine != nil {
+		source := "startup"
+		if m.currentSessionID != "" {
+			source = "resume"
+		}
+		m.hookEngine.ExecuteAsync(hooks.SessionStart, hooks.HookInput{
+			Source: source,
+			Model:  m.getModelID(),
+		})
+	}
 	return tea.Batch(textarea.Blink, m.spinner.Tick)
 }
 
@@ -427,6 +453,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleSessionSelected(msg)
 
 	case SessionSelectorCancelledMsg:
+		return m, nil
+
+	case MemorySelectedMsg:
+		return m.handleMemorySelected(msg)
+
+	case MemorySelectorCancelledMsg:
 		return m, nil
 
 	case SkillInvokeMsg:
@@ -559,6 +591,10 @@ func (m model) View() string {
 
 	if m.sessionSelector.IsActive() {
 		return m.sessionSelector.Render()
+	}
+
+	if m.memorySelector.IsActive() {
+		return m.memorySelector.Render()
 	}
 
 	chat := m.viewport.View()
@@ -745,6 +781,20 @@ func (m *model) cycleOperationMode() {
 	}
 
 	m.planMode = (m.operationMode == modePlan)
+
+	// Update hook engine permission mode
+	if m.hookEngine != nil {
+		var mode string
+		switch m.operationMode {
+		case modeAutoAccept:
+			mode = "auto"
+		case modePlan:
+			mode = "plan"
+		default:
+			mode = "normal"
+		}
+		m.hookEngine.SetPermissionMode(mode)
+	}
 
 	// Recalculate viewport height when mode changes
 	m.updateViewportHeight()

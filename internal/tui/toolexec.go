@@ -284,3 +284,12 @@ func parseToolInput(input string) (map[string]any, error) {
 	}
 	return params, nil
 }
+
+// encodeToolInput converts params back to JSON string for tool input
+func encodeToolInput(params map[string]any) (string, error) {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}

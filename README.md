@@ -82,7 +82,6 @@ gen --resume          # Select from list
 | `/tools` | List available tools |
 | `/skills` | Manage skills (disable/enable/active) |
 | `/agents` | List available agents |
-| `/sessions` | List and resume sessions |
 | `/clear` | Clear chat history |
 | `/help` | Show all commands |
 

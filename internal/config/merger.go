@@ -78,18 +78,24 @@ func mergeStringSlices(base, overlay []string) []string {
 }
 
 // mergeMaps merges two map[string][]Hook.
-// Overlay values are added to or replace base values.
+// Hooks for the same event are appended together (not replaced).
+// This allows user and project hooks for the same event to all execute.
 func mergeMaps(base, overlay map[string][]Hook) map[string][]Hook {
 	result := make(map[string][]Hook)
 
-	// Copy base
+	// Copy base hooks
 	for k, v := range base {
 		result[k] = append([]Hook{}, v...)
 	}
 
-	// Overlay
+	// Append overlay hooks (not replace)
 	for k, v := range overlay {
-		result[k] = append([]Hook{}, v...)
+		if existing, ok := result[k]; ok {
+			// Append new hooks to existing ones
+			result[k] = append(existing, v...)
+		} else {
+			result[k] = append([]Hook{}, v...)
+		}
 	}
 
 	return result

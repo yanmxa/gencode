@@ -64,11 +64,30 @@ type Hook struct {
 
 // HookCmd defines a single hook command
 type HookCmd struct {
-	// Type is the hook type (e.g., "command")
+	// Type is the hook type (e.g., "command", "prompt", "agent")
+	// Currently only "command" is supported.
 	Type string `json:"type"`
 
-	// Command is the shell command to execute
-	Command string `json:"command"`
+	// Command is the shell command to execute (for type=command)
+	Command string `json:"command,omitempty"`
+
+	// Prompt is the LLM prompt (for type=prompt/agent, not yet supported)
+	Prompt string `json:"prompt,omitempty"`
+
+	// Model specifies the model for prompt/agent hooks
+	Model string `json:"model,omitempty"`
+
+	// Async runs the hook asynchronously (fire-and-forget)
+	Async bool `json:"async,omitempty"`
+
+	// Timeout in seconds (default: 600)
+	Timeout int `json:"timeout,omitempty"`
+
+	// StatusMessage is displayed while the hook executes
+	StatusMessage string `json:"statusMessage,omitempty"`
+
+	// Once ensures the hook only runs once per session
+	Once bool `json:"once,omitempty"`
 }
 
 // SessionPermissions tracks runtime permission state for the current session.

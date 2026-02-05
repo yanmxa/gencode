@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -20,6 +21,22 @@ func (m *model) handleToolResult(msg toolResultMsg) (tea.Model, tea.Cmd) {
 	// Clear task progress when Task tool completes
 	if msg.toolName == "Task" {
 		m.taskProgress = nil
+	}
+
+	// Execute PostToolUse or PostToolUseFailure hook asynchronously
+	if m.hookEngine != nil {
+		eventType := hooks.PostToolUse
+		if msg.result.IsError {
+			eventType = hooks.PostToolUseFailure
+		}
+		input := hooks.HookInput{
+			ToolName:     msg.toolName,
+			ToolResponse: msg.result.Content,
+		}
+		if msg.result.IsError {
+			input.Error = msg.result.Content
+		}
+		m.hookEngine.ExecuteAsync(eventType, input)
 	}
 
 	// Sequential mode - original behavior
@@ -79,15 +96,17 @@ func (m *model) completeParallelExecution() (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleStartToolExecution(msg startToolExecutionMsg) (tea.Model, tea.Cmd) {
-	m.pendingToolCalls = msg.toolCalls
+	m.pendingToolCalls = m.filterToolCallsWithHooks(msg.toolCalls)
 	m.pendingToolIdx = 0
 
-	// Try parallel execution
+	if len(m.pendingToolCalls) == 0 {
+		m.viewport.SetContent(m.renderMessages())
+		return m, m.continueWithToolResults()
+	}
+
 	cmd := executeToolsParallel(m.pendingToolCalls, m.cwd, m.settings, m.sessionPermissions)
 
-	// Check if parallel execution was used by examining if tea.Batch was returned
-	// If it's parallel, we need to set up tracking
-	if len(msg.toolCalls) > 1 && m.canRunToolsInParallel(msg.toolCalls) {
+	if len(m.pendingToolCalls) > 1 && m.canRunToolsInParallel(m.pendingToolCalls) {
 		m.parallelMode = true
 		m.parallelResults = make(map[int]provider.ToolResult)
 		m.parallelResultCount = 0
@@ -139,6 +158,44 @@ func (m *model) handleAllToolsCompleted() (tea.Model, tea.Cmd) {
 	return m, m.continueWithToolResults()
 }
 
+// filterToolCallsWithHooks runs PreToolUse hooks and filters blocked tools.
+func (m *model) filterToolCallsWithHooks(toolCalls []provider.ToolCall) []provider.ToolCall {
+	if m.hookEngine == nil {
+		return toolCalls
+	}
+
+	filtered := make([]provider.ToolCall, 0, len(toolCalls))
+	for _, tc := range toolCalls {
+		params, _ := parseToolInput(tc.Input)
+		outcome := m.hookEngine.Execute(context.Background(), hooks.PreToolUse, hooks.HookInput{
+			ToolName:  tc.Name,
+			ToolInput: params,
+			ToolUseID: tc.ID,
+		})
+
+		if outcome.ShouldBlock {
+			m.messages = append(m.messages, chatMessage{
+				role:     "user",
+				toolName: tc.Name,
+				toolResult: &provider.ToolResult{
+					ToolCallID: tc.ID,
+					Content:    "Blocked by hook: " + outcome.BlockReason,
+					IsError:    true,
+				},
+			})
+			continue
+		}
+
+		if outcome.UpdatedInput != nil {
+			if updated, err := encodeToolInput(outcome.UpdatedInput); err == nil {
+				tc.Input = updated
+			}
+		}
+		filtered = append(filtered, tc)
+	}
+	return filtered
+}
+
 func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 	if msg.buildingToolName != "" {
 		m.buildingToolName = msg.buildingToolName
@@ -169,6 +226,11 @@ func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 		m.streamChan = nil
 		m.cancelFunc = nil
 		m.viewport.SetContent(m.renderMessages())
+
+		// Execute Stop hook asynchronously
+		if m.hookEngine != nil {
+			m.hookEngine.ExecuteAsync(hooks.Stop, hooks.HookInput{})
+		}
 
 		// Auto-save session after assistant response completes
 		_ = m.saveSession()

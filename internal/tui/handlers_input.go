@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
 )
@@ -67,6 +68,11 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.memorySelector.IsActive() {
+		cmd := m.memorySelector.HandleKeypress(msg)
+		return m, cmd
+	}
+
 	if m.suggestions.IsVisible() {
 		switch msg.Type {
 		case tea.KeyUp, tea.KeyCtrlP:
@@ -77,8 +83,20 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.KeyTab, tea.KeyEnter:
 			if selected := m.suggestions.GetSelected(); selected != "" {
-				m.textarea.SetValue(selected + " ")
-				m.textarea.CursorEnd()
+				if m.suggestions.GetSuggestionType() == SuggestionTypeFile {
+					// For @ file suggestions, replace the @query with @selected
+					currentValue := m.textarea.Value()
+					// Find the last @ and replace from there
+					if atIdx := strings.LastIndex(currentValue, "@"); atIdx >= 0 {
+						newValue := currentValue[:atIdx] + "@" + selected
+						m.textarea.SetValue(newValue)
+						m.textarea.CursorEnd()
+					}
+				} else {
+					// For command suggestions
+					m.textarea.SetValue(selected + " ")
+					m.textarea.CursorEnd()
+				}
 				m.suggestions.Hide()
 			}
 			return m, nil
@@ -317,6 +335,16 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	// Execute UserPromptSubmit hook before processing
+	if blocked, reason := m.checkPromptHook(input); blocked {
+		m.messages = append(m.messages, chatMessage{role: "system", content: "Prompt blocked: " + reason})
+		m.textarea.Reset()
+		m.textarea.SetHeight(minTextareaHeight)
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+		return m, nil
+	}
+
 	m.inputHistory = append(m.inputHistory, input)
 	m.historyIndex = -1
 	m.tempInput = ""
@@ -467,4 +495,13 @@ func (m *model) handleSkillInvocation() (tea.Model, tea.Cmd) {
 	m.pendingSkillArgs = ""
 
 	return m, m.startLLMStream(extra)
+}
+
+// checkPromptHook runs UserPromptSubmit hook and returns (blocked, reason).
+func (m *model) checkPromptHook(prompt string) (bool, string) {
+	if m.hookEngine == nil {
+		return false, ""
+	}
+	outcome := m.hookEngine.Execute(context.Background(), hooks.UserPromptSubmit, hooks.HookInput{Prompt: prompt})
+	return outcome.ShouldBlock, outcome.BlockReason
 }
