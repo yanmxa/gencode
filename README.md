@@ -25,10 +25,8 @@ GenCode is an AI assistant that lives in your terminal. Multi-provider support, 
 ## 🚀 Installation
 
 ```bash
-go install github.com/yanmxa/gencode@latest
+go install github.com/yanmxa/gencode/cmd/gen@latest
 ```
-
-This installs the `gencode` binary to your `$GOPATH/bin`.
 
 <details>
 <summary><b>Other methods</b></summary>
@@ -47,7 +45,7 @@ sudo mv gen /usr/local/bin/
 ```bash
 git clone https://github.com/yanmxa/gencode.git
 cd gencode
-go build -o gen .
+go build -o gen ./cmd/gen
 sudo mv gen /usr/local/bin/
 ```
 
