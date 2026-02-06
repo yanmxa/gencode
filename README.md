@@ -142,6 +142,10 @@ GenCode stores configuration in `~/.gen/`:
 - [Aider](https://github.com/paul-gauthier/aider) — AI pair programming in terminal
 - [Continue](https://github.com/continuedev/continue) — Open-source AI code assistant
 
+## 🤝 Contributing
+
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE) for details.
