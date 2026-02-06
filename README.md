@@ -28,6 +28,18 @@ GenCode is an AI assistant that lives in your terminal. Multi-provider support, 
 curl -fsSL https://raw.githubusercontent.com/yanmxa/gencode/main/install.sh | bash
 ```
 
+**Upgrade:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yanmxa/gencode/main/install.sh | bash -s upgrade
+```
+
+**Uninstall:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yanmxa/gencode/main/install.sh | bash -s uninstall
+```
+
 <details>
 <summary><b>Other methods</b></summary>
 
