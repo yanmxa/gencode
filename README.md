@@ -25,19 +25,16 @@ GenCode is an AI assistant that lives in your terminal. Multi-provider support, 
 ## 🚀 Installation
 
 ```bash
-go install github.com/yanmxa/gencode/cmd/gen@latest
+curl -fsSL https://raw.githubusercontent.com/yanmxa/gencode/main/install.sh | bash
 ```
 
 <details>
 <summary><b>Other methods</b></summary>
 
-**Download Binary**
+**Go Install**
 
 ```bash
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-curl -sL "https://github.com/yanmxa/gencode/releases/latest/download/gen_${OS}_${ARCH}.tar.gz" | tar xz
-sudo mv gen /usr/local/bin/
+go install github.com/yanmxa/gencode/cmd/gen@latest
 ```
 
 **Build from Source**
