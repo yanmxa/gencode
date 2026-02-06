@@ -51,7 +51,12 @@ internal/
 │   └── suggestions.go   # Command autocomplete
 ├── config/              # Settings and permissions
 ├── system/              # System prompt generation
-└── log/                 # Debug logging
+├── log/                 # Debug logging
+└── mcp/                 # MCP (Model Context Protocol) support
+    ├── transport/       # STDIO, HTTP, SSE transports
+    ├── client.go        # MCP client implementation
+    ├── config.go        # Configuration loading
+    └── registry.go      # Server management
 ```
 
 ## Key Interfaces
@@ -107,6 +112,49 @@ Token limits track context window usage and prevent exceeding model limits.
 **Usage Indicator:** Shows `⚡ 180K/200K (90%)` when >= 80% of limit.
 
 See [docs/token-limits.md](docs/token-limits.md) for detailed documentation.
+
+## MCP (Model Context Protocol) Support
+
+GenCode supports MCP servers for extending functionality with external tools.
+
+### Configuration
+
+MCP servers are configured in JSON files:
+
+| Scope | Path | Git | Purpose |
+|-------|------|-----|---------|
+| user | `~/.gen/mcp.json` | N/A | Global, cross-project |
+| project | `./.gen/mcp.json` | Commit | Team shared |
+| local | `./.gen/mcp.local.json` | Ignore | Personal, not shared |
+
+**Priority:** Local overrides Project overrides User.
+
+### CLI Commands
+
+```bash
+# Add servers
+gen mcp add <name> -- <command> [args...]           # STDIO
+gen mcp add --transport http <name> <url>           # HTTP
+gen mcp add --transport sse <name> <url>            # SSE
+gen mcp add-json <name> '<json>'                    # From JSON
+
+# Manage
+gen mcp list                    # List all servers
+gen mcp get <name>              # Show server details
+gen mcp remove <name>           # Remove server
+```
+
+### TUI Commands
+
+- `/mcp` - Show server status and tools
+- `/mcp connect <name>` - Connect to server
+- `/mcp disconnect <name>` - Disconnect from server
+
+### Tool Naming
+
+MCP tools are exposed with the pattern: `mcp__<server>__<tool>`
+
+Example: `mcp__filesystem__read_file`
 
 ## Debug Logging
 

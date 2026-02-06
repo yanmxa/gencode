@@ -125,7 +125,7 @@ func (m model) handleSessionSelected(msg SessionSelectedMsg) (tea.Model, tea.Cmd
 	if err := m.loadSession(msg.SessionID); err != nil {
 		// Add error message
 		m.messages = append(m.messages, chatMessage{
-			role:    "system",
+			role:    roleNotice,
 			content: "Failed to load session: " + err.Error(),
 		})
 	}

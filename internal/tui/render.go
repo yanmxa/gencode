@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-
 func createMarkdownRenderer(width int) *glamour.TermRenderer {
 	wrapWidth := max(width-4, minWrapWidth)
 
@@ -164,7 +163,7 @@ func (m model) renderMessages() string {
 	// Build a set of message indices to skip (tool results rendered inline with tool calls)
 	skipIndices := make(map[int]bool)
 	for i, msg := range m.messages {
-		if msg.role == "assistant" && len(msg.toolCalls) > 0 {
+		if msg.role == roleAssistant && len(msg.toolCalls) > 0 {
 			// Build set of ToolCall IDs for this assistant message
 			toolCallIDs := make(map[string]bool)
 			for _, tc := range msg.toolCalls {
@@ -196,17 +195,15 @@ func (m model) renderMessages() string {
 		}
 
 		switch msg.role {
-		case "user":
+		case roleUser:
 			if msg.toolResult != nil {
 				sb.WriteString(m.renderToolResult(msg))
 			} else {
 				sb.WriteString(m.renderUserMessage(msg))
 			}
-		case "system":
+		case roleNotice:
 			sb.WriteString(m.renderSystemMessage(msg))
-		case "permission":
-			// Skip - rendered separately in View()
-		default: // assistant
+		case roleAssistant:
 			sb.WriteString(m.renderAssistantMessage(msg, i, i == len(m.messages)-1))
 		}
 	}
@@ -801,4 +798,3 @@ func formatToolResultSize(toolName, content string) string {
 		return fmt.Sprintf("%d lines", lineCount)
 	}
 }
-

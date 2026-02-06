@@ -12,8 +12,8 @@ import (
 
 // SkillItem represents a skill in the selector.
 type SkillItem struct {
-	Name        string           // Base name
-	Namespace   string           // Optional namespace
+	Name        string // Base name
+	Namespace   string // Optional namespace
 	Description string
 	Hint        string // argument-hint
 	State       skill.SkillState

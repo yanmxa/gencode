@@ -13,6 +13,11 @@ type ToolSchema struct {
 
 // GetToolSchemas returns provider.Tool definitions for all registered tools
 func GetToolSchemas() []provider.Tool {
+	return GetToolSchemasWithMCP(nil)
+}
+
+// GetToolSchemasWithMCP returns tool schemas including MCP tools if a getter is provided
+func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Tool {
 	tools := []provider.Tool{
 		{
 			Name:        "Read",
@@ -296,6 +301,11 @@ func GetToolSchemas() []provider.Tool {
 
 	// Add Task tool
 	tools = append(tools, TaskToolSchema)
+
+	// Add MCP tools if getter is provided
+	if mcpToolsGetter != nil {
+		tools = append(tools, mcpToolsGetter()...)
+	}
 
 	return tools
 }

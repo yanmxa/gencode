@@ -302,4 +302,5 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(helpCmd)
 	rootCmd.SetHelpCommand(helpCmd)
+	rootCmd.AddCommand(mcpCmd)
 }

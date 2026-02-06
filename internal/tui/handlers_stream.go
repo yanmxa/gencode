@@ -5,11 +5,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
-	"github.com/yanmxa/gencode/internal/tool"
 )
 
 func (m *model) handleToolResult(msg toolResultMsg) (tea.Model, tea.Cmd) {
@@ -42,7 +40,7 @@ func (m *model) handleToolResult(msg toolResultMsg) (tea.Model, tea.Cmd) {
 	// Sequential mode - original behavior
 	r := msg.result
 	m.messages = append(m.messages, chatMessage{
-		role:       "user",
+		role:       roleUser,
 		toolResult: &r,
 		toolName:   msg.toolName,
 	})
@@ -75,7 +73,7 @@ func (m *model) completeParallelExecution() (tea.Model, tea.Cmd) {
 		tc := m.pendingToolCalls[i]
 		if result, ok := m.parallelResults[i]; ok {
 			m.messages = append(m.messages, chatMessage{
-				role:       "user",
+				role:       roleUser,
 				toolResult: &result,
 				toolName:   tc.Name,
 			})
@@ -118,31 +116,7 @@ func (m *model) handleStartToolExecution(msg startToolExecutionMsg) (tea.Model, 
 // canRunToolsInParallel checks if all tools can run without user interaction
 func (m *model) canRunToolsInParallel(toolCalls []provider.ToolCall) bool {
 	for _, tc := range toolCalls {
-		params, err := parseToolInput(tc.Input)
-		if err != nil {
-			return false
-		}
-
-		t, ok := tool.Get(tc.Name)
-		if !ok {
-			return false
-		}
-
-		// Check settings
-		if m.settings != nil {
-			permResult := m.settings.CheckPermission(tc.Name, params, m.sessionPermissions)
-			if permResult == config.PermissionAsk {
-				return false
-			}
-		}
-
-		// Check permission-aware tool
-		if pat, ok := t.(tool.PermissionAwareTool); ok && pat.RequiresPermission() {
-			return false
-		}
-
-		// Check interactive tool
-		if it, ok := t.(tool.InteractiveTool); ok && it.RequiresInteraction() {
+		if requiresUserInteraction(tc, m.settings, m.sessionPermissions) {
 			return false
 		}
 	}
@@ -175,7 +149,7 @@ func (m *model) filterToolCallsWithHooks(toolCalls []provider.ToolCall) []provid
 
 		if outcome.ShouldBlock {
 			m.messages = append(m.messages, chatMessage{
-				role:     "user",
+				role:     roleUser,
 				toolName: tc.Name,
 				toolResult: &provider.ToolResult{
 					ToolCallID: tc.ID,
@@ -267,7 +241,7 @@ func (m *model) handleStreamContinue(msg streamContinueMsg) (tea.Model, tea.Cmd)
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelFunc = cancel
 
-	m.messages = append(m.messages, chatMessage{role: "assistant", content: ""})
+	m.messages = append(m.messages, chatMessage{role: roleAssistant, content: ""})
 	m.viewport.SetContent(m.renderMessages())
 	m.viewport.GotoBottom()
 
@@ -338,7 +312,7 @@ func (m *model) handleSpinnerTick(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if !needsUpdate && len(m.messages) > 0 {
 		lastMsg := m.messages[len(m.messages)-1]
-		needsUpdate = lastMsg.role == "assistant" && lastMsg.content == "" && len(lastMsg.toolCalls) == 0
+		needsUpdate = lastMsg.role == roleAssistant && lastMsg.content == "" && len(lastMsg.toolCalls) == 0
 	}
 
 	if needsUpdate {

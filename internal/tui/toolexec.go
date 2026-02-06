@@ -3,12 +3,14 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/ui"
@@ -64,36 +66,9 @@ func executeToolsParallel(toolCalls []provider.ToolCall, cwd string, settings *c
 		return processNextTool(toolCalls, 0, cwd, settings, sessionPerms)
 	}
 
-	// Check if any tool requires permission - if so, process sequentially
+	// Check if any tool requires user interaction - if so, process sequentially
 	for _, tc := range toolCalls {
-		params, err := parseToolInput(tc.Input)
-		if err != nil {
-			continue
-		}
-
-		t, ok := tool.Get(tc.Name)
-		if !ok {
-			continue
-		}
-
-		// Check if tool requires permission
-		if settings != nil {
-			permResult := settings.CheckPermission(tc.Name, params, sessionPerms)
-			if permResult == config.PermissionAsk {
-				// Has a tool that requires permission - use sequential processing
-				return processNextTool(toolCalls, 0, cwd, settings, sessionPerms)
-			}
-		}
-
-		// Check if it's a permission-aware tool
-		if pat, ok := t.(tool.PermissionAwareTool); ok && pat.RequiresPermission() {
-			// Use sequential processing for permission-aware tools
-			return processNextTool(toolCalls, 0, cwd, settings, sessionPerms)
-		}
-
-		// Check if it's an interactive tool
-		if it, ok := t.(tool.InteractiveTool); ok && it.RequiresInteraction() {
-			// Use sequential processing for interactive tools
+		if requiresUserInteraction(tc, settings, sessionPerms) {
 			return processNextTool(toolCalls, 0, cwd, settings, sessionPerms)
 		}
 	}
@@ -117,6 +92,14 @@ func executeToolAsync(tc provider.ToolCall, index int, cwd string, settings *con
 		params, err := parseToolInput(tc.Input)
 		if err != nil {
 			return newToolResult(tc, index, "Error parsing tool input: "+err.Error(), true)
+		}
+
+		// Check if this is an MCP tool
+		if mcp.IsMCPTool(tc.Name) {
+			start := time.Now()
+			result := executeMCPTool(ctx, tc, params)
+			log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
+			return newToolResultFromOutput(tc, index, result)
 		}
 
 		if _, ok := tool.Get(tc.Name); !ok {
@@ -159,6 +142,14 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 		params, err := parseToolInput(tc.Input)
 		if err != nil {
 			return newToolResult(tc, idx, "Error parsing tool input: "+err.Error(), true)
+		}
+
+		// Check if this is an MCP tool
+		if mcp.IsMCPTool(tc.Name) {
+			start := time.Now()
+			result := executeMCPTool(ctx, tc, params)
+			log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
+			return newToolResultFromOutput(tc, idx, result)
 		}
 
 		t, ok := tool.Get(tc.Name)
@@ -283,6 +274,67 @@ func parseToolInput(input string) (map[string]any, error) {
 		return nil, err
 	}
 	return params, nil
+}
+
+// requiresUserInteraction checks if a tool call requires user interaction (permission or interactive prompt)
+func requiresUserInteraction(tc provider.ToolCall, settings *config.Settings, sessionPerms *config.SessionPermissions) bool {
+	params, err := parseToolInput(tc.Input)
+	if err != nil {
+		return true // Assume interaction required on parse error
+	}
+
+	t, ok := tool.Get(tc.Name)
+	if !ok {
+		return true // Unknown tool, assume interaction required
+	}
+
+	// Check settings permission
+	if settings != nil {
+		if settings.CheckPermission(tc.Name, params, sessionPerms) == config.PermissionAsk {
+			return true
+		}
+	}
+
+	// Check permission-aware tool
+	if pat, ok := t.(tool.PermissionAwareTool); ok && pat.RequiresPermission() {
+		return true
+	}
+
+	// Check interactive tool
+	if it, ok := t.(tool.InteractiveTool); ok && it.RequiresInteraction() {
+		return true
+	}
+
+	return false
+}
+
+// executeMCPTool executes an MCP tool and returns the result
+func executeMCPTool(ctx context.Context, tc provider.ToolCall, params map[string]any) ui.ToolResult {
+	if mcp.DefaultRegistry == nil {
+		return ui.NewErrorResult(tc.Name, "MCP registry not initialized")
+	}
+
+	result, err := mcp.DefaultRegistry.CallTool(ctx, tc.Name, params)
+	if err != nil {
+		return ui.NewErrorResult(tc.Name, err.Error())
+	}
+
+	return ui.ToolResult{
+		Success:  !result.IsError,
+		Output:   extractMCPContent(result.Content),
+		Metadata: ui.ResultMetadata{Title: tc.Name, Icon: "🔌"},
+	}
+}
+
+// extractMCPContent extracts text content from MCP tool result
+func extractMCPContent(contents []mcp.ToolResultContent) string {
+	var parts []string
+	for _, c := range contents {
+		if c.Text != "" {
+			parts = append(parts, c.Text)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 // encodeToolInput converts params back to JSON string for tool input

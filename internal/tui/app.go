@@ -19,6 +19,7 @@ import (
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/session"
@@ -38,6 +39,12 @@ func (m operationMode) Next() operationMode {
 	return (m + 1) % 3
 }
 
+// Message roles
+const (
+	roleUser      = "user"
+	roleAssistant = "assistant"
+	roleNotice    = "notice" // UI-only notifications (not sent to LLM)
+)
 
 type chatMessage struct {
 	role              string
@@ -111,14 +118,14 @@ type model struct {
 	pendingToolIdx   int
 
 	// Parallel tool execution tracking
-	parallelMode        bool                       // True when executing tools in parallel
+	parallelMode        bool                        // True when executing tools in parallel
 	parallelResults     map[int]provider.ToolResult // Collected results by index
-	parallelResultCount int                        // Number of results received
+	parallelResultCount int                         // Number of results received
 
 	settings           *config.Settings
 	sessionPermissions *config.SessionPermissions
 
-	questionPrompt *QuestionPrompt
+	questionPrompt  *QuestionPrompt
 	pendingQuestion *tool.QuestionRequest
 
 	enterPlanPrompt *EnterPlanPrompt
@@ -134,6 +141,7 @@ type model struct {
 
 	disabledTools map[string]bool
 	toolSelector  ToolSelectorState
+	mcpSelector   MCPSelectorState
 
 	// Skill system
 	skillSelector            SkillSelectorState
@@ -144,8 +152,8 @@ type model struct {
 	agentSelector AgentSelectorState
 
 	// Task progress tracking
-	activeTaskID   string   // Currently executing Task ID (for progress display)
-	taskProgress   []string // Recent progress messages from Task
+	activeTaskID string   // Currently executing Task ID (for progress display)
+	taskProgress []string // Recent progress messages from Task
 
 	// Token usage tracking (from most recent API response)
 	lastInputTokens  int // Input tokens from last API call (represents current context size)
@@ -170,6 +178,9 @@ type model struct {
 
 	// Hooks engine
 	hookEngine *hooks.Engine
+
+	// MCP registry
+	mcpRegistry *mcp.Registry
 }
 
 func Run() error {
@@ -331,6 +342,14 @@ func newModel() model {
 	// Initialize agent system (loads custom agents and state stores)
 	agent.Init(cwd)
 
+	// Initialize MCP registry
+	var mcpRegistry *mcp.Registry
+	if err := mcp.Initialize(cwd); err != nil {
+		log.Logger().Warn("Failed to initialize MCP registry", zap.Error(err))
+	} else {
+		mcpRegistry = mcp.DefaultRegistry
+	}
+
 	// Configure Task tool if provider is available
 	if llmProvider != nil {
 		modelID := ""
@@ -378,10 +397,12 @@ func newModel() model {
 		operationMode:      modeNormal,
 		disabledTools:      config.GetDisabledTools(),
 		toolSelector:       NewToolSelectorState(),
+		mcpSelector:        NewMCPSelectorState(),
 		skillSelector:      NewSkillSelectorState(),
 		agentSelector:      NewAgentSelectorState(),
 		sessionSelector:    NewSessionSelectorState(),
 		hookEngine:         hookEngine,
+		mcpRegistry:        mcpRegistry,
 	}
 }
 
@@ -425,41 +446,43 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ProviderSelectedMsg:
 		return m.handleProviderSelected(msg)
 
-	case SelectorCancelledMsg:
+	// Selector state changes - handled by selector components, no action needed
+	case SelectorCancelledMsg,
+		ToolToggleMsg, ToolSelectorCancelledMsg,
+		SkillCycleMsg, SkillSelectorCancelledMsg,
+		AgentToggleMsg, AgentSelectorCancelledMsg:
 		return m, nil
 
-	case ToolToggleMsg:
-		// Tool toggle already handled in toolSelector.Toggle()
+	case MCPConnectMsg:
+		return m, startMCPConnect(msg.ServerName)
+
+	case MCPConnectResultMsg:
+		m.mcpSelector.HandleConnectResult(msg)
+		content := fmt.Sprintf("Connected to MCP server '%s' (%d tools)", msg.ServerName, msg.ToolCount)
+		if !msg.Success {
+			content = fmt.Sprintf("Failed to connect to '%s': %v", msg.ServerName, msg.Error)
+		}
+		m.messages = append(m.messages, chatMessage{role: roleNotice, content: content})
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
 		return m, nil
 
-	case ToolSelectorCancelledMsg:
+	case MCPDisconnectMsg:
+		m.mcpSelector.HandleDisconnect(msg.ServerName)
+		m.messages = append(m.messages, chatMessage{role: roleNotice, content: fmt.Sprintf("Disconnected from MCP server '%s'", msg.ServerName)})
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
 		return m, nil
 
-	case SkillCycleMsg:
-		// Skill state cycle already handled in skillSelector.CycleState()
-		return m, nil
-
-	case SkillSelectorCancelledMsg:
-		return m, nil
-
-	case AgentToggleMsg:
-		// Agent toggle already handled in agentSelector.Toggle()
-		return m, nil
-
-	case AgentSelectorCancelledMsg:
+	// Additional selector cancelled events
+	case MCPSelectorCancelledMsg, SessionSelectorCancelledMsg, MemorySelectorCancelledMsg:
 		return m, nil
 
 	case SessionSelectedMsg:
 		return m.handleSessionSelected(msg)
 
-	case SessionSelectorCancelledMsg:
-		return m, nil
-
 	case MemorySelectedMsg:
 		return m.handleMemorySelected(msg)
-
-	case MemorySelectorCancelledMsg:
-		return m, nil
 
 	case SkillInvokeMsg:
 		// A skill was invoked from the selector - trigger skill execution
@@ -589,6 +612,10 @@ func (m model) View() string {
 		return m.agentSelector.Render()
 	}
 
+	if m.mcpSelector.IsActive() {
+		return m.mcpSelector.Render()
+	}
+
 	if m.sessionSelector.IsActive() {
 		return m.sessionSelector.Render()
 	}
@@ -710,7 +737,8 @@ func isGitRepo(dir string) bool {
 func (m model) convertMessagesToProvider() []provider.Message {
 	providerMsgs := make([]provider.Message, 0, len(m.messages))
 	for _, msg := range m.messages {
-		if msg.role == "system" {
+		// Skip UI-only messages
+		if msg.role == roleNotice {
 			continue
 		}
 
@@ -741,10 +769,30 @@ func (m model) getModelID() string {
 }
 
 func (m model) getToolsForMode() []provider.Tool {
+	// Create MCP tools getter if registry is available
+	var mcpToolsGetter func() []provider.Tool
+	if m.mcpRegistry != nil {
+		mcpToolsGetter = m.mcpRegistry.GetToolSchemas
+	}
+
 	if m.planMode {
 		return tool.GetPlanModeToolSchemasFiltered(m.disabledTools)
 	}
-	return tool.GetToolSchemasFiltered(m.disabledTools)
+
+	// Get base tools with MCP tools
+	tools := tool.GetToolSchemasWithMCP(mcpToolsGetter)
+
+	// Filter disabled tools
+	if len(m.disabledTools) == 0 {
+		return tools
+	}
+	filtered := make([]provider.Tool, 0, len(tools))
+	for _, t := range tools {
+		if !m.disabledTools[t.Name] {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
 }
 
 // buildExtraContext returns additional context for the system prompt including

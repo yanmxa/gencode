@@ -27,9 +27,9 @@ func (m *model) handleProviderSelected(msg ProviderSelectedMsg) (tea.Model, tea.
 	ctx := context.Background()
 	result, err := m.selector.ConnectProvider(ctx, msg.Provider, msg.AuthMethod)
 	if err != nil {
-		m.messages = append(m.messages, chatMessage{role: "system", content: "Error: " + err.Error()})
+		m.messages = append(m.messages, chatMessage{role: roleNotice, content: "Error: " + err.Error()})
 	} else {
-		m.messages = append(m.messages, chatMessage{role: "system", content: result})
+		m.messages = append(m.messages, chatMessage{role: roleNotice, content: result})
 		if p, err := provider.GetProvider(ctx, msg.Provider, msg.AuthMethod); err == nil {
 			m.llmProvider = p
 			// Configure Task tool with executor (use current model if available)
@@ -48,9 +48,9 @@ func (m *model) handleProviderSelected(msg ProviderSelectedMsg) (tea.Model, tea.
 func (m *model) handleModelSelected(msg ModelSelectedMsg) (tea.Model, tea.Cmd) {
 	result, err := m.selector.SetModel(msg.ModelID, msg.ProviderName, msg.AuthMethod)
 	if err != nil {
-		m.messages = append(m.messages, chatMessage{role: "system", content: "Error: " + err.Error()})
+		m.messages = append(m.messages, chatMessage{role: roleNotice, content: "Error: " + err.Error()})
 	} else {
-		m.messages = append(m.messages, chatMessage{role: "system", content: result})
+		m.messages = append(m.messages, chatMessage{role: roleNotice, content: result})
 		m.currentModel = &provider.CurrentModelInfo{
 			ModelID:    msg.ModelID,
 			Provider:   provider.Provider(msg.ProviderName),
@@ -87,7 +87,7 @@ func (m *model) handlePermissionRequest(msg PermissionRequestMsg) (tea.Model, te
 	if blocked, reason := m.checkPermissionHook(msg.Request); blocked {
 		tc := m.pendingToolCalls[m.pendingToolIdx]
 		m.messages = append(m.messages, chatMessage{
-			role:     "user",
+			role:     roleUser,
 			toolName: tc.Name,
 			toolResult: &provider.ToolResult{
 				ToolCallID: tc.ID,
@@ -161,7 +161,7 @@ func (m *model) handlePermissionResponse(msg PermissionResponseMsg) (tea.Model, 
 
 	tc := m.pendingToolCalls[m.pendingToolIdx]
 	m.messages = append(m.messages, chatMessage{
-		role:     "user",
+		role:     roleUser,
 		toolName: tc.Name,
 		toolResult: &provider.ToolResult{
 			ToolCallID: tc.ID,
@@ -190,7 +190,7 @@ func (m *model) handleQuestionResponse(msg QuestionResponseMsg) (tea.Model, tea.
 	if msg.Cancelled {
 		tc := m.pendingToolCalls[m.pendingToolIdx]
 		m.messages = append(m.messages, chatMessage{
-			role:     "user",
+			role:     roleUser,
 			toolName: tc.Name,
 			toolResult: &provider.ToolResult{
 				ToolCallID: tc.ID,
@@ -228,7 +228,7 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 	if !msg.Approved {
 		tc := m.pendingToolCalls[m.pendingToolIdx]
 		m.messages = append(m.messages, chatMessage{
-			role:     "user",
+			role:     roleUser,
 			toolName: tc.Name,
 			toolResult: &provider.ToolResult{
 				ToolCallID: tc.ID,
@@ -282,13 +282,13 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 			planContent = msg.Request.Plan
 		}
 		userMsg := fmt.Sprintf("Please implement the following plan:\n\n%s", planContent)
-		m.messages = append(m.messages, chatMessage{role: "user", content: userMsg})
+		m.messages = append(m.messages, chatMessage{role: roleUser, content: userMsg})
 
 		m.streaming = true
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelFunc = cancel
 		providerMsgs := m.convertMessagesToProvider()
-		m.messages = append(m.messages, chatMessage{role: "assistant", content: ""})
+		m.messages = append(m.messages, chatMessage{role: roleAssistant, content: ""})
 		m.viewport.SetContent(m.renderMessages())
 		m.viewport.GotoBottom()
 
@@ -357,12 +357,12 @@ func (m *model) handleEnterPlanResponse(msg EnterPlanResponseMsg) (tea.Model, te
 
 func (m *model) handleCompactResult(msg CompactResultMsg) (tea.Model, tea.Cmd) {
 	m.compacting = false
-	m.compactFocus = ""      // Reset focus
+	m.compactFocus = ""       // Reset focus
 	m.autoCompactNext = false // Reset auto-compact flag
 
 	if msg.Error != nil {
 		m.messages = append(m.messages, chatMessage{
-			role:    "system",
+			role:    roleNotice,
 			content: fmt.Sprintf("⚠ Compact failed: %v", msg.Error),
 		})
 		m.viewport.SetContent(m.renderMessages())
@@ -373,7 +373,7 @@ func (m *model) handleCompactResult(msg CompactResultMsg) (tea.Model, tea.Cmd) {
 	// Replace message history with the summary as a user message
 	// This ensures the summary is sent to LLM as context for future messages
 	m.messages = []chatMessage{{
-		role:         "user",
+		role:         roleUser,
 		content:      fmt.Sprintf("Here is a summary of our previous conversation:\n\n%s", msg.Summary),
 		isSummary:    true,
 		summaryCount: msg.OriginalCount,
@@ -400,7 +400,7 @@ func (m *model) handleTokenLimitResult(msg TokenLimitResultMsg) (tea.Model, tea.
 	} else {
 		content = msg.Result
 	}
-	m.messages = append(m.messages, chatMessage{role: "system", content: content})
+	m.messages = append(m.messages, chatMessage{role: roleNotice, content: content})
 
 	m.viewport.SetContent(m.renderMessages())
 	m.viewport.GotoBottom()
@@ -418,7 +418,7 @@ func (m *model) handleEditorFinished(msg EditorFinishedMsg) (tea.Model, tea.Cmd)
 		content = fmt.Sprintf("Editor error: %v", msg.Err)
 	}
 
-	m.messages = append(m.messages, chatMessage{role: "system", content: content})
+	m.messages = append(m.messages, chatMessage{role: roleNotice, content: content})
 	m.viewport.SetContent(m.renderMessages())
 	m.viewport.GotoBottom()
 	return m, nil

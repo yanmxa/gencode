@@ -13,6 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/skill"
@@ -111,6 +112,11 @@ func getCommandRegistry() map[string]Command {
 			Name:        "memory",
 			Description: "View and manage memory files (list/show/edit) with @import support",
 			Handler:     handleMemoryCommand,
+		},
+		"mcp": {
+			Name:        "mcp",
+			Description: "View MCP server status and manage connections",
+			Handler:     handleMCPCommand,
 		},
 	}
 }
@@ -693,7 +699,7 @@ func buildConversationForSummary(messages []chatMessage) string {
 
 	for _, msg := range messages {
 		switch msg.role {
-		case "user":
+		case roleUser:
 			if msg.toolResult != nil {
 				content := truncateToolResult(msg.toolResult.Content, 500)
 				fmt.Fprintf(&sb, "[Tool Result: %s]\n%s\n\n", msg.toolName, content)
@@ -701,7 +707,7 @@ func buildConversationForSummary(messages []chatMessage) string {
 				fmt.Fprintf(&sb, "User: %s\n\n", msg.content)
 			}
 
-		case "assistant":
+		case roleAssistant:
 			if msg.content != "" {
 				fmt.Fprintf(&sb, "Assistant: %s\n\n", msg.content)
 			}
@@ -712,10 +718,10 @@ func buildConversationForSummary(messages []chatMessage) string {
 				sb.WriteString("\n")
 			}
 
-		case "system":
+		case roleNotice:
 			// Skip welcome messages
 			if msg.content != "" && !strings.Contains(msg.content, "AI-powered coding assistant") {
-				fmt.Fprintf(&sb, "System: %s\n\n", msg.content)
+				fmt.Fprintf(&sb, "Notice: %s\n\n", msg.content)
 			}
 		}
 	}
@@ -754,7 +760,7 @@ func (m *model) triggerAutoCompact() tea.Cmd {
 	m.compacting = true
 	m.compactFocus = ""
 	m.messages = append(m.messages, chatMessage{
-		role:    "system",
+		role:    roleNotice,
 		content: fmt.Sprintf("⚡ Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()),
 	})
 	m.viewport.SetContent(m.renderMessages())
@@ -968,8 +974,8 @@ type memoryListState struct {
 }
 
 const (
-	memoryBoxWidth  = 53
-	memoryMaxPath   = 36
+	memoryBoxWidth = 53
+	memoryMaxPath  = 36
 )
 
 // handleMemoryList lists all loaded memory files with beautiful UI
@@ -1276,7 +1282,7 @@ func (m model) handleMemorySelected(msg MemorySelectedMsg) (tea.Model, tea.Cmd) 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		if err := createMemoryFile(filePath, msg.Level, m.cwd); err != nil {
 			m.messages = append(m.messages, chatMessage{
-				role:    "system",
+				role:    roleNotice,
 				content: fmt.Sprintf("Error: %v", err),
 			})
 			m.viewport.SetContent(m.renderMessages())
@@ -1290,7 +1296,7 @@ func (m model) handleMemorySelected(msg MemorySelectedMsg) (tea.Model, tea.Cmd) 
 	displayPath := formatMemoryDisplayPath(filePath, msg.Level, m.cwd)
 
 	m.messages = append(m.messages, chatMessage{
-		role:    "system",
+		role:    roleNotice,
 		content: fmt.Sprintf("Opening %s memory: %s", msg.Level, displayPath),
 	})
 	m.viewport.SetContent(m.renderMessages())
@@ -1332,4 +1338,116 @@ func formatMemoryDisplayPath(filePath, level, cwd string) string {
 		}
 	}
 	return shortenPath(filePath)
+}
+
+// handleMCPCommand handles the /mcp command
+// Usage: /mcp [connect|disconnect|list] [server-name]
+func handleMCPCommand(ctx context.Context, m *model, args string) (string, error) {
+	if mcp.DefaultRegistry == nil {
+		return "MCP is not initialized.\n\nAdd MCP servers with:\n  gen mcp add <name> -- <command> [args...]", nil
+	}
+
+	args = strings.TrimSpace(args)
+	parts := strings.Fields(args)
+
+	if len(parts) == 0 {
+		// No arguments: enter interactive selector
+		if err := m.mcpSelector.EnterMCPSelect(m.width, m.height); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
+
+	subCmd := strings.ToLower(parts[0])
+	var serverName string
+	if len(parts) > 1 {
+		serverName = parts[1]
+	}
+
+	switch subCmd {
+	case "connect":
+		return handleMCPConnect(ctx, m, serverName)
+	case "disconnect":
+		return handleMCPDisconnect(m, serverName)
+	case "list", "status":
+		return handleMCPList(m)
+	default:
+		// Treat single argument as connect request
+		return handleMCPConnect(ctx, m, subCmd)
+	}
+}
+
+// handleMCPList lists all MCP servers and their status
+func handleMCPList(m *model) (string, error) {
+	servers := mcp.DefaultRegistry.List()
+
+	if len(servers) == 0 {
+		return "No MCP servers configured.\n\nAdd servers with:\n  gen mcp add <name> -- <command> [args...]\n  gen mcp add --transport http <name> <url>", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("MCP Servers:\n\n")
+
+	for _, srv := range servers {
+		icon, label := mcpStatusDisplay(srv.Status)
+		sb.WriteString(fmt.Sprintf("  %s %s [%s] (%s)\n", icon, srv.Config.Name, srv.Config.GetType(), label))
+
+		if srv.Status == mcp.StatusConnected {
+			if len(srv.Tools) > 0 {
+				sb.WriteString(fmt.Sprintf("    Tools: %d\n", len(srv.Tools)))
+			}
+			if len(srv.Resources) > 0 {
+				sb.WriteString(fmt.Sprintf("    Resources: %d\n", len(srv.Resources)))
+			}
+			if len(srv.Prompts) > 0 {
+				sb.WriteString(fmt.Sprintf("    Prompts: %d\n", len(srv.Prompts)))
+			}
+		}
+
+		if srv.Error != "" {
+			sb.WriteString(fmt.Sprintf("    Error: %s\n", srv.Error))
+		}
+	}
+
+	sb.WriteString("\nCommands:\n")
+	sb.WriteString("  /mcp connect <name>     Connect to server\n")
+	sb.WriteString("  /mcp disconnect <name>  Disconnect from server\n")
+
+	return sb.String(), nil
+}
+
+// handleMCPConnect connects to an MCP server
+func handleMCPConnect(ctx context.Context, m *model, name string) (string, error) {
+	if name == "" {
+		return "Usage: /mcp connect <server-name>", nil
+	}
+
+	if _, ok := mcp.DefaultRegistry.GetConfig(name); !ok {
+		return fmt.Sprintf("Server not found: %s\n\nUse /mcp list to see available servers.", name), nil
+	}
+
+	if err := mcp.DefaultRegistry.Connect(ctx, name); err != nil {
+		return fmt.Sprintf("Failed to connect to %s: %v", name, err), nil
+	}
+
+	// Get connected server info
+	if client, ok := mcp.DefaultRegistry.GetClient(name); ok {
+		tools := client.GetCachedTools()
+		return fmt.Sprintf("Connected to %s\nTools available: %d", name, len(tools)), nil
+	}
+
+	return fmt.Sprintf("Connected to %s", name), nil
+}
+
+// handleMCPDisconnect disconnects from an MCP server
+func handleMCPDisconnect(m *model, name string) (string, error) {
+	if name == "" {
+		return "Usage: /mcp disconnect <server-name>", nil
+	}
+
+	if err := mcp.DefaultRegistry.Disconnect(name); err != nil {
+		return fmt.Sprintf("Failed to disconnect from %s: %v", name, err), nil
+	}
+
+	return fmt.Sprintf("Disconnected from %s", name), nil
 }

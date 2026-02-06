@@ -63,6 +63,11 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.mcpSelector.IsActive() {
+		cmd := m.mcpSelector.HandleKeypress(msg)
+		return m, cmd
+	}
+
 	if m.sessionSelector.IsActive() {
 		cmd := m.sessionSelector.HandleKeypress(msg)
 		return m, cmd
@@ -240,7 +245,7 @@ func (m *model) handleStreamCancel() (tea.Model, tea.Cmd) {
 		for i := m.pendingToolIdx; i < len(m.pendingToolCalls); i++ {
 			tc := m.pendingToolCalls[i]
 			m.messages = append(m.messages, chatMessage{
-				role:     "user",
+				role:     roleUser,
 				toolName: tc.Name,
 				toolResult: &provider.ToolResult{
 					ToolCallID: tc.ID,
@@ -254,10 +259,10 @@ func (m *model) handleStreamCancel() (tea.Model, tea.Cmd) {
 	} else if len(m.messages) > 0 {
 		idx := len(m.messages) - 1
 		lastMsg := m.messages[idx]
-		if lastMsg.role == "assistant" && len(lastMsg.toolCalls) > 0 {
+		if lastMsg.role == roleAssistant && len(lastMsg.toolCalls) > 0 {
 			for _, tc := range lastMsg.toolCalls {
 				m.messages = append(m.messages, chatMessage{
-					role:     "user",
+					role:     roleUser,
 					toolName: tc.Name,
 					toolResult: &provider.ToolResult{
 						ToolCallID: tc.ID,
@@ -271,7 +276,7 @@ func (m *model) handleStreamCancel() (tea.Model, tea.Cmd) {
 
 	if len(m.messages) > 0 {
 		for i := len(m.messages) - 1; i >= 0; i-- {
-			if m.messages[i].role == "assistant" {
+			if m.messages[i].role == roleAssistant {
 				if len(m.messages[i].toolCalls) == 0 {
 					if m.messages[i].content == "" {
 						m.messages[i].content = "[Interrupted]"
@@ -337,7 +342,7 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 
 	// Execute UserPromptSubmit hook before processing
 	if blocked, reason := m.checkPromptHook(input); blocked {
-		m.messages = append(m.messages, chatMessage{role: "system", content: "Prompt blocked: " + reason})
+		m.messages = append(m.messages, chatMessage{role: roleNotice, content: "Prompt blocked: " + reason})
 		m.textarea.Reset()
 		m.textarea.SetHeight(minTextareaHeight)
 		m.viewport.SetContent(m.renderMessages())
@@ -369,8 +374,8 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		}
 
 		if result != "" {
-			m.messages = append(m.messages, chatMessage{role: "user", content: input})
-			m.messages = append(m.messages, chatMessage{role: "system", content: result})
+			m.messages = append(m.messages, chatMessage{role: roleUser, content: input})
+			m.messages = append(m.messages, chatMessage{role: roleNotice, content: result})
 			m.viewport.SetContent(m.renderMessages())
 			m.viewport.GotoBottom()
 			return m, nil
@@ -384,12 +389,12 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.messages = append(m.messages, chatMessage{role: "user", content: input})
+	m.messages = append(m.messages, chatMessage{role: roleUser, content: input})
 	m.textarea.Reset()
 	m.textarea.SetHeight(minTextareaHeight)
 
 	if m.llmProvider == nil {
-		m.messages = append(m.messages, chatMessage{role: "system", content: "No provider connected. Use /provider to connect."})
+		m.messages = append(m.messages, chatMessage{role: roleNotice, content: "No provider connected. Use /provider to connect."})
 		m.viewport.SetContent(m.renderMessages())
 		m.viewport.GotoBottom()
 		return m, nil
@@ -440,7 +445,7 @@ func (m *model) startLLMStream(extra []string) tea.Cmd {
 
 	providerMsgs := m.convertMessagesToProvider()
 
-	m.messages = append(m.messages, chatMessage{role: "assistant", content: ""})
+	m.messages = append(m.messages, chatMessage{role: roleAssistant, content: ""})
 	m.viewport.SetContent(m.renderMessages())
 	m.viewport.GotoBottom()
 
@@ -470,7 +475,7 @@ func (m *model) startLLMStream(extra []string) tea.Cmd {
 // instructions and args to the LLM.
 func (m *model) handleSkillInvocation() (tea.Model, tea.Cmd) {
 	if m.llmProvider == nil {
-		m.messages = append(m.messages, chatMessage{role: "system", content: "No provider connected. Use /provider to connect."})
+		m.messages = append(m.messages, chatMessage{role: roleNotice, content: "No provider connected. Use /provider to connect."})
 		m.pendingSkillInstructions = ""
 		m.pendingSkillArgs = ""
 		m.viewport.SetContent(m.renderMessages())
@@ -484,7 +489,7 @@ func (m *model) handleSkillInvocation() (tea.Model, tea.Cmd) {
 		userMessage = "Execute the skill."
 	}
 
-	m.messages = append(m.messages, chatMessage{role: "user", content: userMessage})
+	m.messages = append(m.messages, chatMessage{role: roleUser, content: userMessage})
 
 	// Build extra context with skill instructions
 	extra := m.buildExtraContext()
