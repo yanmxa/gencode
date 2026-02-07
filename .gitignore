@@ -20,4 +20,5 @@ gen_*
 # Local config
 .gen/
 .claude/
+CLAUDE.md
 CLAUDE.local.md
