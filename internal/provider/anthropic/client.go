@@ -3,6 +3,7 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -13,8 +14,9 @@ import (
 
 // Client implements the LLMProvider interface using the Anthropic SDK
 type Client struct {
-	client anthropic.Client
-	name   string
+	client       anthropic.Client
+	name         string
+	cachedModels []provider.ModelInfo
 }
 
 // NewClient creates a new Anthropic client with the given SDK client
@@ -238,16 +240,52 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 	return ch
 }
 
-// ListModels returns the available models for Anthropic
-// Anthropic doesn't have a list models API, so we return defaults.
-// The caller is responsible for caching via Store.CacheModels.
+// defaultModels is the fallback static model list
+var defaultModels = []provider.ModelInfo{
+	{ID: "claude-opus-4-5@20251101", Name: "Claude Opus 4.5", DisplayName: "Claude Opus 4.5 (Most Capable)"},
+	{ID: "claude-sonnet-4-5@20250929", Name: "Claude Sonnet 4.5", DisplayName: "Claude Sonnet 4.5 (Balanced)"},
+	{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4", DisplayName: "Claude Sonnet 4"},
+	{ID: "claude-haiku-3-5@20241022", Name: "Claude Haiku 3.5", DisplayName: "Claude Haiku 3.5 (Fast)"},
+}
+
+// ListModels returns available models using the Anthropic Models API,
+// falling back to a static list if the API call fails.
 func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
-	return []provider.ModelInfo{
-		{ID: "claude-opus-4-5@20251101", Name: "Claude Opus 4.5", DisplayName: "Claude Opus 4.5 (Most Capable)"},
-		{ID: "claude-sonnet-4-5@20250929", Name: "Claude Sonnet 4.5", DisplayName: "Claude Sonnet 4.5 (Balanced)"},
-		{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4", DisplayName: "Claude Sonnet 4"},
-		{ID: "claude-haiku-3-5@20241022", Name: "Claude Haiku 3.5", DisplayName: "Claude Haiku 3.5 (Fast)"},
-	}, nil
+	if len(c.cachedModels) > 0 {
+		return c.cachedModels, nil
+	}
+
+	models, err := c.fetchModels(ctx)
+	if err != nil {
+		// Fall back to static model list
+		c.cachedModels = defaultModels
+		return c.cachedModels, nil
+	}
+	c.cachedModels = models
+	return c.cachedModels, nil
+}
+
+// fetchModels fetches available models from the Anthropic Models API
+func (c *Client) fetchModels(ctx context.Context) ([]provider.ModelInfo, error) {
+	pager := c.client.Models.ListAutoPaging(ctx, anthropic.ModelListParams{})
+
+	var models []provider.ModelInfo
+	for pager.Next() {
+		m := pager.Current()
+		models = append(models, provider.ModelInfo{
+			ID:          m.ID,
+			Name:        m.DisplayName,
+			DisplayName: m.DisplayName,
+		})
+	}
+	if err := pager.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(models) == 0 {
+		return nil, fmt.Errorf("no models returned from API")
+	}
+	return models, nil
 }
 
 // Ensure Client implements LLMProvider

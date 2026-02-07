@@ -35,12 +35,6 @@ func (m ProviderMeta) Key() string {
 	return string(m.Provider) + ":" + string(m.AuthMethod)
 }
 
-// UsesStaticModelList returns true if this provider uses a static model list
-// (no API to list models) and should cache models without expiration.
-func (p Provider) UsesStaticModelList() bool {
-	return p == ProviderAnthropic
-}
-
 // ModelInfo represents information about an available model
 type ModelInfo struct {
 	ID               string `json:"id"`

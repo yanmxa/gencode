@@ -160,16 +160,25 @@ func calculateBoxWidth(screenWidth int) int {
 	return max(40, min(boxWidth, 60))
 }
 
+// statusDisplayInfo contains display information for a provider status
+type statusDisplayInfo struct {
+	icon  string
+	style lipgloss.Style
+	desc  string
+}
+
+// statusDisplayMap maps provider status to display information
+var statusDisplayMap = map[provider.ProviderStatus]statusDisplayInfo{
+	provider.StatusConnected: {"●", selectorStatusConnected, ""},
+	provider.StatusAvailable: {"○", selectorStatusReady, "(available)"},
+}
+
 // getStatusDisplay returns the icon, style, and description for a provider status
 func getStatusDisplay(status provider.ProviderStatus) (icon string, style lipgloss.Style, desc string) {
-	switch status {
-	case provider.StatusConnected:
-		return "●", selectorStatusConnected, ""
-	case provider.StatusAvailable:
-		return "○", selectorStatusReady, "(available)"
-	default:
-		return "◌", selectorStatusNone, ""
+	if info, ok := statusDisplayMap[status]; ok {
+		return info.icon, info.style, info.desc
 	}
+	return "◌", selectorStatusNone, ""
 }
 
 // NewSelectorState creates a new SelectorState
@@ -343,7 +352,7 @@ func (s *SelectorState) EnterModelSelect(ctx context.Context, width, height int)
 
 			// Cache the models
 			prov := provider.Provider(providerName)
-			_ = store.CacheModels(prov, conn.AuthMethod, models, prov.UsesStaticModelList())
+			_ = store.CacheModels(prov, conn.AuthMethod, models)
 
 			for _, mdl := range models {
 				s.models = append(s.models, ModelItem{
@@ -600,7 +609,7 @@ func (s *SelectorState) Select() tea.Cmd {
 		return nil
 	}
 
-	// Auth method level - connect inline without exiting
+	// Auth method level - toggle connect/disconnect
 	if s.parentIdx >= len(s.providers) {
 		return nil
 	}
@@ -611,6 +620,19 @@ func (s *SelectorState) Select() tea.Cmd {
 
 	item := authMethods[s.selectedIdx]
 	authIdx := s.selectedIdx
+
+	// If already connected, disconnect
+	if item.Status == provider.StatusConnected {
+		store, _ := provider.NewStore()
+		if store != nil {
+			_ = store.Disconnect(item.Provider)
+		}
+		s.lastConnectResult = "✓ Disconnected"
+		s.lastConnectAuthIdx = authIdx
+		s.lastConnectSuccess = true
+		authMethods[authIdx].Status = provider.StatusAvailable
+		return nil
+	}
 
 	// Clear previous result
 	s.lastConnectResult = "Connecting..."
@@ -649,19 +671,24 @@ func (s *SelectorState) Select() tea.Cmd {
 		}
 
 		models, err := llmProvider.ListModels(ctx)
-		if err != nil {
-			return ProviderConnectResultMsg{
-				AuthIdx: authIdx,
-				Success: false,
-				Message: "Failed: " + err.Error(),
-			}
-		}
 
 		// Save connection using a new store instance
 		store, _ := provider.NewStore()
 		if store != nil {
-			_ = store.CacheModels(item.Provider, item.AuthMethod, models, item.Provider.UsesStaticModelList())
+			if len(models) > 0 {
+				_ = store.CacheModels(item.Provider, item.AuthMethod, models)
+			}
 			_ = store.Connect(item.Provider, item.AuthMethod)
+		}
+
+		if err != nil {
+			// Models API unavailable - connected but using static models
+			return ProviderConnectResultMsg{
+				AuthIdx:   authIdx,
+				Success:   true,
+				Message:   fmt.Sprintf("⚠ %d models loaded (static)", len(models)),
+				NewStatus: provider.StatusConnected,
+			}
 		}
 
 		return ProviderConnectResultMsg{
@@ -972,13 +999,7 @@ func (s *SelectorState) renderProviderSelector() string {
 
 				// Show connection result for this auth method
 				if s.lastConnectResult != "" && i == s.lastConnectAuthIdx {
-					resultStyle := selectorHintStyle
-					if s.lastConnectSuccess {
-						resultStyle = selectorStatusConnected
-					} else if s.lastConnectResult != "Connecting..." {
-						resultStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Error)
-					}
-					sb.WriteString(selectorItemStyle.Render("    " + resultStyle.Render(s.lastConnectResult)))
+					sb.WriteString(selectorItemStyle.Render("    " + s.renderAuthResultMessage()))
 					sb.WriteString("\n")
 				}
 			}
@@ -1028,28 +1049,27 @@ func (s *SelectorState) renderTabHeader() string {
 	return lipgloss.PlaceHorizontal(boxWidth-4, lipgloss.Center, tabs)
 }
 
+// getSearchProviderStatus returns icon, style, and description for a search provider
+func getSearchProviderStatus(status string, requiresKey bool) (icon string, style lipgloss.Style, desc string) {
+	switch status {
+	case "current":
+		return "●", selectorStatusConnected, ""
+	case "available":
+		return "○", selectorStatusReady, ""
+	default:
+		if requiresKey {
+			return "◌", selectorStatusNone, "(no credentials)"
+		}
+		return "◌", selectorStatusNone, ""
+	}
+}
+
 // renderSearchProviders renders the search provider list
 func (s *SelectorState) renderSearchProviders() string {
 	var sb strings.Builder
 
 	for i, sp := range s.searchProviders {
-		var statusIcon string
-		var statusStyle lipgloss.Style
-		var statusDesc string
-
-		if sp.Status == "current" {
-			statusIcon = "●"
-			statusStyle = selectorStatusConnected
-		} else if sp.Status == "available" {
-			statusIcon = "○"
-			statusStyle = selectorStatusReady
-		} else {
-			statusIcon = "◌"
-			statusStyle = selectorStatusNone
-			if sp.RequiresKey {
-				statusDesc = "(no credentials)"
-			}
-		}
+		statusIcon, statusStyle, statusDesc := getSearchProviderStatus(sp.Status, sp.RequiresKey)
 
 		line := fmt.Sprintf("%s %s %s",
 			statusStyle.Render(statusIcon),
@@ -1066,18 +1086,36 @@ func (s *SelectorState) renderSearchProviders() string {
 
 		// Show result message for this provider
 		if s.lastConnectResult != "" && i == s.lastConnectAuthIdx {
-			resultStyle := selectorHintStyle
-			if s.lastConnectSuccess {
-				resultStyle = selectorStatusConnected
-			} else {
-				resultStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Error)
-			}
-			sb.WriteString(selectorItemStyle.Render("    " + resultStyle.Render(s.lastConnectResult)))
+			sb.WriteString(selectorItemStyle.Render("    " + s.renderResultMessage()))
 			sb.WriteString("\n")
 		}
 	}
 
 	return sb.String()
+}
+
+// connectResultStyle returns the appropriate style for a connection result message.
+func (s *SelectorState) connectResultStyle() lipgloss.Style {
+	if !s.lastConnectSuccess {
+		if s.lastConnectResult == "Connecting..." {
+			return selectorHintStyle
+		}
+		return lipgloss.NewStyle().Foreground(CurrentTheme.Error)
+	}
+	if strings.HasPrefix(s.lastConnectResult, "⚠") {
+		return lipgloss.NewStyle().Foreground(CurrentTheme.Warning)
+	}
+	return selectorStatusConnected
+}
+
+// renderResultMessage returns the styled result message for connection attempts
+func (s *SelectorState) renderResultMessage() string {
+	return s.connectResultStyle().Render(s.lastConnectResult)
+}
+
+// renderAuthResultMessage returns the styled result message for auth connection attempts
+func (s *SelectorState) renderAuthResultMessage() string {
+	return s.connectResultStyle().Render(s.lastConnectResult)
 }
 
 // ConnectProvider connects to the selected provider and verifies the connection
@@ -1113,17 +1151,20 @@ func (s *SelectorState) ConnectProvider(ctx context.Context, p provider.Provider
 		return "", fmt.Errorf("failed to create provider: %w", err)
 	}
 
-	models, err := llmProvider.ListModels(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to connect: %w", err)
-	}
+	models, listErr := llmProvider.ListModels(ctx)
 
-	// Cache the models
-	_ = s.store.CacheModels(p, authMethod, models, p.UsesStaticModelList())
+	// Cache models if available
+	if len(models) > 0 {
+		_ = s.store.CacheModels(p, authMethod, models)
+	}
 
 	// Save connection
 	if err := s.store.Connect(p, authMethod); err != nil {
 		return "", fmt.Errorf("failed to save connection: %w", err)
+	}
+
+	if listErr != nil {
+		return fmt.Sprintf("Connected to %s via %s (⚠ %d static models)", meta.DisplayName, authMethod, len(models)), nil
 	}
 
 	return fmt.Sprintf("Connected to %s via %s (%d models)", meta.DisplayName, authMethod, len(models)), nil

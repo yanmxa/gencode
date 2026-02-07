@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -30,23 +31,50 @@ type SessionSelectorState struct {
 	maxVisible   int
 	width        int
 	height       int
+	store        *session.Store
+	cwd          string
+	messageCache map[string]string // Cache for last user messages
 }
 
 // NewSessionSelectorState creates a new SessionSelectorState
 func NewSessionSelectorState() SessionSelectorState {
 	return SessionSelectorState{
-		active:     false,
-		maxVisible: 15, // Show more sessions than other selectors
+		active:       false,
+		maxVisible:   6, // Default, will be calculated based on terminal height
+		messageCache: make(map[string]string),
 	}
 }
 
-// calculateSessionBoxWidth returns 70% of the screen width for the session selector
-func calculateSessionBoxWidth(screenWidth int) int {
-	return max(60, screenWidth*70/100)
+// clamp constrains a value between min and max bounds
+func clamp(value, minVal, maxVal int) int {
+	if value < minVal {
+		return minVal
+	}
+	if value > maxVal {
+		return maxVal
+	}
+	return value
+}
+
+// calculateMaxVisible calculates how many sessions can fit on screen.
+// Each session takes 3 lines (title + preview + blank separator).
+func calculateMaxVisible(height int) int {
+	const (
+		fixedLines      = 7 // title(1) + search(1) + blank(1) + hint(2) + scroll indicators(2)
+		linesPerSession = 3
+	)
+	maxVisible := (height - fixedLines) / linesPerSession
+	return clamp(maxVisible, 3, 20)
+}
+
+// calculateMessagePreviewLength calculates message preview length based on terminal width.
+// Accounts for indentation (4 chars) + quotes (2 chars) + margins.
+func calculateMessagePreviewLength(width int) int {
+	return clamp(width-10, 30, 120)
 }
 
 // EnterSessionSelect enters session selection mode
-func (s *SessionSelectorState) EnterSessionSelect(width, height int, store *session.Store) error {
+func (s *SessionSelectorState) EnterSessionSelect(width, height int, store *session.Store, cwd string) error {
 	if store == nil {
 		return fmt.Errorf("session store is required")
 	}
@@ -55,20 +83,25 @@ func (s *SessionSelectorState) EnterSessionSelect(width, height int, store *sess
 	if err != nil {
 		return fmt.Errorf("failed to list sessions: %w", err)
 	}
-
 	if len(sessions) == 0 {
 		return fmt.Errorf("no sessions found")
 	}
 
-	s.sessions = sessions
-	s.filtered = sessions
-	s.active = true
-	s.selectedIdx = 0
-	s.searchQuery = ""
-	s.scrollOffset = 0
-	s.width = width
-	s.height = height
+	*s = SessionSelectorState{
+		active:       true,
+		sessions:     sessions,
+		width:        width,
+		height:       height,
+		maxVisible:   calculateMaxVisible(height),
+		store:        store,
+		cwd:          cwd,
+		messageCache: make(map[string]string),
+	}
+	s.updateFilter()
 
+	if len(s.filtered) == 0 {
+		return fmt.Errorf("no sessions found for current directory")
+	}
 	return nil
 }
 
@@ -79,12 +112,7 @@ func (s *SessionSelectorState) IsActive() bool {
 
 // Cancel cancels the selector
 func (s *SessionSelectorState) Cancel() {
-	s.active = false
-	s.sessions = nil
-	s.filtered = nil
-	s.selectedIdx = 0
-	s.searchQuery = ""
-	s.scrollOffset = 0
+	*s = NewSessionSelectorState()
 }
 
 // MoveUp moves the selection up
@@ -113,21 +141,22 @@ func (s *SessionSelectorState) ensureVisible() {
 	}
 }
 
-// updateFilter filters sessions based on search query
+// updateFilter filters sessions by CWD and search query
 func (s *SessionSelectorState) updateFilter() {
-	if s.searchQuery == "" {
-		s.filtered = s.sessions
-	} else {
-		query := strings.ToLower(s.searchQuery)
-		s.filtered = make([]*session.SessionMetadata, 0)
-		for _, sess := range s.sessions {
-			if fuzzyMatch(strings.ToLower(sess.Title), query) ||
-				fuzzyMatch(strings.ToLower(sess.Model), query) ||
-				fuzzyMatch(strings.ToLower(sess.Cwd), query) {
-				s.filtered = append(s.filtered, sess)
-			}
+	query := strings.ToLower(s.searchQuery)
+	s.filtered = make([]*session.SessionMetadata, 0, len(s.sessions))
+
+	for _, sess := range s.sessions {
+		if sess.Cwd != s.cwd {
+			continue
 		}
+		if query != "" && !fuzzyMatch(strings.ToLower(sess.Title), query) &&
+			!fuzzyMatch(strings.ToLower(sess.Model), query) {
+			continue
+		}
+		s.filtered = append(s.filtered, sess)
 	}
+
 	s.selectedIdx = 0
 	s.scrollOffset = 0
 }
@@ -151,10 +180,8 @@ func (s *SessionSelectorState) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	switch key.Type {
 	case tea.KeyUp, tea.KeyCtrlP:
 		s.MoveUp()
-		return nil
 	case tea.KeyDown, tea.KeyCtrlN:
 		s.MoveDown()
-		return nil
 	case tea.KeyEnter:
 		return s.Select()
 	case tea.KeyEsc:
@@ -164,34 +191,88 @@ func (s *SessionSelectorState) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		s.Cancel()
-		return func() tea.Msg {
-			return SessionSelectorCancelledMsg{}
-		}
+		return func() tea.Msg { return SessionSelectorCancelledMsg{} }
 	case tea.KeyBackspace:
 		if len(s.searchQuery) > 0 {
 			s.searchQuery = s.searchQuery[:len(s.searchQuery)-1]
 			s.updateFilter()
 		}
-		return nil
 	case tea.KeyRunes:
+		if s.searchQuery == "" && (key.String() == "j" || key.String() == "k") {
+			if key.String() == "j" {
+				s.MoveDown()
+			} else {
+				s.MoveUp()
+			}
+			return nil
+		}
 		s.searchQuery += string(key.Runes)
 		s.updateFilter()
-		return nil
+	}
+	return nil
+}
+
+// formatCompactMetadata formats message count and time inline
+func formatCompactMetadata(sess *session.SessionMetadata) string {
+	return fmt.Sprintf("%d msgs · %s", sess.MessageCount, formatRelativeTime(sess.UpdatedAt))
+}
+
+// truncateToFirstLine extracts the first line and truncates to maxLen
+func truncateToFirstLine(content string, maxLen int) string {
+	content = strings.TrimSpace(content)
+	if first, _, found := strings.Cut(content, "\n"); found {
+		content = first
+	}
+	if len(content) > maxLen {
+		return content[:maxLen-3] + "..."
+	}
+	return content
+}
+
+// getLastUserMessage retrieves the last user message from a session for preview
+func (s *SessionSelectorState) getLastUserMessage(sess *session.SessionMetadata) string {
+	if cached, ok := s.messageCache[sess.ID]; ok {
+		return cached
 	}
 
-	// Vim-style navigation (only when not searching)
-	if s.searchQuery == "" {
-		switch key.String() {
-		case "j":
-			s.MoveDown()
-			return nil
-		case "k":
-			s.MoveUp()
-			return nil
+	if s.store == nil {
+		return ""
+	}
+
+	fullSession, err := s.store.Load(sess.ID)
+	if err != nil {
+		return ""
+	}
+
+	for i := len(fullSession.Messages) - 1; i >= 0; i-- {
+		msg := fullSession.Messages[i]
+		if msg.Role == "user" && msg.Content != "" {
+			maxLen := calculateMessagePreviewLength(s.width)
+			content := truncateToFirstLine(msg.Content, maxLen)
+			s.messageCache[sess.ID] = content
+			return content
 		}
 	}
 
-	return nil
+	return ""
+}
+
+// renderSession renders a single session in compact 2-line format
+func (s *SessionSelectorState) renderSession(sess *session.SessionMetadata, isSelected bool, sb *strings.Builder, boxWidth int) {
+	titleStyle, indent := selectorItemStyle, "  "
+	if isSelected {
+		titleStyle, indent = selectorSelectedStyle, "> "
+	}
+
+	metadata := formatCompactMetadata(sess)
+	title := truncateWithEllipsis(sess.Title, boxWidth-len(indent)-len(" · ")-len(metadata)-2)
+	sb.WriteString(titleStyle.Render(fmt.Sprintf("%s%s · %s", indent, title, metadata)) + "\n")
+
+	if lastMsg := s.getLastUserMessage(sess); lastMsg != "" {
+		previewStyle := lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
+		sb.WriteString(previewStyle.Render(fmt.Sprintf("    \"%s\"", lastMsg)))
+	}
+	sb.WriteString("\n\n")
 }
 
 // Render renders the session selector
@@ -202,112 +283,67 @@ func (s *SessionSelectorState) Render() string {
 
 	var sb strings.Builder
 
-	// Title with count
-	title := fmt.Sprintf("Resume Session (%d/%d)", len(s.filtered), len(s.sessions))
-	sb.WriteString(selectorTitleStyle.Render(title))
-	sb.WriteString("\n")
+	// Title with project name and count
+	title := fmt.Sprintf("Resume Session - %s (%d/%d)", filepath.Base(s.cwd), len(s.filtered), len(s.sessions))
+	sb.WriteString(selectorTitleStyle.Render(title) + "\n")
 
-	// Search input box
-	if s.searchQuery == "" {
-		sb.WriteString(selectorHintStyle.Render("Type to filter..."))
-	} else {
-		sb.WriteString(selectorBreadcrumbStyle.Render("> " + s.searchQuery + "_"))
+	// Search input
+	searchLine := "🔍 Type to filter..."
+	searchStyle := selectorHintStyle
+	if s.searchQuery != "" {
+		searchLine = "> " + s.searchQuery + "_"
+		searchStyle = selectorBreadcrumbStyle
 	}
-	sb.WriteString("\n\n")
+	sb.WriteString(searchStyle.Render(searchLine) + "\n\n")
 
-	// Handle empty results
 	if len(s.filtered) == 0 {
-		sb.WriteString(selectorHintStyle.Render("  No sessions match the filter"))
-		sb.WriteString("\n")
+		sb.WriteString(selectorHintStyle.Render("  No sessions match the filter") + "\n")
 	} else {
-		// Calculate visible range
-		endIdx := s.scrollOffset + s.maxVisible
-		if endIdx > len(s.filtered) {
-			endIdx = len(s.filtered)
-		}
-
-		// Show scroll up indicator
-		if s.scrollOffset > 0 {
-			sb.WriteString(selectorHintStyle.Render("  ↑ more above"))
-			sb.WriteString("\n")
-		}
-
-		// Render visible sessions
-		dateStyle := lipgloss.NewStyle().Foreground(CurrentTheme.TextDim)
-		countStyle := lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
+		endIdx := min(s.scrollOffset+s.maxVisible, len(s.filtered))
+		s.renderScrollIndicator(&sb, s.scrollOffset > 0, "↑ more above")
 
 		for i := s.scrollOffset; i < endIdx; i++ {
-			sess := s.filtered[i]
-
-			// Format: Title (date) [messages]
-			dateStr := formatRelativeTime(sess.UpdatedAt)
-			msgCount := fmt.Sprintf("[%d msgs]", sess.MessageCount)
-
-			// Truncate title if needed (larger than standard selectors)
-			maxTitleLen := 60
-			title := sess.Title
-			if len(title) > maxTitleLen {
-				title = title[:maxTitleLen-3] + "..."
-			}
-
-			line := fmt.Sprintf("%s %s %s",
-				title,
-				dateStyle.Render(dateStr),
-				countStyle.Render(msgCount),
-			)
-
-			if i == s.selectedIdx {
-				sb.WriteString(selectorSelectedStyle.Render("> " + line))
-			} else {
-				sb.WriteString(selectorItemStyle.Render("  " + line))
-			}
-			sb.WriteString("\n")
+			s.renderSession(s.filtered[i], i == s.selectedIdx, &sb, s.width)
 		}
 
-		// Show scroll down indicator
-		if endIdx < len(s.filtered) {
-			sb.WriteString(selectorHintStyle.Render("  ↓ more below"))
-			sb.WriteString("\n")
-		}
+		s.renderScrollIndicator(&sb, endIdx < len(s.filtered), "↓ more below")
 	}
 
-	sb.WriteString("\n")
-	sb.WriteString(selectorHintStyle.Render("↑/↓ navigate · Enter select · Esc clear/cancel"))
+	sb.WriteString("\n" + selectorHintStyle.Render("↑/↓ navigate · Enter select · Esc clear/cancel"))
+	return sb.String()
+}
 
-	// Wrap in border (use larger width for session selector)
-	content := sb.String()
-	box := selectorBorderStyle.Width(calculateSessionBoxWidth(s.width)).Render(content)
-
-	// Center the box
-	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)
+// renderScrollIndicator writes a scroll indicator if the condition is true
+func (s *SessionSelectorState) renderScrollIndicator(sb *strings.Builder, show bool, text string) {
+	if show {
+		sb.WriteString(selectorHintStyle.Render("  "+text) + "\n")
+	}
 }
 
 // formatRelativeTime formats a time as a relative string (e.g., "2h ago", "yesterday")
 func formatRelativeTime(t time.Time) string {
-	now := time.Now()
-	diff := now.Sub(t)
+	diff := time.Since(t)
 
 	switch {
 	case diff < time.Minute:
 		return "just now"
 	case diff < time.Hour:
-		mins := int(diff.Minutes())
-		if mins == 1 {
-			return "1 min ago"
-		}
-		return fmt.Sprintf("%d mins ago", mins)
+		return pluralize(int(diff.Minutes()), "min") + " ago"
 	case diff < 24*time.Hour:
-		hours := int(diff.Hours())
-		if hours == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", hours)
+		return pluralize(int(diff.Hours()), "hour") + " ago"
 	case diff < 48*time.Hour:
 		return "yesterday"
 	case diff < 7*24*time.Hour:
-		days := int(diff.Hours() / 24)
-		return fmt.Sprintf("%d days ago", days)
+		return fmt.Sprintf("%d days ago", int(diff.Hours()/24))
 	default:
 		return t.Format("Jan 2")
 	}
+}
+
+// pluralize returns "1 unit" or "n units" based on count
+func pluralize(n int, unit string) string {
+	if n == 1 {
+		return "1 " + unit
+	}
+	return fmt.Sprintf("%d %ss", n, unit)
 }

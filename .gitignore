@@ -1,4 +1,5 @@
 # Binary
+bin/
 /gen
 gen_*
 *.tar.gz

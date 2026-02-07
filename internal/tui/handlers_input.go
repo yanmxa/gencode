@@ -174,13 +174,9 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleCtrlO() (tea.Model, tea.Cmd) {
+	// Handle permission prompt preview toggle
 	if m.permissionPrompt != nil && m.permissionPrompt.IsActive() {
-		if m.permissionPrompt.diffPreview != nil {
-			m.permissionPrompt.diffPreview.ToggleExpand()
-		}
-		if m.permissionPrompt.bashPreview != nil {
-			m.permissionPrompt.bashPreview.ToggleExpand()
-		}
+		m.togglePermissionPreview()
 		return m, nil
 	}
 
@@ -214,24 +210,27 @@ func (m *model) handleCtrlO() (tea.Model, tea.Cmd) {
 
 	// Single tap: toggle most recent expandable item
 	m.lastCtrlOTime = now
+	m.toggleMostRecentExpandable()
+	m.viewport.SetContent(m.renderMessages())
+	return m, nil
+}
+
+// toggleMostRecentExpandable toggles the expansion state of the most recent expandable message.
+func (m *model) toggleMostRecentExpandable() {
 	for i := len(m.messages) - 1; i >= 0; i-- {
-		if m.messages[i].isSummary {
-			m.messages[i].expanded = !m.messages[i].expanded
-			m.viewport.SetContent(m.renderMessages())
-			return m, nil
-		}
-		if m.messages[i].toolResult != nil {
-			m.messages[i].expanded = !m.messages[i].expanded
-			m.viewport.SetContent(m.renderMessages())
-			return m, nil
-		}
-		if len(m.messages[i].toolCalls) > 0 {
-			m.messages[i].toolCallsExpanded = !m.messages[i].toolCallsExpanded
-			m.viewport.SetContent(m.renderMessages())
-			return m, nil
+		msg := &m.messages[i]
+		switch {
+		case msg.isSummary:
+			msg.expanded = !msg.expanded
+			return
+		case msg.toolResult != nil:
+			msg.expanded = !msg.expanded
+			return
+		case len(msg.toolCalls) > 0:
+			msg.toolCallsExpanded = !msg.toolCallsExpanded
+			return
 		}
 	}
-	return m, nil
 }
 
 func (m *model) handleStreamCancel() (tea.Model, tea.Cmd) {
@@ -241,55 +240,60 @@ func (m *model) handleStreamCancel() (tea.Model, tea.Cmd) {
 	m.cancelFunc = nil
 	m.buildingToolName = ""
 
+	// Cancel pending tool calls
+	m.cancelPendingToolCalls()
+
+	// Mark the last assistant message as interrupted
+	m.markLastAssistantInterrupted()
+
+	m.viewport.SetContent(m.renderMessages())
+	return m, nil
+}
+
+// cancelPendingToolCalls adds cancellation messages for pending tool calls.
+func (m *model) cancelPendingToolCalls() {
+	var toolCalls []provider.ToolCall
+
 	if m.pendingToolCalls != nil {
-		for i := m.pendingToolIdx; i < len(m.pendingToolCalls); i++ {
-			tc := m.pendingToolCalls[i]
-			m.messages = append(m.messages, chatMessage{
-				role:     roleUser,
-				toolName: tc.Name,
-				toolResult: &provider.ToolResult{
-					ToolCallID: tc.ID,
-					Content:    "Tool execution cancelled by user",
-					IsError:    true,
-				},
-			})
-		}
+		toolCalls = m.pendingToolCalls[m.pendingToolIdx:]
 		m.pendingToolCalls = nil
 		m.pendingToolIdx = 0
 	} else if len(m.messages) > 0 {
-		idx := len(m.messages) - 1
-		lastMsg := m.messages[idx]
-		if lastMsg.role == roleAssistant && len(lastMsg.toolCalls) > 0 {
-			for _, tc := range lastMsg.toolCalls {
-				m.messages = append(m.messages, chatMessage{
-					role:     roleUser,
-					toolName: tc.Name,
-					toolResult: &provider.ToolResult{
-						ToolCallID: tc.ID,
-						Content:    "Tool execution cancelled by user",
-						IsError:    true,
-					},
-				})
-			}
+		lastMsg := m.messages[len(m.messages)-1]
+		if lastMsg.role == roleAssistant {
+			toolCalls = lastMsg.toolCalls
 		}
 	}
 
-	if len(m.messages) > 0 {
-		for i := len(m.messages) - 1; i >= 0; i-- {
-			if m.messages[i].role == roleAssistant {
-				if len(m.messages[i].toolCalls) == 0 {
-					if m.messages[i].content == "" {
-						m.messages[i].content = "[Interrupted]"
-					} else {
-						m.messages[i].content += " [Interrupted]"
-					}
-				}
-				break
+	for _, tc := range toolCalls {
+		m.messages = append(m.messages, chatMessage{
+			role:     roleUser,
+			toolName: tc.Name,
+			toolResult: &provider.ToolResult{
+				ToolCallID: tc.ID,
+				Content:    "Tool execution cancelled by user",
+				IsError:    true,
+			},
+		})
+	}
+}
+
+// markLastAssistantInterrupted marks the last assistant message as interrupted if it has no tool calls.
+func (m *model) markLastAssistantInterrupted() {
+	for i := len(m.messages) - 1; i >= 0; i-- {
+		msg := &m.messages[i]
+		if msg.role != roleAssistant {
+			continue
+		}
+		if len(msg.toolCalls) == 0 {
+			if msg.content == "" {
+				msg.content = "[Interrupted]"
+			} else {
+				msg.content += " [Interrupted]"
 			}
 		}
+		return
 	}
-	m.viewport.SetContent(m.renderMessages())
-	return m, nil
 }
 
 func (m *model) handleHistoryUp() (tea.Model, tea.Cmd) {
@@ -422,7 +426,7 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		if m.pendingSessionSelector {
 			m.pendingSessionSelector = false
 			if m.sessionStore != nil {
-				_ = m.sessionSelector.EnterSessionSelect(m.width, m.height, m.sessionStore)
+				_ = m.sessionSelector.EnterSessionSelect(m.width, m.height, m.sessionStore, m.cwd)
 			}
 		}
 	} else {
@@ -509,4 +513,14 @@ func (m *model) checkPromptHook(prompt string) (bool, string) {
 	}
 	outcome := m.hookEngine.Execute(context.Background(), hooks.UserPromptSubmit, hooks.HookInput{Prompt: prompt})
 	return outcome.ShouldBlock, outcome.BlockReason
+}
+
+// togglePermissionPreview toggles the expand state of permission prompt previews.
+func (m *model) togglePermissionPreview() {
+	if m.permissionPrompt.diffPreview != nil {
+		m.permissionPrompt.diffPreview.ToggleExpand()
+	}
+	if m.permissionPrompt.bashPreview != nil {
+		m.permissionPrompt.bashPreview.ToggleExpand()
+	}
 }

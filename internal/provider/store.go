@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 )
@@ -24,7 +23,6 @@ type ConnectionInfo struct {
 type ModelCache struct {
 	CachedAt time.Time   `json:"cachedAt"`
 	Models   []ModelInfo `json:"models"`
-	NoExpire bool        `json:"noExpire,omitempty"` // Skip TTL for providers without API
 }
 
 // CurrentModelInfo stores the current model with its provider info
@@ -51,9 +49,9 @@ type StoreData struct {
 
 // Store manages provider configuration persistence
 type Store struct {
-	mu       sync.RWMutex
-	path     string
-	data     StoreData
+	mu   sync.RWMutex
+	path string
+	data StoreData
 }
 
 // NewStore creates a new Store instance
@@ -181,25 +179,14 @@ func (s *Store) GetConnections() map[string]ConnectionInfo {
 }
 
 // CacheModels saves model information for a provider.
-// If noExpire is true, the cache will never expire (for providers without list API).
-func (s *Store) CacheModels(provider Provider, authMethod AuthMethod, models []ModelInfo, noExpire ...bool) error {
+func (s *Store) CacheModels(provider Provider, authMethod AuthMethod, models []ModelInfo) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	key := makeModelCacheKey(provider, authMethod)
-
-	// Determine noExpire value: explicit parameter > preserve existing > false
-	expire := false
-	if len(noExpire) > 0 {
-		expire = noExpire[0]
-	} else if existing, ok := s.data.Models[key]; ok {
-		expire = existing.NoExpire
-	}
-
 	s.data.Models[key] = ModelCache{
 		CachedAt: time.Now(),
 		Models:   models,
-		NoExpire: expire,
 	}
 
 	return s.save()
@@ -214,8 +201,7 @@ func (s *Store) GetCachedModels(provider Provider, authMethod AuthMethod) ([]Mod
 	if !ok {
 		return nil, false
 	}
-	// Skip TTL check if NoExpire is set OR provider uses static model list
-	if !cache.NoExpire && !provider.UsesStaticModelList() && time.Since(cache.CachedAt) > ModelCacheTTL {
+	if time.Since(cache.CachedAt) > ModelCacheTTL {
 		return nil, false
 	}
 
@@ -234,15 +220,7 @@ func (s *Store) GetAllCachedModels() map[string][]ModelInfo {
 
 	result := make(map[string][]ModelInfo)
 	for key, cache := range s.data.Models {
-		// Extract provider from key (format: "provider:authMethod")
-		providerName := key
-		if idx := strings.Index(key, ":"); idx > 0 {
-			providerName = key[:idx]
-		}
-		provider := Provider(providerName)
-
-		// Skip expired caches (unless NoExpire is set or provider uses static model list)
-		if !cache.NoExpire && !provider.UsesStaticModelList() && time.Since(cache.CachedAt) > ModelCacheTTL {
+		if time.Since(cache.CachedAt) > ModelCacheTTL {
 			continue
 		}
 		result[key] = cache.Models
