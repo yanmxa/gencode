@@ -231,13 +231,6 @@ func (p *PlanPrompt) HandleKeypress(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 
-	case tea.KeyPgUp, tea.KeyCtrlU:
-		// Let the main viewport handle scrolling (return nil to pass through)
-		return nil
-
-	case tea.KeyPgDown, tea.KeyCtrlD:
-		// Let the main viewport handle scrolling (return nil to pass through)
-		return nil
 	}
 
 	// Handle number key shortcuts

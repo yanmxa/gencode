@@ -247,20 +247,30 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 
 	tc := m.pendingToolCalls[m.pendingToolIdx]
 
-	if m.planStore == nil {
-		m.planStore, _ = plan.NewStore()
+	// Extract plan content once
+	planContent := msg.ModifiedPlan
+	if planContent == "" && msg.Request != nil {
+		planContent = msg.Request.Plan
 	}
-	if m.planStore != nil {
-		planContent := msg.ModifiedPlan
-		if planContent == "" && msg.Request != nil {
-			planContent = msg.Request.Plan
+
+	// Save the plan (skip for "modify" which feeds back into plan mode)
+	if msg.ApproveMode != "modify" {
+		if m.planStore == nil {
+			m.planStore, _ = plan.NewStore()
 		}
-		savedPlan := &plan.Plan{
-			Task:    m.planTask,
-			Status:  plan.StatusApproved,
-			Content: planContent,
+		if m.planStore != nil {
+			savedPlan := &plan.Plan{
+				Task:    m.planTask,
+				Status:  plan.StatusApproved,
+				Content: planContent,
+			}
+			if _, err := m.planStore.Save(savedPlan); err != nil {
+				m.messages = append(m.messages, chatMessage{
+					role:    roleNotice,
+					content: fmt.Sprintf("Warning: failed to save plan: %v", err),
+				})
+			}
 		}
-		m.planStore.Save(savedPlan)
 	}
 
 	switch msg.ApproveMode {
@@ -277,10 +287,6 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 		m.pendingToolCalls = nil
 		m.pendingToolIdx = 0
 
-		planContent := msg.ModifiedPlan
-		if planContent == "" && msg.Request != nil {
-			planContent = msg.Request.Plan
-		}
 		userMsg := fmt.Sprintf("Please implement the following plan:\n\n%s", planContent)
 		m.messages = append(m.messages, chatMessage{role: roleUser, content: userMsg})
 
@@ -319,13 +325,15 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 			m.sessionPermissions.AllowPattern(pattern)
 		}
 		m.operationMode = modeAutoAccept
+		m.planMode = false
 	case "manual":
 		m.operationMode = modeNormal
+		m.planMode = false
 	case "modify":
-		m.operationMode = modeNormal
+		// Stay in plan mode — LLM will revise the plan based on user feedback
+		m.operationMode = modePlan
 	}
 
-	m.planMode = false
 	return m, executeInteractiveTool(tc, msg.Response, m.cwd)
 }
 
@@ -345,6 +353,9 @@ func (m *model) handleEnterPlanResponse(msg EnterPlanResponseMsg) (tea.Model, te
 		// User approved entering plan mode
 		m.planMode = true
 		m.operationMode = modePlan
+		if msg.Request != nil && msg.Request.Message != "" {
+			m.planTask = msg.Request.Message
+		}
 		if m.planStore == nil {
 			m.planStore, _ = plan.NewStore()
 		}

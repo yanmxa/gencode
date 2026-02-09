@@ -80,12 +80,28 @@ func (t *ExitPlanModeTool) ExecuteWithResponse(ctx context.Context, params map[s
 		}
 	}
 
+	// Handle "modify" — user gave feedback, stay in plan mode
+	if resp.ApproveMode == "modify" {
+		output := "The user wants changes to the plan. You are still in plan mode. Please revise your plan based on the user's feedback below, then call ExitPlanMode again with the updated plan.\n\n"
+		if resp.ModifiedPlan != "" {
+			output += resp.ModifiedPlan
+		}
+		return ui.ToolResult{
+			Success: true,
+			Output:  output,
+			Metadata: ui.ResultMetadata{
+				Title:    "ExitPlanMode",
+				Icon:     "📋",
+				Subtitle: "Revision requested",
+			},
+		}
+	}
+
 	// Format response based on approval mode
 	modeDesc := map[string]string{
 		"clear-auto": "Plan approved. Context cleared. Auto-accept mode enabled for edits.",
 		"auto":       "Plan approved. Auto-accept mode enabled for edits.",
 		"manual":     "Plan approved. Manual approval mode - each change requires confirmation.",
-		"modify":     "Plan modified and approved.",
 	}
 
 	description, exists := modeDesc[resp.ApproveMode]

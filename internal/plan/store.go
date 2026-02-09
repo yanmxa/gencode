@@ -15,7 +15,6 @@ type PlanStatus string
 const (
 	StatusDraft    PlanStatus = "draft"
 	StatusApproved PlanStatus = "approved"
-	StatusExecuted PlanStatus = "executed"
 )
 
 // Plan represents a saved implementation plan
@@ -214,7 +213,7 @@ func unescapeYAML(s string) string {
 
 // ValidatePlanID checks if a plan ID is valid
 func ValidatePlanID(id string) bool {
-	// Must match pattern: word-word-word
-	pattern := regexp.MustCompile(`^[a-z]+-[a-z]+-[a-z]+$`)
+	// Must match pattern: YYYYMMDD-keyword-keyword... or keyword-keyword-keyword
+	pattern := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)+$`)
 	return pattern.MatchString(id)
 }
