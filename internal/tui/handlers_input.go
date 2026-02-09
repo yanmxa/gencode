@@ -411,6 +411,9 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
 
+	// Update markdown renderer before rendering any content
+	m.mdRenderer = createMarkdownRenderer(msg.Width)
+
 	if !m.ready {
 		m.viewport = newViewport(msg.Width, msg.Height-5)
 		// If resuming a session with messages, render them instead of welcome
@@ -431,11 +434,13 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		}
 	} else {
 		m.viewport.Width = msg.Width
+		// Re-render messages with updated wrap width
+		if len(m.messages) > 0 {
+			m.viewport.SetContent(m.renderMessages())
+		}
 	}
 	m.updateViewportHeight()
 	m.textarea.SetWidth(msg.Width - 4 - 2)
-
-	m.mdRenderer = createMarkdownRenderer(msg.Width)
 
 	return m, nil
 }
