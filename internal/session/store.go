@@ -140,6 +140,23 @@ func (s *Store) GetLatest() (*Session, error) {
 	return s.Load(sessions[0].ID)
 }
 
+// GetLatestByCwd returns the most recently updated session for the given working directory
+func (s *Store) GetLatestByCwd(cwd string) (*Session, error) {
+	sessions, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+
+	// Sessions are already sorted by update time (newest first)
+	for _, meta := range sessions {
+		if meta.Cwd == cwd {
+			return s.Load(meta.ID)
+		}
+	}
+
+	return nil, fmt.Errorf("no sessions found for directory: %s", cwd)
+}
+
 // Delete removes a session file
 func (s *Store) Delete(id string) error {
 	s.mu.Lock()

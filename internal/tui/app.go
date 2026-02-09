@@ -231,8 +231,9 @@ func RunWithContinue() error {
 	}
 	m.sessionStore = sessionStore
 
-	// Load the latest session
-	sess, err := sessionStore.GetLatest()
+	// Load the latest session for the current working directory
+	cwd, _ := os.Getwd()
+	sess, err := sessionStore.GetLatestByCwd(cwd)
 	if err != nil {
 		return fmt.Errorf("no previous session to continue: %w", err)
 	}
