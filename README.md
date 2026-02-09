@@ -49,7 +49,7 @@ go install github.com/yanmxa/gencode/cmd/gen@latest
 git clone https://github.com/yanmxa/gencode.git
 cd gencode
 go build -o gen ./cmd/gen
-sudo mv gen /usr/local/bin/
+mkdir -p ~/.local/bin && mv gen ~/.local/bin/
 ```
 
 </details>

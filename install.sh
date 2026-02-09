@@ -3,7 +3,7 @@ set -e
 
 REPO="yanmxa/gencode"
 BINARY="gen"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="${HOME}/.local/bin"
 
 # Colors
 RED='\033[0;31m'
@@ -74,14 +74,16 @@ do_install() {
     tar -xzf "$TMP_DIR/gen.tar.gz" -C "$TMP_DIR" || error "Extract failed"
 
     # Install
-    if [ -w "$INSTALL_DIR" ]; then
-        mv "$TMP_DIR/$BINARY" "$INSTALL_DIR/"
-    else
-        warn "Requires sudo to install to $INSTALL_DIR"
-        sudo mv "$TMP_DIR/$BINARY" "$INSTALL_DIR/"
+    mkdir -p "$INSTALL_DIR"
+    mv "$TMP_DIR/$BINARY" "$INSTALL_DIR/"
+    chmod +x "$INSTALL_DIR/$BINARY"
+
+    # Hint if not in PATH
+    if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
+        warn "Add $INSTALL_DIR to your PATH:"
+        warn "  export PATH=\"\$HOME/.local/bin:\$PATH\""
     fi
 
-    chmod +x "$INSTALL_DIR/$BINARY"
     info "✓ gen v${VERSION} installed to $INSTALL_DIR/$BINARY"
 }
 
@@ -90,12 +92,7 @@ do_uninstall() {
     
     # Remove binary
     if [ -f "$INSTALL_DIR/$BINARY" ]; then
-        if [ -w "$INSTALL_DIR" ]; then
-            rm "$INSTALL_DIR/$BINARY"
-        else
-            warn "Requires sudo to remove from $INSTALL_DIR"
-            sudo rm "$INSTALL_DIR/$BINARY"
-        fi
+        rm "$INSTALL_DIR/$BINARY"
         info "✓ Removed $INSTALL_DIR/$BINARY"
     else
         warn "Binary not found at $INSTALL_DIR/$BINARY"
