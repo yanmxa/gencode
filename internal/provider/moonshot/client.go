@@ -1,4 +1,10 @@
-// Package moonshot implements the LLMProvider interface using the Moonshot AI platform.
+func (c *Client) handleError(name string, ch chan provider.StreamChunk, err error) {
+	log.LogError(name, err)
+	ch <- provider.StreamChunk{
+		Type:  provider.ChunkTypeError,
+		Error: err,
+	}
+}// Package moonshot implements the LLMProvider interface using the Moonshot AI platform.
 package moonshot
 
 import (
@@ -37,6 +43,10 @@ func (c *Client) Name() string {
 
 // Stream sends a completion request and returns a channel of streaming chunks.
 func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan provider.StreamChunk {
+	return c.stream(ctx, opts)
+}
+
+func (c *Client) stream(ctx context.Context, opts provider.CompletionOptions) <-chan provider.StreamChunk {
 	ch := make(chan provider.StreamChunk)
 
 	go func() {
@@ -45,22 +55,14 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		// Prepare the request payload.
 		payload, err := preparePayload(opts)
 		if err != nil {
-			log.LogError(c.name, err)
-			ch <- provider.StreamChunk{
-				Type:  provider.ChunkTypeError,
-				Error: err,
-			}
+			c.handleError(c.name, ch, err)
 			return
 		}
 
 		// Create the HTTP request.
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint + "/chat/completions", payload)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/chat/completions", payload)
 		if err != nil {
-			log.LogError(c.name, err)
-			ch <- provider.StreamChunk{
-				Type:  provider.ChunkTypeError,
-				Error: err,
-			}
+			c.handleError(c.name, ch, err)
 			return
 		}
 
@@ -72,14 +74,10 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		log.LogRequest(c.name, opts.Model, opts)
 
 		// Make the HTTP request.
-		client := &http.Client{}
-		res, err := client.Do(req)
+		httpClient := &http.Client{}
+		res, err := httpClient.Do(req)
 		if err != nil {
-			log.LogError(c.name, err)
-			ch <- provider.StreamChunk{
-				Type:  provider.ChunkTypeError,
-				Error: err,
-			}
+			c.handleError(c.name, ch, err)
 			return
 		}
 		defer res.Body.Close()
@@ -88,20 +86,13 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		if res.StatusCode != http.StatusOK {
 			bodyBytes, err := io.ReadAll(res.Body)
 			if err != nil {
-				log.LogError(c.name, fmt.Errorf("HTTP error: %s (failed to read response body)", res.Status))
-				ch <- provider.StreamChunk{
-					Type:  provider.ChunkTypeError,
-					Error: fmt.Errorf("HTTP error: %s (failed to read response body)", res.Status),
-				}
+				err = fmt.Errorf("HTTP error: %s (failed to read response body)", res.Status)
+				c.handleError(c.name, ch, err)
 				return
 			}
 			bodyString := string(bodyBytes)
 			err = fmt.Errorf("HTTP error: %s, Body: %s", res.Status, bodyString)
-			log.LogError(c.name, err)
-			ch <- provider.StreamChunk{
-				Type:  provider.ChunkTypeError,
-				Error: err,
-			}
+			c.handleError(c.name, ch, err)
 			return
 		}
 
@@ -121,11 +112,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				if err == io.EOF {
 					break // End of stream
 				}
-				log.LogError(c.name, err)
-				ch <- provider.StreamChunk{
-					Type:  provider.ChunkTypeError,
-					Error: err,
-				}
+				c.handleError(c.name, ch, err)
 				return
 			}
 
@@ -159,6 +146,11 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 	return ch
 }
+type chatCompletionRequest struct {
+	Model    string                   `json:"model"`
+	Messages []map[string]interface{} `json:"messages"`
+	Stream   bool                     `json:"stream"`
+}
 
 // preparePayload prepares the JSON payload for the Moonshot API request.
 func preparePayload(opts provider.CompletionOptions) (io.Reader, error) {
@@ -181,10 +173,11 @@ func preparePayload(opts provider.CompletionOptions) (io.Reader, error) {
 	}
 
 	// Build the payload.
-	payload := map[string]interface{}{}
-	payload["model"] = opts.Model
-	payload["messages"] = messages
-	payload["stream"] = true // Enable streaming
+	payload := chatCompletionRequest{
+		Model:    opts.Model,
+		Messages: messages,
+		Stream:   true,
+	}
 
 	// Convert payload to JSON.
 	jsonPayload, err := json.Marshal(payload)
@@ -192,7 +185,7 @@ func preparePayload(opts provider.CompletionOptions) (io.Reader, error) {
 		return nil, err
 	}
 
-	return io.Reader(strings.NewReader(string(jsonPayload))), nil
+	return strings.NewReader(string(jsonPayload)), nil
 }
 
 // ListModels returns the available models for Moonshot AI.
