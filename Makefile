@@ -11,7 +11,8 @@ build:
 	go build $(LDFLAGS) -o $(BINDIR)/$(BINARY) $(SRCDIR)
 
 install: build
-	sudo cp $(BINDIR)/$(BINARY) /usr/local/bin/
+	@mkdir -p $(HOME)/.local/bin
+	cp $(BINDIR)/$(BINARY) $(HOME)/.local/bin/
 
 clean:
 	rm -rf $(BINDIR)
