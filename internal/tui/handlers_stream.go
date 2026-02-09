@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -193,6 +194,11 @@ func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 			}
 			m.viewport.SetContent(m.renderMessages())
 
+			// Check for auto-compact before continuing the agentic loop
+			if m.shouldAutoCompact() {
+				return m, m.triggerAutoCompact()
+			}
+
 			return m, m.executeTools(msg.toolCalls)
 		}
 
@@ -217,6 +223,19 @@ func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if msg.err != nil {
+		// If the error is "prompt too long", trigger auto-compact and retry
+		if strings.Contains(msg.err.Error(), "prompt is too long") && len(m.messages) >= 3 {
+			// Remove the empty assistant message that was added for streaming
+			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == roleAssistant && m.messages[len(m.messages)-1].content == "" {
+				m.messages = m.messages[:len(m.messages)-1]
+			}
+			m.streaming = false
+			m.streamChan = nil
+			m.cancelFunc = nil
+			m.viewport.SetContent(m.renderMessages())
+			return m, m.triggerAutoCompact()
+		}
+
 		if len(m.messages) > 0 {
 			idx := len(m.messages) - 1
 			m.messages[idx].content += "\n[Error: " + msg.err.Error() + "]"
