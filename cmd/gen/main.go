@@ -19,6 +19,7 @@ import (
 	// Import providers for registration
 	_ "github.com/yanmxa/gencode/internal/provider/anthropic"
 	_ "github.com/yanmxa/gencode/internal/provider/google"
+	_ "github.com/yanmxa/gencode/internal/provider/moonshot"
 	_ "github.com/yanmxa/gencode/internal/provider/openai"
 )
 
@@ -293,6 +294,8 @@ func getDefaultModel(providerName string, authMethod provider.AuthMethod) string
 		return "gpt-4o"
 	case "google":
 		return "gemini-2.0-flash"
+	case "moonshot":
+		return "moonshot-v1-auto"
 	default:
 		return "claude-sonnet-4-20250514"
 	}

@@ -1,38 +1,30 @@
-func (c *Client) handleError(name string, ch chan provider.StreamChunk, err error) {
-	log.LogError(name, err)
-	ch <- provider.StreamChunk{
-		Type:  provider.ChunkTypeError,
-		Error: err,
-	}
-}// Package moonshot implements the LLMProvider interface using the Moonshot AI platform.
+// Package moonshot implements the LLMProvider interface using the Moonshot AI platform.
+// Moonshot's API is OpenAI-compatible, so we reuse the openai-go SDK with a custom base URL.
 package moonshot
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"os"
+	"sort"
+	"strings"
 	"time"
+
+	"github.com/openai/openai-go"
 
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
-// Client implements the LLMProvider interface for Moonshot AI.
+// Client implements the LLMProvider interface for Moonshot AI using the OpenAI SDK.
 type Client struct {
-	apiKey string
+	client openai.Client
 	name   string
-	endpoint string
 }
 
-// NewClient creates a new Moonshot client.
-func NewClient(apiKey string, name string) *Client {
+// NewClient creates a new Moonshot client with the given OpenAI SDK client.
+func NewClient(client openai.Client, name string) *Client {
 	return &Client{
-		apiKey: apiKey,
+		client: client,
 		name:   name,
-		endpoint: "https://api.moonshot.cn/v1", // Placeholder URL
 	}
 }
 
@@ -43,97 +35,184 @@ func (c *Client) Name() string {
 
 // Stream sends a completion request and returns a channel of streaming chunks.
 func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan provider.StreamChunk {
-	return c.stream(ctx, opts)
-}
-
-func (c *Client) stream(ctx context.Context, opts provider.CompletionOptions) <-chan provider.StreamChunk {
 	ch := make(chan provider.StreamChunk)
 
 	go func() {
 		defer close(ch)
 
-		// Prepare the request payload.
-		payload, err := preparePayload(opts)
-		if err != nil {
-			c.handleError(c.name, ch, err)
-			return
+		// Convert messages to OpenAI format
+		messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(opts.Messages)+1)
+
+		// Add system prompt if provided
+		if opts.SystemPrompt != "" {
+			messages = append(messages, openai.SystemMessage(opts.SystemPrompt))
 		}
 
-		// Create the HTTP request.
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/chat/completions", payload)
-		if err != nil {
-			c.handleError(c.name, ch, err)
-			return
+		for _, msg := range opts.Messages {
+			switch msg.Role {
+			case "user":
+				if msg.ToolResult != nil {
+					messages = append(messages, openai.ToolMessage(
+						msg.ToolResult.Content,
+						msg.ToolResult.ToolCallID,
+					))
+				} else {
+					messages = append(messages, openai.UserMessage(msg.Content))
+				}
+			case "assistant":
+				if len(msg.ToolCalls) > 0 {
+					var asstMsg openai.ChatCompletionAssistantMessageParam
+					if msg.Content != "" {
+						asstMsg.Content.OfString = openai.Opt(msg.Content)
+					}
+					asstMsg.ToolCalls = make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls))
+					for i, tc := range msg.ToolCalls {
+						asstMsg.ToolCalls[i] = openai.ChatCompletionMessageToolCallParam{
+							ID: tc.ID,
+							Function: openai.ChatCompletionMessageToolCallFunctionParam{
+								Name:      tc.Name,
+								Arguments: tc.Input,
+							},
+						}
+					}
+					messages = append(messages, openai.ChatCompletionMessageParamUnion{OfAssistant: &asstMsg})
+				} else {
+					messages = append(messages, openai.AssistantMessage(msg.Content))
+				}
+			case "system":
+				messages = append(messages, openai.SystemMessage(msg.Content))
+			}
 		}
 
-		// Set headers.
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-API-KEY", c.apiKey)
+		// Build request params
+		params := openai.ChatCompletionNewParams{
+			Model:    opts.Model,
+			Messages: messages,
+		}
+
+		if opts.MaxTokens > 0 {
+			params.MaxCompletionTokens = openai.Int(int64(opts.MaxTokens))
+		}
+
+		if opts.Temperature > 0 {
+			params.Temperature = openai.Float(opts.Temperature)
+		}
+
+		// Add tools if provided
+		if len(opts.Tools) > 0 {
+			tools := make([]openai.ChatCompletionToolParam, 0, len(opts.Tools))
+			for _, t := range opts.Tools {
+				var funcParams openai.FunctionParameters
+				if props, ok := t.Parameters.(map[string]any); ok {
+					funcParams = props
+				}
+
+				tools = append(tools, openai.ChatCompletionToolParam{
+					Function: openai.FunctionDefinitionParam{
+						Name:        t.Name,
+						Description: openai.String(t.Description),
+						Parameters:  funcParams,
+					},
+				})
+			}
+			params.Tools = tools
+		}
 
 		// Log request
 		log.LogRequest(c.name, opts.Model, opts)
 
-		// Make the HTTP request.
-		httpClient := &http.Client{}
-		res, err := httpClient.Do(req)
-		if err != nil {
-			c.handleError(c.name, ch, err)
-			return
-		}
-		defer res.Body.Close()
+		// Create streaming request
+		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 
-		// Check the response status code.
-		if res.StatusCode != http.StatusOK {
-			bodyBytes, err := io.ReadAll(res.Body)
-			if err != nil {
-				err = fmt.Errorf("HTTP error: %s (failed to read response body)", res.Status)
-				c.handleError(c.name, ch, err)
-				return
-			}
-			bodyString := string(bodyBytes)
-			err = fmt.Errorf("HTTP error: %s, Body: %s", res.Status, bodyString)
-			c.handleError(c.name, ch, err)
-			return
-		}
-
-		// Process the response stream.
-		decoder := json.NewDecoder(res.Body)
+		// Track tool calls
+		toolCalls := make(map[int]*provider.ToolCall)
+		var response provider.CompletionResponse
 
 		// Stream timing and counting
 		streamStart := time.Now()
 		chunkCount := 0
 
-		var response provider.CompletionResponse
-
-		for {
-			var chunk map[string]interface{}
-			err := decoder.Decode(&chunk)
-			if err != nil {
-				if err == io.EOF {
-					break // End of stream
-				}
-				c.handleError(c.name, ch, err)
-				return
-			}
-
+		// Read stream events
+		for stream.Next() {
+			chunk := stream.Current()
 			chunkCount++
 
-			// Extract data from the chunk and send it to the channel.
-			text, ok := chunk["choices"].([]interface{})
-			if ok && len(text) > 0 {
-				content, ok := text[0].(map[string]interface{})["delta"].(map[string]interface{})["content"].(string)
-				if ok {
+			for _, choice := range chunk.Choices {
+				// Handle text delta
+				if choice.Delta.Content != "" {
 					ch <- provider.StreamChunk{
 						Type: provider.ChunkTypeText,
-						Text: content,
+						Text: choice.Delta.Content,
 					}
-					response.Content += content
+					response.Content += choice.Delta.Content
 				}
+
+				// Handle tool calls
+				for _, tc := range choice.Delta.ToolCalls {
+					idx := int(tc.Index)
+
+					if _, exists := toolCalls[idx]; !exists {
+						toolCalls[idx] = &provider.ToolCall{
+							ID:   tc.ID,
+							Name: tc.Function.Name,
+						}
+						ch <- provider.StreamChunk{
+							Type:     provider.ChunkTypeToolStart,
+							ToolID:   tc.ID,
+							ToolName: tc.Function.Name,
+						}
+					}
+
+					if tc.Function.Arguments != "" {
+						toolCalls[idx].Input += tc.Function.Arguments
+						ch <- provider.StreamChunk{
+							Type:   provider.ChunkTypeToolInput,
+							ToolID: toolCalls[idx].ID,
+							Text:   tc.Function.Arguments,
+						}
+					}
+				}
+
+				// Handle finish reason
+				if choice.FinishReason != "" {
+					switch choice.FinishReason {
+					case "stop":
+						response.StopReason = "end_turn"
+					case "tool_calls":
+						response.StopReason = "tool_use"
+					case "length":
+						response.StopReason = "max_tokens"
+					default:
+						response.StopReason = choice.FinishReason
+					}
+				}
+			}
+
+			// Handle usage
+			if chunk.Usage.PromptTokens > 0 {
+				response.Usage.InputTokens = int(chunk.Usage.PromptTokens)
+			}
+			if chunk.Usage.CompletionTokens > 0 {
+				response.Usage.OutputTokens = int(chunk.Usage.CompletionTokens)
 			}
 		}
 
 		// Log stream done
 		log.LogStreamDone(c.name, time.Since(streamStart), chunkCount)
+
+		if err := stream.Err(); err != nil {
+			log.LogError(c.name, err)
+			ch <- provider.StreamChunk{
+				Type:  provider.ChunkTypeError,
+				Error: err,
+			}
+			return
+		}
+
+		// Collect tool calls
+		for _, tc := range toolCalls {
+			response.ToolCalls = append(response.ToolCalls, *tc)
+		}
 
 		// Log response
 		log.LogResponse(c.name, response)
@@ -146,66 +225,44 @@ func (c *Client) stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 	return ch
 }
-type chatCompletionRequest struct {
-	Model    string                   `json:"model"`
-	Messages []map[string]interface{} `json:"messages"`
-	Stream   bool                     `json:"stream"`
+
+// staticModels is the fallback list when the models API is unavailable.
+var staticModels = []provider.ModelInfo{
+	{ID: "moonshot-v1-auto", Name: "moonshot-v1-auto", DisplayName: "Moonshot V1 Auto"},
+	{ID: "moonshot-v1-128k", Name: "moonshot-v1-128k", DisplayName: "Moonshot V1 128K"},
+	{ID: "kimi-k2-0711-preview", Name: "kimi-k2-0711-preview", DisplayName: "Kimi K2 0711 Preview"},
+	{ID: "kimi-k2-0905-preview", Name: "kimi-k2-0905-preview", DisplayName: "Kimi K2 0905 Preview"},
 }
 
-// preparePayload prepares the JSON payload for the Moonshot API request.
-func preparePayload(opts provider.CompletionOptions) (io.Reader, error) {
-	// Convert messages to the expected format.
-	messages := make([]map[string]interface{}, 0, len(opts.Messages))
-	for _, msg := range opts.Messages {
-		message := map[string]interface{}{}
-		switch msg.Role {
-		case "user":
-			message["role"] = "user"
-			message["content"] = msg.Content
-		case "assistant":
-			message["role"] = "assistant"
-			message["content"] = msg.Content
-		case "system":
-			message["role"] = "system"
-			message["content"] = msg.Content
-		}
-		messages = append(messages, message)
-	}
-
-	// Build the payload.
-	payload := chatCompletionRequest{
-		Model:    opts.Model,
-		Messages: messages,
-		Stream:   true,
-	}
-
-	// Convert payload to JSON.
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	return strings.NewReader(string(jsonPayload)), nil
-}
-
-// ListModels returns the available models for Moonshot AI.
+// ListModels returns the available models for Moonshot AI using the API.
 func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
-	// In the absence of an API endpoint, return a hardcoded list of models.
-	models := []provider.ModelInfo{
-		{ID: "moonshot-standard", Name: "Moonshot Standard", DisplayName: "Moonshot Standard"},
-		{ID: "moonshot-pro", Name: "Moonshot Pro", DisplayName: "Moonshot Pro"},
+	page, err := c.client.Models.List(ctx)
+	if err != nil {
+		// Fall back to static models if API call fails
+		return staticModels, err
 	}
+
+	models := make([]provider.ModelInfo, 0)
+	for _, m := range page.Data {
+		id := m.ID
+		if strings.HasPrefix(id, "moonshot-v1-") || strings.HasPrefix(id, "kimi-") {
+			models = append(models, provider.ModelInfo{
+				ID:          id,
+				Name:        id,
+				DisplayName: id,
+			})
+		}
+	}
+
+	if len(models) == 0 {
+		return staticModels, nil
+	}
+
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].ID < models[j].ID
+	})
+
 	return models, nil
-}
-
-// NewAPIKeyClient creates a new Moonshot client using API Key authentication
-func NewAPIKeyClient(ctx context.Context) (provider.LLMProvider, error) {
-	apiKey := os.Getenv("MOONSHOT_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("MOONSHOT_API_KEY environment variable is not set")
-	}
-
-	return NewClient(apiKey, "moonshot:api_key"), nil
 }
 
 // Ensure Client implements LLMProvider

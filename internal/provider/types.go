@@ -11,6 +11,7 @@ const (
 	ProviderAnthropic Provider = "anthropic"
 	ProviderOpenAI    Provider = "openai"
 	ProviderGoogle    Provider = "google"
+	ProviderMoonshot  Provider = "moonshot"
 )
 
 // AuthMethod represents an authentication method

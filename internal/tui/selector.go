@@ -239,11 +239,13 @@ func (s *SelectorState) EnterProviderSelect(width, height int) error {
 		provider.ProviderAnthropic,
 		provider.ProviderOpenAI,
 		provider.ProviderGoogle,
+		provider.ProviderMoonshot,
 	}
 	displayNames := map[provider.Provider]string{
 		provider.ProviderAnthropic: "Anthropic",
 		provider.ProviderOpenAI:    "OpenAI",
 		provider.ProviderGoogle:    "Google",
+		provider.ProviderMoonshot:  "Moonshot",
 	}
 
 	for _, p := range providerOrder {
