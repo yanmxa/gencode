@@ -749,6 +749,9 @@ func extractToolArgs(input string) string {
 	if p, ok := params["path"].(string); ok {
 		return p
 	}
+	if u, ok := params["url"].(string); ok {
+		return u
+	}
 
 	keys := make([]string, 0, len(params))
 	for k := range params {
