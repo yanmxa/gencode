@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -382,7 +384,7 @@ func newModel() model {
 		llmProvider:        llmProvider,
 		store:              store,
 		currentModel:       currentModel,
-		inputHistory:       []string{},
+		inputHistory:       loadInputHistory(cwd),
 		historyIndex:       -1,
 		cwd:                cwd,
 		mdRenderer:         mdRenderer,
@@ -847,6 +849,65 @@ func (m *model) cycleOperationMode() {
 
 	// Recalculate viewport height when mode changes
 	m.updateViewportHeight()
+}
+
+const maxHistoryEntries = 500
+
+func historyFilePath(cwd string) string {
+	return filepath.Join(cwd, ".gen", "history")
+}
+
+func loadInputHistory(cwd string) []string {
+	path := historyFilePath(cwd)
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	var history []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Unescape newlines
+		entry := strings.ReplaceAll(line, "\\n", "\n")
+		entry = strings.ReplaceAll(entry, "\\\\", "\\")
+		if entry != "" {
+			history = append(history, entry)
+		}
+	}
+	// Keep only the last maxHistoryEntries
+	if len(history) > maxHistoryEntries {
+		history = history[len(history)-maxHistoryEntries:]
+	}
+	return history
+}
+
+func saveInputHistory(cwd string, history []string) {
+	path := historyFilePath(cwd)
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	// Keep only the last maxHistoryEntries
+	entries := history
+	if len(entries) > maxHistoryEntries {
+		entries = entries[len(entries)-maxHistoryEntries:]
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	w := bufio.NewWriter(f)
+	for _, entry := range entries {
+		// Escape backslashes first, then newlines
+		escaped := strings.ReplaceAll(entry, "\\", "\\\\")
+		escaped = strings.ReplaceAll(escaped, "\n", "\\n")
+		fmt.Fprintln(w, escaped)
+	}
+	w.Flush()
 }
 
 func (m *model) updateViewportHeight() {

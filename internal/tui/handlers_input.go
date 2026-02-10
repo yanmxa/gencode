@@ -357,6 +357,7 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 	m.inputHistory = append(m.inputHistory, input)
 	m.historyIndex = -1
 	m.tempInput = ""
+	saveInputHistory(m.cwd, m.inputHistory)
 
 	if result, isCmd := ExecuteCommand(context.Background(), m, input); isCmd {
 		m.textarea.Reset()
