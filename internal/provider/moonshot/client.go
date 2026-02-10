@@ -4,6 +4,7 @@ package moonshot
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 	"time"
@@ -60,11 +61,11 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					messages = append(messages, openai.UserMessage(msg.Content))
 				}
 			case "assistant":
+				var asstMsg openai.ChatCompletionAssistantMessageParam
+				if msg.Content != "" {
+					asstMsg.Content.OfString = openai.Opt(msg.Content)
+				}
 				if len(msg.ToolCalls) > 0 {
-					var asstMsg openai.ChatCompletionAssistantMessageParam
-					if msg.Content != "" {
-						asstMsg.Content.OfString = openai.Opt(msg.Content)
-					}
 					asstMsg.ToolCalls = make([]openai.ChatCompletionMessageToolCallUnionParam, len(msg.ToolCalls))
 					for i, tc := range msg.ToolCalls {
 						asstMsg.ToolCalls[i] = openai.ChatCompletionMessageToolCallUnionParam{
@@ -77,10 +78,11 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 							},
 						}
 					}
-					messages = append(messages, openai.ChatCompletionMessageParamUnion{OfAssistant: &asstMsg})
-				} else {
-					messages = append(messages, openai.AssistantMessage(msg.Content))
 				}
+				// Use saved thinking content if available, otherwise empty string
+				// Moonshot requires reasoning_content for all assistant messages when thinking is enabled
+				asstMsg.SetExtraFields(map[string]any{"reasoning_content": msg.Thinking})
+				messages = append(messages, openai.ChatCompletionMessageParamUnion{OfAssistant: &asstMsg})
 			case "system":
 				messages = append(messages, openai.SystemMessage(msg.Content))
 			}
@@ -91,6 +93,12 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 			Model:    opts.Model,
 			Messages: messages,
 		}
+
+		// Enable thinking mode for Kimi thinking models
+		// The reasoning_content will be captured and replayed in multi-turn conversations
+		params.SetExtraFields(map[string]any{
+			"thinking": map[string]any{"type": "enabled"},
+		})
 
 		if opts.MaxTokens > 0 {
 			params.MaxCompletionTokens = openai.Int(int64(opts.MaxTokens))
@@ -142,6 +150,24 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 			chunkCount++
 
 			for _, choice := range chunk.Choices {
+				// Handle reasoning_content (thinking) for Kimi thinking models
+				// Parse the raw JSON to extract reasoning_content since it's not in the SDK struct
+				rawJSON := choice.Delta.RawJSON()
+				if rawJSON != "" {
+					var deltaMap map[string]any
+					if err := json.Unmarshal([]byte(rawJSON), &deltaMap); err == nil {
+						if rc, ok := deltaMap["reasoning_content"]; ok && rc != nil {
+							if content, ok := rc.(string); ok && content != "" {
+								ch <- provider.StreamChunk{
+									Type: provider.ChunkTypeThinking,
+									Text: content,
+								}
+								response.Thinking += content
+							}
+						}
+					}
+				}
+
 				// Handle text delta
 				if choice.Delta.Content != "" {
 					ch <- provider.StreamChunk{

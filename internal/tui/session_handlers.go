@@ -95,6 +95,8 @@ func convertToStoredMessages(messages []chatMessage) []session.StoredMessage {
 		stored = append(stored, session.StoredMessage{
 			Role:       msg.role,
 			Content:    msg.content,
+			Thinking:   msg.thinking,
+			Images:     msg.images,
 			ToolCalls:  msg.toolCalls,
 			ToolResult: msg.toolResult,
 			ToolName:   msg.toolName,
@@ -111,6 +113,8 @@ func convertFromStoredMessages(stored []session.StoredMessage) []chatMessage {
 		messages = append(messages, chatMessage{
 			role:       sm.Role,
 			content:    sm.Content,
+			thinking:   sm.Thinking,
+			images:     sm.Images,
 			toolCalls:  sm.ToolCalls,
 			toolResult: sm.ToolResult,
 			toolName:   sm.ToolName,

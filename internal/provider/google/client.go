@@ -2,6 +2,7 @@ package google
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"sort"
@@ -88,6 +89,29 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 							Args: args,
 						},
 					})
+				}
+			} else if len(msg.ContentParts) > 0 {
+				// Multimodal message with images
+				for _, part := range msg.ContentParts {
+					switch part.Type {
+					case provider.ContentTypeImage:
+						if part.Image != nil {
+							// Decode base64 data for Google API
+							decoded, err := base64.StdEncoding.DecodeString(part.Image.Data)
+							if err == nil {
+								parts = append(parts, &genai.Part{
+									InlineData: &genai.Blob{
+										MIMEType: part.Image.MediaType,
+										Data:     decoded,
+									},
+								})
+							}
+						}
+					case provider.ContentTypeText:
+						if part.Text != "" {
+							parts = append(parts, &genai.Part{Text: part.Text})
+						}
+					}
 				}
 			} else {
 				parts = append(parts, &genai.Part{Text: msg.Content})

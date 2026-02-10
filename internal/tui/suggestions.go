@@ -78,8 +78,10 @@ func NewSuggestionState() SuggestionState {
 // Reset resets the suggestion state
 func (s *SuggestionState) Reset() {
 	s.visible = false
-	s.suggestions = []Command{}
+	s.suggestions = nil
+	s.fileSuggestions = nil
 	s.selectedIdx = 0
+	s.atQuery = ""
 }
 
 // UpdateSuggestions updates suggestions based on input
@@ -147,7 +149,17 @@ func (s *SuggestionState) updateFileSuggestions(query string) {
 	}
 }
 
-// scanMarkdownFiles scans for markdown files matching the query.
+// supportedFileExtensions defines file extensions for @ suggestions
+var supportedFileExtensions = map[string]bool{
+	".md":   true,
+	".png":  true,
+	".jpg":  true,
+	".jpeg": true,
+	".gif":  true,
+	".webp": true,
+}
+
+// scanMarkdownFiles scans for markdown and image files matching the query.
 func (s *SuggestionState) scanMarkdownFiles(query string) []FileSuggestion {
 	queryLower := strings.ToLower(query)
 	seen := make(map[string]bool)
@@ -180,7 +192,9 @@ func (s *SuggestionState) scanMarkdownFiles(query string) []FileSuggestion {
 				continue
 			}
 
-			if !strings.HasSuffix(strings.ToLower(name), ".md") {
+			// Check if file has a supported extension
+			ext := strings.ToLower(filepath.Ext(name))
+			if !supportedFileExtensions[ext] {
 				continue
 			}
 
@@ -378,14 +392,14 @@ func (s *SuggestionState) renderCommandSuggestions(width int) string {
 		items = items[:maxItems]
 	}
 
-	maxWidth := maxInt(width-4, 40)
+	maxWidth := max(width-4, 40)
 	boxWidth := clampInt(width*80/100, 40, maxWidth)
-	contentWidth := maxInt(boxWidth-4, 20)
+	contentWidth := max(boxWidth-4, 20)
 
 	var lines []string
 	for i, cmd := range items {
 		cmdName := "/" + cmd.Name
-		maxDescLen := maxInt(contentWidth-len(cmdName)-3, 10)
+		maxDescLen := max(contentWidth-len(cmdName)-3, 10)
 		desc := truncateWithEllipsis(cmd.Description, maxDescLen)
 
 		line := fmt.Sprintf("%s - %s", cmdName, desc)
@@ -401,23 +415,9 @@ func (s *SuggestionState) renderCommandSuggestions(width int) string {
 	return suggestionBoxStyle.Width(boxWidth).Render(content)
 }
 
-// clampInt clamps a value between min and max.
-func clampInt(value, min, max int) int {
-	if value < min {
-		return min
-	}
-	if value > max {
-		return max
-	}
-	return value
-}
-
-// maxInt returns the larger of two integers.
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+// clampInt clamps a value between minVal and maxVal.
+func clampInt(value, minVal, maxVal int) int {
+	return max(minVal, min(value, maxVal))
 }
 
 // truncateWithEllipsis truncates a string and adds ellipsis if needed.

@@ -2,12 +2,15 @@ package tui
 
 import (
 	"context"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
 )
@@ -78,6 +81,28 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// Image selection mode handling
+	if m.imageSelectMode && len(m.pendingImages) > 0 {
+		switch msg.Type {
+		case tea.KeyLeft:
+			if m.selectedImageIdx > 0 {
+				m.selectedImageIdx--
+			}
+			return m, nil
+		case tea.KeyRight:
+			if m.selectedImageIdx < len(m.pendingImages)-1 {
+				m.selectedImageIdx++
+			}
+			return m, nil
+		case tea.KeyDelete, tea.KeyBackspace:
+			m.removePendingImage(m.selectedImageIdx)
+			return m, nil
+		case tea.KeyEsc:
+			m.imageSelectMode = false
+			return m, nil
+		}
+	}
+
 	if m.suggestions.IsVisible() {
 		switch msg.Type {
 		case tea.KeyUp, tea.KeyCtrlP:
@@ -126,7 +151,39 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleCtrlO()
 	}
 
+	// Toggle mouse capture: off for text selection, on for scroll
+	if msg.Type == tea.KeyCtrlB {
+		m.mouseEnabled = !m.mouseEnabled
+		var cmd tea.Cmd
+		if m.mouseEnabled {
+			cmd = tea.EnableMouseCellMotion
+		} else {
+			cmd = tea.DisableMouse
+		}
+		m.updateViewportHeight()
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+		return m, cmd
+	}
+
 	switch msg.Type {
+	case tea.KeyCtrlX:
+		// Remove pending image: selected one in select mode, or last one otherwise
+		if len(m.pendingImages) > 0 {
+			if m.imageSelectMode {
+				m.removePendingImage(m.selectedImageIdx)
+			} else {
+				m.removePendingImage(len(m.pendingImages) - 1)
+			}
+			return m, nil
+		}
+		// No pending images, let textarea handle it
+		return nil, nil
+
+	case tea.KeyCtrlV, tea.KeyCtrlY:
+		// Ctrl+V / Ctrl+Y: Paste image from clipboard
+		return m.pasteImageFromClipboard()
+
 	case tea.KeyCtrlC:
 		if m.textarea.Value() != "" {
 			m.textarea.Reset()
@@ -151,6 +208,12 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyUp:
 		if m.textarea.Line() == 0 {
+			// Enter image select mode if there are pending images
+			if len(m.pendingImages) > 0 && !m.imageSelectMode {
+				m.imageSelectMode = true
+				m.selectedImageIdx = len(m.pendingImages) - 1 // Select last image
+				return m, nil
+			}
 			return m.handleHistoryUp()
 		}
 
@@ -333,7 +396,7 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	input := strings.TrimSpace(m.textarea.Value())
-	if input == "" {
+	if input == "" && len(m.pendingImages) == 0 {
 		return m, nil
 	}
 
@@ -354,10 +417,12 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.inputHistory = append(m.inputHistory, input)
-	m.historyIndex = -1
-	m.tempInput = ""
-	saveInputHistory(m.cwd, m.inputHistory)
+	if input != "" {
+		m.inputHistory = append(m.inputHistory, input)
+		m.historyIndex = -1
+		m.tempInput = ""
+		saveInputHistory(m.cwd, m.inputHistory)
+	}
 
 	if result, isCmd := ExecuteCommand(context.Background(), m, input); isCmd {
 		m.textarea.Reset()
@@ -394,7 +459,20 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.messages = append(m.messages, chatMessage{role: roleUser, content: input})
+	// Process @image.png references
+	content, fileImages, err := m.processImageReferences(input)
+	if err != nil {
+		m.messages = append(m.messages, chatMessage{role: roleNotice, content: "Image error: " + err.Error()})
+		m.viewport.SetContent(m.renderMessages())
+		m.viewport.GotoBottom()
+		return m, nil
+	}
+
+	// Combine pending clipboard images with file reference images
+	allImages := append(m.pendingImages, fileImages...)
+	m.pendingImages = nil // Clear pending images
+
+	m.messages = append(m.messages, chatMessage{role: roleUser, content: content, images: allImages})
 	m.textarea.Reset()
 	m.textarea.SetHeight(minTextareaHeight)
 
@@ -529,4 +607,63 @@ func (m *model) togglePermissionPreview() {
 	if m.permissionPrompt.bashPreview != nil {
 		m.permissionPrompt.bashPreview.ToggleExpand()
 	}
+}
+
+// removePendingImage removes the image at the given index from pendingImages
+// and adjusts selectedImageIdx accordingly. Exits image select mode if no images remain.
+func (m *model) removePendingImage(idx int) {
+	if idx < 0 || idx >= len(m.pendingImages) {
+		return
+	}
+	m.pendingImages = append(m.pendingImages[:idx], m.pendingImages[idx+1:]...)
+	if m.selectedImageIdx >= len(m.pendingImages) && m.selectedImageIdx > 0 {
+		m.selectedImageIdx--
+	}
+	if len(m.pendingImages) == 0 {
+		m.imageSelectMode = false
+	}
+}
+
+// imageRefPattern matches @path/to/image.ext references
+var imageRefPattern = regexp.MustCompile(`@([^\s]+\.(png|jpg|jpeg|gif|webp))`)
+
+// pasteImageFromClipboard handles pasting image from clipboard
+func (m *model) pasteImageFromClipboard() (tea.Model, tea.Cmd) {
+	imgData, err := image.ReadImageToProviderData()
+	if err != nil || imgData == nil {
+		// Silently ignore clipboard errors or empty clipboard
+		return m, nil
+	}
+	m.pendingImages = append(m.pendingImages, *imgData)
+	return m, nil
+}
+
+// processImageReferences extracts @image.png references from input
+// Returns the cleaned text content and any loaded images
+func (m *model) processImageReferences(input string) (string, []provider.ImageData, error) {
+	matches := imageRefPattern.FindAllStringSubmatch(input, -1)
+	if len(matches) == 0 {
+		return input, nil, nil
+	}
+
+	var images []provider.ImageData
+	for _, match := range matches {
+		path := match[1]
+		// Resolve relative to cwd
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(m.cwd, path)
+		}
+
+		imgInfo, err := image.Load(path)
+		if err != nil {
+			return "", nil, err
+		}
+		images = append(images, imgInfo.ToProviderData())
+	}
+
+	// Remove image references from text
+	content := imageRefPattern.ReplaceAllString(input, "")
+	content = strings.TrimSpace(content)
+
+	return content, images, nil
 }

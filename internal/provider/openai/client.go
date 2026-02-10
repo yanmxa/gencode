@@ -305,6 +305,39 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 						msg.ToolResult.Content,
 						msg.ToolResult.ToolCallID,
 					))
+				} else if len(msg.ContentParts) > 0 {
+					// Multimodal message with images
+					parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(msg.ContentParts))
+					for _, part := range msg.ContentParts {
+						switch part.Type {
+						case provider.ContentTypeImage:
+							if part.Image != nil {
+								dataURI := fmt.Sprintf("data:%s;base64,%s", part.Image.MediaType, part.Image.Data)
+								parts = append(parts, openai.ChatCompletionContentPartUnionParam{
+									OfImageURL: &openai.ChatCompletionContentPartImageParam{
+										ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
+											URL: dataURI,
+										},
+									},
+								})
+							}
+						case provider.ContentTypeText:
+							if part.Text != "" {
+								parts = append(parts, openai.ChatCompletionContentPartUnionParam{
+									OfText: &openai.ChatCompletionContentPartTextParam{
+										Text: part.Text,
+									},
+								})
+							}
+						}
+					}
+					messages = append(messages, openai.ChatCompletionMessageParamUnion{
+						OfUser: &openai.ChatCompletionUserMessageParam{
+							Content: openai.ChatCompletionUserMessageParamContentUnion{
+								OfArrayOfContentParts: parts,
+							},
+						},
+					})
 				} else {
 					messages = append(messages, openai.UserMessage(msg.Content))
 				}

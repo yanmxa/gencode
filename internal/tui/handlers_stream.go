@@ -247,11 +247,18 @@ func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if len(m.messages) > 0 && msg.text != "" {
+	if len(m.messages) > 0 {
 		idx := len(m.messages) - 1
-		m.messages[idx].content += msg.text
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
+		if msg.thinking != "" {
+			m.messages[idx].thinking += msg.thinking
+			m.viewport.SetContent(m.renderMessages())
+			m.viewport.GotoBottom()
+		}
+		if msg.text != "" {
+			m.messages[idx].content += msg.text
+			m.viewport.SetContent(m.renderMessages())
+			m.viewport.GotoBottom()
+		}
 	}
 	return m, tea.Batch(m.waitForChunk(), m.spinner.Tick)
 }

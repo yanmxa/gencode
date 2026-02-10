@@ -20,12 +20,14 @@ type SessionMetadata struct {
 
 // StoredMessage represents a message stored in a session
 type StoredMessage struct {
-	Role       string              `json:"role"`
-	Content    string              `json:"content,omitempty"`
-	ToolCalls  []provider.ToolCall `json:"toolCalls,omitempty"`
+	Role       string               `json:"role"`
+	Content    string               `json:"content,omitempty"`
+	Thinking   string               `json:"thinking,omitempty"`
+	Images     []provider.ImageData `json:"images,omitempty"`
+	ToolCalls  []provider.ToolCall  `json:"toolCalls,omitempty"`
 	ToolResult *provider.ToolResult `json:"toolResult,omitempty"`
-	ToolName   string              `json:"toolName,omitempty"`
-	IsSummary  bool                `json:"isSummary,omitempty"`
+	ToolName   string               `json:"toolName,omitempty"`
+	IsSummary  bool                 `json:"isSummary,omitempty"`
 }
 
 // Session represents a complete session with metadata and messages

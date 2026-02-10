@@ -55,12 +55,37 @@ type CompletionOptions struct {
 	SystemPrompt string
 }
 
+// ContentType represents the type of content in a message part
+type ContentType string
+
+const (
+	ContentTypeText  ContentType = "text"
+	ContentTypeImage ContentType = "image"
+)
+
+// ImageData represents image data for multimodal messages
+type ImageData struct {
+	MediaType string `json:"media_type"` // "image/png", "image/jpeg", etc.
+	Data      string `json:"data"`       // Base64 encoded image data
+	FileName  string `json:"file_name"`
+	Size      int    `json:"size"` // Size in bytes
+}
+
+// ContentPart represents a part of multimodal message content
+type ContentPart struct {
+	Type  ContentType `json:"type"`
+	Text  string      `json:"text,omitempty"`
+	Image *ImageData  `json:"image,omitempty"`
+}
+
 // Message represents a chat message
 type Message struct {
-	Role       string       `json:"role"` // "user", "assistant", "system"
-	Content    string       `json:"content,omitempty"`
-	ToolCalls  []ToolCall   `json:"tool_calls,omitempty"`
-	ToolResult *ToolResult  `json:"tool_result,omitempty"`
+	Role         string        `json:"role"` // "user", "assistant", "system"
+	Content      string        `json:"content,omitempty"`
+	ContentParts []ContentPart `json:"content_parts,omitempty"` // Multimodal content
+	ToolCalls    []ToolCall    `json:"tool_calls,omitempty"`
+	ToolResult   *ToolResult   `json:"tool_result,omitempty"`
+	Thinking     string        `json:"thinking,omitempty"` // Reasoning content for thinking models
 }
 
 // Tool represents a tool definition
@@ -88,6 +113,7 @@ type ToolResult struct {
 // CompletionResponse represents a completion response
 type CompletionResponse struct {
 	Content    string     `json:"content,omitempty"`
+	Thinking   string     `json:"thinking,omitempty"` // Reasoning content for thinking models
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	StopReason string     `json:"stop_reason"` // "end_turn", "tool_use", "max_tokens"
 	Usage      Usage      `json:"usage"`
@@ -104,6 +130,7 @@ type ChunkType string
 
 const (
 	ChunkTypeText      ChunkType = "text"
+	ChunkTypeThinking  ChunkType = "thinking"
 	ChunkTypeToolStart ChunkType = "tool_start"
 	ChunkTypeToolInput ChunkType = "tool_input"
 	ChunkTypeDone      ChunkType = "done"

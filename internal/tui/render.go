@@ -64,6 +64,7 @@ func (m model) renderWelcome() string {
 
 	sb.WriteString("\n")
 	sb.WriteString("   " + hintStyle.Render("Enter to send · Esc to stop · Shift+Tab mode · Ctrl+C exit") + "\n")
+	sb.WriteString("   " + hintStyle.Render("Ctrl+V paste image · @file.png attach · Ctrl+B select text") + "\n")
 
 	return sb.String()
 }
@@ -91,6 +92,13 @@ func (m model) renderModeStatus() string {
 		styledLabel := lipgloss.NewStyle().Foreground(color).Render(label)
 		hint := lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Render("  shift+tab to toggle")
 		parts = append(parts, "  "+styledIcon+styledLabel+hint)
+	}
+
+	// Show indicator when mouse capture is off (non-default state)
+	if !m.mouseEnabled {
+		mouseIcon := lipgloss.NewStyle().Foreground(CurrentTheme.Accent).Render("✂ select mode")
+		mouseHint := lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Render("  ctrl+b to restore scroll")
+		parts = append(parts, "  "+mouseIcon+mouseHint)
 	}
 
 	// Token usage indicator (show when >= 80% of limit)
@@ -219,9 +227,52 @@ func (m model) renderUserMessage(msg chatMessage) string {
 		return m.renderSummaryMessage(msg)
 	}
 
+	var sb strings.Builder
 	prompt := inputPromptStyle.Render("❯ ")
-	content := userMsgStyle.Render(msg.content)
-	return prompt + content + "\n"
+
+	// Render image indicators in Claude Code style
+	if len(msg.images) > 0 {
+		var parts []string
+		for i := range msg.images {
+			parts = append(parts, pendingImageStyle.Render(fmt.Sprintf("[Image #%d]", i+1)))
+		}
+		sb.WriteString(prompt + strings.Join(parts, " ") + "\n")
+	}
+
+	// Render text content
+	if msg.content != "" {
+		sb.WriteString(prompt + userMsgStyle.Render(msg.content) + "\n")
+	}
+
+	return sb.String()
+}
+
+// renderPendingImages renders indicator for clipboard images waiting to be sent
+// Uses Claude Code style with selection mode
+func (m model) renderPendingImages() string {
+	if len(m.pendingImages) == 0 {
+		return ""
+	}
+
+	var parts []string
+	for i := range m.pendingImages {
+		label := fmt.Sprintf("[Image #%d]", i+1)
+		if m.imageSelectMode && i == m.selectedImageIdx {
+			// Highlight selected image
+			parts = append(parts, selectedImageStyle.Render(label))
+		} else {
+			parts = append(parts, pendingImageStyle.Render(label))
+		}
+	}
+
+	var hint string
+	if m.imageSelectMode {
+		hint = pendingImageHintStyle.Render(" ← prev · → next · Del remove · Esc cancel")
+	} else {
+		hint = pendingImageHintStyle.Render(" (↑ to select)")
+	}
+
+	return "  " + strings.Join(parts, " ") + hint + "\n"
 }
 
 // renderSummaryMessage renders a compact summary with collapse/expand support
@@ -264,9 +315,20 @@ func (m model) renderAssistantMessage(msg chatMessage, idx int, isLast bool) str
 	aiIcon := aiPromptStyle.Render("◆ ")
 	aiIndent := "  "
 
+	// Display thinking content (reasoning_content) if available
+	if msg.thinking != "" {
+		thinkingIcon := thinkingContentStyle.Render("✦ ")
+		thinkingContent := thinkingContentStyle.Render(msg.thinking)
+		thinkingContent = strings.ReplaceAll(thinkingContent, "\n", "\n"+aiIndent)
+		sb.WriteString(thinkingIcon + thinkingContent + "\n\n")
+	}
+
 	if msg.content == "" && len(msg.toolCalls) == 0 && m.streaming {
-		content := thinkingStyle.Render(m.spinner.View() + " Thinking...")
-		sb.WriteString(aiIcon + content + "\n")
+		// Show spinner when waiting for response, but only if no thinking content yet
+		if msg.thinking == "" {
+			content := thinkingStyle.Render(m.spinner.View() + " Thinking...")
+			sb.WriteString(aiIcon + content + "\n")
+		}
 	} else if m.streaming && isLast && len(msg.toolCalls) == 0 {
 		content := assistantMsgStyle.Render(msg.content + "▌")
 		content = strings.ReplaceAll(content, "\n", "\n"+aiIndent)
@@ -512,18 +574,15 @@ func extractIntField(content, prefix string) int {
 	if val == "" {
 		return 0
 	}
-	// Parse only leading digits
-	var end int
+	// Find end of leading digits
+	end := 0
 	for end < len(val) && val[end] >= '0' && val[end] <= '9' {
 		end++
 	}
 	if end == 0 {
 		return 0
 	}
-	n, err := strconv.Atoi(val[:end])
-	if err != nil {
-		return 0
-	}
+	n, _ := strconv.Atoi(val[:end])
 	return n
 }
 

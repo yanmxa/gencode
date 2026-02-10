@@ -53,6 +53,25 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 							msg.ToolResult.IsError,
 						),
 					))
+				} else if len(msg.ContentParts) > 0 {
+					// Multimodal message with images
+					blocks := make([]anthropic.ContentBlockParamUnion, 0, len(msg.ContentParts))
+					for _, part := range msg.ContentParts {
+						switch part.Type {
+						case provider.ContentTypeImage:
+							if part.Image != nil {
+								blocks = append(blocks, anthropic.NewImageBlockBase64(
+									part.Image.MediaType,
+									part.Image.Data,
+								))
+							}
+						case provider.ContentTypeText:
+							if part.Text != "" {
+								blocks = append(blocks, anthropic.NewTextBlock(part.Text))
+							}
+						}
+					}
+					anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(blocks...))
 				} else {
 					anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(
 						anthropic.NewTextBlock(msg.Content),

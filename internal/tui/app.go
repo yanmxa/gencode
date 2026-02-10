@@ -51,6 +51,8 @@ const (
 type chatMessage struct {
 	role              string
 	content           string
+	thinking          string               // Reasoning content for thinking models
+	images            []provider.ImageData // Image attachments
 	toolCalls         []provider.ToolCall
 	toolCallsExpanded bool
 	toolResult        *provider.ToolResult
@@ -64,6 +66,7 @@ type chatMessage struct {
 type (
 	streamChunkMsg struct {
 		text             string
+		thinking         string // Reasoning content for thinking models
 		done             bool
 		err              error
 		toolCalls        []provider.ToolCall
@@ -183,6 +186,14 @@ type model struct {
 
 	// MCP registry
 	mcpRegistry *mcp.Registry
+
+	// Mouse capture (on by default for scroll; Ctrl+B to disable for text selection)
+	mouseEnabled bool
+
+	// Pending images from clipboard paste
+	pendingImages         []provider.ImageData
+	imageSelectMode       bool // True when in image selection mode
+	selectedImageIdx      int  // Currently selected image index
 }
 
 func Run() error {
@@ -404,6 +415,7 @@ func newModel() model {
 		skillSelector:      NewSkillSelectorState(),
 		agentSelector:      NewAgentSelectorState(),
 		sessionSelector:    NewSessionSelectorState(),
+		mouseEnabled:       true,
 		hookEngine:         hookEngine,
 		mcpRegistry:        mcpRegistry,
 	}
@@ -649,19 +661,26 @@ func (m model) View() string {
 	}
 
 	prompt := inputPromptStyle.Render("❯ ")
+	pendingImagesView := m.renderPendingImages()
 	inputView := prompt + m.textarea.View()
+
+	// Build chat section with optional pending images at bottom (above separator)
+	chatSection := chat
+	if pendingImagesView != "" {
+		chatSection = chat + "\n" + strings.TrimSuffix(pendingImagesView, "\n")
+	}
 
 	// Show spinner in chat area when fetching token limits
 	if m.fetchingTokenLimits {
 		spinnerView := thinkingStyle.Render(m.spinner.View() + " Fetching token limits...")
-		chatWithSpinner := chat + "\n" + spinnerView
+		chatWithSpinner := chatSection + "\n" + spinnerView
 		return fmt.Sprintf("%s\n%s\n%s\n%s", chatWithSpinner, separator, inputView, separator)
 	}
 
 	// Show spinner in chat area when compacting conversation
 	if m.compacting {
 		spinnerView := thinkingStyle.Render(m.spinner.View() + " Compacting conversation...")
-		chatWithSpinner := chat + "\n" + spinnerView
+		chatWithSpinner := chatSection + "\n" + spinnerView
 		return fmt.Sprintf("%s\n%s\n%s\n%s", chatWithSpinner, separator, inputView, separator)
 	}
 
@@ -671,17 +690,17 @@ func (m model) View() string {
 	if suggestions != "" {
 		if statusLine != "" {
 			return fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s",
-				chat, separator, inputView, suggestions, separator, statusLine)
+				chatSection, separator, inputView, suggestions, separator, statusLine)
 		}
-		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s", chat, separator, inputView, suggestions, separator)
+		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s", chatSection, separator, inputView, suggestions, separator)
 	}
 
 	if statusLine != "" {
 		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s",
-			chat, separator, inputView, separator, statusLine)
+			chatSection, separator, inputView, separator, statusLine)
 	}
 
-	return fmt.Sprintf("%s\n%s\n%s\n%s", chat, separator, inputView, separator)
+	return fmt.Sprintf("%s\n%s\n%s\n%s", chatSection, separator, inputView, separator)
 }
 
 func (m model) continueWithToolResults() tea.Cmd {
@@ -706,6 +725,8 @@ func (m model) waitForChunk() tea.Cmd {
 		switch chunk.Type {
 		case provider.ChunkTypeText:
 			return streamChunkMsg{text: chunk.Text}
+		case provider.ChunkTypeThinking:
+			return streamChunkMsg{thinking: chunk.Text}
 		case provider.ChunkTypeDone:
 			var usage *provider.Usage
 			if chunk.Response != nil {
@@ -747,8 +768,29 @@ func (m model) convertMessagesToProvider() []provider.Message {
 
 		providerMsg := provider.Message{
 			Role:      msg.role,
-			Content:   msg.content,
 			ToolCalls: msg.toolCalls,
+			Thinking:  msg.thinking,
+		}
+
+		// Handle multimodal messages with images
+		if len(msg.images) > 0 {
+			parts := make([]provider.ContentPart, 0, len(msg.images)+1)
+			for _, img := range msg.images {
+				imgCopy := img
+				parts = append(parts, provider.ContentPart{
+					Type:  provider.ContentTypeImage,
+					Image: &imgCopy,
+				})
+			}
+			if msg.content != "" {
+				parts = append(parts, provider.ContentPart{
+					Type: provider.ContentTypeText,
+					Text: msg.content,
+				})
+			}
+			providerMsg.ContentParts = parts
+		} else {
+			providerMsg.Content = msg.content
 		}
 
 		if msg.toolResult != nil {
@@ -917,7 +959,7 @@ func (m *model) updateViewportHeight() {
 	inputH := 3
 	separatorH := 2
 	statusH := 0
-	if m.operationMode != modeNormal {
+	if m.operationMode != modeNormal || !m.mouseEnabled {
 		statusH = 1
 	}
 	chatH := m.height - inputH - separatorH - statusH
