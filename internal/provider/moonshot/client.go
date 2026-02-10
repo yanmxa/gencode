@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/v3"
 
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/provider"
@@ -65,13 +65,15 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					if msg.Content != "" {
 						asstMsg.Content.OfString = openai.Opt(msg.Content)
 					}
-					asstMsg.ToolCalls = make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls))
+					asstMsg.ToolCalls = make([]openai.ChatCompletionMessageToolCallUnionParam, len(msg.ToolCalls))
 					for i, tc := range msg.ToolCalls {
-						asstMsg.ToolCalls[i] = openai.ChatCompletionMessageToolCallParam{
-							ID: tc.ID,
-							Function: openai.ChatCompletionMessageToolCallFunctionParam{
-								Name:      tc.Name,
-								Arguments: tc.Input,
+						asstMsg.ToolCalls[i] = openai.ChatCompletionMessageToolCallUnionParam{
+							OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+								ID: tc.ID,
+								Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+									Name:      tc.Name,
+									Arguments: tc.Input,
+								},
 							},
 						}
 					}
@@ -100,18 +102,20 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 		// Add tools if provided
 		if len(opts.Tools) > 0 {
-			tools := make([]openai.ChatCompletionToolParam, 0, len(opts.Tools))
+			tools := make([]openai.ChatCompletionToolUnionParam, 0, len(opts.Tools))
 			for _, t := range opts.Tools {
 				var funcParams openai.FunctionParameters
 				if props, ok := t.Parameters.(map[string]any); ok {
 					funcParams = props
 				}
 
-				tools = append(tools, openai.ChatCompletionToolParam{
-					Function: openai.FunctionDefinitionParam{
-						Name:        t.Name,
-						Description: openai.String(t.Description),
-						Parameters:  funcParams,
+				tools = append(tools, openai.ChatCompletionToolUnionParam{
+					OfFunction: &openai.ChatCompletionFunctionToolParam{
+						Function: openai.FunctionDefinitionParam{
+							Name:        t.Name,
+							Description: openai.String(t.Description),
+							Parameters:  funcParams,
+						},
 					},
 				})
 			}

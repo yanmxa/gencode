@@ -13,7 +13,7 @@ require (
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-runewidth v0.0.16
-	github.com/openai/openai-go v1.12.0
+	github.com/openai/openai-go/v3 v3.19.0
 	github.com/spf13/cobra v1.8.1
 	go.uber.org/zap v1.27.0
 	google.golang.org/genai v1.43.0
