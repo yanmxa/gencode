@@ -24,6 +24,10 @@ type Theme struct {
 	Error   lipgloss.Color // red - removed, errors
 	Warning lipgloss.Color // amber/orange - in progress
 
+	// Diff background colors
+	SuccessBg lipgloss.Color // subtle green background for added lines
+	ErrorBg   lipgloss.Color // subtle red/pink background for removed lines
+
 	// UI element colors
 	Border     lipgloss.Color // borders
 	Background lipgloss.Color // backgrounds for badges/boxes
@@ -46,6 +50,9 @@ var DarkTheme = Theme{
 	Error:   lipgloss.Color("#EF4444"),
 	Warning: lipgloss.Color("#FBBF24"), // Brighter amber to distinguish from Accent
 
+	SuccessBg: lipgloss.Color("#1a2e1a"),
+	ErrorBg:   lipgloss.Color("#2e1a1a"),
+
 	Border:     lipgloss.Color("#374151"),
 	Background: lipgloss.Color("#1F2937"),
 }
@@ -66,6 +73,9 @@ var LightTheme = Theme{
 	Success: lipgloss.Color("#059669"),
 	Error:   lipgloss.Color("#DC2626"),
 	Warning: lipgloss.Color("#B45309"), // Deeper amber to distinguish from Accent
+
+	SuccessBg: lipgloss.Color("#dafbe1"),
+	ErrorBg:   lipgloss.Color("#ffebe9"),
 
 	Border:     lipgloss.Color("#E5E7EB"),
 	Background: lipgloss.Color("#F3F4F6"),

@@ -36,7 +36,7 @@ func (p *PermissionPrompt) Show(req *permission.PermissionRequest, width, height
 	p.selectedIdx = 0 // Reset to "Yes"
 
 	if req.DiffMeta != nil {
-		p.diffPreview = NewDiffPreview(req.DiffMeta)
+		p.diffPreview = NewDiffPreview(req.DiffMeta, req.FilePath)
 	} else {
 		p.diffPreview = nil
 	}

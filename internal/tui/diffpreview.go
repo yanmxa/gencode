@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -17,14 +18,16 @@ const (
 // DiffPreview renders a diff preview with expand/collapse functionality
 type DiffPreview struct {
 	diffMeta   *permission.DiffMetadata
+	filePath   string
 	expanded   bool
 	maxVisible int
 }
 
 // NewDiffPreview creates a new DiffPreview instance
-func NewDiffPreview(diffMeta *permission.DiffMetadata) *DiffPreview {
+func NewDiffPreview(diffMeta *permission.DiffMetadata, filePath string) *DiffPreview {
 	return &DiffPreview{
 		diffMeta:   diffMeta,
+		filePath:   filePath,
 		expanded:   false,
 		maxVisible: DefaultMaxVisibleLines,
 	}
@@ -54,6 +57,14 @@ func getDiffRemovedStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(CurrentTheme.Error)
 }
 
+func getDiffAddedBgStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Success).Background(CurrentTheme.SuccessBg)
+}
+
+func getDiffRemovedBgStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Error).Background(CurrentTheme.ErrorBg)
+}
+
 func getDiffContextStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
 }
@@ -65,12 +76,12 @@ func getDiffLineNoStyle() lipgloss.Style {
 		Align(lipgloss.Right)
 }
 
-func getDiffSummaryStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(CurrentTheme.TextDim)
-}
-
 func getDiffMoreStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Italic(true)
+}
+
+func getDiffHeaderStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
 }
 
 // Render renders the diff preview
@@ -84,13 +95,32 @@ func (d *DiffPreview) Render(width int) string {
 		return d.renderNewFilePreview(width)
 	}
 
-	// For edits, use side-by-side format
-	return d.renderSideBySide(width)
+	// For edits, use split-panel format (left=old, right=new)
+	return d.renderSplitPanel(width)
+}
+
+// renderFileHeader renders a file path header with summary info
+func (d *DiffPreview) renderFileHeader(label string) string {
+	name := d.filePath
+	if name != "" {
+		name = filepath.Base(name)
+	}
+	if name == "" {
+		name = "file"
+	}
+	return getDiffHeaderStyle().Render(fmt.Sprintf(" %s  %s", name, label))
 }
 
 // renderNewFilePreview renders a new file in simple single-column format
 func (d *DiffPreview) renderNewFilePreview(width int) string {
 	var sb strings.Builder
+
+	// File header
+	sb.WriteString(d.renderFileHeader("(new file)"))
+	sb.WriteString("\n")
+	sep := strings.Repeat("─", width)
+	sb.WriteString(getDiffContextStyle().Render(sep))
+	sb.WriteString("\n")
 
 	lines := d.diffMeta.Lines
 	showCount := len(lines)
@@ -109,7 +139,7 @@ func (d *DiffPreview) renderNewFilePreview(width int) string {
 		}
 		lineNo := fmt.Sprintf("%4d", line.NewLineNo)
 		sb.WriteString(getDiffLineNoStyle().Render(lineNo))
-		sb.WriteString(getDiffLineNoStyle().Render(" │ "))
+		sb.WriteString(getDiffContextStyle().Render(" │ "))
 		sb.WriteString(getDiffAddedStyle().Render(line.Content))
 		sb.WriteString("\n")
 	}
@@ -124,88 +154,140 @@ func (d *DiffPreview) renderNewFilePreview(width int) string {
 	return sb.String()
 }
 
-// renderSideBySide renders edits in side-by-side format:
-// Left side: removed lines (old content)
-// Right side: added lines (new content)
-// Arrow (→) connects them
-func (d *DiffPreview) renderSideBySide(width int) string {
+// renderSplitPanel renders edits in a minimal GitHub-style split-panel format.
+// Left panel shows removed lines (old) with pink/red background.
+// Right panel shows added lines (new) with green background.
+// Context lines appear on both sides with dim text. No decorations.
+func (d *DiffPreview) renderSplitPanel(width int) string {
 	var sb strings.Builder
 
-	// Summary line: +5 -3 lines
-	summary := fmt.Sprintf("+%d -%d lines", d.diffMeta.AddedCount, d.diffMeta.RemovedCount)
-	sb.WriteString(getDiffSummaryStyle().Render(summary))
+	// File header with summary
+	added := getDiffAddedStyle().Render(fmt.Sprintf("+%d", d.diffMeta.AddedCount))
+	removed := getDiffRemovedStyle().Render(fmt.Sprintf("-%d", d.diffMeta.RemovedCount))
+	sb.WriteString(d.renderFileHeader(fmt.Sprintf("%s %s", added, removed)))
 	sb.WriteString("\n")
 
-	// Collect removed and added lines
-	var removed, added []permission.DiffLine
-	for _, line := range d.diffMeta.Lines {
-		switch line.Type {
-		case permission.DiffLineRemoved:
-			removed = append(removed, line)
-		case permission.DiffLineAdded:
-			added = append(added, line)
-		}
-		// Skip context, hunk, and metadata lines for side-by-side view
+	// Layout per panel: "NNNN - content" = 4 (lineNo) + 2 (indicator) + content
+	// Gap between panels: 2 spaces
+	// Total overhead = 4 + 2 + 2 + 4 + 2 = 14 chars
+	const gap = 0
+	const prefix = 7 // 4 (lineNo) + 3 (indicator: " - ", " + ", "   ")
+	panelWidth := (width - gap) / 2
+	contentWidth := panelWidth - prefix
+	if contentWidth < 8 {
+		contentWidth = 8
 	}
 
-	// Calculate column width (account for line numbers, borders, arrow)
-	// Format: "  1 │ content     →  1 │ content"
-	// Line number column: 4 chars + " │ " (3 chars) = 7 chars per side
-	// Arrow: " → " = 3 chars
-	colWidth := (width - 7 - 3 - 7) / 2
-	if colWidth < 10 {
-		colWidth = 10
-	}
-
-	// Pair and render rows
-	maxRows := len(removed)
-	if len(added) > maxRows {
-		maxRows = len(added)
-	}
-
-	// Apply truncation
-	showRows := maxRows
+	lines := d.diffMeta.Lines
+	showCount := len(lines)
 	truncated := false
-	if !d.expanded && showRows > d.maxVisible {
-		showRows = d.maxVisible
+	if !d.expanded && showCount > d.maxVisible {
+		showCount = d.maxVisible
 		truncated = true
 	}
 
-	for i := 0; i < showRows; i++ {
-		// Left side: removed content (red)
-		if i < len(removed) {
-			lineNo := fmt.Sprintf("%4d", removed[i].OldLineNo)
-			sb.WriteString(getDiffLineNoStyle().Render(lineNo))
-			sb.WriteString(getDiffLineNoStyle().Render(" │ "))
-			content := truncateOrPad(removed[i].Content, colWidth)
-			sb.WriteString(getDiffRemovedStyle().Render(content))
-		} else {
-			// Empty placeholder for left side
-			sb.WriteString(strings.Repeat(" ", 7+colWidth))
+	removedBgStyle := getDiffRemovedBgStyle()
+	addedBgStyle := getDiffAddedBgStyle()
+	contextStyle := getDiffContextStyle()
+	blankPanel := strings.Repeat(" ", panelWidth)
+	gapStr := strings.Repeat(" ", gap)
+
+	// renderLeft renders a removed line for the left panel
+	renderLeft := func(line permission.DiffLine) string {
+		no := fmt.Sprintf("%4d", line.OldLineNo)
+		content := truncateOrPad(truncateContent(line.Content, contentWidth), contentWidth)
+		return removedBgStyle.Render(truncateOrPad(no+" - "+content, panelWidth))
+	}
+
+	// renderRight renders an added line for the right panel
+	renderRight := func(line permission.DiffLine) string {
+		no := fmt.Sprintf("%4d", line.NewLineNo)
+		content := truncateOrPad(truncateContent(line.Content, contentWidth), contentWidth)
+		return addedBgStyle.Render(truncateOrPad(no+" + "+content, panelWidth))
+	}
+
+	for i := 0; i < showCount; i++ {
+		line := lines[i]
+
+		switch line.Type {
+		case permission.DiffLineHunk, permission.DiffLineMetadata:
+			// Skip hunk headers and metadata entirely
+
+		case permission.DiffLineContext:
+			// Context: show on both panels, dim text, no background
+			leftNo := fmt.Sprintf("%4d", line.OldLineNo)
+			rightNo := fmt.Sprintf("%4d", line.NewLineNo)
+			content := truncateOrPad(truncateContent(line.Content, contentWidth), contentWidth)
+
+			sb.WriteString(contextStyle.Render(leftNo + "   " + content))
+			sb.WriteString(gapStr)
+			sb.WriteString(contextStyle.Render(rightNo + "   " + content))
+			sb.WriteString("\n")
+
+		case permission.DiffLineRemoved:
+			// Collect consecutive removed lines
+			var removedLines []permission.DiffLine
+			for i < showCount && lines[i].Type == permission.DiffLineRemoved {
+				removedLines = append(removedLines, lines[i])
+				i++
+			}
+			// Collect consecutive added lines that follow
+			var addedLines []permission.DiffLine
+			for i < showCount && lines[i].Type == permission.DiffLineAdded {
+				addedLines = append(addedLines, lines[i])
+				i++
+			}
+			i-- // adjust for outer loop increment
+
+			// Pair removed and added lines side by side
+			maxLen := len(removedLines)
+			if len(addedLines) > maxLen {
+				maxLen = len(addedLines)
+			}
+			for j := 0; j < maxLen; j++ {
+				if j < len(removedLines) {
+					sb.WriteString(renderLeft(removedLines[j]))
+				} else {
+					sb.WriteString(blankPanel)
+				}
+				sb.WriteString(gapStr)
+				if j < len(addedLines) {
+					sb.WriteString(renderRight(addedLines[j]))
+				} else {
+					sb.WriteString(blankPanel)
+				}
+				sb.WriteString("\n")
+			}
+
+		case permission.DiffLineAdded:
+			// Standalone added lines (not preceded by removed)
+			sb.WriteString(blankPanel)
+			sb.WriteString(gapStr)
+			sb.WriteString(renderRight(line))
+			sb.WriteString("\n")
 		}
-
-		// Arrow separator
-		sb.WriteString(getDiffContextStyle().Render(" → "))
-
-		// Right side: added content (green)
-		if i < len(added) {
-			lineNo := fmt.Sprintf("%4d", added[i].NewLineNo)
-			sb.WriteString(getDiffLineNoStyle().Render(lineNo))
-			sb.WriteString(getDiffLineNoStyle().Render(" │ "))
-			sb.WriteString(getDiffAddedStyle().Render(added[i].Content))
-		}
-
-		sb.WriteString("\n")
 	}
 
 	if truncated {
-		remaining := maxRows - d.maxVisible
+		remaining := len(lines) - d.maxVisible
 		msg := fmt.Sprintf("... %d more lines (Ctrl+O to expand)", remaining)
 		sb.WriteString(getDiffMoreStyle().Render(msg))
 		sb.WriteString("\n")
 	}
 
 	return sb.String()
+}
+
+// truncateContent truncates content if too long
+func truncateContent(content string, width int) string {
+	displayWidth := runewidth.StringWidth(content)
+	if displayWidth > width {
+		if width > 3 {
+			return runewidth.Truncate(content, width-3, "...")
+		}
+		return runewidth.Truncate(content, width, "")
+	}
+	return content
 }
 
 // truncateOrPad truncates content if too long, or pads with spaces if too short
