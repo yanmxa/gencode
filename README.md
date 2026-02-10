@@ -15,7 +15,7 @@ GenCode is an AI assistant that lives in your terminal. Multi-provider support, 
 
 ## ✨ Features
 
-- **Multi-provider Support** — Anthropic Claude, OpenAI GPT, Google Gemini (API key & Vertex AI)
+- **Multi-provider Support** — Anthropic Claude(API key & Vertex AI), OpenAI GPT, Google Gemini
 - **Built-in Tools** — Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 - **Skills System** — Reusable prompts with 3 states: disabled, enabled (slash command), active (model-aware)
 - **Subagents** — Specialized agents (Explore, Plan, Bash, Review) for autonomous task execution
