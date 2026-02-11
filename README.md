@@ -11,7 +11,7 @@
   </p>
 </p>
 
-An open-source AI coding assistant that lives in your terminal. Multi-provider support, built-in tools, MCP integration, and a flexible skill/agent system compatible with [Claude Code](https://claude.ai/code) extensions.
+An open-source AI coding agent for the terminal. Multi-provider support, flexible context management, compatible with [Claude Code](https://claude.ai/code) extensions and plugins.
 
 ## ✨ Features
 
