@@ -16,10 +16,10 @@ An open-source AI coding assistant that lives in your terminal. Multi-provider s
 ## ✨ Features
 
 - **Multi-provider** — Anthropic, OpenAI, Gemini, Moonshot — switch with `/provider`
-- **Tools** — Built-in (Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch) + [MCP](https://modelcontextprotocol.io) server tools, with dynamic enable/disable for context control
-- **Skills** — Three levels: disabled, enabled (slash command), active (model-aware), compatible with [Claude Code](https://claude.ai/code) extensions
-- **Session** — Resume, compact, and auto-compact for unlimited conversation length
-- Subagents (Explore, Plan, Bash, Review), plan mode, task management, user/project scope settings, hooks, and more
+- **Tools** — Built-in (Edit, Bash, WebSearch, etc.) + [MCP](https://modelcontextprotocol.io), dynamic enable/disable for context control
+- **Skills** — 3-level management (disabled/enabled/active), compatible with [Claude Code](https://claude.ai/code) extensions
+- **Session** — Resume, compact, auto-compact
+- **Others** — Subagents, plan mode, task management, user/project scope, hooks
 
 ### Providers
 
