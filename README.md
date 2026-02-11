@@ -11,14 +11,14 @@
   </p>
 </p>
 
-GenCode is an AI assistant that lives in your terminal. Multi-provider support, built-in tools, and a flexible skill/agent system compatible with Claude Code.
+An open-source AI coding assistant that lives in your terminal. Multi-provider support, built-in tools, MCP integration, and a flexible skill/agent system compatible with [Claude Code](https://claude.ai/code) extensions.
 
 ## ✨ Features
 
-- **Multi-provider Support** — Connect to any supported LLM with a single `/provider` command
+- **Multi-provider Support** — Switch between LLMs with a single `/provider` command
 - **Built-in Tools** — Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
-- **Skills System** — Reusable prompts with 3 states: disabled, enabled (slash command), active (model-aware)
-- **Subagents** — Specialized agents (Explore, Plan, Bash, Review) for autonomous task execution
+- **MCP Integration** — Connect to [Model Context Protocol](https://modelcontextprotocol.io) servers for extended capabilities
+- **Skills & Subagents** — Reusable skills (slash commands) and specialized agents (Explore, Plan, Bash, Review), compatible with [Claude Code](https://claude.ai/code) extensions
 - **Session Persistence** — Save, resume, and manage conversation sessions
 - **Non-interactive Mode** — Pipe input or pass messages directly for scripting
 
