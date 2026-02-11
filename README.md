@@ -15,12 +15,11 @@ An open-source AI coding assistant that lives in your terminal. Multi-provider s
 
 ## ✨ Features
 
-- **Multi-provider Support** — Switch between LLMs with a single `/provider` command
-- **Built-in Tools** — Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
-- **MCP Integration** — Connect to [Model Context Protocol](https://modelcontextprotocol.io) servers for extended capabilities
-- **Skills & Subagents** — Reusable skills (slash commands) and specialized agents (Explore, Plan, Bash, Review), compatible with [Claude Code](https://claude.ai/code) extensions
-- **Session Persistence** — Save, resume, and manage conversation sessions
-- **Non-interactive Mode** — Pipe input or pass messages directly for scripting
+- **Multi-provider** — Anthropic, OpenAI, Gemini, Moonshot — switch with `/provider`
+- **Tools** — Built-in (Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch) + [MCP](https://modelcontextprotocol.io) server tools, with dynamic enable/disable for context control
+- **Skills** — Three levels: disabled, enabled (slash command), active (model-aware), compatible with [Claude Code](https://claude.ai/code) extensions
+- **Session** — Resume, compact, and auto-compact for unlimited conversation length
+- Subagents (Explore, Plan, Bash, Review), plan mode, task management, user/project scope settings, hooks, and more
 
 ### Providers
 
