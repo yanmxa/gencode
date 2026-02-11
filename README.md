@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">GenCode</h1>
   <p align="center">
-    <strong>Open-source AI assistant for the terminal</strong>
+    <strong>Open-source AI coding assistant for the terminal</strong>
   </p>
   <p align="center">
     <a href="https://github.com/yanmxa/gencode/releases"><img src="https://img.shields.io/github/v/release/yanmxa/gencode?style=flat-square" alt="Release"></a>
@@ -11,7 +11,7 @@
   </p>
 </p>
 
-An open-source AI coding agent for the terminal. Multi-provider support, flexible context management, compatible with [Claude Code](https://claude.ai/code) extensions and plugins.
+An open-source AI coding assistant for the terminal. Multi-provider support, flexible context management, compatible with [Claude Code](https://claude.ai/code) extensions and plugins.
 
 ## ✨ Features
 
