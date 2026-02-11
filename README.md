@@ -15,7 +15,7 @@ GenCode is an AI assistant that lives in your terminal. Multi-provider support, 
 
 ## ✨ Features
 
-- **Multi-provider Support** — Anthropic Claude(API key & Vertex AI), OpenAI GPT, Google Gemini
+- **Multi-provider Support** — Anthropic Claude, OpenAI, Google Gemini, Moonshot Kimi
 - **Built-in Tools** — Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 - **Skills System** — Reusable prompts with 3 states: disabled, enabled (slash command), active (model-aware)
 - **Subagents** — Specialized agents (Explore, Plan, Bash, Review) for autonomous task execution
@@ -112,6 +112,46 @@ GenCode stores configuration in `~/.gen/`:
 └── agents/           # Custom agents
 ```
 
+### Providers
+
+<details>
+<summary><b>Anthropic Claude</b></summary>
+
+- **Auth:** API Key, Vertex AI
+- **Env:** `ANTHROPIC_API_KEY`
+- **Vertex AI Env:** `ANTHROPIC_VERTEX_PROJECT_ID`, `CLOUD_ML_REGION` (defaults to `us-east5`)
+- **Models:** Claude Opus, Sonnet, Haiku (via API or Vertex AI)
+
+</details>
+
+<details>
+<summary><b>OpenAI</b></summary>
+
+- **Auth:** API Key
+- **Env:** `OPENAI_API_KEY`
+- **Models:** GPT-4o, GPT-4, o1/o3, Codex, etc.
+
+</details>
+
+<details>
+<summary><b>Google Gemini</b></summary>
+
+- **Auth:** API Key
+- **Env:** `GOOGLE_API_KEY` (or `GEMINI_API_KEY`)
+- **Models:** Gemini 2.5 Pro/Flash, etc.
+
+</details>
+
+<details>
+<summary><b>Moonshot Kimi</b></summary>
+
+- **Auth:** API Key (OpenAI-compatible)
+- **Env:** `MOONSHOT_API_KEY`, `MOONSHOT_BASE_URL` (optional, defaults to `https://api.moonshot.cn/v1`)
+- **Models:** Kimi K2.5, K2 Thinking, Moonshot V1, etc.
+- **Features:** Thinking mode, multimodal (image/video for supported models)
+
+</details>
+
 ### Environment Variables
 
 | Variable | Description |
@@ -119,6 +159,7 @@ GenCode stores configuration in `~/.gen/`:
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `GOOGLE_API_KEY` | Google AI API key |
+| `MOONSHOT_API_KEY` | Moonshot (Kimi) API key |
 | `GEN_DEBUG` | Set to `1` to enable debug logging |
 
 ## 🛠️ Built-in Tools

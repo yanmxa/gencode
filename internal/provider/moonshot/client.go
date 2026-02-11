@@ -5,8 +5,8 @@ package moonshot
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/openai/openai-go/v3"
@@ -57,6 +57,39 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 						msg.ToolResult.Content,
 						msg.ToolResult.ToolCallID,
 					))
+				} else if len(msg.ContentParts) > 0 {
+					// Multimodal message with images
+					parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(msg.ContentParts))
+					for _, part := range msg.ContentParts {
+						switch part.Type {
+						case provider.ContentTypeImage:
+							if part.Image != nil {
+								dataURI := fmt.Sprintf("data:%s;base64,%s", part.Image.MediaType, part.Image.Data)
+								parts = append(parts, openai.ChatCompletionContentPartUnionParam{
+									OfImageURL: &openai.ChatCompletionContentPartImageParam{
+										ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
+											URL: dataURI,
+										},
+									},
+								})
+							}
+						case provider.ContentTypeText:
+							if part.Text != "" {
+								parts = append(parts, openai.ChatCompletionContentPartUnionParam{
+									OfText: &openai.ChatCompletionContentPartTextParam{
+										Text: part.Text,
+									},
+								})
+							}
+						}
+					}
+					messages = append(messages, openai.ChatCompletionMessageParamUnion{
+						OfUser: &openai.ChatCompletionUserMessageParam{
+							Content: openai.ChatCompletionUserMessageParamContentUnion{
+								OfArrayOfContentParts: parts,
+							},
+						},
+					})
 				} else {
 					messages = append(messages, openai.UserMessage(msg.Content))
 				}
@@ -275,13 +308,21 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 	models := make([]provider.ModelInfo, 0)
 	for _, m := range page.Data {
 		id := m.ID
-		if strings.HasPrefix(id, "moonshot-v1-") || strings.HasPrefix(id, "kimi-") {
-			models = append(models, provider.ModelInfo{
-				ID:          id,
-				Name:        id,
-				DisplayName: id,
-			})
+		info := provider.ModelInfo{
+			ID:          id,
+			Name:        id,
+			DisplayName: id,
 		}
+		// Extract context_length from raw JSON (Moonshot extension field)
+		if raw := m.RawJSON(); raw != "" {
+			var extra struct {
+				ContextLength int `json:"context_length"`
+			}
+			if err := json.Unmarshal([]byte(raw), &extra); err == nil && extra.ContextLength > 0 {
+				info.InputTokenLimit = extra.ContextLength
+			}
+		}
+		models = append(models, info)
 	}
 
 	if len(models) == 0 {
