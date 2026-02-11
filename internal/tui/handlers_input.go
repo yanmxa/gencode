@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -17,16 +19,6 @@ import (
 
 func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.planPrompt != nil && m.planPrompt.IsActive() {
-		if !m.planPrompt.IsEditing() {
-			switch msg.Type {
-			case tea.KeyPgUp, tea.KeyCtrlU:
-				m.viewport.HalfPageUp()
-				return m, nil
-			case tea.KeyPgDown, tea.KeyCtrlD:
-				m.viewport.HalfPageDown()
-				return m, nil
-			}
-		}
 		cmd := m.planPrompt.HandleKeypress(msg)
 		return m, cmd
 	}
@@ -142,28 +134,12 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			(m.planPrompt == nil || !m.planPrompt.IsActive()) &&
 			!m.selector.IsActive() && !m.suggestions.IsVisible() {
 			m.cycleOperationMode()
-			m.viewport.SetContent(m.renderMessages())
 			return m, nil
 		}
 	}
 
 	if msg.Type == tea.KeyCtrlO {
 		return m.handleCtrlO()
-	}
-
-	// Toggle mouse capture: off for text selection, on for scroll
-	if msg.Type == tea.KeyCtrlB {
-		m.mouseEnabled = !m.mouseEnabled
-		var cmd tea.Cmd
-		if m.mouseEnabled {
-			cmd = tea.EnableMouseCellMotion
-		} else {
-			cmd = tea.DisableMouse
-		}
-		m.updateViewportHeight()
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
-		return m, cmd
 	}
 
 	switch msg.Type {
@@ -245,9 +221,10 @@ func (m *model) handleCtrlO() (tea.Model, tea.Cmd) {
 
 	now := time.Now()
 	if now.Sub(m.lastCtrlOTime) < doubleTapThreshold {
-		// Double-tap: toggle all expandable items
+		// Double-tap: toggle all uncommitted expandable items
 		anyExpanded := false
-		for _, msg := range m.messages {
+		for i := m.committedCount; i < len(m.messages); i++ {
+			msg := m.messages[i]
 			if (msg.toolResult != nil && msg.expanded) ||
 				(len(msg.toolCalls) > 0 && msg.toolCallsExpanded) ||
 				(msg.isSummary && msg.expanded) {
@@ -255,7 +232,7 @@ func (m *model) handleCtrlO() (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		for i := range m.messages {
+		for i := m.committedCount; i < len(m.messages); i++ {
 			if m.messages[i].toolResult != nil {
 				m.messages[i].expanded = !anyExpanded
 			}
@@ -267,14 +244,12 @@ func (m *model) handleCtrlO() (tea.Model, tea.Cmd) {
 			}
 		}
 		m.lastCtrlOTime = time.Time{}
-		m.viewport.SetContent(m.renderMessages())
 		return m, nil
 	}
 
 	// Single tap: toggle most recent expandable item
 	m.lastCtrlOTime = now
 	m.toggleMostRecentExpandable()
-	m.viewport.SetContent(m.renderMessages())
 	return m, nil
 }
 
@@ -309,8 +284,8 @@ func (m *model) handleStreamCancel() (tea.Model, tea.Cmd) {
 	// Mark the last assistant message as interrupted
 	m.markLastAssistantInterrupted()
 
-	m.viewport.SetContent(m.renderMessages())
-	return m, nil
+	// Commit all messages to scrollback
+	return m, tea.Batch(m.commitMessages()...)
 }
 
 // cancelPendingToolCalls adds cancellation messages for pending tool calls.
@@ -412,9 +387,7 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		m.messages = append(m.messages, chatMessage{role: roleNotice, content: "Prompt blocked: " + reason})
 		m.textarea.Reset()
 		m.textarea.SetHeight(minTextareaHeight)
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
-		return m, nil
+		return m, tea.Batch(m.commitMessages()...)
 	}
 
 	if input != "" {
@@ -427,6 +400,22 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 	if result, isCmd := ExecuteCommand(context.Background(), m, input); isCmd {
 		m.textarea.Reset()
 		m.textarea.SetHeight(minTextareaHeight)
+
+		// Handle clear screen command: clear both visible screen and scrollback.
+		if m.pendingClearScreen {
+			m.pendingClearScreen = false
+			// Write escape sequences directly to /dev/tty to bypass BT's renderer.
+			// \033[2J clears visible screen, \033[3J clears scrollback, \033[H moves cursor home.
+			if tty, err := os.OpenFile("/dev/tty", os.O_WRONLY, 0); err == nil {
+				tty.WriteString("\033[2J\033[3J\033[H")
+				tty.Close()
+			}
+			// For tmux, clear its own scrollback buffer since \033[3J doesn't affect it.
+			if os.Getenv("TMUX") != "" {
+				exec.Command("tmux", "clear-history").Run()
+			}
+			return m, tea.ClearScreen
+		}
 
 		// Check if async token limit fetch was started (don't add to messages to avoid polluting main loop)
 		if m.fetchingTokenLimits {
@@ -446,26 +435,20 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		if result != "" {
 			m.messages = append(m.messages, chatMessage{role: roleUser, content: input})
 			m.messages = append(m.messages, chatMessage{role: roleNotice, content: result})
-			m.viewport.SetContent(m.renderMessages())
-			m.viewport.GotoBottom()
-			return m, nil
+			return m, tea.Batch(m.commitMessages()...)
 		}
 		// Check if this was a skill command (empty result with pending args)
 		if m.pendingSkillArgs != "" {
 			return m.handleSkillInvocation()
 		}
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
-		return m, nil
+		return m, tea.Batch(m.commitMessages()...)
 	}
 
 	// Process @image.png references
 	content, fileImages, err := m.processImageReferences(input)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{role: roleNotice, content: "Image error: " + err.Error()})
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
-		return m, nil
+		return m, tea.Batch(m.commitMessages()...)
 	}
 
 	// Combine pending clipboard images with file reference images
@@ -478,9 +461,7 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 
 	if m.llmProvider == nil {
 		m.messages = append(m.messages, chatMessage{role: roleNotice, content: "No provider connected. Use /provider to connect."})
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
-		return m, nil
+		return m, tea.Batch(m.commitMessages()...)
 	}
 
 	return m, m.startLLMStream(m.buildExtraContext())
@@ -494,15 +475,17 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.mdRenderer = createMarkdownRenderer(msg.Width)
 
 	if !m.ready {
-		m.viewport = newViewport(msg.Width, msg.Height-5)
-		// If resuming a session with messages, render them instead of welcome
-		if len(m.messages) > 0 {
-			m.viewport.SetContent(m.renderMessages())
-			m.viewport.GotoBottom()
-		} else {
-			m.viewport.SetContent(m.renderWelcome())
-		}
 		m.ready = true
+
+		var cmds []tea.Cmd
+
+		// If resuming a session with messages, commit them to scrollback
+		if len(m.messages) > 0 {
+			cmds = append(cmds, m.commitAllMessages()...)
+		} else {
+			// Print welcome screen
+			cmds = append(cmds, tea.Println(m.renderWelcome()))
+		}
 
 		// Open session selector if pending (for --resume flag)
 		if m.pendingSessionSelector {
@@ -511,16 +494,15 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 				_ = m.sessionSelector.EnterSessionSelect(m.width, m.height, m.sessionStore, m.cwd)
 			}
 		}
-	} else {
-		m.viewport.Width = msg.Width
-		// Re-render messages with updated wrap width
-		if len(m.messages) > 0 {
-			m.viewport.SetContent(m.renderMessages())
-		}
-	}
-	m.updateViewportHeight()
-	m.textarea.SetWidth(msg.Width - 4 - 2)
 
+		m.textarea.SetWidth(msg.Width - 4 - 2)
+		if len(cmds) > 0 {
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
+	}
+
+	m.textarea.SetWidth(msg.Width - 4 - 2)
 	return m, nil
 }
 
@@ -533,9 +515,10 @@ func (m *model) startLLMStream(extra []string) tea.Cmd {
 
 	providerMsgs := m.convertMessagesToProvider()
 
+	// Commit any pending messages before starting stream
+	commitCmds := m.commitMessages()
+
 	m.messages = append(m.messages, chatMessage{role: roleAssistant, content: ""})
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
 
 	modelID := m.getModelID()
 	sysPrompt := system.Prompt(system.Config{
@@ -556,7 +539,8 @@ func (m *model) startLLMStream(extra []string) tea.Cmd {
 		SystemPrompt: sysPrompt,
 	})
 
-	return tea.Batch(m.waitForChunk(), m.spinner.Tick)
+	allCmds := append(commitCmds, m.waitForChunk(), m.spinner.Tick)
+	return tea.Batch(allCmds...)
 }
 
 // handleSkillInvocation handles skill command invocation by sending the skill
@@ -566,9 +550,7 @@ func (m *model) handleSkillInvocation() (tea.Model, tea.Cmd) {
 		m.messages = append(m.messages, chatMessage{role: roleNotice, content: "No provider connected. Use /provider to connect."})
 		m.pendingSkillInstructions = ""
 		m.pendingSkillArgs = ""
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
-		return m, nil
+		return m, tea.Batch(m.commitMessages()...)
 	}
 
 	// Get the user message (skill args or skill name)
@@ -630,16 +612,22 @@ var imageRefPattern = regexp.MustCompile(`@([^\s]+\.(png|jpg|jpeg|gif|webp))`)
 // pasteImageFromClipboard handles pasting image from clipboard
 func (m *model) pasteImageFromClipboard() (tea.Model, tea.Cmd) {
 	imgData, err := image.ReadImageToProviderData()
-	if err != nil || imgData == nil {
-		// Silently ignore clipboard errors or empty clipboard
-		return m, nil
+	if err != nil {
+		m.messages = append(m.messages, chatMessage{role: roleNotice, content: "Image paste error: " + err.Error()})
+		return m, tea.Batch(m.commitMessages()...)
+	}
+	if imgData == nil {
+		// No image in clipboard, let textarea handle the key
+		return nil, nil
 	}
 	m.pendingImages = append(m.pendingImages, *imgData)
 	return m, nil
 }
 
 // processImageReferences extracts @image.png references from input
-// Returns the cleaned text content and any loaded images
+// Returns the cleaned text content and any loaded images.
+// Only processes references where the file actually exists on disk;
+// non-existent file references are left in the text as-is.
 func (m *model) processImageReferences(input string) (string, []provider.ImageData, error) {
 	matches := imageRefPattern.FindAllStringSubmatch(input, -1)
 	if len(matches) == 0 {
@@ -647,22 +635,32 @@ func (m *model) processImageReferences(input string) (string, []provider.ImageDa
 	}
 
 	var images []provider.ImageData
+	var loadedRefs []string // track which @references were successfully loaded
 	for _, match := range matches {
 		path := match[1]
-		// Resolve relative to cwd
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(m.cwd, path)
+		absPath := path
+		if !filepath.IsAbs(absPath) {
+			absPath = filepath.Join(m.cwd, absPath)
 		}
 
-		imgInfo, err := image.Load(path)
+		// Skip references to files that don't exist
+		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			continue
+		}
+
+		imgInfo, err := image.Load(absPath)
 		if err != nil {
 			return "", nil, err
 		}
 		images = append(images, imgInfo.ToProviderData())
+		loadedRefs = append(loadedRefs, match[0]) // full match including @
 	}
 
-	// Remove image references from text
-	content := imageRefPattern.ReplaceAllString(input, "")
+	// Only remove references that were successfully loaded
+	content := input
+	for _, ref := range loadedRefs {
+		content = strings.ReplaceAll(content, ref, "")
+	}
 	content = strings.TrimSpace(content)
 
 	return content, images, nil

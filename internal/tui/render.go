@@ -64,7 +64,6 @@ func (m model) renderWelcome() string {
 
 	sb.WriteString("\n")
 	sb.WriteString("   " + hintStyle.Render("Enter to send · Esc to stop · Shift+Tab mode · Ctrl+C exit") + "\n")
-	sb.WriteString("   " + hintStyle.Render("Ctrl+V paste image · @file.png attach · Ctrl+B select text") + "\n")
 
 	return sb.String()
 }
@@ -92,13 +91,6 @@ func (m model) renderModeStatus() string {
 		styledLabel := lipgloss.NewStyle().Foreground(color).Render(label)
 		hint := lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Render("  shift+tab to toggle")
 		parts = append(parts, "  "+styledIcon+styledLabel+hint)
-	}
-
-	// Show indicator when mouse capture is off (non-default state)
-	if !m.mouseEnabled {
-		mouseIcon := lipgloss.NewStyle().Foreground(CurrentTheme.Accent).Render("✂ select mode")
-		mouseHint := lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Render("  ctrl+b to restore scroll")
-		parts = append(parts, "  "+mouseIcon+mouseHint)
 	}
 
 	// Token usage indicator (show when >= 80% of limit)
@@ -163,60 +155,134 @@ func (m model) renderTokenUsage() string {
 	return indicator
 }
 
+// buildSkipIndices returns a set of message indices that should be skipped during rendering.
+// Tool result messages are skipped when they are rendered inline with their tool calls.
+func (m model) buildSkipIndices(startIdx int) map[int]bool {
+	skipIndices := make(map[int]bool)
+	for i := startIdx; i < len(m.messages); i++ {
+		msg := m.messages[i]
+		if msg.role != roleAssistant || len(msg.toolCalls) == 0 {
+			continue
+		}
+		// Mark subsequent tool result messages that match these tool calls
+		for j := i + 1; j < len(m.messages) && m.messages[j].toolResult != nil; j++ {
+			for _, tc := range msg.toolCalls {
+				if tc.ID == m.messages[j].toolResult.ToolCallID {
+					skipIndices[j] = true
+					break
+				}
+			}
+		}
+	}
+	return skipIndices
+}
+
 func (m model) renderMessages() string {
 	if len(m.messages) == 0 {
 		return m.renderWelcome()
 	}
+	return m.renderMessageRange(0, len(m.messages), true)
+}
 
-	// Build a set of message indices to skip (tool results rendered inline with tool calls)
-	skipIndices := make(map[int]bool)
-	for i, msg := range m.messages {
-		if msg.role == roleAssistant && len(msg.toolCalls) > 0 {
-			// Build set of ToolCall IDs for this assistant message
-			toolCallIDs := make(map[string]bool)
-			for _, tc := range msg.toolCalls {
-				toolCallIDs[tc.ID] = true
-			}
-			// Mark subsequent tool result messages that match these IDs
-			for j := i + 1; j < len(m.messages); j++ {
-				nextMsg := m.messages[j]
-				if nextMsg.toolResult == nil {
-					break
-				}
-				if toolCallIDs[nextMsg.toolResult.ToolCallID] {
-					skipIndices[j] = true
-				}
-			}
-		}
+// renderSingleMessage renders one message at the given index for committing to scrollback.
+// It handles the skip logic for inline tool results.
+func (m model) renderSingleMessage(idx int) string {
+	if idx < 0 || idx >= len(m.messages) {
+		return ""
 	}
 
+	// Skip tool results that are rendered inline with their tool calls
+	if m.messages[idx].toolResult != nil && m.isToolResultInlined(idx) {
+		return ""
+	}
+
+	return m.renderMessageAt(idx, false)
+}
+
+// renderActiveContent renders all uncommitted messages for the managed region.
+// This includes: assistant messages waiting for tool results, partial tool results,
+// streaming assistant message, and pending tool spinner.
+func (m model) renderActiveContent() string {
+	if m.committedCount >= len(m.messages) {
+		return m.renderPendingToolSpinner()
+	}
+	return m.renderMessageRange(m.committedCount, len(m.messages), true)
+}
+
+// isToolResultInlined checks if the tool result at idx was rendered inline with its tool call.
+func (m model) isToolResultInlined(idx int) bool {
+	msg := m.messages[idx]
+	if msg.toolResult == nil {
+		return false
+	}
+	toolCallID := msg.toolResult.ToolCallID
+
+	// Look backwards for the assistant message that has the matching tool call
+	for j := idx - 1; j >= 0; j-- {
+		prev := m.messages[j]
+		if prev.role == roleAssistant && len(prev.toolCalls) > 0 {
+			for _, tc := range prev.toolCalls {
+				if tc.ID == toolCallID {
+					return true
+				}
+			}
+			// Found an assistant message with tool calls but no match - stop searching
+			break
+		}
+		// Skip over other tool result messages in the sequence
+		if prev.toolResult != nil {
+			continue
+		}
+		// Non-tool-result, non-assistant message breaks the chain
+		break
+	}
+	return false
+}
+
+// renderMessageAt renders a single message at the given index.
+func (m model) renderMessageAt(idx int, isStreaming bool) string {
+	msg := m.messages[idx]
 	var sb strings.Builder
 
-	for i, msg := range m.messages {
-		// Skip tool results that were rendered inline with their tool calls
+	if msg.toolResult == nil {
+		sb.WriteString("\n")
+	}
+
+	switch msg.role {
+	case roleUser:
+		if msg.toolResult != nil {
+			sb.WriteString(m.renderToolResult(msg))
+		} else {
+			sb.WriteString(m.renderUserMessage(msg))
+		}
+	case roleNotice:
+		sb.WriteString(m.renderSystemMessage(msg))
+	case roleAssistant:
+		sb.WriteString(m.renderAssistantMessage(msg, idx, isStreaming))
+	}
+
+	return sb.String()
+}
+
+// renderMessageRange renders messages from startIdx to endIdx with skip logic and spinner.
+func (m model) renderMessageRange(startIdx, endIdx int, includeSpinner bool) string {
+	skipIndices := m.buildSkipIndices(startIdx)
+	var sb strings.Builder
+
+	lastIdx := endIdx - 1
+	isLastStreaming := m.streaming && lastIdx >= 0 && m.messages[lastIdx].role == roleAssistant
+
+	for i := startIdx; i < endIdx; i++ {
 		if skipIndices[i] {
 			continue
 		}
-
-		if msg.toolResult == nil {
-			sb.WriteString("\n")
-		}
-
-		switch msg.role {
-		case roleUser:
-			if msg.toolResult != nil {
-				sb.WriteString(m.renderToolResult(msg))
-			} else {
-				sb.WriteString(m.renderUserMessage(msg))
-			}
-		case roleNotice:
-			sb.WriteString(m.renderSystemMessage(msg))
-		case roleAssistant:
-			sb.WriteString(m.renderAssistantMessage(msg, i, i == len(m.messages)-1))
-		}
+		isStreaming := i == lastIdx && isLastStreaming
+		sb.WriteString(m.renderMessageAt(i, isStreaming))
 	}
 
-	sb.WriteString(m.renderPendingToolSpinner())
+	if includeSpinner {
+		sb.WriteString(m.renderPendingToolSpinner())
+	}
 
 	return sb.String()
 }

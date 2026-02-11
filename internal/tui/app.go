@@ -11,7 +11,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
@@ -86,7 +85,6 @@ type (
 )
 
 type model struct {
-	viewport     viewport.Model
 	textarea     textarea.Model
 	spinner      spinner.Model
 	messages     []chatMessage
@@ -187,8 +185,9 @@ type model struct {
 	// MCP registry
 	mcpRegistry *mcp.Registry
 
-	// Mouse capture (on by default for scroll; Ctrl+B to disable for text selection)
-	mouseEnabled bool
+	// Inline rendering: tracks how many messages have been pushed to scrollback
+	committedCount     int
+	pendingClearScreen bool
 
 	// Pending images from clipboard paste
 	pendingImages         []provider.ImageData
@@ -197,11 +196,7 @@ type model struct {
 }
 
 func Run() error {
-	p := tea.NewProgram(
-		newModel(),
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
+	p := tea.NewProgram(newModel())
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("failed to run TUI: %w", err)
@@ -221,11 +216,7 @@ func RunWithPlanMode(task string) error {
 	}
 	m.planStore = store
 
-	p := tea.NewProgram(
-		m,
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
+	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("failed to run TUI: %w", err)
@@ -255,11 +246,7 @@ func RunWithContinue() error {
 	m.messages = convertFromStoredMessages(sess.Messages)
 	m.currentSessionID = sess.Metadata.ID
 
-	p := tea.NewProgram(
-		m,
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
+	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("failed to run TUI: %w", err)
@@ -281,20 +268,12 @@ func RunWithResume() error {
 	// Set flag to open session selector after window is ready
 	m.pendingSessionSelector = true
 
-	p := tea.NewProgram(
-		m,
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
+	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("failed to run TUI: %w", err)
 	}
 	return nil
-}
-
-func newViewport(width, height int) viewport.Model {
-	return viewport.New(width, height)
 }
 
 func newModel() model {
@@ -415,7 +394,6 @@ func newModel() model {
 		skillSelector:      NewSkillSelectorState(),
 		agentSelector:      NewAgentSelectorState(),
 		sessionSelector:    NewSessionSelectorState(),
-		mouseEnabled:       true,
 		hookEngine:         hookEngine,
 		mcpRegistry:        mcpRegistry,
 	}
@@ -478,16 +456,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			content = fmt.Sprintf("Failed to connect to '%s': %v", msg.ServerName, msg.Error)
 		}
 		m.messages = append(m.messages, chatMessage{role: roleNotice, content: content})
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
-		return m, nil
+		return m, tea.Batch(m.commitMessages()...)
 
 	case MCPDisconnectMsg:
 		m.mcpSelector.HandleDisconnect(msg.ServerName)
 		m.messages = append(m.messages, chatMessage{role: roleNotice, content: fmt.Sprintf("Disconnected from MCP server '%s'", msg.ServerName)})
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
-		return m, nil
+		return m, tea.Batch(m.commitMessages()...)
 
 	// Additional selector cancelled events
 	case MCPSelectorCancelledMsg, SessionSelectorCancelledMsg, MemorySelectorCancelledMsg:
@@ -577,7 +551,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streaming = false
 		m.streamChan = nil
 		m.cancelFunc = nil
-		m.viewport.SetContent(m.renderMessages())
+		cmds = append(cmds, m.commitMessages()...)
 
 	case spinner.TickMsg:
 		return m.handleSpinnerTick(msg)
@@ -591,11 +565,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.textarea.Value() != prevValue {
 		m.updateTextareaHeight()
 		m.suggestions.UpdateSuggestions(m.textarea.Value())
-	}
-
-	if m.ready {
-		m.viewport, cmd = m.viewport.Update(msg)
-		cmds = append(cmds, cmd)
 	}
 
 	if m.streaming || m.fetchingTokenLimits || m.compacting {
@@ -614,93 +583,162 @@ func (m model) View() string {
 	if m.selector.IsActive() {
 		return m.selector.Render()
 	}
-
 	if m.toolSelector.IsActive() {
 		return m.toolSelector.Render()
 	}
-
 	if m.skillSelector.IsActive() {
 		return m.skillSelector.Render()
 	}
-
 	if m.agentSelector.IsActive() {
 		return m.agentSelector.Render()
 	}
-
 	if m.mcpSelector.IsActive() {
 		return m.mcpSelector.Render()
 	}
-
 	if m.sessionSelector.IsActive() {
 		return m.sessionSelector.Render()
 	}
-
 	if m.memorySelector.IsActive() {
 		return m.memorySelector.Render()
 	}
 
-	chat := m.viewport.View()
-
 	separator := separatorStyle.Render(strings.Repeat("─", m.width))
 
+	// Plan prompt: show plan content + menu in the managed region
 	if m.planPrompt != nil && m.planPrompt.IsActive() {
+		planContent := m.planPrompt.RenderContent()
 		planMenu := m.planPrompt.RenderMenu()
-		return fmt.Sprintf("%s\n%s\n%s\n%s", m.viewport.View(), separator, planMenu, separator)
+		return fmt.Sprintf("%s\n%s\n%s\n%s", planContent, separator, planMenu, separator)
 	}
 
+	// Interactive prompts: show only the prompt in the managed region
 	if m.permissionPrompt.IsActive() {
-		return fmt.Sprintf("%s\n%s\n%s", chat, separator, m.permissionPrompt.Render())
+		return fmt.Sprintf("%s\n%s", separator, m.permissionPrompt.Render())
 	}
 
 	if m.questionPrompt.IsActive() {
-		return fmt.Sprintf("%s\n%s\n%s", chat, separator, m.questionPrompt.Render())
+		return fmt.Sprintf("%s\n%s", separator, m.questionPrompt.Render())
 	}
 
 	if m.enterPlanPrompt.IsActive() {
-		return fmt.Sprintf("%s\n%s\n%s", chat, separator, m.enterPlanPrompt.Render())
+		return fmt.Sprintf("%s\n%s", separator, m.enterPlanPrompt.Render())
 	}
+
+	// Active content: streaming message, tool spinner
+	activeContent := m.renderActiveContent()
 
 	prompt := inputPromptStyle.Render("❯ ")
 	pendingImagesView := m.renderPendingImages()
 	inputView := prompt + m.textarea.View()
 
-	// Build chat section with optional pending images at bottom (above separator)
-	chatSection := chat
-	if pendingImagesView != "" {
-		chatSection = chat + "\n" + strings.TrimSuffix(pendingImagesView, "\n")
+	// Build the managed region
+	var parts []string
+
+	if activeContent != "" {
+		parts = append(parts, activeContent)
 	}
 
-	// Show spinner in chat area when fetching token limits
+	if pendingImagesView != "" {
+		parts = append(parts, strings.TrimSuffix(pendingImagesView, "\n"))
+	}
+
+	// Show spinner when fetching token limits
 	if m.fetchingTokenLimits {
 		spinnerView := thinkingStyle.Render(m.spinner.View() + " Fetching token limits...")
-		chatWithSpinner := chatSection + "\n" + spinnerView
-		return fmt.Sprintf("%s\n%s\n%s\n%s", chatWithSpinner, separator, inputView, separator)
+		parts = append(parts, spinnerView)
 	}
 
-	// Show spinner in chat area when compacting conversation
+	// Show spinner when compacting conversation
 	if m.compacting {
 		spinnerView := thinkingStyle.Render(m.spinner.View() + " Compacting conversation...")
-		chatWithSpinner := chatSection + "\n" + spinnerView
-		return fmt.Sprintf("%s\n%s\n%s\n%s", chatWithSpinner, separator, inputView, separator)
+		parts = append(parts, spinnerView)
 	}
+
+	chatSection := strings.Join(parts, "\n")
 
 	statusLine := m.renderModeStatus()
-
 	suggestions := m.suggestions.Render(m.width)
+
+	// Build the final view
+	var view strings.Builder
+	if chatSection != "" {
+		view.WriteString(chatSection)
+		view.WriteString("\n")
+	}
+	view.WriteString(separator)
+	view.WriteString("\n")
+	view.WriteString(inputView)
 	if suggestions != "" {
-		if statusLine != "" {
-			return fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s",
-				chatSection, separator, inputView, suggestions, separator, statusLine)
-		}
-		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s", chatSection, separator, inputView, suggestions, separator)
+		view.WriteString("\n")
+		view.WriteString(suggestions)
 	}
-
+	view.WriteString("\n")
+	view.WriteString(separator)
 	if statusLine != "" {
-		return fmt.Sprintf("%s\n%s\n%s\n%s\n%s",
-			chatSection, separator, inputView, separator, statusLine)
+		view.WriteString("\n")
+		view.WriteString(statusLine)
 	}
 
-	return fmt.Sprintf("%s\n%s\n%s\n%s", chatSection, separator, inputView, separator)
+	return view.String()
+}
+
+// commitMessages pushes uncommitted completed messages to terminal scrollback via tea.Println.
+// Messages that are currently being streamed (last assistant message while streaming) are skipped.
+// Assistant messages with tool calls are not committed until all their tool results are present,
+// ensuring that tool results are rendered inline with their tool calls.
+func (m *model) commitMessages() []tea.Cmd {
+	return m.commitMessagesWithCheck(true)
+}
+
+// commitAllMessages pushes all messages to scrollback (used for session resume)
+func (m *model) commitAllMessages() []tea.Cmd {
+	return m.commitMessagesWithCheck(false)
+}
+
+// commitMessagesWithCheck is the shared implementation for committing messages.
+// When checkReady is true, it waits for streaming to complete and tool results to arrive.
+func (m *model) commitMessagesWithCheck(checkReady bool) []tea.Cmd {
+	var cmds []tea.Cmd
+	lastIdx := len(m.messages) - 1
+
+	for i := m.committedCount; i < len(m.messages); i++ {
+		msg := m.messages[i]
+
+		if checkReady {
+			// Don't commit the in-progress streaming message
+			if i == lastIdx && msg.role == roleAssistant && m.streaming {
+				break
+			}
+			// Wait for all tool results before committing an assistant message with tool calls
+			if msg.role == roleAssistant && len(msg.toolCalls) > 0 && !m.hasAllToolResults(i) {
+				break
+			}
+		}
+
+		if rendered := m.renderSingleMessage(i); rendered != "" {
+			cmds = append(cmds, tea.Println(rendered))
+		}
+		m.committedCount = i + 1
+	}
+	return cmds
+}
+
+// hasAllToolResults checks if all tool results for the assistant message at idx are present.
+func (m *model) hasAllToolResults(idx int) bool {
+	toolCalls := m.messages[idx].toolCalls
+	if len(toolCalls) == 0 {
+		return true
+	}
+	endIdx := idx + 1 + len(toolCalls)
+	if endIdx > len(m.messages) {
+		return false
+	}
+	for j := idx + 1; j < endIdx; j++ {
+		if m.messages[j].toolResult == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func (m model) continueWithToolResults() tea.Cmd {
@@ -889,8 +927,6 @@ func (m *model) cycleOperationMode() {
 		m.hookEngine.SetPermissionMode(mode)
 	}
 
-	// Recalculate viewport height when mode changes
-	m.updateViewportHeight()
 }
 
 const maxHistoryEntries = 500
@@ -952,19 +988,3 @@ func saveInputHistory(cwd string, history []string) {
 	w.Flush()
 }
 
-func (m *model) updateViewportHeight() {
-	if m.width == 0 || m.height == 0 {
-		return
-	}
-	inputH := 3
-	separatorH := 2
-	statusH := 0
-	if m.operationMode != modeNormal || !m.mouseEnabled {
-		statusH = 1
-	}
-	chatH := m.height - inputH - separatorH - statusH
-	if chatH < 1 {
-		chatH = 1
-	}
-	m.viewport.Height = chatH
-}

@@ -134,9 +134,7 @@ func (m model) handleSessionSelected(msg SessionSelectedMsg) (tea.Model, tea.Cmd
 		})
 	}
 
-	// Update viewport with restored messages
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-
-	return m, nil
+	// Commit restored messages to scrollback
+	m.committedCount = 0
+	return m, tea.Batch(m.commitAllMessages()...)
 }

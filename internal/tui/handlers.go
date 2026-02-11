@@ -40,9 +40,7 @@ func (m *model) handleProviderSelected(msg ProviderSelectedMsg) (tea.Model, tea.
 			configureTaskTool(p, m.cwd, modelID)
 		}
 	}
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-	return m, nil
+	return m, tea.Batch(m.commitMessages()...)
 }
 
 func (m *model) handleModelSelected(msg ModelSelectedMsg) (tea.Model, tea.Cmd) {
@@ -63,9 +61,7 @@ func (m *model) handleModelSelected(msg ModelSelectedMsg) (tea.Model, tea.Cmd) {
 			configureTaskTool(p, m.cwd, msg.ModelID)
 		}
 	}
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-	return m, nil
+	return m, tea.Batch(m.commitMessages()...)
 }
 
 // configureTaskTool sets up the Task tool with the agent executor
@@ -98,8 +94,7 @@ func (m *model) handlePermissionRequest(msg PermissionRequestMsg) (tea.Model, te
 		m.pendingToolCalls = nil
 		m.pendingToolIdx = 0
 		m.streaming = false
-		m.viewport.SetContent(m.renderMessages())
-		return m, nil
+		return m, tea.Batch(m.commitMessages()...)
 	}
 
 	m.permissionPrompt.Show(msg.Request, m.width, m.height)
@@ -172,8 +167,7 @@ func (m *model) handlePermissionResponse(msg PermissionResponseMsg) (tea.Model, 
 	m.pendingToolCalls = nil
 	m.pendingToolIdx = 0
 	m.streaming = false
-	m.viewport.SetContent(m.renderMessages())
-	return m, nil
+	return m, tea.Batch(m.commitMessages()...)
 }
 
 // Interactive tool handlers (Question, Plan)
@@ -181,9 +175,8 @@ func (m *model) handlePermissionResponse(msg PermissionResponseMsg) (tea.Model, 
 func (m *model) handleQuestionRequest(msg QuestionRequestMsg) (tea.Model, tea.Cmd) {
 	m.pendingQuestion = msg.Request
 	m.questionPrompt.Show(msg.Request, m.width)
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-	return m, nil
+	// Commit any pending messages before showing the question prompt
+	return m, tea.Batch(m.commitMessages()...)
 }
 
 func (m *model) handleQuestionResponse(msg QuestionResponseMsg) (tea.Model, tea.Cmd) {
@@ -202,8 +195,7 @@ func (m *model) handleQuestionResponse(msg QuestionResponseMsg) (tea.Model, tea.
 		m.pendingToolIdx = 0
 		m.pendingQuestion = nil
 		m.streaming = false
-		m.viewport.SetContent(m.renderMessages())
-		return m, nil
+		return m, tea.Batch(m.commitMessages()...)
 	}
 
 	tc := m.pendingToolCalls[m.pendingToolIdx]
@@ -217,11 +209,8 @@ func (m *model) handlePlanRequest(msg PlanRequestMsg) (tea.Model, tea.Cmd) {
 		planPath = m.planStore.GetPath(plan.GeneratePlanName(m.planTask))
 	}
 	m.planPrompt.Show(msg.Request, planPath, m.width, m.height)
-	chatContent := m.renderMessages()
-	planContent := m.planPrompt.RenderContent()
-	m.viewport.SetContent(chatContent + "\n" + planContent)
-	m.viewport.GotoBottom()
-	return m, nil
+	// Commit messages before showing the plan prompt
+	return m, tea.Batch(m.commitMessages()...)
 }
 
 func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
@@ -241,8 +230,7 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 		m.streaming = false
 		m.planMode = false
 		m.operationMode = modeNormal
-		m.viewport.SetContent(m.renderMessages())
-		return m, nil
+		return m, tea.Batch(m.commitMessages()...)
 	}
 
 	tc := m.pendingToolCalls[m.pendingToolIdx]
@@ -276,6 +264,7 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 	switch msg.ApproveMode {
 	case "clear-auto":
 		m.messages = []chatMessage{}
+		m.committedCount = 0
 		m.sessionPermissions.AllowAllEdits = true
 		m.sessionPermissions.AllowAllWrites = true
 		for _, pattern := range config.CommonAllowPatterns {
@@ -294,9 +283,11 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelFunc = cancel
 		providerMsgs := m.convertMessagesToProvider()
+
+		// Commit the user message before starting stream
+		commitCmds := m.commitMessages()
+
 		m.messages = append(m.messages, chatMessage{role: roleAssistant, content: ""})
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
 
 		modelID := m.getModelID()
 		sysPrompt := system.Prompt(system.Config{
@@ -316,7 +307,8 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 			Tools:        tools,
 			SystemPrompt: sysPrompt,
 		})
-		return m, tea.Batch(m.waitForChunk(), m.spinner.Tick)
+		allCmds := append(commitCmds, m.waitForChunk(), m.spinner.Tick)
+		return m, tea.Batch(allCmds...)
 
 	case "auto":
 		m.sessionPermissions.AllowAllEdits = true
@@ -341,9 +333,8 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) handleEnterPlanRequest(msg EnterPlanRequestMsg) (tea.Model, tea.Cmd) {
 	m.enterPlanPrompt.Show(msg.Request, m.width)
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-	return m, nil
+	// Commit messages before showing the enter plan prompt
+	return m, tea.Batch(m.commitMessages()...)
 }
 
 func (m *model) handleEnterPlanResponse(msg EnterPlanResponseMsg) (tea.Model, tea.Cmd) {
@@ -376,9 +367,7 @@ func (m *model) handleCompactResult(msg CompactResultMsg) (tea.Model, tea.Cmd) {
 			role:    roleNotice,
 			content: fmt.Sprintf("⚠ Compact failed: %v", msg.Error),
 		})
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
-		return m, nil
+		return m, tea.Batch(m.commitMessages()...)
 	}
 
 	// Replace message history with the summary as a user message
@@ -391,12 +380,14 @@ func (m *model) handleCompactResult(msg CompactResultMsg) (tea.Model, tea.Cmd) {
 		expanded:     false, // Collapsed by default
 	}}
 
+	m.committedCount = 0
 	m.lastInputTokens = 0
 	m.lastOutputTokens = 0
 
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-	return m, nil
+	// Clear screen and commit the new summary
+	cmds := []tea.Cmd{tea.ClearScreen}
+	cmds = append(cmds, m.commitMessages()...)
+	return m, tea.Batch(cmds...)
 }
 
 // Token Limit handlers
@@ -413,9 +404,7 @@ func (m *model) handleTokenLimitResult(msg TokenLimitResultMsg) (tea.Model, tea.
 	}
 	m.messages = append(m.messages, chatMessage{role: roleNotice, content: content})
 
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-	return m, nil
+	return m, tea.Batch(m.commitMessages()...)
 }
 
 // Editor finished handler
@@ -430,7 +419,5 @@ func (m *model) handleEditorFinished(msg EditorFinishedMsg) (tea.Model, tea.Cmd)
 	}
 
 	m.messages = append(m.messages, chatMessage{role: roleNotice, content: content})
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-	return m, nil
+	return m, tea.Batch(m.commitMessages()...)
 }

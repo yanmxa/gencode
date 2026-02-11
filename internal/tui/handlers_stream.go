@@ -46,9 +46,9 @@ func (m *model) handleToolResult(msg toolResultMsg) (tea.Model, tea.Cmd) {
 		toolName:   msg.toolName,
 	})
 	m.pendingToolIdx++
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-	return m, processNextTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd, m.settings, m.sessionPermissions)
+	commitCmds := m.commitMessages()
+	nextTool := processNextTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd, m.settings, m.sessionPermissions)
+	return m, tea.Batch(append(commitCmds, nextTool)...)
 }
 
 func (m *model) handleParallelToolResult(msg toolResultMsg) (tea.Model, tea.Cmd) {
@@ -88,10 +88,9 @@ func (m *model) completeParallelExecution() (tea.Model, tea.Cmd) {
 	m.pendingToolCalls = nil
 	m.pendingToolIdx = 0
 
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-
-	return m, m.continueWithToolResults()
+	commitCmds := m.commitMessages()
+	commitCmds = append(commitCmds, m.continueWithToolResults())
+	return m, tea.Batch(commitCmds...)
 }
 
 func (m *model) handleStartToolExecution(msg startToolExecutionMsg) (tea.Model, tea.Cmd) {
@@ -99,7 +98,6 @@ func (m *model) handleStartToolExecution(msg startToolExecutionMsg) (tea.Model, 
 	m.pendingToolIdx = 0
 
 	if len(m.pendingToolCalls) == 0 {
-		m.viewport.SetContent(m.renderMessages())
 		return m, m.continueWithToolResults()
 	}
 
@@ -174,8 +172,6 @@ func (m *model) filterToolCallsWithHooks(toolCalls []provider.ToolCall) []provid
 func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 	if msg.buildingToolName != "" {
 		m.buildingToolName = msg.buildingToolName
-		m.viewport.SetContent(m.renderMessages())
-		m.viewport.GotoBottom()
 	}
 
 	if msg.done {
@@ -192,20 +188,25 @@ func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 				idx := len(m.messages) - 1
 				m.messages[idx].toolCalls = msg.toolCalls
 			}
-			m.viewport.SetContent(m.renderMessages())
+			// Commit the completed assistant message with tool calls
+			commitCmds := m.commitMessages()
 
 			// Check for auto-compact before continuing the agentic loop
 			if m.shouldAutoCompact() {
-				return m, m.triggerAutoCompact()
+				commitCmds = append(commitCmds, m.triggerAutoCompact())
+				return m, tea.Batch(commitCmds...)
 			}
 
-			return m, m.executeTools(msg.toolCalls)
+			commitCmds = append(commitCmds, m.executeTools(msg.toolCalls))
+			return m, tea.Batch(commitCmds...)
 		}
 
 		m.streaming = false
 		m.streamChan = nil
 		m.cancelFunc = nil
-		m.viewport.SetContent(m.renderMessages())
+
+		// Commit the completed assistant message
+		commitCmds := m.commitMessages()
 
 		// Execute Stop hook asynchronously
 		if m.hookEngine != nil {
@@ -217,7 +218,11 @@ func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 
 		// Check for auto-compact trigger (>= 95% context usage)
 		if m.shouldAutoCompact() {
-			return m, m.triggerAutoCompact()
+			commitCmds = append(commitCmds, m.triggerAutoCompact())
+			return m, tea.Batch(commitCmds...)
+		}
+		if len(commitCmds) > 0 {
+			return m, tea.Batch(commitCmds...)
 		}
 		return m, nil
 	}
@@ -232,7 +237,6 @@ func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 			m.streaming = false
 			m.streamChan = nil
 			m.cancelFunc = nil
-			m.viewport.SetContent(m.renderMessages())
 			return m, m.triggerAutoCompact()
 		}
 
@@ -243,21 +247,19 @@ func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 		m.streaming = false
 		m.streamChan = nil
 		m.cancelFunc = nil
-		m.viewport.SetContent(m.renderMessages())
-		return m, nil
+		// Commit the error message
+		return m, tea.Batch(m.commitMessages()...)
 	}
 
+	// Streaming text/thinking chunks: just update the message content
+	// View() will re-render the active content automatically
 	if len(m.messages) > 0 {
 		idx := len(m.messages) - 1
 		if msg.thinking != "" {
 			m.messages[idx].thinking += msg.thinking
-			m.viewport.SetContent(m.renderMessages())
-			m.viewport.GotoBottom()
 		}
 		if msg.text != "" {
 			m.messages[idx].content += msg.text
-			m.viewport.SetContent(m.renderMessages())
-			m.viewport.GotoBottom()
 		}
 	}
 	return m, tea.Batch(m.waitForChunk(), m.spinner.Tick)
@@ -267,9 +269,10 @@ func (m *model) handleStreamContinue(msg streamContinueMsg) (tea.Model, tea.Cmd)
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelFunc = cancel
 
+	// Commit any pending messages before starting new stream
+	commitCmds := m.commitMessages()
+
 	m.messages = append(m.messages, chatMessage{role: roleAssistant, content: ""})
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
 
 	extra := m.buildExtraContext()
 
@@ -292,7 +295,8 @@ func (m *model) handleStreamContinue(msg streamContinueMsg) (tea.Model, tea.Cmd)
 		Tools:        tools,
 		SystemPrompt: sysPrompt,
 	})
-	return m, tea.Batch(m.waitForChunk(), m.spinner.Tick)
+	allCmds := append(commitCmds, m.waitForChunk(), m.spinner.Tick)
+	return m, tea.Batch(allCmds...)
 }
 
 func (m *model) handleSpinnerTick(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -332,17 +336,6 @@ func (m *model) handleSpinnerTick(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Determine if viewport needs update
-	needsUpdate := m.buildingToolName != "" ||
-		(m.pendingToolCalls != nil && m.pendingToolIdx < len(m.pendingToolCalls))
-
-	if !needsUpdate && len(m.messages) > 0 {
-		lastMsg := m.messages[len(m.messages)-1]
-		needsUpdate = lastMsg.role == roleAssistant && lastMsg.content == "" && len(lastMsg.toolCalls) == 0
-	}
-
-	if needsUpdate {
-		m.viewport.SetContent(m.renderMessages())
-	}
+	// View() renders active content live, no viewport update needed
 	return m, cmd
 }

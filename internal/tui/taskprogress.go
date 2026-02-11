@@ -56,10 +56,7 @@ func (m *model) handleTaskProgress(msg TaskProgressMsg) (tea.Model, tea.Cmd) {
 		m.taskProgress = m.taskProgress[1:]
 	}
 
-	// Update viewport to show progress
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-
+	// View() renders active content live, no viewport update needed
 	// Continue checking for more progress
 	return m, tea.Batch(m.spinner.Tick, checkTaskProgress())
 }

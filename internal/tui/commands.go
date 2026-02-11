@@ -261,10 +261,12 @@ func handleHelpCommand(ctx context.Context, m *model, args string) (string, erro
 
 // handleClearCommand handles the /clear command
 func handleClearCommand(ctx context.Context, m *model, args string) (string, error) {
-	// Clear all messages and reset token tracking
+	// Clear all messages, reset token tracking, and mark for screen clear
 	m.messages = []chatMessage{}
+	m.committedCount = 0
 	m.lastInputTokens = 0
 	m.lastOutputTokens = 0
+	m.pendingClearScreen = true
 	return "", nil
 }
 
@@ -763,9 +765,9 @@ func (m *model) triggerAutoCompact() tea.Cmd {
 		role:    roleNotice,
 		content: fmt.Sprintf("⚡ Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()),
 	})
-	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
-	return tea.Batch(m.spinner.Tick, startCompact(m))
+	commitCmds := m.commitMessages()
+	commitCmds = append(commitCmds, m.spinner.Tick, startCompact(m))
+	return tea.Batch(commitCmds...)
 }
 
 // IsSkillCommand checks if the command is a registered skill.
@@ -1285,8 +1287,7 @@ func (m model) handleMemorySelected(msg MemorySelectedMsg) (tea.Model, tea.Cmd) 
 				role:    roleNotice,
 				content: fmt.Sprintf("Error: %v", err),
 			})
-			m.viewport.SetContent(m.renderMessages())
-			return m, nil
+			return m, tea.Batch(m.commitMessages()...)
 		}
 	}
 
@@ -1299,9 +1300,10 @@ func (m model) handleMemorySelected(msg MemorySelectedMsg) (tea.Model, tea.Cmd) 
 		role:    roleNotice,
 		content: fmt.Sprintf("Opening %s memory: %s", msg.Level, displayPath),
 	})
-	m.viewport.SetContent(m.renderMessages())
 
-	return m, startExternalEditor(filePath)
+	commitCmds := m.commitMessages()
+	commitCmds = append(commitCmds, startExternalEditor(filePath))
+	return m, tea.Batch(commitCmds...)
 }
 
 // createMemoryFile creates a new memory file with the appropriate template
