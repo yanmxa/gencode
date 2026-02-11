@@ -76,27 +76,6 @@ gen --resume          # Select from list
 3. Use `/model` to select a model
 4. Start chatting!
 
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `/provider` | Connect to an LLM provider |
-| `/model` | Select a model |
-| `/tools` | List available tools |
-| `/skills` | Manage skills (disable/enable/active) |
-| `/agents` | List available agents |
-| `/clear` | Clear chat history |
-| `/help` | Show all commands |
-
-### Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `Enter` | Send message |
-| `Alt+Enter` | Insert newline |
-| `↑/↓` | Navigate history |
-| `Esc` | Stop AI response |
-| `Ctrl+C` | Clear input / Quit |
 
 ## 🔧 Configuration
 
@@ -114,68 +93,12 @@ GenCode stores configuration in `~/.gen/`:
 
 ### Providers
 
-<details>
-<summary><b>Anthropic Claude</b></summary>
-
-- **Auth:** API Key, Vertex AI
-- **Env:** `ANTHROPIC_API_KEY`
-- **Vertex AI Env:** `ANTHROPIC_VERTEX_PROJECT_ID`, `CLOUD_ML_REGION` (defaults to `us-east5`)
-- **Models:** Claude Opus, Sonnet, Haiku (via API or Vertex AI)
-
-</details>
-
-<details>
-<summary><b>OpenAI</b></summary>
-
-- **Auth:** API Key
-- **Env:** `OPENAI_API_KEY`
-- **Models:** GPT-4o, GPT-4, o1/o3, Codex, etc.
-
-</details>
-
-<details>
-<summary><b>Google Gemini</b></summary>
-
-- **Auth:** API Key
-- **Env:** `GOOGLE_API_KEY` (or `GEMINI_API_KEY`)
-- **Models:** Gemini 2.5 Pro/Flash, etc.
-
-</details>
-
-<details>
-<summary><b>Moonshot Kimi</b></summary>
-
-- **Auth:** API Key (OpenAI-compatible)
-- **Env:** `MOONSHOT_API_KEY`, `MOONSHOT_BASE_URL` (optional, defaults to `https://api.moonshot.cn/v1`)
-- **Models:** Kimi K2.5, K2 Thinking, Moonshot V1, etc.
-- **Features:** Thinking mode, multimodal (image/video for supported models)
-
-</details>
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `ANTHROPIC_API_KEY` | Anthropic API key |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `GOOGLE_API_KEY` | Google AI API key |
-| `MOONSHOT_API_KEY` | Moonshot (Kimi) API key |
-| `GEN_DEBUG` | Set to `1` to enable debug logging |
-
-## 🛠️ Built-in Tools
-
-| Tool | Description |
-|------|-------------|
-| `Read` | Read file contents |
-| `Write` | Create or overwrite files |
-| `Edit` | Edit files with diff preview |
-| `Bash` | Execute shell commands |
-| `Glob` | Find files by pattern |
-| `Grep` | Search file contents |
-| `WebFetch` | Fetch web page content |
-| `WebSearch` | Search the web |
-| `Task` | Spawn subagents for complex tasks |
-| `Skill` | Invoke custom skills |
+| Provider | Auth | Environment Variables | Models |
+|----------|------|----------------------|--------|
+| **Anthropic Claude** | API Key, Vertex AI | `ANTHROPIC_API_KEY` or `ANTHROPIC_VERTEX_PROJECT_ID`, `CLOUD_ML_REGION` | Claude Opus, Sonnet, Haiku |
+| **OpenAI** | API Key | `OPENAI_API_KEY` | GPT-5.2, GPT-5, o3/o4-mini, Codex |
+| **Google Gemini** | API Key | `GOOGLE_API_KEY` (or `GEMINI_API_KEY`) | Gemini 3 Pro/Flash, Gemini 2.5 Pro/Flash |
+| **Moonshot Kimi** | API Key | `MOONSHOT_API_KEY`, `MOONSHOT_BASE_URL` (optional) | Kimi K2.5, K2 Thinking |
 
 ## 🔗 Related Projects
 
