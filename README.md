@@ -15,12 +15,22 @@ GenCode is an AI assistant that lives in your terminal. Multi-provider support, 
 
 ## ✨ Features
 
-- **Multi-provider Support** — Anthropic Claude, OpenAI, Google Gemini, Moonshot Kimi
+- **Multi-provider Support** — Connect to any supported LLM with a single `/provider` command
 - **Built-in Tools** — Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 - **Skills System** — Reusable prompts with 3 states: disabled, enabled (slash command), active (model-aware)
 - **Subagents** — Specialized agents (Explore, Plan, Bash, Review) for autonomous task execution
 - **Session Persistence** — Save, resume, and manage conversation sessions
 - **Non-interactive Mode** — Pipe input or pass messages directly for scripting
+
+### Providers
+
+| Provider | Models | Auth | Environment Variables |
+|:---------|:-------|:-----|:----------------------|
+| **Anthropic** | Claude Opus 4, Sonnet 4, Haiku 3.5 | API Key / Vertex AI | `ANTHROPIC_API_KEY` |
+| **OpenAI** | GPT-5.2, GPT-5, o3, o4-mini, Codex | API Key | `OPENAI_API_KEY` |
+| **Google** | Gemini 3 Pro/Flash, 2.5 Pro/Flash | API Key | `GOOGLE_API_KEY` |
+| **Moonshot** | Kimi K2.5, K2 Thinking | API Key | `MOONSHOT_API_KEY` |
+| **Alibaba** | Qwen 3, Qwen 2.5 | _Planning_ | — |
 
 ## 🚀 Installation
 
@@ -91,14 +101,6 @@ GenCode stores configuration in `~/.gen/`:
 └── agents/           # Custom agents
 ```
 
-### Providers
-
-| Provider | Auth | Environment Variables | Models |
-|----------|------|----------------------|--------|
-| **Anthropic Claude** | API Key, Vertex AI | `ANTHROPIC_API_KEY` or `ANTHROPIC_VERTEX_PROJECT_ID`, `CLOUD_ML_REGION` | Claude Opus, Sonnet, Haiku |
-| **OpenAI** | API Key | `OPENAI_API_KEY` | GPT-5.2, GPT-5, o3/o4-mini, Codex |
-| **Google Gemini** | API Key | `GOOGLE_API_KEY` (or `GEMINI_API_KEY`) | Gemini 3 Pro/Flash, Gemini 2.5 Pro/Flash |
-| **Moonshot Kimi** | API Key | `MOONSHOT_API_KEY`, `MOONSHOT_BASE_URL` (optional) | Kimi K2.5, K2 Thinking |
 
 ## 🔗 Related Projects
 
