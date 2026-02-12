@@ -9,11 +9,14 @@ import (
 
 // LogRequest logs an LLM request in human-readable format
 func LogRequest(providerName, model string, opts provider.CompletionOptions) {
+	turn := NextTurn()
+
+	// Write to DEV_DIR if enabled
+	WriteDevRequest(providerName, model, opts, turn)
+
 	if !enabled {
 		return
 	}
-
-	turn := NextTurn()
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "───────────────────────────────────────── Turn %d ─────────────────────────────────────────\n", turn)

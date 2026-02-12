@@ -9,6 +9,11 @@ import (
 
 // LogResponse logs an LLM response in human-readable format
 func LogResponse(providerName string, resp provider.CompletionResponse) {
+	turn := CurrentTurn()
+
+	// Write to DEV_DIR if enabled
+	WriteDevResponse(providerName, resp, turn)
+
 	if !enabled {
 		return
 	}

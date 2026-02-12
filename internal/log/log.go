@@ -19,6 +19,9 @@ var (
 	initialized bool
 	mu          sync.Mutex
 	turnCount   int // Track conversation turns
+
+	devDir     string // DEV_DIR directory path for debug output
+	devEnabled bool   // Whether DEV_DIR is enabled
 )
 
 // Init initializes the logger based on GEN_DEBUG env var
@@ -30,6 +33,15 @@ func Init() error {
 		return nil
 	}
 	initialized = true
+
+	// Initialize DEV_DIR for JSON debug output (independent of GEN_DEBUG)
+	if dir := os.Getenv("DEV_DIR"); dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create DEV_DIR: %w", err)
+		}
+		devDir = dir
+		devEnabled = true
+	}
 
 	if os.Getenv("GEN_DEBUG") != "1" {
 		logger = zap.NewNop()
