@@ -4,6 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/session"
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 // ensureSessionStore initializes the session store if not already initialized
@@ -50,6 +51,7 @@ func (m *model) saveSession() error {
 			Cwd:      m.cwd,
 		},
 		Messages: storedMessages,
+		Tasks:    tool.DefaultTodoStore.Export(),
 	}
 
 	// Generate title from first user message if new session
@@ -80,6 +82,13 @@ func (m *model) loadSession(id string) error {
 	// Restore messages
 	m.messages = convertFromStoredMessages(sess.Messages)
 	m.currentSessionID = sess.Metadata.ID
+
+	// Restore tasks
+	if len(sess.Tasks) > 0 {
+		tool.DefaultTodoStore.Import(sess.Tasks)
+	} else {
+		tool.DefaultTodoStore.Reset()
+	}
 
 	// Reset token usage (will be updated on next API call)
 	m.lastInputTokens = 0

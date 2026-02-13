@@ -267,6 +267,8 @@ func handleClearCommand(ctx context.Context, m *model, args string) (string, err
 	m.lastInputTokens = 0
 	m.lastOutputTokens = 0
 	m.pendingClearScreen = true
+	// Reset task list for fresh session
+	tool.DefaultTodoStore.Reset()
 	return "", nil
 }
 

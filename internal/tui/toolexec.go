@@ -269,6 +269,10 @@ func executeInteractiveTool[T any](tc provider.ToolCall, response T, cwd string)
 }
 
 func parseToolInput(input string) (map[string]any, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return map[string]any{}, nil
+	}
 	var params map[string]any
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
 		return nil, err

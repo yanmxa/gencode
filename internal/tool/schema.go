@@ -302,6 +302,9 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Too
 	// Add Task tool
 	tools = append(tools, TaskToolSchema)
 
+	// Add Todo tools
+	tools = append(tools, TodoToolSchemas...)
+
 	// Add MCP tools if getter is provided
 	if mcpToolsGetter != nil {
 		tools = append(tools, mcpToolsGetter()...)
@@ -435,6 +438,106 @@ var ExitPlanModeSchema = provider.Tool{
 			},
 		},
 		"required": []string{"plan"},
+	},
+}
+
+// TodoToolSchemas defines the schemas for task management tools
+var TodoToolSchemas = []provider.Tool{
+	{
+		Name:        "TaskCreate",
+		Description: "Create a task to track progress on multi-step work. Use for complex tasks requiring 3+ steps or when the user provides multiple tasks at once.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"subject": map[string]any{
+					"type":        "string",
+					"description": "A brief, actionable title in imperative form (e.g., 'Fix authentication bug')",
+				},
+				"description": map[string]any{
+					"type":        "string",
+					"description": "Detailed description of what needs to be done",
+				},
+				"activeForm": map[string]any{
+					"type":        "string",
+					"description": "Present continuous form shown in spinner when in_progress (e.g., 'Fixing authentication bug')",
+				},
+				"metadata": map[string]any{
+					"type":        "object",
+					"description": "Arbitrary metadata to attach to the task",
+				},
+			},
+			"required": []string{"subject", "description"},
+		},
+	},
+	{
+		Name:        "TaskGet",
+		Description: "Retrieve a task by its ID to see full details including description, status, and dependencies.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"taskId": map[string]any{
+					"type":        "string",
+					"description": "The ID of the task to retrieve",
+				},
+			},
+			"required": []string{"taskId"},
+		},
+	},
+	{
+		Name:        "TaskUpdate",
+		Description: "Update a task's status, details, or dependencies. Use to mark tasks as in_progress before starting work, completed when done, or deleted to remove.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"taskId": map[string]any{
+					"type":        "string",
+					"description": "The ID of the task to update",
+				},
+				"status": map[string]any{
+					"type":        "string",
+					"description": "New status: pending, in_progress, completed, or deleted",
+				},
+				"subject": map[string]any{
+					"type":        "string",
+					"description": "New subject for the task",
+				},
+				"description": map[string]any{
+					"type":        "string",
+					"description": "New description for the task",
+				},
+				"activeForm": map[string]any{
+					"type":        "string",
+					"description": "Present continuous form shown in spinner when in_progress",
+				},
+				"owner": map[string]any{
+					"type":        "string",
+					"description": "New owner for the task",
+				},
+				"metadata": map[string]any{
+					"type":        "object",
+					"description": "Metadata keys to merge (set a key to null to delete it)",
+				},
+				"addBlocks": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Task IDs that this task blocks",
+				},
+				"addBlockedBy": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Task IDs that block this task",
+				},
+			},
+			"required": []string{"taskId"},
+		},
+	},
+	{
+		Name:        "TaskList",
+		Description: "List all tracked tasks with their status, owner, and dependencies. Use to check progress or find the next task to work on.",
+		Parameters: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
 	},
 }
 

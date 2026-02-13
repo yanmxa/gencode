@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 // SessionMetadata contains metadata about a session
@@ -34,4 +35,5 @@ type StoredMessage struct {
 type Session struct {
 	Metadata SessionMetadata `json:"metadata"`
 	Messages []StoredMessage `json:"messages"`
+	Tasks    []tool.TodoTask `json:"tasks,omitempty"`
 }

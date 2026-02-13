@@ -246,6 +246,11 @@ func RunWithContinue() error {
 	m.messages = convertFromStoredMessages(sess.Messages)
 	m.currentSessionID = sess.Metadata.ID
 
+	// Restore tasks from session
+	if len(sess.Tasks) > 0 {
+		tool.DefaultTodoStore.Import(sess.Tasks)
+	}
+
 	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {
@@ -604,24 +609,30 @@ func (m model) View() string {
 
 	separator := separatorStyle.Render(strings.Repeat("─", m.width))
 
+	// Helper: render todo list prefix for interactive prompts
+	todoPrefix := ""
+	if todoView := m.renderTodoList(); todoView != "" {
+		todoPrefix = strings.TrimSuffix(todoView, "\n") + "\n"
+	}
+
 	// Plan prompt: show plan content + menu in the managed region
 	if m.planPrompt != nil && m.planPrompt.IsActive() {
 		planContent := m.planPrompt.RenderContent()
 		planMenu := m.planPrompt.RenderMenu()
-		return fmt.Sprintf("%s\n%s\n%s\n%s", planContent, separator, planMenu, separator)
+		return fmt.Sprintf("%s\n%s%s\n%s\n%s", planContent, todoPrefix, separator, planMenu, separator)
 	}
 
-	// Interactive prompts: show only the prompt in the managed region
+	// Interactive prompts: show todo list above the prompt
 	if m.permissionPrompt.IsActive() {
-		return fmt.Sprintf("%s\n%s", separator, m.permissionPrompt.Render())
+		return fmt.Sprintf("%s%s\n%s", todoPrefix, separator, m.permissionPrompt.Render())
 	}
 
 	if m.questionPrompt.IsActive() {
-		return fmt.Sprintf("%s\n%s", separator, m.questionPrompt.Render())
+		return fmt.Sprintf("%s%s\n%s", todoPrefix, separator, m.questionPrompt.Render())
 	}
 
 	if m.enterPlanPrompt.IsActive() {
-		return fmt.Sprintf("%s\n%s", separator, m.enterPlanPrompt.Render())
+		return fmt.Sprintf("%s%s\n%s", todoPrefix, separator, m.enterPlanPrompt.Render())
 	}
 
 	// Active content: streaming message, tool spinner
@@ -636,6 +647,11 @@ func (m model) View() string {
 
 	if activeContent != "" {
 		parts = append(parts, activeContent)
+	}
+
+	// Task list: show between active content and input
+	if todoView := m.renderTodoList(); todoView != "" {
+		parts = append(parts, strings.TrimSuffix(todoView, "\n"))
 	}
 
 	if pendingImagesView != "" {
