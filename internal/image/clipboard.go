@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/message"
 )
 
 // ReadImageFromClipboard reads an image from the clipboard.
@@ -92,8 +92,8 @@ func readClipboardLinux() (*ImageInfo, error) {
 	return newClipboardImageInfo(data)
 }
 
-// ReadImageToProviderData reads clipboard image directly to provider.ImageData
-func ReadImageToProviderData() (*provider.ImageData, error) {
+// ReadImageToProviderData reads clipboard image directly to message.ImageData
+func ReadImageToProviderData() (*message.ImageData, error) {
 	info, err := ReadImageFromClipboard()
 	if err != nil {
 		return nil, err

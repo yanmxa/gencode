@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -37,7 +38,7 @@ func LogRequest(providerName, model string, opts provider.CompletionOptions) {
 	fmt.Fprintf(&sb, "    Messages(%d):\n", len(opts.Messages))
 	for i, msg := range opts.Messages {
 		switch msg.Role {
-		case "user":
+		case message.RoleUser:
 			if msg.Content != "" {
 				fmt.Fprintf(&sb, "      [%d] User: %s\n", i, escapeForLog(msg.Content))
 			}
@@ -48,7 +49,7 @@ func LogRequest(providerName, model string, opts provider.CompletionOptions) {
 					fmt.Fprintf(&sb, "      [%d] ToolResult[%s]: %s\n", i, msg.ToolResult.ToolCallID, escapeForLog(msg.ToolResult.Content))
 				}
 			}
-		case "assistant":
+		case message.RoleAssistant:
 			if msg.Content != "" {
 				fmt.Fprintf(&sb, "      [%d] Assistant: %s\n", i, escapeForLog(msg.Content))
 			}

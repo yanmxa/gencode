@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -10,50 +9,50 @@ import (
 
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/mcp"
-	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/ui"
 )
 
 type (
 	startToolExecutionMsg struct {
-		toolCalls []provider.ToolCall
+		toolCalls []message.ToolCall
 	}
 	allToolsCompletedMsg struct{}
 	toolResultMsg        struct {
 		index    int
-		result   provider.ToolResult
+		result   message.ToolResult
 		toolName string
 	}
 )
 
-func (m model) executeTools(toolCalls []provider.ToolCall) tea.Cmd {
+func (m model) executeTools(toolCalls []message.ToolCall) tea.Cmd {
 	return func() tea.Msg {
 		return startToolExecutionMsg{toolCalls: toolCalls}
 	}
 }
 
 // newToolResult creates a toolResultMsg with the given parameters
-func newToolResult(tc provider.ToolCall, index int, content string, isError bool) toolResultMsg {
+func newToolResult(tc message.ToolCall, index int, content string, isError bool) toolResultMsg {
 	return toolResultMsg{
 		index:    index,
-		result:   provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isError},
+		result:   message.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isError},
 		toolName: tc.Name,
 	}
 }
 
 // newToolResultFromOutput creates a toolResultMsg from a ui.ToolResult
-func newToolResultFromOutput(tc provider.ToolCall, index int, output ui.ToolResult) toolResultMsg {
+func newToolResultFromOutput(tc message.ToolCall, index int, output ui.ToolResult) toolResultMsg {
 	return toolResultMsg{
 		index:    index,
-		result:   provider.ToolResult{ToolCallID: tc.ID, Content: output.FormatForLLM(), IsError: !output.Success},
+		result:   message.ToolResult{ToolCallID: tc.ID, Content: output.FormatForLLM(), IsError: !output.Success},
 		toolName: tc.Name,
 	}
 }
 
 // executeToolsParallel executes multiple tools in parallel and returns a batch command
-func executeToolsParallel(toolCalls []provider.ToolCall, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
+func executeToolsParallel(toolCalls []message.ToolCall, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
 	if len(toolCalls) == 0 {
 		return func() tea.Msg {
 			return allToolsCompletedMsg{}
@@ -84,8 +83,8 @@ func executeToolsParallel(toolCalls []provider.ToolCall, cwd string, settings *c
 	return tea.Batch(cmds...)
 }
 
-// executeToolAsync executes a single tool asynchronously and returns its result
-func executeToolAsync(tc provider.ToolCall, index int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
+// executeToolAsync executes a single tool asynchronously and returns its result.
+func executeToolAsync(tc message.ToolCall, index int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 
@@ -96,42 +95,42 @@ func executeToolAsync(tc provider.ToolCall, index int, cwd string, settings *con
 
 		// Check if this is an MCP tool
 		if mcp.IsMCPTool(tc.Name) {
-			start := time.Now()
-			result := executeMCPTool(ctx, tc, params)
-			log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
-			return newToolResultFromOutput(tc, index, result)
+			return executeAndLog(tc, index, func() ui.ToolResult {
+				return executeMCPTool(ctx, tc, params)
+			})
 		}
 
 		if _, ok := tool.Get(tc.Name); !ok {
 			return newToolResult(tc, index, "Unknown tool: "+tc.Name, true)
 		}
 
-		// Check permission - if auto-allowed or denied, handle here
+		// Check permission
 		if settings != nil {
-			permResult := settings.CheckPermission(tc.Name, params, sessionPerms)
-			switch permResult {
-			case config.PermissionAllow:
-				start := time.Now()
-				result := tool.Execute(ctx, tc.Name, params, cwd)
-				log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
-				return newToolResultFromOutput(tc, index, result)
+			switch settings.CheckPermission(tc.Name, params, sessionPerms) {
 			case config.PermissionDeny:
 				return newToolResult(tc, index, "Permission denied by settings", true)
+			case config.PermissionAllow:
+				// Fall through to execute
 			}
 		}
 
-		start := time.Now()
-		result := tool.Execute(ctx, tc.Name, params, cwd)
-		log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
-		return newToolResultFromOutput(tc, index, result)
+		return executeAndLog(tc, index, func() ui.ToolResult {
+			return tool.Execute(ctx, tc.Name, params, cwd)
+		})
 	}
 }
 
-func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
+// executeAndLog runs a tool function, logs execution time, and returns the result.
+func executeAndLog(tc message.ToolCall, index int, fn func() ui.ToolResult) toolResultMsg {
+	start := time.Now()
+	result := fn()
+	log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
+	return newToolResultFromOutput(tc, index, result)
+}
+
+func processNextTool(toolCalls []message.ToolCall, idx int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
 	if idx >= len(toolCalls) {
-		return func() tea.Msg {
-			return allToolsCompletedMsg{}
-		}
+		return func() tea.Msg { return allToolsCompletedMsg{} }
 	}
 
 	tc := toolCalls[idx]
@@ -144,12 +143,11 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 			return newToolResult(tc, idx, "Error parsing tool input: "+err.Error(), true)
 		}
 
-		// Check if this is an MCP tool
+		// MCP tools execute directly
 		if mcp.IsMCPTool(tc.Name) {
-			start := time.Now()
-			result := executeMCPTool(ctx, tc, params)
-			log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
-			return newToolResultFromOutput(tc, idx, result)
+			return executeAndLog(tc, idx, func() ui.ToolResult {
+				return executeMCPTool(ctx, tc, params)
+			})
 		}
 
 		t, ok := tool.Get(tc.Name)
@@ -157,53 +155,72 @@ func processNextTool(toolCalls []provider.ToolCall, idx int, cwd string, setting
 			return newToolResult(tc, idx, "Unknown tool: "+tc.Name, true)
 		}
 
+		// Check permissions from settings
 		if settings != nil {
-			permResult := settings.CheckPermission(tc.Name, params, sessionPerms)
-			switch permResult {
+			switch settings.CheckPermission(tc.Name, params, sessionPerms) {
 			case config.PermissionAllow:
-				start := time.Now()
-				result := tool.Execute(ctx, tc.Name, params, cwd)
-				log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
-				return newToolResultFromOutput(tc, idx, result)
+				return executeAndLog(tc, idx, func() ui.ToolResult {
+					return tool.Execute(ctx, tc.Name, params, cwd)
+				})
 			case config.PermissionDeny:
 				return newToolResult(tc, idx, "Permission denied by settings", true)
-			case config.PermissionAsk:
-				// Fall through
 			}
 		}
 
-		if it, ok := t.(tool.InteractiveTool); ok && it.RequiresInteraction() {
-			req, err := it.PrepareInteraction(ctx, params, cwd)
-			if err != nil {
-				return newToolResult(tc, idx, "Error: "+err.Error(), true)
-			}
-			if qr, ok := req.(*tool.QuestionRequest); ok {
-				return QuestionRequestMsg{Request: qr}
-			}
-			if pr, ok := req.(*tool.PlanRequest); ok {
-				return PlanRequestMsg{Request: pr}
-			}
-			if epr, ok := req.(*tool.EnterPlanRequest); ok {
-				return EnterPlanRequestMsg{Request: epr}
-			}
+		// Check for interactive tool prompts
+		if msg := checkInteractiveTool(ctx, t, tc, idx, params, cwd); msg != nil {
+			return msg
 		}
 
-		if pat, ok := t.(tool.PermissionAwareTool); ok && pat.RequiresPermission() {
-			req, err := pat.PreparePermission(ctx, params, cwd)
-			if err != nil {
-				return newToolResult(tc, idx, "Error: "+err.Error(), true)
-			}
-			return PermissionRequestMsg{Request: req}
+		// Check for permission-aware tool prompts
+		if msg := checkPermissionTool(ctx, t, tc, idx, params, cwd); msg != nil {
+			return msg
 		}
 
-		start := time.Now()
-		result := tool.Execute(ctx, tc.Name, params, cwd)
-		log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
-		return newToolResultFromOutput(tc, idx, result)
+		return executeAndLog(tc, idx, func() ui.ToolResult {
+			return tool.Execute(ctx, tc.Name, params, cwd)
+		})
 	}
 }
 
-func executeApprovedTool(toolCalls []provider.ToolCall, idx int, cwd string) tea.Cmd {
+// checkInteractiveTool checks if the tool requires interaction and returns the appropriate message.
+func checkInteractiveTool(ctx context.Context, t tool.Tool, tc message.ToolCall, idx int, params map[string]any, cwd string) tea.Msg {
+	it, ok := t.(tool.InteractiveTool)
+	if !ok || !it.RequiresInteraction() {
+		return nil
+	}
+
+	req, err := it.PrepareInteraction(ctx, params, cwd)
+	if err != nil {
+		return newToolResult(tc, idx, "Error: "+err.Error(), true)
+	}
+
+	switch r := req.(type) {
+	case *tool.QuestionRequest:
+		return QuestionRequestMsg{Request: r}
+	case *tool.PlanRequest:
+		return PlanRequestMsg{Request: r}
+	case *tool.EnterPlanRequest:
+		return EnterPlanRequestMsg{Request: r}
+	}
+	return nil
+}
+
+// checkPermissionTool checks if the tool requires permission and returns the appropriate message.
+func checkPermissionTool(ctx context.Context, t tool.Tool, tc message.ToolCall, idx int, params map[string]any, cwd string) tea.Msg {
+	pat, ok := t.(tool.PermissionAwareTool)
+	if !ok || !pat.RequiresPermission() {
+		return nil
+	}
+
+	req, err := pat.PreparePermission(ctx, params, cwd)
+	if err != nil {
+		return newToolResult(tc, idx, "Error: "+err.Error(), true)
+	}
+	return PermissionRequestMsg{Request: req}
+}
+
+func executeApprovedTool(toolCalls []message.ToolCall, idx int, cwd string) tea.Cmd {
 	if idx >= len(toolCalls) {
 		return nil
 	}
@@ -242,7 +259,7 @@ func executeApprovedTool(toolCalls []provider.ToolCall, idx int, cwd string) tea
 	}
 }
 
-func executeInteractiveTool[T any](tc provider.ToolCall, response T, cwd string) tea.Cmd {
+func executeInteractiveTool[T any](tc message.ToolCall, response T, cwd string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 
@@ -269,19 +286,11 @@ func executeInteractiveTool[T any](tc provider.ToolCall, response T, cwd string)
 }
 
 func parseToolInput(input string) (map[string]any, error) {
-	input = strings.TrimSpace(input)
-	if input == "" {
-		return map[string]any{}, nil
-	}
-	var params map[string]any
-	if err := json.Unmarshal([]byte(input), &params); err != nil {
-		return nil, err
-	}
-	return params, nil
+	return message.ParseToolInput(input)
 }
 
 // requiresUserInteraction checks if a tool call requires user interaction (permission or interactive prompt)
-func requiresUserInteraction(tc provider.ToolCall, settings *config.Settings, sessionPerms *config.SessionPermissions) bool {
+func requiresUserInteraction(tc message.ToolCall, settings *config.Settings, sessionPerms *config.SessionPermissions) bool {
 	params, err := parseToolInput(tc.Input)
 	if err != nil {
 		return true // Assume interaction required on parse error
@@ -313,7 +322,7 @@ func requiresUserInteraction(tc provider.ToolCall, settings *config.Settings, se
 }
 
 // executeMCPTool executes an MCP tool and returns the result
-func executeMCPTool(ctx context.Context, tc provider.ToolCall, params map[string]any) ui.ToolResult {
+func executeMCPTool(ctx context.Context, tc message.ToolCall, params map[string]any) ui.ToolResult {
 	if mcp.DefaultRegistry == nil {
 		return ui.NewErrorResult(tc.Name, "MCP registry not initialized")
 	}
@@ -341,11 +350,3 @@ func extractMCPContent(contents []mcp.ToolResultContent) string {
 	return strings.Join(parts, "\n")
 }
 
-// encodeToolInput converts params back to JSON string for tool input
-func encodeToolInput(params map[string]any) (string, error) {
-	data, err := json.Marshal(params)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}

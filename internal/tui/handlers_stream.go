@@ -7,8 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/message"
 )
 
 func (m *model) handleToolResult(msg toolResultMsg) (tea.Model, tea.Cmd) {
@@ -54,7 +53,7 @@ func (m *model) handleToolResult(msg toolResultMsg) (tea.Model, tea.Cmd) {
 func (m *model) handleParallelToolResult(msg toolResultMsg) (tea.Model, tea.Cmd) {
 	// Store result in the parallel results map
 	if m.parallelResults == nil {
-		m.parallelResults = make(map[int]provider.ToolResult)
+		m.parallelResults = make(map[int]message.ToolResult)
 	}
 	m.parallelResults[msg.index] = msg.result
 	m.parallelResultCount++
@@ -105,7 +104,7 @@ func (m *model) handleStartToolExecution(msg startToolExecutionMsg) (tea.Model, 
 
 	if len(m.pendingToolCalls) > 1 && m.canRunToolsInParallel(m.pendingToolCalls) {
 		m.parallelMode = true
-		m.parallelResults = make(map[int]provider.ToolResult)
+		m.parallelResults = make(map[int]message.ToolResult)
 		m.parallelResultCount = 0
 	}
 
@@ -113,7 +112,7 @@ func (m *model) handleStartToolExecution(msg startToolExecutionMsg) (tea.Model, 
 }
 
 // canRunToolsInParallel checks if all tools can run without user interaction
-func (m *model) canRunToolsInParallel(toolCalls []provider.ToolCall) bool {
+func (m *model) canRunToolsInParallel(toolCalls []message.ToolCall) bool {
 	for _, tc := range toolCalls {
 		if requiresUserInteraction(tc, m.settings, m.sessionPermissions) {
 			return false
@@ -132,41 +131,23 @@ func (m *model) handleAllToolsCompleted() (tea.Model, tea.Cmd) {
 }
 
 // filterToolCallsWithHooks runs PreToolUse hooks and filters blocked tools.
-func (m *model) filterToolCallsWithHooks(toolCalls []provider.ToolCall) []provider.ToolCall {
-	if m.hookEngine == nil {
-		return toolCalls
-	}
+func (m *model) filterToolCallsWithHooks(toolCalls []message.ToolCall) []message.ToolCall {
+	allowed, blocked := m.loop.FilterToolCalls(context.Background(), toolCalls)
 
-	filtered := make([]provider.ToolCall, 0, len(toolCalls))
-	for _, tc := range toolCalls {
-		params, _ := parseToolInput(tc.Input)
-		outcome := m.hookEngine.Execute(context.Background(), hooks.PreToolUse, hooks.HookInput{
-			ToolName:  tc.Name,
-			ToolInput: params,
-			ToolUseID: tc.ID,
+	// Add blocked results as chat messages
+	for _, br := range blocked {
+		m.messages = append(m.messages, chatMessage{
+			role:     roleUser,
+			toolName: br.ToolName,
+			toolResult: &message.ToolResult{
+				ToolCallID: br.ToolCallID,
+				Content:    br.Content,
+				IsError:    br.IsError,
+			},
 		})
-
-		if outcome.ShouldBlock {
-			m.messages = append(m.messages, chatMessage{
-				role:     roleUser,
-				toolName: tc.Name,
-				toolResult: &provider.ToolResult{
-					ToolCallID: tc.ID,
-					Content:    "Blocked by hook: " + outcome.BlockReason,
-					IsError:    true,
-				},
-			})
-			continue
-		}
-
-		if outcome.UpdatedInput != nil {
-			if updated, err := encodeToolInput(outcome.UpdatedInput); err == nil {
-				tc.Input = updated
-			}
-		}
-		filtered = append(filtered, tc)
 	}
-	return filtered
+
+	return allowed
 }
 
 func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
@@ -174,95 +155,118 @@ func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 		m.buildingToolName = msg.buildingToolName
 	}
 
+	if msg.err != nil {
+		return m.handleStreamError(msg.err)
+	}
+
 	if msg.done {
-		m.buildingToolName = ""
+		return m.handleStreamDone(msg)
+	}
 
-		// Update token usage from the most recent API response
-		if msg.usage != nil {
-			m.lastInputTokens = msg.usage.InputTokens
-			m.lastOutputTokens = msg.usage.OutputTokens
-		}
+	// Streaming text/thinking chunks: update the message content
+	m.appendToLastMessage(msg.text, msg.thinking)
+	return m, tea.Batch(m.waitForChunk(), m.spinner.Tick)
+}
 
-		if len(msg.toolCalls) > 0 {
-			if len(m.messages) > 0 {
-				idx := len(m.messages) - 1
-				m.messages[idx].toolCalls = msg.toolCalls
-			}
-			// Commit the completed assistant message with tool calls
-			commitCmds := m.commitMessages()
+// handleStreamDone processes a completed stream.
+func (m *model) handleStreamDone(msg streamChunkMsg) (tea.Model, tea.Cmd) {
+	m.buildingToolName = ""
 
-			// Check for auto-compact before continuing the agentic loop
-			if m.shouldAutoCompact() {
-				commitCmds = append(commitCmds, m.triggerAutoCompact())
-				return m, tea.Batch(commitCmds...)
-			}
+	if msg.usage != nil {
+		m.lastInputTokens = msg.usage.InputTokens
+		m.lastOutputTokens = msg.usage.OutputTokens
+	}
 
-			commitCmds = append(commitCmds, m.executeTools(msg.toolCalls))
-			return m, tea.Batch(commitCmds...)
-		}
-
-		m.streaming = false
-		m.streamChan = nil
-		m.cancelFunc = nil
-
-		// Commit the completed assistant message
+	if len(msg.toolCalls) > 0 {
+		m.setLastMessageToolCalls(msg.toolCalls)
 		commitCmds := m.commitMessages()
 
-		// Execute Stop hook asynchronously
-		if m.hookEngine != nil {
-			m.hookEngine.ExecuteAsync(hooks.Stop, hooks.HookInput{})
-		}
-
-		// Auto-save session after assistant response completes
-		_ = m.saveSession()
-
-		// Check for auto-compact trigger (>= 95% context usage)
 		if m.shouldAutoCompact() {
 			commitCmds = append(commitCmds, m.triggerAutoCompact())
 			return m, tea.Batch(commitCmds...)
 		}
-		if len(commitCmds) > 0 {
-			return m, tea.Batch(commitCmds...)
-		}
-		return m, nil
+
+		commitCmds = append(commitCmds, m.executeTools(msg.toolCalls))
+		return m, tea.Batch(commitCmds...)
 	}
 
-	if msg.err != nil {
-		// If the error is "prompt too long", trigger auto-compact and retry
-		if strings.Contains(msg.err.Error(), "prompt is too long") && len(m.messages) >= 3 {
-			// Remove the empty assistant message that was added for streaming
-			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == roleAssistant && m.messages[len(m.messages)-1].content == "" {
-				m.messages = m.messages[:len(m.messages)-1]
-			}
-			m.streaming = false
-			m.streamChan = nil
-			m.cancelFunc = nil
-			return m, m.triggerAutoCompact()
-		}
+	m.streaming = false
+	m.streamChan = nil
+	m.cancelFunc = nil
 
-		if len(m.messages) > 0 {
-			idx := len(m.messages) - 1
-			m.messages[idx].content += "\n[Error: " + msg.err.Error() + "]"
-		}
+	commitCmds := m.commitMessages()
+
+	if m.hookEngine != nil {
+		m.hookEngine.ExecuteAsync(hooks.Stop, hooks.HookInput{})
+	}
+
+	_ = m.saveSession()
+
+	if m.shouldAutoCompact() {
+		commitCmds = append(commitCmds, m.triggerAutoCompact())
+	}
+
+	if len(commitCmds) > 0 {
+		return m, tea.Batch(commitCmds...)
+	}
+	return m, nil
+}
+
+// handleStreamError processes a stream error.
+func (m *model) handleStreamError(err error) (tea.Model, tea.Cmd) {
+	// If "prompt too long", trigger auto-compact and retry
+	if strings.Contains(err.Error(), "prompt is too long") && len(m.messages) >= 3 {
+		m.removeEmptyLastAssistantMessage()
 		m.streaming = false
 		m.streamChan = nil
 		m.cancelFunc = nil
-		// Commit the error message
-		return m, tea.Batch(m.commitMessages()...)
+		return m, m.triggerAutoCompact()
 	}
 
-	// Streaming text/thinking chunks: just update the message content
-	// View() will re-render the active content automatically
+	m.appendErrorToLastMessage(err)
+	m.streaming = false
+	m.streamChan = nil
+	m.cancelFunc = nil
+	return m, tea.Batch(m.commitMessages()...)
+}
+
+// appendToLastMessage appends text and thinking content to the last message.
+func (m *model) appendToLastMessage(text, thinking string) {
+	if len(m.messages) == 0 {
+		return
+	}
+	idx := len(m.messages) - 1
+	if thinking != "" {
+		m.messages[idx].thinking += thinking
+	}
+	if text != "" {
+		m.messages[idx].content += text
+	}
+}
+
+// setLastMessageToolCalls sets tool calls on the last message.
+func (m *model) setLastMessageToolCalls(calls []message.ToolCall) {
+	if len(m.messages) > 0 {
+		m.messages[len(m.messages)-1].toolCalls = calls
+	}
+}
+
+// appendErrorToLastMessage appends an error to the last message content.
+func (m *model) appendErrorToLastMessage(err error) {
 	if len(m.messages) > 0 {
 		idx := len(m.messages) - 1
-		if msg.thinking != "" {
-			m.messages[idx].thinking += msg.thinking
-		}
-		if msg.text != "" {
-			m.messages[idx].content += msg.text
+		m.messages[idx].content += "\n[Error: " + err.Error() + "]"
+	}
+}
+
+// removeEmptyLastAssistantMessage removes the last message if it's an empty assistant message.
+func (m *model) removeEmptyLastAssistantMessage() {
+	if len(m.messages) > 0 {
+		last := m.messages[len(m.messages)-1]
+		if last.role == roleAssistant && last.content == "" {
+			m.messages = m.messages[:len(m.messages)-1]
 		}
 	}
-	return m, tea.Batch(m.waitForChunk(), m.spinner.Tick)
 }
 
 func (m *model) handleStreamContinue(msg streamContinueMsg) (tea.Model, tea.Cmd) {
@@ -274,27 +278,11 @@ func (m *model) handleStreamContinue(msg streamContinueMsg) (tea.Model, tea.Cmd)
 
 	m.messages = append(m.messages, chatMessage{role: roleAssistant, content: ""})
 
-	extra := m.buildExtraContext()
+	// Configure loop with current state and set messages
+	m.configureLoop(m.buildExtraContext())
+	m.loop.SetMessages(msg.messages)
 
-	sysPrompt := system.Prompt(system.Config{
-		Provider: m.llmProvider.Name(),
-		Model:    msg.modelID,
-		Cwd:      m.cwd,
-		IsGit:    isGitRepo(m.cwd),
-		PlanMode: m.planMode,
-		Memory:   system.LoadMemory(m.cwd),
-		Extra:    extra,
-	})
-
-	tools := m.getToolsForMode()
-
-	m.streamChan = m.llmProvider.Stream(ctx, provider.CompletionOptions{
-		Model:        msg.modelID,
-		Messages:     msg.messages,
-		MaxTokens:    m.getMaxTokens(),
-		Tools:        tools,
-		SystemPrompt: sysPrompt,
-	})
+	m.streamChan = m.loop.Stream(ctx)
 	allCmds := append(commitCmds, m.waitForChunk(), m.spinner.Tick)
 	return m, tea.Batch(allCmds...)
 }

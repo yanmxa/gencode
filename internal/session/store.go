@@ -43,6 +43,12 @@ func NewStore() (*Store, error) {
 	return store, nil
 }
 
+// NewStoreWithDir creates a session store using the given directory.
+// Intended for testing — does not run background cleanup.
+func NewStoreWithDir(dir string) *Store {
+	return &Store{baseDir: dir}
+}
+
 // Save saves a session to disk
 func (s *Store) Save(session *Session) error {
 	s.mu.Lock()

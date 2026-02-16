@@ -13,7 +13,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/skill"
@@ -115,7 +117,7 @@ func getCommandRegistry() map[string]Command {
 		},
 		"mcp": {
 			Name:        "mcp",
-			Description: "View MCP server status and manage connections",
+			Description: "Manage MCP servers (add/remove/connect/list)",
 			Handler:     handleMCPCommand,
 		},
 	}
@@ -294,7 +296,11 @@ func handleGlobCommand(ctx context.Context, m *model, args string) (string, erro
 
 // handleToolCommand handles the /tool command
 func handleToolCommand(ctx context.Context, m *model, args string) (string, error) {
-	if err := m.toolSelector.EnterToolSelect(m.width, m.height, m.disabledTools); err != nil {
+	var mcpTools func() []provider.Tool
+	if m.mcpRegistry != nil {
+		mcpTools = m.mcpRegistry.GetToolSchemas
+	}
+	if err := m.toolSelector.EnterToolSelect(m.width, m.height, m.disabledTools, mcpTools); err != nil {
 		return "", err
 	}
 	return "", nil
@@ -435,8 +441,8 @@ func autoFetchTokenLimits(ctx context.Context, m *model) (string, error) {
 	providerName := string(m.currentModel.Provider)
 
 	systemPrompt := buildTokenLimitAgentPrompt(modelID, providerName, string(m.currentModel.AuthMethod))
-	messages := []provider.Message{
-		{Role: "user", Content: fmt.Sprintf("Find the token limits for model: %s (provider: %s)", modelID, providerName)},
+	messages := []message.Message{
+		message.UserMessage(fmt.Sprintf("Find the token limits for model: %s (provider: %s)", modelID, providerName), nil),
 	}
 
 	cwd, _ := os.Getwd()
@@ -468,8 +474,8 @@ func autoFetchTokenLimits(ctx context.Context, m *model) (string, error) {
 
 		// Continue conversation
 		messages = append(messages,
-			provider.Message{Role: "assistant", Content: content},
-			provider.Message{Role: "user", Content: "Please continue searching or respond with FOUND or NOT_FOUND."})
+			message.AssistantMessage(content, "", nil),
+			message.UserMessage("Please continue searching or respond with FOUND or NOT_FOUND.", nil))
 	}
 
 	return tokenLimitNotFoundMessage(modelID), nil
@@ -526,11 +532,8 @@ func getTokenLimitAgentTools() []provider.Tool {
 }
 
 // appendToolCallMessages executes tool calls and appends results to messages
-func appendToolCallMessages(ctx context.Context, messages []provider.Message, toolCalls []provider.ToolCall, cwd string) []provider.Message {
-	messages = append(messages, provider.Message{
-		Role:      "assistant",
-		ToolCalls: toolCalls,
-	})
+func appendToolCallMessages(ctx context.Context, messages []message.Message, toolCalls []message.ToolCall, cwd string) []message.Message {
+	messages = append(messages, message.AssistantMessage("", "", toolCalls))
 
 	for _, tc := range toolCalls {
 		var params map[string]any
@@ -539,15 +542,12 @@ func appendToolCallMessages(ctx context.Context, messages []provider.Message, to
 		}
 
 		result := tool.Execute(ctx, tc.Name, params, cwd)
-		messages = append(messages, provider.Message{
-			Role: "user",
-			ToolResult: &provider.ToolResult{
-				ToolCallID: tc.ID,
-				ToolName:   tc.Name,
-				Content:    result.Output,
-				IsError:    !result.Success,
-			},
-		})
+		messages = append(messages, message.ToolResultMessage(message.ToolResult{
+			ToolCallID: tc.ID,
+			ToolName:   tc.Name,
+			Content:    result.Output,
+			IsError:    !result.Success,
+		}))
 	}
 	return messages
 }
@@ -675,70 +675,7 @@ func startCompact(m *model) tea.Cmd {
 
 // compactConversation calls the LLM to generate a summary of the conversation
 func compactConversation(ctx context.Context, m *model, focus string) (summary string, count int, err error) {
-	count = len(m.messages)
-	conversationText := buildConversationForSummary(m.messages)
-
-	// Add focus instruction if provided
-	if focus != "" {
-		conversationText += fmt.Sprintf("\n\n**Important**: Focus the summary on: %s", focus)
-	}
-
-	response, err := provider.Complete(ctx, m.llmProvider, provider.CompletionOptions{
-		Model:        m.getModelID(),
-		SystemPrompt: system.CompactPrompt(),
-		Messages:     []provider.Message{{Role: "user", Content: conversationText}},
-		MaxTokens:    2048,
-	})
-	if err != nil {
-		return "", count, fmt.Errorf("failed to generate summary: %w", err)
-	}
-
-	return strings.TrimSpace(response.Content), count, nil
-}
-
-// buildConversationForSummary converts messages to text for summarization
-func buildConversationForSummary(messages []chatMessage) string {
-	var sb strings.Builder
-	sb.WriteString("Please summarize this coding conversation:\n\n")
-
-	for _, msg := range messages {
-		switch msg.role {
-		case roleUser:
-			if msg.toolResult != nil {
-				content := truncateToolResult(msg.toolResult.Content, 500)
-				fmt.Fprintf(&sb, "[Tool Result: %s]\n%s\n\n", msg.toolName, content)
-			} else {
-				fmt.Fprintf(&sb, "User: %s\n\n", msg.content)
-			}
-
-		case roleAssistant:
-			if msg.content != "" {
-				fmt.Fprintf(&sb, "Assistant: %s\n\n", msg.content)
-			}
-			if len(msg.toolCalls) > 0 {
-				for _, tc := range msg.toolCalls {
-					fmt.Fprintf(&sb, "[Tool Call: %s]\n", tc.Name)
-				}
-				sb.WriteString("\n")
-			}
-
-		case roleNotice:
-			// Skip welcome messages
-			if msg.content != "" && !strings.Contains(msg.content, "AI-powered coding assistant") {
-				fmt.Fprintf(&sb, "Notice: %s\n\n", msg.content)
-			}
-		}
-	}
-
-	return sb.String()
-}
-
-// truncateToolResult truncates tool result content to maxLen characters
-func truncateToolResult(content string, maxLen int) string {
-	if len(content) <= maxLen {
-		return content
-	}
-	return content[:maxLen] + "...[truncated]"
+	return core.Compact(ctx, m.loop.Client, m.convertMessagesToProvider(), focus)
 }
 
 // getContextUsagePercent returns the current context usage as a percentage.
@@ -756,7 +693,7 @@ func (m *model) shouldAutoCompact() bool {
 	if m.llmProvider == nil || len(m.messages) < 3 {
 		return false
 	}
-	return m.getContextUsagePercent() >= autoCompactThreshold
+	return message.NeedsCompaction(m.lastInputTokens, m.getEffectiveInputLimit())
 }
 
 // triggerAutoCompact initiates auto-compact with a system message
@@ -1345,10 +1282,10 @@ func formatMemoryDisplayPath(filePath, level, cwd string) string {
 }
 
 // handleMCPCommand handles the /mcp command
-// Usage: /mcp [connect|disconnect|list] [server-name]
+// Usage: /mcp [add|remove|get|connect|disconnect|reconnect|list] [args...]
 func handleMCPCommand(ctx context.Context, m *model, args string) (string, error) {
 	if mcp.DefaultRegistry == nil {
-		return "MCP is not initialized.\n\nAdd MCP servers with:\n  gen mcp add <name> -- <command> [args...]", nil
+		return "MCP is not initialized.\n\nAdd MCP servers with:\n  /mcp add <name> -- <command> [args...]", nil
 	}
 
 	args = strings.TrimSpace(args)
@@ -1369,10 +1306,18 @@ func handleMCPCommand(ctx context.Context, m *model, args string) (string, error
 	}
 
 	switch subCmd {
+	case "add":
+		return handleMCPAdd(ctx, m, parts[1:])
+	case "remove":
+		return handleMCPRemove(m, serverName)
+	case "get":
+		return handleMCPGet(m, serverName)
 	case "connect":
 		return handleMCPConnect(ctx, m, serverName)
 	case "disconnect":
 		return handleMCPDisconnect(m, serverName)
+	case "reconnect":
+		return handleMCPReconnect(ctx, m, serverName)
 	case "list", "status":
 		return handleMCPList(m)
 	default:
@@ -1386,7 +1331,7 @@ func handleMCPList(m *model) (string, error) {
 	servers := mcp.DefaultRegistry.List()
 
 	if len(servers) == 0 {
-		return "No MCP servers configured.\n\nAdd servers with:\n  gen mcp add <name> -- <command> [args...]\n  gen mcp add --transport http <name> <url>", nil
+		return "No MCP servers configured.\n\nAdd servers with:\n  /mcp add <name> -- <command> [args...]\n  /mcp add --transport http <name> <url>", nil
 	}
 
 	var sb strings.Builder
@@ -1394,7 +1339,11 @@ func handleMCPList(m *model) (string, error) {
 
 	for _, srv := range servers {
 		icon, label := mcpStatusDisplay(srv.Status)
-		sb.WriteString(fmt.Sprintf("  %s %s [%s] (%s)\n", icon, srv.Config.Name, srv.Config.GetType(), label))
+		scope := string(srv.Config.Scope)
+		if scope == "" {
+			scope = "local"
+		}
+		sb.WriteString(fmt.Sprintf("  %s %s [%s] (%s, %s)\n", icon, srv.Config.Name, srv.Config.GetType(), scope, label))
 
 		if srv.Status == mcp.StatusConnected {
 			if len(srv.Tools) > 0 {
@@ -1414,8 +1363,12 @@ func handleMCPList(m *model) (string, error) {
 	}
 
 	sb.WriteString("\nCommands:\n")
+	sb.WriteString("  /mcp add <name> ...     Add a server\n")
+	sb.WriteString("  /mcp remove <name>      Remove a server\n")
+	sb.WriteString("  /mcp get <name>         Show server details\n")
 	sb.WriteString("  /mcp connect <name>     Connect to server\n")
 	sb.WriteString("  /mcp disconnect <name>  Disconnect from server\n")
+	sb.WriteString("  /mcp reconnect <name>   Reconnect to server\n")
 
 	return sb.String(), nil
 }
@@ -1454,4 +1407,265 @@ func handleMCPDisconnect(m *model, name string) (string, error) {
 	}
 
 	return fmt.Sprintf("Disconnected from %s", name), nil
+}
+
+// handleMCPAdd adds a new MCP server configuration
+func handleMCPAdd(ctx context.Context, m *model, args []string) (string, error) {
+	if len(args) == 0 {
+		return mcpAddUsage(), nil
+	}
+
+	// Parse flags and positional arguments
+	var (
+		transport = "stdio"
+		scope     = "local"
+		envVars   []string
+		headers   []string
+		name      string
+		positional []string
+		dashIdx   = -1
+	)
+
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--" {
+			dashIdx = i
+			break
+		}
+		switch args[i] {
+		case "--transport", "-t":
+			if i+1 < len(args) {
+				i++
+				transport = args[i]
+			}
+		case "--scope", "-s":
+			if i+1 < len(args) {
+				i++
+				scope = args[i]
+			}
+		case "--env", "-e":
+			if i+1 < len(args) {
+				i++
+				envVars = append(envVars, args[i])
+			}
+		case "--header", "-H":
+			if i+1 < len(args) {
+				i++
+				headers = append(headers, args[i])
+			}
+		default:
+			positional = append(positional, args[i])
+		}
+	}
+
+	if len(positional) == 0 {
+		return mcpAddUsage(), nil
+	}
+	name = positional[0]
+
+	var config mcp.ServerConfig
+	config.Type = mcp.TransportType(transport)
+
+	switch config.Type {
+	case mcp.TransportSTDIO:
+		if dashIdx == -1 || dashIdx >= len(args)-1 {
+			return "STDIO transport requires: /mcp add <name> -- <command> [args...]", nil
+		}
+		cmdArgs := args[dashIdx+1:]
+		config.Command = cmdArgs[0]
+		if len(cmdArgs) > 1 {
+			config.Args = cmdArgs[1:]
+		}
+
+	case mcp.TransportHTTP, mcp.TransportSSE:
+		if len(positional) < 2 {
+			return fmt.Sprintf("%s transport requires a URL: /mcp add --transport %s <name> <url>", transport, transport), nil
+		}
+		config.URL = positional[1]
+		config.Headers = parseMCPKeyValues(headers, ":")
+
+	default:
+		return fmt.Sprintf("Unsupported transport type: %s (use stdio, http, or sse)", transport), nil
+	}
+
+	config.Env = parseMCPKeyValues(envVars, "=")
+
+	mcpScope := parseMCPScope(scope)
+	if err := mcp.DefaultRegistry.AddServer(name, config, mcpScope); err != nil {
+		return fmt.Sprintf("Failed to add server: %v", err), nil
+	}
+
+	// Auto-connect
+	if err := mcp.DefaultRegistry.Connect(ctx, name); err != nil {
+		return fmt.Sprintf("Added '%s' to %s scope, but failed to connect: %v", name, scope, err), nil
+	}
+
+	toolCount := 0
+	if client, ok := mcp.DefaultRegistry.GetClient(name); ok {
+		toolCount = len(client.GetCachedTools())
+	}
+
+	return fmt.Sprintf("Added and connected to '%s' (%s, %s scope)\nTools available: %d", name, transport, scope, toolCount), nil
+}
+
+// handleMCPRemove removes an MCP server configuration
+func handleMCPRemove(m *model, name string) (string, error) {
+	if name == "" {
+		return "Usage: /mcp remove <server-name>", nil
+	}
+
+	if _, ok := mcp.DefaultRegistry.GetConfig(name); !ok {
+		return fmt.Sprintf("Server not found: %s\n\nUse /mcp list to see available servers.", name), nil
+	}
+
+	if err := mcp.DefaultRegistry.RemoveServer(name); err != nil {
+		return fmt.Sprintf("Failed to remove %s: %v", name, err), nil
+	}
+
+	return fmt.Sprintf("Removed server '%s'", name), nil
+}
+
+// handleMCPGet shows detailed information about an MCP server
+func handleMCPGet(m *model, name string) (string, error) {
+	if name == "" {
+		return "Usage: /mcp get <server-name>", nil
+	}
+
+	config, ok := mcp.DefaultRegistry.GetConfig(name)
+	if !ok {
+		return fmt.Sprintf("Server not found: %s\n\nUse /mcp list to see available servers.", name), nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Server: %s\n", name))
+
+	scope := string(config.Scope)
+	if scope == "" {
+		scope = "local"
+	}
+	sb.WriteString(fmt.Sprintf("Scope:  %s\n", scope))
+	sb.WriteString(fmt.Sprintf("Type:   %s\n", config.GetType()))
+
+	switch config.GetType() {
+	case mcp.TransportSTDIO:
+		cmd := config.Command
+		if len(config.Args) > 0 {
+			cmd += " " + strings.Join(config.Args, " ")
+		}
+		sb.WriteString(fmt.Sprintf("Command: %s\n", cmd))
+	case mcp.TransportHTTP, mcp.TransportSSE:
+		sb.WriteString(fmt.Sprintf("URL:    %s\n", config.URL))
+	}
+
+	if len(config.Env) > 0 {
+		sb.WriteString("Env:\n")
+		for k, v := range config.Env {
+			// Mask values for security
+			masked := v
+			if len(masked) > 4 {
+				masked = masked[:4] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("  %s=%s\n", k, masked))
+		}
+	}
+
+	if len(config.Headers) > 0 {
+		sb.WriteString("Headers:\n")
+		for k, v := range config.Headers {
+			masked := v
+			if len(masked) > 8 {
+				masked = masked[:8] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("  %s: %s\n", k, masked))
+		}
+	}
+
+	// Connection status
+	icon, label := mcpStatusDisplay(mcp.StatusDisconnected)
+	toolCount := 0
+	if client, ok := mcp.DefaultRegistry.GetClient(name); ok {
+		srv := client.ToServer()
+		icon, label = mcpStatusDisplay(srv.Status)
+		toolCount = len(srv.Tools)
+
+		if srv.Error != "" {
+			sb.WriteString(fmt.Sprintf("Error:  %s\n", srv.Error))
+		}
+	}
+	sb.WriteString(fmt.Sprintf("Status: %s %s\n", icon, label))
+	if toolCount > 0 {
+		sb.WriteString(fmt.Sprintf("Tools:  %d\n", toolCount))
+	}
+
+	return sb.String(), nil
+}
+
+// handleMCPReconnect disconnects and reconnects to an MCP server
+func handleMCPReconnect(ctx context.Context, m *model, name string) (string, error) {
+	if name == "" {
+		return "Usage: /mcp reconnect <server-name>", nil
+	}
+
+	if _, ok := mcp.DefaultRegistry.GetConfig(name); !ok {
+		return fmt.Sprintf("Server not found: %s\n\nUse /mcp list to see available servers.", name), nil
+	}
+
+	// Disconnect (ignore error if not connected)
+	_ = mcp.DefaultRegistry.Disconnect(name)
+
+	// Reconnect
+	if err := mcp.DefaultRegistry.Connect(ctx, name); err != nil {
+		return fmt.Sprintf("Failed to reconnect to %s: %v", name, err), nil
+	}
+
+	toolCount := 0
+	if client, ok := mcp.DefaultRegistry.GetClient(name); ok {
+		toolCount = len(client.GetCachedTools())
+	}
+
+	return fmt.Sprintf("Reconnected to %s\nTools available: %d", name, toolCount), nil
+}
+
+// parseMCPScope converts a string to mcp.Scope
+func parseMCPScope(s string) mcp.Scope {
+	switch strings.ToLower(s) {
+	case "user", "global":
+		return mcp.ScopeUser
+	case "project":
+		return mcp.ScopeProject
+	default:
+		return mcp.ScopeLocal
+	}
+}
+
+// parseMCPKeyValues converts ["KEY=val", ...] to map[string]string
+func parseMCPKeyValues(items []string, sep string) map[string]string {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(items))
+	for _, item := range items {
+		if key, value, ok := strings.Cut(item, sep); ok {
+			result[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		}
+	}
+	return result
+}
+
+// mcpAddUsage returns the help text for /mcp add
+func mcpAddUsage() string {
+	return `Usage: /mcp add [options] <name> [-- <command> [args...]] or <url>
+
+Options:
+  --transport <type>   Transport: stdio (default), http, sse
+  --scope <scope>      Scope: local (default), project, user
+  --env KEY=value      Environment variable (repeatable, STDIO only)
+  --header Key:Value   HTTP header (repeatable, HTTP/SSE only)
+
+Short flags: -t, -s, -e, -H
+
+Examples:
+  /mcp add myserver -- npx -y @modelcontextprotocol/server-filesystem .
+  /mcp add --transport http pubmed https://pubmed.mcp.example.com/mcp
+  /mcp add --transport http --scope project myapi https://api.example.com/mcp
+  /mcp add --env API_KEY=xxx myserver -- npx -y some-mcp-server`
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -40,7 +41,7 @@ func isResponsesModel(model string) bool {
 
 // Stream sends a completion request and returns a channel of streaming chunks.
 // It routes to the Responses API for codex models and Chat Completions for all others.
-func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan provider.StreamChunk {
+func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
 	if isResponsesModel(opts.Model) {
 		return c.streamResponses(ctx, opts)
 	}
@@ -48,8 +49,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 }
 
 // streamResponses implements streaming via the Responses API for codex models.
-func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOptions) <-chan provider.StreamChunk {
-	ch := make(chan provider.StreamChunk)
+func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
+	ch := make(chan message.StreamChunk)
 
 	go func() {
 		defer close(ch)
@@ -59,7 +60,7 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 
 		for _, msg := range opts.Messages {
 			switch msg.Role {
-			case "user":
+			case message.RoleUser:
 				if msg.ToolResult != nil {
 					inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 						OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
@@ -79,7 +80,7 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 						},
 					})
 				}
-			case "assistant":
+			case message.RoleAssistant:
 				if len(msg.ToolCalls) > 0 {
 					// Add text content as a message if present
 					if msg.Content != "" {
@@ -112,7 +113,7 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 						},
 					})
 				}
-			case "system":
+			default: // system messages
 				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 					OfMessage: &responses.EasyInputMessageParam{
 						Role: responses.EasyInputMessageRoleSystem,
@@ -170,8 +171,8 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 		stream := c.client.Responses.NewStreaming(ctx, params)
 
 		// Track tool calls by item ID
-		toolCalls := make(map[string]*provider.ToolCall)
-		var response provider.CompletionResponse
+		toolCalls := make(map[string]*message.ToolCall)
+		var response message.CompletionResponse
 		hasToolCalls := false
 
 		// Stream timing and counting
@@ -186,8 +187,8 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 			switch event.Type {
 			case "response.output_text.delta":
 				delta := event.AsResponseOutputTextDelta()
-				ch <- provider.StreamChunk{
-					Type: provider.ChunkTypeText,
+				ch <- message.StreamChunk{
+					Type: message.ChunkTypeText,
 					Text: delta.Delta,
 				}
 				response.Content += delta.Delta
@@ -197,12 +198,12 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 				if itemEvent.Item.Type == "function_call" {
 					funcCall := itemEvent.Item.AsFunctionCall()
 					hasToolCalls = true
-					toolCalls[funcCall.ID] = &provider.ToolCall{
+					toolCalls[funcCall.ID] = &message.ToolCall{
 						ID:   funcCall.CallID,
 						Name: funcCall.Name,
 					}
-					ch <- provider.StreamChunk{
-						Type:     provider.ChunkTypeToolStart,
+					ch <- message.StreamChunk{
+						Type:     message.ChunkTypeToolStart,
 						ToolID:   funcCall.CallID,
 						ToolName: funcCall.Name,
 					}
@@ -212,8 +213,8 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 				delta := event.AsResponseFunctionCallArgumentsDelta()
 				if tc, ok := toolCalls[delta.ItemID]; ok {
 					tc.Input += delta.Delta
-					ch <- provider.StreamChunk{
-						Type:   provider.ChunkTypeToolInput,
+					ch <- message.StreamChunk{
+						Type:   message.ChunkTypeToolInput,
 						ToolID: tc.ID,
 						Text:   delta.Delta,
 					}
@@ -244,8 +245,8 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 			case "error":
 				errEvent := event.AsError()
 				log.LogError(c.name, fmt.Errorf("responses API error: %s", errEvent.Message))
-				ch <- provider.StreamChunk{
-					Type:  provider.ChunkTypeError,
+				ch <- message.StreamChunk{
+					Type:  message.ChunkTypeError,
 					Error: fmt.Errorf("responses API error: %s", errEvent.Message),
 				}
 				return
@@ -257,8 +258,8 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 
 		if err := stream.Err(); err != nil {
 			log.LogError(c.name, err)
-			ch <- provider.StreamChunk{
-				Type:  provider.ChunkTypeError,
+			ch <- message.StreamChunk{
+				Type:  message.ChunkTypeError,
 				Error: err,
 			}
 			return
@@ -272,8 +273,8 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 		// Log response
 		log.LogResponse(c.name, response)
 
-		ch <- provider.StreamChunk{
-			Type:     provider.ChunkTypeDone,
+		ch <- message.StreamChunk{
+			Type:     message.ChunkTypeDone,
 			Response: &response,
 		}
 	}()
@@ -282,8 +283,8 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 }
 
 // streamChatCompletions implements streaming via the Chat Completions API.
-func (c *Client) streamChatCompletions(ctx context.Context, opts provider.CompletionOptions) <-chan provider.StreamChunk {
-	ch := make(chan provider.StreamChunk)
+func (c *Client) streamChatCompletions(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
+	ch := make(chan message.StreamChunk)
 
 	go func() {
 		defer close(ch)
@@ -298,38 +299,32 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 
 		for _, msg := range opts.Messages {
 			switch msg.Role {
-			case "user":
+			case message.RoleUser:
 				if msg.ToolResult != nil {
 					// Tool result message
 					messages = append(messages, openai.ToolMessage(
 						msg.ToolResult.Content,
 						msg.ToolResult.ToolCallID,
 					))
-				} else if len(msg.ContentParts) > 0 {
+				} else if len(msg.Images) > 0 {
 					// Multimodal message with images
-					parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(msg.ContentParts))
-					for _, part := range msg.ContentParts {
-						switch part.Type {
-						case provider.ContentTypeImage:
-							if part.Image != nil {
-								dataURI := fmt.Sprintf("data:%s;base64,%s", part.Image.MediaType, part.Image.Data)
-								parts = append(parts, openai.ChatCompletionContentPartUnionParam{
-									OfImageURL: &openai.ChatCompletionContentPartImageParam{
-										ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
-											URL: dataURI,
-										},
-									},
-								})
-							}
-						case provider.ContentTypeText:
-							if part.Text != "" {
-								parts = append(parts, openai.ChatCompletionContentPartUnionParam{
-									OfText: &openai.ChatCompletionContentPartTextParam{
-										Text: part.Text,
-									},
-								})
-							}
-						}
+					parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(msg.Images)+1)
+					for _, img := range msg.Images {
+						dataURI := fmt.Sprintf("data:%s;base64,%s", img.MediaType, img.Data)
+						parts = append(parts, openai.ChatCompletionContentPartUnionParam{
+							OfImageURL: &openai.ChatCompletionContentPartImageParam{
+								ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
+									URL: dataURI,
+								},
+							},
+						})
+					}
+					if msg.Content != "" {
+						parts = append(parts, openai.ChatCompletionContentPartUnionParam{
+							OfText: &openai.ChatCompletionContentPartTextParam{
+								Text: msg.Content,
+							},
+						})
 					}
 					messages = append(messages, openai.ChatCompletionMessageParamUnion{
 						OfUser: &openai.ChatCompletionUserMessageParam{
@@ -341,7 +336,7 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 				} else {
 					messages = append(messages, openai.UserMessage(msg.Content))
 				}
-			case "assistant":
+			case message.RoleAssistant:
 				if len(msg.ToolCalls) > 0 {
 					// Assistant message with tool calls
 					var asstMsg openai.ChatCompletionAssistantMessageParam
@@ -364,7 +359,7 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 				} else {
 					messages = append(messages, openai.AssistantMessage(msg.Content))
 				}
-			case "system":
+			default: // system messages
 				messages = append(messages, openai.SystemMessage(msg.Content))
 			}
 		}
@@ -413,8 +408,8 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 
 		// Track tool calls
-		toolCalls := make(map[int]*provider.ToolCall)
-		var response provider.CompletionResponse
+		toolCalls := make(map[int]*message.ToolCall)
+		var response message.CompletionResponse
 
 		// Stream timing and counting
 		streamStart := time.Now()
@@ -428,8 +423,8 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 			for _, choice := range chunk.Choices {
 				// Handle text delta
 				if choice.Delta.Content != "" {
-					ch <- provider.StreamChunk{
-						Type: provider.ChunkTypeText,
+					ch <- message.StreamChunk{
+						Type: message.ChunkTypeText,
 						Text: choice.Delta.Content,
 					}
 					response.Content += choice.Delta.Content
@@ -441,12 +436,12 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 
 					// Initialize new tool call
 					if _, exists := toolCalls[idx]; !exists {
-						toolCalls[idx] = &provider.ToolCall{
+						toolCalls[idx] = &message.ToolCall{
 							ID:   tc.ID,
 							Name: tc.Function.Name,
 						}
-						ch <- provider.StreamChunk{
-							Type:     provider.ChunkTypeToolStart,
+						ch <- message.StreamChunk{
+							Type:     message.ChunkTypeToolStart,
 							ToolID:   tc.ID,
 							ToolName: tc.Function.Name,
 						}
@@ -455,8 +450,8 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 					// Accumulate arguments
 					if tc.Function.Arguments != "" {
 						toolCalls[idx].Input += tc.Function.Arguments
-						ch <- provider.StreamChunk{
-							Type:   provider.ChunkTypeToolInput,
+						ch <- message.StreamChunk{
+							Type:   message.ChunkTypeToolInput,
 							ToolID: toolCalls[idx].ID,
 							Text:   tc.Function.Arguments,
 						}
@@ -492,8 +487,8 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 
 		if err := stream.Err(); err != nil {
 			log.LogError(c.name, err)
-			ch <- provider.StreamChunk{
-				Type:  provider.ChunkTypeError,
+			ch <- message.StreamChunk{
+				Type:  message.ChunkTypeError,
 				Error: err,
 			}
 			return
@@ -507,8 +502,8 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 		// Log response
 		log.LogResponse(c.name, response)
 
-		ch <- provider.StreamChunk{
-			Type:     provider.ChunkTypeDone,
+		ch <- message.StreamChunk{
+			Type:     message.ChunkTypeDone,
 			Response: &response,
 		}
 	}()

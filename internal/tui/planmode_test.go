@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -17,7 +17,7 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 		planTask:      "test task",
 		planPrompt:     NewPlanPrompt(),
 		questionPrompt: NewQuestionPrompt(),
-		pendingToolCalls: []provider.ToolCall{
+		pendingToolCalls: []message.ToolCall{
 			{ID: "tc-1", Name: "ExitPlanMode"},
 		},
 		pendingToolIdx:     0,
@@ -57,7 +57,7 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 		planTask:      "test task",
 		planPrompt:     NewPlanPrompt(),
 		questionPrompt: NewQuestionPrompt(),
-		pendingToolCalls: []provider.ToolCall{
+		pendingToolCalls: []message.ToolCall{
 			{ID: "tc-1", Name: "ExitPlanMode"},
 		},
 		pendingToolIdx:     0,
@@ -94,7 +94,7 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 		planTask:      "test task",
 		planPrompt:     NewPlanPrompt(),
 		questionPrompt: NewQuestionPrompt(),
-		pendingToolCalls: []provider.ToolCall{
+		pendingToolCalls: []message.ToolCall{
 			{ID: "tc-1", Name: "ExitPlanMode"},
 		},
 		pendingToolIdx:     0,
@@ -134,7 +134,7 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 		planTask:      "test task",
 		planPrompt:     NewPlanPrompt(),
 		questionPrompt: NewQuestionPrompt(),
-		pendingToolCalls: []provider.ToolCall{
+		pendingToolCalls: []message.ToolCall{
 			{ID: "tc-1", Name: "ExitPlanMode"},
 		},
 		pendingToolIdx:     0,

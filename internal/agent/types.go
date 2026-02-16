@@ -6,7 +6,8 @@ package agent
 import (
 	"time"
 
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/client"
+	"github.com/yanmxa/gencode/internal/message"
 )
 
 // PermissionMode controls how the agent handles permission requests
@@ -100,7 +101,7 @@ type AgentRequest struct {
 	MaxTurns int
 
 	// ParentMessages is the conversation history from the parent (for context)
-	ParentMessages []provider.Message
+	ParentMessages []message.Message
 
 	// Cwd is the current working directory
 	Cwd string
@@ -127,26 +128,19 @@ type AgentResult struct {
 	Summary string
 
 	// Messages contains the full conversation history
-	Messages []provider.Message
+	Messages []message.Message
 
 	// TurnCount is the number of turns used
 	TurnCount int
 
 	// TokenUsage is the total tokens consumed
-	TokenUsage TokenUsage
+	TokenUsage client.TokenUsage
 
 	// Duration is the total execution time
 	Duration time.Duration
 
 	// Error contains any error message if not successful
 	Error string
-}
-
-// TokenUsage tracks token consumption
-type TokenUsage struct {
-	InputTokens  int
-	OutputTokens int
-	TotalTokens  int
 }
 
 // DefaultMaxTurns is the default maximum number of conversation turns

@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/message"
 )
 
 // LogResponse logs an LLM response in human-readable format
-func LogResponse(providerName string, resp provider.CompletionResponse) {
+func LogResponse(providerName string, resp message.CompletionResponse) {
 	turn := CurrentTurn()
 
 	// Write to DEV_DIR if enabled

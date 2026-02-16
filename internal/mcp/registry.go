@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -12,14 +14,22 @@ import (
 
 // Registry manages multiple MCP server connections
 type Registry struct {
-	mu      sync.RWMutex
-	clients map[string]*Client
-	configs map[string]ServerConfig
-	loader  *ConfigLoader
-	cwd     string
+	mu         sync.RWMutex
+	clients    map[string]*Client
+	configs    map[string]ServerConfig
+	disabled   map[string]bool   // servers explicitly disabled by the user
+	connecting map[string]bool   // servers currently being connected (async)
+	connectErr map[string]string // last connection error for servers without a client
+	loader     *ConfigLoader
+	cwd        string
 
 	// Callback when tool schemas change
 	onToolsChanged func()
+}
+
+// mcpState is the on-disk format for persisted MCP runtime state.
+type mcpState struct {
+	Disabled []string `json:"disabled,omitempty"`
 }
 
 // DefaultRegistry is the global MCP registry
@@ -27,20 +37,24 @@ var DefaultRegistry *Registry
 
 // Initialize initializes the global MCP registry with the given working directory
 func Initialize(cwd string) error {
-	loader := NewConfigLoader(cwd)
-	configs, err := loader.LoadAll()
+	reg, err := NewRegistry(cwd)
 	if err != nil {
-		return fmt.Errorf("failed to load MCP configs: %w", err)
+		return err
 	}
-
-	DefaultRegistry = &Registry{
-		clients: make(map[string]*Client),
-		configs: configs,
-		loader:  loader,
-		cwd:     cwd,
-	}
-
+	DefaultRegistry = reg
 	return nil
+}
+
+// NewRegistryForTest creates a registry with pre-loaded configs for testing.
+// It does not read from disk.
+func NewRegistryForTest(configs map[string]ServerConfig) *Registry {
+	return &Registry{
+		clients:    make(map[string]*Client),
+		configs:    configs,
+		disabled:   make(map[string]bool),
+		connecting: make(map[string]bool),
+		connectErr: make(map[string]string),
+	}
 }
 
 // NewRegistry creates a new MCP registry
@@ -51,12 +65,17 @@ func NewRegistry(cwd string) (*Registry, error) {
 		return nil, fmt.Errorf("failed to load MCP configs: %w", err)
 	}
 
-	return &Registry{
-		clients: make(map[string]*Client),
-		configs: configs,
-		loader:  loader,
-		cwd:     cwd,
-	}, nil
+	reg := &Registry{
+		clients:    make(map[string]*Client),
+		configs:    configs,
+		disabled:   make(map[string]bool),
+		connecting: make(map[string]bool),
+		connectErr: make(map[string]string),
+		loader:     loader,
+		cwd:        cwd,
+	}
+	reg.loadState()
+	return reg, nil
 }
 
 // Reload reloads configurations from disk
@@ -104,6 +123,8 @@ func (r *Registry) RemoveServer(name string) error {
 	}
 
 	delete(r.configs, name)
+	delete(r.connecting, name)
+	delete(r.connectErr, name)
 	return nil
 }
 
@@ -138,6 +159,25 @@ func (r *Registry) Connect(ctx context.Context, name string) error {
 
 	r.notifyToolsChanged()
 	return nil
+}
+
+// ConnectAll connects to all configured MCP servers.
+// Connection errors are collected but don't stop other connections.
+func (r *Registry) ConnectAll(ctx context.Context) []error {
+	r.mu.RLock()
+	names := make([]string, 0, len(r.configs))
+	for name := range r.configs {
+		names = append(names, name)
+	}
+	r.mu.RUnlock()
+
+	var errs []error
+	for _, name := range names {
+		if err := r.Connect(ctx, name); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", name, err))
+		}
+	}
+	return errs
 }
 
 // Disconnect disconnects from an MCP server
@@ -198,6 +238,11 @@ func (r *Registry) List() []Server {
 
 		if client, ok := r.clients[name]; ok {
 			server = client.ToServer()
+		} else if r.connecting[name] {
+			server.Status = StatusConnecting
+		} else if errMsg, ok := r.connectErr[name]; ok {
+			server.Status = StatusError
+			server.Error = errMsg
 		}
 
 		servers = append(servers, server)
@@ -299,4 +344,99 @@ func ParseMCPToolName(name string) (serverName, toolName string, ok bool) {
 func IsMCPTool(name string) bool {
 	_, _, ok := ParseMCPToolName(name)
 	return ok
+}
+
+// SetConnecting marks or unmarks a server as currently connecting.
+// On failure, call SetConnectError to store the error; List() will report StatusError.
+func (r *Registry) SetConnecting(name string, val bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if val {
+		r.connecting[name] = true
+		delete(r.connectErr, name)
+	} else {
+		delete(r.connecting, name)
+	}
+}
+
+// SetConnectError stores a connection error for a server that failed to connect.
+func (r *Registry) SetConnectError(name string, errMsg string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if errMsg != "" {
+		r.connectErr[name] = errMsg
+	} else {
+		delete(r.connectErr, name)
+	}
+}
+
+// IsDisabled returns whether a server has been explicitly disabled by the user.
+func (r *Registry) IsDisabled(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.disabled[name]
+}
+
+// SetDisabled sets the disabled state for a server and persists it.
+func (r *Registry) SetDisabled(name string, disabled bool) {
+	r.mu.Lock()
+	if disabled {
+		r.disabled[name] = true
+	} else {
+		delete(r.disabled, name)
+	}
+	r.mu.Unlock()
+	r.saveState()
+}
+
+// statePath returns the path to the state file.
+func (r *Registry) statePath() string {
+	if r.loader != nil {
+		return filepath.Join(r.loader.GetProjectDir(), "mcp-state.json")
+	}
+	return ""
+}
+
+// loadState loads persisted disabled state from disk.
+func (r *Registry) loadState() {
+	path := r.statePath()
+	if path == "" {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var state mcpState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, name := range state.Disabled {
+		r.disabled[name] = true
+	}
+}
+
+// saveState persists disabled state to disk.
+func (r *Registry) saveState() {
+	path := r.statePath()
+	if path == "" {
+		return
+	}
+	r.mu.RLock()
+	var state mcpState
+	for name := range r.disabled {
+		state.Disabled = append(state.Disabled, name)
+	}
+	r.mu.RUnlock()
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return
+	}
+	os.WriteFile(path, data, 0644)
 }

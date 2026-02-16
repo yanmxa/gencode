@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tui"
@@ -149,7 +150,7 @@ func getInputMessage(args []string) string {
 }
 
 // runNonInteractive runs in non-interactive mode
-func runNonInteractive(message string) error {
+func runNonInteractive(userMessage string) error {
 	ctx := context.Background()
 
 	// Load store and get connected provider
@@ -193,10 +194,8 @@ func runNonInteractive(message string) error {
 		Model:        model,
 		MaxTokens:    8192,
 		SystemPrompt: "You are a helpful AI coding assistant.",
-		Messages: []provider.Message{
-			{Role: "user", Content: message},
-		},
-		Tools: tool.GetToolSchemas(),
+		Messages:     []message.Message{message.UserMessage(userMessage, nil)},
+		Tools:        tool.GetToolSchemas(),
 	}
 
 	// Stream response
@@ -204,11 +203,11 @@ func runNonInteractive(message string) error {
 
 	for chunk := range streamChan {
 		switch chunk.Type {
-		case provider.ChunkTypeText:
+		case message.ChunkTypeText:
 			fmt.Print(chunk.Text)
-		case provider.ChunkTypeError:
+		case message.ChunkTypeError:
 			return chunk.Error
-		case provider.ChunkTypeDone:
+		case message.ChunkTypeDone:
 			fmt.Println() // Final newline
 		}
 	}

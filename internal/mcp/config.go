@@ -21,6 +21,16 @@ func NewConfigLoader(cwd string) *ConfigLoader {
 	}
 }
 
+// NewConfigLoaderForTest creates a configuration loader where both userDir
+// and projectDir point to subdirectories of the given base directory.
+// This avoids touching the real home directory in tests.
+func NewConfigLoaderForTest(baseDir string) *ConfigLoader {
+	return &ConfigLoader{
+		userDir:    filepath.Join(baseDir, "user", ".gen"),
+		projectDir: filepath.Join(baseDir, "project", ".gen"),
+	}
+}
+
 // LoadAll loads and merges MCP configurations from all sources.
 // Priority (lowest to highest):
 //  1. ~/.gen/mcp.json (user scope)

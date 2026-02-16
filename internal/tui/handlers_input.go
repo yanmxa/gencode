@@ -13,8 +13,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/image"
-	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/message"
 )
 
 func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -290,7 +289,7 @@ func (m *model) handleStreamCancel() (tea.Model, tea.Cmd) {
 
 // cancelPendingToolCalls adds cancellation messages for pending tool calls.
 func (m *model) cancelPendingToolCalls() {
-	var toolCalls []provider.ToolCall
+	var toolCalls []message.ToolCall
 
 	if m.pendingToolCalls != nil {
 		toolCalls = m.pendingToolCalls[m.pendingToolIdx:]
@@ -307,7 +306,7 @@ func (m *model) cancelPendingToolCalls() {
 		m.messages = append(m.messages, chatMessage{
 			role:     roleUser,
 			toolName: tc.Name,
-			toolResult: &provider.ToolResult{
+			toolResult: &message.ToolResult{
 				ToolCallID: tc.ID,
 				Content:    "Tool execution cancelled by user",
 				IsError:    true,
@@ -432,6 +431,15 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 			return m, startExternalEditor(m.editingMemoryFile)
 		}
 
+		// Auto-reconnect disconnected MCP servers when selector opens
+		if m.mcpSelector.IsActive() {
+			cmds := m.commitMessages()
+			if reconnectCmd := m.mcpSelector.autoReconnect(); reconnectCmd != nil {
+				cmds = append(cmds, reconnectCmd)
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		if result != "" {
 			m.messages = append(m.messages, chatMessage{role: roleUser, content: input})
 			m.messages = append(m.messages, chatMessage{role: roleNotice, content: result})
@@ -513,31 +521,16 @@ func (m *model) startLLMStream(extra []string) tea.Cmd {
 	m.cancelFunc = cancel
 	m.streaming = true
 
-	providerMsgs := m.convertMessagesToProvider()
+	// Configure loop with current state and set messages
+	m.configureLoop(extra)
+	m.loop.SetMessages(m.convertMessagesToProvider())
 
 	// Commit any pending messages before starting stream
 	commitCmds := m.commitMessages()
 
 	m.messages = append(m.messages, chatMessage{role: roleAssistant, content: ""})
 
-	modelID := m.getModelID()
-	sysPrompt := system.Prompt(system.Config{
-		Provider: m.llmProvider.Name(),
-		Model:    modelID,
-		Cwd:      m.cwd,
-		IsGit:    isGitRepo(m.cwd),
-		PlanMode: m.planMode,
-		Memory:   system.LoadMemory(m.cwd),
-		Extra:    extra,
-	})
-
-	m.streamChan = m.llmProvider.Stream(ctx, provider.CompletionOptions{
-		Model:        modelID,
-		Messages:     providerMsgs,
-		MaxTokens:    m.getMaxTokens(),
-		Tools:        m.getToolsForMode(),
-		SystemPrompt: sysPrompt,
-	})
+	m.streamChan = m.loop.Stream(ctx)
 
 	allCmds := append(commitCmds, m.waitForChunk(), m.spinner.Tick)
 	return tea.Batch(allCmds...)
@@ -628,13 +621,13 @@ func (m *model) pasteImageFromClipboard() (tea.Model, tea.Cmd) {
 // Returns the cleaned text content and any loaded images.
 // Only processes references where the file actually exists on disk;
 // non-existent file references are left in the text as-is.
-func (m *model) processImageReferences(input string) (string, []provider.ImageData, error) {
+func (m *model) processImageReferences(input string) (string, []message.ImageData, error) {
 	matches := imageRefPattern.FindAllStringSubmatch(input, -1)
 	if len(matches) == 0 {
 		return input, nil, nil
 	}
 
-	var images []provider.ImageData
+	var images []message.ImageData
 	var loadedRefs []string // track which @references were successfully loaded
 	for _, match := range matches {
 		path := match[1]

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -20,7 +21,7 @@ type DevRequest struct {
 	Temperature  float64            `json:"temperature"`
 	SystemPrompt string             `json:"system_prompt,omitempty"`
 	Tools        []provider.Tool    `json:"tools,omitempty"`
-	Messages     []provider.Message `json:"messages"`
+	Messages     []message.Message `json:"messages"`
 }
 
 // DevResponse represents the response data saved to JSON file
@@ -31,8 +32,8 @@ type DevResponse struct {
 	StopReason string              `json:"stop_reason"`
 	Content    string              `json:"content,omitempty"`
 	Thinking   string              `json:"thinking,omitempty"`
-	ToolCalls  []provider.ToolCall `json:"tool_calls,omitempty"`
-	Usage      provider.Usage      `json:"usage"`
+	ToolCalls  []message.ToolCall `json:"tool_calls,omitempty"`
+	Usage      message.Usage      `json:"usage"`
 }
 
 // WriteDevRequest writes request data to JSON file in DEV_DIR
@@ -56,7 +57,7 @@ func WriteDevRequest(providerName, model string, opts provider.CompletionOptions
 }
 
 // WriteDevResponse writes response data to JSON file in DEV_DIR
-func WriteDevResponse(providerName string, resp provider.CompletionResponse, turn int) {
+func WriteDevResponse(providerName string, resp message.CompletionResponse, turn int) {
 	if !devEnabled {
 		return
 	}

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/log"
 	"go.uber.org/zap"
 )
@@ -39,9 +40,42 @@ type Config struct {
 	Extra    []string // Additional prompt sections
 }
 
-// Prompt builds the complete system prompt.
+// System manages system prompt generation with runtime customization.
+type System struct {
+	Client   *client.Client // reference for provider name + model
+	Cwd      string
+	IsGit    bool
+	PlanMode bool
+	Extra    []string // per-turn prompt sections (skills, agents, etc.)
+	Memory   string   // pre-loaded memory content; if empty, loaded from disk
+}
+
+// Prompt builds the complete system prompt from the System's fields.
+func (s *System) Prompt() string {
+	providerName := ""
+	modelID := ""
+	if s.Client != nil {
+		providerName = s.Client.Name()
+		modelID = s.Client.ModelID()
+	}
+	memory := s.Memory
+	if memory == "" {
+		memory = LoadMemory(s.Cwd)
+	}
+	return BuildPrompt(Config{
+		Provider: providerName,
+		Model:    modelID,
+		Cwd:      s.Cwd,
+		IsGit:    s.IsGit,
+		PlanMode: s.PlanMode,
+		Memory:   memory,
+		Extra:    s.Extra,
+	})
+}
+
+// BuildPrompt builds the complete system prompt from a Config.
 // Assembly order: base + tools + provider/generic + environment
-func Prompt(cfg Config) string {
+func BuildPrompt(cfg Config) string {
 	base := load("base.txt")
 	tools := load("tools.txt")
 	providerPrompt := providerOrGeneric(cfg.Provider)

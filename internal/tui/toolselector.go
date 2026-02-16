@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -69,9 +70,9 @@ func NewToolSelectorState() ToolSelectorState {
 }
 
 // EnterToolSelect enters tool selection mode
-func (s *ToolSelectorState) EnterToolSelect(width, height int, disabledTools map[string]bool) error {
-	// Get all tool schemas
-	allTools := tool.GetToolSchemas()
+func (s *ToolSelectorState) EnterToolSelect(width, height int, disabledTools map[string]bool, mcpTools func() []provider.Tool) error {
+	// Get all tool schemas including MCP tools
+	allTools := tool.GetToolSchemasWithMCP(mcpTools)
 
 	s.tools = make([]ToolItem, 0, len(allTools))
 	for _, t := range allTools {

@@ -346,3 +346,13 @@ func (r *Registry) Count() int {
 	defer r.mu.RUnlock()
 	return len(r.skills)
 }
+
+// NewRegistryForTest creates a Registry with pre-populated skills and stores.
+// Intended for testing only.
+func NewRegistryForTest(skills map[string]*Skill, userStore, projectStore *Store) *Registry {
+	return &Registry{
+		skills:       skills,
+		userStore:    userStore,
+		projectStore: projectStore,
+	}
+}

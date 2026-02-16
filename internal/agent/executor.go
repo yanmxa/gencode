@@ -2,17 +2,21 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/yanmxa/gencode/internal/client"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tool/ui"
 	"go.uber.org/zap"
 )
 
@@ -21,15 +25,18 @@ type Executor struct {
 	provider      provider.LLMProvider
 	cwd           string
 	parentModelID string // Parent conversation's model ID (used when inheriting)
+	hooks         *hooks.Engine
 }
 
 // NewExecutor creates a new agent executor
 // parentModelID is the model used by the parent conversation (for inheritance)
-func NewExecutor(llmProvider provider.LLMProvider, cwd string, parentModelID string) *Executor {
+// hookEngine is optional — when non-nil, PreToolUse hooks will fire during agent tool calls
+func NewExecutor(llmProvider provider.LLMProvider, cwd string, parentModelID string, hookEngine *hooks.Engine) *Executor {
 	return &Executor{
 		provider:      llmProvider,
 		cwd:           cwd,
 		parentModelID: parentModelID,
+		hooks:         hookEngine,
 	}
 }
 
@@ -38,8 +45,8 @@ func (e *Executor) GetParentModelID() string {
 	return e.parentModelID
 }
 
-// Run executes an agent request and returns the result
-// For background agents, this should be called in a goroutine
+// Run executes an agent request and returns the result.
+// For background agents, this should be called in a goroutine.
 func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, error) {
 	start := time.Now()
 
@@ -61,21 +68,8 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 		maxTurns = DefaultMaxTurns
 	}
 
-	// Build system prompt
-	systemPrompt := e.buildSystemPrompt(config, req)
-
-	// Get filtered tools
-	tools := e.filterTools(config)
-
-	// Initialize messages
-	messages := []provider.Message{
-		{Role: "user", Content: req.Prompt},
-	}
-
-	// Track usage
-	var totalInputTokens, totalOutputTokens int
-	var turnCount int
-	var lastContent string
+	// Build the agent-specific system prompt as Extra
+	agentPrompt := e.buildSystemPrompt(config, req)
 
 	log.Logger().Info("Starting agent execution",
 		zap.String("agent", config.Name),
@@ -83,113 +77,71 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 		zap.Int("maxTurns", maxTurns),
 	)
 
-	// Main agent loop
-	for turnCount < maxTurns {
-		select {
-		case <-ctx.Done():
+	// Build core.Loop
+	c := &client.Client{Provider: e.provider, Model: modelID, MaxTokens: 8192}
+	loop := &core.Loop{
+		System:     &system.System{Client: c, Cwd: e.cwd, Extra: []string{agentPrompt}},
+		Client:     c,
+		Tool:       &tool.Set{Access: convertToolAccess(config.Tools)},
+		Permission: agentPermission(config.PermissionMode),
+		Hooks:      e.hooks,
+	}
+	loop.AddUser(req.Prompt, nil)
+
+	// Create progress callback
+	onToolStart := func(tc message.ToolCall) bool {
+		if req.OnProgress != nil {
+			params, _ := message.ParseToolInput(tc.Input)
+			progressMsg := e.formatToolProgress(tc.Name, params)
+			req.OnProgress(progressMsg)
+		}
+		return true
+	}
+
+	result, err := loop.Run(ctx, core.RunOptions{MaxTurns: maxTurns, OnToolStart: onToolStart})
+	if err != nil {
+		if result != nil && result.StopReason == "cancelled" {
 			return &AgentResult{
 				AgentName:  config.Name,
 				Success:    false,
-				Content:    lastContent,
-				Messages:   messages,
-				TurnCount:  turnCount,
-				TokenUsage: TokenUsage{InputTokens: totalInputTokens, OutputTokens: totalOutputTokens, TotalTokens: totalInputTokens + totalOutputTokens},
+				Content:    result.Content,
+				Messages:   result.Messages,
+				TurnCount:  result.Turns,
+				TokenUsage: result.Tokens,
 				Duration:   time.Since(start),
 				Error:      "agent cancelled",
-			}, ctx.Err()
-		default:
+			}, err
 		}
-
-		turnCount++
-
-		log.Logger().Debug("Agent turn",
-			zap.Int("turn", turnCount),
-			zap.Int("maxTurns", maxTurns),
-		)
-
-		// Stream response from LLM
-		response, err := e.streamCompletion(ctx, modelID, systemPrompt, messages, tools)
-		if err != nil {
-			return nil, fmt.Errorf("LLM completion failed: %w", err)
-		}
-
-		// Update token usage
-		totalInputTokens += response.Usage.InputTokens
-		totalOutputTokens += response.Usage.OutputTokens
-		lastContent = response.Content
-
-		// Add assistant message to history
-		messages = append(messages, provider.Message{
-			Role:      "assistant",
-			Content:   response.Content,
-			ToolCalls: response.ToolCalls,
-		})
-
-		// Check if done
-		if response.StopReason == "end_turn" || len(response.ToolCalls) == 0 {
-			log.Logger().Info("Agent completed",
-				zap.Int("turns", turnCount),
-				zap.Int("inputTokens", totalInputTokens),
-				zap.Int("outputTokens", totalOutputTokens),
-			)
-
-			return &AgentResult{
-				AgentName:  config.Name,
-				Success:    true,
-				Content:    response.Content,
-				Messages:   messages,
-				TurnCount:  turnCount,
-				TokenUsage: TokenUsage{InputTokens: totalInputTokens, OutputTokens: totalOutputTokens, TotalTokens: totalInputTokens + totalOutputTokens},
-				Duration:   time.Since(start),
-			}, nil
-		}
-
-		// Execute tool calls
-		for _, tc := range response.ToolCalls {
-			select {
-			case <-ctx.Done():
-				return &AgentResult{
-					AgentName:  config.Name,
-					Success:    false,
-					Content:    lastContent,
-					Messages:   messages,
-					TurnCount:  turnCount,
-					TokenUsage: TokenUsage{InputTokens: totalInputTokens, OutputTokens: totalOutputTokens, TotalTokens: totalInputTokens + totalOutputTokens},
-					Duration:   time.Since(start),
-					Error:      "agent cancelled during tool execution",
-				}, ctx.Err()
-			default:
-			}
-
-			result := e.executeTool(ctx, tc, config, req.OnProgress)
-
-			// Add tool result to messages
-			messages = append(messages, provider.Message{
-				Role: "user",
-				ToolResult: &provider.ToolResult{
-					ToolCallID: tc.ID,
-					ToolName:   tc.Name,
-					Content:    result.FormatForLLM(),
-					IsError:    !result.Success,
-				},
-			})
-		}
+		return nil, fmt.Errorf("LLM completion failed: %w", err)
 	}
 
-	// Max turns reached
-	log.Logger().Warn("Agent reached max turns",
-		zap.Int("maxTurns", maxTurns),
+	success := result.StopReason == "end_turn"
+	errMsg := ""
+	if result.StopReason == "max_turns" {
+		errMsg = fmt.Sprintf("reached maximum turns (%d)", maxTurns)
+	}
+
+	logLevel := log.Logger().Info
+	if !success {
+		logLevel = log.Logger().Warn
+	}
+	logLevel("Agent completed",
+		zap.String("agent", config.Name),
+		zap.String("stopReason", result.StopReason),
+		zap.Int("turns", result.Turns),
+		zap.Int("inputTokens", result.Tokens.InputTokens),
+		zap.Int("outputTokens", result.Tokens.OutputTokens),
 	)
 
 	return &AgentResult{
 		AgentName:  config.Name,
-		Success:    false,
-		Content:    lastContent,
-		Messages:   messages,
-		TurnCount:  turnCount,
-		TokenUsage: TokenUsage{InputTokens: totalInputTokens, OutputTokens: totalOutputTokens, TotalTokens: totalInputTokens + totalOutputTokens},
+		Success:    success,
+		Content:    result.Content,
+		Messages:   result.Messages,
+		TurnCount:  result.Turns,
+		TokenUsage: result.Tokens,
 		Duration:   time.Since(start),
-		Error:      fmt.Sprintf("reached maximum turns (%d)", maxTurns),
+		Error:      errMsg,
 	}, nil
 }
 
@@ -265,149 +217,7 @@ func (e *Executor) resolveModelID(requestModel string) string {
 	return FallbackModel
 }
 
-// streamCompletion streams a completion and collects the full response
-func (e *Executor) streamCompletion(ctx context.Context, modelID string, systemPrompt string, messages []provider.Message, tools []provider.Tool) (*provider.CompletionResponse, error) {
-	streamChan := e.provider.Stream(ctx, provider.CompletionOptions{
-		Model:        modelID,
-		Messages:     messages,
-		MaxTokens:    8192,
-		Tools:        tools,
-		SystemPrompt: systemPrompt,
-	})
-
-	var response provider.CompletionResponse
-
-	for chunk := range streamChan {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
-		switch chunk.Type {
-		case provider.ChunkTypeText:
-			response.Content += chunk.Text
-		case provider.ChunkTypeToolStart:
-			// Tool call started
-			response.ToolCalls = append(response.ToolCalls, provider.ToolCall{
-				ID:   chunk.ToolID,
-				Name: chunk.ToolName,
-			})
-		case provider.ChunkTypeToolInput:
-			// Add input to last tool call
-			if len(response.ToolCalls) > 0 {
-				idx := len(response.ToolCalls) - 1
-				response.ToolCalls[idx].Input += chunk.Text
-			}
-		case provider.ChunkTypeDone:
-			if chunk.Response != nil {
-				return chunk.Response, nil
-			}
-			return &response, nil
-		case provider.ChunkTypeError:
-			return nil, chunk.Error
-		}
-	}
-
-	return &response, nil
-}
-
-// executeTool executes a single tool call
-func (e *Executor) executeTool(ctx context.Context, tc provider.ToolCall, config *AgentConfig, onProgress ProgressCallback) ui.ToolResult {
-	// Parse input
-	var params map[string]any
-	if err := json.Unmarshal([]byte(tc.Input), &params); err != nil {
-		return ui.NewErrorResult(tc.Name, fmt.Sprintf("Error parsing tool input: %v", err))
-	}
-
-	// Report progress before execution
-	if onProgress != nil {
-		progressMsg := e.formatToolProgress(tc.Name, params)
-		onProgress(progressMsg)
-	}
-
-	// Get tool
-	t, ok := tool.Get(tc.Name)
-	if !ok {
-		return ui.NewErrorResult(tc.Name, fmt.Sprintf("Unknown tool: %s", tc.Name))
-	}
-
-	// Check if tool requires permission
-	// In agent context, we handle permission based on agent's permission mode
-	if pat, ok := t.(tool.PermissionAwareTool); ok && pat.RequiresPermission() {
-		switch config.PermissionMode {
-		case PermissionPlan:
-			// Plan mode - only allow read-only tools
-			if !e.isReadOnlyTool(tc.Name) {
-				return ui.NewErrorResult(tc.Name, fmt.Sprintf("Tool %s requires write permission but agent is in plan mode", tc.Name))
-			}
-		case PermissionDontAsk:
-			// Auto-accept all
-			return pat.ExecuteApproved(ctx, params, e.cwd)
-		case PermissionAcceptEdits:
-			// Accept edits but check bash commands
-			if tc.Name == "Bash" {
-				// For simplicity, allow bash in acceptEdits mode
-				// In a full implementation, this would prompt the user
-			}
-			return pat.ExecuteApproved(ctx, params, e.cwd)
-		default:
-			// Default - execute with approval (for agents we auto-approve in this simplified version)
-			return pat.ExecuteApproved(ctx, params, e.cwd)
-		}
-	}
-
-	// Execute read-only tool
-	return t.Execute(ctx, params, e.cwd)
-}
-
-// formatToolProgress creates a progress message for a tool call
-func (e *Executor) formatToolProgress(toolName string, params map[string]any) string {
-	switch toolName {
-	case "Read":
-		if path, ok := params["file_path"].(string); ok {
-			return fmt.Sprintf("Reading: %s", path)
-		}
-	case "Glob":
-		if pattern, ok := params["pattern"].(string); ok {
-			return fmt.Sprintf("Finding: %s", pattern)
-		}
-	case "Grep":
-		if pattern, ok := params["pattern"].(string); ok {
-			return fmt.Sprintf("Searching: %s", pattern)
-		}
-	case "WebFetch":
-		if url, ok := params["url"].(string); ok {
-			return fmt.Sprintf("Fetching: %s", url)
-		}
-	case "WebSearch":
-		if query, ok := params["query"].(string); ok {
-			return fmt.Sprintf("Searching web: %s", query)
-		}
-	case "Bash":
-		if cmd, ok := params["command"].(string); ok {
-			if len(cmd) > 50 {
-				cmd = cmd[:47] + "..."
-			}
-			return fmt.Sprintf("Running: %s", cmd)
-		}
-	}
-	return fmt.Sprintf("Executing: %s", toolName)
-}
-
-// isReadOnlyTool checks if a tool is read-only
-func (e *Executor) isReadOnlyTool(name string) bool {
-	readOnlyTools := map[string]bool{
-		"Read":      true,
-		"Glob":      true,
-		"Grep":      true,
-		"WebFetch":  true,
-		"WebSearch": true,
-	}
-	return readOnlyTools[name]
-}
-
-// buildSystemPrompt builds the system prompt for the agent
+// buildSystemPrompt builds the agent-specific system prompt.
 func (e *Executor) buildSystemPrompt(config *AgentConfig, req AgentRequest) string {
 	var sb strings.Builder
 
@@ -457,52 +267,55 @@ func (e *Executor) buildSystemPrompt(config *AgentConfig, req AgentRequest) stri
 	return sb.String()
 }
 
-// filterTools returns the tools available to the agent based on configuration
-func (e *Executor) filterTools(config *AgentConfig) []provider.Tool {
-	allTools := tool.GetToolSchemas()
+// toolProgressFormats maps tool names to their progress format templates and param keys.
+var toolProgressFormats = map[string]struct {
+	verb  string
+	param string
+}{
+	"Read":      {"Reading", "file_path"},
+	"Glob":      {"Finding", "pattern"},
+	"Grep":      {"Searching", "pattern"},
+	"WebFetch":  {"Fetching", "url"},
+	"WebSearch": {"Searching web", "query"},
+	"Bash":      {"Running", "command"},
+}
 
-	// Always filter out Task to prevent nested agent spawning
-	filtered := make([]provider.Tool, 0, len(allTools))
-
-	for _, t := range allTools {
-		// Never allow Task tool in agents
-		if t.Name == "Task" {
-			continue
-		}
-
-		// Never allow EnterPlanMode or ExitPlanMode in agents
-		if t.Name == "EnterPlanMode" || t.Name == "ExitPlanMode" {
-			continue
-		}
-
-		// Apply tool access rules
-		switch config.Tools.Mode {
-		case ToolAccessAllowlist:
-			allowed := false
-			for _, name := range config.Tools.Allow {
-				if strings.EqualFold(t.Name, name) {
-					allowed = true
-					break
-				}
-			}
-			if !allowed {
-				continue
-			}
-		case ToolAccessDenylist:
-			denied := false
-			for _, name := range config.Tools.Deny {
-				if strings.EqualFold(t.Name, name) {
-					denied = true
-					break
-				}
-			}
-			if denied {
-				continue
-			}
-		}
-
-		filtered = append(filtered, t)
+// formatToolProgress creates a progress message for a tool call.
+func (e *Executor) formatToolProgress(toolName string, params map[string]any) string {
+	format, ok := toolProgressFormats[toolName]
+	if !ok {
+		return fmt.Sprintf("Executing: %s", toolName)
 	}
 
-	return filtered
+	value, ok := params[format.param].(string)
+	if !ok {
+		return fmt.Sprintf("Executing: %s", toolName)
+	}
+
+	// Truncate long command strings
+	if toolName == "Bash" && len(value) > 50 {
+		value = value[:47] + "..."
+	}
+
+	return fmt.Sprintf("%s: %s", format.verb, value)
+}
+
+// --- Internal helpers ---
+
+// agentPermission maps PermissionMode to a permission.Checker.
+func agentPermission(mode PermissionMode) permission.Checker {
+	if mode == PermissionPlan {
+		return permission.ReadOnly()
+	}
+	return permission.PermitAll()
+}
+
+
+// convertToolAccess converts agent.ToolAccess to tool.AccessConfig.
+func convertToolAccess(ta ToolAccess) *tool.AccessConfig {
+	return &tool.AccessConfig{
+		Mode:  tool.AccessMode(ta.Mode),
+		Allow: ta.Allow,
+		Deny:  ta.Deny,
+	}
 }

@@ -9,9 +9,9 @@ import (
 	"github.com/yanmxa/gencode/internal/agent"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/permission"
 )
@@ -37,7 +37,7 @@ func (m *model) handleProviderSelected(msg ProviderSelectedMsg) (tea.Model, tea.
 			if m.currentModel != nil {
 				modelID = m.currentModel.ModelID
 			}
-			configureTaskTool(p, m.cwd, modelID)
+			configureTaskTool(p, m.cwd, modelID, m.hookEngine)
 		}
 	}
 	return m, tea.Batch(m.commitMessages()...)
@@ -58,19 +58,19 @@ func (m *model) handleModelSelected(msg ModelSelectedMsg) (tea.Model, tea.Cmd) {
 		if p, err := provider.GetProvider(ctx, provider.Provider(msg.ProviderName), msg.AuthMethod); err == nil {
 			m.llmProvider = p
 			// Configure Task tool with executor
-			configureTaskTool(p, m.cwd, msg.ModelID)
+			configureTaskTool(p, m.cwd, msg.ModelID, m.hookEngine)
 		}
 	}
 	return m, tea.Batch(m.commitMessages()...)
 }
 
 // configureTaskTool sets up the Task tool with the agent executor
-func configureTaskTool(llmProvider provider.LLMProvider, cwd string, modelID string) {
+func configureTaskTool(llmProvider provider.LLMProvider, cwd string, modelID string, hookEngine *hooks.Engine) {
 	// Get Task tool from registry
 	if t, ok := tool.Get("Task"); ok {
 		if taskTool, ok := t.(*tool.TaskTool); ok {
 			// Create executor and adapter
-			executor := agent.NewExecutor(llmProvider, cwd, modelID)
+			executor := agent.NewExecutor(llmProvider, cwd, modelID, hookEngine)
 			adapter := agent.NewExecutorAdapter(executor)
 			taskTool.SetExecutor(adapter)
 		}
@@ -81,24 +81,29 @@ func configureTaskTool(llmProvider provider.LLMProvider, cwd string, modelID str
 
 func (m *model) handlePermissionRequest(msg PermissionRequestMsg) (tea.Model, tea.Cmd) {
 	if blocked, reason := m.checkPermissionHook(msg.Request); blocked {
-		tc := m.pendingToolCalls[m.pendingToolIdx]
-		m.messages = append(m.messages, chatMessage{
-			role:     roleUser,
-			toolName: tc.Name,
-			toolResult: &provider.ToolResult{
-				ToolCallID: tc.ID,
-				Content:    "Blocked by hook: " + reason,
-				IsError:    true,
-			},
-		})
-		m.pendingToolCalls = nil
-		m.pendingToolIdx = 0
-		m.streaming = false
-		return m, tea.Batch(m.commitMessages()...)
+		return m.abortToolWithError("Blocked by hook: " + reason)
 	}
 
 	m.permissionPrompt.Show(msg.Request, m.width, m.height)
 	return m, nil
+}
+
+// abortToolWithError adds an error result for the current pending tool and resets state.
+func (m *model) abortToolWithError(errorMsg string) (tea.Model, tea.Cmd) {
+	tc := m.pendingToolCalls[m.pendingToolIdx]
+	m.messages = append(m.messages, chatMessage{
+		role:     roleUser,
+		toolName: tc.Name,
+		toolResult: &message.ToolResult{
+			ToolCallID: tc.ID,
+			Content:    errorMsg,
+			IsError:    true,
+		},
+	})
+	m.pendingToolCalls = nil
+	m.pendingToolIdx = 0
+	m.streaming = false
+	return m, tea.Batch(m.commitMessages()...)
 }
 
 // checkPermissionHook runs PermissionRequest hook and returns (blocked, reason).
@@ -123,51 +128,42 @@ func (m *model) checkPermissionHook(req *permission.PermissionRequest) (bool, st
 }
 
 func (m *model) handlePermissionResponse(msg PermissionResponseMsg) (tea.Model, tea.Cmd) {
-	if msg.Approved {
-		if msg.AllowAll && m.sessionPermissions != nil && msg.Request != nil {
-			toolName := msg.Request.ToolName
-			switch toolName {
-			case "Edit":
-				m.sessionPermissions.AllowAllEdits = true
-			case "Write":
-				m.sessionPermissions.AllowAllWrites = true
-			case "Bash":
-				m.sessionPermissions.AllowAllBash = true
-			case "Skill":
-				m.sessionPermissions.AllowAllSkills = true
-			case "Task":
-				m.sessionPermissions.AllowAllTasks = true
-			default:
-				m.sessionPermissions.AllowTool(toolName)
-			}
-		}
-
-		// For Task tool, clear progress and start checking for updates
-		if msg.Request != nil && msg.Request.ToolName == "Task" {
-			m.taskProgress = nil
-			return m, tea.Batch(
-				executeApprovedTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd),
-				checkTaskProgress(),
-			)
-		}
-
-		return m, executeApprovedTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd)
+	if !msg.Approved {
+		return m.abortToolWithError("User denied permission")
 	}
 
-	tc := m.pendingToolCalls[m.pendingToolIdx]
-	m.messages = append(m.messages, chatMessage{
-		role:     roleUser,
-		toolName: tc.Name,
-		toolResult: &provider.ToolResult{
-			ToolCallID: tc.ID,
-			Content:    "User denied permission",
-			IsError:    true,
-		},
-	})
-	m.pendingToolCalls = nil
-	m.pendingToolIdx = 0
-	m.streaming = false
-	return m, tea.Batch(m.commitMessages()...)
+	if msg.AllowAll && m.sessionPermissions != nil && msg.Request != nil {
+		m.applyAllowAllPermission(msg.Request.ToolName)
+	}
+
+	// For Task tool, clear progress and start checking for updates
+	if msg.Request != nil && msg.Request.ToolName == "Task" {
+		m.taskProgress = nil
+		return m, tea.Batch(
+			executeApprovedTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd),
+			checkTaskProgress(),
+		)
+	}
+
+	return m, executeApprovedTool(m.pendingToolCalls, m.pendingToolIdx, m.cwd)
+}
+
+// applyAllowAllPermission enables "allow all" for the given tool type.
+func (m *model) applyAllowAllPermission(toolName string) {
+	switch toolName {
+	case "Edit":
+		m.sessionPermissions.AllowAllEdits = true
+	case "Write":
+		m.sessionPermissions.AllowAllWrites = true
+	case "Bash":
+		m.sessionPermissions.AllowAllBash = true
+	case "Skill":
+		m.sessionPermissions.AllowAllSkills = true
+	case "Task":
+		m.sessionPermissions.AllowAllTasks = true
+	default:
+		m.sessionPermissions.AllowTool(toolName)
+	}
 }
 
 // Interactive tool handlers (Question, Plan)
@@ -181,21 +177,8 @@ func (m *model) handleQuestionRequest(msg QuestionRequestMsg) (tea.Model, tea.Cm
 
 func (m *model) handleQuestionResponse(msg QuestionResponseMsg) (tea.Model, tea.Cmd) {
 	if msg.Cancelled {
-		tc := m.pendingToolCalls[m.pendingToolIdx]
-		m.messages = append(m.messages, chatMessage{
-			role:     roleUser,
-			toolName: tc.Name,
-			toolResult: &provider.ToolResult{
-				ToolCallID: tc.ID,
-				Content:    "User cancelled the question prompt",
-				IsError:    true,
-			},
-		})
-		m.pendingToolCalls = nil
-		m.pendingToolIdx = 0
 		m.pendingQuestion = nil
-		m.streaming = false
-		return m, tea.Batch(m.commitMessages()...)
+		return m.abortToolWithError("User cancelled the question prompt")
 	}
 
 	tc := m.pendingToolCalls[m.pendingToolIdx]
@@ -215,22 +198,9 @@ func (m *model) handlePlanRequest(msg PlanRequestMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 	if !msg.Approved {
-		tc := m.pendingToolCalls[m.pendingToolIdx]
-		m.messages = append(m.messages, chatMessage{
-			role:     roleUser,
-			toolName: tc.Name,
-			toolResult: &provider.ToolResult{
-				ToolCallID: tc.ID,
-				Content:    "Plan was rejected by the user. Please ask for clarification or modify your approach.",
-				IsError:    true,
-			},
-		})
-		m.pendingToolCalls = nil
-		m.pendingToolIdx = 0
-		m.streaming = false
 		m.planMode = false
 		m.operationMode = modeNormal
-		return m, tea.Batch(m.commitMessages()...)
+		return m.abortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.")
 	}
 
 	tc := m.pendingToolCalls[m.pendingToolIdx]
@@ -282,31 +252,17 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 		m.streaming = true
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelFunc = cancel
-		providerMsgs := m.convertMessagesToProvider()
+
+		// Configure loop and set messages
+		m.configureLoop(nil)
+		m.loop.SetMessages(m.convertMessagesToProvider())
 
 		// Commit the user message before starting stream
 		commitCmds := m.commitMessages()
 
 		m.messages = append(m.messages, chatMessage{role: roleAssistant, content: ""})
 
-		modelID := m.getModelID()
-		sysPrompt := system.Prompt(system.Config{
-			Provider: m.llmProvider.Name(),
-			Model:    modelID,
-			Cwd:      m.cwd,
-			IsGit:    isGitRepo(m.cwd),
-			PlanMode: false,
-			Memory:   system.LoadMemory(m.cwd),
-		})
-		tools := m.getToolsForMode()
-
-		m.streamChan = m.llmProvider.Stream(ctx, provider.CompletionOptions{
-			Model:        modelID,
-			Messages:     providerMsgs,
-			MaxTokens:    m.getMaxTokens(),
-			Tools:        tools,
-			SystemPrompt: sysPrompt,
-		})
+		m.streamChan = m.loop.Stream(ctx)
 		allCmds := append(commitCmds, m.waitForChunk(), m.spinner.Tick)
 		return m, tea.Batch(allCmds...)
 
@@ -412,6 +368,9 @@ func (m *model) handleTokenLimitResult(msg TokenLimitResultMsg) (tea.Model, tea.
 func (m *model) handleEditorFinished(msg EditorFinishedMsg) (tea.Model, tea.Cmd) {
 	filePath := m.editingMemoryFile
 	m.editingMemoryFile = ""
+
+	// Invalidate cached memory so it's reloaded on next stream
+	m.cachedMemory = ""
 
 	content := fmt.Sprintf("Saved: %s", filePath)
 	if msg.Err != nil {

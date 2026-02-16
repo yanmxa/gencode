@@ -9,6 +9,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -33,8 +34,8 @@ func (c *Client) Name() string {
 }
 
 // Stream sends a completion request and returns a channel of streaming chunks
-func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan provider.StreamChunk {
-	ch := make(chan provider.StreamChunk)
+func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
+	ch := make(chan message.StreamChunk)
 
 	go func() {
 		defer close(ch)
@@ -43,7 +44,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		anthropicMsgs := make([]anthropic.MessageParam, 0, len(opts.Messages))
 		for _, msg := range opts.Messages {
 			switch msg.Role {
-			case "user":
+			case message.RoleUser:
 				if msg.ToolResult != nil {
 					// Tool result message
 					anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(
@@ -53,23 +54,17 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 							msg.ToolResult.IsError,
 						),
 					))
-				} else if len(msg.ContentParts) > 0 {
+				} else if len(msg.Images) > 0 {
 					// Multimodal message with images
-					blocks := make([]anthropic.ContentBlockParamUnion, 0, len(msg.ContentParts))
-					for _, part := range msg.ContentParts {
-						switch part.Type {
-						case provider.ContentTypeImage:
-							if part.Image != nil {
-								blocks = append(blocks, anthropic.NewImageBlockBase64(
-									part.Image.MediaType,
-									part.Image.Data,
-								))
-							}
-						case provider.ContentTypeText:
-							if part.Text != "" {
-								blocks = append(blocks, anthropic.NewTextBlock(part.Text))
-							}
-						}
+					blocks := make([]anthropic.ContentBlockParamUnion, 0, len(msg.Images)+1)
+					for _, img := range msg.Images {
+						blocks = append(blocks, anthropic.NewImageBlockBase64(
+							img.MediaType,
+							img.Data,
+						))
+					}
+					if msg.Content != "" {
+						blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 					}
 					anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(blocks...))
 				} else {
@@ -77,7 +72,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 						anthropic.NewTextBlock(msg.Content),
 					))
 				}
-			case "assistant":
+			case message.RoleAssistant:
 				if len(msg.ToolCalls) > 0 {
 					// Assistant message with tool calls
 					blocks := make([]anthropic.ContentBlockParamUnion, 0, len(msg.ToolCalls)+1)
@@ -164,7 +159,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		var currentToolID string
 		var currentToolName string
 		var currentToolInput string
-		var response provider.CompletionResponse
+		var response message.CompletionResponse
 
 		// Stream timing and counting
 		streamStart := time.Now()
@@ -182,8 +177,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					currentToolID = block.ContentBlock.ID
 					currentToolName = block.ContentBlock.Name
 					currentToolInput = ""
-					ch <- provider.StreamChunk{
-						Type:     provider.ChunkTypeToolStart,
+					ch <- message.StreamChunk{
+						Type:     message.ChunkTypeToolStart,
 						ToolID:   currentToolID,
 						ToolName: currentToolName,
 					}
@@ -194,16 +189,16 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				switch delta.Delta.Type {
 				case "text_delta":
 					if delta.Delta.Text != "" {
-						ch <- provider.StreamChunk{
-							Type: provider.ChunkTypeText,
+						ch <- message.StreamChunk{
+							Type: message.ChunkTypeText,
 							Text: delta.Delta.Text,
 						}
 						response.Content += delta.Delta.Text
 					}
 				case "input_json_delta":
 					if delta.Delta.PartialJSON != "" {
-						ch <- provider.StreamChunk{
-							Type:   provider.ChunkTypeToolInput,
+						ch <- message.StreamChunk{
+							Type:   message.ChunkTypeToolInput,
 							ToolID: currentToolID,
 							Text:   delta.Delta.PartialJSON,
 						}
@@ -214,7 +209,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 			case "content_block_stop":
 				// When a tool block ends, add the accumulated tool call
 				if currentToolID != "" && currentToolName != "" {
-					response.ToolCalls = append(response.ToolCalls, provider.ToolCall{
+					response.ToolCalls = append(response.ToolCalls, message.ToolCall{
 						ID:    currentToolID,
 						Name:  currentToolName,
 						Input: currentToolInput,
@@ -240,8 +235,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 		if err := stream.Err(); err != nil {
 			log.LogError(c.name, err)
-			ch <- provider.StreamChunk{
-				Type:  provider.ChunkTypeError,
+			ch <- message.StreamChunk{
+				Type:  message.ChunkTypeError,
 				Error: err,
 			}
 			return
@@ -250,8 +245,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		// Log response
 		log.LogResponse(c.name, response)
 
-		ch <- provider.StreamChunk{
-			Type:     provider.ChunkTypeDone,
+		ch <- message.StreamChunk{
+			Type:     message.ChunkTypeDone,
 			Response: &response,
 		}
 	}()

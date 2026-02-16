@@ -6,14 +6,15 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // messageMarshaler wraps a Message for zap logging
-type messageMarshaler provider.Message
+type messageMarshaler message.Message
 
 func (m messageMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) error {
-	enc.AddString("role", m.Role)
+	enc.AddString("role", string(m.Role))
 	enc.AddString("content", m.Content)
 	if len(m.ToolCalls) > 0 {
 		_ = enc.AddArray("tool_calls", toolCallsMarshaler(m.ToolCalls))
@@ -25,7 +26,7 @@ func (m messageMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 }
 
 // messagesMarshaler wraps a slice of Messages for zap logging
-type messagesMarshaler []provider.Message
+type messagesMarshaler []message.Message
 
 func (m messagesMarshaler) MarshalLogArray(enc zapcore.ArrayEncoder) error {
 	for _, msg := range m {
@@ -35,7 +36,7 @@ func (m messagesMarshaler) MarshalLogArray(enc zapcore.ArrayEncoder) error {
 }
 
 // MessagesField creates a zap field for messages
-func MessagesField(messages []provider.Message) zap.Field {
+func MessagesField(messages []message.Message) zap.Field {
 	return zap.Array("messages", messagesMarshaler(messages))
 }
 
@@ -71,7 +72,7 @@ func ToolsField(tools []provider.Tool) zap.Field {
 }
 
 // toolCallMarshaler wraps a ToolCall for zap logging
-type toolCallMarshaler provider.ToolCall
+type toolCallMarshaler message.ToolCall
 
 func (tc toolCallMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("id", tc.ID)
@@ -81,7 +82,7 @@ func (tc toolCallMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 }
 
 // toolCallsMarshaler wraps a slice of ToolCalls for zap logging
-type toolCallsMarshaler []provider.ToolCall
+type toolCallsMarshaler []message.ToolCall
 
 func (tc toolCallsMarshaler) MarshalLogArray(enc zapcore.ArrayEncoder) error {
 	for _, call := range tc {
@@ -91,12 +92,12 @@ func (tc toolCallsMarshaler) MarshalLogArray(enc zapcore.ArrayEncoder) error {
 }
 
 // ToolCallsField creates a zap field for tool calls
-func ToolCallsField(toolCalls []provider.ToolCall) zap.Field {
+func ToolCallsField(toolCalls []message.ToolCall) zap.Field {
 	return zap.Array("tool_calls", toolCallsMarshaler(toolCalls))
 }
 
 // toolResultMarshaler wraps a ToolResult for zap logging
-type toolResultMarshaler provider.ToolResult
+type toolResultMarshaler message.ToolResult
 
 func (tr toolResultMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("tool_call_id", tr.ToolCallID)
@@ -106,7 +107,7 @@ func (tr toolResultMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) error 
 }
 
 // usageMarshaler wraps Usage for zap logging
-type usageMarshaler provider.Usage
+type usageMarshaler message.Usage
 
 func (u usageMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddInt("input_tokens", u.InputTokens)
@@ -115,6 +116,6 @@ func (u usageMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 }
 
 // UsageField creates a zap field for usage
-func UsageField(usage provider.Usage) zap.Field {
+func UsageField(usage message.Usage) zap.Field {
 	return zap.Object("usage", usageMarshaler(usage))
 }

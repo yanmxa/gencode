@@ -17,14 +17,18 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -51,10 +55,10 @@ type chatMessage struct {
 	role              string
 	content           string
 	thinking          string               // Reasoning content for thinking models
-	images            []provider.ImageData // Image attachments
-	toolCalls         []provider.ToolCall
+	images            []message.ImageData // Image attachments
+	toolCalls         []message.ToolCall
 	toolCallsExpanded bool
-	toolResult        *provider.ToolResult
+	toolResult        *message.ToolResult
 	toolName          string
 	expanded          bool
 	renderedInline    bool // marks this toolResult was rendered inline with its tool call
@@ -68,14 +72,14 @@ type (
 		thinking         string // Reasoning content for thinking models
 		done             bool
 		err              error
-		toolCalls        []provider.ToolCall
+		toolCalls        []message.ToolCall
 		stopReason       string
 		buildingToolName string
-		usage            *provider.Usage
+		usage            *message.Usage
 	}
 	streamDoneMsg     struct{}
 	streamContinueMsg struct {
-		messages []provider.Message
+		messages []message.Message
 		modelID  string
 	}
 	// EditorFinishedMsg is sent when an external editor process completes
@@ -92,7 +96,7 @@ type model struct {
 	store        *provider.Store
 	currentModel *provider.CurrentModelInfo
 	streaming    bool
-	streamChan   <-chan provider.StreamChunk
+	streamChan   <-chan message.StreamChunk
 	cancelFunc   context.CancelFunc
 	width        int
 	height       int
@@ -117,12 +121,12 @@ type model struct {
 	memorySelector MemorySelectorState
 
 	permissionPrompt *PermissionPrompt
-	pendingToolCalls []provider.ToolCall
+	pendingToolCalls []message.ToolCall
 	pendingToolIdx   int
 
 	// Parallel tool execution tracking
 	parallelMode        bool                        // True when executing tools in parallel
-	parallelResults     map[int]provider.ToolResult // Collected results by index
+	parallelResults     map[int]message.ToolResult // Collected results by index
 	parallelResultCount int                         // Number of results received
 
 	settings           *config.Settings
@@ -185,12 +189,18 @@ type model struct {
 	// MCP registry
 	mcpRegistry *mcp.Registry
 
+	// Core loop for LLM orchestration
+	loop *core.Loop
+
 	// Inline rendering: tracks how many messages have been pushed to scrollback
 	committedCount     int
 	pendingClearScreen bool
 
+	// Cached memory content (avoids re-reading from disk every turn)
+	cachedMemory string
+
 	// Pending images from clipboard paste
-	pendingImages         []provider.ImageData
+	pendingImages         []message.ImageData
 	imageSelectMode       bool // True when in image selection mode
 	selectedImageIdx      int  // Currently selected image index
 }
@@ -348,15 +358,6 @@ func newModel() model {
 		mcpRegistry = mcp.DefaultRegistry
 	}
 
-	// Configure Task tool if provider is available
-	if llmProvider != nil {
-		modelID := ""
-		if currentModel != nil {
-			modelID = currentModel.ModelID
-		}
-		configureTaskTool(llmProvider, cwd, modelID)
-	}
-
 	mdRenderer := createMarkdownRenderer(defaultWidth)
 
 	settings, _ := config.Load()
@@ -368,9 +369,20 @@ func newModel() model {
 	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
 	hookEngine := hooks.NewEngine(settings, sessionID, cwd, "")
 
+	// Configure Task tool if provider is available
+	if llmProvider != nil {
+		modelID := ""
+		if currentModel != nil {
+			modelID = currentModel.ModelID
+		}
+		configureTaskTool(llmProvider, cwd, modelID, hookEngine)
+	}
+
 	// Initialize suggestions with cwd for @ file completion
 	suggestions := NewSuggestionState()
 	suggestions.SetCwd(cwd)
+
+	loop := &core.Loop{}
 
 	return model{
 		textarea:           ta,
@@ -401,6 +413,7 @@ func newModel() model {
 		sessionSelector:    NewSessionSelectorState(),
 		hookEngine:         hookEngine,
 		mcpRegistry:        mcpRegistry,
+		loop:               loop,
 	}
 }
 
@@ -416,7 +429,7 @@ func (m model) Init() tea.Cmd {
 			Model:  m.getModelID(),
 		})
 	}
-	return tea.Batch(textarea.Blink, m.spinner.Tick)
+	return tea.Batch(textarea.Blink, m.spinner.Tick, autoConnectMCPServers())
 }
 
 func (m *model) updateTextareaHeight() {
@@ -452,21 +465,50 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case MCPConnectMsg:
+		// Clear disabled flag and mark as connecting
+		if mcp.DefaultRegistry != nil {
+			mcp.DefaultRegistry.SetDisabled(msg.ServerName, false)
+			mcp.DefaultRegistry.SetConnecting(msg.ServerName, true)
+		}
 		return m, startMCPConnect(msg.ServerName)
 
 	case MCPConnectResultMsg:
-		m.mcpSelector.HandleConnectResult(msg)
-		content := fmt.Sprintf("Connected to MCP server '%s' (%d tools)", msg.ServerName, msg.ToolCount)
-		if !msg.Success {
-			content = fmt.Sprintf("Failed to connect to '%s': %v", msg.ServerName, msg.Error)
+		// Clear connecting state and store error if failed
+		if mcp.DefaultRegistry != nil {
+			mcp.DefaultRegistry.SetConnecting(msg.ServerName, false)
+			if !msg.Success && msg.Error != nil {
+				mcp.DefaultRegistry.SetConnectError(msg.ServerName, msg.Error.Error())
+			} else {
+				mcp.DefaultRegistry.SetConnectError(msg.ServerName, "")
+			}
 		}
-		m.messages = append(m.messages, chatMessage{role: roleNotice, content: content})
-		return m, tea.Batch(m.commitMessages()...)
+		m.mcpSelector.HandleConnectResult(msg)
+		// Only show notice when selector is not active (status visible in selector UI)
+		if !m.mcpSelector.IsActive() && !msg.Success {
+			content := fmt.Sprintf("Failed to connect to '%s': %v", msg.ServerName, msg.Error)
+			m.messages = append(m.messages, chatMessage{role: roleNotice, content: content})
+			return m, tea.Batch(m.commitMessages()...)
+		}
+		return m, nil
 
 	case MCPDisconnectMsg:
 		m.mcpSelector.HandleDisconnect(msg.ServerName)
-		m.messages = append(m.messages, chatMessage{role: roleNotice, content: fmt.Sprintf("Disconnected from MCP server '%s'", msg.ServerName)})
-		return m, tea.Batch(m.commitMessages()...)
+		return m, nil
+
+	case MCPReconnectMsg:
+		m.mcpSelector.HandleReconnect(msg.ServerName)
+		if mcp.DefaultRegistry != nil {
+			mcp.DefaultRegistry.SetConnecting(msg.ServerName, true)
+		}
+		return m, startMCPConnect(msg.ServerName)
+
+	case MCPRemoveMsg:
+		m.mcpSelector.HandleRemove(msg.ServerName)
+		return m, nil
+
+	case MCPAddRequestMsg:
+		m.textarea.SetValue("/mcp add ")
+		return m, nil
 
 	// Additional selector cancelled events
 	case MCPSelectorCancelledMsg, SessionSelectorCancelledMsg, MemorySelectorCancelledMsg:
@@ -680,6 +722,9 @@ func (m model) View() string {
 	if chatSection != "" {
 		view.WriteString(chatSection)
 		view.WriteString("\n")
+	} else if m.committedCount > 0 {
+		// Add spacing between scrollback content and the input separator
+		view.WriteString("\n")
 	}
 	view.WriteString(separator)
 	view.WriteString("\n")
@@ -777,12 +822,12 @@ func (m model) waitForChunk() tea.Cmd {
 		}
 
 		switch chunk.Type {
-		case provider.ChunkTypeText:
+		case message.ChunkTypeText:
 			return streamChunkMsg{text: chunk.Text}
-		case provider.ChunkTypeThinking:
+		case message.ChunkTypeThinking:
 			return streamChunkMsg{thinking: chunk.Text}
-		case provider.ChunkTypeDone:
-			var usage *provider.Usage
+		case message.ChunkTypeDone:
+			var usage *message.Usage
 			if chunk.Response != nil {
 				usage = &chunk.Response.Usage
 			}
@@ -795,11 +840,11 @@ func (m model) waitForChunk() tea.Cmd {
 				}
 			}
 			return streamChunkMsg{done: true, usage: usage}
-		case provider.ChunkTypeError:
+		case message.ChunkTypeError:
 			return streamChunkMsg{err: chunk.Error}
-		case provider.ChunkTypeToolStart:
+		case message.ChunkTypeToolStart:
 			return streamChunkMsg{text: "", buildingToolName: chunk.ToolName}
-		case provider.ChunkTypeToolInput:
+		case message.ChunkTypeToolInput:
 			return streamChunkMsg{text: ""}
 		default:
 			return streamChunkMsg{text: ""}
@@ -812,39 +857,20 @@ func isGitRepo(dir string) bool {
 	return err == nil
 }
 
-func (m model) convertMessagesToProvider() []provider.Message {
-	providerMsgs := make([]provider.Message, 0, len(m.messages))
+func (m model) convertMessagesToProvider() []message.Message {
+	providerMsgs := make([]message.Message, 0, len(m.messages))
 	for _, msg := range m.messages {
 		// Skip UI-only messages
 		if msg.role == roleNotice {
 			continue
 		}
 
-		providerMsg := provider.Message{
-			Role:      msg.role,
+		providerMsg := message.Message{
+			Role:      message.Role(msg.role),
+			Content:   msg.content,
+			Images:    msg.images,
 			ToolCalls: msg.toolCalls,
 			Thinking:  msg.thinking,
-		}
-
-		// Handle multimodal messages with images
-		if len(msg.images) > 0 {
-			parts := make([]provider.ContentPart, 0, len(msg.images)+1)
-			for _, img := range msg.images {
-				imgCopy := img
-				parts = append(parts, provider.ContentPart{
-					Type:  provider.ContentTypeImage,
-					Image: &imgCopy,
-				})
-			}
-			if msg.content != "" {
-				parts = append(parts, provider.ContentPart{
-					Type: provider.ContentTypeText,
-					Text: msg.content,
-				})
-			}
-			providerMsg.ContentParts = parts
-		} else {
-			providerMsg.Content = msg.content
 		}
 
 		if msg.toolResult != nil {
@@ -860,38 +886,45 @@ func (m model) convertMessagesToProvider() []provider.Message {
 	return providerMsgs
 }
 
-func (m model) getModelID() string {
-	if m.currentModel != nil {
-		return m.currentModel.ModelID
-	}
-	return "claude-sonnet-4-20250514"
-}
-
-func (m model) getToolsForMode() []provider.Tool {
-	// Create MCP tools getter if registry is available
+// configureLoop updates the loop's configuration from the current model state.
+func (m *model) configureLoop(extra []string) {
 	var mcpToolsGetter func() []provider.Tool
 	if m.mcpRegistry != nil {
 		mcpToolsGetter = m.mcpRegistry.GetToolSchemas
 	}
 
-	if m.planMode {
-		return tool.GetPlanModeToolSchemasFiltered(m.disabledTools)
+	// Cache memory content to avoid re-reading files from disk every turn
+	if m.cachedMemory == "" {
+		m.cachedMemory = system.LoadMemory(m.cwd)
 	}
 
-	// Get base tools with MCP tools
-	tools := tool.GetToolSchemasWithMCP(mcpToolsGetter)
+	m.loop.Client = &client.Client{
+		Provider:  m.llmProvider,
+		Model:     m.getModelID(),
+		MaxTokens: m.getMaxTokens(),
+	}
+	m.loop.System = &system.System{
+		Client:   m.loop.Client,
+		Cwd:      m.cwd,
+		IsGit:    isGitRepo(m.cwd),
+		PlanMode: m.planMode,
+		Extra:    extra,
+		Memory:   m.cachedMemory,
+	}
+	m.loop.Tool = &tool.Set{
+		Disabled: m.disabledTools,
+		PlanMode: m.planMode,
+		MCP:      mcpToolsGetter,
+	}
+	m.loop.Permission = nil // TUI uses its own permission system
+	m.loop.Hooks = m.hookEngine
+}
 
-	// Filter disabled tools
-	if len(m.disabledTools) == 0 {
-		return tools
+func (m model) getModelID() string {
+	if m.currentModel != nil {
+		return m.currentModel.ModelID
 	}
-	filtered := make([]provider.Tool, 0, len(tools))
-	for _, t := range tools {
-		if !m.disabledTools[t.Name] {
-			filtered = append(filtered, t)
-		}
-	}
-	return filtered
+	return "claude-sonnet-4-20250514"
 }
 
 // buildExtraContext returns additional context for the system prompt including

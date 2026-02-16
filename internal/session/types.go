@@ -3,7 +3,7 @@ package session
 import (
 	"time"
 
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -24,9 +24,9 @@ type StoredMessage struct {
 	Role       string               `json:"role"`
 	Content    string               `json:"content,omitempty"`
 	Thinking   string               `json:"thinking,omitempty"`
-	Images     []provider.ImageData `json:"images,omitempty"`
-	ToolCalls  []provider.ToolCall  `json:"toolCalls,omitempty"`
-	ToolResult *provider.ToolResult `json:"toolResult,omitempty"`
+	Images     []message.ImageData `json:"images,omitempty"`
+	ToolCalls  []message.ToolCall  `json:"toolCalls,omitempty"`
+	ToolResult *message.ToolResult `json:"toolResult,omitempty"`
 	ToolName   string               `json:"toolName,omitempty"`
 	IsSummary  bool                 `json:"isSummary,omitempty"`
 }

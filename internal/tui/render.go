@@ -27,7 +27,10 @@ func createMarkdownRenderer(width int) *glamour.TermRenderer {
 	uintPtr := func(u uint) *uint { return &u }
 	compactStyle.Document.Margin = uintPtr(0)
 	compactStyle.Paragraph.Margin = uintPtr(0)
+	compactStyle.Heading.Margin = uintPtr(0)
 	compactStyle.CodeBlock.Margin = uintPtr(0)
+	compactStyle.List.Margin = uintPtr(0)
+	compactStyle.Table.Margin = uintPtr(0)
 
 	renderer, _ := glamour.NewTermRenderer(
 		glamour.WithStyles(compactStyle),
@@ -186,6 +189,7 @@ func (m model) renderMessages() string {
 
 // renderSingleMessage renders one message at the given index for committing to scrollback.
 // It handles the skip logic for inline tool results.
+// The trailing newline is trimmed because tea.Println adds its own.
 func (m model) renderSingleMessage(idx int) string {
 	if idx < 0 || idx >= len(m.messages) {
 		return ""
@@ -196,7 +200,7 @@ func (m model) renderSingleMessage(idx int) string {
 		return ""
 	}
 
-	return m.renderMessageAt(idx, false)
+	return strings.TrimRight(m.renderMessageAt(idx, false), "\n")
 }
 
 // renderActiveContent renders all uncommitted messages for the managed region.
@@ -405,7 +409,9 @@ func (m model) renderAssistantMessage(msg chatMessage, idx int, isLast bool) str
 		if err == nil {
 			content = strings.TrimLeft(rendered, " \t\n")
 			content = strings.TrimRight(content, " \t\n")
-			blankLines := regexp.MustCompile(`\n\s*\n`)
+			// Glamour renders "blank" lines filled with ANSI escape codes (e.g. colored spaces).
+			// Match lines containing only ANSI codes and/or whitespace, then collapse.
+			blankLines := regexp.MustCompile(`\n((?:\x1b\[[0-9;]*[a-zA-Z]|[ \t])*\n)+`)
 			content = blankLines.ReplaceAllString(content, "\n")
 		} else {
 			content = msg.content

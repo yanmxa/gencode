@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+
+	"github.com/yanmxa/gencode/internal/message"
 )
 
 // Provider represents a provider name
@@ -48,44 +50,11 @@ type ModelInfo struct {
 // CompletionOptions contains options for a completion request
 type CompletionOptions struct {
 	Model       string
-	Messages    []Message
+	Messages    []message.Message
 	MaxTokens   int
 	Temperature float64
 	Tools       []Tool
 	SystemPrompt string
-}
-
-// ContentType represents the type of content in a message part
-type ContentType string
-
-const (
-	ContentTypeText  ContentType = "text"
-	ContentTypeImage ContentType = "image"
-)
-
-// ImageData represents image data for multimodal messages
-type ImageData struct {
-	MediaType string `json:"media_type"` // "image/png", "image/jpeg", etc.
-	Data      string `json:"data"`       // Base64 encoded image data
-	FileName  string `json:"file_name"`
-	Size      int    `json:"size"` // Size in bytes
-}
-
-// ContentPart represents a part of multimodal message content
-type ContentPart struct {
-	Type  ContentType `json:"type"`
-	Text  string      `json:"text,omitempty"`
-	Image *ImageData  `json:"image,omitempty"`
-}
-
-// Message represents a chat message
-type Message struct {
-	Role         string        `json:"role"` // "user", "assistant", "system"
-	Content      string        `json:"content,omitempty"`
-	ContentParts []ContentPart `json:"content_parts,omitempty"` // Multimodal content
-	ToolCalls    []ToolCall    `json:"tool_calls,omitempty"`
-	ToolResult   *ToolResult   `json:"tool_result,omitempty"`
-	Thinking     string        `json:"thinking,omitempty"` // Reasoning content for thinking models
 }
 
 // Tool represents a tool definition
@@ -95,62 +64,10 @@ type Tool struct {
 	Parameters  interface{} `json:"parameters"` // JSON Schema
 }
 
-// ToolCall represents a tool call from the model
-type ToolCall struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Input string `json:"input"` // JSON string
-}
-
-// ToolResult represents the result of a tool execution
-type ToolResult struct {
-	ToolCallID string `json:"tool_call_id"`
-	ToolName   string `json:"tool_name,omitempty"`
-	Content    string `json:"content"`
-	IsError    bool   `json:"is_error,omitempty"`
-}
-
-// CompletionResponse represents a completion response
-type CompletionResponse struct {
-	Content    string     `json:"content,omitempty"`
-	Thinking   string     `json:"thinking,omitempty"` // Reasoning content for thinking models
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	StopReason string     `json:"stop_reason"` // "end_turn", "tool_use", "max_tokens"
-	Usage      Usage      `json:"usage"`
-}
-
-// Usage contains token usage information
-type Usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-}
-
-// ChunkType represents the type of a stream chunk
-type ChunkType string
-
-const (
-	ChunkTypeText      ChunkType = "text"
-	ChunkTypeThinking  ChunkType = "thinking"
-	ChunkTypeToolStart ChunkType = "tool_start"
-	ChunkTypeToolInput ChunkType = "tool_input"
-	ChunkTypeDone      ChunkType = "done"
-	ChunkTypeError     ChunkType = "error"
-)
-
-// StreamChunk represents a chunk in a streaming response
-type StreamChunk struct {
-	Type     ChunkType
-	Text     string             // For text chunks
-	ToolID   string             // For tool_start chunks
-	ToolName string             // For tool_start chunks
-	Response *CompletionResponse // For done chunks
-	Error    error              // For error chunks
-}
-
 // LLMProvider is the interface that all providers must implement
 type LLMProvider interface {
 	// Stream sends a completion request and returns a channel of streaming chunks
-	Stream(ctx context.Context, opts CompletionOptions) <-chan StreamChunk
+	Stream(ctx context.Context, opts CompletionOptions) <-chan message.StreamChunk
 
 	// ListModels returns the available models for this provider
 	ListModels(ctx context.Context) ([]ModelInfo, error)
@@ -164,23 +81,23 @@ type ProviderFactory func(ctx context.Context) (LLMProvider, error)
 
 // Complete is a helper function that collects stream chunks into a complete response
 // This provides non-streaming output from any LLMProvider
-func Complete(ctx context.Context, provider LLMProvider, opts CompletionOptions) (CompletionResponse, error) {
-	var response CompletionResponse
+func Complete(ctx context.Context, provider LLMProvider, opts CompletionOptions) (message.CompletionResponse, error) {
+	var response message.CompletionResponse
 
 	streamChan := provider.Stream(ctx, opts)
 
 	for chunk := range streamChan {
 		switch chunk.Type {
-		case ChunkTypeText:
+		case message.ChunkTypeText:
 			response.Content += chunk.Text
-		case ChunkTypeToolStart, ChunkTypeToolInput:
+		case message.ChunkTypeToolStart, message.ChunkTypeToolInput:
 			// Tool calls are accumulated in the done chunk
-		case ChunkTypeDone:
+		case message.ChunkTypeDone:
 			if chunk.Response != nil {
 				return *chunk.Response, nil
 			}
 			return response, nil
-		case ChunkTypeError:
+		case message.ChunkTypeError:
 			return response, chunk.Error
 		}
 	}

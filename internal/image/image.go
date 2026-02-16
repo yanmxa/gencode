@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/message"
 )
 
 const (
@@ -97,9 +97,9 @@ func (i *ImageInfo) ToBase64() string {
 	return base64.StdEncoding.EncodeToString(i.Data)
 }
 
-// ToProviderData converts ImageInfo to provider.ImageData
-func (i *ImageInfo) ToProviderData() provider.ImageData {
-	return provider.ImageData{
+// ToProviderData converts ImageInfo to message.ImageData
+func (i *ImageInfo) ToProviderData() message.ImageData {
+	return message.ImageData{
 		MediaType: i.MediaType,
 		Data:      i.ToBase64(),
 		FileName:  i.FileName,

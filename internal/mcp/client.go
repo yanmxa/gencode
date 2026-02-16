@@ -33,6 +33,11 @@ type Client struct {
 	config    ServerConfig
 	transport transport.Transport
 
+	// TransportFactory overrides the default transport creation.
+	// When set, Connect() uses this instead of createTransport().
+	// This allows tests to inject a fake transport.
+	TransportFactory func() (transport.Transport, error)
+
 	mu           sync.RWMutex
 	connected    bool
 	capabilities ServerCapabilities
@@ -115,7 +120,13 @@ func (c *Client) Connect(ctx context.Context) error {
 		return nil
 	}
 
-	trans, err := c.createTransport()
+	var trans transport.Transport
+	var err error
+	if c.TransportFactory != nil {
+		trans, err = c.TransportFactory()
+	} else {
+		trans, err = c.createTransport()
+	}
 	if err != nil {
 		return err
 	}
@@ -434,23 +445,25 @@ func (c *Client) SetOnToolsChanged(callback func()) {
 	c.onToolsChanged = callback
 }
 
-// handleNotification processes incoming notifications from the server
+// handleNotification processes incoming notifications from the server.
+// Runs in a goroutine to avoid deadlocking when Connect() holds mu.
 func (c *Client) handleNotification(method string, _ []byte) {
 	if method != MethodToolsListChanged {
 		return
 	}
 
-	// Refresh tools list (ListTools updates c.tools internally)
-	ctx := context.Background()
-	c.ListTools(ctx)
+	go func() {
+		ctx := context.Background()
+		c.ListTools(ctx)
 
-	c.mu.RLock()
-	callback := c.onToolsChanged
-	c.mu.RUnlock()
+		c.mu.RLock()
+		callback := c.onToolsChanged
+		c.mu.RUnlock()
 
-	if callback != nil {
-		callback()
-	}
+		if callback != nil {
+			callback()
+		}
+	}()
 }
 
 // Config returns the server configuration

@@ -12,6 +12,7 @@ import (
 	"github.com/openai/openai-go/v3"
 
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -35,8 +36,8 @@ func (c *Client) Name() string {
 }
 
 // Stream sends a completion request and returns a channel of streaming chunks.
-func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan provider.StreamChunk {
-	ch := make(chan provider.StreamChunk)
+func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
+	ch := make(chan message.StreamChunk)
 
 	go func() {
 		defer close(ch)
@@ -51,37 +52,31 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 		for _, msg := range opts.Messages {
 			switch msg.Role {
-			case "user":
+			case message.RoleUser:
 				if msg.ToolResult != nil {
 					messages = append(messages, openai.ToolMessage(
 						msg.ToolResult.Content,
 						msg.ToolResult.ToolCallID,
 					))
-				} else if len(msg.ContentParts) > 0 {
+				} else if len(msg.Images) > 0 {
 					// Multimodal message with images
-					parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(msg.ContentParts))
-					for _, part := range msg.ContentParts {
-						switch part.Type {
-						case provider.ContentTypeImage:
-							if part.Image != nil {
-								dataURI := fmt.Sprintf("data:%s;base64,%s", part.Image.MediaType, part.Image.Data)
-								parts = append(parts, openai.ChatCompletionContentPartUnionParam{
-									OfImageURL: &openai.ChatCompletionContentPartImageParam{
-										ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
-											URL: dataURI,
-										},
-									},
-								})
-							}
-						case provider.ContentTypeText:
-							if part.Text != "" {
-								parts = append(parts, openai.ChatCompletionContentPartUnionParam{
-									OfText: &openai.ChatCompletionContentPartTextParam{
-										Text: part.Text,
-									},
-								})
-							}
-						}
+					parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(msg.Images)+1)
+					for _, img := range msg.Images {
+						dataURI := fmt.Sprintf("data:%s;base64,%s", img.MediaType, img.Data)
+						parts = append(parts, openai.ChatCompletionContentPartUnionParam{
+							OfImageURL: &openai.ChatCompletionContentPartImageParam{
+								ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
+									URL: dataURI,
+								},
+							},
+						})
+					}
+					if msg.Content != "" {
+						parts = append(parts, openai.ChatCompletionContentPartUnionParam{
+							OfText: &openai.ChatCompletionContentPartTextParam{
+								Text: msg.Content,
+							},
+						})
 					}
 					messages = append(messages, openai.ChatCompletionMessageParamUnion{
 						OfUser: &openai.ChatCompletionUserMessageParam{
@@ -93,7 +88,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				} else {
 					messages = append(messages, openai.UserMessage(msg.Content))
 				}
-			case "assistant":
+			case message.RoleAssistant:
 				var asstMsg openai.ChatCompletionAssistantMessageParam
 				if msg.Content != "" {
 					asstMsg.Content.OfString = openai.Opt(msg.Content)
@@ -116,7 +111,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				// Moonshot requires reasoning_content for all assistant messages when thinking is enabled
 				asstMsg.SetExtraFields(map[string]any{"reasoning_content": msg.Thinking})
 				messages = append(messages, openai.ChatCompletionMessageParamUnion{OfAssistant: &asstMsg})
-			case "system":
+			default: // system messages
 				messages = append(messages, openai.SystemMessage(msg.Content))
 			}
 		}
@@ -170,8 +165,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 
 		// Track tool calls
-		toolCalls := make(map[int]*provider.ToolCall)
-		var response provider.CompletionResponse
+		toolCalls := make(map[int]*message.ToolCall)
+		var response message.CompletionResponse
 
 		// Stream timing and counting
 		streamStart := time.Now()
@@ -191,8 +186,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					if err := json.Unmarshal([]byte(rawJSON), &deltaMap); err == nil {
 						if rc, ok := deltaMap["reasoning_content"]; ok && rc != nil {
 							if content, ok := rc.(string); ok && content != "" {
-								ch <- provider.StreamChunk{
-									Type: provider.ChunkTypeThinking,
+								ch <- message.StreamChunk{
+									Type: message.ChunkTypeThinking,
 									Text: content,
 								}
 								response.Thinking += content
@@ -203,8 +198,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 				// Handle text delta
 				if choice.Delta.Content != "" {
-					ch <- provider.StreamChunk{
-						Type: provider.ChunkTypeText,
+					ch <- message.StreamChunk{
+						Type: message.ChunkTypeText,
 						Text: choice.Delta.Content,
 					}
 					response.Content += choice.Delta.Content
@@ -215,12 +210,12 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					idx := int(tc.Index)
 
 					if _, exists := toolCalls[idx]; !exists {
-						toolCalls[idx] = &provider.ToolCall{
+						toolCalls[idx] = &message.ToolCall{
 							ID:   tc.ID,
 							Name: tc.Function.Name,
 						}
-						ch <- provider.StreamChunk{
-							Type:     provider.ChunkTypeToolStart,
+						ch <- message.StreamChunk{
+							Type:     message.ChunkTypeToolStart,
 							ToolID:   tc.ID,
 							ToolName: tc.Function.Name,
 						}
@@ -228,8 +223,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 					if tc.Function.Arguments != "" {
 						toolCalls[idx].Input += tc.Function.Arguments
-						ch <- provider.StreamChunk{
-							Type:   provider.ChunkTypeToolInput,
+						ch <- message.StreamChunk{
+							Type:   message.ChunkTypeToolInput,
 							ToolID: toolCalls[idx].ID,
 							Text:   tc.Function.Arguments,
 						}
@@ -265,8 +260,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 		if err := stream.Err(); err != nil {
 			log.LogError(c.name, err)
-			ch <- provider.StreamChunk{
-				Type:  provider.ChunkTypeError,
+			ch <- message.StreamChunk{
+				Type:  message.ChunkTypeError,
 				Error: err,
 			}
 			return
@@ -280,8 +275,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		// Log response
 		log.LogResponse(c.name, response)
 
-		ch <- provider.StreamChunk{
-			Type:     provider.ChunkTypeDone,
+		ch <- message.StreamChunk{
+			Type:     message.ChunkTypeDone,
 			Response: &response,
 		}
 	}()

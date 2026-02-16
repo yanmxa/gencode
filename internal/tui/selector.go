@@ -22,6 +22,7 @@ var (
 	selectorStatusConnected lipgloss.Style
 	selectorStatusReady     lipgloss.Style
 	selectorStatusNone      lipgloss.Style
+	selectorStatusError     lipgloss.Style
 	selectorHintStyle       lipgloss.Style
 	selectorBreadcrumbStyle lipgloss.Style
 )
@@ -54,6 +55,9 @@ func init() {
 
 	selectorStatusNone = lipgloss.NewStyle().
 		Foreground(CurrentTheme.Muted)
+
+	selectorStatusError = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("9"))
 
 	selectorHintStyle = lipgloss.NewStyle().
 		Foreground(CurrentTheme.Muted).

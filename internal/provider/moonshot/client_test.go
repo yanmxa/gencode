@@ -11,6 +11,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -46,11 +47,11 @@ func TestMoonshotAssistantMessagesIncludeReasoningContent(t *testing.T) {
 
 	c := NewClient(client, "moonshot:test")
 
-	messages := []provider.Message{
-		{Role: "user", Content: "hi"},
-		{Role: "assistant", ToolCalls: []provider.ToolCall{{ID: "tc1", Name: "WebSearch", Input: "{}"}}},
-		{Role: "user", ToolResult: &provider.ToolResult{ToolCallID: "tc1", Content: "ok"}},
-		{Role: "assistant", Content: "done"},
+	messages := []message.Message{
+		{Role: message.RoleUser, Content: "hi"},
+		{Role: message.RoleAssistant, ToolCalls: []message.ToolCall{{ID: "tc1", Name: "WebSearch", Input: "{}"}}},
+		{Role: message.RoleUser, ToolResult: &message.ToolResult{ToolCallID: "tc1", Content: "ok"}},
+		{Role: message.RoleAssistant, Content: "done"},
 	}
 
 	ch := c.Stream(context.Background(), provider.CompletionOptions{

@@ -12,6 +12,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -35,8 +36,8 @@ func (c *Client) Name() string {
 }
 
 // Stream sends a completion request and returns a channel of streaming chunks
-func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan provider.StreamChunk {
-	ch := make(chan provider.StreamChunk)
+func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
+	ch := make(chan message.StreamChunk)
 
 	go func() {
 		defer close(ch)
@@ -46,12 +47,12 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		for _, msg := range opts.Messages {
 			var role string
 			switch msg.Role {
-			case "user":
+			case message.RoleUser:
 				role = "user"
-			case "assistant":
+			case message.RoleAssistant:
 				role = "model"
 			default:
-				role = msg.Role
+				role = string(msg.Role)
 			}
 
 			parts := make([]*genai.Part, 0)
@@ -90,28 +91,21 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 						},
 					})
 				}
-			} else if len(msg.ContentParts) > 0 {
+			} else if len(msg.Images) > 0 {
 				// Multimodal message with images
-				for _, part := range msg.ContentParts {
-					switch part.Type {
-					case provider.ContentTypeImage:
-						if part.Image != nil {
-							// Decode base64 data for Google API
-							decoded, err := base64.StdEncoding.DecodeString(part.Image.Data)
-							if err == nil {
-								parts = append(parts, &genai.Part{
-									InlineData: &genai.Blob{
-										MIMEType: part.Image.MediaType,
-										Data:     decoded,
-									},
-								})
-							}
-						}
-					case provider.ContentTypeText:
-						if part.Text != "" {
-							parts = append(parts, &genai.Part{Text: part.Text})
-						}
+				for _, img := range msg.Images {
+					decoded, err := base64.StdEncoding.DecodeString(img.Data)
+					if err == nil {
+						parts = append(parts, &genai.Part{
+							InlineData: &genai.Blob{
+								MIMEType: img.MediaType,
+								Data:     decoded,
+							},
+						})
 					}
+				}
+				if msg.Content != "" {
+					parts = append(parts, &genai.Part{Text: msg.Content})
 				}
 			} else {
 				parts = append(parts, &genai.Part{Text: msg.Content})
@@ -164,7 +158,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		log.LogRequest(c.name, opts.Model, opts)
 
 		// Create streaming request
-		var response provider.CompletionResponse
+		var response message.CompletionResponse
 
 		// Stream timing and counting
 		streamStart := time.Now()
@@ -173,8 +167,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		for result, err := range c.client.Models.GenerateContentStream(ctx, opts.Model, contents, config) {
 			if err != nil {
 				log.LogError(c.name, err)
-				ch <- provider.StreamChunk{
-					Type:  provider.ChunkTypeError,
+				ch <- message.StreamChunk{
+					Type:  message.ChunkTypeError,
 					Error: err,
 				}
 				return
@@ -190,8 +184,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				for _, part := range candidate.Content.Parts {
 					// Handle text
 					if part.Text != "" {
-						ch <- provider.StreamChunk{
-							Type: provider.ChunkTypeText,
+						ch <- message.StreamChunk{
+							Type: message.ChunkTypeText,
 							Text: part.Text,
 						}
 						response.Content += part.Text
@@ -202,19 +196,19 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 						fc := part.FunctionCall
 						argsJSON, _ := json.Marshal(fc.Args)
 
-						ch <- provider.StreamChunk{
-							Type:     provider.ChunkTypeToolStart,
+						ch <- message.StreamChunk{
+							Type:     message.ChunkTypeToolStart,
 							ToolID:   fc.ID,
 							ToolName: fc.Name,
 						}
 
-						ch <- provider.StreamChunk{
-							Type:   provider.ChunkTypeToolInput,
+						ch <- message.StreamChunk{
+							Type:   message.ChunkTypeToolInput,
 							ToolID: fc.ID,
 							Text:   string(argsJSON),
 						}
 
-						response.ToolCalls = append(response.ToolCalls, provider.ToolCall{
+						response.ToolCalls = append(response.ToolCalls, message.ToolCall{
 							ID:    fc.ID,
 							Name:  fc.Name,
 							Input: string(argsJSON),
@@ -253,8 +247,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		// Log response
 		log.LogResponse(c.name, response)
 
-		ch <- provider.StreamChunk{
-			Type:     provider.ChunkTypeDone,
+		ch <- message.StreamChunk{
+			Type:     message.ChunkTypeDone,
 			Response: &response,
 		}
 	}()
