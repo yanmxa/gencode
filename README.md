@@ -18,8 +18,10 @@ An open-source AI coding assistant for the terminal. Multi-provider support, fle
 - **Multi-provider** — Anthropic, OpenAI, Gemini, Moonshot, etc. — switch with `/provider`
 - **Tools** — Built-in (Edit, Bash, WebSearch, etc.) + [MCP](https://modelcontextprotocol.io), dynamic enable/disable for context control
 - **Skills** — Model visibility control (off/command/aware), [Claude Code](https://claude.ai/code) compatible
+- **Subagents** — Dedicated LLM instances with isolated context and tools, background execution support
+- **Plugins** — Packaged skills/agents/hooks/MCP servers, marketplace browse & install, [Claude Code](https://claude.ai/code) plugin compatible
 - **Session** — Persist, resume, search, auto-cleanup, with context compact
-- **Others** — Subagents, plan mode, task management, hooks, etc.
+- **Others** — Plan mode, task management, hooks, etc.
 
 ### Providers
 
