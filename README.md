@@ -19,7 +19,7 @@ An open-source AI coding assistant for the terminal. Multi-provider support, fle
 - **Tools** — Built-in (Edit, Bash, WebSearch, etc.) + [MCP](https://modelcontextprotocol.io), dynamic enable/disable for context control
 - **Skills** — Model visibility control (off/command/aware), [Claude Code](https://claude.ai/code) compatible
 - **Subagents** — Dedicated LLM instances with isolated context and tools, background execution support
-- **Plugins** — Packaged skills/agents/hooks/MCP servers, marketplace browse & install, [Claude Code](https://claude.ai/code) plugin compatible
+- **Plugins** — Bundle skills/agents/hooks/MCP, marketplace install, [Claude Code](https://claude.ai/code) compatible
 - **Session** — Persist, resume, search, auto-cleanup, with context compact
 - **Others** — Plan mode, task management, hooks, etc.
 
@@ -27,7 +27,7 @@ An open-source AI coding assistant for the terminal. Multi-provider support, fle
 
 | Provider | Models | Auth | Environment Variables |
 |:---------|:-------|:-----|:----------------------|
-| **Anthropic** | Claude Opus 4, Sonnet 4, Haiku 3.5 | API Key / [Vertex AI](https://code.claude.com/docs/en/google-vertex-ai) | `ANTHROPIC_API_KEY` |
+| **Anthropic** | Claude Opus 4.6, Sonnet 4.6 | API Key / [Vertex AI](https://code.claude.com/docs/en/google-vertex-ai) | `ANTHROPIC_API_KEY` |
 | **OpenAI** | GPT-5.2, GPT-5, o3, o4-mini, Codex | API Key | `OPENAI_API_KEY` |
 | **Google** | Gemini 3 Pro/Flash, 2.5 Pro/Flash | API Key | `GOOGLE_API_KEY` |
 | **Moonshot** | Kimi K2.5, K2 Thinking | API Key | `MOONSHOT_API_KEY` |
