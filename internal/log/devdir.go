@@ -2,7 +2,6 @@ package log
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -52,7 +51,7 @@ func WriteDevRequest(providerName, model string, opts provider.CompletionOptions
 		Tools:        opts.Tools,
 		Messages:     opts.Messages,
 	}
-	filename := filepath.Join(devDir, fmt.Sprintf("turn-%03d-request.json", turn))
+	filename := filepath.Join(devDir, GetTurnPrefix(turn)+"-request.json")
 	writeJSON(filename, req)
 }
 
@@ -71,7 +70,46 @@ func WriteDevResponse(providerName string, resp message.CompletionResponse, turn
 		ToolCalls:  resp.ToolCalls,
 		Usage:      resp.Usage,
 	}
-	filename := filepath.Join(devDir, fmt.Sprintf("turn-%03d-response.json", turn))
+	filename := filepath.Join(devDir, GetTurnPrefix(turn)+"-response.json")
+	writeJSON(filename, res)
+}
+
+// WriteAgentDevRequest writes agent request data with hierarchical naming
+func WriteAgentDevRequest(tracker *AgentTurnTracker, providerName, model string, opts provider.CompletionOptions, turn int) {
+	if !devEnabled || tracker == nil {
+		return
+	}
+	req := DevRequest{
+		Turn:         turn,
+		Timestamp:    time.Now().UTC(),
+		Provider:     providerName,
+		Model:        model,
+		MaxTokens:    opts.MaxTokens,
+		Temperature:  opts.Temperature,
+		SystemPrompt: opts.SystemPrompt,
+		Tools:        opts.Tools,
+		Messages:     opts.Messages,
+	}
+	filename := filepath.Join(devDir, tracker.GetTurnPrefix(turn)+"-request.json")
+	writeJSON(filename, req)
+}
+
+// WriteAgentDevResponse writes agent response data with hierarchical naming
+func WriteAgentDevResponse(tracker *AgentTurnTracker, providerName string, resp message.CompletionResponse, turn int) {
+	if !devEnabled || tracker == nil {
+		return
+	}
+	res := DevResponse{
+		Turn:       turn,
+		Timestamp:  time.Now().UTC(),
+		Provider:   providerName,
+		StopReason: resp.StopReason,
+		Content:    resp.Content,
+		Thinking:   resp.Thinking,
+		ToolCalls:  resp.ToolCalls,
+		Usage:      resp.Usage,
+	}
+	filename := filepath.Join(devDir, tracker.GetTurnPrefix(turn)+"-response.json")
 	writeJSON(filename, res)
 }
 

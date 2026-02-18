@@ -3,45 +3,81 @@ package agent
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/plugin"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
 
+// agentSearchPath represents an agent search location with optional namespace.
+type agentSearchPath struct {
+	path      string
+	namespace string // Default namespace for agents in this path (from plugin)
+}
+
+// additionalAgentPaths stores plugin agent paths.
+var additionalAgentPaths []agentSearchPath
+
+// AddPluginAgentPath adds a plugin agent path to be searched.
+func AddPluginAgentPath(path, namespace string) {
+	additionalAgentPaths = append(additionalAgentPaths, agentSearchPath{
+		path:      path,
+		namespace: namespace,
+	})
+}
+
+// ClearPluginAgentPaths clears all plugin agent paths.
+func ClearPluginAgentPaths() {
+	additionalAgentPaths = nil
+}
+
 // LoadCustomAgents loads custom agent definitions from standard locations.
+// Note: .claude/plugins/ loading is removed - plugins are handled by the plugin system.
 // Search order (priority):
 //  1. .gen/agents/*.md (project level, preferred)
 //  2. ~/.gen/agents/*.md (user level, preferred)
 //  3. .claude/agents/*.md (project level, Claude Code compatible)
 //  4. ~/.claude/agents/*.md (user level, Claude Code compatible)
+//  5. Plugin agent paths
 func LoadCustomAgents(cwd string) {
 	homeDir, _ := os.UserHomeDir()
 
 	// Define search paths in order of priority
-	searchPaths := []string{
-		filepath.Join(cwd, ".gen", "agents"),
-		filepath.Join(homeDir, ".gen", "agents"),
-		filepath.Join(cwd, ".claude", "agents"),
-		filepath.Join(homeDir, ".claude", "agents"),
+	searchPaths := []agentSearchPath{
+		{path: filepath.Join(cwd, ".gen", "agents")},
+		{path: filepath.Join(homeDir, ".gen", "agents")},
+		{path: filepath.Join(cwd, ".claude", "agents")},
+		{path: filepath.Join(homeDir, ".claude", "agents")},
 	}
 
-	for _, path := range searchPaths {
-		loadAgentsFromDir(path)
+	// Add plugin paths
+	searchPaths = append(searchPaths, additionalAgentPaths...)
+
+	for _, sp := range searchPaths {
+		loadAgentsFromDirWithNamespace(sp.path, sp.namespace)
 	}
 }
 
-// loadAgentsFromDir loads all AGENT.md or *.md files from a directory
-func loadAgentsFromDir(dir string) {
-	// Check if directory exists
-	info, err := os.Stat(dir)
-	if err != nil || !info.IsDir() {
+// loadAgentsFromDirWithNamespace loads agents with an optional namespace prefix.
+// The path can be either a directory (scanned for .md files) or a direct file path.
+func loadAgentsFromDirWithNamespace(path string, namespace string) {
+	info, err := os.Stat(path)
+	if err != nil {
 		return
 	}
 
-	entries, err := os.ReadDir(dir)
+	// If path is a file, load it directly
+	if !info.IsDir() {
+		if strings.HasSuffix(path, ".md") {
+			loadAgentFromFileWithNamespace(path, namespace)
+		}
+		return
+	}
+
+	// Path is a directory, scan for .md files
+	entries, err := os.ReadDir(path)
 	if err != nil {
 		return
 	}
@@ -56,13 +92,13 @@ func loadAgentsFromDir(dir string) {
 			continue
 		}
 
-		filePath := filepath.Join(dir, name)
-		loadAgentFromFile(filePath)
+		filePath := filepath.Join(path, name)
+		loadAgentFromFileWithNamespace(filePath, namespace)
 	}
 }
 
-// loadAgentFromFile loads an agent configuration from a markdown file
-func loadAgentFromFile(filePath string) {
+// loadAgentFromFileWithNamespace loads an agent with optional namespace.
+func loadAgentFromFileWithNamespace(filePath string, namespace string) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		log.Logger().Debug("Failed to read agent file",
@@ -80,6 +116,11 @@ func loadAgentFromFile(filePath string) {
 	}
 
 	if config != nil {
+		// Apply namespace if provided (from plugin)
+		if namespace != "" && !strings.Contains(config.Name, ":") {
+			config.Name = namespace + ":" + config.Name
+		}
+
 		// Register with the default registry
 		DefaultRegistry.Register(config)
 		log.Logger().Info("Loaded custom agent",
@@ -121,10 +162,10 @@ func parseAgentFile(content, filePath string) (*AgentConfig, error) {
 		config.PermissionMode = PermissionDefault
 	}
 
-	// Use the body as the system prompt
-	if body != "" {
-		config.SystemPrompt = strings.TrimSpace(body)
-	}
+	// Don't load the full system prompt at startup - it will be lazily loaded
+	// when the agent is actually executed. Only store the SourceFile path.
+	// The body content is intentionally not loaded here for progressive loading.
+	_ = body // Body will be loaded lazily via GetSystemPrompt()
 
 	config.SourceFile = filePath
 
@@ -154,67 +195,33 @@ func extractFrontmatter(content string) (frontmatter, body string) {
 	return frontmatter, body
 }
 
-// AgentFrontmatter represents the YAML frontmatter structure in AGENT.md files
-// This is used for parsing custom agents
-type AgentFrontmatter struct {
-	Name           string   `yaml:"name"`
-	Description    string   `yaml:"description"`
-	Model          string   `yaml:"model"`
-	PermissionMode string   `yaml:"permission-mode"`
-	MaxTurns       int      `yaml:"max-turns"`
-	Background     bool     `yaml:"background"`
-	Skills         []string `yaml:"skills"`
-	Tools          struct {
-		Mode  string   `yaml:"mode"`
-		Allow []string `yaml:"allow"`
-		Deny  []string `yaml:"deny"`
-	} `yaml:"tools"`
-}
-
-// toAgentConfig converts frontmatter to AgentConfig
-func (f *AgentFrontmatter) toAgentConfig() *AgentConfig {
-	config := &AgentConfig{
-		Name:        f.Name,
-		Description: f.Description,
-		Model:       f.Model,
-		MaxTurns:    f.MaxTurns,
-		Background:  f.Background,
-		Skills:      f.Skills,
+// LoadAgentSystemPrompt loads just the system prompt (body) from an agent file.
+// This is used for lazy loading - the full prompt is only loaded when the agent is executed.
+func LoadAgentSystemPrompt(filePath string) string {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Logger().Debug("Failed to read agent file for system prompt",
+			zap.String("path", filePath),
+			zap.Error(err))
+		return ""
 	}
 
-	// Parse permission mode
-	switch f.PermissionMode {
-	case "plan":
-		config.PermissionMode = PermissionPlan
-	case "acceptEdits":
-		config.PermissionMode = PermissionAcceptEdits
-	case "dontAsk":
-		config.PermissionMode = PermissionDontAsk
-	default:
-		config.PermissionMode = PermissionDefault
-	}
-
-	// Parse tools
-	switch f.Tools.Mode {
-	case "allowlist":
-		config.Tools = ToolAccess{
-			Mode:  ToolAccessAllowlist,
-			Allow: f.Tools.Allow,
-		}
-	case "denylist":
-		config.Tools = ToolAccess{
-			Mode: ToolAccessDenylist,
-			Deny: f.Tools.Deny,
-		}
-	}
-
-	return config
+	_, body := extractFrontmatter(string(content))
+	return strings.TrimSpace(body)
 }
 
 // Init is called to initialize the agent system
 // This should be called during application startup
 // It loads custom agents and initializes the enabled/disabled state stores
 func Init(cwd string) {
+	// Clear previous plugin agent paths
+	ClearPluginAgentPaths()
+
+	// Add agent paths from enabled plugins
+	for _, pp := range plugin.GetPluginAgentPaths() {
+		AddPluginAgentPath(pp.Path, pp.Namespace)
+	}
+
 	LoadCustomAgents(cwd)
 
 	// Initialize stores for enabled/disabled state persistence
@@ -223,9 +230,3 @@ func Init(cwd string) {
 	}
 }
 
-// validateAgentName checks if an agent name is valid
-func validateAgentName(name string) bool {
-	// Agent names should be alphanumeric with hyphens/underscores
-	pattern := regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`)
-	return pattern.MatchString(name)
-}

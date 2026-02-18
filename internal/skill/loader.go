@@ -25,8 +25,8 @@ type PluginInstall struct {
 
 // Loader handles loading skills from multiple directories.
 type Loader struct {
-	cwd          string // Current working directory for project-level skills
-	claudeCompat bool   // Whether to load from .claude directories
+	cwd             string       // Current working directory for project-level skills
+	additionalPaths []searchPath // Additional paths from plugins
 }
 
 // searchPath represents a skill search location with optional namespace.
@@ -39,71 +39,103 @@ type searchPath struct {
 // NewLoader creates a new skill loader.
 func NewLoader(cwd string) *Loader {
 	return &Loader{
-		cwd:          cwd,
-		claudeCompat: true,
+		cwd: cwd,
+	}
+}
+
+// AddPluginPath adds a plugin skill path to the loader.
+// Plugin paths are searched after user-level but before project-level skills.
+func (l *Loader) AddPluginPath(path, namespace string, isProjectScope bool) {
+	scope := ScopeUserPlugin
+	if isProjectScope {
+		scope = ScopeProjectPlugin
+	}
+	l.additionalPaths = append(l.additionalPaths, searchPath{
+		path:      path,
+		scope:     scope,
+		namespace: namespace,
+	})
+}
+
+// AddPluginPaths adds multiple plugin skill paths to the loader.
+func (l *Loader) AddPluginPaths(paths []struct {
+	Path      string
+	Namespace string
+	IsProject bool
+}) {
+	for _, p := range paths {
+		l.AddPluginPath(p.Path, p.Namespace, p.IsProject)
 	}
 }
 
 // getSearchPaths returns skill directories in priority order (lowest to highest).
+// Note: .claude/plugins/ loading is removed - plugins are handled by the plugin system.
 func (l *Loader) getSearchPaths() []searchPath {
 	homeDir, _ := os.UserHomeDir()
 	var paths []searchPath
 
 	// 1. ~/.claude/skills/ (Claude user compat - lowest priority)
-	if l.claudeCompat {
-		paths = append(paths, searchPath{
-			path:  filepath.Join(homeDir, ".claude", "skills"),
-			scope: ScopeClaudeUser,
-		})
-	}
+	paths = append(paths, searchPath{
+		path:  filepath.Join(homeDir, ".claude", "skills"),
+		scope: ScopeClaudeUser,
+	})
 
-	// 2. User plugins from ~/.claude/plugins/installed_plugins.json
-	if l.claudeCompat {
-		paths = append(paths, l.getPluginPaths(
-			filepath.Join(homeDir, ".claude", "plugins"),
-			ScopeUserPlugin,
-		)...)
-	}
-
-	// 3. User plugins from ~/.gen/plugins/installed_plugins.json
+	// 2. User plugins from ~/.gen/plugins/installed_plugins.json
 	paths = append(paths, l.getPluginPaths(
 		filepath.Join(homeDir, ".gen", "plugins"),
 		ScopeUserPlugin,
 	)...)
 
-	// 4. ~/.gen/skills/ (User level)
+	// 3. ~/.gen/skills/ (User level)
 	paths = append(paths, searchPath{
 		path:  filepath.Join(homeDir, ".gen", "skills"),
 		scope: ScopeUser,
 	})
 
-	// 5. .claude/skills/ (Claude project compat)
-	if l.claudeCompat {
-		paths = append(paths, searchPath{
-			path:  filepath.Join(l.cwd, ".claude", "skills"),
-			scope: ScopeClaudeProject,
-		})
-	}
+	// 4. .claude/skills/ (Claude project compat)
+	paths = append(paths, searchPath{
+		path:  filepath.Join(l.cwd, ".claude", "skills"),
+		scope: ScopeClaudeProject,
+	})
 
-	// 6. Project plugins from .claude/plugins/installed_plugins.json
-	if l.claudeCompat {
-		paths = append(paths, l.getPluginPaths(
-			filepath.Join(l.cwd, ".claude", "plugins"),
-			ScopeProjectPlugin,
-		)...)
-	}
-
-	// 7. Project plugins from .gen/plugins/installed_plugins.json
+	// 5. Project plugins from .gen/plugins/installed_plugins.json
 	paths = append(paths, l.getPluginPaths(
 		filepath.Join(l.cwd, ".gen", "plugins"),
 		ScopeProjectPlugin,
 	)...)
 
-	// 8. .gen/skills/ (Project level - highest priority)
+	// 6. .gen/skills/ (Project level - highest priority)
 	paths = append(paths, searchPath{
 		path:  filepath.Join(l.cwd, ".gen", "skills"),
 		scope: ScopeProject,
 	})
+
+	// Insert additional plugin paths at appropriate positions
+	if len(l.additionalPaths) > 0 {
+		// Separate user and project plugin paths
+		var userPluginPaths, projectPluginPaths []searchPath
+		for _, ap := range l.additionalPaths {
+			if ap.scope == ScopeProjectPlugin {
+				projectPluginPaths = append(projectPluginPaths, ap)
+			} else {
+				userPluginPaths = append(userPluginPaths, ap)
+			}
+		}
+
+		// Insert at correct positions
+		// User plugin paths go after ScopeUser (position after ~/.gen/skills)
+		// Project plugin paths go after ScopeClaudeProject (before ScopeProject)
+		var result []searchPath
+		for _, p := range paths {
+			result = append(result, p)
+			if p.scope == ScopeUser {
+				result = append(result, userPluginPaths...)
+			} else if p.scope == ScopeClaudeProject {
+				result = append(result, projectPluginPaths...)
+			}
+		}
+		return result
+	}
 
 	return paths
 }
@@ -208,16 +240,53 @@ func (l *Loader) LoadAll() (map[string]*Skill, error) {
 
 // loadSkillFile loads a skill from a file path.
 // Only parses frontmatter for metadata; instructions are lazy-loaded.
-// defaultNamespace is applied if the skill doesn't have an explicit namespace.
 func (l *Loader) loadSkillFile(path string, scope SkillScope, defaultNamespace string) (*Skill, error) {
-	file, err := os.Open(path)
+	fm, _, err := parseFrontmatterFile(path)
 	if err != nil {
 		return nil, err
 	}
+
+	skillDir := filepath.Dir(path)
+
+	skill := &Skill{
+		FilePath: path,
+		SkillDir: skillDir,
+		Scope:    scope,
+		State:    StateEnable,
+	}
+
+	if fm != "" {
+		if err := yaml.Unmarshal([]byte(fm), skill); err != nil {
+			return nil, err
+		}
+	}
+
+	if skill.Name == "" {
+		skill.Name = filepath.Base(skillDir)
+	}
+
+	if skill.Namespace == "" && defaultNamespace != "" {
+		skill.Namespace = defaultNamespace
+	}
+
+	skill.Scripts = scanResourceDir(filepath.Join(skillDir, "scripts"))
+	skill.References = scanResourceDir(filepath.Join(skillDir, "references"))
+	skill.Assets = scanResourceDir(filepath.Join(skillDir, "assets"))
+	skill.loaded = false
+
+	return skill, nil
+}
+
+// parseFrontmatterFile reads a markdown file and returns (frontmatter, body).
+func parseFrontmatterFile(path string) (frontmatter, body string, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", "", err
+	}
 	defer file.Close()
 
-	var frontmatter strings.Builder
-	var content strings.Builder
+	var fmBuilder strings.Builder
+	var bodyBuilder strings.Builder
 	inFrontmatter := false
 	frontmatterDone := false
 
@@ -228,15 +297,13 @@ func (l *Loader) loadSkillFile(path string, scope SkillScope, defaultNamespace s
 		line := scanner.Text()
 		lineNum++
 
-		// First line must be ---
 		if lineNum == 1 {
 			if strings.TrimSpace(line) == "---" {
 				inFrontmatter = true
 				continue
 			}
-			// No frontmatter, treat entire file as content
-			content.WriteString(line)
-			content.WriteString("\n")
+			bodyBuilder.WriteString(line)
+			bodyBuilder.WriteString("\n")
 			continue
 		}
 
@@ -246,56 +313,19 @@ func (l *Loader) loadSkillFile(path string, scope SkillScope, defaultNamespace s
 				frontmatterDone = true
 				continue
 			}
-			frontmatter.WriteString(line)
-			frontmatter.WriteString("\n")
+			fmBuilder.WriteString(line)
+			fmBuilder.WriteString("\n")
 		} else {
-			content.WriteString(line)
-			content.WriteString("\n")
+			bodyBuilder.WriteString(line)
+			bodyBuilder.WriteString("\n")
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return "", "", err
 	}
 
-	// Get skill directory
-	skillDir := filepath.Dir(path)
-
-	skill := &Skill{
-		FilePath: path,
-		SkillDir: skillDir,
-		Scope:    scope,
-		State:    StateEnable, // Default state
-	}
-
-	// Parse frontmatter
-	if frontmatter.Len() > 0 {
-		if err := yaml.Unmarshal([]byte(frontmatter.String()), skill); err != nil {
-			return nil, err
-		}
-	}
-
-	// If no name in frontmatter, derive from directory name
-	if skill.Name == "" {
-		skill.Name = filepath.Base(skillDir)
-	}
-
-	// Apply default namespace if not set in frontmatter (e.g., from plugin dir)
-	if skill.Namespace == "" && defaultNamespace != "" {
-		skill.Namespace = defaultNamespace
-	}
-
-	// Scan resource directories (Agent Skills spec)
-	skill.Scripts = scanResourceDir(filepath.Join(skillDir, "scripts"))
-	skill.References = scanResourceDir(filepath.Join(skillDir, "references"))
-	skill.Assets = scanResourceDir(filepath.Join(skillDir, "assets"))
-
-	// Don't load instructions yet (lazy loading)
-	// Just store that we have content available
-	skill.Instructions = strings.TrimSpace(content.String())
-	skill.loaded = true
-
-	return skill, nil
+	return fmBuilder.String(), strings.TrimSpace(bodyBuilder.String()), nil
 }
 
 // scanResourceDir scans a directory and returns file names.
@@ -316,51 +346,9 @@ func scanResourceDir(dir string) []string {
 
 // loadInstructions loads the full instructions from a skill file.
 func loadInstructions(path string) (string, error) {
-	file, err := os.Open(path)
+	_, body, err := parseFrontmatterFile(path)
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
-
-	var content strings.Builder
-	inFrontmatter := false
-	frontmatterDone := false
-
-	scanner := bufio.NewScanner(file)
-	lineNum := 0
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		lineNum++
-
-		// First line must be ---
-		if lineNum == 1 {
-			if strings.TrimSpace(line) == "---" {
-				inFrontmatter = true
-				continue
-			}
-			// No frontmatter, treat entire file as content
-			content.WriteString(line)
-			content.WriteString("\n")
-			continue
-		}
-
-		if inFrontmatter && !frontmatterDone {
-			if strings.TrimSpace(line) == "---" {
-				inFrontmatter = false
-				frontmatterDone = true
-				continue
-			}
-			// Skip frontmatter content
-		} else {
-			content.WriteString(line)
-			content.WriteString("\n")
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return "", err
-	}
-
-	return strings.TrimSpace(content.String()), nil
+	return body, nil
 }

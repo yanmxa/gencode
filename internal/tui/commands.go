@@ -16,6 +16,7 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/skill"
@@ -120,6 +121,11 @@ func getCommandRegistry() map[string]Command {
 			Description: "Manage MCP servers (add/remove/connect/list)",
 			Handler:     handleMCPCommand,
 		},
+		"plugin": {
+			Name:        "plugin",
+			Description: "Manage plugins (list/enable/disable/info)",
+			Handler:     handlePluginCommand,
+		},
 	}
 }
 
@@ -179,7 +185,7 @@ func executeSkillCommand(m *model, sk *skill.Skill, args string) string {
 		m.pendingSkillArgs = args
 	} else {
 		// No arguments - just invoke the skill
-		m.pendingSkillArgs = fmt.Sprintf("Run /%s", sk.FullName())
+		m.pendingSkillArgs = fmt.Sprintf("/%s", sk.FullName())
 	}
 
 	return "" // Return empty to trigger LLM call with skill context
@@ -255,7 +261,7 @@ func handleHelpCommand(ctx context.Context, m *model, args string) (string, erro
 
 	for _, name := range names {
 		cmd := registry[name]
-		sb.WriteString(fmt.Sprintf("  /%s - %s\n", cmd.Name, cmd.Description))
+		fmt.Fprintf(&sb, "  /%s - %s\n", cmd.Name, cmd.Description)
 	}
 
 	return sb.String(), nil
@@ -448,7 +454,7 @@ func autoFetchTokenLimits(ctx context.Context, m *model) (string, error) {
 	cwd, _ := os.Getwd()
 	const maxTurns = 5
 
-	for turn := 0; turn < maxTurns; turn++ {
+	for range maxTurns {
 		response, err := provider.Complete(ctx, m.llmProvider, provider.CompletionOptions{
 			Model:        m.getModelID(),
 			SystemPrompt: systemPrompt,
@@ -1343,22 +1349,22 @@ func handleMCPList(m *model) (string, error) {
 		if scope == "" {
 			scope = "local"
 		}
-		sb.WriteString(fmt.Sprintf("  %s %s [%s] (%s, %s)\n", icon, srv.Config.Name, srv.Config.GetType(), scope, label))
+		fmt.Fprintf(&sb, "  %s %s [%s] (%s, %s)\n", icon, srv.Config.Name, srv.Config.GetType(), scope, label)
 
 		if srv.Status == mcp.StatusConnected {
 			if len(srv.Tools) > 0 {
-				sb.WriteString(fmt.Sprintf("    Tools: %d\n", len(srv.Tools)))
+				fmt.Fprintf(&sb, "    Tools: %d\n", len(srv.Tools))
 			}
 			if len(srv.Resources) > 0 {
-				sb.WriteString(fmt.Sprintf("    Resources: %d\n", len(srv.Resources)))
+				fmt.Fprintf(&sb, "    Resources: %d\n", len(srv.Resources))
 			}
 			if len(srv.Prompts) > 0 {
-				sb.WriteString(fmt.Sprintf("    Prompts: %d\n", len(srv.Prompts)))
+				fmt.Fprintf(&sb, "    Prompts: %d\n", len(srv.Prompts))
 			}
 		}
 
 		if srv.Error != "" {
-			sb.WriteString(fmt.Sprintf("    Error: %s\n", srv.Error))
+			fmt.Fprintf(&sb, "    Error: %s\n", srv.Error)
 		}
 	}
 
@@ -1536,14 +1542,14 @@ func handleMCPGet(m *model, name string) (string, error) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Server: %s\n", name))
+	fmt.Fprintf(&sb, "Server: %s\n", name)
 
 	scope := string(config.Scope)
 	if scope == "" {
 		scope = "local"
 	}
-	sb.WriteString(fmt.Sprintf("Scope:  %s\n", scope))
-	sb.WriteString(fmt.Sprintf("Type:   %s\n", config.GetType()))
+	fmt.Fprintf(&sb, "Scope:  %s\n", scope)
+	fmt.Fprintf(&sb, "Type:   %s\n", config.GetType())
 
 	switch config.GetType() {
 	case mcp.TransportSTDIO:
@@ -1551,9 +1557,9 @@ func handleMCPGet(m *model, name string) (string, error) {
 		if len(config.Args) > 0 {
 			cmd += " " + strings.Join(config.Args, " ")
 		}
-		sb.WriteString(fmt.Sprintf("Command: %s\n", cmd))
+		fmt.Fprintf(&sb, "Command: %s\n", cmd)
 	case mcp.TransportHTTP, mcp.TransportSSE:
-		sb.WriteString(fmt.Sprintf("URL:    %s\n", config.URL))
+		fmt.Fprintf(&sb, "URL:    %s\n", config.URL)
 	}
 
 	if len(config.Env) > 0 {
@@ -1564,7 +1570,7 @@ func handleMCPGet(m *model, name string) (string, error) {
 			if len(masked) > 4 {
 				masked = masked[:4] + "..."
 			}
-			sb.WriteString(fmt.Sprintf("  %s=%s\n", k, masked))
+			fmt.Fprintf(&sb, "  %s=%s\n", k, masked)
 		}
 	}
 
@@ -1575,7 +1581,7 @@ func handleMCPGet(m *model, name string) (string, error) {
 			if len(masked) > 8 {
 				masked = masked[:8] + "..."
 			}
-			sb.WriteString(fmt.Sprintf("  %s: %s\n", k, masked))
+			fmt.Fprintf(&sb, "  %s: %s\n", k, masked)
 		}
 	}
 
@@ -1588,12 +1594,12 @@ func handleMCPGet(m *model, name string) (string, error) {
 		toolCount = len(srv.Tools)
 
 		if srv.Error != "" {
-			sb.WriteString(fmt.Sprintf("Error:  %s\n", srv.Error))
+			fmt.Fprintf(&sb, "Error:  %s\n", srv.Error)
 		}
 	}
-	sb.WriteString(fmt.Sprintf("Status: %s %s\n", icon, label))
+	fmt.Fprintf(&sb, "Status: %s %s\n", icon, label)
 	if toolCount > 0 {
-		sb.WriteString(fmt.Sprintf("Tools:  %d\n", toolCount))
+		fmt.Fprintf(&sb, "Tools:  %d\n", toolCount)
 	}
 
 	return sb.String(), nil
@@ -1668,4 +1674,229 @@ Examples:
   /mcp add --transport http pubmed https://pubmed.mcp.example.com/mcp
   /mcp add --transport http --scope project myapi https://api.example.com/mcp
   /mcp add --env API_KEY=xxx myserver -- npx -y some-mcp-server`
+}
+
+// handlePluginCommand handles the /plugin command
+// Usage: /plugin [list|enable|disable|info] [args...]
+func handlePluginCommand(ctx context.Context, m *model, args string) (string, error) {
+	// Load plugins if not already loaded
+	if plugin.DefaultRegistry.Count() == 0 {
+		if err := plugin.DefaultRegistry.Load(ctx, m.cwd); err != nil {
+			return fmt.Sprintf("Failed to load plugins: %v", err), nil
+		}
+		_ = plugin.DefaultRegistry.LoadClaudePlugins(ctx)
+	}
+
+	args = strings.TrimSpace(args)
+	parts := strings.Fields(args)
+
+	if len(parts) == 0 {
+		// No arguments: open interactive selector
+		if err := m.pluginSelector.EnterPluginSelect(m.width, m.height); err != nil {
+			return fmt.Sprintf("Failed to open plugin selector: %v", err), nil
+		}
+		return "", nil
+	}
+
+	subCmd := strings.ToLower(parts[0])
+	var pluginName string
+	if len(parts) > 1 {
+		pluginName = parts[1]
+	}
+
+	switch subCmd {
+	case "list":
+		return handlePluginList(m)
+	case "enable":
+		return handlePluginEnable(ctx, m, pluginName)
+	case "disable":
+		return handlePluginDisable(ctx, m, pluginName)
+	case "info":
+		return handlePluginInfo(m, pluginName)
+	case "errors":
+		return handlePluginErrors(m)
+	default:
+		// Treat single argument as info request
+		return handlePluginInfo(m, subCmd)
+	}
+}
+
+// handlePluginList lists all installed plugins
+func handlePluginList(_ *model) (string, error) {
+	plugins := plugin.DefaultRegistry.List()
+
+	if len(plugins) == 0 {
+		return "No plugins installed.\n\nInstall with: gen plugin install <plugin>@<marketplace>", nil
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Plugins (%d installed, %d enabled):\n\n",
+		plugin.DefaultRegistry.Count(),
+		plugin.DefaultRegistry.EnabledCount())
+
+	for _, p := range plugins {
+		writePluginSummary(&sb, p)
+	}
+
+	sb.WriteString("\nLegend: ● enabled  ○ disabled  👤 user  📁 project  💻 local")
+	sb.WriteString("\n\nCommands:\n")
+	sb.WriteString("  /plugin enable <name>   Enable a plugin\n")
+	sb.WriteString("  /plugin disable <name>  Disable a plugin\n")
+	sb.WriteString("  /plugin info <name>     Show plugin details\n")
+
+	return sb.String(), nil
+}
+
+// writePluginSummary writes a single plugin's summary to the builder.
+func writePluginSummary(sb *strings.Builder, p *plugin.Plugin) {
+	status := "○"
+	if p.Enabled {
+		status = "●"
+	}
+
+	fmt.Fprintf(sb, "  %s %s %s (%s)\n", status, p.Scope.Icon(), p.FullName(), p.Scope)
+
+	if p.Manifest.Description != "" {
+		fmt.Fprintf(sb, "      %s\n", p.Manifest.Description)
+	}
+
+	components := formatComponentCounts(p)
+	if len(components) > 0 {
+		fmt.Fprintf(sb, "      [%s]\n", strings.Join(components, ", "))
+	}
+}
+
+// formatComponentCounts returns component count strings for a plugin.
+func formatComponentCounts(p *plugin.Plugin) []string {
+	var components []string
+	if n := len(p.Components.Skills); n > 0 {
+		components = append(components, fmt.Sprintf("%d skills", n))
+	}
+	if n := len(p.Components.Agents); n > 0 {
+		components = append(components, fmt.Sprintf("%d agents", n))
+	}
+	if n := len(p.Components.Commands); n > 0 {
+		components = append(components, fmt.Sprintf("%d commands", n))
+	}
+	if p.Components.Hooks != nil {
+		if n := len(p.Components.Hooks.Hooks); n > 0 {
+			components = append(components, fmt.Sprintf("%d hooks", n))
+		}
+	}
+	if n := len(p.Components.MCP); n > 0 {
+		components = append(components, fmt.Sprintf("%d MCP", n))
+	}
+	if n := len(p.Components.LSP); n > 0 {
+		components = append(components, fmt.Sprintf("%d LSP", n))
+	}
+	return components
+}
+
+// handlePluginEnable enables a plugin
+func handlePluginEnable(_ context.Context, _ *model, name string) (string, error) {
+	if name == "" {
+		return "Usage: /plugin enable <plugin-name>", nil
+	}
+
+	if err := plugin.DefaultRegistry.Enable(name, plugin.ScopeUser); err != nil {
+		return fmt.Sprintf("Failed to enable '%s': %v", name, err), nil
+	}
+
+	return fmt.Sprintf("Enabled plugin '%s'\n\nRestart session to apply changes.", name), nil
+}
+
+// handlePluginDisable disables a plugin
+func handlePluginDisable(_ context.Context, _ *model, name string) (string, error) {
+	if name == "" {
+		return "Usage: /plugin disable <plugin-name>", nil
+	}
+
+	if err := plugin.DefaultRegistry.Disable(name, plugin.ScopeUser); err != nil {
+		return fmt.Sprintf("Failed to disable '%s': %v", name, err), nil
+	}
+
+	return fmt.Sprintf("Disabled plugin '%s'\n\nRestart session to apply changes.", name), nil
+}
+
+// handlePluginInfo shows detailed information about a plugin
+func handlePluginInfo(_ *model, name string) (string, error) {
+	if name == "" {
+		return "Usage: /plugin info <plugin-name>", nil
+	}
+
+	p, ok := plugin.DefaultRegistry.Get(name)
+	if !ok {
+		return fmt.Sprintf("Plugin not found: %s\n\nUse /plugin list to see available plugins.", name), nil
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Plugin: %s\n", p.FullName())
+	fmt.Fprintf(&sb, "Scope: %s\n", p.Scope)
+	fmt.Fprintf(&sb, "Enabled: %v\n", p.Enabled)
+	fmt.Fprintf(&sb, "Path: %s\n", p.Path)
+
+	writeOptionalField(&sb, "Version", p.Manifest.Version)
+	writeOptionalField(&sb, "Description", p.Manifest.Description)
+	if p.Manifest.Author != nil {
+		writeOptionalField(&sb, "Author", p.Manifest.Author.Name)
+	}
+	writeOptionalField(&sb, "Repository", p.Manifest.Repository)
+
+	sb.WriteString("\nComponents:\n")
+	writeComponentCount(&sb, "Commands", len(p.Components.Commands))
+	writeComponentCount(&sb, "Skills", len(p.Components.Skills))
+	writeComponentCount(&sb, "Agents", len(p.Components.Agents))
+	if p.Components.Hooks != nil {
+		writeComponentCount(&sb, "Hook events", len(p.Components.Hooks.Hooks))
+	}
+	writeComponentCount(&sb, "MCP servers", len(p.Components.MCP))
+	writeComponentCount(&sb, "LSP servers", len(p.Components.LSP))
+
+	if len(p.Errors) > 0 {
+		sb.WriteString("\nErrors:\n")
+		for _, err := range p.Errors {
+			fmt.Fprintf(&sb, "  - %s\n", err)
+		}
+	}
+
+	return sb.String(), nil
+}
+
+// writeOptionalField writes a field only if the value is non-empty.
+func writeOptionalField(sb *strings.Builder, label, value string) {
+	if value != "" {
+		fmt.Fprintf(sb, "%s: %s\n", label, value)
+	}
+}
+
+// writeComponentCount writes a component count line if count > 0.
+func writeComponentCount(sb *strings.Builder, label string, count int) {
+	if count > 0 {
+		fmt.Fprintf(sb, "  %s: %d\n", label, count)
+	}
+}
+
+// handlePluginErrors shows all plugin loading errors
+func handlePluginErrors(_ *model) (string, error) {
+	plugins := plugin.DefaultRegistry.List()
+
+	var sb strings.Builder
+	hasErrors := false
+
+	for _, p := range plugins {
+		if len(p.Errors) > 0 {
+			hasErrors = true
+			fmt.Fprintf(&sb, "%s:\n", p.FullName())
+			for _, err := range p.Errors {
+				fmt.Fprintf(&sb, "  - %s\n", err)
+			}
+			sb.WriteString("\n")
+		}
+	}
+
+	if !hasErrors {
+		return "No plugin errors.", nil
+	}
+
+	return sb.String(), nil
 }

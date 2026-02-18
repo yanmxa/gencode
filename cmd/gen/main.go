@@ -97,7 +97,10 @@ Non-interactive mode:
 		}
 
 		// Interactive mode (TUI)
-		if err := tui.Run(); err != nil {
+		opts := tui.RunOptions{
+			PluginDir: pluginDirFlag,
+		}
+		if err := tui.RunWithOptions(opts); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -116,11 +119,15 @@ var continueFlag bool
 // resumeFlag opens the session selector to choose a session
 var resumeFlag bool
 
+// pluginDirFlag loads plugins from a specific directory
+var pluginDirFlag string
+
 func init() {
 	rootCmd.Flags().StringVarP(&promptFlag, "prompt", "p", "", "Custom prompt to send")
 	rootCmd.Flags().StringVar(&planFlag, "plan", "", "Enter plan mode with task description")
 	rootCmd.Flags().BoolVarP(&continueFlag, "continue", "c", false, "Resume the most recent session")
 	rootCmd.Flags().BoolVarP(&resumeFlag, "resume", "r", false, "Select and resume a previous session")
+	rootCmd.Flags().StringVar(&pluginDirFlag, "plugin-dir", "", "Load plugins from a specific directory")
 }
 
 // getInputMessage gets input from args, flags, or stdin

@@ -25,6 +25,7 @@ import (
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plan"
+	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/skill"
@@ -146,9 +147,10 @@ type model struct {
 
 	buildingToolName string
 
-	disabledTools map[string]bool
-	toolSelector  ToolSelectorState
-	mcpSelector   MCPSelectorState
+	disabledTools    map[string]bool
+	toolSelector     ToolSelectorState
+	mcpSelector      MCPSelectorState
+	pluginSelector   PluginSelectorState
 
 	// Skill system
 	skillSelector            SkillSelectorState
@@ -205,8 +207,27 @@ type model struct {
 	selectedImageIdx      int  // Currently selected image index
 }
 
+// RunOptions contains options for running the TUI
+type RunOptions struct {
+	PluginDir string // Directory to load plugins from
+}
+
 func Run() error {
-	p := tea.NewProgram(newModel())
+	return RunWithOptions(RunOptions{})
+}
+
+func RunWithOptions(opts RunOptions) error {
+	m := newModel()
+
+	// Load plugins from specified directory
+	if opts.PluginDir != "" {
+		ctx := context.Background()
+		if err := plugin.DefaultRegistry.LoadFromPath(ctx, opts.PluginDir); err != nil {
+			return fmt.Errorf("failed to load plugins from %s: %w", opts.PluginDir, err)
+		}
+	}
+
+	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("failed to run TUI: %w", err)
@@ -342,6 +363,12 @@ func newModel() model {
 
 	cwd, _ := os.Getwd()
 
+	// Initialize plugin registry (must be before skills and agents)
+	ctx := context.Background()
+	if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
+		log.Logger().Warn("Failed to load plugins", zap.Error(err))
+	}
+
 	// Initialize skill registry
 	if err := skill.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize skill registry", zap.Error(err))
@@ -408,6 +435,7 @@ func newModel() model {
 		disabledTools:      config.GetDisabledTools(),
 		toolSelector:       NewToolSelectorState(),
 		mcpSelector:        NewMCPSelectorState(),
+		pluginSelector:     NewPluginSelectorState(),
 		skillSelector:      NewSkillSelectorState(),
 		agentSelector:      NewAgentSelectorState(),
 		sessionSelector:    NewSessionSelectorState(),
@@ -510,8 +538,41 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetValue("/mcp add ")
 		return m, nil
 
+	// Plugin selector events
+	case PluginEnableMsg:
+		m.pluginSelector.HandleEnable(msg.PluginName)
+		return m, nil
+
+	case PluginDisableMsg:
+		m.pluginSelector.HandleDisable(msg.PluginName)
+		return m, nil
+
+	case PluginUninstallMsg:
+		m.pluginSelector.HandleUninstall(msg.PluginName)
+		return m, nil
+
+	case PluginInstallMsg:
+		// Install plugin asynchronously
+		return m, m.installPlugin(msg)
+
+	case PluginInstallResultMsg:
+		m.pluginSelector.HandleInstallResult(msg)
+		// Reload agents to pick up newly installed plugin agents
+		if msg.Success {
+			agent.Init(m.cwd)
+		}
+		return m, nil
+
+	case MarketplaceRemoveMsg:
+		m.pluginSelector.HandleMarketplaceRemove(msg.ID)
+		return m, nil
+
+	case MarketplaceSyncResultMsg:
+		m.pluginSelector.HandleMarketplaceSync(msg)
+		return m, nil
+
 	// Additional selector cancelled events
-	case MCPSelectorCancelledMsg, SessionSelectorCancelledMsg, MemorySelectorCancelledMsg:
+	case MCPSelectorCancelledMsg, SessionSelectorCancelledMsg, MemorySelectorCancelledMsg, PluginSelectorCancelledMsg:
 		return m, nil
 
 	case SessionSelectedMsg:
@@ -641,6 +702,9 @@ func (m model) View() string {
 	}
 	if m.mcpSelector.IsActive() {
 		return m.mcpSelector.Render()
+	}
+	if m.pluginSelector.IsActive() {
+		return m.pluginSelector.Render()
 	}
 	if m.sessionSelector.IsActive() {
 		return m.sessionSelector.Render()
@@ -1035,5 +1099,29 @@ func saveInputHistory(cwd string, history []string) {
 		fmt.Fprintln(w, escaped)
 	}
 	w.Flush()
+}
+
+// installPlugin handles plugin installation asynchronously
+func (m model) installPlugin(msg PluginInstallMsg) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+
+		installer := plugin.NewInstaller(plugin.DefaultRegistry, m.cwd)
+		if err := installer.LoadMarketplaces(); err != nil {
+			return PluginInstallResultMsg{PluginName: msg.PluginName, Success: false, Error: err}
+		}
+
+		pluginRef := msg.PluginName
+		if msg.Marketplace != "" {
+			pluginRef = msg.PluginName + "@" + msg.Marketplace
+		}
+
+		if err := installer.Install(ctx, pluginRef, msg.Scope); err != nil {
+			return PluginInstallResultMsg{PluginName: msg.PluginName, Success: false, Error: err}
+		}
+
+		return PluginInstallResultMsg{PluginName: msg.PluginName, Success: true}
+	}
 }
 

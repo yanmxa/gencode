@@ -121,7 +121,7 @@ func Sync() error {
 	return nil
 }
 
-// NextTurn increments and returns the turn counter
+// NextTurn increments and returns the turn counter (main loop only)
 func NextTurn() int {
 	mu.Lock()
 	defer mu.Unlock()
@@ -129,11 +129,88 @@ func NextTurn() int {
 	return turnCount
 }
 
-// CurrentTurn returns the current turn number
+// CurrentTurn returns the current turn number (main loop only)
 func CurrentTurn() int {
 	mu.Lock()
 	defer mu.Unlock()
 	return turnCount
+}
+
+// GetTurnPrefix returns the turn prefix for file naming (main loop only)
+// Format: main-{turn}
+// Example: main-005
+func GetTurnPrefix(turn int) string {
+	return fmt.Sprintf("main-%03d", turn)
+}
+
+// AgentTurnTracker tracks turns for a specific agent loop.
+// Each agent gets its own tracker, supporting parallel execution.
+type AgentTurnTracker struct {
+	parentPrefix string // e.g., "main-002" or "main-002:explore-003"
+	agentName    string // e.g., "code-simplifier", "explore"
+	turnCount    int
+	mu           sync.Mutex
+}
+
+// NewAgentTurnTracker creates a tracker for an agent loop.
+// agentName is the name of the agent (e.g., "code-simplifier").
+// parentTracker is nil for first-level agents, or the parent's tracker for nested agents.
+func NewAgentTurnTracker(agentName string, parentTracker *AgentTurnTracker) *AgentTurnTracker {
+	mu.Lock()
+	parentTurn := turnCount
+	mu.Unlock()
+
+	// Sanitize agent name for filename (replace special chars)
+	safeName := sanitizeAgentName(agentName)
+
+	var parentPrefix string
+	if parentTracker != nil {
+		// Nested agent: inherit parent's full prefix including current turn
+		parentPrefix = fmt.Sprintf("%s:%s-%03d", parentTracker.parentPrefix, parentTracker.agentName, parentTracker.CurrentTurn())
+	} else {
+		// First-level agent: use main loop turn
+		parentPrefix = fmt.Sprintf("main-%03d", parentTurn)
+	}
+
+	return &AgentTurnTracker{
+		parentPrefix: parentPrefix,
+		agentName:    safeName,
+		turnCount:    0,
+	}
+}
+
+// sanitizeAgentName makes agent name safe for filenames
+func sanitizeAgentName(name string) string {
+	// Replace colons and special chars with underscore
+	result := strings.ReplaceAll(name, ":", "_")
+	result = strings.ReplaceAll(result, "/", "_")
+	result = strings.ReplaceAll(result, " ", "_")
+	return result
+}
+
+// NextTurn increments and returns the agent's turn counter
+func (t *AgentTurnTracker) NextTurn() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.turnCount++
+	return t.turnCount
+}
+
+// CurrentTurn returns the agent's current turn number
+func (t *AgentTurnTracker) CurrentTurn() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.turnCount
+}
+
+// GetTurnPrefix returns the turn prefix for file naming
+// Format: {parentPrefix}:{agentName}-{turn}
+// Examples:
+//   - Main loop turn 5: "main-005" (use GetTurnPrefix directly)
+//   - Agent "code-simplifier" spawned at main turn 5, sub-turn 3: "main-005:code-simplifier-003"
+//   - Nested "explore" agent: "main-005:code-simplifier-003:explore-001"
+func (t *AgentTurnTracker) GetTurnPrefix(turn int) string {
+	return fmt.Sprintf("%s:%s-%03d", t.parentPrefix, t.agentName, turn)
 }
 
 // escapeForLog escapes newlines and tabs for single-line log output

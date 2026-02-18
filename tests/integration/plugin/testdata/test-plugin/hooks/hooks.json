@@ -1,0 +1,16 @@
+{
+  "description": "Test plugin hooks for comparison testing",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'test-plugin: SessionStart hook triggered' >> /tmp/test-plugin-hooks.log",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

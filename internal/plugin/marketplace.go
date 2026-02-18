@@ -1,0 +1,400 @@
+package plugin
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// MarketplaceManager manages plugin marketplaces.
+type MarketplaceManager struct {
+	cwd             string
+	marketplaces    map[string]MarketplaceEntry
+	configDir       string // Directory for known_marketplaces.json
+	cacheDir        string
+	marketplacesDir string
+}
+
+// NewMarketplaceManager creates a new marketplace manager.
+func NewMarketplaceManager(cwd string) *MarketplaceManager {
+	homeDir, _ := os.UserHomeDir()
+	configDir := filepath.Join(homeDir, ".gen", "plugins")
+	return &MarketplaceManager{
+		cwd:             cwd,
+		marketplaces:    make(map[string]MarketplaceEntry),
+		configDir:       configDir,
+		cacheDir:        filepath.Join(configDir, "cache"),
+		marketplacesDir: filepath.Join(configDir, "marketplaces"),
+	}
+}
+
+// NewMarketplaceManagerWithConfig creates a marketplace manager with custom config directory.
+// Used for testing to avoid modifying user's real configuration.
+func NewMarketplaceManagerWithConfig(cwd, configDir string) *MarketplaceManager {
+	return &MarketplaceManager{
+		cwd:             cwd,
+		marketplaces:    make(map[string]MarketplaceEntry),
+		configDir:       configDir,
+		cacheDir:        filepath.Join(configDir, "cache"),
+		marketplacesDir: filepath.Join(configDir, "marketplaces"),
+	}
+}
+
+// Load loads marketplace configurations from known_marketplaces.json.
+func (m *MarketplaceManager) Load() error {
+	path := filepath.Join(m.configDir, "known_marketplaces.json")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	// Try v2 format first (map)
+	var v2 map[string]MarketplaceEntry
+	if err := json.Unmarshal(data, &v2); err == nil && len(v2) > 0 {
+		m.marketplaces = v2
+		return nil
+	}
+
+	// Fall back to v1 format (array)
+	var v1 KnownMarketplaces
+	if err := json.Unmarshal(data, &v1); err != nil {
+		return err
+	}
+
+	// Convert v1 to v2
+	for _, ms := range v1.Marketplaces {
+		m.marketplaces[ms.Name] = MarketplaceEntry{
+			Source: MarketplaceSourceInfo{
+				Source: ms.Type,
+				Repo:   ms.Repository,
+				Path:   ms.Path,
+			},
+		}
+	}
+
+	return nil
+}
+
+// Save saves marketplace configurations to known_marketplaces.json.
+func (m *MarketplaceManager) Save() error {
+	if err := os.MkdirAll(m.configDir, 0755); err != nil {
+		return err
+	}
+
+	path := filepath.Join(m.configDir, "known_marketplaces.json")
+	data, err := json.MarshalIndent(m.marketplaces, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
+// Get returns a marketplace by ID.
+func (m *MarketplaceManager) Get(id string) (MarketplaceEntry, bool) {
+	entry, ok := m.marketplaces[id]
+	return entry, ok
+}
+
+// List returns all marketplace IDs.
+func (m *MarketplaceManager) List() []string {
+	ids := make([]string, 0, len(m.marketplaces))
+	for id := range m.marketplaces {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// Add adds a new marketplace.
+func (m *MarketplaceManager) Add(id string, entry MarketplaceEntry) error {
+	m.marketplaces[id] = entry
+	return m.Save()
+}
+
+// AddToMemory adds a marketplace to memory without saving.
+// Used for GitHub marketplaces which save after successful sync.
+func (m *MarketplaceManager) AddToMemory(id string, entry MarketplaceEntry) {
+	m.marketplaces[id] = entry
+}
+
+// RemoveFromMemory removes a marketplace from memory without saving.
+func (m *MarketplaceManager) RemoveFromMemory(id string) {
+	delete(m.marketplaces, id)
+}
+
+// AddGitHub adds a GitHub-based marketplace.
+// Note: Only adds to memory, does not save until sync succeeds.
+func (m *MarketplaceManager) AddGitHub(id, repo string) error {
+	entry := MarketplaceEntry{
+		Source: MarketplaceSourceInfo{
+			Source: "github",
+			Repo:   repo,
+		},
+		InstallLocation: filepath.Join(m.marketplacesDir, id),
+		LastUpdated:     time.Now().Format(time.RFC3339),
+	}
+	// Only add to memory, save will happen after successful sync
+	m.AddToMemory(id, entry)
+	return nil
+}
+
+// AddDirectory adds a directory-based marketplace.
+func (m *MarketplaceManager) AddDirectory(id, path string) error {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+
+	// Validate path exists and is a directory
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("directory does not exist: %s", absPath)
+		}
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("path is not a directory: %s", absPath)
+	}
+
+	// Validate it contains plugins or is itself a plugin
+	if !isValidMarketplace(absPath) {
+		return fmt.Errorf("no plugins found in: %s", absPath)
+	}
+
+	entry := MarketplaceEntry{
+		Source: MarketplaceSourceInfo{
+			Source: "directory",
+			Path:   absPath,
+		},
+		LastUpdated: time.Now().Format(time.RFC3339),
+	}
+	return m.Add(id, entry)
+}
+
+// isValidMarketplace checks if a directory is a valid marketplace.
+// A valid marketplace either contains plugins/ subdirectory with plugins,
+// or has plugin directories directly inside it.
+func isValidMarketplace(path string) bool {
+	// Check for plugins/ subdirectory
+	pluginsDir := filepath.Join(path, "plugins")
+	if entries, err := os.ReadDir(pluginsDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() && isValidPlugin(filepath.Join(pluginsDir, e.Name())) {
+				return true
+			}
+		}
+	}
+
+	// Check if direct subdirectories are plugins
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.IsDir() && isValidPlugin(filepath.Join(path, e.Name())) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Remove removes a marketplace.
+func (m *MarketplaceManager) Remove(id string) error {
+	delete(m.marketplaces, id)
+	return m.Save()
+}
+
+// Sync synchronizes a marketplace (clone/update from source).
+func (m *MarketplaceManager) Sync(ctx context.Context, id string) error {
+	entry, ok := m.marketplaces[id]
+	if !ok {
+		return fmt.Errorf("marketplace not found: %s", id)
+	}
+
+	switch entry.Source.Source {
+	case "github":
+		return m.syncGitHub(ctx, id, entry)
+	case "directory":
+		// Directory marketplaces don't need syncing
+		return nil
+	default:
+		return fmt.Errorf("unsupported marketplace source: %s", entry.Source.Source)
+	}
+}
+
+// syncGitHub clones or updates a GitHub marketplace.
+func (m *MarketplaceManager) syncGitHub(ctx context.Context, id string, entry MarketplaceEntry) error {
+	destPath := entry.InstallLocation
+	if destPath == "" {
+		destPath = filepath.Join(m.marketplacesDir, id)
+	}
+
+	// Check if already cloned
+	gitDir := filepath.Join(destPath, ".git")
+	if _, err := os.Stat(gitDir); err == nil {
+		// Pull updates
+		cmd := exec.CommandContext(ctx, "git", "-C", destPath, "pull", "--ff-only")
+		return cmd.Run()
+	}
+
+	// Clone
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return err
+	}
+	url := fmt.Sprintf("https://github.com/%s.git", entry.Source.Repo)
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", url, destPath)
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Update entry with install location
+	entry.InstallLocation = destPath
+	entry.LastUpdated = time.Now().Format(time.RFC3339)
+	m.marketplaces[id] = entry
+	return m.Save()
+}
+
+// SyncAll synchronizes all marketplaces.
+func (m *MarketplaceManager) SyncAll(ctx context.Context) []error {
+	var errors []error
+	for id := range m.marketplaces {
+		if err := m.Sync(ctx, id); err != nil {
+			errors = append(errors, fmt.Errorf("%s: %w", id, err))
+		}
+	}
+	return errors
+}
+
+// GetPluginPath returns the path to a plugin in a marketplace.
+func (m *MarketplaceManager) GetPluginPath(marketplaceID, pluginName string) (string, error) {
+	basePath, err := m.getMarketplaceBasePath(marketplaceID)
+	if err != nil {
+		return "", err
+	}
+
+	searchPaths := []string{
+		filepath.Join(basePath, "plugins", pluginName),
+		filepath.Join(basePath, pluginName),
+		filepath.Join(basePath, "Claude", "plugins", pluginName),
+	}
+
+	for _, path := range searchPaths {
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf("plugin not found: %s in marketplace %s", pluginName, marketplaceID)
+}
+
+// getMarketplaceBasePath returns the base path for a marketplace.
+func (m *MarketplaceManager) getMarketplaceBasePath(marketplaceID string) (string, error) {
+	entry, ok := m.marketplaces[marketplaceID]
+	if !ok {
+		return "", fmt.Errorf("marketplace not found: %s", marketplaceID)
+	}
+
+	switch entry.Source.Source {
+	case "github":
+		return entry.InstallLocation, nil
+	case "directory":
+		return entry.Source.Path, nil
+	default:
+		return "", fmt.Errorf("unsupported marketplace source: %s", entry.Source.Source)
+	}
+}
+
+// ListPlugins returns all plugins in a marketplace.
+func (m *MarketplaceManager) ListPlugins(marketplaceID string) ([]string, error) {
+	basePath, err := m.getMarketplaceBasePath(marketplaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	searchDirs := []string{
+		filepath.Join(basePath, "plugins"),
+		basePath,
+		filepath.Join(basePath, "Claude", "plugins"),
+	}
+
+	var plugins []string
+	seen := make(map[string]bool)
+
+	for _, dir := range searchDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			name := e.Name()
+			// Skip non-directories, already seen, and hidden directories
+			if !e.IsDir() || seen[name] || strings.HasPrefix(name, ".") {
+				continue
+			}
+			pluginPath := filepath.Join(dir, name)
+			if isValidPlugin(pluginPath) {
+				plugins = append(plugins, name)
+				seen[name] = true
+			}
+		}
+	}
+
+	return plugins, nil
+}
+
+// isValidPlugin checks if a directory contains a valid plugin.
+func isValidPlugin(path string) bool {
+	// Check for .gen-plugin or .claude-plugin manifest
+	for _, metaDir := range []string{".gen-plugin", ".claude-plugin"} {
+		manifestPath := filepath.Join(path, metaDir, "plugin.json")
+		if _, err := os.Stat(manifestPath); err == nil {
+			return true
+		}
+	}
+	// Also check for skills, commands, or agents directories
+	for _, dir := range []string{"skills", "commands", "agents"} {
+		if _, err := os.Stat(filepath.Join(path, dir)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// GetMarketplaceMetadata loads the marketplace.json metadata from a marketplace.
+func (m *MarketplaceManager) GetMarketplaceMetadata(marketplaceID string) (*MarketplaceMetadata, error) {
+	basePath, err := m.getMarketplaceBasePath(marketplaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	searchPaths := []string{
+		filepath.Join(basePath, ".claude-plugin", "marketplace.json"),
+		filepath.Join(basePath, ".gen-plugin", "marketplace.json"),
+		filepath.Join(basePath, "marketplace.json"),
+	}
+
+	for _, path := range searchPaths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var meta MarketplaceMetadata
+		if err := json.Unmarshal(data, &meta); err != nil {
+			continue
+		}
+		return &meta, nil
+	}
+
+	return nil, fmt.Errorf("no marketplace metadata found for %s", marketplaceID)
+}

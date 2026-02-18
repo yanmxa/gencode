@@ -165,7 +165,7 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 		}
 
 		// Log request
-		log.LogRequest(c.name, opts.Model, opts)
+		log.LogRequestCtx(ctx, c.name, opts.Model, opts)
 
 		// Create streaming request
 		stream := c.client.Responses.NewStreaming(ctx, params)
@@ -271,7 +271,7 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 		}
 
 		// Log response
-		log.LogResponse(c.name, response)
+		log.LogResponseCtx(ctx, c.name, response)
 
 		ch <- message.StreamChunk{
 			Type:     message.ChunkTypeDone,
@@ -402,7 +402,7 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 		}
 
 		// Log request
-		log.LogRequest(c.name, opts.Model, opts)
+		log.LogRequestCtx(ctx, c.name, opts.Model, opts)
 
 		// Create streaming request
 		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
@@ -500,7 +500,7 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 		}
 
 		// Log response
-		log.LogResponse(c.name, response)
+		log.LogResponseCtx(ctx, c.name, response)
 
 		ch <- message.StreamChunk{
 			Type:     message.ChunkTypeDone,

@@ -1,0 +1,13 @@
+{
+  "name": "test-plugin",
+  "version": "1.0.0",
+  "description": "A test plugin for UI/UX comparison testing between Claude Code and GenCode",
+  "author": {
+    "name": "GenCode Test",
+    "email": "test@gencode.dev"
+  },
+  "homepage": "https://github.com/yanmxa/gencode",
+  "repository": "https://github.com/yanmxa/gencode",
+  "license": "MIT",
+  "keywords": ["test", "comparison", "plugin"]
+}

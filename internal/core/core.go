@@ -21,7 +21,7 @@ import (
 	"github.com/yanmxa/gencode/internal/tool/ui"
 )
 
-const defaultMaxTurns = 50
+const defaultMaxTurns = 100
 
 // RunOptions controls the synchronous Run() loop.
 type RunOptions struct {
@@ -327,7 +327,8 @@ func (l *Loop) runTool(ctx context.Context, tc message.ToolCall, params map[stri
 // It sends the conversation to the LLM with a compact prompt and returns
 // the summary text, the original message count, and any error.
 func Compact(ctx context.Context, c *client.Client,
-	msgs []message.Message, focus string) (summary string, count int, err error) {
+	msgs []message.Message, focus string,
+) (summary string, count int, err error) {
 	count = len(msgs)
 
 	conversationText := message.BuildConversationText(msgs)

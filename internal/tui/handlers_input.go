@@ -62,6 +62,11 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.pluginSelector.IsActive() {
+		cmd := m.pluginSelector.HandleKeypress(msg)
+		return m, cmd
+	}
+
 	if m.sessionSelector.IsActive() {
 		cmd := m.sessionSelector.HandleKeypress(msg)
 		return m, cmd

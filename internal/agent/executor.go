@@ -71,6 +71,10 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 	// Build the agent-specific system prompt as Extra
 	agentPrompt := e.buildSystemPrompt(config, req)
 
+	// Create turn tracker for hierarchical DEV_DIR logging
+	tracker := log.NewAgentTurnTracker(config.Name, nil)
+	ctx = log.WithAgentTracker(ctx, tracker)
+
 	log.Logger().Info("Starting agent execution",
 		zap.String("agent", config.Name),
 		zap.String("description", req.Description),
@@ -92,7 +96,7 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 	onToolStart := func(tc message.ToolCall) bool {
 		if req.OnProgress != nil {
 			params, _ := message.ParseToolInput(tc.Input)
-			progressMsg := e.formatToolProgress(tc.Name, params)
+			progressMsg := formatToolProgress(tc.Name, params)
 			req.OnProgress(progressMsg)
 		}
 		return true
@@ -121,17 +125,18 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 		errMsg = fmt.Sprintf("reached maximum turns (%d)", maxTurns)
 	}
 
-	logLevel := log.Logger().Info
-	if !success {
-		logLevel = log.Logger().Warn
-	}
-	logLevel("Agent completed",
+	logFields := []zap.Field{
 		zap.String("agent", config.Name),
 		zap.String("stopReason", result.StopReason),
 		zap.Int("turns", result.Turns),
 		zap.Int("inputTokens", result.Tokens.InputTokens),
 		zap.Int("outputTokens", result.Tokens.OutputTokens),
-	)
+	}
+	if success {
+		log.Logger().Info("Agent completed", logFields...)
+	} else {
+		log.Logger().Warn("Agent completed", logFields...)
+	}
 
 	return &AgentResult{
 		AgentName:  config.Name,
@@ -244,10 +249,10 @@ func (e *Executor) buildSystemPrompt(config *AgentConfig, req AgentRequest) stri
 		sb.WriteString("You have full autonomy to complete your task. You can read and modify files, execute commands, and make changes as needed.\n\n")
 	}
 
-	// Custom system prompt from config
-	if config.SystemPrompt != "" {
+	// Custom system prompt from config (lazily loaded)
+	if sysPrompt := config.GetSystemPrompt(); sysPrompt != "" {
 		sb.WriteString("## Additional Instructions\n")
-		sb.WriteString(config.SystemPrompt)
+		sb.WriteString(sysPrompt)
 		sb.WriteString("\n\n")
 	}
 
@@ -281,7 +286,7 @@ var toolProgressFormats = map[string]struct {
 }
 
 // formatToolProgress creates a progress message for a tool call.
-func (e *Executor) formatToolProgress(toolName string, params map[string]any) string {
+func formatToolProgress(toolName string, params map[string]any) string {
 	format, ok := toolProgressFormats[toolName]
 	if !ok {
 		return fmt.Sprintf("Executing: %s", toolName)

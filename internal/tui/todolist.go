@@ -68,13 +68,7 @@ func (m model) renderTodoTask(t *tool.TodoTask) string {
 		return todoCompletedStyle.Render("  ✓ "+subject) + "\n"
 
 	case tool.TodoStatusInProgress:
-		line := todoInProgressStyle.Render("  "+m.spinner.View()+" "+subject) + "\n"
-		if t.ActiveForm != "" {
-			form := m.truncateText(t.ActiveForm, m.width-6)
-			activeStyle := lipgloss.NewStyle().Foreground(CurrentTheme.Accent)
-			line += activeStyle.Render("    "+form) + "\n"
-		}
-		return line
+		return todoInProgressStyle.Render("  "+m.spinner.View()+" "+subject) + "\n"
 
 	default:
 		if tool.DefaultTodoStore.IsBlocked(t.ID) {

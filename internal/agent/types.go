@@ -72,6 +72,35 @@ type AgentConfig struct {
 
 	// SourceFile is the file path if loaded from AGENT.md (internal use)
 	SourceFile string `yaml:"-" json:"-"`
+
+	// systemPromptLoaded indicates if the full system prompt has been loaded
+	systemPromptLoaded bool `yaml:"-" json:"-"`
+}
+
+// GetSystemPrompt returns the system prompt, loading it lazily if needed.
+// For file-based agents, the prompt is loaded from SourceFile on first access.
+func (c *AgentConfig) GetSystemPrompt() string {
+	if c.systemPromptLoaded || c.SourceFile == "" {
+		return c.SystemPrompt
+	}
+	// Lazy load from file
+	c.loadSystemPromptFromFile()
+	return c.SystemPrompt
+}
+
+// loadSystemPromptFromFile loads the full system prompt from the source file.
+// This is called lazily when the agent is actually executed.
+func (c *AgentConfig) loadSystemPromptFromFile() {
+	if c.SourceFile == "" || c.systemPromptLoaded {
+		return
+	}
+	c.systemPromptLoaded = true
+
+	// Use the loader's function to extract the body
+	prompt := LoadAgentSystemPrompt(c.SourceFile)
+	if prompt != "" {
+		c.SystemPrompt = prompt
+	}
 }
 
 // ProgressCallback is called when the agent makes progress
@@ -144,7 +173,7 @@ type AgentResult struct {
 }
 
 // DefaultMaxTurns is the default maximum number of conversation turns
-const DefaultMaxTurns = 50
+const DefaultMaxTurns = 100
 
 // FallbackModel is used when no parent model is available
 const FallbackModel = "claude-sonnet-4-20250514"

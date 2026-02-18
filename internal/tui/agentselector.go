@@ -18,6 +18,7 @@ type AgentItem struct {
 	PermissionMode string // default/acceptEdits/dontAsk/plan
 	Tools          string // Tool list as string
 	IsCustom       bool   // Whether this is a custom agent
+	PluginName     string // Plugin name if from a plugin (e.g., "code-simplifier")
 	Enabled        bool   // Current enabled state
 }
 
@@ -82,13 +83,21 @@ func (s *AgentSelectorState) EnterAgentSelect(width, height int) error {
 	s.agents = make([]AgentItem, 0, len(allConfigs))
 	for _, cfg := range allConfigs {
 		lowerName := strings.ToLower(cfg.Name)
+
+		// Detect plugin agents by namespace prefix (e.g., "plugin-name:agent-name")
+		var pluginName string
+		if idx := strings.Index(cfg.Name, ":"); idx > 0 {
+			pluginName = cfg.Name[:idx]
+		}
+
 		s.agents = append(s.agents, AgentItem{
 			Name:           cfg.Name,
 			Description:    cfg.Description,
 			Model:          cfg.Model,
 			PermissionMode: formatPermissionMode(cfg.PermissionMode),
 			Tools:          formatToolsAccess(cfg.Tools),
-			IsCustom:       cfg.SourceFile != "",
+			IsCustom:       cfg.SourceFile != "" && pluginName == "",
+			PluginName:     pluginName,
 			Enabled:        !disabledAgents[lowerName],
 		})
 	}
@@ -393,10 +402,12 @@ func (s *AgentSelectorState) Render() string {
 				tools = tools[:toolsWidth-3] + "..."
 			}
 
-			// Custom indicator
-			customTag := ""
-			if a.IsCustom {
-				customTag = " [Custom]"
+			// Source indicator (Plugin or Custom)
+			sourceTag := ""
+			if a.PluginName != "" {
+				sourceTag = " [Plugin: " + a.PluginName + "]"
+			} else if a.IsCustom {
+				sourceTag = " [Custom]"
 			}
 
 			descStyle := lipgloss.NewStyle().Foreground(CurrentTheme.Muted)
@@ -406,7 +417,7 @@ func (s *AgentSelectorState) Render() string {
 				model,
 				mode,
 				descStyle.Render(tools),
-				customTag,
+				sourceTag,
 			)
 
 			if i == s.selectedIdx {

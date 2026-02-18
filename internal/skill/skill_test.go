@@ -134,8 +134,7 @@ Example instructions.
 
 	// Create loader with the temp directory as project root
 	loader := &Loader{
-		cwd:          tmpDir,
-		claudeCompat: false, // Disable claude compat for simpler testing
+		cwd: tmpDir,
 	}
 
 	skills, err := loader.LoadAll()
@@ -179,8 +178,7 @@ Commit instructions.
 
 	// Create loader with the temp directory as project root
 	loader := &Loader{
-		cwd:          tmpDir,
-		claudeCompat: false,
+		cwd: tmpDir,
 	}
 
 	skills, err := loader.LoadAll()
@@ -229,8 +227,7 @@ Test instructions.
 
 	// Override the loader to use our temp directory
 	loader := &Loader{
-		cwd:          tmpDir,
-		claudeCompat: false,
+		cwd: tmpDir,
 	}
 
 	skills, err := loader.LoadAll()
@@ -354,8 +351,7 @@ Git commit instructions.
 
 	// Create loader with the temp directory as project root
 	loader := &Loader{
-		cwd:          tmpDir,
-		claudeCompat: false,
+		cwd: tmpDir,
 	}
 
 	skills, err := loader.LoadAll()
@@ -433,8 +429,7 @@ Review instructions.
 
 	// Create loader with the temp directory as project root
 	loader := &Loader{
-		cwd:          tmpDir,
-		claudeCompat: false,
+		cwd: tmpDir,
 	}
 
 	skills, err := loader.LoadAll()
