@@ -2,6 +2,7 @@ package tui
 
 import (
 	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -10,6 +11,9 @@ import (
 type TaskProgressMsg struct {
 	Message string
 }
+
+// TaskProgressTickMsg is sent to continue polling even when no progress is available
+type TaskProgressTickMsg struct{}
 
 // taskProgressChan is the global channel for task progress updates
 var (
@@ -36,16 +40,17 @@ func SendTaskProgress(msg string) {
 }
 
 // checkTaskProgress returns a command that checks for task progress
+// It uses a tick-based approach to keep polling even when no progress is available
 func checkTaskProgress() tea.Cmd {
-	return func() tea.Msg {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		ch := GetTaskProgressChan()
 		select {
 		case msg := <-ch:
 			return TaskProgressMsg{Message: msg}
 		default:
-			return nil
+			return TaskProgressTickMsg{}
 		}
-	}
+	})
 }
 
 // handleTaskProgress handles task progress messages
@@ -59,4 +64,18 @@ func (m *model) handleTaskProgress(msg TaskProgressMsg) (tea.Model, tea.Cmd) {
 	// View() renders active content live, no viewport update needed
 	// Continue checking for more progress
 	return m, tea.Batch(m.spinner.Tick, checkTaskProgress())
+}
+
+// handleTaskProgressTick handles tick messages to continue polling
+func (m *model) handleTaskProgressTick() (tea.Model, tea.Cmd) {
+	// Check if a Task tool is still pending/executing
+	if m.pendingToolCalls != nil && m.pendingToolIdx < len(m.pendingToolCalls) {
+		tc := m.pendingToolCalls[m.pendingToolIdx]
+		if tc.Name == "Task" {
+			// Continue polling with spinner tick
+			return m, tea.Batch(m.spinner.Tick, checkTaskProgress())
+		}
+	}
+	// No Task tool running, stop polling
+	return m, nil
 }

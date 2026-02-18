@@ -23,30 +23,6 @@ func ExpandPluginRoot(s string, pluginPath string) string {
 	return s
 }
 
-// ExpandPluginEnv expands plugin-specific environment variables in a map.
-func ExpandPluginEnv(env map[string]string, pluginPath string) map[string]string {
-	if env == nil {
-		return nil
-	}
-	result := make(map[string]string, len(env))
-	for k, v := range env {
-		result[k] = ExpandPluginRoot(v, pluginPath)
-	}
-	return result
-}
-
-// ExpandPluginArgs expands plugin-specific variables in command arguments.
-func ExpandPluginArgs(args []string, pluginPath string) []string {
-	if args == nil {
-		return nil
-	}
-	result := make([]string, len(args))
-	for i, arg := range args {
-		result[i] = ExpandPluginRoot(arg, pluginPath)
-	}
-	return result
-}
-
 // ResolvePaths resolves paths from manifest field, which can be:
 // - string: single path or glob pattern
 // - []string: multiple paths

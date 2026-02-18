@@ -315,15 +315,8 @@ func (s *PluginSelectorState) refreshInstalledPlugins() {
 // refreshDiscoverPlugins loads available plugins from all marketplaces
 func (s *PluginSelectorState) refreshDiscoverPlugins() {
 	s.discoverPlugins = []DiscoverPluginItem{}
+	installedNames := s.getInstalledNames()
 
-	// Get installed plugin names for quick lookup
-	installedNames := make(map[string]bool)
-	for _, p := range plugin.DefaultRegistry.List() {
-		installedNames[p.FullName()] = true
-		installedNames[p.Name()] = true
-	}
-
-	// Load plugins from each marketplace
 	for _, marketplaceID := range s.marketplaceManager.List() {
 		plugins, err := s.marketplaceManager.ListPlugins(marketplaceID)
 		if err != nil {
@@ -331,26 +324,8 @@ func (s *PluginSelectorState) refreshDiscoverPlugins() {
 		}
 
 		for _, pluginName := range plugins {
-			fullName := pluginName + "@" + marketplaceID
-			item := DiscoverPluginItem{
-				Name:        pluginName,
-				Marketplace: marketplaceID,
-				Installed:   installedNames[fullName] || installedNames[pluginName],
-			}
-
-			// Try to load plugin manifest for more details
-			pluginPath, err := s.marketplaceManager.GetPluginPath(marketplaceID, pluginName)
-			if err == nil {
-				if p, err := plugin.LoadPlugin(pluginPath, plugin.ScopeUser, fullName); err == nil {
-					item.Description = p.Manifest.Description
-					item.Version = p.Manifest.Version
-					if p.Manifest.Author != nil {
-						item.Author = p.Manifest.Author.Name
-					}
-					item.Homepage = p.Manifest.Homepage
-				}
-			}
-
+			item := s.newDiscoverItem(pluginName, marketplaceID, installedNames)
+			s.enrichDiscoverItem(&item)
 			s.discoverPlugins = append(s.discoverPlugins, item)
 		}
 	}
@@ -421,6 +396,45 @@ func (s *PluginSelectorState) refreshMarketplaces() {
 		}
 		return s.marketplaces[i].ID < s.marketplaces[j].ID
 	})
+}
+
+// getInstalledNames returns a set of installed plugin names for quick lookup.
+func (s *PluginSelectorState) getInstalledNames() map[string]bool {
+	names := make(map[string]bool)
+	for _, p := range plugin.DefaultRegistry.List() {
+		names[p.FullName()] = true
+		names[p.Name()] = true
+	}
+	return names
+}
+
+// newDiscoverItem creates a DiscoverPluginItem with installed status set.
+func (s *PluginSelectorState) newDiscoverItem(name, marketplaceID string, installed map[string]bool) DiscoverPluginItem {
+	fullName := name + "@" + marketplaceID
+	return DiscoverPluginItem{
+		Name:        name,
+		Marketplace: marketplaceID,
+		Installed:   installed[fullName] || installed[name],
+	}
+}
+
+// enrichDiscoverItem loads manifest details (description, version, author, homepage) into an item.
+func (s *PluginSelectorState) enrichDiscoverItem(item *DiscoverPluginItem) {
+	fullName := item.Name + "@" + item.Marketplace
+	pluginPath, err := s.marketplaceManager.GetPluginPath(item.Marketplace, item.Name)
+	if err != nil {
+		return
+	}
+	p, err := plugin.LoadPlugin(pluginPath, plugin.ScopeUser, fullName)
+	if err != nil {
+		return
+	}
+	item.Description = p.Manifest.Description
+	item.Version = p.Manifest.Version
+	if p.Manifest.Author != nil {
+		item.Author = p.Manifest.Author.Name
+	}
+	item.Homepage = p.Manifest.Homepage
 }
 
 // IsActive returns whether the selector is active
@@ -779,28 +793,15 @@ func (s *PluginSelectorState) browseMarketplace() {
 		return
 	}
 
-	// Get installed plugin names
-	installedNames := make(map[string]bool)
-	for _, p := range plugin.DefaultRegistry.List() {
-		installedNames[p.FullName()] = true
-		installedNames[p.Name()] = true
-	}
+	installedNames := s.getInstalledNames()
 
 	for _, pluginName := range plugins {
-		fullName := pluginName + "@" + s.detailMarketplace.ID
-		item := DiscoverPluginItem{
-			Name:        pluginName,
-			Marketplace: s.detailMarketplace.ID,
-			Installed:   installedNames[fullName] || installedNames[pluginName],
-		}
-
-		// Try to load more details
+		item := s.newDiscoverItem(pluginName, s.detailMarketplace.ID, installedNames)
 		if pluginPath, err := s.marketplaceManager.GetPluginPath(s.detailMarketplace.ID, pluginName); err == nil {
-			if p, err := plugin.LoadPlugin(pluginPath, plugin.ScopeUser, fullName); err == nil {
+			if p, err := plugin.LoadPlugin(pluginPath, plugin.ScopeUser, pluginName+"@"+s.detailMarketplace.ID); err == nil {
 				item.Description = p.Manifest.Description
 			}
 		}
-
 		s.browsePlugins = append(s.browsePlugins, item)
 	}
 
@@ -950,12 +951,12 @@ func (s *PluginSelectorState) HandleMarketplaceSync(msg MarketplaceSyncResultMsg
 	s.loadingMsg = ""
 	if !msg.Success {
 		s.setError(fmt.Sprintf("Failed to sync %s: %v", msg.ID, msg.Error))
-		// Remove failed marketplace from memory if it was never synced successfully
+		// Remove failed marketplace if it was never synced successfully
 		// (InstallLocation directory doesn't exist)
 		if entry, ok := s.marketplaceManager.Get(msg.ID); ok {
 			if entry.Source.Source == "github" {
 				if _, err := os.Stat(entry.InstallLocation); os.IsNotExist(err) {
-					s.marketplaceManager.RemoveFromMemory(msg.ID)
+					_ = s.marketplaceManager.Remove(msg.ID)
 				}
 			}
 		}

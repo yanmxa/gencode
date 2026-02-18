@@ -93,7 +93,6 @@ func executeToolAsync(tc message.ToolCall, index int, cwd string, settings *conf
 			return newToolResult(tc, index, "Error parsing tool input: "+err.Error(), true)
 		}
 
-		// Check if this is an MCP tool
 		if mcp.IsMCPTool(tc.Name) {
 			return executeAndLog(tc, index, func() ui.ToolResult {
 				return executeMCPTool(ctx, tc, params)
@@ -104,19 +103,27 @@ func executeToolAsync(tc message.ToolCall, index int, cwd string, settings *conf
 			return newToolResult(tc, index, "Unknown tool: "+tc.Name, true)
 		}
 
-		// Check permission
-		if settings != nil {
-			switch settings.CheckPermission(tc.Name, params, sessionPerms) {
-			case config.PermissionDeny:
-				return newToolResult(tc, index, "Permission denied by settings", true)
-			case config.PermissionAllow:
-				// Fall through to execute
-			}
+		if msg := checkPermission(tc, index, params, settings, sessionPerms); msg != nil {
+			return msg
 		}
 
 		return executeAndLog(tc, index, func() ui.ToolResult {
 			return tool.Execute(ctx, tc.Name, params, cwd)
 		})
+	}
+}
+
+// checkPermission checks tool permission from settings.
+// Returns a deny result message if denied, nil if allowed or no settings.
+func checkPermission(tc message.ToolCall, index int, params map[string]any, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Msg {
+	if settings == nil {
+		return nil
+	}
+	switch settings.CheckPermission(tc.Name, params, sessionPerms) {
+	case config.PermissionDeny:
+		return newToolResult(tc, index, "Permission denied by settings", true)
+	default:
+		return nil
 	}
 }
 
@@ -143,7 +150,6 @@ func processNextTool(toolCalls []message.ToolCall, idx int, cwd string, settings
 			return newToolResult(tc, idx, "Error parsing tool input: "+err.Error(), true)
 		}
 
-		// MCP tools execute directly
 		if mcp.IsMCPTool(tc.Name) {
 			return executeAndLog(tc, idx, func() ui.ToolResult {
 				return executeMCPTool(ctx, tc, params)
@@ -155,7 +161,6 @@ func processNextTool(toolCalls []message.ToolCall, idx int, cwd string, settings
 			return newToolResult(tc, idx, "Unknown tool: "+tc.Name, true)
 		}
 
-		// Check permissions from settings
 		if settings != nil {
 			switch settings.CheckPermission(tc.Name, params, sessionPerms) {
 			case config.PermissionAllow:
@@ -167,12 +172,10 @@ func processNextTool(toolCalls []message.ToolCall, idx int, cwd string, settings
 			}
 		}
 
-		// Check for interactive tool prompts
 		if msg := checkInteractiveTool(ctx, t, tc, idx, params, cwd); msg != nil {
 			return msg
 		}
 
-		// Check for permission-aware tool prompts
 		if msg := checkPermissionTool(ctx, t, tc, idx, params, cwd); msg != nil {
 			return msg
 		}

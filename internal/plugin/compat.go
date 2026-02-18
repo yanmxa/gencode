@@ -78,12 +78,8 @@ func loadClaudeEnabledPlugins(homeDir string) map[string]bool {
 	return settings.EnabledPlugins
 }
 
-// convertClaudePlugin converts Claude Code specific paths and variables.
+// convertClaudePlugin sets the source suffix for Claude Code plugins.
 func convertClaudePlugin(p *Plugin) {
-	// Replace CLAUDE_PLUGIN_ROOT with GEN_PLUGIN_ROOT in all paths
-	// This is handled by the resolver, but we can add any additional conversions here
-
-	// Update source to indicate this is from Claude
 	if p.Source == "" {
 		p.Source = p.Name() + "@claude"
 	}

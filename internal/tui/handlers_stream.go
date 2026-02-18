@@ -68,7 +68,6 @@ func (m *model) handleParallelToolResult(msg toolResultMsg) (tea.Model, tea.Cmd)
 }
 
 func (m *model) completeParallelExecution() (tea.Model, tea.Cmd) {
-	// Add all results as messages in order
 	for i := 0; i < len(m.pendingToolCalls); i++ {
 		tc := m.pendingToolCalls[i]
 		if result, ok := m.parallelResults[i]; ok {
@@ -80,13 +79,7 @@ func (m *model) completeParallelExecution() (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Reset parallel execution state
-	m.parallelMode = false
-	m.parallelResults = nil
-	m.parallelResultCount = 0
-	m.pendingToolCalls = nil
-	m.pendingToolIdx = 0
-
+	m.resetToolState()
 	commitCmds := m.commitMessages()
 	commitCmds = append(commitCmds, m.continueWithToolResults())
 	return m, tea.Batch(commitCmds...)
@@ -122,12 +115,17 @@ func (m *model) canRunToolsInParallel(toolCalls []message.ToolCall) bool {
 }
 
 func (m *model) handleAllToolsCompleted() (tea.Model, tea.Cmd) {
+	m.resetToolState()
+	return m, m.continueWithToolResults()
+}
+
+// resetToolState clears all pending/parallel tool execution state.
+func (m *model) resetToolState() {
 	m.pendingToolCalls = nil
 	m.pendingToolIdx = 0
 	m.parallelMode = false
 	m.parallelResults = nil
 	m.parallelResultCount = 0
-	return m, m.continueWithToolResults()
 }
 
 // filterToolCallsWithHooks runs PreToolUse hooks and filters blocked tools.

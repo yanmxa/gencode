@@ -120,19 +120,7 @@ func (m *MarketplaceManager) Add(id string, entry MarketplaceEntry) error {
 	return m.Save()
 }
 
-// AddToMemory adds a marketplace to memory without saving.
-// Used for GitHub marketplaces which save after successful sync.
-func (m *MarketplaceManager) AddToMemory(id string, entry MarketplaceEntry) {
-	m.marketplaces[id] = entry
-}
-
-// RemoveFromMemory removes a marketplace from memory without saving.
-func (m *MarketplaceManager) RemoveFromMemory(id string) {
-	delete(m.marketplaces, id)
-}
-
 // AddGitHub adds a GitHub-based marketplace.
-// Note: Only adds to memory, does not save until sync succeeds.
 func (m *MarketplaceManager) AddGitHub(id, repo string) error {
 	entry := MarketplaceEntry{
 		Source: MarketplaceSourceInfo{
@@ -142,9 +130,7 @@ func (m *MarketplaceManager) AddGitHub(id, repo string) error {
 		InstallLocation: filepath.Join(m.marketplacesDir, id),
 		LastUpdated:     time.Now().Format(time.RFC3339),
 	}
-	// Only add to memory, save will happen after successful sync
-	m.AddToMemory(id, entry)
-	return nil
+	return m.Add(id, entry)
 }
 
 // AddDirectory adds a directory-based marketplace.

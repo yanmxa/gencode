@@ -1005,7 +1005,7 @@ func (s *SelectorState) renderProviderSelector() string {
 
 				// Show connection result for this auth method
 				if s.lastConnectResult != "" && i == s.lastConnectAuthIdx {
-					sb.WriteString(selectorItemStyle.Render("    " + s.renderAuthResultMessage()))
+					sb.WriteString(selectorItemStyle.Render("    " + s.renderConnectResult()))
 					sb.WriteString("\n")
 				}
 			}
@@ -1092,7 +1092,7 @@ func (s *SelectorState) renderSearchProviders() string {
 
 		// Show result message for this provider
 		if s.lastConnectResult != "" && i == s.lastConnectAuthIdx {
-			sb.WriteString(selectorItemStyle.Render("    " + s.renderResultMessage()))
+			sb.WriteString(selectorItemStyle.Render("    " + s.renderConnectResult()))
 			sb.WriteString("\n")
 		}
 	}
@@ -1114,13 +1114,8 @@ func (s *SelectorState) connectResultStyle() lipgloss.Style {
 	return selectorStatusConnected
 }
 
-// renderResultMessage returns the styled result message for connection attempts
-func (s *SelectorState) renderResultMessage() string {
-	return s.connectResultStyle().Render(s.lastConnectResult)
-}
-
-// renderAuthResultMessage returns the styled result message for auth connection attempts
-func (s *SelectorState) renderAuthResultMessage() string {
+// renderConnectResult returns the styled result message for connection attempts.
+func (s *SelectorState) renderConnectResult() string {
 	return s.connectResultStyle().Render(s.lastConnectResult)
 }
 

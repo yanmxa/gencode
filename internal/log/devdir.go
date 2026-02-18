@@ -20,23 +20,33 @@ type DevRequest struct {
 	Temperature  float64            `json:"temperature"`
 	SystemPrompt string             `json:"system_prompt,omitempty"`
 	Tools        []provider.Tool    `json:"tools,omitempty"`
-	Messages     []message.Message `json:"messages"`
+	Messages     []message.Message  `json:"messages"`
 }
 
 // DevResponse represents the response data saved to JSON file
 type DevResponse struct {
-	Turn       int                 `json:"turn"`
-	Timestamp  time.Time           `json:"timestamp"`
-	Provider   string              `json:"provider"`
-	StopReason string              `json:"stop_reason"`
-	Content    string              `json:"content,omitempty"`
-	Thinking   string              `json:"thinking,omitempty"`
+	Turn       int                `json:"turn"`
+	Timestamp  time.Time          `json:"timestamp"`
+	Provider   string             `json:"provider"`
+	StopReason string             `json:"stop_reason"`
+	Content    string             `json:"content,omitempty"`
+	Thinking   string             `json:"thinking,omitempty"`
 	ToolCalls  []message.ToolCall `json:"tool_calls,omitempty"`
 	Usage      message.Usage      `json:"usage"`
 }
 
-// WriteDevRequest writes request data to JSON file in DEV_DIR
-func WriteDevRequest(providerName, model string, opts provider.CompletionOptions, turn int) {
+// turnPrefix returns the file prefix for a given tracker and turn.
+// If tracker is nil, uses the main loop prefix.
+func turnPrefix(tracker *AgentTurnTracker, turn int) string {
+	if tracker != nil {
+		return tracker.GetTurnPrefix(turn)
+	}
+	return GetTurnPrefix(turn)
+}
+
+// writeDevRequest writes request data to JSON file in DEV_DIR.
+// tracker may be nil for main-loop requests.
+func writeDevRequest(tracker *AgentTurnTracker, providerName, model string, opts provider.CompletionOptions, turn int) {
 	if !devEnabled {
 		return
 	}
@@ -51,12 +61,12 @@ func WriteDevRequest(providerName, model string, opts provider.CompletionOptions
 		Tools:        opts.Tools,
 		Messages:     opts.Messages,
 	}
-	filename := filepath.Join(devDir, GetTurnPrefix(turn)+"-request.json")
-	writeJSON(filename, req)
+	writeJSON(filepath.Join(devDir, turnPrefix(tracker, turn)+"-request.json"), req)
 }
 
-// WriteDevResponse writes response data to JSON file in DEV_DIR
-func WriteDevResponse(providerName string, resp message.CompletionResponse, turn int) {
+// writeDevResponse writes response data to JSON file in DEV_DIR.
+// tracker may be nil for main-loop responses.
+func writeDevResponse(tracker *AgentTurnTracker, providerName string, resp message.CompletionResponse, turn int) {
 	if !devEnabled {
 		return
 	}
@@ -70,47 +80,7 @@ func WriteDevResponse(providerName string, resp message.CompletionResponse, turn
 		ToolCalls:  resp.ToolCalls,
 		Usage:      resp.Usage,
 	}
-	filename := filepath.Join(devDir, GetTurnPrefix(turn)+"-response.json")
-	writeJSON(filename, res)
-}
-
-// WriteAgentDevRequest writes agent request data with hierarchical naming
-func WriteAgentDevRequest(tracker *AgentTurnTracker, providerName, model string, opts provider.CompletionOptions, turn int) {
-	if !devEnabled || tracker == nil {
-		return
-	}
-	req := DevRequest{
-		Turn:         turn,
-		Timestamp:    time.Now().UTC(),
-		Provider:     providerName,
-		Model:        model,
-		MaxTokens:    opts.MaxTokens,
-		Temperature:  opts.Temperature,
-		SystemPrompt: opts.SystemPrompt,
-		Tools:        opts.Tools,
-		Messages:     opts.Messages,
-	}
-	filename := filepath.Join(devDir, tracker.GetTurnPrefix(turn)+"-request.json")
-	writeJSON(filename, req)
-}
-
-// WriteAgentDevResponse writes agent response data with hierarchical naming
-func WriteAgentDevResponse(tracker *AgentTurnTracker, providerName string, resp message.CompletionResponse, turn int) {
-	if !devEnabled || tracker == nil {
-		return
-	}
-	res := DevResponse{
-		Turn:       turn,
-		Timestamp:  time.Now().UTC(),
-		Provider:   providerName,
-		StopReason: resp.StopReason,
-		Content:    resp.Content,
-		Thinking:   resp.Thinking,
-		ToolCalls:  resp.ToolCalls,
-		Usage:      resp.Usage,
-	}
-	filename := filepath.Join(devDir, tracker.GetTurnPrefix(turn)+"-response.json")
-	writeJSON(filename, res)
+	writeJSON(filepath.Join(devDir, turnPrefix(tracker, turn)+"-response.json"), res)
 }
 
 func writeJSON(filename string, data any) {

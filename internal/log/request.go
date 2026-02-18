@@ -34,13 +34,26 @@ func LogRequestCtx(ctx context.Context, providerName, model string, opts provide
 	if tracker != nil {
 		turn = tracker.NextTurn()
 		prefix = tracker.GetTurnPrefix(turn)
-		WriteAgentDevRequest(tracker, providerName, model, opts, turn)
 	} else {
 		turn = NextTurn()
 		prefix = GetTurnPrefix(turn)
-		WriteDevRequest(providerName, model, opts, turn)
 	}
 
+	writeDevRequest(tracker, providerName, model, opts, turn)
+	logRequest(prefix, providerName, model, opts)
+}
+
+// LogRequest logs an LLM request in human-readable format (main loop only)
+func LogRequest(providerName, model string, opts provider.CompletionOptions) {
+	turn := NextTurn()
+	prefix := fmt.Sprintf("Turn %d", turn)
+
+	writeDevRequest(nil, providerName, model, opts, turn)
+	logRequest(prefix, providerName, model, opts)
+}
+
+// logRequest formats and logs an LLM request.
+func logRequest(prefix, providerName, model string, opts provider.CompletionOptions) {
 	if !enabled {
 		return
 	}
@@ -63,81 +76,32 @@ func LogRequestCtx(ctx context.Context, providerName, model string, opts provide
 
 	fmt.Fprintf(&sb, "    Messages(%d):\n", len(opts.Messages))
 	for i, msg := range opts.Messages {
-		switch msg.Role {
-		case message.RoleUser:
-			if msg.Content != "" {
-				fmt.Fprintf(&sb, "      [%d] User: %s\n", i, escapeForLog(msg.Content))
-			}
-			if msg.ToolResult != nil {
-				if msg.ToolResult.IsError {
-					fmt.Fprintf(&sb, "      [%d] ToolResult[%s] ERROR: %s\n", i, msg.ToolResult.ToolCallID, escapeForLog(msg.ToolResult.Content))
-				} else {
-					fmt.Fprintf(&sb, "      [%d] ToolResult[%s]: %s\n", i, msg.ToolResult.ToolCallID, escapeForLog(msg.ToolResult.Content))
-				}
-			}
-		case message.RoleAssistant:
-			if msg.Content != "" {
-				fmt.Fprintf(&sb, "      [%d] Assistant: %s\n", i, escapeForLog(msg.Content))
-			}
-			for _, tc := range msg.ToolCalls {
-				fmt.Fprintf(&sb, "      [%d] ToolCall: %s(%s)\n", i, tc.Name, escapeForLog(tc.Input))
-			}
-		}
+		formatMessageLog(&sb, i, msg)
 	}
 
 	logger.Info(sb.String())
 }
 
-// LogRequest logs an LLM request in human-readable format (main loop only)
-func LogRequest(providerName, model string, opts provider.CompletionOptions) {
-	turn := NextTurn()
-
-	// Write to DEV_DIR if enabled
-	WriteDevRequest(providerName, model, opts, turn)
-
-	if !enabled {
-		return
-	}
-
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "───────────────────────────────────────── Turn %d ─────────────────────────────────────────\n", turn)
-	fmt.Fprintf(&sb, ">>> [%s] %s | max_tokens=%d temp=%.1f\n", providerName, model, opts.MaxTokens, opts.Temperature)
-
-	if opts.SystemPrompt != "" {
-		fmt.Fprintf(&sb, "    System: %s\n", escapeForLog(opts.SystemPrompt))
-	}
-
-	if len(opts.Tools) > 0 {
-		toolNames := make([]string, len(opts.Tools))
-		for i, t := range opts.Tools {
-			toolNames[i] = t.Name
+// formatMessageLog formats a single message for log output.
+func formatMessageLog(sb *strings.Builder, idx int, msg message.Message) {
+	switch msg.Role {
+	case message.RoleUser:
+		if msg.Content != "" {
+			fmt.Fprintf(sb, "      [%d] User: %s\n", idx, escapeForLog(msg.Content))
 		}
-		fmt.Fprintf(&sb, "    Tools(%d): [%s]\n", len(opts.Tools), strings.Join(toolNames, ", "))
-	}
-
-	fmt.Fprintf(&sb, "    Messages(%d):\n", len(opts.Messages))
-	for i, msg := range opts.Messages {
-		switch msg.Role {
-		case message.RoleUser:
-			if msg.Content != "" {
-				fmt.Fprintf(&sb, "      [%d] User: %s\n", i, escapeForLog(msg.Content))
+		if msg.ToolResult != nil {
+			label := "ToolResult"
+			if msg.ToolResult.IsError {
+				label = "ToolResult ERROR"
 			}
-			if msg.ToolResult != nil {
-				if msg.ToolResult.IsError {
-					fmt.Fprintf(&sb, "      [%d] ToolResult[%s] ERROR: %s\n", i, msg.ToolResult.ToolCallID, escapeForLog(msg.ToolResult.Content))
-				} else {
-					fmt.Fprintf(&sb, "      [%d] ToolResult[%s]: %s\n", i, msg.ToolResult.ToolCallID, escapeForLog(msg.ToolResult.Content))
-				}
-			}
-		case message.RoleAssistant:
-			if msg.Content != "" {
-				fmt.Fprintf(&sb, "      [%d] Assistant: %s\n", i, escapeForLog(msg.Content))
-			}
-			for _, tc := range msg.ToolCalls {
-				fmt.Fprintf(&sb, "      [%d] ToolCall: %s(%s)\n", i, tc.Name, escapeForLog(tc.Input))
-			}
+			fmt.Fprintf(sb, "      [%d] %s[%s]: %s\n", idx, label, msg.ToolResult.ToolCallID, escapeForLog(msg.ToolResult.Content))
+		}
+	case message.RoleAssistant:
+		if msg.Content != "" {
+			fmt.Fprintf(sb, "      [%d] Assistant: %s\n", idx, escapeForLog(msg.Content))
+		}
+		for _, tc := range msg.ToolCalls {
+			fmt.Fprintf(sb, "      [%d] ToolCall: %s(%s)\n", idx, tc.Name, escapeForLog(tc.Input))
 		}
 	}
-
-	logger.Info(sb.String())
 }

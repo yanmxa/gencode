@@ -317,48 +317,6 @@ func (r *Registry) GetByScope(scope Scope) []*Plugin {
 	return result
 }
 
-// GetAllSkillPaths returns all skill paths from enabled plugins.
-func (r *Registry) GetAllSkillPaths() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	var paths []string
-	for _, p := range r.plugins {
-		if p.Enabled {
-			paths = append(paths, p.Components.Skills...)
-		}
-	}
-	return paths
-}
-
-// GetAllAgentPaths returns all agent paths from enabled plugins.
-func (r *Registry) GetAllAgentPaths() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	var paths []string
-	for _, p := range r.plugins {
-		if p.Enabled {
-			paths = append(paths, p.Components.Agents...)
-		}
-	}
-	return paths
-}
-
-// GetAllCommandPaths returns all command paths from enabled plugins.
-func (r *Registry) GetAllCommandPaths() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	var paths []string
-	for _, p := range r.plugins {
-		if p.Enabled {
-			paths = append(paths, p.Components.Commands...)
-		}
-	}
-	return paths
-}
-
 // GetAllMCPServers returns all MCP server configs from enabled plugins.
 func (r *Registry) GetAllMCPServers() map[string]MCPServerConfig {
 	r.mu.RLock()

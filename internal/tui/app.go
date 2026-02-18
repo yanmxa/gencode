@@ -604,6 +604,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TaskProgressMsg:
 		return m.handleTaskProgress(msg)
 
+	case TaskProgressTickMsg:
+		return m.handleTaskProgressTick()
+
 	case startToolExecutionMsg:
 		return m.handleStartToolExecution(msg)
 
