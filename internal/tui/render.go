@@ -40,31 +40,21 @@ func createMarkdownRenderer(width int) *glamour.TermRenderer {
 }
 
 func (m model) renderWelcome() string {
-	gradient := []lipgloss.Color{
-		CurrentTheme.Primary,
-		CurrentTheme.AI,
-		CurrentTheme.Accent,
-	}
+	genStyle := lipgloss.NewStyle().Foreground(CurrentTheme.AI).Bold(true)
+	bracketStyle := lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
+	slashStyle := lipgloss.NewStyle().Foreground(CurrentTheme.Accent).Bold(true)
 
-	logoLines := []string{
-		"   ╋╋╋╋╋   ╋╋╋╋╋   ╋   ╋       ╋╋╋╋╋   ╋╋╋╋╋   ╋╋╋╋    ╋╋╋╋╋",
-		"   ╋       ╋       ╋╋  ╋       ╋       ╋   ╋   ╋   ╋   ╋    ",
-		"   ╋  ╋╋╋  ╋╋╋╋    ╋ ╋ ╋       ╋       ╋   ╋   ╋   ╋   ╋╋╋╋ ",
-		"   ╋    ╋  ╋       ╋  ╋╋       ╋       ╋   ╋   ╋   ╋   ╋    ",
-		"   ╋╋╋╋╋   ╋╋╋╋╋   ╋   ╋       ╋╋╋╋╋   ╋╋╋╋╋   ╋╋╋╋    ╋╋╋╋╋",
-	}
+	icon := bracketStyle.Render("   ❮ ") +
+		genStyle.Render("GEN") +
+		slashStyle.Render(" ✦ ") +
+		slashStyle.Render("/") +
+		bracketStyle.Render("❯")
 
 	hintStyle := lipgloss.NewStyle().Foreground(CurrentTheme.TextDisabled)
 
 	var sb strings.Builder
 	sb.WriteString("\n")
-
-	for i, line := range logoLines {
-		colorIdx := i % len(gradient)
-		style := lipgloss.NewStyle().Foreground(gradient[colorIdx])
-		sb.WriteString(style.Render(line) + "\n")
-	}
-
+	sb.WriteString(icon + "\n")
 	sb.WriteString("\n")
 	sb.WriteString("   " + hintStyle.Render("Enter to send · Esc to stop · Shift+Tab mode · Ctrl+C exit") + "\n")
 
