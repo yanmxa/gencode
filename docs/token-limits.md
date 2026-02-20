@@ -1,6 +1,6 @@
-# Token Limits System
+# Token Limits
 
-Token limits help track context window usage and prevent exceeding model limits. The system supports both provider-supplied limits (from API) and user-configured limits.
+Token limits help track context window usage and prevent exceeding model limits. GenCode supports both provider-supplied limits (from API) and user-configured limits.
 
 ## Storage
 
@@ -208,3 +208,8 @@ Token Limits for claude-opus-4-5@20251101:
 
 Current usage: 150K tokens (75.0%)
 ```
+
+## See Also
+
+- [Subagent System](subagent-system.md) — Auto-fetch agent for token limits
+- [MCP Servers](mcp-servers.md) — MCP tool responses contribute to token usage

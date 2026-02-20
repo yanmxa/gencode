@@ -269,3 +269,8 @@ internal/tui/
 ```
 
 The `Registry` holds configs (from disk), live clients (in memory), and disabled state (persisted to `.gen/mcp-state.json`). Adding a server writes to disk and updates the in-memory config. Connecting creates a `Client` that establishes a transport, initializes the MCP protocol, and caches the server's tool/resource/prompt schemas. Disabling a server persists across restarts, preventing auto-connect until the user explicitly re-enables it.
+
+## See Also
+
+- [Plugin System](plugin-system.md) — MCP servers can be bundled in plugins
+- [Token Limits](token-limits.md) — Token management for MCP tool responses

@@ -339,7 +339,7 @@ func (m model) renderPendingImages() string {
 func (m model) renderSummaryMessage(msg chatMessage) string {
 	var sb strings.Builder
 
-	icon := aiPromptStyle.Render("◆ ")
+	icon := aiPromptStyle.Render("● ")
 	title := fmt.Sprintf("Compacted %d messages → 1 summary", msg.summaryCount)
 	header := icon + toolCallStyle.Render(title)
 
@@ -372,7 +372,7 @@ func (m model) renderToolResult(msg chatMessage) string {
 
 func (m model) renderAssistantMessage(msg chatMessage, idx int, isLast bool) string {
 	var sb strings.Builder
-	aiIcon := aiPromptStyle.Render("◆ ")
+	aiIcon := aiPromptStyle.Render("● ")
 	aiIndent := "  "
 
 	// Display thinking content (reasoning_content) if available
@@ -439,7 +439,7 @@ func (m model) renderToolCalls(msg chatMessage, msgIdx int) string {
 
 	for _, tc := range msg.toolCalls {
 		if msg.toolCallsExpanded {
-			toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s", tc.Name))
+			toolLine := toolCallStyle.Render(fmt.Sprintf("⚙ %s", tc.Name))
 			sb.WriteString(toolLine + "\n")
 			var params map[string]any
 			if err := json.Unmarshal([]byte(tc.Input), &params); err == nil {
@@ -461,7 +461,7 @@ func (m model) renderToolCalls(msg chatMessage, msgIdx int) string {
 				sb.WriteString(toolCallStyle.Render(toolLine) + "\n")
 			} else {
 				args := extractToolArgs(tc.Input)
-				toolLine := toolCallStyle.Render(fmt.Sprintf("⚡%s(%s)", tc.Name, args))
+				toolLine := toolCallStyle.Render(fmt.Sprintf("⚙ %s(%s)", tc.Name, args))
 				sb.WriteString(toolLine + "\n")
 			}
 		}
@@ -824,7 +824,7 @@ func getToolExecutionDesc(toolName string) string {
 func formatTaskToolCall(input string) string {
 	var params map[string]any
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
-		return "⚡Task(...)"
+		return "⚙ Task(...)"
 	}
 
 	agentType := "Agent"
@@ -850,9 +850,9 @@ func formatTaskToolCall(input string) string {
 	}
 
 	if desc != "" {
-		return fmt.Sprintf("⚡Task(%s: %s)%s", agentType, desc, bgSuffix)
+		return fmt.Sprintf("⚙ Task(%s: %s)%s", agentType, desc, bgSuffix)
 	}
-	return fmt.Sprintf("⚡Task(%s)%s", agentType, bgSuffix)
+	return fmt.Sprintf("⚙ Task(%s)%s", agentType, bgSuffix)
 }
 
 func extractToolArgs(input string) string {

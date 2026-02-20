@@ -1,10 +1,8 @@
-# GenCode Subagent System Documentation
-
-This document describes the Task tool, TaskOutput, TaskStop, and the Subagent system in GenCode.
-
-## Overview
+# Subagent System
 
 The Subagent system allows GenCode to spawn specialized AI agents for complex tasks. Each agent runs in an isolated context with filtered tool access and returns only the final result to the main conversation.
+
+## Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -498,3 +496,10 @@ messages = [                         messages = [
 | `internal/agent/adapter.go` | Tool/Agent package bridge |
 | `internal/task/agent_task.go` | Background task wrapper |
 | `internal/task/manager.go` | Task lifecycle management |
+
+## See Also
+
+- [Context Loading](agent-context-loading.md) — Progressive loading strategy for agents
+- [Skill System](skill-system.md) — Skills vs agents execution model comparison
+- [Task Management](task-management.md) — Task tools used within agent workflows
+- [Plugin System](plugin-system.md) — Custom agents distributed as plugins

@@ -1,8 +1,10 @@
-# Skills & Agents Context Loading Mechanism
+# Context Loading
+
+GenCode's Skills and Agents both use a **Progressive Loading** strategy to minimize startup cost and conserve the context window.
 
 ## Overview
 
-GenCode's Skills and Agents both use a **Progressive Loading** strategy. This design ensures:
+This design ensures:
 
 1. **At startup**: Only load lightweight metadata
 2. **In LLM prompt**: Only inject name + description
@@ -235,3 +237,9 @@ func (s *Skill) GetInstructions() string {
 2. **Memory Savings**: Unused skills/agents don't load Instructions/SystemPrompt
 3. **Token Savings**: Main Loop system prompt only contains brief metadata
 4. **On-Demand Loading**: Only invoked skills/executed agents load full content
+
+## See Also
+
+- [Skill System](skill-system.md) — Skill definition and invocation flow
+- [Subagent System](subagent-system.md) — Agent definition and execution flow
+- [Plugin System](plugin-system.md) — Plugin startup and resource loading

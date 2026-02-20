@@ -1,10 +1,8 @@
-# GenCode Skill System
+# Skill System
 
-This document describes the GenCode skill system architecture, implementation, and usage patterns. The skill system aligns with the [Agent Skills specification](https://agentskills.io) and provides Claude Code compatibility.
+Skills are reusable capabilities that extend GenCode's functionality. They allow users to define custom workflows, scripts, and instructions that the LLM can invoke programmatically. The skill system aligns with the [Agent Skills specification](https://agentskills.io) and provides Claude Code compatibility.
 
 ## Overview
-
-Skills are reusable capabilities that extend GenCode's functionality. They allow users to define custom workflows, scripts, and instructions that the LLM can invoke programmatically.
 
 Key principles:
 - **Progressive loading**: Only load content when needed to conserve context window
@@ -368,6 +366,12 @@ chmod +x scripts/run.sh
 - Supports scripts/references/assets directories
 - Implements progressive loading
 - .skill package format (optional, not implemented)
+
+## See Also
+
+- [Plugin System](plugin-system.md) — Skills can be bundled and distributed as plugins
+- [Context Loading](agent-context-loading.md) — Progressive loading strategy shared with agents
+- [Subagent System](subagent-system.md) — Agent-based execution (isolated loop vs skill injection)
 
 ## References
 

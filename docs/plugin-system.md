@@ -497,3 +497,10 @@ The plugin system uses **non-fatal error handling** throughout:
 - Missing component directories are silently skipped
 - Errors are stored in `Plugin.Errors` and displayed in the TUI detail view
 - Settings file read failures fall back to empty defaults
+
+## See Also
+
+- [Skill System](skill-system.md) — Skills loaded from plugins
+- [Subagent System](subagent-system.md) — Agents loaded from plugins
+- [MCP Servers](mcp-servers.md) — MCP servers bundled in plugins
+- [Context Loading](agent-context-loading.md) — Progressive loading strategy for plugin resources

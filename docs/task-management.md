@@ -1,4 +1,6 @@
-# Task Management System
+# Task Management
+
+The task management system lets the LLM create, track, and coordinate multi-step work items. Tasks flow through `pending → in_progress → completed` with dependency support and real-time TUI rendering.
 
 ## Core Loop
 
@@ -147,3 +149,8 @@ all completed + idle  →  renderTodoList() calls Reset()  →  tasks={}, nextID
 | Functional options | `Update(id, WithStatus(...), WithOwner(...))` — composable, type-safe |
 | Blocked = runtime check | No state machine; `renderTodoTask` evaluates `BlockedBy` on each frame |
 | `parseToolInput("")` → `{}` | LLM sends empty body for `TaskList()`; must not error |
+
+## See Also
+
+- [Subagent System](subagent-system.md) — Task tools used within agent workflows
+- [Context Loading](agent-context-loading.md) — How agent context is constructed
