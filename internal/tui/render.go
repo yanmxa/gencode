@@ -44,11 +44,11 @@ func (m model) renderWelcome() string {
 	bracketStyle := lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
 	slashStyle := lipgloss.NewStyle().Foreground(CurrentTheme.Accent).Bold(true)
 
-	icon := bracketStyle.Render("   ❮ ") +
+	icon := bracketStyle.Render("   < ") +
 		genStyle.Render("GEN") +
 		slashStyle.Render(" ✦ ") +
 		slashStyle.Render("/") +
-		bracketStyle.Render("❯")
+		bracketStyle.Render(">")
 
 	hintStyle := lipgloss.NewStyle().Foreground(CurrentTheme.TextDisabled)
 
