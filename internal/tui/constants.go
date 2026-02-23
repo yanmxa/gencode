@@ -1,3 +1,4 @@
+// Shared constants: default dimensions, timeouts, and limits.
 package tui
 
 import "time"

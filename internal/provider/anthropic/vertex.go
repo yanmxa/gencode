@@ -22,33 +22,48 @@ var VertexMeta = provider.ProviderMeta{
 // vertexModels is the static list of Claude models available on Vertex AI.
 //
 // Source: https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude
-// Last updated: 2025-02-07
+//         https://platform.claude.com/docs/en/docs/about-claude/models
+// Last updated: 2026-02-23
 //
 // Note: Vertex AI does not provide a Models API, so we use a static list.
 // TODO: Switch to dynamic fetching once upstream issue is resolved:
 //       https://github.com/anthropics/anthropic-sdk-go/issues/270
-// TODO: Update model list from:
-//       https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude
 var vertexModels = []provider.ModelInfo{
+	// Current generation
 	{
 		ID:               "claude-opus-4-6",
 		Name:             "Claude Opus 4.6",
 		DisplayName:      "Claude Opus 4.6 (Most Intelligent)",
-		InputTokenLimit:  1000000,
+		InputTokenLimit:  1000000, // 1M (preview)
 		OutputTokenLimit: 128000,
+	},
+	{
+		ID:               "claude-sonnet-4-6",
+		Name:             "Claude Sonnet 4.6",
+		DisplayName:      "Claude Sonnet 4.6 (Speed & Intelligence)",
+		InputTokenLimit:  1000000, // 1M (preview)
+		OutputTokenLimit: 128000,
+	},
+	{
+		ID:               "claude-haiku-4-5",
+		Name:             "Claude Haiku 4.5",
+		DisplayName:      "Claude Haiku 4.5 (Fast)",
+		InputTokenLimit:  200000,
+		OutputTokenLimit: 64000,
+	},
+	// Legacy models
+	{
+		ID:               "claude-sonnet-4-5",
+		Name:             "Claude Sonnet 4.5",
+		DisplayName:      "Claude Sonnet 4.5",
+		InputTokenLimit:  200000, // 1M (preview)
+		OutputTokenLimit: 64000,
 	},
 	{
 		ID:               "claude-opus-4-5",
 		Name:             "Claude Opus 4.5",
-		DisplayName:      "Claude Opus 4.5 (Most Capable)",
+		DisplayName:      "Claude Opus 4.5",
 		InputTokenLimit:  200000,
-		OutputTokenLimit: 64000,
-	},
-	{
-		ID:               "claude-sonnet-4-5",
-		Name:             "Claude Sonnet 4.5",
-		DisplayName:      "Claude Sonnet 4.5 (Balanced)",
-		InputTokenLimit:  1000000,
 		OutputTokenLimit: 64000,
 	},
 	{
@@ -59,10 +74,10 @@ var vertexModels = []provider.ModelInfo{
 		OutputTokenLimit: 32000,
 	},
 	{
-		ID:               "claude-haiku-4-5",
-		Name:             "Claude Haiku 4.5",
-		DisplayName:      "Claude Haiku 4.5 (Fast)",
-		InputTokenLimit:  200000,
+		ID:               "claude-sonnet-4",
+		Name:             "Claude Sonnet 4",
+		DisplayName:      "Claude Sonnet 4",
+		InputTokenLimit:  200000, // 1M (preview)
 		OutputTokenLimit: 64000,
 	},
 	{
@@ -71,27 +86,6 @@ var vertexModels = []provider.ModelInfo{
 		DisplayName:      "Claude Opus 4",
 		InputTokenLimit:  200000,
 		OutputTokenLimit: 32000,
-	},
-	{
-		ID:               "claude-sonnet-4",
-		Name:             "Claude Sonnet 4",
-		DisplayName:      "Claude Sonnet 4",
-		InputTokenLimit:  1000000,
-		OutputTokenLimit: 64000,
-	},
-	{
-		ID:               "claude-3-5-haiku",
-		Name:             "Claude 3.5 Haiku",
-		DisplayName:      "Claude 3.5 Haiku",
-		InputTokenLimit:  200000,
-		OutputTokenLimit: 8192,
-	},
-	{
-		ID:               "claude-3-haiku",
-		Name:             "Claude 3 Haiku",
-		DisplayName:      "Claude 3 Haiku",
-		InputTokenLimit:  200000,
-		OutputTokenLimit: 8000,
 	},
 }
 

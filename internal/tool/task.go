@@ -3,6 +3,7 @@ package tool
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/yanmxa/gencode/internal/tool/permission"
@@ -47,12 +48,14 @@ type AgentExecRequest struct {
 
 // AgentExecResult contains the result of agent execution
 type AgentExecResult struct {
-	AgentName  string
-	Success    bool
-	Content    string
-	TurnCount  int
+	AgentName   string
+	Success     bool
+	Content     string
+	TurnCount   int
+	ToolUses    int
 	TotalTokens int
-	Error      string
+	Duration    time.Duration
+	Error       string
 }
 
 // AgentTaskInfo contains info about a background agent task
@@ -265,16 +268,26 @@ func (t *TaskTool) execute(ctx context.Context, params map[string]any, cwd strin
 		}
 	}
 
-	// Format output
-	output := result.Content
-	if output == "" {
-		output = fmt.Sprintf("Agent completed successfully.\nTurns: %d\nTokens: %d",
-			result.TurnCount, result.TotalTokens)
+	// Format output with structured metadata for TUI rendering
+	agentName := result.AgentName
+	if agentName == "" {
+		agentName = agentType
+	}
+	agentDuration := result.Duration
+	if agentDuration == 0 {
+		agentDuration = duration
+	}
+	var outputBuilder strings.Builder
+	fmt.Fprintf(&outputBuilder, "Agent: %s\nTurns: %d\nToolUses: %d\nTokens: %d\nDuration: %s\n",
+		agentName, result.TurnCount, result.ToolUses, result.TotalTokens, formatDuration(agentDuration))
+	if result.Content != "" {
+		outputBuilder.WriteString("\n")
+		outputBuilder.WriteString(result.Content)
 	}
 
 	return ui.ToolResult{
 		Success: true,
-		Output:  output,
+		Output:  outputBuilder.String(),
 		Metadata: ui.ResultMetadata{
 			Title:    t.Name(),
 			Icon:     t.Icon(),
@@ -282,6 +295,19 @@ func (t *TaskTool) execute(ctx context.Context, params map[string]any, cwd strin
 			Duration: duration,
 		},
 	}
+}
+
+// formatDuration formats a duration as human-readable string (e.g., "2m 30s", "45s")
+func formatDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	minutes := int(d.Minutes())
+	seconds := int(d.Seconds()) % 60
+	if minutes > 0 {
+		return fmt.Sprintf("%dm %ds", minutes, seconds)
+	}
+	return fmt.Sprintf("%ds", seconds)
 }
 
 func init() {

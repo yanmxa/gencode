@@ -162,6 +162,9 @@ type AgentResult struct {
 	// TurnCount is the number of turns used
 	TurnCount int
 
+	// ToolUses is the number of tool calls executed
+	ToolUses int
+
 	// TokenUsage is the total tokens consumed
 	TokenUsage client.TokenUsage
 

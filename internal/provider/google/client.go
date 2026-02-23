@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	stdlog "log"
 	"os"
 	"sort"
 	"strings"
@@ -307,10 +309,15 @@ func NewAPIKeyClient(ctx context.Context) (provider.LLMProvider, error) {
 		apiKey = os.Getenv("GEMINI_API_KEY")
 	}
 
+	// The Google GenAI SDK warns via log.Printf when both GOOGLE_API_KEY and
+	// GEMINI_API_KEY are set. Suppress it to prevent leaking into the TUI.
+	w := stdlog.Writer()
+	stdlog.SetOutput(io.Discard)
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  apiKey,
 		Backend: genai.BackendGeminiAPI,
 	})
+	stdlog.SetOutput(w)
 	if err != nil {
 		return nil, err
 	}

@@ -36,6 +36,7 @@ type Result struct {
 	Content    string
 	Messages   []message.Message
 	Turns      int
+	ToolUses   int
 	Tokens     client.TokenUsage
 	StopReason string // "end_turn", "max_turns", "cancelled"
 }
@@ -68,10 +69,13 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 		maxTurns = defaultMaxTurns
 	}
 
+	toolUses := 0
 	for turn := 0; turn < maxTurns; turn++ {
 		select {
 		case <-ctx.Done():
-			return l.buildResult("cancelled", turn), ctx.Err()
+			r := l.buildResult("cancelled", turn)
+			r.ToolUses = toolUses
+			return r, ctx.Err()
 		default:
 		}
 
@@ -91,6 +95,7 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 		if len(calls) == 0 {
 			r := l.buildResult("end_turn", turn+1)
 			r.Content = resp.Content
+			r.ToolUses = toolUses
 			return r, nil
 		}
 
@@ -104,7 +109,9 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 		for _, tc := range allowed {
 			select {
 			case <-ctx.Done():
-				return l.buildResult("cancelled", turn+1), ctx.Err()
+				r := l.buildResult("cancelled", turn+1)
+				r.ToolUses = toolUses
+				return r, ctx.Err()
 			default:
 			}
 
@@ -114,13 +121,16 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 
 			result := l.ExecTool(ctx, tc)
 			l.AddToolResult(*result)
+			toolUses++
 			if opts.OnToolDone != nil {
 				opts.OnToolDone(tc, *result)
 			}
 		}
 	}
 
-	return l.buildResult("max_turns", maxTurns), nil
+	r := l.buildResult("max_turns", maxTurns)
+	r.ToolUses = toolUses
+	return r, nil
 }
 
 func (l *Loop) buildResult(reason string, turns int) *Result {

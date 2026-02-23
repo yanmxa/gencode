@@ -362,10 +362,6 @@ Usage notes:
 				"description": "Override model: sonnet, opus, haiku. If not specified, inherits from parent conversation.",
 				"enum":        []string{"sonnet", "opus", "haiku"},
 			},
-			"max_turns": map[string]any{
-				"type":        "integer",
-				"description": "Maximum number of conversation turns before stopping",
-			},
 		},
 		"required": []string{"subagent_type", "prompt"},
 	},
@@ -434,7 +430,7 @@ var ExitPlanModeSchema = provider.Tool{
 		"properties": map[string]any{
 			"plan": map[string]any{
 				"type":        "string",
-				"description": "The complete implementation plan in Markdown format. Should include: Summary, Analysis, Implementation Steps, Testing Strategy, and Risks.",
+				"description": "The complete implementation plan in Markdown format. Should include: Context, Implementation Steps (with file paths and line references), Critical Files, and Verification.",
 			},
 		},
 		"required": []string{"plan"},
@@ -556,8 +552,48 @@ func GetToolSchemasFiltered(disabled map[string]bool) []provider.Tool {
 	return filtered
 }
 
+// PlanModeTaskSchema is a Task tool schema for plan mode.
+// It omits run_in_background and resume (foreground-only, no resume needed),
+// and restricts agent types to Explore and Plan.
+var PlanModeTaskSchema = provider.Tool{
+	Name: "Task",
+	Description: `Launch a subagent to explore the codebase or design an implementation plan.
+
+Available agent types in plan mode:
+- Explore: Fast codebase exploration. Use to find files, search code, and answer questions. (Tools: Read, Glob, Grep, WebFetch, WebSearch)
+- Plan: Software architect for designing implementation plans. Returns step-by-step plans, identifies critical files, and considers trade-offs. (Tools: Read, Glob, Grep, WebFetch, WebSearch)
+
+Usage notes:
+- Launch multiple agents by making multiple Task calls in a single message
+- Always include a short description (3-5 words) summarizing what the agent will do
+- Provide each agent with specific questions, not just "explore X"`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"subagent_type": map[string]any{
+				"type":        "string",
+				"description": "The type of agent to spawn: Explore or Plan",
+			},
+			"prompt": map[string]any{
+				"type":        "string",
+				"description": "The task for the agent to perform",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "A short (3-5 word) description of the task",
+			},
+			"model": map[string]any{
+				"type":        "string",
+				"description": "Override model: sonnet, opus, haiku. If not specified, inherits from parent.",
+				"enum":        []string{"sonnet", "opus", "haiku"},
+			},
+		},
+		"required": []string{"subagent_type", "prompt"},
+	},
+}
+
 // GetPlanModeToolSchemas returns only the tools available in plan mode
-// Plan mode restricts to read-only tools plus ExitPlanMode
+// Plan mode restricts to read-only tools, the plan-specific Task tool, plus ExitPlanMode
 func GetPlanModeToolSchemas() []provider.Tool {
 	// Read-only tools allowed in plan mode
 	allowedTools := map[string]bool{
@@ -568,15 +604,18 @@ func GetPlanModeToolSchemas() []provider.Tool {
 		"WebSearch": true,
 	}
 
-	// Filter to allowed tools
+	// Filter to allowed read-only tools
 	allTools := GetToolSchemas()
-	tools := make([]provider.Tool, 0, len(allowedTools)+1)
+	tools := make([]provider.Tool, 0, len(allowedTools)+2)
 
 	for _, t := range allTools {
 		if allowedTools[t.Name] {
 			tools = append(tools, t)
 		}
 	}
+
+	// Add plan-mode Task schema (no run_in_background, restricted agent types)
+	tools = append(tools, PlanModeTaskSchema)
 
 	// Add ExitPlanMode
 	tools = append(tools, ExitPlanModeSchema)

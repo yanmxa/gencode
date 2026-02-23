@@ -1,3 +1,5 @@
+// Message rendering: converts chatMessage structs to styled terminal output
+// (welcome, user, assistant, tool calls, tool results, summaries, spinners, status bar).
 package tui
 
 import (
@@ -12,6 +14,10 @@ import (
 	"github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tui/theme"
 )
 
 func createMarkdownRenderer(width int) *glamour.TermRenderer {
@@ -40,9 +46,9 @@ func createMarkdownRenderer(width int) *glamour.TermRenderer {
 }
 
 func (m model) renderWelcome() string {
-	genStyle := lipgloss.NewStyle().Foreground(CurrentTheme.AI).Bold(true)
-	bracketStyle := lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
-	slashStyle := lipgloss.NewStyle().Foreground(CurrentTheme.Accent).Bold(true)
+	genStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.AI).Bold(true)
+	bracketStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
+	slashStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Accent).Bold(true)
 
 	icon := bracketStyle.Render("   < ") +
 		genStyle.Render("GEN") +
@@ -50,7 +56,7 @@ func (m model) renderWelcome() string {
 		slashStyle.Render("/") +
 		bracketStyle.Render(">")
 
-	hintStyle := lipgloss.NewStyle().Foreground(CurrentTheme.TextDisabled)
+	hintStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDisabled)
 
 	var sb strings.Builder
 	sb.WriteString("\n")
@@ -64,31 +70,11 @@ func (m model) renderWelcome() string {
 func (m model) renderModeStatus() string {
 	var parts []string
 
-	// Mode status
-	var icon, label string
-	var color lipgloss.Color
-
-	switch m.operationMode {
-	case modeAutoAccept:
-		icon = "⏵⏵"
-		label = " accept edits on"
-		color = CurrentTheme.Success
-	case modePlan:
-		icon = "⏸"
-		label = " plan mode on"
-		color = CurrentTheme.Warning
+	if modeStatus := m.renderOperationModeIndicator(); modeStatus != "" {
+		parts = append(parts, modeStatus)
 	}
 
-	if icon != "" {
-		styledIcon := lipgloss.NewStyle().Foreground(color).Render(icon)
-		styledLabel := lipgloss.NewStyle().Foreground(color).Render(label)
-		hint := lipgloss.NewStyle().Foreground(CurrentTheme.Muted).Render("  shift+tab to toggle")
-		parts = append(parts, "  "+styledIcon+styledLabel+hint)
-	}
-
-	// Token usage indicator (show when >= 80% of limit)
-	tokenUsage := m.renderTokenUsage()
-	if tokenUsage != "" {
+	if tokenUsage := m.renderTokenUsage(); tokenUsage != "" {
 		parts = append(parts, tokenUsage)
 	}
 
@@ -99,11 +85,34 @@ func (m model) renderModeStatus() string {
 	return strings.Join(parts, "  ")
 }
 
+// renderOperationModeIndicator returns the mode status indicator for auto-accept or plan mode.
+func (m model) renderOperationModeIndicator() string {
+	var icon, label string
+	var color lipgloss.Color
+
+	switch m.operationMode {
+	case modeAutoAccept:
+		icon = "⏵⏵"
+		label = " accept edits on"
+		color = theme.CurrentTheme.Success
+	case modePlan:
+		icon = "⏸"
+		label = " plan mode on"
+		color = theme.CurrentTheme.Warning
+	default:
+		return ""
+	}
+
+	style := lipgloss.NewStyle().Foreground(color)
+	hint := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted).Render("  shift+tab to toggle")
+	return "  " + style.Render(icon+label) + hint
+}
+
 // Auto-compact threshold (percentage of context usage)
 const autoCompactThreshold = 95
 
-// renderTokenUsage returns token usage indicator
-// Shows context usage with color coding and auto-compact warnings
+// renderTokenUsage returns token usage indicator.
+// Shows context usage with color coding and auto-compact warnings.
 func (m model) renderTokenUsage() string {
 	inputLimit := m.getEffectiveInputLimit()
 	if inputLimit == 0 || m.lastInputTokens == 0 {
@@ -112,40 +121,37 @@ func (m model) renderTokenUsage() string {
 
 	percent := float64(m.lastInputTokens) / float64(inputLimit) * 100
 
-	// Always show when >= 50% for awareness
+	// Only show when >= 50% for awareness
 	if percent < 50 {
 		return ""
 	}
 
+	color, hint := m.tokenUsageColorAndHint(percent)
+	style := lipgloss.NewStyle().Foreground(color)
+
 	used := formatTokenCount(m.lastInputTokens)
 	limit := formatTokenCount(inputLimit)
-
-	// Color based on usage level
-	var color lipgloss.Color
-	var hint string
-
-	switch {
-	case percent >= autoCompactThreshold:
-		color = CurrentTheme.Error // Critical - will auto-compact
-		hint = " ⚠ auto-compact"
-	case percent >= 85:
-		color = CurrentTheme.Warning // Warning - approaching limit
-		hint = fmt.Sprintf(" (compact at %d%%)", autoCompactThreshold)
-	case percent >= 70:
-		color = CurrentTheme.Accent // Getting high
-	default:
-		color = CurrentTheme.Muted // Normal
-	}
-
-	style := lipgloss.NewStyle().Foreground(color)
 	indicator := style.Render(fmt.Sprintf("⚡ %s/%s (%.0f%%)", used, limit, percent))
 
 	if hint != "" {
-		// Use same color for hint as the main indicator
-		indicator += lipgloss.NewStyle().Foreground(color).Render(hint)
+		indicator += style.Render(hint)
 	}
 
 	return indicator
+}
+
+// tokenUsageColorAndHint returns the color and hint text for token usage percentage.
+func (m model) tokenUsageColorAndHint(percent float64) (lipgloss.Color, string) {
+	switch {
+	case percent >= autoCompactThreshold:
+		return theme.CurrentTheme.Error, " ⚠ auto-compact"
+	case percent >= 85:
+		return theme.CurrentTheme.Warning, fmt.Sprintf(" (compact at %d%%)", autoCompactThreshold)
+	case percent >= 70:
+		return theme.CurrentTheme.Accent, ""
+	default:
+		return theme.CurrentTheme.Muted, ""
+	}
 }
 
 // buildSkipIndices returns a set of message indices that should be skipped during rendering.
@@ -175,6 +181,31 @@ func (m model) renderMessages() string {
 		return m.renderWelcome()
 	}
 	return m.renderMessageRange(0, len(m.messages), true)
+}
+
+// renderPlanForScrollback renders the plan title + markdown content as a styled
+// string for pushing into terminal scrollback via tea.Println.
+func (m model) renderPlanForScrollback(req *tool.PlanRequest) string {
+	if req == nil {
+		return ""
+	}
+
+	var sb strings.Builder
+
+	titleStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
+	sb.WriteString("\n ")
+	sb.WriteString(titleStyle.Render("📋 Implementation Plan"))
+	sb.WriteString("\n")
+
+	content := req.Plan
+	if m.mdRenderer != nil {
+		if rendered, err := m.mdRenderer.Render(content); err == nil {
+			content = strings.TrimSpace(rendered)
+		}
+	}
+	sb.WriteString(content)
+
+	return sb.String()
 }
 
 // renderSingleMessage renders one message at the given index for committing to scrollback.
@@ -383,33 +414,10 @@ func (m model) renderAssistantMessage(msg chatMessage, idx int, isLast bool) str
 		sb.WriteString(thinkingIcon + thinkingContent + "\n\n")
 	}
 
-	if msg.content == "" && len(msg.toolCalls) == 0 && m.streaming {
-		// Show spinner when waiting for response, but only if no thinking content yet
-		if msg.thinking == "" {
-			content := thinkingStyle.Render(m.spinner.View() + " Thinking...")
-			sb.WriteString(aiIcon + content + "\n")
-		}
-	} else if m.streaming && isLast && len(msg.toolCalls) == 0 {
-		content := assistantMsgStyle.Render(msg.content + "▌")
+	// Render content based on streaming state
+	content := m.formatAssistantContent(msg, isLast)
+	if content != "" {
 		content = strings.ReplaceAll(content, "\n", "\n"+aiIndent)
-		sb.WriteString(aiIcon + content + "\n")
-	} else if m.mdRenderer != nil && msg.content != "" {
-		rendered, err := m.mdRenderer.Render(msg.content)
-		var content string
-		if err == nil {
-			content = strings.TrimLeft(rendered, " \t\n")
-			content = strings.TrimRight(content, " \t\n")
-			// Glamour renders "blank" lines filled with ANSI escape codes (e.g. colored spaces).
-			// Match lines containing only ANSI codes and/or whitespace, then collapse.
-			blankLines := regexp.MustCompile(`\n((?:\x1b\[[0-9;]*[a-zA-Z]|[ \t])*\n)+`)
-			content = blankLines.ReplaceAllString(content, "\n")
-		} else {
-			content = msg.content
-		}
-		content = strings.ReplaceAll(content, "\n", "\n"+aiIndent)
-		sb.WriteString(aiIcon + content + "\n")
-	} else if msg.content != "" {
-		content := strings.ReplaceAll(msg.content, "\n", "\n"+aiIndent)
 		sb.WriteString(aiIcon + content + "\n")
 	}
 
@@ -418,6 +426,47 @@ func (m model) renderAssistantMessage(msg chatMessage, idx int, isLast bool) str
 	}
 
 	return sb.String()
+}
+
+// formatAssistantContent formats the assistant message content based on streaming state.
+func (m model) formatAssistantContent(msg chatMessage, isLast bool) string {
+	// Waiting for response with no content yet
+	if msg.content == "" && len(msg.toolCalls) == 0 && m.streaming && msg.thinking == "" {
+		return thinkingStyle.Render(m.spinner.View() + " Thinking...")
+	}
+
+	// Streaming in progress - show cursor
+	if m.streaming && isLast && len(msg.toolCalls) == 0 {
+		return assistantMsgStyle.Render(msg.content + "▌")
+	}
+
+	// No content to render
+	if msg.content == "" {
+		return ""
+	}
+
+	// Render markdown if available
+	if m.mdRenderer != nil {
+		return m.renderMarkdownContent(msg.content)
+	}
+
+	return msg.content
+}
+
+// renderMarkdownContent renders content through the markdown renderer.
+func (m model) renderMarkdownContent(content string) string {
+	rendered, err := m.mdRenderer.Render(content)
+	if err != nil {
+		return content
+	}
+
+	result := strings.TrimLeft(rendered, " \t\n")
+	result = strings.TrimRight(result, " \t\n")
+
+	// Glamour renders "blank" lines filled with ANSI escape codes (e.g. colored spaces).
+	// Match lines containing only ANSI codes and/or whitespace, then collapse.
+	blankLines := regexp.MustCompile(`\n((?:\x1b\[[0-9;]*[a-zA-Z]|[ \t])*\n)+`)
+	return blankLines.ReplaceAllString(result, "\n")
 }
 
 func (m model) renderToolCalls(msg chatMessage, msgIdx int) string {
@@ -469,6 +518,9 @@ func (m model) renderToolCalls(msg chatMessage, msgIdx int) string {
 		// Render the corresponding result inline if found
 		if resultMsg, ok := resultMap[tc.ID]; ok {
 			sb.WriteString(m.renderToolResultInline(resultMsg))
+		} else if m.parallelMode && tc.Name == "Task" {
+			// Parallel mode: show live progress inline under each Task
+			sb.WriteString(m.renderTaskProgressInline(tc))
 		}
 	}
 
@@ -599,12 +651,27 @@ func (m model) renderTaskResultInline(msg chatMessage) string {
 		sb.WriteString(toolResultExpandedStyle.Render(fmt.Sprintf("     Task ID: %s", taskID)) + "\n")
 		sb.WriteString(toolResultExpandedStyle.Render(fmt.Sprintf("     Check:   TaskOutput(\"%s\")", taskID)) + "\n")
 	} else {
-		turns := extractIntField(content, "Turns: ")
-		if turns > 0 {
-			sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  %s → Done (%d turns)", icon, agentName, turns)) + "\n")
-		} else {
-			sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  %s → Done", icon, agentName)) + "\n")
+		// Build stats summary: (N tool uses · XYk tokens · Nm Ns)
+		toolUses := extractIntField(content, "ToolUses: ")
+		tokens := extractIntField(content, "Tokens: ")
+		duration := extractField(content, "Duration: ", "")
+
+		var stats []string
+		if toolUses > 0 {
+			stats = append(stats, fmt.Sprintf("%d tool uses", toolUses))
 		}
+		if tokens > 0 {
+			stats = append(stats, formatTokenCount(tokens)+" tokens")
+		}
+		if duration != "" {
+			stats = append(stats, duration)
+		}
+
+		agentLine := fmt.Sprintf("  %s  %s → Done", icon, agentName)
+		if len(stats) > 0 {
+			agentLine += " (" + strings.Join(stats, " · ") + ")"
+		}
+		sb.WriteString(toolResultStyle.Render(agentLine) + "\n")
 	}
 
 	if msg.expanded {
@@ -761,6 +828,11 @@ func (m model) renderPendingToolSpinner() string {
 		return ""
 	}
 
+	// Parallel mode with Task tools: progress rendered inline by renderToolCalls
+	if m.parallelMode && m.hasParallelTaskTools() {
+		return ""
+	}
+
 	// Determine which tool is active
 	var toolName string
 	if m.buildingToolName != "" {
@@ -773,14 +845,15 @@ func (m model) renderPendingToolSpinner() string {
 
 	var sb strings.Builder
 
-	// Task tool has special rendering with progress
+	// Task tool has special rendering with per-agent progress
 	if toolName == "Task" {
+		progress := m.taskProgress[m.pendingToolIdx]
 		status := "Agent starting..."
-		if len(m.taskProgress) > 0 {
+		if len(progress) > 0 {
 			status = "Agent running..."
 		}
 		sb.WriteString(thinkingStyle.Render(fmt.Sprintf("  %s %s", m.spinner.View(), status)) + "\n")
-		for _, p := range m.taskProgress {
+		for _, p := range progress {
 			sb.WriteString(toolResultExpandedStyle.Render(fmt.Sprintf("     %s", p)) + "\n")
 		}
 		return sb.String()
@@ -790,6 +863,57 @@ func (m model) renderPendingToolSpinner() string {
 	sb.WriteString(thinkingStyle.Render(fmt.Sprintf("  %s %s", m.spinner.View(), getToolExecutionDesc(toolName))) + "\n")
 	return sb.String()
 }
+
+// hasParallelTaskTools returns true if any pending tool call is a Task tool
+func (m model) hasParallelTaskTools() bool {
+	for _, tc := range m.pendingToolCalls {
+		if tc.Name == "Task" {
+			return true
+		}
+	}
+	return false
+}
+
+// renderTaskProgressInline renders live progress for a parallel Task tool call
+// directly under its ⚙ Task(...) line. Shows spinner+progress while running,
+// or ✓ Done when completed (before results are committed to messages).
+func (m model) renderTaskProgressInline(tc message.ToolCall) string {
+	idx, ok := m.findPendingToolIndex(tc.ID)
+	if !ok {
+		return ""
+	}
+
+	var sb strings.Builder
+
+	// Check if completed in parallel results (not yet committed to messages)
+	if _, done := m.parallelResults[idx]; done {
+		sb.WriteString(toolResultStyle.Render("  ✓ Done") + "\n")
+		return sb.String()
+	}
+
+	// Show spinner and progress lines
+	progress := m.taskProgress[idx]
+	status := "starting..."
+	if len(progress) > 0 {
+		status = "running..."
+	}
+	sb.WriteString(thinkingStyle.Render(fmt.Sprintf("  %s %s", m.spinner.View(), status)) + "\n")
+	for _, p := range progress {
+		sb.WriteString(toolResultExpandedStyle.Render(fmt.Sprintf("     %s", p)) + "\n")
+	}
+	return sb.String()
+}
+
+// findPendingToolIndex finds a tool call's index in pendingToolCalls by ID
+func (m model) findPendingToolIndex(toolCallID string) (int, bool) {
+	for i, tc := range m.pendingToolCalls {
+		if tc.ID == toolCallID {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
 
 func getToolExecutionDesc(toolName string) string {
 	switch toolName {

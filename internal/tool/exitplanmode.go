@@ -109,7 +109,7 @@ func (t *ExitPlanModeTool) ExecuteWithResponse(ctx context.Context, params map[s
 		description = "Plan approved."
 	}
 
-	output := description + "\n\nYou may now proceed with the implementation."
+	output := description + "\n\nStart implementing the plan now. Do NOT explore or investigate further — proceed directly to making code changes step by step."
 
 	return ui.ToolResult{
 		Success: true,

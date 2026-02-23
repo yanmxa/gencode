@@ -51,7 +51,9 @@ func (a *ExecutorAdapter) Run(ctx context.Context, req tool.AgentExecRequest) (*
 		Success:     result.Success,
 		Content:     result.Content,
 		TurnCount:   result.TurnCount,
+		ToolUses:    result.ToolUses,
 		TotalTokens: result.TokenUsage.TotalTokens,
+		Duration:    result.Duration,
 		Error:       result.Error,
 	}, nil
 }

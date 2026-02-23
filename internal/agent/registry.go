@@ -76,7 +76,7 @@ func (r *Registry) registerBuiltins() {
 			Mode:  ToolAccessAllowlist,
 			Allow: []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"},
 		},
-		MaxTurns:   30,
+		MaxTurns:   100,
 		Background: false,
 	}
 
@@ -90,7 +90,7 @@ func (r *Registry) registerBuiltins() {
 			Mode:  ToolAccessAllowlist,
 			Allow: []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"},
 		},
-		MaxTurns:   50,
+		MaxTurns:   100,
 		Background: false,
 	}
 
@@ -104,7 +104,7 @@ func (r *Registry) registerBuiltins() {
 			Mode:  ToolAccessAllowlist,
 			Allow: []string{"Bash", "Read", "Glob", "Grep"},
 		},
-		MaxTurns:   30,
+		MaxTurns:   100,
 		Background: false,
 	}
 
@@ -118,7 +118,7 @@ func (r *Registry) registerBuiltins() {
 			Mode:  ToolAccessAllowlist,
 			Allow: []string{"Read", "Glob", "Grep", "Bash"},
 		},
-		MaxTurns:   30,
+		MaxTurns:   100,
 		Background: false,
 	}
 
@@ -132,7 +132,7 @@ func (r *Registry) registerBuiltins() {
 			Mode: ToolAccessDenylist,
 			Deny: []string{"Task"}, // Prevent nested Task spawning
 		},
-		MaxTurns:   50,
+		MaxTurns:   100,
 		Background: false,
 	}
 }
