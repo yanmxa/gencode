@@ -72,7 +72,7 @@ func TestExitPlanMode_ApprovalModes(t *testing.T) {
 			if !strings.Contains(result.Output, tt.wantSubstr) {
 				t.Errorf("mode %s: expected %q in output, got %q", tt.mode, tt.wantSubstr, result.Output)
 			}
-			if !strings.Contains(result.Output, "proceed with the implementation") {
+			if !strings.Contains(result.Output, "Start implementing the plan now") {
 				t.Errorf("mode %s: should tell LLM to proceed", tt.mode)
 			}
 			if result.Metadata.Subtitle != "Approved" {
