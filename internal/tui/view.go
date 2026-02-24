@@ -91,9 +91,11 @@ func (m model) View() string {
 	}
 	view.WriteString("\n")
 	view.WriteString(separator)
+	view.WriteString("\n")
 	if statusLine != "" {
-		view.WriteString("\n")
 		view.WriteString(statusLine)
+	} else {
+		view.WriteString(" ")
 	}
 
 	return view.String()
