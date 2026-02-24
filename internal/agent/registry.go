@@ -69,7 +69,7 @@ func (r *Registry) registerBuiltins() {
 	// Explore agent - read-only codebase exploration
 	r.agents["explore"] = &AgentConfig{
 		Name:           "Explore",
-		Description:    "Fast codebase exploration and understanding. Use for finding files, searching code, and answering questions about the codebase.",
+		Description:    "Fast codebase exploration and understanding. Use for questions that require reading and cross-referencing multiple files. NOT for questions answerable with a single direct tool call (one Bash command, one Grep, one Read) — use those tools directly instead.",
 		Model:          "inherit",
 		PermissionMode: PermissionPlan,
 		Tools: ToolAccess{
