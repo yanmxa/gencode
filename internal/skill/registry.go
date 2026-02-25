@@ -334,6 +334,25 @@ func (r *Registry) GetSkillInvocationPrompt(name string) string {
 	var sb strings.Builder
 	// Use FullName in the XML tag
 	fmt.Fprintf(&sb, "<skill-invocation name=\"%s\">\n", skill.FullName())
+
+	// Include script and reference paths so LLM knows correct locations
+	if skill.SkillDir != "" {
+		if len(skill.Scripts) > 0 {
+			sb.WriteString("Available scripts (use Bash to execute):\n")
+			for _, script := range skill.Scripts {
+				fmt.Fprintf(&sb, "  - %s/scripts/%s\n", skill.SkillDir, script)
+			}
+			sb.WriteString("\n")
+		}
+		if len(skill.References) > 0 {
+			sb.WriteString("Reference files (use Read when needed):\n")
+			for _, ref := range skill.References {
+				fmt.Fprintf(&sb, "  - %s/references/%s\n", skill.SkillDir, ref)
+			}
+			sb.WriteString("\n")
+		}
+	}
+
 	sb.WriteString(instructions)
 	sb.WriteString("\n</skill-invocation>")
 
