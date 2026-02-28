@@ -65,7 +65,7 @@ func (m model) View() string {
 		parts = append(parts, spinnerView)
 	}
 
-	if m.compacting {
+	if m.compact.active {
 		spinnerView := thinkingStyle.Render(m.spinner.View() + " Compacting conversation...")
 		parts = append(parts, spinnerView)
 	}

@@ -296,13 +296,13 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, e
 	if m.streaming {
 		return "Cannot compact while streaming.", nil
 	}
-	m.compacting = true
-	m.compactFocus = strings.TrimSpace(args)
+	m.compact.active = true
+	m.compact.focus = strings.TrimSpace(args)
 	return "", nil
 }
 
 func startCompact(m *model) tea.Cmd {
-	focus := m.compactFocus
+	focus := m.compact.focus
 	return func() tea.Msg {
 		ctx := context.Background()
 		summary, count, err := compactConversation(ctx, m, focus)
@@ -330,8 +330,8 @@ func (m *model) shouldAutoCompact() bool {
 }
 
 func (m *model) triggerAutoCompact() tea.Cmd {
-	m.compacting = true
-	m.compactFocus = ""
+	m.compact.active = true
+	m.compact.focus = ""
 	m.messages = append(m.messages, chatMessage{
 		role:    roleNotice,
 		content: fmt.Sprintf("⚡ Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()),

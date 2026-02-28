@@ -174,7 +174,7 @@ func (m *model) handleStreamDone(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 		commitCmds := m.commitMessages()
 
 		if m.shouldAutoCompact() {
-			m.autoCompactNext = true // Auto-continue after compaction
+			m.compact.autoContinue = true // Auto-continue after compaction
 			commitCmds = append(commitCmds, m.triggerAutoCompact())
 			return m, tea.Batch(commitCmds...)
 		}
@@ -210,7 +210,7 @@ func (m *model) handleStreamError(err error) (tea.Model, tea.Cmd) {
 		m.streaming = false
 		m.streamChan = nil
 		m.cancelFunc = nil
-		m.autoCompactNext = true // Auto-continue after compaction
+		m.compact.autoContinue = true // Auto-continue after compaction
 		return m, m.triggerAutoCompact()
 	}
 

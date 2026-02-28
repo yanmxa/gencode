@@ -75,6 +75,18 @@ type (
 	}
 )
 
+type compactState struct {
+	active       bool
+	focus        string
+	autoContinue bool
+}
+
+func (c *compactState) Reset() {
+	c.active = false
+	c.focus = ""
+	c.autoContinue = false
+}
+
 type toolExecState struct {
 	pendingCalls    []message.ToolCall
 	currentIdx      int
@@ -156,9 +168,7 @@ type model struct {
 
 	fetchingTokenLimits bool
 
-	compacting      bool
-	compactFocus    string
-	autoCompactNext bool
+	compact compactState
 
 	sessionStore           *session.Store
 	currentSessionID       string

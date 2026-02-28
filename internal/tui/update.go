@@ -223,7 +223,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.suggestions.UpdateSuggestions(m.textarea.Value())
 	}
 
-	if m.streaming || m.fetchingTokenLimits || m.compacting {
+	if m.streaming || m.fetchingTokenLimits || m.compact.active {
 		m.spinner, cmd = m.spinner.Update(msg)
 		cmds = append(cmds, cmd)
 	}

@@ -7,8 +7,8 @@ import (
 )
 
 func (m *model) handleCompactResult(msg CompactResultMsg) (tea.Model, tea.Cmd) {
-	shouldContinue := m.autoCompactNext
-	m.resetCompactState()
+	shouldContinue := m.compact.autoContinue
+	m.compact.Reset()
 
 	if msg.Error != nil {
 		m.addNotice(fmt.Sprintf("Compact failed: %v", msg.Error))
@@ -30,12 +30,6 @@ func (m *model) handleCompactResult(msg CompactResultMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// resetCompactState clears compaction-related state.
-func (m *model) resetCompactState() {
-	m.compacting = false
-	m.compactFocus = ""
-	m.autoCompactNext = false
-}
 
 // replaceWithSummary replaces all messages with a single summary message.
 func (m *model) replaceWithSummary(summary string, originalCount int) {

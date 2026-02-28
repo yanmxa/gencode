@@ -422,7 +422,7 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		}
 
 		// Check if async compact was started
-		if m.compacting {
+		if m.compact.active {
 			return m, tea.Batch(m.spinner.Tick, startCompact(m))
 		}
 
