@@ -291,10 +291,10 @@ func (m *model) handleStreamCancel() (tea.Model, tea.Cmd) {
 func (m *model) cancelPendingToolCalls() {
 	var toolCalls []message.ToolCall
 
-	if m.pendingToolCalls != nil {
-		toolCalls = m.pendingToolCalls[m.pendingToolIdx:]
-		m.pendingToolCalls = nil
-		m.pendingToolIdx = 0
+	if m.toolExec.pendingCalls != nil {
+		toolCalls = m.toolExec.pendingCalls[m.toolExec.currentIdx:]
+		m.toolExec.pendingCalls = nil
+		m.toolExec.currentIdx = 0
 	} else if len(m.messages) > 0 {
 		lastMsg := m.messages[len(m.messages)-1]
 		if lastMsg.role == roleAssistant {

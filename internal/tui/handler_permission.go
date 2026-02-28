@@ -21,7 +21,7 @@ func (m *model) handlePermissionRequest(msg PermissionRequestMsg) (tea.Model, te
 }
 
 func (m *model) abortToolWithError(errorMsg string) (tea.Model, tea.Cmd) {
-	tc := m.pendingToolCalls[m.pendingToolIdx]
+	tc := m.toolExec.pendingCalls[m.toolExec.currentIdx]
 	m.messages = append(m.messages, chatMessage{
 		role:     roleUser,
 		toolName: tc.Name,
@@ -31,8 +31,8 @@ func (m *model) abortToolWithError(errorMsg string) (tea.Model, tea.Cmd) {
 			IsError:    true,
 		},
 	})
-	m.pendingToolCalls = nil
-	m.pendingToolIdx = 0
+	m.toolExec.pendingCalls = nil
+	m.toolExec.currentIdx = 0
 	m.streaming = false
 	return m, tea.Batch(m.commitMessages()...)
 }
@@ -69,12 +69,12 @@ func (m *model) handlePermissionResponse(msg PermissionResponseMsg) (tea.Model, 
 	if msg.Request != nil && msg.Request.ToolName == "Task" {
 		m.taskProgress = nil
 		return m, tea.Batch(
-			ExecuteApproved(m.pendingToolCalls, m.pendingToolIdx, m.cwd),
+			ExecuteApproved(m.toolExec.pendingCalls, m.toolExec.currentIdx, m.cwd),
 			progress.Check(),
 		)
 	}
 
-	return m, ExecuteApproved(m.pendingToolCalls, m.pendingToolIdx, m.cwd)
+	return m, ExecuteApproved(m.toolExec.pendingCalls, m.toolExec.currentIdx, m.cwd)
 }
 
 func (m *model) applyAllowAllPermission(toolName string) {

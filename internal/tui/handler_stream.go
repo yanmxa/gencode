@@ -14,7 +14,7 @@ import (
 
 func (m *model) handleToolResult(msg ResultMsg) (tea.Model, tea.Cmd) {
 	// Check if we're in parallel mode
-	if m.parallelMode {
+	if m.toolExec.parallel {
 		return m.handleParallelToolResult(msg)
 	}
 
@@ -46,22 +46,22 @@ func (m *model) handleToolResult(msg ResultMsg) (tea.Model, tea.Cmd) {
 		toolResult: &r,
 		toolName:   msg.ToolName,
 	})
-	m.pendingToolIdx++
+	m.toolExec.currentIdx++
 	commitCmds := m.commitMessages()
-	nextTool := ProcessNext(m.pendingToolCalls, m.pendingToolIdx, m.cwd, m.settings, m.sessionPermissions)
+	nextTool := ProcessNext(m.toolExec.pendingCalls, m.toolExec.currentIdx, m.cwd, m.settings, m.sessionPermissions)
 	return m, tea.Batch(append(commitCmds, nextTool)...)
 }
 
 func (m *model) handleParallelToolResult(msg ResultMsg) (tea.Model, tea.Cmd) {
 	// Store result in the parallel results map
-	if m.parallelResults == nil {
-		m.parallelResults = make(map[int]message.ToolResult)
+	if m.toolExec.parallelResults == nil {
+		m.toolExec.parallelResults = make(map[int]message.ToolResult)
 	}
-	m.parallelResults[msg.Index] = msg.Result
-	m.parallelResultCount++
+	m.toolExec.parallelResults[msg.Index] = msg.Result
+	m.toolExec.parallelCount++
 
 	// Check if all results are in
-	if m.parallelResultCount >= len(m.pendingToolCalls) {
+	if m.toolExec.parallelCount >= len(m.toolExec.pendingCalls) {
 		return m.completeParallelExecution()
 	}
 
@@ -70,9 +70,9 @@ func (m *model) handleParallelToolResult(msg ResultMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) completeParallelExecution() (tea.Model, tea.Cmd) {
-	for i := 0; i < len(m.pendingToolCalls); i++ {
-		tc := m.pendingToolCalls[i]
-		if result, ok := m.parallelResults[i]; ok {
+	for i := 0; i < len(m.toolExec.pendingCalls); i++ {
+		tc := m.toolExec.pendingCalls[i]
+		if result, ok := m.toolExec.parallelResults[i]; ok {
 			m.messages = append(m.messages, chatMessage{
 				role:       roleUser,
 				toolResult: &result,
@@ -82,26 +82,26 @@ func (m *model) completeParallelExecution() (tea.Model, tea.Cmd) {
 	}
 
 	m.taskProgress = nil // clear all agent progress
-	m.resetToolState()
+	m.toolExec.Reset()
 	commitCmds := m.commitMessages()
 	commitCmds = append(commitCmds, m.continueWithToolResults())
 	return m, tea.Batch(commitCmds...)
 }
 
 func (m *model) handleStartToolExecution(msg StartMsg) (tea.Model, tea.Cmd) {
-	m.pendingToolCalls = m.filterToolCallsWithHooks(msg.ToolCalls)
-	m.pendingToolIdx = 0
+	m.toolExec.pendingCalls = m.filterToolCallsWithHooks(msg.ToolCalls)
+	m.toolExec.currentIdx = 0
 
-	if len(m.pendingToolCalls) == 0 {
+	if len(m.toolExec.pendingCalls) == 0 {
 		return m, m.continueWithToolResults()
 	}
 
-	cmd := ExecuteParallel(m.pendingToolCalls, m.cwd, m.settings, m.sessionPermissions, m.planMode)
+	cmd := ExecuteParallel(m.toolExec.pendingCalls, m.cwd, m.settings, m.sessionPermissions, m.planMode)
 
-	if len(m.pendingToolCalls) > 1 && m.canRunToolsInParallel(m.pendingToolCalls) {
-		m.parallelMode = true
-		m.parallelResults = make(map[int]message.ToolResult)
-		m.parallelResultCount = 0
+	if len(m.toolExec.pendingCalls) > 1 && m.canRunToolsInParallel(m.toolExec.pendingCalls) {
+		m.toolExec.parallel = true
+		m.toolExec.parallelResults = make(map[int]message.ToolResult)
+		m.toolExec.parallelCount = 0
 	}
 
 	return m, cmd
@@ -118,17 +118,8 @@ func (m *model) canRunToolsInParallel(toolCalls []message.ToolCall) bool {
 }
 
 func (m *model) handleAllToolsCompleted() (tea.Model, tea.Cmd) {
-	m.resetToolState()
+	m.toolExec.Reset()
 	return m, m.continueWithToolResults()
-}
-
-// resetToolState clears all pending/parallel tool execution state.
-func (m *model) resetToolState() {
-	m.pendingToolCalls = nil
-	m.pendingToolIdx = 0
-	m.parallelMode = false
-	m.parallelResults = nil
-	m.parallelResultCount = 0
 }
 
 // filterToolCallsWithHooks runs PreToolUse hooks and filters blocked tools.

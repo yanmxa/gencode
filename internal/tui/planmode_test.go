@@ -17,10 +17,12 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 		planTask:      "test task",
 		planPrompt:     NewPlanPrompt(),
 		questionPrompt: NewQuestionPrompt(),
-		pendingToolCalls: []message.ToolCall{
-			{ID: "tc-1", Name: "ExitPlanMode"},
+		toolExec: toolExecState{
+			pendingCalls: []message.ToolCall{
+				{ID: "tc-1", Name: "ExitPlanMode"},
+			},
+			currentIdx: 0,
 		},
-		pendingToolIdx:     0,
 		sessionPermissions: config.NewSessionPermissions(),
 		messages:           []chatMessage{},
 	}
@@ -57,10 +59,12 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 		planTask:      "test task",
 		planPrompt:     NewPlanPrompt(),
 		questionPrompt: NewQuestionPrompt(),
-		pendingToolCalls: []message.ToolCall{
-			{ID: "tc-1", Name: "ExitPlanMode"},
+		toolExec: toolExecState{
+			pendingCalls: []message.ToolCall{
+				{ID: "tc-1", Name: "ExitPlanMode"},
+			},
+			currentIdx: 0,
 		},
-		pendingToolIdx:     0,
 		sessionPermissions: config.NewSessionPermissions(),
 		messages:           []chatMessage{},
 	}
@@ -94,10 +98,12 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 		planTask:      "test task",
 		planPrompt:     NewPlanPrompt(),
 		questionPrompt: NewQuestionPrompt(),
-		pendingToolCalls: []message.ToolCall{
-			{ID: "tc-1", Name: "ExitPlanMode"},
+		toolExec: toolExecState{
+			pendingCalls: []message.ToolCall{
+				{ID: "tc-1", Name: "ExitPlanMode"},
+			},
+			currentIdx: 0,
 		},
-		pendingToolIdx:     0,
 		sessionPermissions: config.NewSessionPermissions(),
 		messages:           []chatMessage{},
 	}
@@ -134,10 +140,12 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 		planTask:      "test task",
 		planPrompt:     NewPlanPrompt(),
 		questionPrompt: NewQuestionPrompt(),
-		pendingToolCalls: []message.ToolCall{
-			{ID: "tc-1", Name: "ExitPlanMode"},
+		toolExec: toolExecState{
+			pendingCalls: []message.ToolCall{
+				{ID: "tc-1", Name: "ExitPlanMode"},
+			},
+			currentIdx: 0,
 		},
-		pendingToolIdx:     0,
 		sessionPermissions: config.NewSessionPermissions(),
 		messages:           []chatMessage{},
 	}

@@ -518,7 +518,7 @@ func (m model) renderToolCalls(msg chatMessage, msgIdx int) string {
 		// Render the corresponding result inline if found
 		if resultMsg, ok := resultMap[tc.ID]; ok {
 			sb.WriteString(m.renderToolResultInline(resultMsg))
-		} else if m.parallelMode && tc.Name == "Task" {
+		} else if m.toolExec.parallel && tc.Name == "Task" {
 			// Parallel mode: show live progress inline under each Task
 			sb.WriteString(m.renderTaskProgressInline(tc))
 		}
@@ -829,7 +829,7 @@ func (m model) renderPendingToolSpinner() string {
 	}
 
 	// Parallel mode with Task tools: progress rendered inline by renderToolCalls
-	if m.parallelMode && m.hasParallelTaskTools() {
+	if m.toolExec.parallel && m.hasParallelTaskTools() {
 		return ""
 	}
 
@@ -837,8 +837,8 @@ func (m model) renderPendingToolSpinner() string {
 	var toolName string
 	if m.buildingToolName != "" {
 		toolName = m.buildingToolName
-	} else if m.pendingToolCalls != nil && m.pendingToolIdx < len(m.pendingToolCalls) {
-		toolName = m.pendingToolCalls[m.pendingToolIdx].Name
+	} else if m.toolExec.pendingCalls != nil && m.toolExec.currentIdx < len(m.toolExec.pendingCalls) {
+		toolName = m.toolExec.pendingCalls[m.toolExec.currentIdx].Name
 	} else {
 		return ""
 	}
@@ -847,7 +847,7 @@ func (m model) renderPendingToolSpinner() string {
 
 	// Task tool has special rendering with per-agent progress
 	if toolName == "Task" {
-		progress := m.taskProgress[m.pendingToolIdx]
+		progress := m.taskProgress[m.toolExec.currentIdx]
 		status := "Agent starting..."
 		if len(progress) > 0 {
 			status = "Agent running..."
@@ -866,7 +866,7 @@ func (m model) renderPendingToolSpinner() string {
 
 // hasParallelTaskTools returns true if any pending tool call is a Task tool
 func (m model) hasParallelTaskTools() bool {
-	for _, tc := range m.pendingToolCalls {
+	for _, tc := range m.toolExec.pendingCalls {
 		if tc.Name == "Task" {
 			return true
 		}
@@ -886,7 +886,7 @@ func (m model) renderTaskProgressInline(tc message.ToolCall) string {
 	var sb strings.Builder
 
 	// Check if completed in parallel results (not yet committed to messages)
-	if _, done := m.parallelResults[idx]; done {
+	if _, done := m.toolExec.parallelResults[idx]; done {
 		sb.WriteString(toolResultStyle.Render("  ✓ Done") + "\n")
 		return sb.String()
 	}
@@ -906,7 +906,7 @@ func (m model) renderTaskProgressInline(tc message.ToolCall) string {
 
 // findPendingToolIndex finds a tool call's index in pendingToolCalls by ID
 func (m model) findPendingToolIndex(toolCallID string) (int, bool) {
-	for i, tc := range m.pendingToolCalls {
+	for i, tc := range m.toolExec.pendingCalls {
 		if tc.ID == toolCallID {
 			return i, true
 		}

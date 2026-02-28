@@ -21,7 +21,7 @@ func (m *model) handleQuestionResponse(msg QuestionResponseMsg) (tea.Model, tea.
 		return m.abortToolWithError("User cancelled the question prompt")
 	}
 
-	tc := m.pendingToolCalls[m.pendingToolIdx]
+	tc := m.toolExec.pendingCalls[m.toolExec.currentIdx]
 	m.pendingQuestion = nil
 	return m, ExecuteInteractive(tc, msg.Response, m.cwd)
 }
@@ -48,7 +48,7 @@ func (m *model) handlePlanResponse(msg PlanResponseMsg) (tea.Model, tea.Cmd) {
 		return m.abortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.")
 	}
 
-	tc := m.pendingToolCalls[m.pendingToolIdx]
+	tc := m.toolExec.pendingCalls[m.toolExec.currentIdx]
 
 	planContent := msg.ModifiedPlan
 	if planContent == "" && msg.Request != nil {
@@ -95,8 +95,8 @@ func (m *model) handlePlanClearAutoMode(planContent string) (tea.Model, tea.Cmd)
 	m.messages = []chatMessage{}
 	m.committedCount = 0
 	m.enableAutoAcceptMode()
-	m.pendingToolCalls = nil
-	m.pendingToolIdx = 0
+	m.toolExec.pendingCalls = nil
+	m.toolExec.currentIdx = 0
 
 	userMsg := fmt.Sprintf("Implement the following approved plan step by step. Start coding immediately — do NOT explore or investigate further.\n\n%s", planContent)
 	m.messages = append(m.messages, chatMessage{role: roleUser, content: userMsg})
@@ -121,7 +121,7 @@ func (m *model) handleEnterPlanRequest(msg EnterPlanRequestMsg) (tea.Model, tea.
 }
 
 func (m *model) handleEnterPlanResponse(msg EnterPlanResponseMsg) (tea.Model, tea.Cmd) {
-	tc := m.pendingToolCalls[m.pendingToolIdx]
+	tc := m.toolExec.pendingCalls[m.toolExec.currentIdx]
 
 	if msg.Approved {
 		m.planMode = true

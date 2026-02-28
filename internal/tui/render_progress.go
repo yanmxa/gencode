@@ -30,7 +30,7 @@ func (m *model) handleTaskProgressTick() (tea.Model, tea.Cmd) {
 }
 
 func (m *model) hasRunningTaskTools() bool {
-	if m.parallelMode {
+	if m.toolExec.parallel {
 		return m.hasRunningParallelTaskTools()
 	}
 	return m.hasRunningSequentialTaskTool()
@@ -38,9 +38,9 @@ func (m *model) hasRunningTaskTools() bool {
 
 // hasRunningParallelTaskTools checks for unfinished Task tools in parallel mode.
 func (m *model) hasRunningParallelTaskTools() bool {
-	for i, tc := range m.pendingToolCalls {
+	for i, tc := range m.toolExec.pendingCalls {
 		if tc.Name == "Task" {
-			if _, done := m.parallelResults[i]; !done {
+			if _, done := m.toolExec.parallelResults[i]; !done {
 				return true
 			}
 		}
@@ -50,8 +50,8 @@ func (m *model) hasRunningParallelTaskTools() bool {
 
 // hasRunningSequentialTaskTool checks if the current sequential tool is a Task.
 func (m *model) hasRunningSequentialTaskTool() bool {
-	if m.pendingToolCalls == nil || m.pendingToolIdx >= len(m.pendingToolCalls) {
+	if m.toolExec.pendingCalls == nil || m.toolExec.currentIdx >= len(m.toolExec.pendingCalls) {
 		return false
 	}
-	return m.pendingToolCalls[m.pendingToolIdx].Name == "Task"
+	return m.toolExec.pendingCalls[m.toolExec.currentIdx].Name == "Task"
 }

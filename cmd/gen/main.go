@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -11,11 +10,9 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 
+	"github.com/yanmxa/gencode/internal/app"
 	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tui"
+	"github.com/yanmxa/gencode/internal/options"
 
 	// Import providers for registration
 	_ "github.com/yanmxa/gencode/internal/provider/anthropic"
@@ -28,12 +25,34 @@ var (
 	version = "1.7.4"
 )
 
+// cliOpts holds all CLI flag values in one place.
+var cliOpts struct {
+	print     string // -p/--print: non-interactive print mode
+	plan      bool
+	cont      bool // --continue
+	resume    bool
+	pluginDir string
+}
+
 func init() {
 	// Load .env file if it exists (silent fail if not found)
 	_ = godotenv.Load()
 
 	// Initialize logging (enabled via GEN_DEBUG=1)
 	_ = log.Init()
+
+	// Register flags
+	rootCmd.Flags().StringVarP(&cliOpts.print, "print", "p", "", "Non-interactive print mode with prompt")
+	rootCmd.Flags().BoolVar(&cliOpts.plan, "plan", false, "Enter plan mode")
+	rootCmd.Flags().BoolVarP(&cliOpts.cont, "continue", "c", false, "Resume the most recent session")
+	rootCmd.Flags().BoolVarP(&cliOpts.resume, "resume", "r", false, "Select and resume a previous session")
+	rootCmd.Flags().StringVar(&cliOpts.pluginDir, "plugin-dir", "", "Load plugins from a specific directory")
+
+	// Register subcommands
+	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(helpCmd)
+	rootCmd.SetHelpCommand(helpCmd)
+	rootCmd.AddCommand(mcpCmd)
 }
 
 func main() {
@@ -52,175 +71,43 @@ var rootCmd = &cobra.Command{
 Extensible tools, customizable prompts, multi-provider support.
 
 Non-interactive mode:
-  gen "your message"       Send a message directly
-  echo "message" | gen     Send a message via stdin
-  gen -p "prompt"          Use a custom prompt`,
+  gen -p "your prompt"     Print response and exit
+  echo "msg" | gen -p ""   Pipe stdin in print mode`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Check for plan mode flag
-		if planFlag != "" {
-			if err := tui.RunWithPlanMode(planFlag); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			return
+		printPrompt := cliOpts.print
+		if printPrompt == "" {
+			printPrompt = readStdin()
 		}
 
-		// Check for --continue flag (resume most recent session)
-		if continueFlag {
-			if err := tui.RunWithContinue(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			return
+		opts := options.RunOptions{
+			Print:     printPrompt,
+			Prompt:    strings.Join(args, " "),
+			PluginDir: cliOpts.pluginDir,
+			PlanMode:  cliOpts.plan,
+			Continue:  cliOpts.cont,
+			Resume:    cliOpts.resume,
 		}
-
-		// Check for --resume flag (session selector)
-		if resumeFlag {
-			if err := tui.RunWithResume(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		}
-
-		// Check for non-interactive input
-		message := getInputMessage(args)
-
-		if message != "" {
-			// Non-interactive mode
-			if err := runNonInteractive(message); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		}
-
-		// Interactive mode (TUI)
-		opts := tui.RunOptions{
-			PluginDir: pluginDirFlag,
-		}
-		if err := tui.RunWithOptions(opts); err != nil {
+		if err := app.RunWithOptions(opts); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	},
 }
 
-// promptFlag is the custom prompt flag
-var promptFlag string
-
-// planFlag is the plan mode task description
-var planFlag string
-
-// continueFlag resumes the most recent session
-var continueFlag bool
-
-// resumeFlag opens the session selector to choose a session
-var resumeFlag bool
-
-// pluginDirFlag loads plugins from a specific directory
-var pluginDirFlag string
-
-func init() {
-	rootCmd.Flags().StringVarP(&promptFlag, "prompt", "p", "", "Custom prompt to send")
-	rootCmd.Flags().StringVar(&planFlag, "plan", "", "Enter plan mode with task description")
-	rootCmd.Flags().BoolVarP(&continueFlag, "continue", "c", false, "Resume the most recent session")
-	rootCmd.Flags().BoolVarP(&resumeFlag, "resume", "r", false, "Select and resume a previous session")
-	rootCmd.Flags().StringVar(&pluginDirFlag, "plugin-dir", "", "Load plugins from a specific directory")
-}
-
-// getInputMessage gets input from args, flags, or stdin
-func getInputMessage(args []string) string {
-	// Check for -p/--prompt flag
-	if promptFlag != "" {
-		return promptFlag
-	}
-
-	// Check for positional arguments
-	if len(args) > 0 {
-		return strings.Join(args, " ")
-	}
-
-	// Check if stdin has data (non-interactive pipe)
+// readStdin returns piped stdin data, or empty string if stdin is a terminal.
+func readStdin() string {
 	stat, _ := os.Stdin.Stat()
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		// Data is being piped in
 		reader := bufio.NewReader(os.Stdin)
 		data, err := io.ReadAll(reader)
 		if err == nil && len(data) > 0 {
 			return strings.TrimSpace(string(data))
 		}
 	}
-
 	return ""
 }
 
-// runNonInteractive runs in non-interactive mode
-func runNonInteractive(userMessage string) error {
-	ctx := context.Background()
-
-	// Load store and get connected provider
-	store, err := provider.NewStore()
-	if err != nil {
-		return fmt.Errorf("failed to load store: %w", err)
-	}
-
-	var llmProvider provider.LLMProvider
-	var model string
-
-	// Try to use current model setting first
-	current := store.GetCurrentModel()
-	if current != nil {
-		p, err := provider.GetProvider(ctx, current.Provider, current.AuthMethod)
-		if err != nil {
-			return fmt.Errorf("provider %s (%s) not available: %w. Run 'gen' and use /provider to connect",
-				current.Provider, current.AuthMethod, err)
-		}
-		llmProvider = p
-		model = current.ModelID
-	} else {
-		// Fall back to first available provider with default model
-		connections := store.GetConnections()
-		for providerName, conn := range connections {
-			p, err := provider.GetProvider(ctx, provider.Provider(providerName), conn.AuthMethod)
-			if err == nil {
-				llmProvider = p
-				model = getDefaultModel(providerName, conn.AuthMethod)
-				break
-			}
-		}
-	}
-
-	if llmProvider == nil {
-		return fmt.Errorf("no provider connected. Run 'gen' and use /provider to connect")
-	}
-
-	// Send message
-	opts := provider.CompletionOptions{
-		Model:        model,
-		MaxTokens:    8192,
-		SystemPrompt: "You are a helpful AI coding assistant.",
-		Messages:     []message.Message{message.UserMessage(userMessage, nil)},
-		Tools:        tool.GetToolSchemas(),
-	}
-
-	// Stream response
-	streamChan := llmProvider.Stream(ctx, opts)
-
-	for chunk := range streamChan {
-		switch chunk.Type {
-		case message.ChunkTypeText:
-			fmt.Print(chunk.Text)
-		case message.ChunkTypeError:
-			return chunk.Error
-		case message.ChunkTypeDone:
-			fmt.Println() // Final newline
-		}
-	}
-
-	return nil
-}
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
@@ -244,17 +131,21 @@ func printHelp() {
 Gen - AI coding assistant for the terminal
 
 Usage:
-  gen [message]              Non-interactive mode with message
   gen                        Start interactive chat mode
+  gen "message"              Interactive mode with initial prompt
+  gen -p "prompt"            Non-interactive print mode
   gen [command]              Run a command
 
-Non-interactive Mode:
-  gen "your message"         Send a message directly
-  echo "message" | gen       Send a message via stdin
-  gen -p "prompt"            Use a custom prompt
-  gen --plan "task"          Enter plan mode with task
+Print Mode (non-interactive):
+  gen -p "your prompt"       Print response and exit
+  echo "data" | gen -p "analyze"  Pipe stdin with prompt
 
-Session Persistence:
+Interactive Mode:
+  gen                        Start chat
+  gen "Explain this code"    Start chat with initial prompt
+  gen --plan "design login"  Start in plan mode
+
+Session:
   gen -c, --continue         Resume the most recent session
   gen -r, --resume           Select and resume a previous session
 
@@ -262,14 +153,14 @@ Commands:
   version      Print the version number
   help         Show this help message
 
-Interactive Mode:
+Keybindings:
   Enter        Send message
   Alt+Enter    Insert newline
   Up/Down      Navigate input history
   Esc          Stop AI response
   Ctrl+C       Clear input / Quit
 
-Interactive Commands:
+Slash Commands:
   /provider    Select and connect to a provider
   /model       Select a model
   /clear       Clear chat history
@@ -277,9 +168,10 @@ Interactive Commands:
 
 Examples:
   gen                        Start interactive chat
-  gen "Explain this code"    Quick question
-  gen --continue             Resume previous session
-  cat file.go | gen "Review" Review file via pipe
+  gen "Explain this code"    Interactive with initial prompt
+  gen -p "Explain this code" Print response and exit
+  gen --plan "design login"  Plan mode
+  gen -c                     Resume previous session
   gen version                Show version
 
 For more information, visit: https://github.com/yanmxa/gencode
@@ -287,29 +179,4 @@ For more information, visit: https://github.com/yanmxa/gencode
 	fmt.Println(help)
 }
 
-// getDefaultModel returns the default model for a provider and auth method
-func getDefaultModel(providerName string, authMethod provider.AuthMethod) string {
-	if providerName == "anthropic" && authMethod == provider.AuthVertex {
-		return "claude-sonnet-4-5@20250929" // Vertex AI format
-	}
 
-	switch providerName {
-	case "anthropic":
-		return "claude-sonnet-4-20250514" // API key format
-	case "openai":
-		return "gpt-4o"
-	case "google":
-		return "gemini-2.0-flash"
-	case "moonshot":
-		return "moonshot-v1-auto"
-	default:
-		return "claude-sonnet-4-20250514"
-	}
-}
-
-func init() {
-	rootCmd.AddCommand(versionCmd)
-	rootCmd.AddCommand(helpCmd)
-	rootCmd.SetHelpCommand(helpCmd)
-	rootCmd.AddCommand(mcpCmd)
-}

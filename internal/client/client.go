@@ -5,10 +5,11 @@ import (
 	"context"
 
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/options"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
-const defaultMaxTokens = 8192
+const defaultMaxTokens = options.DefaultMaxTokens
 
 // TokenUsage tracks token consumption for a conversation.
 type TokenUsage struct {

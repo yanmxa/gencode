@@ -75,6 +75,22 @@ type (
 	}
 )
 
+type toolExecState struct {
+	pendingCalls    []message.ToolCall
+	currentIdx      int
+	parallel        bool
+	parallelResults map[int]message.ToolResult
+	parallelCount   int
+}
+
+func (t *toolExecState) Reset() {
+	t.pendingCalls = nil
+	t.currentIdx = 0
+	t.parallel = false
+	t.parallelResults = nil
+	t.parallelCount = 0
+}
+
 type model struct {
 	textarea     textarea.Model
 	spinner      spinner.Model
@@ -103,12 +119,7 @@ type model struct {
 	memorySelector MemorySelectorState
 
 	permissionPrompt *PermissionPrompt
-	pendingToolCalls []message.ToolCall
-	pendingToolIdx   int
-
-	parallelMode        bool
-	parallelResults     map[int]message.ToolResult
-	parallelResultCount int
+	toolExec         toolExecState
 
 	settings           *config.Settings
 	sessionPermissions *config.SessionPermissions
@@ -170,9 +181,4 @@ type model struct {
 	pendingImages   []message.ImageData
 	imageSelectMode bool
 	selectedImageIdx int
-}
-
-// RunOptions contains options for running the TUI
-type RunOptions struct {
-	PluginDir string
 }

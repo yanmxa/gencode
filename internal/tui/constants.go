@@ -1,10 +1,14 @@
 // Shared constants: default dimensions, timeouts, and limits.
 package tui
 
-import "time"
+import (
+	"time"
+
+	"github.com/yanmxa/gencode/internal/options"
+)
 
 const (
-	defaultMaxTokens   = 8192
+	defaultMaxTokens   = options.DefaultMaxTokens
 	doubleTapThreshold = 500 * time.Millisecond
 	defaultWidth       = 80
 	maxTextareaHeight  = 6

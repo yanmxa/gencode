@@ -1,4 +1,4 @@
-// Application entry points (Run*), model constructor, and Bubble Tea Init.
+// TUI entry point, model constructor, and Bubble Tea Init.
 package tui
 
 import (
@@ -19,6 +19,7 @@ import (
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/options"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
@@ -33,13 +34,18 @@ import (
 	"github.com/yanmxa/gencode/internal/tui/theme"
 )
 
-func Run() error {
-	return RunWithOptions(RunOptions{})
+// NewProgram creates a configured Bubble Tea program ready to run.
+func NewProgram(opts options.RunOptions) (*tea.Program, error) {
+	m := newModel()
+	if err := m.initState(opts); err != nil {
+		return nil, err
+	}
+	return tea.NewProgram(m), nil
 }
 
-func RunWithOptions(opts RunOptions) error {
-	m := newModel()
-
+// initState applies RunOptions flags to the model: plugin loading,
+// plan mode setup, and session restoration.
+func (m *model) initState(opts options.RunOptions) error {
 	if opts.PluginDir != "" {
 		ctx := context.Background()
 		if err := plugin.DefaultRegistry.LoadFromPath(ctx, opts.PluginDir); err != nil {
@@ -47,80 +53,49 @@ func RunWithOptions(opts RunOptions) error {
 		}
 	}
 
-	p := tea.NewProgram(m)
+	if opts.PlanMode {
+		m.planMode = true
+		m.planTask = opts.Prompt
+		m.operationMode = modePlan
 
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("failed to run TUI: %w", err)
-	}
-	return nil
-}
-
-func RunWithPlanMode(task string) error {
-	m := newModel()
-	m.planMode = true
-	m.planTask = task
-	m.operationMode = modePlan
-
-	store, err := plan.NewStore()
-	if err != nil {
-		return fmt.Errorf("failed to initialize plan store: %w", err)
-	}
-	m.planStore = store
-
-	p := tea.NewProgram(m)
-
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("failed to run TUI: %w", err)
-	}
-	return nil
-}
-
-func RunWithContinue() error {
-	m := newModel()
-
-	sessionStore, err := session.NewStore()
-	if err != nil {
-		return fmt.Errorf("failed to initialize session store: %w", err)
-	}
-	m.sessionStore = sessionStore
-
-	cwd, _ := os.Getwd()
-	sess, err := sessionStore.GetLatestByCwd(cwd)
-	if err != nil {
-		return fmt.Errorf("no previous session to continue: %w", err)
+		store, err := plan.NewStore()
+		if err != nil {
+			return fmt.Errorf("failed to initialize plan store: %w", err)
+		}
+		m.planStore = store
 	}
 
-	m.messages = convertFromStoredMessages(sess.Messages)
-	m.currentSessionID = sess.Metadata.ID
+	if opts.Continue {
+		sessionStore, err := session.NewStore()
+		if err != nil {
+			return fmt.Errorf("failed to initialize session store: %w", err)
+		}
+		m.sessionStore = sessionStore
 
-	if len(sess.Tasks) > 0 {
-		tool.DefaultTodoStore.Import(sess.Tasks)
+		cwd, _ := os.Getwd()
+		sess, err := sessionStore.GetLatestByCwd(cwd)
+		if err != nil {
+			return fmt.Errorf("no previous session to continue: %w", err)
+		}
+
+		m.messages = convertFromStoredMessages(sess.Messages)
+		m.currentSessionID = sess.Metadata.ID
+
+		if len(sess.Tasks) > 0 {
+			tool.DefaultTodoStore.Import(sess.Tasks)
+		}
 	}
 
-	p := tea.NewProgram(m)
+	if opts.Resume {
+		sessionStore, err := session.NewStore()
+		if err != nil {
+			return fmt.Errorf("failed to initialize session store: %w", err)
+		}
+		m.sessionStore = sessionStore
 
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("failed to run TUI: %w", err)
+		m.pendingSessionSelector = true
 	}
-	return nil
-}
 
-func RunWithResume() error {
-	m := newModel()
-
-	sessionStore, err := session.NewStore()
-	if err != nil {
-		return fmt.Errorf("failed to initialize session store: %w", err)
-	}
-	m.sessionStore = sessionStore
-
-	m.pendingSessionSelector = true
-
-	p := tea.NewProgram(m)
-
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("failed to run TUI: %w", err)
-	}
 	return nil
 }
 
