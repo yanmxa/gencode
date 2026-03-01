@@ -293,7 +293,7 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, e
 	if len(m.messages) < 3 {
 		return "Not enough conversation history to compact.", nil
 	}
-	if m.streaming {
+	if m.stream.active {
 		return "Cannot compact while streaming.", nil
 	}
 	m.compact.active = true

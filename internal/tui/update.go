@@ -204,9 +204,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleStreamContinue(msg)
 
 	case streamDoneMsg:
-		m.streaming = false
-		m.streamChan = nil
-		m.cancelFunc = nil
+		m.stream.Stop()
 		cmds = append(cmds, m.commitMessages()...)
 
 	case spinner.TickMsg:
@@ -223,7 +221,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.suggestions.UpdateSuggestions(m.textarea.Value())
 	}
 
-	if m.streaming || m.fetchingTokenLimits || m.compact.active {
+	if m.stream.active || m.fetchingTokenLimits || m.compact.active {
 		m.spinner, cmd = m.spinner.Update(msg)
 		cmds = append(cmds, cmd)
 	}

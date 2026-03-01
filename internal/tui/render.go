@@ -295,7 +295,7 @@ func (m model) renderMessageRange(startIdx, endIdx int, includeSpinner bool) str
 	var sb strings.Builder
 
 	lastIdx := endIdx - 1
-	isLastStreaming := m.streaming && lastIdx >= 0 && m.messages[lastIdx].role == roleAssistant
+	isLastStreaming := m.stream.active && lastIdx >= 0 && m.messages[lastIdx].role == roleAssistant
 
 	for i := startIdx; i < endIdx; i++ {
 		if skipIndices[i] {
@@ -431,12 +431,12 @@ func (m model) renderAssistantMessage(msg chatMessage, idx int, isLast bool) str
 // formatAssistantContent formats the assistant message content based on streaming state.
 func (m model) formatAssistantContent(msg chatMessage, isLast bool) string {
 	// Waiting for response with no content yet
-	if msg.content == "" && len(msg.toolCalls) == 0 && m.streaming && msg.thinking == "" {
+	if msg.content == "" && len(msg.toolCalls) == 0 && m.stream.active && msg.thinking == "" {
 		return thinkingStyle.Render(m.spinner.View() + " Thinking...")
 	}
 
 	// Streaming in progress - show cursor
-	if m.streaming && isLast && len(msg.toolCalls) == 0 {
+	if m.stream.active && isLast && len(msg.toolCalls) == 0 {
 		return assistantMsgStyle.Render(msg.content + "▌")
 	}
 
@@ -835,8 +835,8 @@ func (m model) renderPendingToolSpinner() string {
 
 	// Determine which tool is active
 	var toolName string
-	if m.buildingToolName != "" {
-		toolName = m.buildingToolName
+	if m.stream.buildingTool != "" {
+		toolName = m.stream.buildingTool
 	} else if m.toolExec.pendingCalls != nil && m.toolExec.currentIdx < len(m.toolExec.pendingCalls) {
 		toolName = m.toolExec.pendingCalls[m.toolExec.currentIdx].Name
 	} else {

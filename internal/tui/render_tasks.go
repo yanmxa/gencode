@@ -30,7 +30,7 @@ func (m model) renderTodoList() string {
 	}
 
 	// Reset store when all tasks completed and LLM is idle
-	if completed == len(tasks) && !m.streaming {
+	if completed == len(tasks) && !m.stream.active {
 		tool.DefaultTodoStore.Reset()
 		return ""
 	}

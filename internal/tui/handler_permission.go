@@ -33,7 +33,7 @@ func (m *model) abortToolWithError(errorMsg string) (tea.Model, tea.Cmd) {
 	})
 	m.toolExec.pendingCalls = nil
 	m.toolExec.currentIdx = 0
-	m.streaming = false
+	m.stream.active = false
 	return m, tea.Batch(m.commitMessages()...)
 }
 

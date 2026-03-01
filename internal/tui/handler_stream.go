@@ -144,7 +144,7 @@ func (m *model) filterToolCallsWithHooks(toolCalls []message.ToolCall) []message
 
 func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 	if msg.buildingToolName != "" {
-		m.buildingToolName = msg.buildingToolName
+		m.stream.buildingTool = msg.buildingToolName
 	}
 
 	if msg.err != nil {
@@ -162,7 +162,7 @@ func (m *model) handleStreamChunk(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 
 // handleStreamDone processes a completed stream.
 func (m *model) handleStreamDone(msg streamChunkMsg) (tea.Model, tea.Cmd) {
-	m.buildingToolName = ""
+	m.stream.buildingTool = ""
 
 	if msg.usage != nil {
 		m.lastInputTokens = msg.usage.InputTokens
@@ -183,9 +183,7 @@ func (m *model) handleStreamDone(msg streamChunkMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(commitCmds...)
 	}
 
-	m.streaming = false
-	m.streamChan = nil
-	m.cancelFunc = nil
+	m.stream.Stop()
 
 	commitCmds := m.commitMessages()
 
@@ -207,17 +205,13 @@ func (m *model) handleStreamError(err error) (tea.Model, tea.Cmd) {
 	// If "prompt too long", trigger auto-compact and retry
 	if strings.Contains(err.Error(), "prompt is too long") && len(m.messages) >= 3 {
 		m.removeEmptyLastAssistantMessage()
-		m.streaming = false
-		m.streamChan = nil
-		m.cancelFunc = nil
+		m.stream.Stop()
 		m.compact.autoContinue = true // Auto-continue after compaction
 		return m, m.triggerAutoCompact()
 	}
 
 	m.appendErrorToLastMessage(err)
-	m.streaming = false
-	m.streamChan = nil
-	m.cancelFunc = nil
+	m.stream.Stop()
 	return m, tea.Batch(m.commitMessages()...)
 }
 
@@ -262,7 +256,7 @@ func (m *model) removeEmptyLastAssistantMessage() {
 
 func (m *model) handleStreamContinue(msg streamContinueMsg) (tea.Model, tea.Cmd) {
 	ctx, cancel := context.WithCancel(context.Background())
-	m.cancelFunc = cancel
+	m.stream.cancel = cancel
 
 	// Commit any pending messages before starting new stream
 	commitCmds := m.commitMessages()
@@ -273,7 +267,7 @@ func (m *model) handleStreamContinue(msg streamContinueMsg) (tea.Model, tea.Cmd)
 	m.configureLoop(m.buildExtraContext())
 	m.loop.SetMessages(msg.messages)
 
-	m.streamChan = m.loop.Stream(ctx)
+	m.stream.ch = m.loop.Stream(ctx)
 	allCmds := append(commitCmds, m.waitForChunk(), m.spinner.Tick)
 	return m, tea.Batch(allCmds...)
 }
@@ -286,7 +280,7 @@ func (m *model) handleSpinnerTick(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	if !m.streaming {
+	if !m.stream.active {
 		return m, nil
 	}
 

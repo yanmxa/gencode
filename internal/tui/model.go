@@ -75,6 +75,21 @@ type (
 	}
 )
 
+type streamState struct {
+	active       bool
+	ch           <-chan message.StreamChunk
+	cancel       context.CancelFunc
+	buildingTool string
+}
+
+// Stop clears streaming state. Caller responsible for calling cancel() first if needed.
+func (s *streamState) Stop() {
+	s.active = false
+	s.ch = nil
+	s.cancel = nil
+	s.buildingTool = ""
+}
+
 type compactState struct {
 	active       bool
 	focus        string
@@ -110,10 +125,8 @@ type model struct {
 	llmProvider  provider.LLMProvider
 	store        *provider.Store
 	currentModel *provider.CurrentModelInfo
-	streaming    bool
-	streamChan   <-chan message.StreamChunk
-	cancelFunc   context.CancelFunc
-	width        int
+	stream streamState
+	width  int
 	height       int
 	ready        bool
 	inputHistory []string
@@ -147,8 +160,6 @@ type model struct {
 	planStore  *plan.Store
 
 	operationMode operationMode
-
-	buildingToolName string
 
 	disabledTools  map[string]bool
 	toolSelector   ToolSelectorState

@@ -82,7 +82,7 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if msg.Type == tea.KeyShiftTab {
-		if !m.streaming && !m.permissionPrompt.IsActive() &&
+		if !m.stream.active && !m.permissionPrompt.IsActive() &&
 			!m.questionPrompt.IsActive() &&
 			(m.planPrompt == nil || !m.planPrompt.IsActive()) &&
 			!m.selector.IsActive() && !m.suggestions.IsVisible() {
@@ -120,8 +120,8 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.historyIndex = -1
 			return m, nil
 		}
-		if m.cancelFunc != nil {
-			m.cancelFunc()
+		if m.stream.cancel != nil {
+			m.stream.cancel()
 		}
 		return m, tea.Quit
 
@@ -130,7 +130,7 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.suggestions.Hide()
 			return m, nil
 		}
-		if m.streaming && m.cancelFunc != nil {
+		if m.stream.active && m.stream.cancel != nil {
 			return m.handleStreamCancel()
 		}
 		return m, nil
@@ -271,11 +271,8 @@ func (m *model) toggleMostRecentExpandable() {
 }
 
 func (m *model) handleStreamCancel() (tea.Model, tea.Cmd) {
-	m.cancelFunc()
-	m.streaming = false
-	m.streamChan = nil
-	m.cancelFunc = nil
-	m.buildingToolName = ""
+	m.stream.cancel()
+	m.stream.Stop()
 
 	// Cancel pending tool calls
 	m.cancelPendingToolCalls()
@@ -366,7 +363,7 @@ func (m *model) handleHistoryDown() (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
-	if m.streaming {
+	if m.stream.active {
 		return m, nil
 	}
 	input := strings.TrimSpace(m.textarea.Value())
@@ -375,8 +372,8 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 	}
 
 	if strings.ToLower(input) == "exit" {
-		if m.cancelFunc != nil {
-			m.cancelFunc()
+		if m.stream.cancel != nil {
+			m.stream.cancel()
 		}
 		return m, tea.Quit
 	}
@@ -523,8 +520,8 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 // It appends an empty assistant message, sets up cancellation, and starts streaming.
 func (m *model) startLLMStream(extra []string) tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())
-	m.cancelFunc = cancel
-	m.streaming = true
+	m.stream.cancel = cancel
+	m.stream.active = true
 
 	// Configure loop with current state and set messages
 	m.configureLoop(extra)
@@ -535,7 +532,7 @@ func (m *model) startLLMStream(extra []string) tea.Cmd {
 
 	m.messages = append(m.messages, chatMessage{role: roleAssistant, content: ""})
 
-	m.streamChan = m.loop.Stream(ctx)
+	m.stream.ch = m.loop.Stream(ctx)
 
 	allCmds := append(commitCmds, m.waitForChunk(), m.spinner.Tick)
 	return tea.Batch(allCmds...)

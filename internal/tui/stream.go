@@ -18,10 +18,10 @@ func (m model) continueWithToolResults() tea.Cmd {
 
 func (m model) waitForChunk() tea.Cmd {
 	return func() tea.Msg {
-		if m.streamChan == nil {
+		if m.stream.ch == nil {
 			return streamDoneMsg{}
 		}
-		chunk, ok := <-m.streamChan
+		chunk, ok := <-m.stream.ch
 		if !ok {
 			return streamChunkMsg{done: true}
 		}

@@ -21,7 +21,7 @@ func (m *model) commitMessagesWithCheck(checkReady bool) []tea.Cmd {
 		msg := m.messages[i]
 
 		if checkReady {
-			if i == lastIdx && msg.role == roleAssistant && m.streaming {
+			if i == lastIdx && msg.role == roleAssistant && m.stream.active {
 				break
 			}
 			if msg.role == roleAssistant && len(msg.toolCalls) > 0 && !m.hasAllToolResults(i) {
