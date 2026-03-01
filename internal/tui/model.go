@@ -75,6 +75,25 @@ type (
 	}
 )
 
+type imageAttachState struct {
+	pending     []message.ImageData
+	selectMode  bool
+	selectedIdx int
+}
+
+func (img *imageAttachState) RemoveAt(idx int) {
+	if idx < 0 || idx >= len(img.pending) {
+		return
+	}
+	img.pending = append(img.pending[:idx], img.pending[idx+1:]...)
+	if img.selectedIdx >= len(img.pending) && img.selectedIdx > 0 {
+		img.selectedIdx--
+	}
+	if len(img.pending) == 0 {
+		img.selectMode = false
+	}
+}
+
 type streamState struct {
 	active       bool
 	ch           <-chan message.StreamChunk
@@ -199,7 +218,5 @@ type model struct {
 
 	cachedMemory string
 
-	pendingImages   []message.ImageData
-	imageSelectMode bool
-	selectedImageIdx int
+	images imageAttachState
 }

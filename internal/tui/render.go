@@ -341,14 +341,14 @@ func (m model) renderUserMessage(msg chatMessage) string {
 // renderPendingImages renders indicator for clipboard images waiting to be sent
 // Uses Claude Code style with selection mode
 func (m model) renderPendingImages() string {
-	if len(m.pendingImages) == 0 {
+	if len(m.images.pending) == 0 {
 		return ""
 	}
 
 	var parts []string
-	for i := range m.pendingImages {
+	for i := range m.images.pending {
 		label := fmt.Sprintf("[Image #%d]", i+1)
-		if m.imageSelectMode && i == m.selectedImageIdx {
+		if m.images.selectMode && i == m.images.selectedIdx {
 			// Highlight selected image
 			parts = append(parts, selectedImageStyle.Render(label))
 		} else {
@@ -357,7 +357,7 @@ func (m model) renderPendingImages() string {
 	}
 
 	var hint string
-	if m.imageSelectMode {
+	if m.images.selectMode {
 		hint = pendingImageHintStyle.Render(" ← prev · → next · Del remove · Esc cancel")
 	} else {
 		hint = pendingImageHintStyle.Render(" (↑ to select)")

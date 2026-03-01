@@ -27,23 +27,23 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Image selection mode handling
-	if m.imageSelectMode && len(m.pendingImages) > 0 {
+	if m.images.selectMode && len(m.images.pending) > 0 {
 		switch msg.Type {
 		case tea.KeyLeft:
-			if m.selectedImageIdx > 0 {
-				m.selectedImageIdx--
+			if m.images.selectedIdx > 0 {
+				m.images.selectedIdx--
 			}
 			return m, nil
 		case tea.KeyRight:
-			if m.selectedImageIdx < len(m.pendingImages)-1 {
-				m.selectedImageIdx++
+			if m.images.selectedIdx < len(m.images.pending)-1 {
+				m.images.selectedIdx++
 			}
 			return m, nil
 		case tea.KeyDelete, tea.KeyBackspace:
-			m.removePendingImage(m.selectedImageIdx)
+			m.images.RemoveAt(m.images.selectedIdx)
 			return m, nil
 		case tea.KeyEsc:
-			m.imageSelectMode = false
+			m.images.selectMode = false
 			return m, nil
 		}
 	}
@@ -98,11 +98,11 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyCtrlX:
 		// Remove pending image: selected one in select mode, or last one otherwise
-		if len(m.pendingImages) > 0 {
-			if m.imageSelectMode {
-				m.removePendingImage(m.selectedImageIdx)
+		if len(m.images.pending) > 0 {
+			if m.images.selectMode {
+				m.images.RemoveAt(m.images.selectedIdx)
 			} else {
-				m.removePendingImage(len(m.pendingImages) - 1)
+				m.images.RemoveAt(len(m.images.pending) - 1)
 			}
 			return m, nil
 		}
@@ -138,9 +138,9 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyUp:
 		if m.textarea.Line() == 0 {
 			// Enter image select mode if there are pending images
-			if len(m.pendingImages) > 0 && !m.imageSelectMode {
-				m.imageSelectMode = true
-				m.selectedImageIdx = len(m.pendingImages) - 1 // Select last image
+			if len(m.images.pending) > 0 && !m.images.selectMode {
+				m.images.selectMode = true
+				m.images.selectedIdx = len(m.images.pending) - 1 // Select last image
 				return m, nil
 			}
 			return m.handleHistoryUp()
@@ -367,7 +367,7 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	input := strings.TrimSpace(m.textarea.Value())
-	if input == "" && len(m.pendingImages) == 0 {
+	if input == "" && len(m.images.pending) == 0 {
 		return m, nil
 	}
 
@@ -457,8 +457,8 @@ func (m *model) handleSubmit() (tea.Model, tea.Cmd) {
 	}
 
 	// Combine pending clipboard images with file reference images
-	allImages := append(m.pendingImages, fileImages...)
-	m.pendingImages = nil // Clear pending images
+	allImages := append(m.images.pending, fileImages...)
+	m.images.pending = nil // Clear pending images
 
 	m.messages = append(m.messages, chatMessage{role: roleUser, content: content, images: allImages})
 	m.textarea.Reset()
@@ -581,21 +581,6 @@ func (m *model) togglePermissionPreview() {
 	m.permissionPrompt.TogglePreview()
 }
 
-// removePendingImage removes the image at the given index from pendingImages
-// and adjusts selectedImageIdx accordingly. Exits image select mode if no images remain.
-func (m *model) removePendingImage(idx int) {
-	if idx < 0 || idx >= len(m.pendingImages) {
-		return
-	}
-	m.pendingImages = append(m.pendingImages[:idx], m.pendingImages[idx+1:]...)
-	if m.selectedImageIdx >= len(m.pendingImages) && m.selectedImageIdx > 0 {
-		m.selectedImageIdx--
-	}
-	if len(m.pendingImages) == 0 {
-		m.imageSelectMode = false
-	}
-}
-
 // imageRefPattern matches @path/to/image.ext references
 var imageRefPattern = regexp.MustCompile(`@([^\s]+\.(png|jpg|jpeg|gif|webp))`)
 
@@ -610,7 +595,7 @@ func (m *model) pasteImageFromClipboard() (tea.Model, tea.Cmd) {
 		// No image in clipboard, let textarea handle the key
 		return nil, nil
 	}
-	m.pendingImages = append(m.pendingImages, *imgData)
+	m.images.pending = append(m.images.pending, *imgData)
 	return m, nil
 }
 
