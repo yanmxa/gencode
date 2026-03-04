@@ -44,7 +44,7 @@ func TestLoad_UnsupportedFormat(t *testing.T) {
 	// Create a temp file with unsupported extension
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(tmpFile, []byte("hello"), 0644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

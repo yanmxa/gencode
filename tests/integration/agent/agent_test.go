@@ -12,8 +12,10 @@ import (
 func TestAgent_ExploreAgent(t *testing.T) {
 	mp := &testutil.MockProvider{
 		Responses: []message.CompletionResponse{
-			{Content: "Explored the codebase", StopReason: "end_turn",
-				Usage: message.Usage{InputTokens: 50, OutputTokens: 25}},
+			{
+				Content: "Explored the codebase", StopReason: "end_turn",
+				Usage: message.Usage{InputTokens: 50, OutputTokens: 25},
+			},
 		},
 	}
 
@@ -123,8 +125,10 @@ func TestAgent_ModelResolution(t *testing.T) {
 func TestAgent_BackgroundExecution(t *testing.T) {
 	mp := &testutil.MockProvider{
 		Responses: []message.CompletionResponse{
-			{Content: "background result", StopReason: "end_turn",
-				Usage: message.Usage{InputTokens: 10, OutputTokens: 5}},
+			{
+				Content: "background result", StopReason: "end_turn",
+				Usage: message.Usage{InputTokens: 10, OutputTokens: 5},
+			},
 		},
 	}
 

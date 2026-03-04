@@ -46,7 +46,8 @@ type FakeClient struct {
 
 // Send returns the next response synchronously.
 func (f *FakeClient) Send(_ context.Context, msgs []message.Message,
-	tools []provider.Tool, sysPrompt string) (message.CompletionResponse, error) {
+	tools []provider.Tool, sysPrompt string,
+) (message.CompletionResponse, error) {
 	f.recordCall(msgs, tools, sysPrompt)
 	if f.shouldInjectError() {
 		return message.CompletionResponse{}, f.ErrorValue
@@ -56,7 +57,8 @@ func (f *FakeClient) Send(_ context.Context, msgs []message.Message,
 
 // Stream returns the next response as a single-chunk stream.
 func (f *FakeClient) Stream(_ context.Context, msgs []message.Message,
-	tools []provider.Tool, sysPrompt string) <-chan message.StreamChunk {
+	tools []provider.Tool, sysPrompt string,
+) <-chan message.StreamChunk {
 	f.recordCall(msgs, tools, sysPrompt)
 	ch := make(chan message.StreamChunk, 1)
 
@@ -77,7 +79,8 @@ func (f *FakeClient) Stream(_ context.Context, msgs []message.Message,
 
 // Complete returns the next response (used for utility calls like compaction).
 func (f *FakeClient) Complete(_ context.Context,
-	sysPrompt string, msgs []message.Message, maxTokens int) (message.CompletionResponse, error) {
+	sysPrompt string, msgs []message.Message, maxTokens int,
+) (message.CompletionResponse, error) {
 	f.Calls = append(f.Calls, provider.CompletionOptions{
 		Model:        f.modelID(),
 		SystemPrompt: sysPrompt,

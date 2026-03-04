@@ -87,9 +87,9 @@ func TestSkill_BooleanHelpers(t *testing.T) {
 
 func TestSkill_RegistryLookup(t *testing.T) {
 	skills := map[string]*skill.Skill{
-		"git:commit":  {Name: "commit", Namespace: "git", State: skill.StateEnable, Description: "create commit"},
-		"git:push":    {Name: "push", Namespace: "git", State: skill.StateActive, Description: "push changes"},
-		"review":      {Name: "review", State: skill.StateEnable, Description: "review code"},
+		"git:commit": {Name: "commit", Namespace: "git", State: skill.StateEnable, Description: "create commit"},
+		"git:push":   {Name: "push", Namespace: "git", State: skill.StateActive, Description: "push changes"},
+		"review":     {Name: "review", State: skill.StateEnable, Description: "review code"},
 	}
 
 	registry := newTestRegistry(t, skills)

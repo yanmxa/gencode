@@ -263,4 +263,3 @@ func (t *STDIOTransport) SetNotificationHandler(handler NotificationHandler) {
 	defer t.mu.Unlock()
 	t.notifyHandler = handler
 }
-

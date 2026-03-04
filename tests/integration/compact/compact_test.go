@@ -29,7 +29,7 @@ func TestCompact_SummarizesConversation(t *testing.T) {
 		message.AssistantMessage("you're welcome", "", nil),
 	}
 
-	summary, count, err := core.Compact(context.Background(), c, msgs, "")
+	summary, count, err := core.Compact(context.Background(), c, msgs, "", "")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestCompact_WithFocus(t *testing.T) {
 		message.AssistantMessage("ok", "", nil),
 	}
 
-	_, _, err := core.Compact(context.Background(), c, msgs, "testing")
+	_, _, err := core.Compact(context.Background(), c, msgs, "", "testing")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestCompact_EmptyConversation(t *testing.T) {
 		message.CompletionResponse{Content: "Empty summary", StopReason: "end_turn"},
 	)
 
-	summary, count, err := core.Compact(context.Background(), c, nil, "")
+	summary, count, err := core.Compact(context.Background(), c, nil, "", "")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}
@@ -79,6 +79,38 @@ func TestCompact_EmptyConversation(t *testing.T) {
 	}
 	if summary == "" {
 		t.Error("expected non-empty summary even for empty conversation")
+	}
+}
+
+func TestCompact_WithSessionMemory(t *testing.T) {
+	c, fake := newFakeClient(
+		message.CompletionResponse{Content: "Combined summary", StopReason: "end_turn"},
+	)
+
+	msgs := []message.Message{
+		message.UserMessage("add tests", nil),
+		message.AssistantMessage("done", "", nil),
+	}
+
+	sessionMemory := "Previous context: refactored session store."
+	_, _, err := core.Compact(context.Background(), c, msgs, sessionMemory, "")
+	if err != nil {
+		t.Fatalf("Compact() error: %v", err)
+	}
+
+	// Verify session memory was prepended to the conversation text
+	if len(fake.Calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(fake.Calls))
+	}
+	sent := fake.Calls[0].Messages[0].Content
+	if !strings.Contains(sent, "Previous session context:") {
+		t.Error("expected 'Previous session context:' header in sent text")
+	}
+	if !strings.Contains(sent, sessionMemory) {
+		t.Error("expected session memory content in sent text")
+	}
+	if !strings.Contains(sent, "Recent conversation:") {
+		t.Error("expected 'Recent conversation:' header in sent text")
 	}
 }
 

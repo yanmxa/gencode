@@ -67,7 +67,7 @@ func TestLoadSkillFile(t *testing.T) {
 	// Create a temporary skill file
 	tmpDir := t.TempDir()
 	skillDir := filepath.Join(tmpDir, "test-skill")
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,7 +83,7 @@ argument-hint: "[message]"
 
 This is the skill content.
 `
-	if err := os.WriteFile(skillPath, []byte(skillContent), 0644); err != nil {
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -116,7 +116,7 @@ func TestLoadAllSkills(t *testing.T) {
 
 	// Create a skill in the test directory
 	skillDir := filepath.Join(tmpDir, ".gen", "skills", "example-skill")
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -128,7 +128,7 @@ description: An example skill
 
 Example instructions.
 `
-	if err := os.WriteFile(skillPath, []byte(skillContent), 0644); err != nil {
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -158,7 +158,7 @@ func TestLoadSkillWithNamespace(t *testing.T) {
 
 	// Create a namespaced skill
 	skillDir := filepath.Join(tmpDir, ".gen", "skills", "commit")
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -172,7 +172,7 @@ argument-hint: "[message]"
 
 Commit instructions.
 `
-	if err := os.WriteFile(skillPath, []byte(skillContent), 0644); err != nil {
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -209,7 +209,7 @@ func TestSkillRegistry(t *testing.T) {
 
 	// Create a skill in the test directory
 	skillDir := filepath.Join(tmpDir, ".gen", "skills", "registry-test")
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -221,7 +221,7 @@ description: Registry test skill
 
 Test instructions.
 `
-	if err := os.WriteFile(skillPath, []byte(skillContent), 0644); err != nil {
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -308,7 +308,7 @@ func TestLoadPluginSkills(t *testing.T) {
 	// Create a plugin cache directory with skills
 	pluginCacheDir := filepath.Join(tmpDir, ".gen", "plugins", "cache", "test-marketplace", "git", "1.0.0")
 	skillDir := filepath.Join(pluginCacheDir, "skills", "commit")
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -321,13 +321,13 @@ argument-hint: "[message]"
 
 Git commit instructions.
 `
-	if err := os.WriteFile(skillPath, []byte(skillContent), 0644); err != nil {
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create installed_plugins.json
 	pluginsDir := filepath.Join(tmpDir, ".gen", "plugins")
-	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -345,7 +345,7 @@ Git commit instructions.
 	}
 
 	configData, _ := json.MarshalIndent(installedPlugins, "", "  ")
-	if err := os.WriteFile(filepath.Join(pluginsDir, "installed_plugins.json"), configData, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(pluginsDir, "installed_plugins.json"), configData, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -386,7 +386,7 @@ func TestPluginSkillExplicitNamespaceOverride(t *testing.T) {
 	// Create a plugin cache directory with skills
 	pluginCacheDir := filepath.Join(tmpDir, ".gen", "plugins", "cache", "test-marketplace", "my-plugin", "1.0.0")
 	skillDir := filepath.Join(pluginCacheDir, "skills", "review")
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -399,13 +399,13 @@ description: Code review skill
 
 Review instructions.
 `
-	if err := os.WriteFile(skillPath, []byte(skillContent), 0644); err != nil {
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create installed_plugins.json
 	pluginsDir := filepath.Join(tmpDir, ".gen", "plugins")
-	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -423,7 +423,7 @@ Review instructions.
 	}
 
 	configData, _ := json.MarshalIndent(installedPlugins, "", "  ")
-	if err := os.WriteFile(filepath.Join(pluginsDir, "installed_plugins.json"), configData, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(pluginsDir, "installed_plugins.json"), configData, 0o644); err != nil {
 		t.Fatal(err)
 	}
 

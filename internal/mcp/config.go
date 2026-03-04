@@ -97,7 +97,7 @@ func (l *ConfigLoader) SaveServer(name string, config ServerConfig, scope Scope)
 
 	// Ensure directory exists
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 
@@ -124,7 +124,7 @@ func (l *ConfigLoader) SaveServer(name string, config ServerConfig, scope Scope)
 		return err
 	}
 
-	return os.WriteFile(filePath, data, 0644)
+	return os.WriteFile(filePath, data, 0o644)
 }
 
 // RemoveServer removes a server configuration from the specified scope
@@ -153,7 +153,7 @@ func (l *ConfigLoader) RemoveServer(name string, scope Scope) error {
 		return err
 	}
 
-	return os.WriteFile(filePath, data, 0644)
+	return os.WriteFile(filePath, data, 0o644)
 }
 
 // RemoveServerFromAll removes a server from all config files where it exists
@@ -186,7 +186,7 @@ func (l *ConfigLoader) removeServerFromFile(filePath, name string) {
 	if err != nil {
 		return
 	}
-	os.WriteFile(filePath, data, 0644)
+	os.WriteFile(filePath, data, 0o644)
 }
 
 // GetUserDir returns the user config directory

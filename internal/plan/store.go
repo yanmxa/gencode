@@ -40,7 +40,7 @@ func NewStore() (*Store, error) {
 	}
 
 	baseDir := filepath.Join(homeDir, ".gen", "plans")
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create plans directory: %w", err)
 	}
 
@@ -71,7 +71,7 @@ func (s *Store) Save(plan *Plan) (string, error) {
 	sb.WriteString("---\n\n")
 	sb.WriteString(plan.Content)
 
-	if err := os.WriteFile(filePath, []byte(sb.String()), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(sb.String()), 0o644); err != nil {
 		return "", fmt.Errorf("failed to write plan file: %w", err)
 	}
 

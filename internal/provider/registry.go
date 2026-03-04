@@ -15,8 +15,8 @@ type registryEntry struct {
 
 // Registry manages provider registration and discovery
 type Registry struct {
-	mu       sync.RWMutex
-	entries  map[string]registryEntry // key: "provider:authMethod"
+	mu      sync.RWMutex
+	entries map[string]registryEntry // key: "provider:authMethod"
 }
 
 // globalRegistry is the default registry instance

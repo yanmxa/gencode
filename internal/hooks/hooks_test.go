@@ -57,7 +57,7 @@ func TestGetMatchValue(t *testing.T) {
 		{SubagentStop, HookInput{AgentType: "Plan"}, "Plan"},
 		{PreCompact, HookInput{Trigger: "auto"}, "auto"},
 		{UserPromptSubmit, HookInput{Prompt: "hello"}, ""}, // No matcher support
-		{Stop, HookInput{}, ""},                             // No matcher support
+		{Stop, HookInput{}, ""},                            // No matcher support
 	}
 
 	for _, tt := range tests {
@@ -140,7 +140,7 @@ func TestEngineMatcherFiltering(t *testing.T) {
 	scriptPath := filepath.Join(tmpDir, "hook.sh")
 	err := os.WriteFile(scriptPath, []byte(`#!/bin/bash
 echo '{"systemMessage":"hook executed"}'
-`), 0755)
+`), 0o755)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestEngineBlockingHook(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(`#!/bin/bash
 echo "Blocked by policy" >&2
 exit 2
-`), 0755)
+`), 0o755)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestEngineJSONBlockingOutput(t *testing.T) {
 	scriptPath := filepath.Join(tmpDir, "deny.sh")
 	err := os.WriteFile(scriptPath, []byte(`#!/bin/bash
 echo '{"continue":false,"stopReason":"Denied by hook"}'
-`), 0755)
+`), 0o755)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestEngineUpdatedInput(t *testing.T) {
 	script := `#!/bin/bash
 echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":` + string(updatedJSON) + `}}'
 `
-	err := os.WriteFile(scriptPath, []byte(script), 0755)
+	err := os.WriteFile(scriptPath, []byte(script), 0o755)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestEngineEnvironmentVariables(t *testing.T) {
 	scriptPath := filepath.Join(tmpDir, "env.sh")
 	err := os.WriteFile(scriptPath, []byte(`#!/bin/bash
 echo "{\"systemMessage\":\"GEN=$GEN_PROJECT_DIR CLAUDE=$CLAUDE_PROJECT_DIR\"}"
-`), 0755)
+`), 0o755)
 	if err != nil {
 		t.Fatal(err)
 	}

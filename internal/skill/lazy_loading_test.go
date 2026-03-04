@@ -10,7 +10,7 @@ func TestSkillLazyLoading(t *testing.T) {
 	// Create a temporary skill directory
 	tmpDir := t.TempDir()
 	skillDir := filepath.Join(tmpDir, "test-skill")
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("Failed to create skill dir: %v", err)
 	}
 
@@ -31,7 +31,7 @@ It contains detailed instructions for the skill.
 ## Example
 ` + "```bash\necho 'hello world'\n```"
 
-	if err := os.WriteFile(skillFile, []byte(skillContent), 0644); err != nil {
+	if err := os.WriteFile(skillFile, []byte(skillContent), 0o644); err != nil {
 		t.Fatalf("Failed to create skill file: %v", err)
 	}
 

@@ -40,11 +40,11 @@ type TokenLimitOverride struct {
 
 // StoreData is the persisted data structure
 type StoreData struct {
-	Connections    map[string]ConnectionInfo      `json:"connections"`              // key: provider
-	Models         map[string]ModelCache          `json:"models"`                   // key: provider:authMethod
-	Current        *CurrentModelInfo              `json:"current"`                  // current model with provider info
-	SearchProvider *string                        `json:"searchProvider,omitempty"` // search provider name (exa, serper, brave)
-	TokenLimits    map[string]TokenLimitOverride  `json:"tokenLimits,omitempty"`    // key: modelID
+	Connections    map[string]ConnectionInfo     `json:"connections"`              // key: provider
+	Models         map[string]ModelCache         `json:"models"`                   // key: provider:authMethod
+	Current        *CurrentModelInfo             `json:"current"`                  // current model with provider info
+	SearchProvider *string                       `json:"searchProvider,omitempty"` // search provider name (exa, serper, brave)
+	TokenLimits    map[string]TokenLimitOverride `json:"tokenLimits,omitempty"`    // key: modelID
 }
 
 // Store manages provider configuration persistence
@@ -62,7 +62,7 @@ func NewStore() (*Store, error) {
 	}
 
 	configDir := filepath.Join(homeDir, ".gen")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return nil, err
 	}
 
@@ -120,7 +120,7 @@ func (s *Store) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0644)
+	return os.WriteFile(s.path, data, 0o644)
 }
 
 // Connect saves a connection for a provider

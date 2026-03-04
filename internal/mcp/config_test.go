@@ -17,7 +17,7 @@ func TestConfigLoader_SaveAndLoad(t *testing.T) {
 
 	// Create project dir
 	projectDir := filepath.Join(tmpDir, ".gen")
-	os.MkdirAll(projectDir, 0755)
+	os.MkdirAll(projectDir, 0o755)
 
 	loader := &ConfigLoader{
 		userDir:    filepath.Join(tmpDir, "user", ".gen"),
@@ -77,8 +77,8 @@ func TestConfigLoader_ScopePriority(t *testing.T) {
 
 	userDir := filepath.Join(tmpDir, "user", ".gen")
 	projectDir := filepath.Join(tmpDir, "project", ".gen")
-	os.MkdirAll(userDir, 0755)
-	os.MkdirAll(projectDir, 0755)
+	os.MkdirAll(userDir, 0o755)
+	os.MkdirAll(projectDir, 0o755)
 
 	// Create user-level config
 	userConfig := MCPConfig{
@@ -89,7 +89,7 @@ func TestConfigLoader_ScopePriority(t *testing.T) {
 		},
 	}
 	userData, _ := json.Marshal(userConfig)
-	os.WriteFile(filepath.Join(userDir, "mcp.json"), userData, 0644)
+	os.WriteFile(filepath.Join(userDir, "mcp.json"), userData, 0o644)
 
 	// Create project-level config (should override)
 	projectConfig := MCPConfig{
@@ -100,7 +100,7 @@ func TestConfigLoader_ScopePriority(t *testing.T) {
 		},
 	}
 	projectData, _ := json.Marshal(projectConfig)
-	os.WriteFile(filepath.Join(projectDir, "mcp.json"), projectData, 0644)
+	os.WriteFile(filepath.Join(projectDir, "mcp.json"), projectData, 0o644)
 
 	loader := &ConfigLoader{
 		userDir:    userDir,

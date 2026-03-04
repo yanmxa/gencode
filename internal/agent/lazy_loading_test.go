@@ -24,7 +24,7 @@ It contains detailed instructions for the agent.
 1. Do something
 2. Do something else
 `
-	if err := os.WriteFile(agentFile, []byte(agentContent), 0644); err != nil {
+	if err := os.WriteFile(agentFile, []byte(agentContent), 0o644); err != nil {
 		t.Fatalf("Failed to create test agent file: %v", err)
 	}
 

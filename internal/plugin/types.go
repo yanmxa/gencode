@@ -3,7 +3,6 @@
 // installable and shareable units. Compatible with Claude Code plugin format.
 package plugin
 
-
 // Scope represents where a plugin is installed.
 type Scope string
 
@@ -275,25 +274,25 @@ type KnownMarketplaces struct {
 
 // MarketplaceMetadata represents the marketplace.json file in a marketplace root.
 type MarketplaceMetadata struct {
-	Name        string               `json:"name"`
-	Version     string               `json:"version,omitempty"`
-	Description string               `json:"description,omitempty"`
-	Owner       *Author              `json:"owner,omitempty"`
-	Plugins     []MarketplacePlugin  `json:"plugins,omitempty"`
+	Name        string              `json:"name"`
+	Version     string              `json:"version,omitempty"`
+	Description string              `json:"description,omitempty"`
+	Owner       *Author             `json:"owner,omitempty"`
+	Plugins     []MarketplacePlugin `json:"plugins,omitempty"`
 }
 
 // MarketplacePlugin represents a plugin entry in marketplace.json.
 type MarketplacePlugin struct {
 	Name        string `json:"name"`
-	Source      string `json:"source"`                // Relative path to plugin
+	Source      string `json:"source"` // Relative path to plugin
 	Description string `json:"description,omitempty"`
 	Category    string `json:"category,omitempty"`
 }
 
 // InstallCounts represents the install-counts-cache.json format.
 type InstallCounts struct {
-	Version   int           `json:"version"`
-	FetchedAt string        `json:"fetchedAt"`
+	Version   int            `json:"version"`
+	FetchedAt string         `json:"fetchedAt"`
 	Counts    []InstallCount `json:"counts"`
 }
 
@@ -302,4 +301,3 @@ type InstallCount struct {
 	Plugin         string `json:"plugin"` // "name@marketplace"
 	UniqueInstalls int    `json:"unique_installs"`
 }
-

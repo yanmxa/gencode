@@ -1,13 +1,13 @@
 // Package config provides multi-level settings management for GenCode.
 // Settings are loaded from multiple sources with the following priority (lowest to highest):
-//   1. ~/.claude/settings.json (Claude user level - compatibility)
-//   2. ~/.gen/settings.json (Gen user level)
-//   3. .claude/settings.json (Claude project level - compatibility)
-//   4. .gen/settings.json (Gen project level)
-//   5. .claude/settings.local.json (Claude local level - compatibility)
-//   6. .gen/settings.local.json (Gen local level)
-//   7. Environment variables / CLI arguments
-//   8. managed-settings.json (system level - cannot be overridden)
+//  1. ~/.claude/settings.json (Claude user level - compatibility)
+//  2. ~/.gen/settings.json (Gen user level)
+//  3. .claude/settings.json (Claude project level - compatibility)
+//  4. .gen/settings.json (Gen project level)
+//  5. .claude/settings.local.json (Claude local level - compatibility)
+//  6. .gen/settings.local.json (Gen local level)
+//  7. Environment variables / CLI arguments
+//  8. managed-settings.json (system level - cannot be overridden)
 package config
 
 // Settings represents the complete GenCode configuration.

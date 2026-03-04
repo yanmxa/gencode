@@ -12,15 +12,15 @@ import (
 
 // DevRequest represents the request data saved to JSON file
 type DevRequest struct {
-	Turn         int                `json:"turn"`
-	Timestamp    time.Time          `json:"timestamp"`
-	Provider     string             `json:"provider"`
-	Model        string             `json:"model"`
-	MaxTokens    int                `json:"max_tokens"`
-	Temperature  float64            `json:"temperature"`
-	SystemPrompt string             `json:"system_prompt,omitempty"`
-	Tools        []provider.Tool    `json:"tools,omitempty"`
-	Messages     []message.Message  `json:"messages"`
+	Turn         int               `json:"turn"`
+	Timestamp    time.Time         `json:"timestamp"`
+	Provider     string            `json:"provider"`
+	Model        string            `json:"model"`
+	MaxTokens    int               `json:"max_tokens"`
+	Temperature  float64           `json:"temperature"`
+	SystemPrompt string            `json:"system_prompt,omitempty"`
+	Tools        []provider.Tool   `json:"tools,omitempty"`
+	Messages     []message.Message `json:"messages"`
 }
 
 // DevResponse represents the response data saved to JSON file
@@ -88,5 +88,5 @@ func writeJSON(filename string, data any) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(filename, jsonData, 0644)
+	_ = os.WriteFile(filename, jsonData, 0o644)
 }

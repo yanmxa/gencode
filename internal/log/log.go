@@ -36,7 +36,7 @@ func Init() error {
 
 	// Initialize DEV_DIR for JSON debug output (independent of GEN_DEBUG)
 	if dir := os.Getenv("DEV_DIR"); dir != "" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("failed to create DEV_DIR: %w", err)
 		}
 		devDir = dir
@@ -58,7 +58,7 @@ func Init() error {
 
 	// Create log directory
 	logDir := filepath.Join(homeDir, ".gen")
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return err
 	}
 
@@ -67,18 +67,18 @@ func Init() error {
 	// Use lumberjack for log rotation
 	writeSyncer := zapcore.AddSync(&lumberjack.Logger{
 		Filename:   logPath,
-		MaxSize:    50,   // MB
+		MaxSize:    50, // MB
 		MaxBackups: 3,
-		MaxAge:     7,    // Days
+		MaxAge:     7, // Days
 		Compress:   true,
 	})
 
 	// Console encoder for human-readable output
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:        "T",
-		LevelKey:       "",  // Hide level, we use custom markers
+		LevelKey:       "", // Hide level, we use custom markers
 		NameKey:        "",
-		CallerKey:      "",  // Hide caller for cleaner output
+		CallerKey:      "", // Hide caller for cleaner output
 		MessageKey:     "M",
 		StacktraceKey:  "",
 		LineEnding:     zapcore.DefaultLineEnding,

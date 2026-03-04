@@ -30,9 +30,7 @@ Configuration files:
   ./.gen/settings.json             Enabled plugins (project)`,
 }
 
-var (
-	pluginScope string
-)
+var pluginScope string
 
 func init() {
 	// Add subcommands

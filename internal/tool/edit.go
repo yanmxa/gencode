@@ -141,7 +141,7 @@ func (t *EditTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 	}
 
 	// Write back to file
-	if err := os.WriteFile(filePath, []byte(newContent), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(newContent), 0o644); err != nil {
 		return ui.NewErrorResult(t.Name(), "failed to write file: "+err.Error())
 	}
 

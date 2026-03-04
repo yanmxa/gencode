@@ -20,13 +20,13 @@ func TestValidatePlanID(t *testing.T) {
 
 		// Invalid IDs
 		{"", false},
-		{"single", false},           // no hyphen segments
-		{"ABC-DEF", false},          // uppercase
-		{"-abc-def", false},         // leading hyphen
-		{"abc-def-", false},         // trailing hyphen (won't match since last segment is empty)
-		{"abc--def", false},         // double hyphen
-		{"abc def", false},          // space
-		{"abc/def-ghi", false},      // slash
+		{"single", false},      // no hyphen segments
+		{"ABC-DEF", false},     // uppercase
+		{"-abc-def", false},    // leading hyphen
+		{"abc-def-", false},    // trailing hyphen (won't match since last segment is empty)
+		{"abc--def", false},    // double hyphen
+		{"abc def", false},     // space
+		{"abc/def-ghi", false}, // slash
 	}
 
 	for _, tt := range tests {
@@ -116,8 +116,8 @@ func TestPlanSaveWithSpecialChars(t *testing.T) {
 
 func TestGeneratePlanName(t *testing.T) {
 	tests := []struct {
-		task     string
-		wantEnd  string // suffix the name should end with (date prefix varies)
+		task    string
+		wantEnd string // suffix the name should end with (date prefix varies)
 	}{
 		{"Add dark mode support", "-add-dark-mode-support"},
 		{"", "-plan"},

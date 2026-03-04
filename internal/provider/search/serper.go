@@ -27,11 +27,11 @@ func NewSerperProvider() *SerperProvider {
 	}
 }
 
-func (p *SerperProvider) Name() ProviderName    { return ProviderSerper }
-func (p *SerperProvider) DisplayName() string   { return "Serper (Google)" }
-func (p *SerperProvider) RequiresAPIKey() bool  { return true }
-func (p *SerperProvider) EnvVars() []string     { return []string{serperEnvKey} }
-func (p *SerperProvider) IsAvailable() bool     { return p.apiKey != "" }
+func (p *SerperProvider) Name() ProviderName   { return ProviderSerper }
+func (p *SerperProvider) DisplayName() string  { return "Serper (Google)" }
+func (p *SerperProvider) RequiresAPIKey() bool { return true }
+func (p *SerperProvider) EnvVars() []string    { return []string{serperEnvKey} }
+func (p *SerperProvider) IsAvailable() bool    { return p.apiKey != "" }
 
 // serperRequest represents a Serper API request
 type serperRequest struct {

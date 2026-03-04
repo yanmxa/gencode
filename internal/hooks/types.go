@@ -62,22 +62,22 @@ type HookInput struct {
 
 // HookOutput is the JSON output from hook commands.
 type HookOutput struct {
-	Continue           *bool              `json:"continue,omitempty"`
-	StopReason         string             `json:"stopReason,omitempty"`
-	SuppressOutput     bool               `json:"suppressOutput,omitempty"`
-	SystemMessage      string             `json:"systemMessage,omitempty"`
-	Decision           string             `json:"decision,omitempty"`
-	Reason             string             `json:"reason,omitempty"`
+	Continue           *bool               `json:"continue,omitempty"`
+	StopReason         string              `json:"stopReason,omitempty"`
+	SuppressOutput     bool                `json:"suppressOutput,omitempty"`
+	SystemMessage      string              `json:"systemMessage,omitempty"`
+	Decision           string              `json:"decision,omitempty"`
+	Reason             string              `json:"reason,omitempty"`
 	HookSpecificOutput *HookSpecificOutput `json:"hookSpecificOutput,omitempty"`
 }
 
 // HookSpecificOutput contains event-specific output fields.
 type HookSpecificOutput struct {
-	HookEventName            string                     `json:"hookEventName"`
-	PermissionDecision       string                     `json:"permissionDecision,omitempty"`
-	PermissionDecisionReason string                     `json:"permissionDecisionReason,omitempty"`
-	UpdatedInput             map[string]any             `json:"updatedInput,omitempty"`
-	AdditionalContext        string                     `json:"additionalContext,omitempty"`
+	HookEventName             string                     `json:"hookEventName"`
+	PermissionDecision        string                     `json:"permissionDecision,omitempty"`
+	PermissionDecisionReason  string                     `json:"permissionDecisionReason,omitempty"`
+	UpdatedInput              map[string]any             `json:"updatedInput,omitempty"`
+	AdditionalContext         string                     `json:"additionalContext,omitempty"`
 	PermissionRequestDecision *PermissionRequestDecision `json:"decision,omitempty"`
 }
 

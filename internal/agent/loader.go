@@ -229,4 +229,3 @@ func Init(cwd string) {
 		log.Logger().Warn("Failed to initialize agent stores", zap.Error(err))
 	}
 }
-

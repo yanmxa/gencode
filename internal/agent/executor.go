@@ -14,6 +14,7 @@ import (
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -22,10 +23,12 @@ import (
 
 // Executor runs agent LLM loops
 type Executor struct {
-	provider      provider.LLMProvider
-	cwd           string
-	parentModelID string // Parent conversation's model ID (used when inheriting)
-	hooks         *hooks.Engine
+	provider        provider.LLMProvider
+	cwd             string
+	parentModelID   string // Parent conversation's model ID (used when inheriting)
+	hooks           *hooks.Engine
+	sessionStore    *session.Store  // Optional: when set, subagent sessions are persisted
+	parentSessionID string          // Parent session ID for linking subagent sessions
 }
 
 // NewExecutor creates a new agent executor
@@ -38,6 +41,13 @@ func NewExecutor(llmProvider provider.LLMProvider, cwd string, parentModelID str
 		parentModelID: parentModelID,
 		hooks:         hookEngine,
 	}
+}
+
+// SetSessionStore configures session persistence for subagent conversations.
+// When set, completed subagent conversations are saved under the parent session.
+func (e *Executor) SetSessionStore(store *session.Store, parentSessionID string) {
+	e.sessionStore = store
+	e.parentSessionID = parentSessionID
 }
 
 // GetParentModelID returns the parent model ID
@@ -139,7 +149,7 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 		log.Logger().Warn("Agent completed", logFields...)
 	}
 
-	return &AgentResult{
+	agentResult := &AgentResult{
 		AgentName:  config.Name,
 		Success:    success,
 		Content:    result.Content,
@@ -149,7 +159,12 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 		TokenUsage: result.Tokens,
 		Duration:   time.Since(start),
 		Error:      errMsg,
-	}, nil
+	}
+
+	// Persist subagent session if store is configured
+	e.persistSubagentSession(config.Name, modelID, req.Description, result.Messages)
+
+	return agentResult, nil
 }
 
 // RunBackground executes an agent in the background and returns the task
@@ -185,7 +200,6 @@ func (e *Executor) RunBackground(req AgentRequest) (*task.AgentTask, error) {
 		defer cancel()
 
 		result, err := e.Run(ctx, req)
-
 		if err != nil {
 			agentTask.AppendOutput([]byte(fmt.Sprintf("Error: %v\n", err)))
 			agentTask.Complete(err)
@@ -307,6 +321,40 @@ func formatToolProgress(toolName string, params map[string]any) string {
 	return fmt.Sprintf("%s: %s", format.verb, value)
 }
 
+// persistSubagentSession saves the subagent conversation to disk if a session store is configured.
+func (e *Executor) persistSubagentSession(agentName, modelID, description string, messages []message.Message) {
+	if e.sessionStore == nil || e.parentSessionID == "" {
+		return
+	}
+
+	entries := session.MessagesToEntries(messages)
+	if len(entries) == 0 {
+		return
+	}
+
+	title := description
+	if title == "" {
+		title = agentName
+	}
+
+	sess := &session.Session{
+		Metadata: session.SessionMetadata{
+			Title:           title,
+			Model:           modelID,
+			Cwd:             e.cwd,
+			ParentSessionID: e.parentSessionID,
+		},
+		Entries: entries,
+	}
+
+	if err := e.sessionStore.SaveSubagent(e.parentSessionID, sess); err != nil {
+		log.Logger().Warn("Failed to persist subagent session",
+			zap.String("agent", agentName),
+			zap.Error(err),
+		)
+	}
+}
+
 // --- Internal helpers ---
 
 // agentPermission maps PermissionMode to a permission.Checker.
@@ -316,7 +364,6 @@ func agentPermission(mode PermissionMode) permission.Checker {
 	}
 	return permission.PermitAll()
 }
-
 
 // convertToolAccess converts agent.ToolAccess to tool.AccessConfig.
 func convertToolAccess(ta ToolAccess) *tool.AccessConfig {

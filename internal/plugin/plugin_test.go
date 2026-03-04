@@ -42,9 +42,9 @@ func TestExpandPluginRoot(t *testing.T) {
 
 func TestParsePluginRef(t *testing.T) {
 	tests := []struct {
-		ref         string
-		wantName    string
-		wantMarket  string
+		ref        string
+		wantName   string
+		wantMarket string
 	}{
 		{"git@my-plugins", "git", "my-plugins"},
 		{"git", "git", ""},
@@ -62,9 +62,9 @@ func TestParsePluginRef(t *testing.T) {
 
 func TestScope(t *testing.T) {
 	tests := []struct {
-		scope    Scope
-		str      string
-		icon     string
+		scope Scope
+		str   string
+		icon  string
 	}{
 		{ScopeUser, "user", "👤"},
 		{ScopeProject, "project", "📁"},
@@ -88,7 +88,7 @@ func TestLoadPlugin(t *testing.T) {
 
 	// Create .gen-plugin/plugin.json
 	pluginMetaDir := filepath.Join(tmpDir, ".gen-plugin")
-	if err := os.MkdirAll(pluginMetaDir, 0755); err != nil {
+	if err := os.MkdirAll(pluginMetaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -98,13 +98,13 @@ func TestLoadPlugin(t *testing.T) {
 		Description: "A test plugin",
 	}
 	manifestJSON, _ := json.Marshal(manifest)
-	if err := os.WriteFile(filepath.Join(pluginMetaDir, "plugin.json"), manifestJSON, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(pluginMetaDir, "plugin.json"), manifestJSON, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create skills directory with a skill
 	skillsDir := filepath.Join(tmpDir, "skills", "hello")
-	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	skillContent := `---
@@ -113,13 +113,13 @@ description: A greeting skill
 ---
 Say hello!
 `
-	if err := os.WriteFile(filepath.Join(skillsDir, "SKILL.md"), []byte(skillContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "SKILL.md"), []byte(skillContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create agents directory
 	agentsDir := filepath.Join(tmpDir, "agents")
-	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+	if err := os.MkdirAll(agentsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	agentContent := `---
@@ -128,7 +128,7 @@ description: A test agent
 ---
 You are a test agent.
 `
-	if err := os.WriteFile(filepath.Join(agentsDir, "test-agent.md"), []byte(agentContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(agentsDir, "test-agent.md"), []byte(agentContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -168,13 +168,13 @@ func TestRegistry(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	pluginMetaDir := filepath.Join(tmpDir, ".gen-plugin")
-	if err := os.MkdirAll(pluginMetaDir, 0755); err != nil {
+	if err := os.MkdirAll(pluginMetaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	manifest := Manifest{Name: "registry-test"}
 	manifestJSON, _ := json.Marshal(manifest)
-	if err := os.WriteFile(filepath.Join(pluginMetaDir, "plugin.json"), manifestJSON, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(pluginMetaDir, "plugin.json"), manifestJSON, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -226,11 +226,11 @@ func TestValidatePlugin(t *testing.T) {
 	// Valid plugin
 	tmpDir := t.TempDir()
 	pluginMetaDir := filepath.Join(tmpDir, ".gen-plugin")
-	os.MkdirAll(pluginMetaDir, 0755)
+	os.MkdirAll(pluginMetaDir, 0o755)
 
 	manifest := Manifest{Name: "valid-plugin", Version: "1.0.0"}
 	manifestJSON, _ := json.Marshal(manifest)
-	os.WriteFile(filepath.Join(pluginMetaDir, "plugin.json"), manifestJSON, 0644)
+	os.WriteFile(filepath.Join(pluginMetaDir, "plugin.json"), manifestJSON, 0o644)
 
 	if err := ValidatePlugin(tmpDir); err != nil {
 		t.Errorf("ValidatePlugin() unexpected error = %v", err)
@@ -245,10 +245,10 @@ func TestValidatePlugin(t *testing.T) {
 	// Invalid plugin (no name)
 	noNameDir := t.TempDir()
 	noNameMetaDir := filepath.Join(noNameDir, ".gen-plugin")
-	os.MkdirAll(noNameMetaDir, 0755)
+	os.MkdirAll(noNameMetaDir, 0o755)
 	noNameManifest := Manifest{Version: "1.0.0"} // Missing name
 	noNameJSON, _ := json.Marshal(noNameManifest)
-	os.WriteFile(filepath.Join(noNameMetaDir, "plugin.json"), noNameJSON, 0644)
+	os.WriteFile(filepath.Join(noNameMetaDir, "plugin.json"), noNameJSON, 0o644)
 
 	if err := ValidatePlugin(noNameDir); err == nil {
 		t.Error("ValidatePlugin() expected error for missing name")
@@ -260,11 +260,11 @@ func TestLoadFromPath(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	pluginMetaDir := filepath.Join(tmpDir, ".gen-plugin")
-	os.MkdirAll(pluginMetaDir, 0755)
+	os.MkdirAll(pluginMetaDir, 0o755)
 
 	manifest := Manifest{Name: "path-test"}
 	manifestJSON, _ := json.Marshal(manifest)
-	os.WriteFile(filepath.Join(pluginMetaDir, "plugin.json"), manifestJSON, 0644)
+	os.WriteFile(filepath.Join(pluginMetaDir, "plugin.json"), manifestJSON, 0o644)
 
 	// Test LoadFromPath
 	registry := NewRegistry()
@@ -290,7 +290,7 @@ func TestHooksConfigParsing(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	hooksDir := filepath.Join(tmpDir, "hooks")
-	os.MkdirAll(hooksDir, 0755)
+	os.MkdirAll(hooksDir, 0o755)
 
 	hooksJSON := `{
 		"hooks": {
@@ -308,7 +308,7 @@ func TestHooksConfigParsing(t *testing.T) {
 			]
 		}
 	}`
-	os.WriteFile(filepath.Join(hooksDir, "hooks.json"), []byte(hooksJSON), 0644)
+	os.WriteFile(filepath.Join(hooksDir, "hooks.json"), []byte(hooksJSON), 0o644)
 
 	// Resolve hooks config
 	config := ResolveHooksConfig(nil, tmpDir)
@@ -356,7 +356,7 @@ func TestMCPConfigParsing(t *testing.T) {
 			}
 		}
 	}`
-	os.WriteFile(filepath.Join(tmpDir, ".mcp.json"), []byte(mcpJSON), 0644)
+	os.WriteFile(filepath.Join(tmpDir, ".mcp.json"), []byte(mcpJSON), 0o644)
 
 	// Resolve MCP config
 	servers := ResolveMCPServers(nil, tmpDir)

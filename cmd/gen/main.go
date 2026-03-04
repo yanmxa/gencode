@@ -13,6 +13,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/options"
+	"github.com/yanmxa/gencode/internal/session"
 
 	// Import providers for registration
 	_ "github.com/yanmxa/gencode/internal/provider/anthropic"
@@ -21,9 +22,7 @@ import (
 	_ "github.com/yanmxa/gencode/internal/provider/openai"
 )
 
-var (
-	version = "1.7.4"
-)
+var version = "1.7.4"
 
 // cliOpts holds all CLI flag values in one place.
 var cliOpts struct {
@@ -40,6 +39,9 @@ func init() {
 
 	// Initialize logging (enabled via GEN_DEBUG=1)
 	_ = log.Init()
+
+	// Set app version for session entries.
+	session.AppVersion = version
 
 	// Register flags
 	rootCmd.Flags().StringVarP(&cliOpts.print, "print", "p", "", "Non-interactive print mode with prompt")
@@ -107,7 +109,6 @@ func readStdin() string {
 	}
 	return ""
 }
-
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
@@ -178,5 +179,3 @@ For more information, visit: https://github.com/yanmxa/gencode
 `
 	fmt.Println(help)
 }
-
-

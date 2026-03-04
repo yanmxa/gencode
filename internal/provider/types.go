@@ -49,11 +49,11 @@ type ModelInfo struct {
 
 // CompletionOptions contains options for a completion request
 type CompletionOptions struct {
-	Model       string
-	Messages    []message.Message
-	MaxTokens   int
-	Temperature float64
-	Tools       []Tool
+	Model        string
+	Messages     []message.Message
+	MaxTokens    int
+	Temperature  float64
+	Tools        []Tool
 	SystemPrompt string
 }
 

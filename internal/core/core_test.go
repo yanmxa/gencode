@@ -175,7 +175,6 @@ func TestSetMessages(t *testing.T) {
 	}
 }
 
-
 func TestDecisionConstants(t *testing.T) {
 	if permission.Permit != 0 {
 		t.Error("Permit should be 0")

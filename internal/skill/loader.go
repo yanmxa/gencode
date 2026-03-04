@@ -12,8 +12,8 @@ import (
 
 // InstalledPluginsData represents the installed_plugins.json structure.
 type InstalledPluginsData struct {
-	Version int                          `json:"version"`
-	Plugins map[string][]PluginInstall   `json:"plugins"`
+	Version int                        `json:"version"`
+	Plugins map[string][]PluginInstall `json:"plugins"`
 }
 
 // PluginInstall represents a single plugin installation.
@@ -62,7 +62,8 @@ func (l *Loader) AddPluginPaths(paths []struct {
 	Path      string
 	Namespace string
 	IsProject bool
-}) {
+},
+) {
 	for _, p := range paths {
 		l.AddPluginPath(p.Path, p.Namespace, p.IsProject)
 	}

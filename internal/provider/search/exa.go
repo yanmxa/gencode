@@ -21,11 +21,11 @@ func NewExaProvider() *ExaProvider {
 	return &ExaProvider{}
 }
 
-func (p *ExaProvider) Name() ProviderName    { return ProviderExa }
-func (p *ExaProvider) DisplayName() string   { return "Exa AI" }
-func (p *ExaProvider) RequiresAPIKey() bool  { return false }
-func (p *ExaProvider) EnvVars() []string     { return []string{} }
-func (p *ExaProvider) IsAvailable() bool     { return true } // Always available, no API key needed
+func (p *ExaProvider) Name() ProviderName   { return ProviderExa }
+func (p *ExaProvider) DisplayName() string  { return "Exa AI" }
+func (p *ExaProvider) RequiresAPIKey() bool { return false }
+func (p *ExaProvider) EnvVars() []string    { return []string{} }
+func (p *ExaProvider) IsAvailable() bool    { return true } // Always available, no API key needed
 
 // exaMCPRequest represents a JSON-RPC 2.0 request to Exa MCP
 type exaMCPRequest struct {
@@ -36,17 +36,17 @@ type exaMCPRequest struct {
 }
 
 type exaToolRequest struct {
-	Name      string              `json:"name"`
-	Arguments exaSearchArguments  `json:"arguments"`
+	Name      string             `json:"name"`
+	Arguments exaSearchArguments `json:"arguments"`
 }
 
 type exaSearchArguments struct {
-	Query            string `json:"query"`
-	NumResults       int    `json:"numResults,omitempty"`
-	Type             string `json:"type,omitempty"`
-	Contents         exaContentsSpec `json:"contents"`
-	IncludeDomains   []string `json:"includeDomains,omitempty"`
-	ExcludeDomains   []string `json:"excludeDomains,omitempty"`
+	Query          string          `json:"query"`
+	NumResults     int             `json:"numResults,omitempty"`
+	Type           string          `json:"type,omitempty"`
+	Contents       exaContentsSpec `json:"contents"`
+	IncludeDomains []string        `json:"includeDomains,omitempty"`
+	ExcludeDomains []string        `json:"excludeDomains,omitempty"`
 }
 
 type exaContentsSpec struct {

@@ -10,12 +10,10 @@ const (
 	MaxTitleLength = 60
 )
 
-// GenerateTitle generates a title from the first user message
-func GenerateTitle(messages []StoredMessage) string {
-	for _, msg := range messages {
-		if msg.Role == "user" && msg.Content != "" && msg.ToolResult == nil {
-			return truncateTitle(msg.Content)
-		}
+// GenerateTitle generates a title from the first user text in the entries.
+func GenerateTitle(entries []Entry) string {
+	if text := ExtractFirstUserText(entries); text != "" {
+		return truncateTitle(text)
 	}
 	return "Untitled Session"
 }

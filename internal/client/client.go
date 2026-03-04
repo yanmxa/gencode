@@ -40,20 +40,23 @@ func (c *Client) Tokens() TokenUsage {
 
 // Send sends a non-streaming completion request and returns the full response.
 func (c *Client) Send(ctx context.Context, msgs []message.Message,
-	tools []provider.Tool, sysPrompt string) (message.CompletionResponse, error) {
+	tools []provider.Tool, sysPrompt string,
+) (message.CompletionResponse, error) {
 	return provider.Complete(ctx, c.Provider, c.opts(msgs, tools, sysPrompt))
 }
 
 // Stream starts a streaming completion request and returns a chunk channel.
 func (c *Client) Stream(ctx context.Context, msgs []message.Message,
-	tools []provider.Tool, sysPrompt string) <-chan message.StreamChunk {
+	tools []provider.Tool, sysPrompt string,
+) <-chan message.StreamChunk {
 	return c.Provider.Stream(ctx, c.opts(msgs, tools, sysPrompt))
 }
 
 // Complete sends a one-shot completion (custom max tokens, no tools).
 // Used for utility calls like conversation compaction.
 func (c *Client) Complete(ctx context.Context,
-	sysPrompt string, msgs []message.Message, maxTokens int) (message.CompletionResponse, error) {
+	sysPrompt string, msgs []message.Message, maxTokens int,
+) (message.CompletionResponse, error) {
 	return provider.Complete(ctx, c.Provider, provider.CompletionOptions{
 		Model:        c.Model,
 		SystemPrompt: sysPrompt,
@@ -75,8 +78,8 @@ func (c *Client) ModelID() string {
 // ResolveMaxTokens returns the effective output token limit.
 // Priority: 1. Custom override (MaxTokens field)
 //
-//	2. Provider's model metadata (OutputTokenLimit from ListModels)
-//	3. Default (8192)
+//  2. Provider's model metadata (OutputTokenLimit from ListModels)
+//  3. Default (8192)
 func (c *Client) ResolveMaxTokens(ctx context.Context) int {
 	if c.MaxTokens > 0 {
 		return c.MaxTokens

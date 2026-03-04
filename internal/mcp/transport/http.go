@@ -268,4 +268,3 @@ func (t *HTTPTransport) SetNotificationHandler(handler NotificationHandler) {
 	defer t.mu.Unlock()
 	t.notifyHandler = handler
 }
-

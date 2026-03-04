@@ -95,7 +95,7 @@ func (t *WriteTool) ExecuteApproved(ctx context.Context, params map[string]any, 
 
 	// Create parent directories if needed
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return ui.NewErrorResult(t.Name(), "failed to create directory: "+err.Error())
 	}
 
@@ -104,7 +104,7 @@ func (t *WriteTool) ExecuteApproved(ctx context.Context, params map[string]any, 
 	isNewFile := os.IsNotExist(err)
 
 	// Get optional mode parameter (default 0644)
-	mode := os.FileMode(0644)
+	mode := os.FileMode(0o644)
 	if modeVal, ok := params["mode"].(float64); ok && modeVal > 0 {
 		mode = os.FileMode(int(modeVal))
 	} else if modeVal, ok := params["mode"].(int); ok && modeVal > 0 {

@@ -222,7 +222,7 @@ func (r *Registry) saveEnabledState(name string, enabled bool, scope Scope) erro
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
 		return err
 	}
 
@@ -248,7 +248,7 @@ func (r *Registry) saveEnabledState(name string, enabled bool, scope Scope) erro
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(settingsPath, data, 0644)
+	return os.WriteFile(settingsPath, data, 0o644)
 }
 
 // Register adds a plugin to the registry.

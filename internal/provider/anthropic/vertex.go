@@ -22,12 +22,15 @@ var VertexMeta = provider.ProviderMeta{
 // vertexModels is the static list of Claude models available on Vertex AI.
 //
 // Source: https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude
-//         https://platform.claude.com/docs/en/docs/about-claude/models
+//
+//	https://platform.claude.com/docs/en/docs/about-claude/models
+//
 // Last updated: 2026-02-23
 //
 // Note: Vertex AI does not provide a Models API, so we use a static list.
 // TODO: Switch to dynamic fetching once upstream issue is resolved:
-//       https://github.com/anthropics/anthropic-sdk-go/issues/270
+//
+//	https://github.com/anthropics/anthropic-sdk-go/issues/270
 var vertexModels = []provider.ModelInfo{
 	// Current generation
 	{

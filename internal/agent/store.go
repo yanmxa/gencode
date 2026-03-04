@@ -83,11 +83,11 @@ func (s *AgentStore) save() error {
 
 	// Ensure directory exists
 	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 
-	return os.WriteFile(s.path, data, 0644)
+	return os.WriteFile(s.path, data, 0o644)
 }
 
 // IsDisabled returns whether an agent is disabled

@@ -4,7 +4,7 @@ SRCDIR := ./cmd/gen
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: build install clean release test
+.PHONY: build install clean release test format lint
 
 build:
 	@mkdir -p $(BINDIR)
@@ -13,6 +13,14 @@ build:
 install: build
 	@mkdir -p $(HOME)/.local/bin
 	cp $(BINDIR)/$(BINARY) $(HOME)/.local/bin/
+
+format:
+	gofumpt -w .
+	go build ./...
+
+lint:
+	go vet ./...
+	gofumpt -d .
 
 test:
 	go test ./...

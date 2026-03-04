@@ -336,12 +336,18 @@ func (l *Loop) runTool(ctx context.Context, tc message.ToolCall, params map[stri
 // Compact summarizes a conversation to reduce context window usage.
 // It sends the conversation to the LLM with a compact prompt and returns
 // the summary text, the original message count, and any error.
+// sessionMemory is the previous compaction summary; if non-empty it is
+// prepended so the new summary incorporates prior context.
 func Compact(ctx context.Context, c *client.Client,
-	msgs []message.Message, focus string,
+	msgs []message.Message, sessionMemory, focus string,
 ) (summary string, count int, err error) {
 	count = len(msgs)
 
 	conversationText := message.BuildConversationText(msgs)
+
+	if sessionMemory != "" {
+		conversationText = fmt.Sprintf("Previous session context:\n\n%s\n\n---\n\nRecent conversation:\n\n%s", sessionMemory, conversationText)
+	}
 
 	if focus != "" {
 		conversationText += fmt.Sprintf("\n\n**Important**: Focus the summary on: %s", focus)

@@ -1008,7 +1008,7 @@ func TestRealMCP_Filesystem(t *testing.T) {
 		t.Fatalf("EvalSymlinks() error: %v", err)
 	}
 	testFile := filepath.Join(tmpDir, "hello.txt")
-	if err := os.WriteFile(testFile, []byte("hello from integration test"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("hello from integration test"), 0o644); err != nil {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 

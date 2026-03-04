@@ -294,4 +294,3 @@ func appendURLPath(base, segment string) string {
 	}
 	return base + "/" + segment
 }
-

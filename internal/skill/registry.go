@@ -81,7 +81,7 @@ func (s *Store) load() {
 func (s *Store) save() error {
 	// Ensure directory exists
 	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 
@@ -94,7 +94,7 @@ func (s *Store) save() error {
 		return err
 	}
 
-	return os.WriteFile(s.path, data, 0644)
+	return os.WriteFile(s.path, data, 0o644)
 }
 
 // GetState returns the persisted state for a skill.

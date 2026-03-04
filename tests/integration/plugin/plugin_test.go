@@ -186,7 +186,7 @@ func TestInstalledPluginsV2Format(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to marshal v2 data: %v", err)
 	}
-	if err := os.WriteFile(installedFile, data, 0644); err != nil {
+	if err := os.WriteFile(installedFile, data, 0o644); err != nil {
 		t.Fatalf("Failed to write installed_plugins.json: %v", err)
 	}
 
@@ -298,4 +298,3 @@ func TestPluginAgentPaths(t *testing.T) {
 		t.Logf("Agent path: %s", agentPath)
 	}
 }
-

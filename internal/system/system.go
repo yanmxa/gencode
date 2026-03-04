@@ -205,17 +205,17 @@ type MemoryFile struct {
 //  2. ~/.claude/CLAUDE.md (fallback)
 //
 // User rules:
-//  - ~/.gen/rules/*.md
+//   - ~/.gen/rules/*.md
 //
 // Project level (first found wins):
 //  1. .gen/GEN.md or GEN.md (preferred)
 //  2. .claude/CLAUDE.md or CLAUDE.md (fallback)
 //
 // Project local (not committed to git):
-//  - .gen/GEN.local.md
+//   - .gen/GEN.local.md
 //
 // Project rules:
-//  - .gen/rules/*.md
+//   - .gen/rules/*.md
 //
 // All sources are concatenated with @import resolution.
 func LoadMemory(cwd string) string {
@@ -409,11 +409,11 @@ func CompactPrompt() string {
 
 // MemoryPaths holds categorized memory file paths.
 type MemoryPaths struct {
-	Global      []string // User-level memory files
-	GlobalRules string   // User-level rules directory
-	Project     []string // Project-level memory files
-	ProjectRules string  // Project-level rules directory
-	Local       []string // Local memory files (not committed)
+	Global       []string // User-level memory files
+	GlobalRules  string   // User-level rules directory
+	Project      []string // Project-level memory files
+	ProjectRules string   // Project-level rules directory
+	Local        []string // Local memory files (not committed)
 }
 
 // GetMemoryPaths returns the search paths for memory files.

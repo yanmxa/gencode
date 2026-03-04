@@ -87,7 +87,7 @@ func ParsePluginRef(ref string) (name, marketplace string) {
 	if len(parts) > 1 {
 		marketplace = parts[1]
 	}
-	return
+	return name, marketplace
 }
 
 // Install installs a plugin from a reference.
@@ -106,7 +106,7 @@ func (i *Installer) Install(ctx context.Context, ref string, scope Scope) error 
 	pluginPath := filepath.Join(installDir, name)
 
 	// Create install directory
-	if err := os.MkdirAll(installDir, 0755); err != nil {
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create install directory: %w", err)
 	}
 
@@ -253,7 +253,7 @@ func (i *Installer) addToInstalled(scope Scope, plugin InstalledPlugin) error {
 // addToInstalledV2 adds a plugin to installed_plugins.json using v2 format.
 func (i *Installer) addToInstalledV2(scope Scope, pluginKey string, info PluginInstallInfo) error {
 	installedFile := GetInstalledPluginsFile(i.cwd, scope)
-	if err := os.MkdirAll(filepath.Dir(installedFile), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(installedFile), 0o755); err != nil {
 		return err
 	}
 
@@ -278,7 +278,7 @@ func (i *Installer) addToInstalledV2(scope Scope, pluginKey string, info PluginI
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(installedFile, data, 0644)
+	return os.WriteFile(installedFile, data, 0o644)
 }
 
 // loadInstalledPluginsV2 loads the installed plugins in v2 format.
@@ -349,9 +349,8 @@ func (i *Installer) removeFromInstalled(scope Scope, source string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(installedFile, data, 0644)
+	return os.WriteFile(installedFile, data, 0o644)
 }
-
 
 // copyDir copies a directory recursively.
 func copyDir(src, dst string) error {
@@ -450,7 +449,7 @@ func (i *Installer) AddMarketplace(source MarketplaceSource) error {
 		if m.Name == source.Name {
 			km.Marketplaces[idx] = source
 			data, _ := json.MarshalIndent(km, "", "  ")
-			return os.WriteFile(path, data, 0644)
+			return os.WriteFile(path, data, 0o644)
 		}
 	}
 
@@ -459,7 +458,7 @@ func (i *Installer) AddMarketplace(source MarketplaceSource) error {
 	i.marketplaces[source.Name] = source
 
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 
@@ -467,5 +466,5 @@ func (i *Installer) AddMarketplace(source MarketplaceSource) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0o644)
 }

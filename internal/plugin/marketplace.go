@@ -86,7 +86,7 @@ func (m *MarketplaceManager) Load() error {
 
 // Save saves marketplace configurations to known_marketplaces.json.
 func (m *MarketplaceManager) Save() error {
-	if err := os.MkdirAll(m.configDir, 0755); err != nil {
+	if err := os.MkdirAll(m.configDir, 0o755); err != nil {
 		return err
 	}
 
@@ -96,7 +96,7 @@ func (m *MarketplaceManager) Save() error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0o644)
 }
 
 // Get returns a marketplace by ID.
@@ -235,7 +235,7 @@ func (m *MarketplaceManager) syncGitHub(ctx context.Context, id string, entry Ma
 	}
 
 	// Clone
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return err
 	}
 	url := fmt.Sprintf("https://github.com/%s.git", entry.Source.Repo)

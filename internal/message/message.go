@@ -8,12 +8,27 @@ import (
 	"strings"
 )
 
+// ChatMessage represents a UI-layer chat message with display state.
+type ChatMessage struct {
+	Role              Role
+	Content           string
+	Thinking          string
+	Images            []ImageData
+	ToolCalls         []ToolCall
+	ToolCallsExpanded bool
+	ToolResult        *ToolResult
+	ToolName          string
+	Expanded          bool
+	RenderedInline    bool
+}
+
 // Role represents the role of a message participant.
 type Role string
 
 const (
 	RoleUser       Role = "user"
 	RoleAssistant  Role = "assistant"
+	RoleNotice     Role = "notice"
 	RoleToolResult Role = "tool_result"
 )
 

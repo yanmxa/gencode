@@ -28,7 +28,8 @@ func NewTestLoop(t *testing.T, responses ...message.CompletionResponse) (*core.L
 
 // NewTestLoopWithPermission creates a Loop with a custom permission checker.
 func NewTestLoopWithPermission(t *testing.T, checker permission.Checker,
-	responses ...message.CompletionResponse) (*core.Loop, *client.FakeClient) {
+	responses ...message.CompletionResponse,
+) (*core.Loop, *client.FakeClient) {
 	t.Helper()
 
 	fake := &client.FakeClient{Responses: responses}

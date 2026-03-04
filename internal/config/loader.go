@@ -46,12 +46,12 @@ func NewLoaderWithOptions(userDir, projectDir string, claudeCompat bool) *Loader
 
 // Load loads and merges settings from all sources.
 // Priority (lowest to highest):
-//   1. ~/.claude/settings.json (Claude user level)
-//   2. ~/.gen/settings.json (Gen user level)
-//   3. .claude/settings.json (Claude project level)
-//   4. .gen/settings.json (Gen project level)
-//   5. .claude/settings.local.json (Claude local level)
-//   6. .gen/settings.local.json (Gen local level)
+//  1. ~/.claude/settings.json (Claude user level)
+//  2. ~/.gen/settings.json (Gen user level)
+//  3. .claude/settings.json (Claude project level)
+//  4. .gen/settings.json (Gen project level)
+//  5. .claude/settings.local.json (Claude local level)
+//  6. .gen/settings.local.json (Gen local level)
 //
 // Later sources override earlier ones.
 func (l *Loader) Load() (*Settings, error) {
@@ -129,12 +129,12 @@ func (l *Loader) GetProjectDir() string {
 
 // EnsureUserDir creates the user config directory if it doesn't exist.
 func (l *Loader) EnsureUserDir() error {
-	return os.MkdirAll(l.userDir, 0755)
+	return os.MkdirAll(l.userDir, 0o755)
 }
 
 // EnsureProjectDir creates the project config directory if it doesn't exist.
 func (l *Loader) EnsureProjectDir() error {
-	return os.MkdirAll(l.projectDir, 0755)
+	return os.MkdirAll(l.projectDir, 0o755)
 }
 
 // SaveToProject saves settings to the project-level settings file.
@@ -153,7 +153,7 @@ func (l *Loader) SaveToUser(settings *Settings) error {
 func (l *Loader) saveToFile(path string, settings *Settings) error {
 	// Ensure directory exists
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 
@@ -180,7 +180,7 @@ func (l *Loader) saveToFile(path string, settings *Settings) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0o644)
 }
 
 // defaultSettings is a cached instance of the default settings

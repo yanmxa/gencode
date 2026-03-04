@@ -23,10 +23,10 @@ Some content after import`
 	importedContent := `## Imported Content
 This was imported from another file.`
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "main.md"), []byte(mainContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "main.md"), []byte(mainContent), 0o644); err != nil {
 		t.Fatalf("Failed to write main.md: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, "imported.md"), []byte(importedContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "imported.md"), []byte(importedContent), 0o644); err != nil {
 		t.Fatalf("Failed to write imported.md: %v", err)
 	}
 
@@ -61,10 +61,10 @@ func TestResolveImportsCycle(t *testing.T) {
 	file2Content := `# File 2
 @file1.md`
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "file1.md"), []byte(file1Content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "file1.md"), []byte(file1Content), 0o644); err != nil {
 		t.Fatalf("Failed to write file1.md: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, "file2.md"), []byte(file2Content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "file2.md"), []byte(file2Content), 0o644); err != nil {
 		t.Fatalf("Failed to write file2.md: %v", err)
 	}
 
@@ -124,19 +124,19 @@ func TestLoadRulesDirectory(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	rulesDir := filepath.Join(tmpDir, "rules")
-	if err := os.MkdirAll(rulesDir, 0755); err != nil {
+	if err := os.MkdirAll(rulesDir, 0o755); err != nil {
 		t.Fatalf("Failed to create rules dir: %v", err)
 	}
 
 	// Create rule files
-	if err := os.WriteFile(filepath.Join(rulesDir, "coding.md"), []byte("# Coding Rules"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(rulesDir, "coding.md"), []byte("# Coding Rules"), 0o644); err != nil {
 		t.Fatalf("Failed to write coding.md: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(rulesDir, "security.md"), []byte("# Security Rules"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(rulesDir, "security.md"), []byte("# Security Rules"), 0o644); err != nil {
 		t.Fatalf("Failed to write security.md: %v", err)
 	}
 	// Non-md file should be ignored
-	if err := os.WriteFile(filepath.Join(rulesDir, "readme.txt"), []byte("Ignore me"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(rulesDir, "readme.txt"), []byte("Ignore me"), 0o644); err != nil {
 		t.Fatalf("Failed to write readme.txt: %v", err)
 	}
 
@@ -219,13 +219,13 @@ After C import`
 	cContent := `### Level C
 Deepest content`
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "a.md"), []byte(aContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "a.md"), []byte(aContent), 0o644); err != nil {
 		t.Fatalf("Failed to write a.md: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, "b.md"), []byte(bContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "b.md"), []byte(bContent), 0o644); err != nil {
 		t.Fatalf("Failed to write b.md: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, "c.md"), []byte(cContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "c.md"), []byte(cContent), 0o644); err != nil {
 		t.Fatalf("Failed to write c.md: %v", err)
 	}
 
@@ -260,7 +260,7 @@ func TestResolveImportsRelativePath(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	subDir := filepath.Join(tmpDir, "subdir")
-	if err := os.MkdirAll(subDir, 0755); err != nil {
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
 		t.Fatalf("Failed to create subdir: %v", err)
 	}
 
@@ -271,10 +271,10 @@ func TestResolveImportsRelativePath(t *testing.T) {
 	nestedContent := `## Nested
 Nested content here`
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "main.md"), []byte(mainContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "main.md"), []byte(mainContent), 0o644); err != nil {
 		t.Fatalf("Failed to write main.md: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(subDir, "nested.md"), []byte(nestedContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(subDir, "nested.md"), []byte(nestedContent), 0o644); err != nil {
 		t.Fatalf("Failed to write nested.md: %v", err)
 	}
 
@@ -300,7 +300,7 @@ func TestLoadMemoryFilesWithImports(t *testing.T) {
 
 	// Create .gen directory
 	genDir := filepath.Join(tmpDir, ".gen")
-	if err := os.MkdirAll(genDir, 0755); err != nil {
+	if err := os.MkdirAll(genDir, 0o755); err != nil {
 		t.Fatalf("Failed to create .gen dir: %v", err)
 	}
 
@@ -312,10 +312,10 @@ End of memory`
 	extraContent := `## Extra Content
 This was imported`
 
-	if err := os.WriteFile(filepath.Join(genDir, "GEN.md"), []byte(genMdContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(genDir, "GEN.md"), []byte(genMdContent), 0o644); err != nil {
 		t.Fatalf("Failed to write GEN.md: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(genDir, "extra.md"), []byte(extraContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(genDir, "extra.md"), []byte(extraContent), 0o644); err != nil {
 		t.Fatalf("Failed to write extra.md: %v", err)
 	}
 
@@ -354,7 +354,7 @@ func TestFindMemoryFile(t *testing.T) {
 
 	// Create one file
 	existingFile := filepath.Join(tmpDir, "exists.md")
-	if err := os.WriteFile(existingFile, []byte("content"), 0644); err != nil {
+	if err := os.WriteFile(existingFile, []byte("content"), 0o644); err != nil {
 		t.Fatalf("Failed to write file: %v", err)
 	}
 

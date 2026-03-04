@@ -96,7 +96,7 @@ func (s SkillScope) String() string {
 type Skill struct {
 	// Frontmatter fields (parsed from YAML header)
 	Name         string   `yaml:"name"`
-	Namespace    string   `yaml:"namespace"`    // Optional namespace (e.g., "git", "jira")
+	Namespace    string   `yaml:"namespace"` // Optional namespace (e.g., "git", "jira")
 	Description  string   `yaml:"description"`
 	AllowedTools []string `yaml:"allowed-tools"`
 	ArgumentHint string   `yaml:"argument-hint"`

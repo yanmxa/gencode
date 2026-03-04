@@ -76,8 +76,8 @@ type MCPResource struct {
 
 // MCPPrompt represents a prompt template exposed by an MCP server
 type MCPPrompt struct {
-	Name        string             `json:"name"`
-	Description string             `json:"description,omitempty"`
+	Name        string              `json:"name"`
+	Description string              `json:"description,omitempty"`
 	Arguments   []MCPPromptArgument `json:"arguments,omitempty"`
 }
 
@@ -111,7 +111,7 @@ type PromptResult struct {
 
 // PromptMessage represents a message in a prompt result
 type PromptMessage struct {
-	Role    string              `json:"role"`
+	Role    string               `json:"role"`
 	Content PromptMessageContent `json:"content"`
 }
 

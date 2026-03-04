@@ -27,11 +27,11 @@ func NewBraveProvider() *BraveProvider {
 	}
 }
 
-func (p *BraveProvider) Name() ProviderName    { return ProviderBrave }
-func (p *BraveProvider) DisplayName() string   { return "Brave Search" }
-func (p *BraveProvider) RequiresAPIKey() bool  { return true }
-func (p *BraveProvider) EnvVars() []string     { return []string{braveEnvKey} }
-func (p *BraveProvider) IsAvailable() bool     { return p.apiKey != "" }
+func (p *BraveProvider) Name() ProviderName   { return ProviderBrave }
+func (p *BraveProvider) DisplayName() string  { return "Brave Search" }
+func (p *BraveProvider) RequiresAPIKey() bool { return true }
+func (p *BraveProvider) EnvVars() []string    { return []string{braveEnvKey} }
+func (p *BraveProvider) IsAvailable() bool    { return p.apiKey != "" }
 
 // braveResponse represents a Brave Search API response
 type braveResponse struct {

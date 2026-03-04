@@ -5,10 +5,21 @@ import (
 	"context"
 	"fmt"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"go.uber.org/zap"
+
+	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/options"
+	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/tui"
+	_ "github.com/yanmxa/gencode/internal/provider/anthropic"
+	_ "github.com/yanmxa/gencode/internal/provider/google"
+	_ "github.com/yanmxa/gencode/internal/provider/openai"
+	"github.com/yanmxa/gencode/internal/skill"
 )
 
 // RunWithOptions routes to either print mode or interactive TUI.
@@ -17,12 +28,12 @@ func RunWithOptions(opts options.RunOptions) error {
 		return runNonInteractive(opts.Print)
 	}
 
-	p, err := tui.NewProgram(opts)
+	m, err := newModel(opts)
 	if err != nil {
 		return err
 	}
 
-	if _, err := p.Run(); err != nil {
+	if _, err := tea.NewProgram(m).Run(); err != nil {
 		return fmt.Errorf("failed to run TUI: %w", err)
 	}
 	return nil
@@ -79,4 +90,60 @@ func runNonInteractive(userMessage string) error {
 	}
 
 	return nil
+}
+
+// --- Infrastructure initialization ---
+
+func initializeProvider() (*provider.Store, provider.LLMProvider, *provider.CurrentModelInfo) {
+	store, _ := provider.NewStore()
+	if store == nil {
+		return nil, nil, nil
+	}
+
+	currentModel := store.GetCurrentModel()
+	ctx := context.Background()
+
+	// Try to connect to current model's provider first
+	if currentModel != nil {
+		if p, err := provider.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod); err == nil {
+			return store, p, currentModel
+		}
+	}
+
+	// Fall back to any available provider
+	for providerName, conn := range store.GetConnections() {
+		if p, err := provider.GetProvider(ctx, provider.Provider(providerName), conn.AuthMethod); err == nil {
+			return store, p, currentModel
+		}
+	}
+
+	return store, nil, currentModel
+}
+
+func initializeRegistries(cwd string) *mcp.Registry {
+	ctx := context.Background()
+
+	if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
+		log.Logger().Warn("Failed to load plugins", zap.Error(err))
+	}
+
+	if err := skill.Initialize(cwd); err != nil {
+		log.Logger().Warn("Failed to initialize skill registry", zap.Error(err))
+	}
+
+	agent.Init(cwd)
+
+	if err := mcp.Initialize(cwd); err != nil {
+		log.Logger().Warn("Failed to initialize MCP registry", zap.Error(err))
+		return nil
+	}
+	return mcp.DefaultRegistry
+}
+
+func loadSettings() *config.Settings {
+	settings, _ := config.Load()
+	if settings == nil {
+		return config.Default()
+	}
+	return settings
 }
