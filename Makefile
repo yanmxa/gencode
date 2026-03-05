@@ -34,7 +34,7 @@ release:
 	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BINDIR)/$(BINARY)_darwin_arm64 $(SRCDIR)
 	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BINDIR)/$(BINARY)_linux_amd64 $(SRCDIR)
 	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BINDIR)/$(BINARY)_linux_arm64 $(SRCDIR)
-	cd $(BINDIR) && tar -czf $(BINARY)_darwin_amd64.tar.gz $(BINARY)_darwin_amd64
-	cd $(BINDIR) && tar -czf $(BINARY)_darwin_arm64.tar.gz $(BINARY)_darwin_arm64
-	cd $(BINDIR) && tar -czf $(BINARY)_linux_amd64.tar.gz $(BINARY)_linux_amd64
-	cd $(BINDIR) && tar -czf $(BINARY)_linux_arm64.tar.gz $(BINARY)_linux_arm64
+	cd $(BINDIR) && cp $(BINARY)_darwin_amd64 $(BINARY) && tar -czf $(BINARY)_darwin_amd64.tar.gz $(BINARY) && rm $(BINARY)
+	cd $(BINDIR) && cp $(BINARY)_darwin_arm64 $(BINARY) && tar -czf $(BINARY)_darwin_arm64.tar.gz $(BINARY) && rm $(BINARY)
+	cd $(BINDIR) && cp $(BINARY)_linux_amd64 $(BINARY) && tar -czf $(BINARY)_linux_amd64.tar.gz $(BINARY) && rm $(BINARY)
+	cd $(BINDIR) && cp $(BINARY)_linux_arm64 $(BINARY) && tar -czf $(BINARY)_linux_arm64.tar.gz $(BINARY) && rm $(BINARY)
