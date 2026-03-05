@@ -46,6 +46,11 @@ func CreateMarkdownRenderer(width int) *glamour.TermRenderer {
 	compactStyle.List.Margin = uintPtr(0)
 	compactStyle.Table.Margin = uintPtr(0)
 
+	// Chroma lexers mark unrecognized tokens as Error, which glamour renders
+	// with a red background. Clear the background so they render as plain text.
+	strPtr := func(s string) *string { return &s }
+	compactStyle.CodeBlock.Chroma.Error.BackgroundColor = strPtr("")
+
 	renderer, _ := glamour.NewTermRenderer(
 		glamour.WithStyles(compactStyle),
 		glamour.WithWordWrap(wrapWidth),
