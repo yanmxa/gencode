@@ -268,6 +268,12 @@ func (m *model) configureLoop(extra []string) {
 		sessionSummary = fmt.Sprintf("<session-summary>\n%s\n</session-summary>", m.session.Summary)
 	}
 
+	// Include active skill invocation if present
+	allExtra := extra
+	if m.skill.ActiveInvocation != "" {
+		allExtra = append(allExtra, m.skill.ActiveInvocation)
+	}
+
 	m.loop.Client = &client.Client{
 		Provider:  m.provider.LLM,
 		Model:     m.getModelID(),
@@ -283,7 +289,7 @@ func (m *model) configureLoop(extra []string) {
 		SessionSummary:      sessionSummary,
 		Skills:              skills,
 		Agents:              agents,
-		Extra:               extra,
+		Extra:               allExtra,
 	}
 	m.loop.Tool = &tool.Set{
 		Disabled: m.mode.DisabledTools,

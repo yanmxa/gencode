@@ -375,6 +375,9 @@ func (m *model) handleSubmit() tea.Cmd {
 		return tea.Batch(cmds...)
 	}
 
+	// Clear active skill invocation on new user input
+	m.skill.ActiveInvocation = ""
+
 	// Process @image.png references
 	content, fileImages, err := appinput.ProcessImageRefs(m.cwd, input)
 	if err != nil {
@@ -460,15 +463,14 @@ func (m *model) handleSkillInvocation() tea.Cmd {
 
 	m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: userMessage})
 
-	// Build extra with skill instructions
-	var extra []string
+	// Store in ActiveInvocation for persistence across turns
 	if m.skill.PendingInstructions != "" {
-		extra = append(extra, m.skill.PendingInstructions)
+		m.skill.ActiveInvocation = m.skill.PendingInstructions
 		m.skill.PendingInstructions = ""
 	}
 	m.skill.PendingArgs = ""
 
-	return m.startLLMStream(extra)
+	return m.startLLMStream(nil) // No extra needed, configureLoop reads ActiveInvocation
 }
 
 // checkPromptHook runs UserPromptSubmit hook and returns (blocked, reason).

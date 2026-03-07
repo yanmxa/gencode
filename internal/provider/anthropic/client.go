@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -12,6 +13,35 @@ import (
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
+
+// validToolIDPattern matches the Claude API requirement for tool_use IDs.
+var validToolIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// toolIDSanitizer lazily builds a mapping from invalid tool call IDs to
+// Claude-compatible replacements. It is constructed once per Stream call
+// and populated on-the-fly during message conversion (single pass).
+type toolIDSanitizer struct {
+	idMap   map[string]string
+	counter int
+}
+
+// resolve returns a valid tool ID. If the ID already matches Claude's pattern,
+// it is returned as-is. Otherwise a stable replacement is created (or reused).
+func (s *toolIDSanitizer) resolve(id string) string {
+	if validToolIDPattern.MatchString(id) {
+		return id
+	}
+	if mapped, ok := s.idMap[id]; ok {
+		return mapped
+	}
+	if s.idMap == nil {
+		s.idMap = make(map[string]string)
+	}
+	s.counter++
+	mapped := fmt.Sprintf("toolu_compat_%d", s.counter)
+	s.idMap[id] = mapped
+	return mapped
+}
 
 // Client implements the LLMProvider interface using the Anthropic SDK
 type Client struct {
@@ -40,6 +70,9 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 	go func() {
 		defer close(ch)
 
+		// Sanitizer for cross-provider tool ID compatibility (lazy, single-pass)
+		var ids toolIDSanitizer
+
 		// Convert messages to Anthropic format
 		anthropicMsgs := make([]anthropic.MessageParam, 0, len(opts.Messages))
 		for _, msg := range opts.Messages {
@@ -49,7 +82,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					// Tool result message
 					anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(
 						anthropic.NewToolResultBlock(
-							msg.ToolResult.ToolCallID,
+							ids.resolve(msg.ToolResult.ToolCallID),
 							msg.ToolResult.Content,
 							msg.ToolResult.IsError,
 						),
@@ -90,7 +123,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 							// For tools with no parameters, use empty object instead of nil
 							input = map[string]any{}
 						}
-						blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
+						blocks = append(blocks, anthropic.NewToolUseBlock(ids.resolve(tc.ID), input, tc.Name))
 					}
 					anthropicMsgs = append(anthropicMsgs, anthropic.NewAssistantMessage(blocks...))
 				} else {
