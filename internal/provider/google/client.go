@@ -85,13 +85,17 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 							args = nil
 						}
 					}
-					parts = append(parts, &genai.Part{
+					p := &genai.Part{
 						FunctionCall: &genai.FunctionCall{
 							ID:   tc.ID,
 							Name: tc.Name,
 							Args: args,
 						},
-					})
+					}
+					if len(tc.ThoughtSignature) > 0 {
+						p.ThoughtSignature = tc.ThoughtSignature
+					}
+					parts = append(parts, p)
 				}
 			} else if len(msg.Images) > 0 {
 				// Multimodal message with images
@@ -184,13 +188,21 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				}
 
 				for _, part := range candidate.Content.Parts {
-					// Handle text
+					// Handle text (distinguish thinking from regular text)
 					if part.Text != "" {
-						ch <- message.StreamChunk{
-							Type: message.ChunkTypeText,
-							Text: part.Text,
+						if part.Thought {
+							ch <- message.StreamChunk{
+								Type: message.ChunkTypeThinking,
+								Text: part.Text,
+							}
+							response.Thinking += part.Text
+						} else {
+							ch <- message.StreamChunk{
+								Type: message.ChunkTypeText,
+								Text: part.Text,
+							}
+							response.Content += part.Text
 						}
-						response.Content += part.Text
 					}
 
 					// Handle function calls
@@ -211,9 +223,10 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 						}
 
 						response.ToolCalls = append(response.ToolCalls, message.ToolCall{
-							ID:    fc.ID,
-							Name:  fc.Name,
-							Input: string(argsJSON),
+							ID:               fc.ID,
+							Name:             fc.Name,
+							Input:            string(argsJSON),
+							ThoughtSignature: part.ThoughtSignature,
 						})
 					}
 				}

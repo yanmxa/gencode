@@ -82,10 +82,8 @@ func (m model) View() string {
 	var view strings.Builder
 	if chatSection != "" {
 		view.WriteString(chatSection)
-		view.WriteString("\n")
-	} else if m.conv.CommittedCount > 0 {
-		view.WriteString("\n")
 	}
+	view.WriteString("\n")
 	view.WriteString(separator)
 	view.WriteString("\n")
 	view.WriteString(inputView)

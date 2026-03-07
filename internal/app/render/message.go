@@ -70,15 +70,7 @@ func RenderWelcome() string {
 		slashStyle.Render("/") +
 		bracketStyle.Render(">")
 
-	hintStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDisabled)
-
-	var sb strings.Builder
-	sb.WriteString("\n")
-	sb.WriteString(icon + "\n")
-	sb.WriteString("\n")
-	sb.WriteString("   " + hintStyle.Render("Enter to send · Esc to stop · Shift+Tab mode · Ctrl+C exit") + "\n")
-
-	return sb.String()
+	return "\n" + icon
 }
 
 // OperationModeParams holds the parameters needed for rendering mode status.

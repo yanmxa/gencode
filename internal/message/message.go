@@ -52,9 +52,10 @@ type ImageData struct {
 
 // ToolCall represents a tool call from the model.
 type ToolCall struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Input string `json:"input"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Input            string `json:"input"`
+	ThoughtSignature []byte `json:"thought_signature,omitempty"` // Google Gemini: opaque signature to echo back
 }
 
 // ToolResult represents the result of a tool execution.
