@@ -486,7 +486,7 @@ func TestSession_MemoryEndToEnd(t *testing.T) {
 	}
 
 	// 4. Verify the memory would be injected into the system prompt
-	// (this simulates what buildExtraContext does)
+	// (this simulates what buildSections does)
 	expectedTag := "<session-memory>\n" + summary + "\n</session-memory>"
 	if !strings.Contains(expectedTag, summary) {
 		t.Error("session-memory tag should contain the summary")

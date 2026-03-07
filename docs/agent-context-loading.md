@@ -28,11 +28,11 @@ This design ensures:
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                            Main Loop Context                             │
 ├─────────────────────────────────────────────────────────────────────────┤
-│  buildExtraContext() builds per-turn Extra content:                      │
+│  buildSections() builds per-turn Sections:                               │
 │                                                                          │
-│  extra := []string{                                                      │
-│      skill.GetAvailableSkillsPrompt(),   // <available-skills>...</>    │
-│      agent.GetAgentPromptForLLM(),       // <available-agents>...</>    │
+│  sections := []system.Section{                                           │
+│      {Name: "skills", Content: skill.GetSkillsSection()},               │
+│      {Name: "agents", Content: agent.GetAgentsSection()},               │
 │  }                                                                       │
 │                                                                          │
 │  System Prompt Composition:                                              │
@@ -132,7 +132,7 @@ func parseAgentFile(content, filePath string) (*AgentConfig, error) {
 
 ```go
 // internal/agent/registry.go
-func (r *Registry) GetAgentPromptForLLM() string {
+func (r *Registry) GetAgentsSection() string {
     var lines []string
     for name, config := range r.agents {
         if r.isDisabledInternal(name) {

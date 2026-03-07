@@ -3,10 +3,11 @@ package skill
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestSkillLazyLoading(t *testing.T) {
+func TestSkillDiskReading(t *testing.T) {
 	// Create a temporary skill directory
 	tmpDir := t.TempDir()
 	skillDir := filepath.Join(tmpDir, "test-skill")
@@ -21,8 +22,7 @@ name: test-lazy-skill
 description: A test skill for lazy loading verification
 ---
 
-This is the full skill instructions content that should NOT be loaded at startup.
-It contains detailed instructions for the skill.
+This is the full skill instructions content.
 
 ## Instructions
 1. Do something
@@ -50,34 +50,34 @@ It contains detailed instructions for the skill.
 		t.Errorf("Description not loaded: got %q", skill.Description)
 	}
 
-	// Verify Instructions is NOT loaded at parse time (lazy loading)
-	if skill.Instructions != "" {
-		t.Errorf("Instructions should be empty at parse time, got: %q", skill.Instructions)
-	}
-	if skill.loaded {
-		t.Error("loaded should be false at parse time")
-	}
-
-	// Now call GetInstructions() to trigger lazy loading
+	// Call GetInstructions() to read from disk
 	instructions := skill.GetInstructions()
-
-	// Verify the full content is now loaded
 	if instructions == "" {
 		t.Error("GetInstructions() should return the full content")
 	}
-	if !skill.loaded {
-		t.Error("loaded should be true after GetInstructions()")
-	}
-	if skill.Instructions == "" {
-		t.Error("Instructions should be populated after GetInstructions()")
-	}
-
-	// Verify it contains the expected content
 	if len(instructions) < 50 {
 		t.Errorf("Instructions seems too short: %d chars", len(instructions))
 	}
 
+	// Verify modifications are immediately reflected (no caching)
+	updatedContent := `---
+name: test-lazy-skill
+description: A test skill for lazy loading verification
+---
+
+Updated instructions with new content.
+`
+	if err := os.WriteFile(skillFile, []byte(updatedContent), 0o644); err != nil {
+		t.Fatalf("Failed to update skill file: %v", err)
+	}
+
+	updatedInstructions := skill.GetInstructions()
+	if !strings.Contains(updatedInstructions, "Updated instructions") {
+		t.Errorf("GetInstructions() should reflect disk changes immediately, got: %s", updatedInstructions)
+	}
+
 	t.Logf("✓ Metadata loaded at startup (name=%s, desc=%s)",
 		skill.Name, skill.Description[:20]+"...")
-	t.Logf("✓ Instructions loaded lazily (%d chars)", len(instructions))
+	t.Logf("✓ Instructions read from disk (%d chars)", len(instructions))
+	t.Logf("✓ Disk changes reflected immediately")
 }

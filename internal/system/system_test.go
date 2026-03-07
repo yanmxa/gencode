@@ -389,3 +389,86 @@ func TestFindMemoryFile(t *testing.T) {
 		})
 	}
 }
+
+func TestPromptCaching(t *testing.T) {
+	s := &System{
+		Cwd:   "/tmp/test",
+		IsGit: true,
+	}
+
+	// First call builds the prompt
+	first := s.Prompt()
+	if first == "" {
+		t.Error("First Prompt() call should return non-empty string")
+	}
+
+	// Second call returns cached
+	second := s.Prompt()
+	if first != second {
+		t.Error("Second Prompt() call should return same cached result")
+	}
+
+	// After Invalidate, should rebuild
+	s.Invalidate()
+	third := s.Prompt()
+	if third == "" {
+		t.Error("Prompt() after Invalidate() should return non-empty string")
+	}
+}
+
+func TestPromptContainsInstructions(t *testing.T) {
+	s := &System{
+		Cwd:                 "/tmp/test",
+		UserInstructions:    "Always use tabs for indentation.",
+		ProjectInstructions: "This is a Go project using Bubble Tea.",
+	}
+
+	prompt := s.Prompt()
+
+	if !strings.Contains(prompt, "<user-instructions>") {
+		t.Error("prompt should contain <user-instructions> tag")
+	}
+	if !strings.Contains(prompt, "Always use tabs for indentation.") {
+		t.Error("prompt should contain user instructions content")
+	}
+	if !strings.Contains(prompt, "<project-instructions>") {
+		t.Error("prompt should contain <project-instructions> tag")
+	}
+	if !strings.Contains(prompt, "This is a Go project using Bubble Tea.") {
+		t.Error("prompt should contain project instructions content")
+	}
+}
+
+func TestPromptDirectFields(t *testing.T) {
+	s := &System{
+		Cwd:            "/tmp/test",
+		SessionSummary: "<session-summary>\nRefactored core.\n</session-summary>",
+		Skills:         "<available-skills>\n- commit\n</available-skills>",
+		Agents:         "<available-agents>\n- Explore\n</available-agents>",
+	}
+
+	prompt := s.Prompt()
+
+	if !strings.Contains(prompt, "<session-summary>") {
+		t.Error("prompt should contain session-summary")
+	}
+	if !strings.Contains(prompt, "<available-skills>") {
+		t.Error("prompt should contain skills")
+	}
+	if !strings.Contains(prompt, "<available-agents>") {
+		t.Error("prompt should contain agents")
+	}
+}
+
+func TestPromptExtra(t *testing.T) {
+	s := &System{
+		Cwd:   "/tmp/test",
+		Extra: []string{"agent identity content here"},
+	}
+
+	prompt := s.Prompt()
+
+	if !strings.Contains(prompt, "agent identity content here") {
+		t.Error("prompt should contain Extra content")
+	}
+}

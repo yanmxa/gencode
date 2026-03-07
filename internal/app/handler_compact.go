@@ -110,10 +110,10 @@ func startCompact(m *model) tea.Cmd {
 	focus := m.conv.Compact.Focus
 	client := m.loop.Client
 	msgs := m.conv.ConvertToProvider()
-	sessionMemory := m.session.Memory
+	sessionSummary := m.session.Summary
 	return func() tea.Msg {
 		ctx := context.Background()
-		summary, count, err := appcompact.CompactConversation(ctx, client, msgs, sessionMemory, focus)
+		summary, count, err := appcompact.CompactConversation(ctx, client, msgs, sessionSummary, focus)
 		return appcompact.CompactResultMsg{Summary: summary, OriginalCount: count, Error: err}
 	}
 }
@@ -160,7 +160,7 @@ func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 	if m.session.Store != nil && m.session.CurrentID != "" {
 		_ = m.session.Store.SaveSessionMemory(m.session.CurrentID, msg.Summary)
 	}
-	m.session.Memory = msg.Summary
+	m.session.Summary = msg.Summary
 
 	cmds := []tea.Cmd{tea.ClearScreen}
 	if shouldContinue {
@@ -168,7 +168,7 @@ func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 			Role:    message.RoleUser,
 			Content: "Continue with the task. The conversation was auto-compacted to free up context.",
 		})
-		cmds = append(cmds, m.startLLMStream(m.buildExtraContext()))
+		cmds = append(cmds, m.startLLMStream(nil))
 	} else {
 		m.conv.AddNotice(fmt.Sprintf("Compacted %d messages into session memory.", msg.OriginalCount))
 		cmds = append(cmds, m.commitMessages()...)

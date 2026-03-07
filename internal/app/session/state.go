@@ -8,5 +8,5 @@ type State struct {
 	CurrentID       string
 	Selector        Model
 	PendingSelector bool
-	Memory          string // Loaded session memory (from compaction summary)
+	Summary         string // Loaded session summary (from compaction)
 }

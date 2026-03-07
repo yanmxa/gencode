@@ -275,12 +275,12 @@ func (r *Registry) GetStatesAt(userLevel bool) map[string]SkillState {
 	return r.projectStore.states
 }
 
-// GetAvailableSkillsPrompt generates the available skills section for the system prompt.
+// GetSkillsSection generates the available skills section for the system prompt.
 // Only includes active skills (state = active).
 // Uses progressive loading: only name + description are included here.
 // Full instructions are loaded when the Skill tool is invoked.
 // Returns content wrapped in <available-skills> XML tags for consistency.
-func (r *Registry) GetAvailableSkillsPrompt() string {
+func (r *Registry) GetSkillsSection() string {
 	active := r.GetActive()
 	if len(active) == 0 {
 		return ""

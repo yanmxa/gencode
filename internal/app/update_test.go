@@ -6,7 +6,6 @@ import (
 
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
-	appsession "github.com/yanmxa/gencode/internal/app/session"
 	apptool "github.com/yanmxa/gencode/internal/app/tool"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/message"
@@ -202,81 +201,38 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 	}
 }
 
-// TestSessionMemory_BuildExtraContext verifies that session memory is included
-// in the extra context returned by buildExtraContext().
-func TestSessionMemory_BuildExtraContext(t *testing.T) {
-	summary := "User worked on session store refactoring. Key files: store.go, types.go."
-	m := &model{
-		session: appsession.State{
-			Memory: summary,
-		},
-		conv: appconv.New(),
-	}
-
-	extra := m.buildExtraContext()
-
-	// Find the session-memory entry
-	var found bool
-	for _, e := range extra {
-		if strings.Contains(e, "<session-memory>") {
-			found = true
-			if !strings.Contains(e, summary) {
-				t.Errorf("session-memory block should contain the summary, got: %s", e)
-			}
-			if !strings.Contains(e, "</session-memory>") {
-				t.Errorf("session-memory block missing closing tag, got: %s", e)
-			}
-		}
-	}
-	if !found {
-		t.Error("buildExtraContext() should include <session-memory> when Memory is set")
-	}
-}
-
-// TestSessionMemory_EmptyNotIncluded verifies that empty session memory
-// does not produce a <session-memory> block.
-func TestSessionMemory_EmptyNotIncluded(t *testing.T) {
-	m := &model{
-		session: appsession.State{Memory: ""},
-		conv:    appconv.New(),
-	}
-
-	extra := m.buildExtraContext()
-	for _, e := range extra {
-		if strings.Contains(e, "<session-memory>") {
-			t.Error("buildExtraContext() should not include <session-memory> when Memory is empty")
-		}
-	}
-}
-
-// TestSessionMemory_InSystemPrompt verifies that session memory from
-// buildExtraContext() actually appears in the final system prompt via BuildPrompt.
-func TestSessionMemory_InSystemPrompt(t *testing.T) {
+// TestSessionSummary_InSystemPrompt verifies that session summary
+// appears in the final system prompt when set on the System struct.
+func TestSessionSummary_InSystemPrompt(t *testing.T) {
 	summary := "Refactored the session package. Added overflow storage."
-	m := &model{
-		session: appsession.State{
-			Memory: summary,
-		},
-		conv: appconv.New(),
+
+	sys := &system.System{
+		Cwd:            "/tmp",
+		SessionSummary: "<session-summary>\n" + summary + "\n</session-summary>",
 	}
+	prompt := sys.Prompt()
 
-	extra := m.buildExtraContext()
-
-	// Build a system prompt using the extra context (same path as configureLoop)
-	prompt := system.BuildPrompt(system.Config{
-		Provider: "test",
-		Model:    "test-model",
-		Cwd:      "/tmp",
-		Extra:    extra,
-	})
-
-	if !strings.Contains(prompt, "<session-memory>") {
-		t.Error("system prompt should contain <session-memory> tag")
+	if !strings.Contains(prompt, "<session-summary>") {
+		t.Error("system prompt should contain <session-summary> tag")
 	}
 	if !strings.Contains(prompt, summary) {
-		t.Error("system prompt should contain the session memory summary")
+		t.Error("system prompt should contain the session summary")
 	}
-	if !strings.Contains(prompt, "</session-memory>") {
-		t.Error("system prompt should contain closing </session-memory> tag")
+	if !strings.Contains(prompt, "</session-summary>") {
+		t.Error("system prompt should contain closing </session-summary> tag")
+	}
+}
+
+// TestSessionSummary_EmptyNotIncluded verifies that empty session summary
+// does not produce a <session-summary> block.
+func TestSessionSummary_EmptyNotIncluded(t *testing.T) {
+	sys := &system.System{
+		Cwd:            "/tmp",
+		SessionSummary: "",
+	}
+	prompt := sys.Prompt()
+
+	if strings.Contains(prompt, "<session-summary>") {
+		t.Error("system prompt should not contain <session-summary> when SessionSummary is empty")
 	}
 }

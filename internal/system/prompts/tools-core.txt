@@ -1,0 +1,38 @@
+# Tool usage
+
+Prefer specialized tools over Bash for file operations:
+- Read instead of cat/head/tail
+- Edit instead of sed/awk
+- Write instead of echo/cat with redirection
+- Glob instead of find/ls
+- Grep instead of grep/rg
+
+## Tool selection strategy
+
+Before spawning an agent via Task, estimate how many tool calls are needed. If 1-2 direct calls can answer the question, use the tool directly — agents add overhead in tokens, latency, and context.
+
+**Decision framework:**
+1. Can a single Bash/Glob/Grep/Read call answer it? → Use that tool directly.
+2. Does it need 3+ searches with decisions between them? → Explore agent.
+3. Does it need code changes, complex reasoning, or multi-file edits? → general-purpose agent.
+
+**Examples of direct tool use (NOT agents):**
+- System/environment state → Bash (ps, df, docker ps, kubectl, env, git status)
+- Find a specific symbol or file → Grep/Glob
+- Check file contents → Read
+- Run a single build/test command → Bash
+
+**Examples where agents ARE appropriate:**
+- "How does the auth system work?" → Explore (needs to trace across files)
+- "Refactor error handling across the codebase" → general-purpose (multi-file edits)
+- "What's the architecture of this project?" → Explore (broad multi-directory scan)
+
+General rule: direct tool < Explore agent < general-purpose agent. Use the lightest option that works.
+
+## Key rules
+
+1. **Read before Edit/Write**: Always read a file before modifying it.
+2. **Parallel execution**: Run independent tool calls in parallel. If multiple operations don't depend on each other, execute them simultaneously.
+3. **Search extensively**: When exploring code, search thoroughly. Use multiple Glob/Grep calls in parallel to find all relevant files and patterns.
+4. **Edit for updates, Write for new files only**: Use Edit to modify existing files. Use Write ONLY to create new files.
+5. **No unnecessary files**: Never create docs/README unless asked.

@@ -133,7 +133,7 @@ func TestSkill_AvailablePrompt(t *testing.T) {
 
 	registry := newTestRegistry(t, skills)
 
-	prompt := registry.GetAvailableSkillsPrompt()
+	prompt := registry.GetSkillsSection()
 
 	// Only active skills should be in the prompt
 	if !strings.Contains(prompt, "git:commit") {
@@ -148,12 +148,23 @@ func TestSkill_AvailablePrompt(t *testing.T) {
 }
 
 func TestSkill_InvocationPrompt(t *testing.T) {
+	// Create a real SKILL.md file so GetInstructions() can read from disk
+	tmpDir := t.TempDir()
+	skillDir := filepath.Join(tmpDir, "test-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("Failed to create skill dir: %v", err)
+	}
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(skillFile, []byte("---\nname: test-skill\ndescription: a test skill\n---\n\nDo the thing step by step"), 0o644); err != nil {
+		t.Fatalf("Failed to write SKILL.md: %v", err)
+	}
+
 	skills := map[string]*skill.Skill{
 		"test-skill": {
-			Name:         "test-skill",
-			State:        skill.StateActive,
-			Description:  "a test skill",
-			Instructions: "Do the thing step by step",
+			Name:        "test-skill",
+			State:       skill.StateActive,
+			Description: "a test skill",
+			FilePath:    skillFile,
 		},
 	}
 

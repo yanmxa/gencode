@@ -62,7 +62,8 @@ func (m *model) handleEditorFinished(msg appmemory.EditorFinishedMsg) tea.Cmd {
 	filePath := m.memory.EditingFile
 	m.memory.EditingFile = ""
 
-	m.memory.CachedContent = ""
+	m.memory.CachedUser = ""
+	m.memory.CachedProject = ""
 
 	content := fmt.Sprintf("Saved: %s", filePath)
 	if msg.Err != nil {

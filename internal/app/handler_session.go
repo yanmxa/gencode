@@ -111,7 +111,7 @@ func (m *model) restoreSessionData(sess *session.Session) {
 	// Load session memory (persisted compaction summary)
 	if m.session.Store != nil {
 		if mem, err := m.session.Store.LoadSessionMemory(sess.Metadata.ID); err == nil && mem != "" {
-			m.session.Memory = mem
+			m.session.Summary = mem
 		}
 	}
 

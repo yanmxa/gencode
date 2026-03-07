@@ -231,11 +231,11 @@ func (r *Registry) ListEnabled() []*AgentConfig {
 	return configs
 }
 
-// GetAgentPromptForLLM returns a formatted string describing available agents.
+// GetAgentsSection returns a formatted string describing available agents.
 // This is used to inform the LLM about what agents are available.
 // Only includes enabled agents.
 // Returns content wrapped in <available-agents> XML tags for consistency.
-func (r *Registry) GetAgentPromptForLLM() string {
+func (r *Registry) GetAgentsSection() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

@@ -252,8 +252,20 @@ func (m *model) configureLoop(extra []string) {
 		mcpToolsGetter = m.mcp.Registry.GetToolSchemas
 	}
 
-	if m.memory.CachedContent == "" {
-		m.memory.CachedContent = system.LoadMemory(m.cwd)
+	if m.memory.CachedUser == "" && m.memory.CachedProject == "" {
+		m.memory.CachedUser, m.memory.CachedProject = system.LoadInstructions(m.cwd)
+	}
+
+	var skills, agents string
+	if skill.DefaultRegistry != nil {
+		skills = skill.DefaultRegistry.GetSkillsSection()
+	}
+	if agent.DefaultRegistry != nil {
+		agents = agent.DefaultRegistry.GetAgentsSection()
+	}
+	var sessionSummary string
+	if m.session.Summary != "" {
+		sessionSummary = fmt.Sprintf("<session-summary>\n%s\n</session-summary>", m.session.Summary)
 	}
 
 	m.loop.Client = &client.Client{
@@ -262,12 +274,16 @@ func (m *model) configureLoop(extra []string) {
 		MaxTokens: m.getMaxTokens(),
 	}
 	m.loop.System = &system.System{
-		Client:   m.loop.Client,
-		Cwd:      m.cwd,
-		IsGit:    isGitRepo(m.cwd),
-		PlanMode: m.mode.Enabled,
-		Extra:    extra,
-		Memory:   m.memory.CachedContent,
+		Client:              m.loop.Client,
+		Cwd:                 m.cwd,
+		IsGit:               isGitRepo(m.cwd),
+		PlanMode:            m.mode.Enabled,
+		UserInstructions:    m.memory.CachedUser,
+		ProjectInstructions: m.memory.CachedProject,
+		SessionSummary:      sessionSummary,
+		Skills:              skills,
+		Agents:              agents,
+		Extra:               extra,
 	}
 	m.loop.Tool = &tool.Set{
 		Disabled: m.mode.DisabledTools,
@@ -283,22 +299,4 @@ func (m model) getModelID() string {
 		return m.provider.CurrentModel.ModelID
 	}
 	return "claude-sonnet-4-20250514"
-}
-
-func (m model) buildExtraContext() []string {
-	var extra []string
-	if skill.DefaultRegistry != nil {
-		if metadata := skill.DefaultRegistry.GetAvailableSkillsPrompt(); metadata != "" {
-			extra = append(extra, metadata)
-		}
-	}
-	if agent.DefaultRegistry != nil {
-		if metadata := agent.DefaultRegistry.GetAgentPromptForLLM(); metadata != "" {
-			extra = append(extra, metadata)
-		}
-	}
-	if m.session.Memory != "" {
-		extra = append(extra, fmt.Sprintf("<session-memory>\n%s\n</session-memory>", m.session.Memory))
-	}
-	return extra
 }

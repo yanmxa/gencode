@@ -34,7 +34,7 @@ func NewTestLoopWithPermission(t *testing.T, checker permission.Checker,
 
 	fake := &client.FakeClient{Responses: responses}
 	loop := &core.Loop{
-		System:     &system.System{Cwd: t.TempDir(), Memory: "test"},
+		System:     &system.System{Cwd: t.TempDir(), UserInstructions: "test"},
 		Client:     NewTestClient(fake),
 		Tool:       &tool.Set{},
 		Permission: checker,

@@ -395,7 +395,7 @@ func (m *model) handleSubmit() tea.Cmd {
 		return tea.Batch(m.commitMessages()...)
 	}
 
-	return m.startLLMStream(m.buildExtraContext())
+	return m.startLLMStream(nil)
 }
 
 func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
@@ -460,8 +460,8 @@ func (m *model) handleSkillInvocation() tea.Cmd {
 
 	m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: userMessage})
 
-	// Build extra context with skill instructions
-	extra := m.buildExtraContext()
+	// Build extra with skill instructions
+	var extra []string
 	if m.skill.PendingInstructions != "" {
 		extra = append(extra, m.skill.PendingInstructions)
 		m.skill.PendingInstructions = ""

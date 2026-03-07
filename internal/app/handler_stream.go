@@ -101,7 +101,7 @@ func (m *model) startContinueStream() tea.Cmd {
 
 	// Configure loop and set messages BEFORE appending the empty assistant placeholder,
 	// so the placeholder is not included in the API request.
-	m.configureLoop(m.buildExtraContext())
+	m.configureLoop(nil)
 	m.loop.SetMessages(m.conv.ConvertToProvider())
 
 	// Commit any pending messages before starting new stream
@@ -119,7 +119,7 @@ func (m *model) handleSpinnerTick(msg tea.Msg) tea.Cmd {
 	return m.output.HandleTick(msg, m.conv.Stream.Active, m.provider.FetchingLimits, m.conv.Compact.Active, interactiveActive, m.hasRunningTaskTools())
 }
 
-// startLLMStream sets up and starts an LLM streaming request with the given extra context.
+// startLLMStream sets up and starts an LLM streaming request with optional extra prompt content.
 // It appends an empty assistant message, sets up cancellation, and starts streaming.
 func (m *model) startLLMStream(extra []string) tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())

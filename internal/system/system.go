@@ -27,101 +27,126 @@ const (
 //go:embed prompts/*.txt
 var promptFS embed.FS
 
-// Config holds configuration for system prompt generation.
-type Config struct {
-	Provider string // Provider name: anthropic, openai, google
-	Model    string // Model identifier
-	Cwd      string // Current working directory
-	IsGit    bool   // Whether cwd is a git repository
-
-	// Extension points (reserved for future use)
-	Memory   string   // CLAUDE.md or similar memory content
-	PlanMode bool     // Whether in plan mode
-	Extra    []string // Additional prompt sections
-}
-
 // System manages system prompt generation with runtime customization.
 type System struct {
-	Client   *client.Client // reference for provider name + model
-	Cwd      string
-	IsGit    bool
-	PlanMode bool
-	Extra    []string // per-turn prompt sections (skills, agents, etc.)
-	Memory   string   // pre-loaded memory content; if empty, loaded from disk
+	Client              *client.Client // reference for provider name + model
+	Cwd                 string
+	IsGit               bool
+	PlanMode            bool
+	UserInstructions    string   // ~/.gen/GEN.md + rules
+	ProjectInstructions string   // .gen/GEN.md + rules + local
+	SessionSummary      string   // <session-summary> from compaction
+	Skills              string   // <available-skills> from active skills
+	Agents              string   // <available-agents> from enabled agents
+	Extra               []string // ad-hoc content (agent-identity, skill-invocation, etc.)
+
+	cached string
+	dirty  bool
 }
 
-// Prompt builds the complete system prompt from the System's fields.
+// Pre-cached embedded prompt files (loaded once at init).
+var (
+	cachedBase     string
+	cachedTools    string
+	cachedPlanMode string
+)
+
+func init() {
+	cachedBase = load("base.txt")
+	cachedTools = join([]string{
+		load("tools-core.txt"),
+		load("tools-git.txt"),
+		load("tools-questions.txt"),
+		load("tools-tasks.txt"),
+	})
+	cachedPlanMode = load("planmode.txt")
+}
+
+// Prompt builds the complete system prompt (with caching).
 func (s *System) Prompt() string {
+	if s.cached != "" && !s.dirty {
+		return s.cached
+	}
+	result := s.buildPrompt()
+	s.cached = result
+	s.dirty = false
+	return result
+}
+
+// Invalidate marks the cached prompt as stale so the next Prompt() call rebuilds it.
+func (s *System) Invalidate() {
+	s.dirty = true
+}
+
+// buildPrompt assembles the complete system prompt in 7-layer narrative order:
+//  1. Identity (base.txt)
+//  2. Environment (provider/generic + <env>)
+//  3. Instructions (<user-instructions>, <project-instructions>)
+//  4. Summary (<session-summary>)
+//  5. Capabilities (<available-skills>, <available-agents>)
+//  6. Guidelines (tools-*.txt)
+//  7. Mode (planmode.txt, only when PlanMode=true)
+func (s *System) buildPrompt() string {
 	providerName := ""
 	modelID := ""
 	if s.Client != nil {
 		providerName = s.Client.Name()
 		modelID = s.Client.ModelID()
 	}
-	memory := s.Memory
-	if memory == "" {
-		memory = LoadMemory(s.Cwd)
-	}
-	return BuildPrompt(Config{
-		Provider: providerName,
-		Model:    modelID,
-		Cwd:      s.Cwd,
-		IsGit:    s.IsGit,
-		PlanMode: s.PlanMode,
-		Memory:   memory,
-		Extra:    s.Extra,
-	})
-}
 
-// BuildPrompt builds the complete system prompt from a Config.
-// Assembly order: base + tools + provider/generic + environment
-func BuildPrompt(cfg Config) string {
-	base := load("base.txt")
-	tools := load("tools.txt")
-	providerPrompt := providerOrGeneric(cfg.Provider)
-	env := formatEnv(cfg)
-
-	// DEBUG: Verify each part is loaded correctly
 	log.Logger().Info("=== System Prompt Loading ===",
-		zap.Int("base_len", len(base)),
-		zap.Int("tools_len", len(tools)),
-		zap.Int("provider_len", len(providerPrompt)),
-		zap.Int("env_len", len(env)),
-		zap.String("provider", cfg.Provider),
-		zap.String("model", cfg.Model),
+		zap.Int("base_len", len(cachedBase)),
+		zap.Int("tools_len", len(cachedTools)),
+		zap.String("provider", providerName),
+		zap.String("model", modelID),
 	)
 
-	if len(base) == 0 {
-		log.Logger().Warn("WARNING: base.txt is empty!")
+	var parts []string
+
+	// 1. Identity
+	parts = append(parts, cachedBase)
+
+	// 2. Environment
+	providerPrompt := providerOrGeneric(providerName)
+	parts = append(parts, providerPrompt)
+	parts = append(parts, s.formatEnv(modelID))
+
+	// 3. Instructions
+	if s.UserInstructions != "" {
+		parts = append(parts, "<user-instructions>\n"+s.UserInstructions+"\n</user-instructions>")
 	}
-	if len(tools) == 0 {
-		log.Logger().Warn("WARNING: tools.txt is empty!")
-	}
-	if len(providerPrompt) == 0 {
-		log.Logger().Warn("WARNING: provider/generic prompt is empty!")
+	if s.ProjectInstructions != "" {
+		parts = append(parts, "<project-instructions>\n"+s.ProjectInstructions+"\n</project-instructions>")
 	}
 
-	parts := []string{base, tools, providerPrompt, env}
-
-	// Plan mode: add plan mode instructions
-	if cfg.PlanMode {
-		planPrompt := load("planmode.txt")
-		if planPrompt != "" {
-			parts = append(parts, planPrompt)
-		}
+	// 4. Summary
+	if s.SessionSummary != "" {
+		parts = append(parts, s.SessionSummary)
 	}
 
-	// Extension points
-	if cfg.Memory != "" {
-		parts = append(parts, formatMemory(cfg.Memory))
+	// 5. Capabilities
+	if s.Skills != "" {
+		parts = append(parts, s.Skills)
 	}
-	for _, e := range cfg.Extra {
+	if s.Agents != "" {
+		parts = append(parts, s.Agents)
+	}
+
+	// 6. Guidelines
+	parts = append(parts, cachedTools)
+
+	// 7. Mode
+	if s.PlanMode {
+		parts = append(parts, cachedPlanMode)
+	}
+
+	// Extra content (agent-identity, skill-invocation, etc.)
+	for _, e := range s.Extra {
 		parts = append(parts, e)
 	}
 
 	result := join(parts)
 
-	// Log final assembled prompt info
 	preview := result
 	if len(preview) > 100 {
 		preview = preview[:100]
@@ -132,6 +157,22 @@ func BuildPrompt(cfg Config) string {
 	)
 
 	return result
+}
+
+// formatEnv generates the dynamic environment section.
+func (s *System) formatEnv(model string) string {
+	gitStatus := "No"
+	if s.IsGit {
+		gitStatus = "Yes"
+	}
+	return fmt.Sprintf(`<env>
+Working directory: %s
+Is git repo: %s
+Platform: %s
+Date: %s
+Model: %s
+</env>`, s.Cwd, gitStatus, runtime.GOOS,
+		time.Now().Format("2006-01-02"), model)
 }
 
 // load reads a prompt file from the embedded filesystem.
@@ -156,27 +197,6 @@ func providerOrGeneric(provider string) string {
 	return string(data)
 }
 
-// formatEnv generates the dynamic environment section.
-func formatEnv(cfg Config) string {
-	gitStatus := "No"
-	if cfg.IsGit {
-		gitStatus = "Yes"
-	}
-	return fmt.Sprintf(`<env>
-Working directory: %s
-Is git repo: %s
-Platform: %s
-Date: %s
-Model: %s
-</env>`, cfg.Cwd, gitStatus, runtime.GOOS,
-		time.Now().Format("2006-01-02"), cfg.Model)
-}
-
-// formatMemory wraps memory content in XML tags.
-func formatMemory(m string) string {
-	return "<memory>\n" + m + "\n</memory>"
-}
-
 // join concatenates non-empty parts with double newlines.
 func join(parts []string) string {
 	var filtered []string
@@ -197,27 +217,23 @@ type MemoryFile struct {
 	Source  string // "rules" for rules directory files, empty otherwise
 }
 
-// LoadMemory loads memory content from standard locations.
-// Priority: GEN.md files first, falling back to CLAUDE.md if not found.
-//
-// User level (first found wins):
-//  1. ~/.gen/GEN.md (preferred)
-//  2. ~/.claude/CLAUDE.md (fallback)
-//
-// User rules:
-//   - ~/.gen/rules/*.md
-//
-// Project level (first found wins):
-//  1. .gen/GEN.md or GEN.md (preferred)
-//  2. .claude/CLAUDE.md or CLAUDE.md (fallback)
-//
-// Project local (not committed to git):
-//   - .gen/GEN.local.md
-//
-// Project rules:
-//   - .gen/rules/*.md
-//
-// All sources are concatenated with @import resolution.
+// LoadInstructions loads user-level and project-level instructions separately.
+// Uses LoadMemoryFiles internally and groups by Level.
+func LoadInstructions(cwd string) (user, project string) {
+	files := LoadMemoryFiles(cwd)
+	var userParts, projectParts []string
+	for _, f := range files {
+		switch f.Level {
+		case "global":
+			userParts = append(userParts, f.Content)
+		case "project", "local":
+			projectParts = append(projectParts, f.Content)
+		}
+	}
+	return strings.Join(userParts, "\n\n"), strings.Join(projectParts, "\n\n")
+}
+
+// LoadMemory loads memory content from standard locations (legacy convenience wrapper).
 func LoadMemory(cwd string) string {
 	files := LoadMemoryFiles(cwd)
 	if len(files) == 0 {

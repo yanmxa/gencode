@@ -1,0 +1,7 @@
+## Git safety (Bash)
+
+- NEVER update git config
+- NEVER run destructive commands (push --force, reset --hard) unless asked
+- NEVER skip hooks (--no-verify) unless asked
+- Stage specific files, not `git add -A` or `git add .`
+- NEVER commit unless explicitly asked

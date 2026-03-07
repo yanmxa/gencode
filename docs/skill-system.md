@@ -84,7 +84,7 @@ Skills are loaded from multiple locations, with higher priority paths overriding
 │  • GetEnabled() → []*Skill      Get enabled skills              │
 │  • GetActive() → []*Skill       Get active skills (model-aware) │
 │  • SetState(name, state)        Set state and persist           │
-│  • GetAvailableSkillsPrompt()   Generate system prompt          │
+│  • GetSkillsSection()           Generate system prompt section   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

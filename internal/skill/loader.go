@@ -273,7 +273,6 @@ func (l *Loader) loadSkillFile(path string, scope SkillScope, defaultNamespace s
 	skill.Scripts = scanResourceDir(filepath.Join(skillDir, "scripts"))
 	skill.References = scanResourceDir(filepath.Join(skillDir, "references"))
 	skill.Assets = scanResourceDir(filepath.Join(skillDir, "assets"))
-	skill.loaded = false
 
 	return skill, nil
 }

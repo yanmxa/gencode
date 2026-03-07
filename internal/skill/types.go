@@ -102,12 +102,10 @@ type Skill struct {
 	ArgumentHint string   `yaml:"argument-hint"`
 
 	// Runtime fields
-	FilePath     string     // Full path to the skill file
-	SkillDir     string     // Directory containing the skill
-	Scope        SkillScope // Where the skill was loaded from
-	Instructions string     // Full markdown content (lazy loaded)
-	State        SkillState // Current state (persisted separately)
-	loaded       bool       // Whether full instructions have been loaded
+	FilePath string     // Full path to the skill file
+	SkillDir string     // Directory containing the skill
+	Scope    SkillScope // Where the skill was loaded from
+	State    SkillState // Current state (persisted separately)
 
 	// Resource directories (Agent Skills spec)
 	Scripts    []string // Files in scripts/ directory
@@ -133,16 +131,14 @@ func (s *Skill) IsActive() bool {
 	return s.State == StateActive
 }
 
-// GetInstructions returns the full skill instructions, loading if needed.
+// GetInstructions returns the full skill instructions, reading from disk each time.
+// This ensures modifications to SKILL.md files are immediately reflected.
 func (s *Skill) GetInstructions() string {
-	if !s.loaded && s.FilePath != "" {
-		// Lazy load instructions
-		if instructions, err := loadInstructions(s.FilePath); err == nil {
-			s.Instructions = instructions
-			s.loaded = true
-		}
+	if s.FilePath == "" {
+		return ""
 	}
-	return s.Instructions
+	instructions, _ := loadInstructions(s.FilePath)
+	return instructions
 }
 
 // GetScriptPath returns the full path to a script file.
