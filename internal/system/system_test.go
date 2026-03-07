@@ -472,3 +472,168 @@ func TestPromptExtra(t *testing.T) {
 		t.Error("prompt should contain Extra content")
 	}
 }
+
+func TestPromptNarrativeOrder(t *testing.T) {
+	s := &System{
+		Cwd:                 "/tmp/test",
+		UserInstructions:    "USER_INSTRUCTIONS_MARKER",
+		ProjectInstructions: "PROJECT_INSTRUCTIONS_MARKER",
+		SessionSummary:      "<session-summary>\nSESSION_SUMMARY_MARKER\n</session-summary>",
+		Skills:              "<available-skills>\nSKILLS_MARKER\n</available-skills>",
+		Agents:              "<available-agents>\nAGENTS_MARKER\n</available-agents>",
+		Extra:               []string{"EXTRA_MARKER"},
+	}
+
+	prompt := s.Prompt()
+
+	// Verify the 7-layer narrative order:
+	// 1. Identity (base.txt) < 2. Environment < 3. Instructions
+	// < 4. Summary < 5. Capabilities < 6. Guidelines < 7. Extra
+	envIdx := strings.Index(prompt, "<env>")
+	userIdx := strings.Index(prompt, "USER_INSTRUCTIONS_MARKER")
+	projectIdx := strings.Index(prompt, "PROJECT_INSTRUCTIONS_MARKER")
+	summaryIdx := strings.Index(prompt, "SESSION_SUMMARY_MARKER")
+	skillsIdx := strings.Index(prompt, "SKILLS_MARKER")
+	agentsIdx := strings.Index(prompt, "AGENTS_MARKER")
+	extraIdx := strings.Index(prompt, "EXTRA_MARKER")
+
+	if envIdx < 0 || userIdx < 0 || projectIdx < 0 || summaryIdx < 0 ||
+		skillsIdx < 0 || agentsIdx < 0 || extraIdx < 0 {
+		t.Fatal("prompt is missing one or more expected sections")
+	}
+
+	// Environment before Instructions
+	if envIdx >= userIdx {
+		t.Error("environment should appear before user instructions")
+	}
+	// User instructions before project instructions
+	if userIdx >= projectIdx {
+		t.Error("user instructions should appear before project instructions")
+	}
+	// Instructions before summary
+	if projectIdx >= summaryIdx {
+		t.Error("project instructions should appear before session summary")
+	}
+	// Summary before capabilities
+	if summaryIdx >= skillsIdx {
+		t.Error("session summary should appear before skills")
+	}
+	if skillsIdx >= agentsIdx {
+		t.Error("skills should appear before agents")
+	}
+	// Extra at the end
+	if agentsIdx >= extraIdx {
+		t.Error("agents should appear before extra content")
+	}
+}
+
+func TestPromptPlanMode(t *testing.T) {
+	// PlanMode=true should include planmode content
+	s := &System{
+		Cwd:      "/tmp/test",
+		PlanMode: true,
+	}
+	prompt := s.Prompt()
+
+	if !strings.Contains(prompt, "plan") && !strings.Contains(prompt, "Plan") {
+		t.Error("PlanMode=true should include plan mode content in prompt")
+	}
+
+	// PlanMode=false should not include planmode content
+	s2 := &System{
+		Cwd:      "/tmp/test",
+		PlanMode: false,
+	}
+	prompt2 := s2.Prompt()
+
+	// The planmode.txt content is only appended when PlanMode=true.
+	// Verify PlanMode prompt has more content than non-PlanMode.
+	if len(prompt) <= len(prompt2) {
+		t.Error("PlanMode=true prompt should be longer than PlanMode=false prompt")
+	}
+}
+
+func TestPromptEmptyFieldsExcluded(t *testing.T) {
+	s := &System{
+		Cwd: "/tmp/test",
+		// All optional fields empty
+	}
+	prompt := s.Prompt()
+
+	if strings.Contains(prompt, "<user-instructions>") {
+		t.Error("empty UserInstructions should not produce <user-instructions> tag")
+	}
+	if strings.Contains(prompt, "<project-instructions>") {
+		t.Error("empty ProjectInstructions should not produce <project-instructions> tag")
+	}
+	if strings.Contains(prompt, "<session-summary>") {
+		t.Error("empty SessionSummary should not produce <session-summary> tag")
+	}
+	if strings.Contains(prompt, "<available-skills>") {
+		t.Error("empty Skills should not produce <available-skills> tag")
+	}
+	if strings.Contains(prompt, "<available-agents>") {
+		t.Error("empty Agents should not produce <available-agents> tag")
+	}
+}
+
+func TestPromptInitCachedFiles(t *testing.T) {
+	// Verify init() pre-cached the embedded prompt files
+	if cachedBase == "" {
+		t.Error("cachedBase should be non-empty after init()")
+	}
+	if cachedTools == "" {
+		t.Error("cachedTools should be non-empty after init()")
+	}
+	if cachedPlanMode == "" {
+		t.Error("cachedPlanMode should be non-empty after init()")
+	}
+
+	// Verify all prompts appear in the assembled result
+	s := &System{Cwd: "/tmp/test"}
+	prompt := s.Prompt()
+
+	if !strings.Contains(prompt, cachedBase[:50]) {
+		t.Error("prompt should contain base.txt content")
+	}
+	if !strings.Contains(prompt, cachedTools[:50]) {
+		t.Error("prompt should contain tools content")
+	}
+}
+
+func TestLoadInstructions(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gencode-test-instructions")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create project-level GEN.md
+	genDir := filepath.Join(tmpDir, ".gen")
+	if err := os.MkdirAll(genDir, 0o755); err != nil {
+		t.Fatalf("Failed to create .gen dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(genDir, "GEN.md"), []byte("Project instructions here"), 0o644); err != nil {
+		t.Fatalf("Failed to write GEN.md: %v", err)
+	}
+
+	// Create local file
+	if err := os.WriteFile(filepath.Join(genDir, "GEN.local.md"), []byte("Local instructions here"), 0o644); err != nil {
+		t.Fatalf("Failed to write GEN.local.md: %v", err)
+	}
+
+	user, project := LoadInstructions(tmpDir)
+
+	// Project and local should be in 'project' output
+	if !strings.Contains(project, "Project instructions here") {
+		t.Errorf("project instructions should contain GEN.md content, got: %s", project)
+	}
+	if !strings.Contains(project, "Local instructions here") {
+		t.Errorf("project instructions should contain GEN.local.md content, got: %s", project)
+	}
+
+	// User instructions come from ~/.gen/GEN.md which we didn't create in tmpDir,
+	// so they may or may not be empty depending on the test environment.
+	// Just verify the function returns without error.
+	_ = user
+}
