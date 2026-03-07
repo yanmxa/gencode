@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/glamour"
 
 	"github.com/yanmxa/gencode/internal/app/render"
 )
@@ -12,7 +11,7 @@ import (
 // Model holds all output-related state: spinner, markdown renderer, and task progress.
 type Model struct {
 	Spinner      spinner.Model
-	MDRenderer   *glamour.TermRenderer
+	MDRenderer   *render.MDRenderer
 	TaskProgress map[int][]string
 }
 
@@ -20,7 +19,7 @@ type Model struct {
 func New(width int) Model {
 	return Model{
 		Spinner:    newSpinner(),
-		MDRenderer: render.CreateMarkdownRenderer(width),
+		MDRenderer: render.NewMDRenderer(width),
 	}
 }
 

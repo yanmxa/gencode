@@ -4,14 +4,10 @@ package render
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/glamour/ansi"
-	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
@@ -26,37 +22,6 @@ const (
 	// AutoCompactThreshold is the percentage of context usage that triggers auto-compact.
 	AutoCompactThreshold = 95
 )
-
-// CreateMarkdownRenderer creates a glamour markdown renderer with the given width.
-func CreateMarkdownRenderer(width int) *glamour.TermRenderer {
-	wrapWidth := max(width-4, MinWrapWidth)
-
-	var compactStyle ansi.StyleConfig
-	if lipgloss.HasDarkBackground() {
-		compactStyle = styles.DarkStyleConfig
-	} else {
-		compactStyle = styles.LightStyleConfig
-	}
-
-	uintPtr := func(u uint) *uint { return &u }
-	compactStyle.Document.Margin = uintPtr(0)
-	compactStyle.Paragraph.Margin = uintPtr(0)
-	compactStyle.Heading.Margin = uintPtr(0)
-	compactStyle.CodeBlock.Margin = uintPtr(0)
-	compactStyle.List.Margin = uintPtr(0)
-	compactStyle.Table.Margin = uintPtr(0)
-
-	// Chroma lexers mark unrecognized tokens as Error, which glamour renders
-	// with a red background. Clear the background so they render as plain text.
-	strPtr := func(s string) *string { return &s }
-	compactStyle.CodeBlock.Chroma.Error.BackgroundColor = strPtr("")
-
-	renderer, _ := glamour.NewTermRenderer(
-		glamour.WithStyles(compactStyle),
-		glamour.WithWordWrap(wrapWidth),
-	)
-	return renderer
-}
 
 // RenderWelcome renders the welcome screen.
 func RenderWelcome() string {
@@ -183,7 +148,7 @@ func TokenUsageColorAndHint(percent float64) (lipgloss.Color, string) {
 }
 
 // RenderUserMessage renders a user message with prompt and optional images.
-func RenderUserMessage(content string, images []message.ImageData, mdRenderer *glamour.TermRenderer) string {
+func RenderUserMessage(content string, images []message.ImageData, mdRenderer *MDRenderer) string {
 	var sb strings.Builder
 	prompt := InputPromptStyle.Render("❯ ")
 
@@ -251,7 +216,7 @@ type AssistantParams struct {
 	StreamActive      bool
 	IsLast            bool
 	SpinnerView       string
-	MDRenderer        *glamour.TermRenderer
+	MDRenderer        *MDRenderer
 }
 
 // RenderAssistantMessage renders an assistant message with thinking, content, and tool calls.
@@ -304,19 +269,12 @@ func FormatAssistantContent(params AssistantParams) string {
 }
 
 // RenderMarkdownContent renders content through the markdown renderer.
-func RenderMarkdownContent(mdRenderer *glamour.TermRenderer, content string) string {
+func RenderMarkdownContent(mdRenderer *MDRenderer, content string) string {
 	rendered, err := mdRenderer.Render(content)
 	if err != nil {
 		return content
 	}
-
-	result := strings.TrimLeft(rendered, " \t\n")
-	result = strings.TrimRight(result, " \t\n")
-
-	// Glamour renders "blank" lines filled with ANSI escape codes (e.g. colored spaces).
-	// Match lines containing only ANSI codes and/or whitespace, then collapse.
-	blankLines := regexp.MustCompile(`\n((?:\x1b\[[0-9;]*[a-zA-Z]|[ \t])*\n)+`)
-	return blankLines.ReplaceAllString(result, "\n")
+	return strings.TrimSpace(rendered)
 }
 
 // ToolCallsParams holds the parameters for rendering tool calls.
@@ -391,7 +349,7 @@ func RenderToolCalls(params ToolCallsParams) string {
 }
 
 // RenderToolResultInline renders a tool result inline (without leading newline).
-func RenderToolResultInline(data ToolResultData, mdRenderer *glamour.TermRenderer) string {
+func RenderToolResultInline(data ToolResultData, mdRenderer *MDRenderer) string {
 	toolName := data.ToolName
 	if toolName == "" {
 		toolName = "Tool"
@@ -594,7 +552,7 @@ func RenderTaskOutputResultInline(data ToolResultData) string {
 }
 
 // RenderPlanForScrollback renders the plan title + markdown content as a styled string.
-func RenderPlanForScrollback(plan string, mdRenderer *glamour.TermRenderer) string {
+func RenderPlanForScrollback(plan string, mdRenderer *MDRenderer) string {
 	if plan == "" {
 		return ""
 	}

@@ -63,5 +63,5 @@ func (m *Model) HandleTick(msg tea.Msg, active, fetching, compacting, interactiv
 
 // ResizeMDRenderer recreates the markdown renderer for the given width.
 func (m *Model) ResizeMDRenderer(width int) {
-	m.MDRenderer = render.CreateMarkdownRenderer(width)
+	m.MDRenderer = render.NewMDRenderer(width)
 }

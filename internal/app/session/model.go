@@ -228,9 +228,11 @@ func truncateToFirstLine(content string, maxLen int) string {
 	return content
 }
 
-// getLastUserMessage retrieves the last user message from a session for preview
-func (s *Model) getLastUserMessage(sess *coresession.SessionMetadata) string {
-	if cached, ok := s.messageCache[sess.ID]; ok {
+// getLastMessage retrieves the last message (user or assistant) from a session
+// for preview. It skips tool_result and tool_use entries.
+func (s *Model) getLastMessage(sess *coresession.SessionMetadata) string {
+	cacheKey := sess.ID + ":last"
+	if cached, ok := s.messageCache[cacheKey]; ok {
 		return cached
 	}
 
@@ -245,6 +247,54 @@ func (s *Model) getLastUserMessage(sess *coresession.SessionMetadata) string {
 
 	for i := len(fullSession.Entries) - 1; i >= 0; i-- {
 		entry := fullSession.Entries[i]
+		if entry.Message == nil {
+			continue
+		}
+		if entry.Type != coresession.EntryUser && entry.Type != coresession.EntryAssistant {
+			continue
+		}
+		// Skip tool_result and tool_use entries.
+		skip := false
+		for _, block := range entry.Message.Content {
+			if block.Type == "tool_result" || block.Type == "tool_use" {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		for _, block := range entry.Message.Content {
+			if block.Type == "text" && block.Text != "" {
+				maxLen := calculateMessagePreviewLength(s.width)
+				content := truncateToFirstLine(block.Text, maxLen)
+				s.messageCache[cacheKey] = content
+				return content
+			}
+		}
+	}
+
+	return ""
+}
+
+// getFirstSubstantiveMessage finds the first user message with >5 characters
+// from a session. Used as a display title when the stored title is too short.
+func (s *Model) getFirstSubstantiveMessage(sess *coresession.SessionMetadata) string {
+	cacheKey := sess.ID + ":subst"
+	if cached, ok := s.messageCache[cacheKey]; ok {
+		return cached
+	}
+
+	if s.store == nil {
+		return ""
+	}
+
+	fullSession, err := s.store.Load(sess.ID)
+	if err != nil {
+		return ""
+	}
+
+	for _, entry := range fullSession.Entries {
 		if entry.Type != coresession.EntryUser || entry.Message == nil {
 			continue
 		}
@@ -260,10 +310,10 @@ func (s *Model) getLastUserMessage(sess *coresession.SessionMetadata) string {
 			continue
 		}
 		for _, block := range entry.Message.Content {
-			if block.Type == "text" && block.Text != "" {
+			if block.Type == "text" && len([]rune(block.Text)) >= coresession.MinSubstantiveLength {
 				maxLen := calculateMessagePreviewLength(s.width)
 				content := truncateToFirstLine(block.Text, maxLen)
-				s.messageCache[sess.ID] = content
+				s.messageCache[cacheKey] = content
 				return content
 			}
 		}
@@ -272,20 +322,48 @@ func (s *Model) getLastUserMessage(sess *coresession.SessionMetadata) string {
 	return ""
 }
 
-// renderSession renders a single session in compact 2-line format
+// renderSession renders a single session in compact 2-line format.
+//
+// Title line: if the stored title is too short (≤5 chars, e.g. "hi") and a
+// substantive message exists, the substantive message is used as the display
+// title. Metadata (message count + relative time) is right-aligned.
+//
+// Subtitle line: the last message in the conversation (any role) is shown as
+// a muted preview.
 func (s *Model) renderSession(sess *coresession.SessionMetadata, isSelected bool, sb *strings.Builder, boxWidth int) {
 	titleStyle, indent := shared.SelectorItemStyle, "  "
 	if isSelected {
 		titleStyle, indent = shared.SelectorSelectedStyle, "> "
 	}
 
-	metadata := formatCompactMetadata(sess)
-	title := shared.TruncateWithEllipsis(sess.Title, boxWidth-len(indent)-len(" · ")-len(metadata)-2)
-	sb.WriteString(titleStyle.Render(fmt.Sprintf("%s%s · %s", indent, title, metadata)) + "\n")
+	// Determine display title — prefer substantive message over short titles.
+	displayTitle := sess.Title
+	if len([]rune(displayTitle)) < coresession.MinSubstantiveLength {
+		if subst := s.getFirstSubstantiveMessage(sess); subst != "" {
+			displayTitle = subst
+		}
+	}
 
-	if lastMsg := s.getLastUserMessage(sess); lastMsg != "" {
+	metadata := formatCompactMetadata(sess)
+	// Reserve space for indent + gap + metadata.
+	maxTitleWidth := boxWidth - len(indent) - len(metadata) - 4
+	if maxTitleWidth < 10 {
+		maxTitleWidth = 10
+	}
+	title := shared.TruncateWithEllipsis(displayTitle, maxTitleWidth)
+
+	// Right-align metadata by padding between title and metadata.
+	titleLen := len(indent) + len(title)
+	gap := boxWidth - titleLen - len(metadata) - 2
+	if gap < 2 {
+		gap = 2
+	}
+	padding := strings.Repeat(" ", gap)
+	sb.WriteString(titleStyle.Render(fmt.Sprintf("%s%s%s%s", indent, title, padding, metadata)) + "\n")
+
+	if lastMsg := s.getLastMessage(sess); lastMsg != "" {
 		previewStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
-		sb.WriteString(previewStyle.Render(fmt.Sprintf("    \"%s\"", lastMsg)))
+		sb.WriteString(previewStyle.Render(fmt.Sprintf("    %s", lastMsg)))
 	}
 	sb.WriteString("\n\n")
 }

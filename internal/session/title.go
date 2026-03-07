@@ -10,10 +10,30 @@ const (
 	MaxTitleLength = 60
 )
 
-// GenerateTitle generates a title from the first user text in the entries.
+// MinSubstantiveLength is the minimum character count for a message to be
+// considered "substantive" (i.e. not just a greeting like "hi" or "hello").
+const MinSubstantiveLength = 6
+
+// GenerateTitle generates a title from the first substantive user text in the
+// entries. Messages with 5 or fewer characters (e.g. "hi", "hello") are
+// skipped in favour of the next meaningful message. If no substantive message
+// exists, the first user text is used as a fallback.
 func GenerateTitle(entries []Entry) string {
-	if text := ExtractFirstUserText(entries); text != "" {
-		return truncateTitle(text)
+	var fallback string
+	for _, entry := range entries {
+		text, ok := extractUserText(entry)
+		if !ok {
+			continue
+		}
+		if fallback == "" {
+			fallback = text
+		}
+		if utf8.RuneCountInString(text) >= MinSubstantiveLength {
+			return truncateTitle(text)
+		}
+	}
+	if fallback != "" {
+		return truncateTitle(fallback)
 	}
 	return "Untitled Session"
 }

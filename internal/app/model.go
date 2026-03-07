@@ -216,7 +216,7 @@ func (m *model) commitAllMessages() []tea.Cmd {
 }
 
 func (m *model) commitMessagesWithCheck(checkReady bool) []tea.Cmd {
-	var cmds []tea.Cmd
+	var printCmds []tea.Cmd
 	lastIdx := len(m.conv.Messages) - 1
 
 	for i := m.conv.CommittedCount; i < len(m.conv.Messages); i++ {
@@ -232,11 +232,18 @@ func (m *model) commitMessagesWithCheck(checkReady bool) []tea.Cmd {
 		}
 
 		if rendered := m.renderSingleMessage(i); rendered != "" {
-			cmds = append(cmds, tea.Println(rendered))
+			printCmds = append(printCmds, tea.Println(rendered))
 		}
 		m.conv.CommittedCount = i + 1
 	}
-	return cmds
+
+	// Wrap in tea.Sequence to preserve message ordering.
+	// tea.Batch runs commands concurrently, which can scramble the display
+	// order when multiple messages are committed at once (e.g., session restore).
+	if len(printCmds) > 1 {
+		return []tea.Cmd{tea.Sequence(printCmds...)}
+	}
+	return printCmds
 }
 
 // --- Message conversion and LLM loop configuration ---
