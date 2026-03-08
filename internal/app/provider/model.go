@@ -707,6 +707,13 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 			s.updateFilter()
 		}
 		return nil
+	case tea.KeySpace:
+		// Handle space for search in model selector
+		if s.selectorType == SelectorTypeModel {
+			s.searchQuery += " "
+			s.updateFilter()
+			return nil
+		}
 	case tea.KeyRunes:
 		// Handle text input for fuzzy search in model selector
 		if s.selectorType == SelectorTypeModel {
