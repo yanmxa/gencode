@@ -193,7 +193,9 @@ type AutoFetchTokenLimitsDeps struct {
 	Cwd          string
 }
 
-// AutoFetchTokenLimits runs a sub-agent to discover token limits for the current model.
+// AutoFetchTokenLimits fetches token limits for the current model.
+// It first tries the provider's direct API (ModelLimitsFetcher) before
+// falling back to a sub-agent discovery approach.
 func AutoFetchTokenLimits(ctx context.Context, deps AutoFetchTokenLimitsDeps) (string, error) {
 	if deps.LLM == nil {
 		return "No provider connected. Use /tokenlimit <input> <output> to set manually.", nil
@@ -201,6 +203,17 @@ func AutoFetchTokenLimits(ctx context.Context, deps AutoFetchTokenLimitsDeps) (s
 
 	modelID := deps.CurrentModel.ModelID
 	providerName := string(deps.CurrentModel.Provider)
+
+	// Try direct API fetch if the provider supports it
+	if fetcher, ok := deps.LLM.(provider.ModelLimitsFetcher); ok {
+		inputLimit, outputLimit, err := fetcher.FetchModelLimits(ctx, modelID)
+		if err == nil && (inputLimit > 0 || outputLimit > 0) {
+			if deps.Store != nil {
+				_ = deps.Store.SetTokenLimit(modelID, inputLimit, outputLimit)
+			}
+			return FormatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, 0), nil
+		}
+	}
 
 	systemPrompt := BuildTokenLimitAgentPrompt(modelID, providerName, string(deps.CurrentModel.AuthMethod))
 	messages := []message.Message{

@@ -287,7 +287,8 @@ func (s *Store) ClearSearchProvider() error {
 	return s.save()
 }
 
-// SetTokenLimit sets custom token limits for a model
+// SetTokenLimit sets custom token limits for a model.
+// It also updates the model cache so subsequent model listings reflect these limits.
 func (s *Store) SetTokenLimit(modelID string, inputLimit, outputLimit int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -297,6 +298,18 @@ func (s *Store) SetTokenLimit(modelID string, inputLimit, outputLimit int) error
 		InputTokenLimit:  inputLimit,
 		OutputTokenLimit: outputLimit,
 	}
+
+	// Update the model cache entry so model listings show the limits
+	for key, cache := range s.data.Models {
+		for i, m := range cache.Models {
+			if m.ID == modelID {
+				cache.Models[i].InputTokenLimit = inputLimit
+				cache.Models[i].OutputTokenLimit = outputLimit
+				s.data.Models[key] = cache
+			}
+		}
+	}
+
 	return s.save()
 }
 

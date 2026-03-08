@@ -290,37 +290,20 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 	return ch
 }
 
-// staticModels is the fallback list when the models API is unavailable.
-var staticModels = []provider.ModelInfo{
-	{ID: "qwen3-235b-a22b", Name: "qwen3-235b-a22b", DisplayName: "Qwen3 235B A22B"},
-	{ID: "qwen3-30b-a3b", Name: "qwen3-30b-a3b", DisplayName: "Qwen3 30B A3B"},
-	{ID: "qwen3-32b", Name: "qwen3-32b", DisplayName: "Qwen3 32B"},
-	{ID: "qwen3-14b", Name: "qwen3-14b", DisplayName: "Qwen3 14B"},
-	{ID: "qwen-plus", Name: "qwen-plus", DisplayName: "Qwen Plus"},
-	{ID: "qwen-max", Name: "qwen-max", DisplayName: "Qwen Max"},
-	{ID: "qwen-turbo", Name: "qwen-turbo", DisplayName: "Qwen Turbo"},
-	{ID: "qwq-plus", Name: "qwq-plus", DisplayName: "QwQ Plus (Thinking)"},
-	{ID: "qwen-coder-plus", Name: "qwen-coder-plus", DisplayName: "Qwen Coder Plus"},
-}
-
-// ListModels returns the available models for Qwen using the API.
+// ListModels returns the available models for Qwen by querying the DashScope API.
 func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 	page, err := c.client.Models.List(ctx)
 	if err != nil {
-		return staticModels, err
+		return nil, err
 	}
 
-	models := make([]provider.ModelInfo, 0)
+	models := make([]provider.ModelInfo, 0, len(page.Data))
 	for _, m := range page.Data {
 		models = append(models, provider.ModelInfo{
 			ID:          m.ID,
 			Name:        m.ID,
 			DisplayName: m.ID,
 		})
-	}
-
-	if len(models) == 0 {
-		return staticModels, nil
 	}
 
 	sort.Slice(models, func(i, j int) bool {
@@ -330,5 +313,34 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 	return models, nil
 }
 
-// Ensure Client implements LLMProvider
+// FetchModelLimits queries the DashScope model detail API to get token limits.
+// DashScope returns extra_info.default_envs with max_input_tokens and max_output_tokens.
+func (c *Client) FetchModelLimits(ctx context.Context, modelID string) (inputLimit, outputLimit int, err error) {
+	model, err := c.client.Models.Get(ctx, modelID)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	raw := model.RawJSON()
+	if raw == "" {
+		return 0, 0, nil
+	}
+
+	var detail struct {
+		ExtraInfo struct {
+			DefaultEnvs struct {
+				MaxInputTokens  int `json:"max_input_tokens"`
+				MaxOutputTokens int `json:"max_output_tokens"`
+			} `json:"default_envs"`
+		} `json:"extra_info"`
+	}
+	if err := json.Unmarshal([]byte(raw), &detail); err != nil {
+		return 0, 0, nil
+	}
+
+	return detail.ExtraInfo.DefaultEnvs.MaxInputTokens, detail.ExtraInfo.DefaultEnvs.MaxOutputTokens, nil
+}
+
+// Ensure Client implements LLMProvider and ModelLimitsFetcher
 var _ provider.LLMProvider = (*Client)(nil)
+var _ provider.ModelLimitsFetcher = (*Client)(nil)

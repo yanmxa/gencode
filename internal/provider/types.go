@@ -77,6 +77,12 @@ type LLMProvider interface {
 	Name() string
 }
 
+// ModelLimitsFetcher is an optional interface for providers that can fetch
+// token limits for a specific model via API (e.g. DashScope model detail endpoint).
+type ModelLimitsFetcher interface {
+	FetchModelLimits(ctx context.Context, modelID string) (inputLimit, outputLimit int, err error)
+}
+
 // ProviderFactory creates a new LLMProvider instance
 type ProviderFactory func(ctx context.Context) (LLMProvider, error)
 

@@ -66,12 +66,12 @@ func (m model) View() string {
 
 	if m.provider.FetchingLimits {
 		spinnerView := render.ThinkingStyle.Render(m.output.Spinner.View() + " Fetching token limits...")
-		parts = append(parts, spinnerView)
+		parts = append(parts, "\n"+spinnerView)
 	}
 
 	if m.conv.Compact.Active {
 		spinnerView := render.ThinkingStyle.Render(m.output.Spinner.View() + " Compacting conversation...")
-		parts = append(parts, spinnerView)
+		parts = append(parts, "\n"+spinnerView)
 	}
 
 	chatSection := strings.Join(parts, "\n")
