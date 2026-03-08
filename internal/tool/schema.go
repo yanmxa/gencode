@@ -320,14 +320,7 @@ var TaskToolSchema = provider.Tool{
 
 The Task tool launches specialized agents that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
 
-Built-in agent types:
-- Bash: Command execution specialist for running bash commands. Use this for git operations, command execution, and other terminal tasks. (Tools: Bash, Read, Glob, Grep)
-- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns, search code for keywords, or answer questions about the codebase. (Tools: Read, Glob, Grep, WebFetch, WebSearch)
-- Plan: Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs. (Tools: Read, Glob, Grep, WebFetch, WebSearch)
-- Review: Code review specialist for analyzing code changes, identifying issues, and suggesting improvements. (Tools: Read, Glob, Grep, Bash)
-- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for something and are not confident that you will find the right match quickly, use this agent. (Tools: all except Task)
-
-Custom agents defined by the user or plugins are also available. Check the <available-agents> section in the system prompt for the full list of available agents and their descriptions. Use the agent name as the subagent_type parameter.
+Check the <available-agents> section in the system prompt for the full list of available agent types and their descriptions. Use the agent name as the subagent_type parameter. Only use agent types listed there — do not guess or use agent types not in the list.
 
 When NOT to use Task (use direct tools instead):
 Before spawning an agent, estimate how many tool calls are needed. If the answer is 1-2 calls, use the tool directly — spawning an agent adds unnecessary overhead.
@@ -347,7 +340,7 @@ Usage notes:
 		"properties": map[string]any{
 			"subagent_type": map[string]any{
 				"type":        "string",
-				"description": "The type of agent to spawn (Bash, Explore, Plan, Review, general-purpose, or custom agent name)",
+				"description": "The type of agent to spawn. Must be one of the agent names listed in the <available-agents> section.",
 			},
 			"prompt": map[string]any{
 				"type":        "string",

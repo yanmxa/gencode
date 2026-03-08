@@ -134,6 +134,12 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 			}
 		}
 
+		// Merge consecutive same-role messages into single messages.
+		// This is required because multiple tool results are stored as separate
+		// user messages internally, but the Claude API requires all tool_result
+		// blocks to be in a single user message following the assistant's tool_use.
+		anthropicMsgs = mergeConsecutiveMessages(anthropicMsgs)
+
 		// Build request params
 		params := anthropic.MessageNewParams{
 			Model:     anthropic.Model(opts.Model),
@@ -333,6 +339,27 @@ func (c *Client) fetchModels(ctx context.Context) ([]provider.ModelInfo, error) 
 		return nil, fmt.Errorf("no models returned from API")
 	}
 	return models, nil
+}
+
+// mergeConsecutiveMessages combines consecutive messages with the same role
+// into single messages with merged content blocks. This is required by the
+// Claude API when multiple tool results follow a single assistant message
+// with multiple tool_use blocks.
+func mergeConsecutiveMessages(msgs []anthropic.MessageParam) []anthropic.MessageParam {
+	if len(msgs) <= 1 {
+		return msgs
+	}
+	merged := make([]anthropic.MessageParam, 0, len(msgs))
+	merged = append(merged, msgs[0])
+	for i := 1; i < len(msgs); i++ {
+		last := &merged[len(merged)-1]
+		if msgs[i].Role == last.Role {
+			last.Content = append(last.Content, msgs[i].Content...)
+		} else {
+			merged = append(merged, msgs[i])
+		}
+	}
+	return merged
 }
 
 // Ensure Client implements LLMProvider
