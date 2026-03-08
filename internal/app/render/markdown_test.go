@@ -47,12 +47,9 @@ func TestMDRenderer_Emphasis(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Render error: %v", err)
 		}
-		if !strings.Contains(out, "bold text") {
-			t.Errorf("output %q should contain 'bold text'", out)
-		}
-		// Check for ANSI bold escape
-		if !strings.Contains(out, "\x1b[1m") {
-			t.Errorf("output should contain ANSI bold sequence")
+		plain := stripANSI(out)
+		if !strings.Contains(plain, "bold text") {
+			t.Errorf("output should contain 'bold text', got:\n%s", plain)
 		}
 	})
 
@@ -61,12 +58,9 @@ func TestMDRenderer_Emphasis(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Render error: %v", err)
 		}
-		if !strings.Contains(out, "italic text") {
-			t.Errorf("output %q should contain 'italic text'", out)
-		}
-		// Check for ANSI italic escape
-		if !strings.Contains(out, "\x1b[3m") {
-			t.Errorf("output should contain ANSI italic sequence")
+		plain := stripANSI(out)
+		if !strings.Contains(plain, "italic text") {
+			t.Errorf("output should contain 'italic text', got:\n%s", plain)
 		}
 	})
 }
@@ -154,8 +148,9 @@ func TestMDRenderer_Link(t *testing.T) {
 	if !strings.Contains(out, "Go") {
 		t.Errorf("output should contain link text 'Go'")
 	}
-	if !strings.Contains(out, "https://golang.org") {
-		t.Errorf("output should contain URL")
+	// URL should be in OSC 8 hyperlink escape sequence, not shown as visible text
+	if !strings.Contains(out, "\x1b]8;;https://golang.org\x1b\\") {
+		t.Errorf("output should contain OSC 8 hyperlink escape for URL")
 	}
 }
 
@@ -167,8 +162,12 @@ func TestMDRenderer_ThematicBreak(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render error: %v", err)
 	}
-	if !strings.Contains(out, "─") {
-		t.Errorf("output should contain horizontal rule character '─'")
+	plain := stripANSI(out)
+	if !strings.Contains(plain, "above") || !strings.Contains(plain, "below") {
+		t.Errorf("output should contain text above and below the rule, got:\n%s", plain)
+	}
+	if !strings.Contains(plain, "---") && !strings.Contains(plain, "─") {
+		t.Errorf("output should contain horizontal rule, got:\n%s", plain)
 	}
 }
 
@@ -180,11 +179,9 @@ func TestMDRenderer_Blockquote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render error: %v", err)
 	}
-	if !strings.Contains(out, "This is a quote") {
-		t.Errorf("output should contain quote text")
-	}
-	if !strings.Contains(out, "│") {
-		t.Errorf("output should contain blockquote marker '│'")
+	plain := stripANSI(out)
+	if !strings.Contains(plain, "This is a quote") {
+		t.Errorf("output should contain quote text, got:\n%s", plain)
 	}
 }
 

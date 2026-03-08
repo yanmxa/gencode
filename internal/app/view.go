@@ -303,6 +303,7 @@ func (m model) renderAssistantMessage(msg message.ChatMessage, idx int, isLast b
 		IsLast:       isLast,
 		SpinnerView:  m.output.Spinner.View(),
 		MDRenderer:   m.output.MDRenderer,
+		Width:        m.width,
 	})
 
 	if len(msg.ToolCalls) == 0 {

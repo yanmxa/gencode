@@ -31,7 +31,7 @@ An open-source AI coding assistant for the terminal. Multi-provider support, fle
 | **OpenAI** | GPT-5.2, GPT-5, o3, o4-mini, Codex | API Key | `OPENAI_API_KEY` |
 | **Google** | Gemini 3 Pro/Flash, 2.5 Pro/Flash | API Key | `GOOGLE_API_KEY` |
 | **Moonshot** | Kimi K2.5, K2 Thinking | API Key | `MOONSHOT_API_KEY` |
-| **Alibaba** | Qwen 3, Qwen 2.5 | _Planning_ | — |
+| **Alibaba** | Qwen 3, QwQ, Qwen Coder | API Key | `DASHSCOPE_API_KEY`, `DASHSCOPE_BASE_URL` (optional) |
 
 ## 🚀 Installation
 

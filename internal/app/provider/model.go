@@ -184,12 +184,14 @@ func (s *Model) EnterProviderSelect(width, height int) error {
 		coreprovider.ProviderOpenAI,
 		coreprovider.ProviderGoogle,
 		coreprovider.ProviderMoonshot,
+		coreprovider.ProviderAlibaba,
 	}
 	displayNames := map[coreprovider.Provider]string{
 		coreprovider.ProviderAnthropic: "Anthropic",
 		coreprovider.ProviderOpenAI:    "OpenAI",
 		coreprovider.ProviderGoogle:    "Google",
 		coreprovider.ProviderMoonshot:  "Moonshot",
+		coreprovider.ProviderAlibaba:    "Alibaba",
 	}
 
 	for _, p := range providerOrder {

@@ -217,6 +217,7 @@ type AssistantParams struct {
 	IsLast            bool
 	SpinnerView       string
 	MDRenderer        *MDRenderer
+	Width             int // terminal width for word wrapping
 }
 
 // RenderAssistantMessage renders an assistant message with thinking, content, and tool calls.
@@ -227,9 +228,18 @@ func RenderAssistantMessage(params AssistantParams) string {
 
 	// Display thinking content (reasoning_content) if available
 	if params.Thinking != "" {
+		wrapWidth := max(params.Width-2, MinWrapWidth)
+		wrapped := lipgloss.NewStyle().Width(wrapWidth).Render(params.Thinking)
+
+		var lines []string
+		for _, line := range strings.Split(wrapped, "\n") {
+			if strings.TrimSpace(line) != "" {
+				lines = append(lines, ThinkingContentStyle.Render(line))
+			}
+		}
+
 		thinkingIcon := ThinkingContentStyle.Render("✦ ")
-		thinkingContent := ThinkingContentStyle.Render(params.Thinking)
-		thinkingContent = strings.ReplaceAll(thinkingContent, "\n", "\n"+aiIndent)
+		thinkingContent := strings.Join(lines, "\n"+aiIndent)
 		sb.WriteString(thinkingIcon + thinkingContent + "\n\n")
 	}
 

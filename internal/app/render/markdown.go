@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
@@ -14,6 +15,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	east "github.com/yuin/goldmark/extension/ast"
+	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/text"
 
 	"github.com/yanmxa/gencode/internal/ui/theme"
@@ -36,7 +39,9 @@ func NewMDRenderer(width int) *MDRenderer {
 // Render parses markdown source and returns styled terminal output.
 func (r *MDRenderer) Render(content string) (string, error) {
 	source := []byte(content)
-	md := goldmark.New()
+	md := goldmark.New(
+		goldmark.WithExtensions(extension.Table),
+	)
 	reader := text.NewReader(source)
 	doc := md.Parser().Parse(reader)
 
@@ -79,6 +84,9 @@ func (r *MDRenderer) renderNode(buf *strings.Builder, n ast.Node, source []byte,
 	case *ast.Blockquote:
 		r.renderBlockquote(buf, node, source, depth)
 
+	case *east.Table:
+		r.renderTable(buf, node, source)
+
 	default:
 		// For unknown block nodes, render children
 		if n.HasChildren() {
@@ -87,24 +95,22 @@ func (r *MDRenderer) renderNode(buf *strings.Builder, n ast.Node, source []byte,
 	}
 }
 
-// renderChildren renders all child nodes, inserting blank lines between blocks.
+// renderChildren renders all child nodes, adding blank lines only before headings and code blocks.
 func (r *MDRenderer) renderChildren(buf *strings.Builder, n ast.Node, source []byte, depth int) {
-	first := true
+	hasPrev := false
 	for child := n.FirstChild(); child != nil; child = child.NextSibling() {
-		// Insert blank line between sibling block-level nodes (not the first one)
-		if !first && isBlockNode(child) {
+		if hasPrev && needsBlankLineBefore(child) {
 			buf.WriteByte('\n')
 		}
 		r.renderNode(buf, child, source, depth)
-		first = false
+		hasPrev = true
 	}
 }
 
-// isBlockNode returns true for block-level AST nodes that should have blank-line separation.
-func isBlockNode(n ast.Node) bool {
+// needsBlankLineBefore returns true for nodes that need a blank line above for visual separation.
+func needsBlankLineBefore(n ast.Node) bool {
 	switch n.(type) {
-	case *ast.Paragraph, *ast.Heading, *ast.FencedCodeBlock, *ast.CodeBlock,
-		*ast.List, *ast.Blockquote, *ast.ThematicBreak:
+	case *ast.Heading, *ast.FencedCodeBlock, *ast.CodeBlock, *east.Table:
 		return true
 	}
 	return false
@@ -244,15 +250,28 @@ func (r *MDRenderer) renderList(buf *strings.Builder, node *ast.List, source []b
 		buf.WriteString(indent)
 		buf.WriteString(markerStyle.Render(marker))
 
-		// Render list item content inline
+		// Calculate available width for list item content
+		contentIndent := indent + strings.Repeat(" ", utf8.RuneCountInString(marker))
+		contentWidth := r.width - utf8.RuneCountInString(indent) - utf8.RuneCountInString(marker)
+
+		// Render list item content
 		first := true
 		for itemChild := listItem.FirstChild(); itemChild != nil; itemChild = itemChild.NextSibling() {
 			switch ic := itemChild.(type) {
 			case *ast.Paragraph:
 				content := r.renderInlineChildren(ic, source)
-				buf.WriteString(content)
+				if !first {
+					buf.WriteString(contentIndent)
+				}
+				wrapped := r.wordWrap(content, contentWidth)
+				// Indent continuation lines
+				wrapped = strings.ReplaceAll(wrapped, "\n", "\n"+contentIndent)
+				buf.WriteString(wrapped)
 			case *ast.TextBlock:
 				content := r.renderInlineChildren(ic, source)
+				if !first {
+					buf.WriteString(contentIndent)
+				}
 				buf.WriteString(content)
 			case *ast.List:
 				if first {
@@ -269,6 +288,101 @@ func (r *MDRenderer) renderList(buf *strings.Builder, node *ast.List, source []b
 		}
 		buf.WriteByte('\n')
 	}
+}
+
+// renderTable renders a table with aligned columns.
+func (r *MDRenderer) renderTable(buf *strings.Builder, node *east.Table, source []byte) {
+	// Collect all rows (header + body rows are direct children of Table)
+	var rows [][]string
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		switch section := child.(type) {
+		case *east.TableHeader:
+			rows = append(rows, r.collectTableCells(section, source))
+		case *east.TableRow:
+			rows = append(rows, r.collectTableCells(section, source))
+		}
+	}
+
+	if len(rows) == 0 {
+		return
+	}
+
+	// Calculate column widths
+	numCols := 0
+	for _, row := range rows {
+		if len(row) > numCols {
+			numCols = len(row)
+		}
+	}
+	colWidths := make([]int, numCols)
+	for _, row := range rows {
+		for i, cell := range row {
+			w := lipgloss.Width(cell)
+			if w > colWidths[i] {
+				colWidths[i] = w
+			}
+		}
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Separator)
+
+	// Helper to render a horizontal border line with box-drawing corners
+	renderBorder := func(left, mid, right string) {
+		var line strings.Builder
+		line.WriteString(left)
+		for j := 0; j < numCols; j++ {
+			if j > 0 {
+				line.WriteString(mid)
+			}
+			line.WriteString(strings.Repeat("─", colWidths[j]+2))
+		}
+		line.WriteString(right)
+		buf.WriteString(dimStyle.Render(line.String()))
+		buf.WriteByte('\n')
+	}
+
+	// Top border: ┌──────┬─────┐
+	renderBorder("┌", "┬", "┐")
+
+	for i, row := range rows {
+		buf.WriteString(dimStyle.Render("│") + " ")
+		for j := 0; j < numCols; j++ {
+			if j > 0 {
+				buf.WriteString(" " + dimStyle.Render("│") + " ")
+			}
+			cell := ""
+			if j < len(row) {
+				cell = row[j]
+			}
+			pad := strings.Repeat(" ", colWidths[j]-lipgloss.Width(cell))
+			if i == 0 {
+				buf.WriteString("\x1b[1m" + cell + "\x1b[22m" + pad)
+			} else {
+				buf.WriteString(cell + pad)
+			}
+		}
+		buf.WriteString(" " + dimStyle.Render("│"))
+		buf.WriteByte('\n')
+
+		// Separator after each row except the last
+		if i < len(rows)-1 {
+			renderBorder("├", "┼", "┤")
+		}
+	}
+
+	// Bottom border: └──────┴─────┘
+	renderBorder("└", "┴", "┘")
+}
+
+// collectTableCells extracts cell text from a table row or header.
+func (r *MDRenderer) collectTableCells(node ast.Node, source []byte) []string {
+	var cells []string
+	for cell := node.FirstChild(); cell != nil; cell = cell.NextSibling() {
+		if tc, ok := cell.(*east.TableCell); ok {
+			cells = append(cells, r.renderInlineChildren(tc, source))
+		}
+	}
+	return cells
 }
 
 // renderBlockquote renders a blockquote with a left border indicator.
@@ -338,16 +452,17 @@ func (r *MDRenderer) renderInline(buf *strings.Builder, n ast.Node, source []byt
 	case *ast.Link:
 		linkText := r.renderInlineChildren(node, source)
 		url := string(node.Destination)
-		urlStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary)
-		buf.WriteString(linkText)
-		buf.WriteString(" (")
-		buf.WriteString(urlStyle.Render(url))
-		buf.WriteByte(')')
+		// Render as OSC 8 clickable hyperlink: blue + dashed underline, no URL shown
+		linkStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary)
+		styled := "\x1b[4:5m" + linkStyle.Render(linkText) + "\x1b[4:0m"
+		// Wrap with OSC 8 escape sequence for terminal hyperlink
+		buf.WriteString("\x1b]8;;" + url + "\x1b\\" + styled + "\x1b]8;;\x1b\\")
 
 	case *ast.AutoLink:
 		url := string(node.URL(source))
-		urlStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary)
-		buf.WriteString(urlStyle.Render(url))
+		linkStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary)
+		styled := "\x1b[4:5m" + linkStyle.Render(url) + "\x1b[4:0m"
+		buf.WriteString("\x1b]8;;" + url + "\x1b\\" + styled + "\x1b]8;;\x1b\\")
 
 	case *ast.Image:
 		alt := r.renderInlineChildren(node, source)

@@ -20,9 +20,10 @@ import (
 	_ "github.com/yanmxa/gencode/internal/provider/google"
 	_ "github.com/yanmxa/gencode/internal/provider/moonshot"
 	_ "github.com/yanmxa/gencode/internal/provider/openai"
+	_ "github.com/yanmxa/gencode/internal/provider/alibaba"
 )
 
-var version = "1.8.2"
+var version = "1.9.0"
 
 // cliOpts holds all CLI flag values in one place.
 var cliOpts struct {

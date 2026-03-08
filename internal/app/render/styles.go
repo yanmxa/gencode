@@ -60,9 +60,8 @@ func init() {
 	ThinkingStyle = lipgloss.NewStyle().
 		Foreground(theme.CurrentTheme.Accent)
 
-	// Thinking content style - slightly dimmed for reasoning content
 	ThinkingContentStyle = lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Muted)
+		Faint(true)
 
 	SystemMsgStyle = lipgloss.NewStyle().
 		Foreground(theme.CurrentTheme.TextDim).
