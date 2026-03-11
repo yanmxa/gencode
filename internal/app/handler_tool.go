@@ -45,6 +45,14 @@ const (
 )
 
 func (m *model) handleToolResult(msg apptool.ExecResultMsg) tea.Cmd {
+	// Discard stale results from cancelled/completed tool executions.
+	// This happens when the user cancels (Esc) during tool execution;
+	// the background goroutine may still deliver results after the
+	// conversation has moved on to new tool calls.
+	if !m.isExpectedToolResult(msg) {
+		return nil
+	}
+
 	// Check if we're in parallel mode
 	if m.tool.Parallel {
 		return m.handleParallelToolResult(msg)
@@ -174,6 +182,19 @@ func (m *model) filterToolCallsWithHooks(toolCalls []message.ToolCall) []message
 	}
 
 	return allowed
+}
+
+// isExpectedToolResult checks whether an incoming tool result belongs to the
+// current set of pending tool calls. Returns false for stale results from
+// cancelled executions that arrive after new tool calls have started.
+func (m *model) isExpectedToolResult(msg apptool.ExecResultMsg) bool {
+	if m.tool.PendingCalls == nil {
+		return false
+	}
+	if msg.Index < 0 || msg.Index >= len(m.tool.PendingCalls) {
+		return false
+	}
+	return m.tool.PendingCalls[msg.Index].ID == msg.Result.ToolCallID
 }
 
 func (m *model) handleTaskProgress(msg progress.UpdateMsg) tea.Cmd {

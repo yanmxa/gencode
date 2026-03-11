@@ -15,13 +15,29 @@ func historyFilePath(cwd string) string {
 	if err != nil {
 		return filepath.Join(cwd, ".gen", "history")
 	}
-	encoded := strings.ReplaceAll(strings.TrimRight(cwd, "/"), "/", "-")
+	encoded := strings.ReplaceAll(strings.TrimSuffix(cwd, "/"), "/", "-")
 	return filepath.Join(homeDir, ".gen", "projects", encoded, "history")
 }
 
+func escapeEntry(entry string) string {
+	entry = strings.ReplaceAll(entry, "\\", "\\\\")
+	return strings.ReplaceAll(entry, "\n", "\\n")
+}
+
+func unescapeEntry(line string) string {
+	line = strings.ReplaceAll(line, "\\n", "\n")
+	return strings.ReplaceAll(line, "\\\\", "\\")
+}
+
+func truncate(entries []string) []string {
+	if len(entries) > maxHistoryEntries {
+		return entries[len(entries)-maxHistoryEntries:]
+	}
+	return entries
+}
+
 func Load(cwd string) []string {
-	path := historyFilePath(cwd)
-	f, err := os.Open(path)
+	f, err := os.Open(historyFilePath(cwd))
 	if err != nil {
 		return nil
 	}
@@ -30,27 +46,17 @@ func Load(cwd string) []string {
 	var history []string
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := scanner.Text()
-		entry := strings.ReplaceAll(line, "\\n", "\n")
-		entry = strings.ReplaceAll(entry, "\\\\", "\\")
-		if entry != "" {
+		if entry := unescapeEntry(scanner.Text()); entry != "" {
 			history = append(history, entry)
 		}
 	}
-	if len(history) > maxHistoryEntries {
-		history = history[len(history)-maxHistoryEntries:]
-	}
-	return history
+	return truncate(history)
 }
 
 func Save(cwd string, history []string) {
 	path := historyFilePath(cwd)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return
-	}
-	entries := history
-	if len(entries) > maxHistoryEntries {
-		entries = entries[len(entries)-maxHistoryEntries:]
 	}
 	f, err := os.Create(path)
 	if err != nil {
@@ -59,10 +65,8 @@ func Save(cwd string, history []string) {
 	defer f.Close()
 
 	w := bufio.NewWriter(f)
-	for _, entry := range entries {
-		escaped := strings.ReplaceAll(entry, "\\", "\\\\")
-		escaped = strings.ReplaceAll(escaped, "\n", "\\n")
-		fmt.Fprintln(w, escaped)
+	for _, entry := range truncate(history) {
+		fmt.Fprintln(w, escapeEntry(entry))
 	}
 	w.Flush()
 }

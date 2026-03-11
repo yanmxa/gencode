@@ -31,11 +31,11 @@ func (s *toolIDSanitizer) resolve(id string) string {
 	if validToolIDPattern.MatchString(id) {
 		return id
 	}
-	if mapped, ok := s.idMap[id]; ok {
-		return mapped
-	}
 	if s.idMap == nil {
 		s.idMap = make(map[string]string)
+	}
+	if mapped, ok := s.idMap[id]; ok {
+		return mapped
 	}
 	s.counter++
 	mapped := fmt.Sprintf("toolu_compat_%d", s.counter)
@@ -73,9 +73,14 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		// Sanitizer for cross-provider tool ID compatibility (lazy, single-pass)
 		var ids toolIDSanitizer
 
+		// Remove orphaned tool_result blocks whose tool_use_id doesn't match
+		// any tool_use in the nearest preceding assistant message. This guards
+		// against stale results from cancelled tool executions.
+		sanitized := sanitizeToolResults(opts.Messages)
+
 		// Convert messages to Anthropic format
-		anthropicMsgs := make([]anthropic.MessageParam, 0, len(opts.Messages))
-		for _, msg := range opts.Messages {
+		anthropicMsgs := make([]anthropic.MessageParam, 0, len(sanitized))
+		for _, msg := range sanitized {
 			switch msg.Role {
 			case message.RoleUser:
 				if msg.ToolResult != nil {
@@ -296,6 +301,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 // defaultModels is the fallback static model list
 var defaultModels = []provider.ModelInfo{
 	{ID: "claude-opus-4-5@20251101", Name: "Claude Opus 4.5", DisplayName: "Claude Opus 4.5 (Most Capable)"},
+	{ID: "claude-sonnet-4-6-20250514", Name: "Claude Sonnet 4.6", DisplayName: "Claude Sonnet 4.6 (Latest)"},
 	{ID: "claude-sonnet-4-5@20250929", Name: "Claude Sonnet 4.5", DisplayName: "Claude Sonnet 4.5 (Balanced)"},
 	{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4", DisplayName: "Claude Sonnet 4"},
 	{ID: "claude-haiku-3-5@20241022", Name: "Claude Haiku 3.5", DisplayName: "Claude Haiku 3.5 (Fast)"},
@@ -339,6 +345,38 @@ func (c *Client) fetchModels(ctx context.Context) ([]provider.ModelInfo, error) 
 		return nil, fmt.Errorf("no models returned from API")
 	}
 	return models, nil
+}
+
+// sanitizeToolResults removes tool_result messages whose tool_use_id doesn't
+// match any tool_use in the nearest preceding assistant message. This prevents
+// "unexpected tool_use_id" API errors caused by stale results from cancelled
+// tool executions or session restore artifacts.
+func sanitizeToolResults(msgs []message.Message) []message.Message {
+	// Track the set of valid tool_use IDs from the most recent assistant message.
+	var currentToolIDs map[string]bool
+	result := make([]message.Message, 0, len(msgs))
+
+	for _, msg := range msgs {
+		switch {
+		case msg.Role == message.RoleAssistant:
+			currentToolIDs = make(map[string]bool, len(msg.ToolCalls))
+			for _, tc := range msg.ToolCalls {
+				currentToolIDs[tc.ID] = true
+			}
+			result = append(result, msg)
+
+		case msg.Role == message.RoleUser && msg.ToolResult != nil:
+			if currentToolIDs != nil && currentToolIDs[msg.ToolResult.ToolCallID] {
+				result = append(result, msg)
+			}
+			// else: orphaned tool_result — skip it
+
+		default:
+			result = append(result, msg)
+		}
+	}
+
+	return result
 }
 
 // mergeConsecutiveMessages combines consecutive messages with the same role
