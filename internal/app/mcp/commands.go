@@ -3,17 +3,26 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	coremcp "github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/ui/shared"
 )
 
+// EditInfo carries the temp file, server name and scope for editing a single server config.
+type EditInfo struct {
+	TempFile   string
+	ServerName string
+	Scope      coremcp.Scope
+}
+
 // HandleCommand dispatches /mcp subcommands.
-func HandleCommand(ctx context.Context, selector *Model, width, height int, args string) (string, error) {
+func HandleCommand(ctx context.Context, selector *Model, width, height int, args string) (string, *EditInfo, error) {
 	if coremcp.DefaultRegistry == nil {
-		return "MCP is not initialized.\n\nAdd MCP servers with:\n  /mcp add <name> -- <command> [args...]", nil
+		return "MCP is not initialized.\n\nAdd MCP servers with:\n  /mcp add <name> -- <command> [args...]", nil, nil
 	}
 
 	args = strings.TrimSpace(args)
@@ -21,9 +30,9 @@ func HandleCommand(ctx context.Context, selector *Model, width, height int, args
 
 	if len(parts) == 0 {
 		if err := selector.EnterSelect(width, height); err != nil {
-			return "", err
+			return "", nil, err
 		}
-		return "", nil
+		return "", nil, nil
 	}
 
 	subCmd := strings.ToLower(parts[0])
@@ -34,21 +43,31 @@ func HandleCommand(ctx context.Context, selector *Model, width, height int, args
 
 	switch subCmd {
 	case "add":
-		return handleAdd(ctx, parts[1:])
+		r, err := handleAdd(ctx, parts[1:])
+		return r, nil, err
+	case "edit":
+		return handleEdit(serverName)
 	case "remove":
-		return handleRemove(serverName)
+		r, err := handleRemove(serverName)
+		return r, nil, err
 	case "get":
-		return handleGet(serverName)
+		r, err := handleGet(serverName)
+		return r, nil, err
 	case "connect":
-		return handleConnect(ctx, serverName)
+		r, err := handleConnect(ctx, serverName)
+		return r, nil, err
 	case "disconnect":
-		return handleDisconnect(serverName)
+		r, err := handleDisconnect(serverName)
+		return r, nil, err
 	case "reconnect":
-		return handleReconnect(ctx, serverName)
+		r, err := handleReconnect(ctx, serverName)
+		return r, nil, err
 	case "list", "status":
-		return handleList()
+		r, err := handleList()
+		return r, nil, err
 	default:
-		return handleConnect(ctx, subCmd)
+		r, err := handleConnect(ctx, subCmd)
+		return r, nil, err
 	}
 }
 
@@ -89,6 +108,7 @@ func handleList() (string, error) {
 
 	sb.WriteString("\nCommands:\n")
 	sb.WriteString("  /mcp add <name> ...     Add a server\n")
+	sb.WriteString("  /mcp edit <name>        Edit server config in $EDITOR\n")
 	sb.WriteString("  /mcp remove <name>      Remove a server\n")
 	sb.WriteString("  /mcp get <name>         Show server details\n")
 	sb.WriteString("  /mcp connect <name>     Connect to server\n")
@@ -96,6 +116,77 @@ func handleList() (string, error) {
 	sb.WriteString("  /mcp reconnect <name>   Reconnect to server\n")
 
 	return sb.String(), nil
+}
+
+func handleEdit(name string) (string, *EditInfo, error) {
+	if name == "" {
+		return "Usage: /mcp edit <server-name>", nil, nil
+	}
+	info, err := PrepareServerEdit(name)
+	if err != nil {
+		return err.Error(), nil, nil
+	}
+	return "", info, nil
+}
+
+// PrepareServerEdit extracts a single server's config into a temp file for editing.
+// The caller is responsible for calling ApplyServerEdit after the editor closes
+// and removing the temp file.
+func PrepareServerEdit(name string) (*EditInfo, error) {
+	config, ok := coremcp.DefaultRegistry.GetConfig(name)
+	if !ok {
+		return nil, fmt.Errorf("server not found: %s\n\nUse /mcp list to see available servers", name)
+	}
+
+	scope := config.Scope
+	if scope == "" {
+		scope = coremcp.ScopeLocal
+	}
+
+	// Strip metadata fields before serializing
+	configToEdit := config
+	configToEdit.Name = ""
+	configToEdit.Scope = ""
+
+	data, err := json.MarshalIndent(configToEdit, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize config: %w", err)
+	}
+
+	tmpFile, err := os.CreateTemp("", fmt.Sprintf("mcp-%s-*.json", name))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	if _, writeErr := tmpFile.Write(append(data, '\n')); writeErr != nil {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		return nil, fmt.Errorf("failed to write temp file: %w", writeErr)
+	}
+	tmpFile.Close()
+
+	return &EditInfo{TempFile: tmpFile.Name(), ServerName: name, Scope: scope}, nil
+}
+
+// ApplyServerEdit reads the edited temp file and saves the updated config back.
+func ApplyServerEdit(info *EditInfo) error {
+	defer os.Remove(info.TempFile)
+
+	data, err := os.ReadFile(info.TempFile)
+	if err != nil {
+		return fmt.Errorf("failed to read edited config: %w", err)
+	}
+
+	var updated coremcp.ServerConfig
+	if err := json.Unmarshal(data, &updated); err != nil {
+		return fmt.Errorf("invalid JSON: %w", err)
+	}
+
+	if err := coremcp.DefaultRegistry.AddServer(info.ServerName, updated, info.Scope); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	return nil
 }
 
 func handleConnect(ctx context.Context, name string) (string, error) {

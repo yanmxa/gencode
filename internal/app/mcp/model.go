@@ -25,7 +25,7 @@ const (
 // Action represents an action available for a server in detail view
 type Action struct {
 	Label  string
-	Action string // "connect", "disconnect", "reconnect", "remove"
+	Action string // "edit", "connect", "disconnect", "reconnect", "remove"
 }
 
 // ServerItem represents an MCP server in the selector
@@ -96,6 +96,11 @@ type RemoveMsg struct {
 // AddServerMsg is sent when the user presses "n" to add a new server
 type AddServerMsg struct{}
 
+// EditServerMsg is sent when the user chooses to edit a server's config
+type EditServerMsg struct {
+	ServerName string
+	Scope      string
+}
 
 // New creates a new Model
 func New() Model {
@@ -276,20 +281,24 @@ func (s *Model) goBack() bool {
 
 // buildActions returns context-sensitive actions for a server
 func (s *Model) buildActions(srv ServerItem) []Action {
+	edit := Action{Label: "Edit", Action: "edit"}
 	switch srv.Status {
 	case coremcp.StatusConnected:
 		return []Action{
+			edit,
 			{Label: "Disable", Action: "disconnect"},
 			{Label: "Reconnect", Action: "reconnect"},
 			{Label: "Remove", Action: "remove"},
 		}
 	case coremcp.StatusConnecting:
 		return []Action{
+			edit,
 			{Label: "Disable", Action: "disconnect"},
 			{Label: "Remove", Action: "remove"},
 		}
 	default: // Error or Disconnected
 		return []Action{
+			edit,
 			{Label: "Connect", Action: "connect"},
 			{Label: "Remove", Action: "remove"},
 		}
@@ -306,6 +315,12 @@ func (s *Model) executeAction() tea.Cmd {
 	name := s.detailServer.Name
 
 	switch action.Action {
+	case "edit":
+		scope := s.detailServer.Scope
+		s.Cancel()
+		return func() tea.Msg {
+			return EditServerMsg{ServerName: name, Scope: scope}
+		}
 	case "connect":
 		s.connecting = true
 		return func() tea.Msg { return ConnectMsg{ServerName: name} }
@@ -480,6 +495,12 @@ func (s *Model) handleListKeypress(key tea.KeyMsg) tea.Cmd {
 	case tea.KeyCtrlN:
 		s.Cancel()
 		return func() tea.Msg { return AddServerMsg{} }
+	case tea.KeyCtrlD:
+		if len(s.filteredServers) > 0 && s.selectedIdx < len(s.filteredServers) {
+			name := s.filteredServers[s.selectedIdx].Name
+			return func() tea.Msg { return RemoveMsg{ServerName: name} }
+		}
+		return nil
 	case tea.KeyEnter, tea.KeyRight:
 		s.enterDetail()
 		return nil
@@ -623,7 +644,7 @@ func (s *Model) renderList() string {
 		}
 	}
 
-	s.renderErrorAndFooter(&sb, "up/down navigate . Enter/right details . ^N add . Esc close")
+	s.renderErrorAndFooter(&sb, "↑↓ navigate . Enter details . ^N add . ^D remove . Esc close")
 	return s.renderBox(sb.String())
 }
 
@@ -719,7 +740,7 @@ func (s *Model) renderDetail() string {
 		sb.WriteString("\n")
 	}
 
-	s.renderErrorAndFooter(&sb, "up/down navigate . Enter execute . left/Esc back")
+	s.renderErrorAndFooter(&sb, "↑↓ navigate . Enter execute . Esc back")
 	return s.renderBox(sb.String())
 }
 

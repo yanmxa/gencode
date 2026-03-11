@@ -55,9 +55,15 @@ func handlerRegistry() map[string]CommandHandler {
 			return result, nil, nil
 		},
 		"mcp": func(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-			result, err := appmcp.HandleCommand(ctx, &m.mcp.Selector, m.width, m.height, args)
+			result, editInfo, err := appmcp.HandleCommand(ctx, &m.mcp.Selector, m.width, m.height, args)
 			if err != nil {
 				return "", nil, err
+			}
+			if editInfo != nil {
+				m.mcp.EditingFile = editInfo.TempFile
+				m.mcp.EditingServer = editInfo.ServerName
+				m.mcp.EditingScope = editInfo.Scope
+				return result, startMCPEditor(editInfo.TempFile), nil
 			}
 			if m.mcp.Selector.IsActive() {
 				return result, m.mcp.Selector.AutoReconnect(), nil

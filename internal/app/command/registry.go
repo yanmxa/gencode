@@ -33,7 +33,7 @@ func builtinCommands() []Info {
 		{Name: "compact", Description: "Summarize conversation to reduce context size"},
 		{Name: "init", Description: "Initialize memory files (GEN.md, local, rules)"},
 		{Name: "memory", Description: "View and manage memory files (list/show/edit) with @import support"},
-		{Name: "mcp", Description: "Manage MCP servers (add/remove/connect/list)"},
+		{Name: "mcp", Description: "Manage MCP servers (add/edit/remove/connect/list)"},
 		{Name: "plugin", Description: "Manage plugins (list/enable/disable/info)"},
 	}
 }

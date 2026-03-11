@@ -20,5 +20,6 @@ gen_*
 # Local config
 .gen/
 .claude/
+.mcp.json
 CLAUDE.md
 CLAUDE.local.md

@@ -216,6 +216,11 @@ func (r *Registry) GetClient(name string) (*Client, bool) {
 	return client, ok
 }
 
+// GetLoader returns the config loader used by this registry.
+func (r *Registry) GetLoader() *ConfigLoader {
+	return r.loader
+}
+
 // GetConfig returns a server config by name
 func (r *Registry) GetConfig(name string) (ServerConfig, bool) {
 	r.mu.RLock()

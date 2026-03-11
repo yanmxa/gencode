@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
+	appmcp "github.com/yanmxa/gencode/internal/app/mcp"
+	appmemory "github.com/yanmxa/gencode/internal/app/memory"
 	"github.com/yanmxa/gencode/internal/mcp"
 )
 
@@ -35,6 +38,7 @@ func init() {
 	// Add subcommands
 	mcpCmd.AddCommand(mcpAddCmd)
 	mcpCmd.AddCommand(mcpAddJSONCmd)
+	mcpCmd.AddCommand(mcpEditCmd)
 	mcpCmd.AddCommand(mcpListCmd)
 	mcpCmd.AddCommand(mcpGetCmd)
 	mcpCmd.AddCommand(mcpRemoveCmd)
@@ -146,6 +150,43 @@ Example:
 		}
 
 		fmt.Printf("Added MCP server '%s' to %s scope\n", name, mcpScope)
+		return nil
+	},
+}
+
+var mcpEditCmd = &cobra.Command{
+	Use:   "edit <name>",
+	Short: "Edit an MCP server's configuration in $EDITOR",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		cwd, _ := os.Getwd()
+
+		if err := mcp.Initialize(cwd); err != nil {
+			return fmt.Errorf("failed to load MCP configs: %w", err)
+		}
+
+		info, err := appmcp.PrepareServerEdit(name)
+		if err != nil {
+			return err
+		}
+
+		editor := appmemory.GetEditor()
+		editorCmd := exec.Command(editor, info.TempFile)
+		editorCmd.Stdin = os.Stdin
+		editorCmd.Stdout = os.Stdout
+		editorCmd.Stderr = os.Stderr
+
+		if err := editorCmd.Run(); err != nil {
+			os.Remove(info.TempFile)
+			return fmt.Errorf("editor failed: %w", err)
+		}
+
+		if err := appmcp.ApplyServerEdit(info); err != nil {
+			return err
+		}
+
+		fmt.Printf("Updated MCP server '%s'\n", name)
 		return nil
 	},
 }
