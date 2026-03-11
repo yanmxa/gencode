@@ -23,7 +23,7 @@ import (
 	_ "github.com/yanmxa/gencode/internal/provider/alibaba"
 )
 
-var version = "1.9.3"
+var version = "1.9.4"
 
 // cliOpts holds all CLI flag values in one place.
 var cliOpts struct {
