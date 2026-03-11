@@ -11,7 +11,12 @@ import (
 const maxHistoryEntries = 500
 
 func historyFilePath(cwd string) string {
-	return filepath.Join(cwd, ".gen", "history")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(cwd, ".gen", "history")
+	}
+	encoded := strings.ReplaceAll(strings.TrimRight(cwd, "/"), "/", "-")
+	return filepath.Join(homeDir, ".gen", "projects", encoded, "history")
 }
 
 func Load(cwd string) []string {
