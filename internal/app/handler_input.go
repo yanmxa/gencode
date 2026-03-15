@@ -15,8 +15,6 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
 
-const doubleTapThreshold = 500 * time.Millisecond
-
 func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Cmd, bool) {
 	// Active modal/overlay components take priority
 	if active, cmd := m.delegateToActiveModal(msg); active {
@@ -108,8 +106,15 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 			return nil, true
 		}
 
+	case tea.KeyCtrlT:
+		m.showTasks = !m.showTasks
+		return nil, true
+
 	case tea.KeyCtrlO:
 		return m.handleCtrlO(), true
+
+	case tea.KeyCtrlE:
+		return m.expandCollapseAll(), true
 
 	case tea.KeyCtrlX:
 		if len(m.input.Images.Pending) > 0 {
@@ -170,6 +175,7 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		return m.handleSubmit(), true
+
 	}
 
 	// Not handled, let textarea handle it
@@ -239,6 +245,12 @@ func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 	return false, nil
 }
 
+const ctrlODoubleTapWindow = 300 * time.Millisecond
+
+// ctrlOSingleTickMsg fires after the double-tap window expires,
+// indicating the user intended a single ctrl+o press.
+type ctrlOSingleTickMsg struct{}
+
 func (m *model) handleCtrlO() tea.Cmd {
 	// Handle permission prompt preview toggle
 	if m.approval != nil && m.approval.IsActive() {
@@ -247,33 +259,53 @@ func (m *model) handleCtrlO() tea.Cmd {
 	}
 
 	now := time.Now()
-	if now.Sub(m.input.LastCtrlO) < doubleTapThreshold {
-		// Double-tap: toggle all uncommitted expandable items
-		anyExpanded := false
-		for i := m.conv.CommittedCount; i < len(m.conv.Messages); i++ {
-			msg := m.conv.Messages[i]
-			if (msg.ToolResult != nil && msg.Expanded) ||
-				(len(msg.ToolCalls) > 0 && msg.ToolCallsExpanded) {
-				anyExpanded = true
-				break
-			}
-		}
-		for i := m.conv.CommittedCount; i < len(m.conv.Messages); i++ {
-			if m.conv.Messages[i].ToolResult != nil {
-				m.conv.Messages[i].Expanded = !anyExpanded
-			}
-			if len(m.conv.Messages[i].ToolCalls) > 0 {
-				m.conv.Messages[i].ToolCallsExpanded = !anyExpanded
-			}
-		}
+	if !m.input.LastCtrlO.IsZero() && now.Sub(m.input.LastCtrlO) < ctrlODoubleTapWindow {
+		// Double-tap: toggle all expandable items
 		m.input.LastCtrlO = time.Time{}
-		return nil
+		return m.expandCollapseAll()
 	}
 
-	// Single tap: toggle most recent expandable item
+	// First tap: wait to see if a second tap follows
 	m.input.LastCtrlO = now
+	return tea.Tick(ctrlODoubleTapWindow, func(time.Time) tea.Msg {
+		return ctrlOSingleTickMsg{}
+	})
+}
+
+// handleCtrlOSingleTick fires when the double-tap window expires
+// without a second press — execute single toggle.
+// Returns a tea.Cmd to reflow scrollback (nil if no-op).
+func (m *model) handleCtrlOSingleTick() tea.Cmd {
+	if m.input.LastCtrlO.IsZero() {
+		return nil // already consumed by double-tap
+	}
+	m.input.LastCtrlO = time.Time{}
 	m.conv.ToggleMostRecentExpandable()
-	return nil
+	// Re-render via reflowScrollback so content stays in terminal scrollback
+	return m.reflowScrollback()
+}
+
+// expandCollapseAll toggles expand/collapse for all tool results and tool calls.
+func (m *model) expandCollapseAll() tea.Cmd {
+	anyExpanded := false
+	for i := 0; i < len(m.conv.Messages); i++ {
+		msg := m.conv.Messages[i]
+		if (msg.ToolResult != nil && msg.Expanded) ||
+			(len(msg.ToolCalls) > 0 && msg.ToolCallsExpanded) {
+			anyExpanded = true
+			break
+		}
+	}
+	for i := 0; i < len(m.conv.Messages); i++ {
+		if m.conv.Messages[i].ToolResult != nil {
+			m.conv.Messages[i].Expanded = !anyExpanded
+		}
+		if len(m.conv.Messages[i].ToolCalls) > 0 {
+			m.conv.Messages[i].ToolCallsExpanded = !anyExpanded
+		}
+	}
+	// Re-render committed messages with new expand state via scrollback
+	return m.reflowScrollback()
 }
 
 func (m *model) handleStreamCancel() tea.Cmd {
@@ -402,6 +434,7 @@ func (m *model) handleSubmit() tea.Cmd {
 }
 
 func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
+	oldWidth := m.width
 	m.width = msg.Width
 	m.height = msg.Height
 
@@ -442,7 +475,35 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 	}
 
 	m.input.Textarea.SetWidth(msg.Width - 4 - 2)
+
+	// If width changed and there are committed messages, clear screen and
+	// re-render all committed content at the new width.
+	if oldWidth != msg.Width && m.conv.CommittedCount > 0 {
+		return m.reflowScrollback()
+	}
+
 	return nil
+}
+
+// reflowScrollback clears the terminal and re-commits all previously committed
+// messages at the current width. This is needed when the pane width changes
+// (e.g., after tmux split) to fix content that was rendered at the old width.
+func (m *model) reflowScrollback() tea.Cmd {
+	committed := m.conv.CommittedCount
+	m.conv.CommittedCount = 0
+
+	var cmds []tea.Cmd
+	cmds = append(cmds, tea.ClearScreen)
+
+	// Re-commit all previously committed messages
+	for i := 0; i < committed; i++ {
+		if rendered := m.renderSingleMessage(i); rendered != "" {
+			cmds = append(cmds, tea.Println(rendered))
+		}
+		m.conv.CommittedCount = i + 1
+	}
+
+	return tea.Sequence(cmds...)
 }
 
 // handleSkillInvocation handles skill command invocation by sending the skill

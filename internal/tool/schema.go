@@ -4,6 +4,20 @@ import (
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
+// Tool name constants used in runtime comparisons across the codebase.
+const (
+	ToolAgent         = "Agent"
+	ToolAgentOutput   = "AgentOutput"
+	ToolAgentStop     = "AgentStop"
+	ToolSkill         = "Skill"
+	ToolEnterPlanMode = "EnterPlanMode"
+	ToolExitPlanMode  = "ExitPlanMode"
+	ToolTaskCreate    = "TaskCreate"
+	ToolTaskGet       = "TaskGet"
+	ToolTaskUpdate    = "TaskUpdate"
+	ToolTaskList      = "TaskList"
+)
+
 // ToolSchema defines the JSON schema for a tool
 type ToolSchema struct {
 	Name        string
@@ -198,8 +212,8 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Too
 			},
 		},
 		{
-			Name:        "TaskOutput",
-			Description: "Retrieve output from a running or completed background task. Use this to check on background tasks started with Bash run_in_background=true.",
+			Name:        "AgentOutput",
+			Description: "Retrieve output from a running or completed background agent. Use this to check on background agents started with Agent run_in_background=true.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -222,8 +236,8 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Too
 			},
 		},
 		{
-			Name:        "TaskStop",
-			Description: "Stops a running background task by its ID. Takes a task_id parameter identifying the task to stop. Returns a success or failure status. Use this tool when you need to terminate a long-running task.",
+			Name:        "AgentStop",
+			Description: "Stops a running background agent by its ID. Takes a task_id parameter identifying the agent to stop. Returns a success or failure status. Use this tool when you need to terminate a long-running agent.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -299,8 +313,8 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Too
 	// Add Skill tool
 	tools = append(tools, SkillToolSchema)
 
-	// Add Task tool
-	tools = append(tools, TaskToolSchema)
+	// Add Agent tool
+	tools = append(tools, AgentToolSchema)
 
 	// Add Todo tools
 	tools = append(tools, TodoToolSchemas...)
@@ -313,35 +327,27 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Too
 	return tools
 }
 
-// TaskToolSchema returns the schema for the Task tool
-var TaskToolSchema = provider.Tool{
-	Name: "Task",
+// AgentToolSchema returns the schema for the Agent tool
+var AgentToolSchema = provider.Tool{
+	Name: "Agent",
 	Description: `Launch a subagent to handle complex, multi-step tasks autonomously.
 
-The Task tool launches specialized agents that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
+Check <available-agents> for available agent types. Use agent name as subagent_type. If omitted, the general-purpose agent is used.
 
-Check the <available-agents> section in the system prompt for the full list of available agent types and their descriptions. Use the agent name as the subagent_type parameter. Only use agent types listed there — do not guess or use agent types not in the list.
+When NOT to use Agent (use direct tools instead):
+- If you want to read a specific file, use Read or Glob directly
+- If searching for code within 2-3 files, use Read directly
+- Only spawn agents for multi-step autonomous work (3+ tool calls)
 
-When NOT to use Task (use direct tools instead):
-Before spawning an agent, estimate how many tool calls are needed. If the answer is 1-2 calls, use the tool directly — spawning an agent adds unnecessary overhead.
-- Questions answerable with a single Bash command: Use Bash directly
-- Questions answerable with a single Glob or Grep: Use Glob/Grep directly
-- Questions answerable by reading 1-2 known files: Use Read directly
-Only spawn agents when the task genuinely requires multi-step autonomous work (3+ tool calls with decisions between them).
-
-Usage notes:
-- Always include a short description (3-5 words) summarizing what the agent will do
-- Launch multiple agents concurrently whenever possible using run_in_background=true
-- Use TaskOutput to check on background agents, TaskStop to stop them
-- Agents can be resumed using the resume parameter with a previous agent ID
-- Each agent runs in isolated context - only final result returns to main conversation`,
+Usage:
+- Each agent runs in isolated context — only final result returns. Summarize it in your response.
+- The result returned by the agent is not visible to the user. To show the user the result, you should send a text message with a concise summary.
+- Foreground (default): blocks until agent completes, result inline
+- Background (run_in_background=true): returns task_id, you will be automatically notified on completion — do NOT poll or check progress
+- For parallel independent tasks: send multiple Agent calls in a SINGLE message`,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"subagent_type": map[string]any{
-				"type":        "string",
-				"description": "The type of agent to spawn. Must be one of the agent names listed in the <available-agents> section.",
-			},
 			"prompt": map[string]any{
 				"type":        "string",
 				"description": "The task for the agent to perform",
@@ -350,22 +356,47 @@ Usage notes:
 				"type":        "string",
 				"description": "A short (3-5 word) description of the task",
 			},
+			"subagent_type": map[string]any{
+				"type":        "string",
+				"description": "The type of specialized agent to use for this task",
+			},
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Name for the spawned agent",
+			},
 			"run_in_background": map[string]any{
 				"type":        "boolean",
-				"description": "Run the agent in background (default: false). Returns task_id immediately.",
-				"default":     false,
-			},
-			"resume": map[string]any{
-				"type":        "string",
-				"description": "Optional agent ID to resume from a previous execution. When resumed, agent continues with full previous context preserved.",
+				"description": "Set to true to run this agent in the background. You will be notified when it completes.",
 			},
 			"model": map[string]any{
 				"type":        "string",
-				"description": "Override model: sonnet, opus, haiku. If not specified, inherits from parent conversation.",
+				"description": "Optional model override. If omitted, inherits from parent conversation.",
 				"enum":        []string{"sonnet", "opus", "haiku"},
 			},
+			"max_turns": map[string]any{
+				"type":        "number",
+				"description": "Maximum number of conversation turns for the agent.",
+			},
+			"resume": map[string]any{
+				"type":        "string",
+				"description": "Agent ID to resume from a previous invocation.",
+			},
+			"mode": map[string]any{
+				"type":        "string",
+				"description": "Permission mode for spawned agent.",
+				"enum":        []string{"acceptEdits", "bypassPermissions", "default", "dontAsk", "plan", "auto"},
+			},
+			"isolation": map[string]any{
+				"type":        "string",
+				"description": "Isolation mode for the agent.",
+				"enum":        []string{"worktree"},
+			},
+			"team_name": map[string]any{
+				"type":        "string",
+				"description": "Team name for spawning. Uses current team context if omitted.",
+			},
 		},
-		"required": []string{"subagent_type", "prompt"},
+		"required": []string{"description", "prompt"},
 	},
 }
 
@@ -409,8 +440,19 @@ Important:
 
 // EnterPlanModeSchema returns the schema for EnterPlanMode tool
 var EnterPlanModeSchema = provider.Tool{
-	Name:        "EnterPlanMode",
-	Description: "Request to enter plan mode for complex implementation tasks. Use this proactively when starting non-trivial tasks that require exploration and planning before making changes. The user must approve entering plan mode.",
+	Name: "EnterPlanMode",
+	Description: `Request to enter plan mode for tasks that need exploration before implementation. The user must approve entering plan mode.
+
+When to use:
+- New feature implementation with architectural decisions
+- Tasks where multiple valid approaches exist and you need to explore first
+
+When NOT to use:
+- User already gave clear, specific instructions (use TaskCreate to track steps instead)
+- User provided a numbered list of tasks (just execute them)
+- Pure research or exploration (use Agent with Explore instead)
+- Simple fixes, obvious bugs, or straightforward multi-file changes
+- Answering questions about the codebase`,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -442,8 +484,27 @@ var ExitPlanModeSchema = provider.Tool{
 // TodoToolSchemas defines the schemas for task management tools
 var TodoToolSchemas = []provider.Tool{
 	{
-		Name:        "TaskCreate",
-		Description: "Create a task to track progress on multi-step work. Use for complex tasks requiring 3+ steps or when the user provides multiple tasks at once.",
+		Name: "TaskCreate",
+		Description: `Create a task to track progress on multi-step work.
+
+When to use:
+- Complex tasks requiring 3+ distinct steps
+- User provides multiple tasks at once
+- After receiving new instructions — capture requirements as tasks
+
+When NOT to use:
+- Single straightforward task or trivial fix
+- Purely conversational or informational exchange
+
+Granularity: one task per logical deliverable (a file, a feature, a test suite).
+Don't create tasks for sub-steps within a single file or for "planning"/"summarizing".
+
+Tips:
+- Prefer sending ALL TaskCreate calls in a single message (parallel tool calls) for speed
+- Use imperative subjects ("Fix bug", "Add tests")
+- Provide activeForm for spinner display ("Fixing bug", "Adding tests")
+- Check TaskList first to avoid duplicates
+- Task IDs are sequential integers starting from 1. Use addBlockedBy to set dependencies (e.g. addBlockedBy=["1"])`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -453,23 +514,34 @@ var TodoToolSchemas = []provider.Tool{
 				},
 				"description": map[string]any{
 					"type":        "string",
-					"description": "Detailed description of what needs to be done",
+					"description": "Detailed description of what needs to be done, including context and acceptance criteria",
 				},
 				"activeForm": map[string]any{
 					"type":        "string",
-					"description": "Present continuous form shown in spinner when in_progress (e.g., 'Fixing authentication bug')",
+					"description": "Present continuous form shown in spinner when in_progress (e.g., 'Fixing authentication bug'). If omitted, the spinner shows the subject instead.",
 				},
 				"metadata": map[string]any{
 					"type":        "object",
 					"description": "Arbitrary metadata to attach to the task",
+				},
+				"addBlockedBy": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Task IDs that must complete before this task can start",
 				},
 			},
 			"required": []string{"subject", "description"},
 		},
 	},
 	{
-		Name:        "TaskGet",
-		Description: "Retrieve a task by its ID to see full details including description, status, and dependencies.",
+		Name: "TaskGet",
+		Description: `Retrieve full task details by ID (description, status, dependencies).
+
+When to use:
+- Before starting work on a task — get full requirements
+- To check task dependencies (what it blocks, what blocks it)
+
+Tip: Verify blockedBy is empty before beginning work.`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -482,8 +554,15 @@ var TodoToolSchemas = []provider.Tool{
 		},
 	},
 	{
-		Name:        "TaskUpdate",
-		Description: "Update a task's status, details, or dependencies. Use to mark tasks as in_progress before starting work, completed when done, or deleted to remove.",
+		Name: "TaskUpdate",
+		Description: `Update a task's status, details, or dependencies.
+
+Status: pending → in_progress → completed. Use "deleted" to remove.
+- Set in_progress BEFORE starting work
+- ONLY mark completed when FULLY done (not if tests fail or partial)
+- After completing, call TaskList for next task
+- If blocked, keep as in_progress and create a new task for the blocker
+- When you see a <task-reminder>, review and update stale tasks immediately`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -505,15 +584,15 @@ var TodoToolSchemas = []provider.Tool{
 				},
 				"activeForm": map[string]any{
 					"type":        "string",
-					"description": "Present continuous form shown in spinner when in_progress",
+					"description": "Present continuous form shown in spinner when in_progress (e.g., 'Fixing authentication bug')",
 				},
 				"owner": map[string]any{
 					"type":        "string",
-					"description": "New owner for the task",
+					"description": "New owner for the task (agent name)",
 				},
 				"metadata": map[string]any{
 					"type":        "object",
-					"description": "Metadata keys to merge (set a key to null to delete it)",
+					"description": "Metadata keys to merge into the task (set a key to null to delete it)",
 				},
 				"addBlocks": map[string]any{
 					"type":        "array",
@@ -530,14 +609,23 @@ var TodoToolSchemas = []provider.Tool{
 		},
 	},
 	{
-		Name:        "TaskList",
-		Description: "List all tracked tasks with their status, owner, and dependencies. Use to check progress or find the next task to work on.",
+		Name: "TaskList",
+		Description: `List all tasks with their status and dependencies.
+
+When to use:
+- Check overall progress
+- After completing a task — find next available work
+- Find blocked tasks that need dependencies resolved
+
+Returns summary per task: id, status, owner. Use TaskGet for full details.
+Prefer working on tasks in ID order (lowest first).`,
 		Parameters: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
 		},
 	},
 }
+
 
 // GetToolSchemasFiltered returns tool schemas excluding disabled tools
 func GetToolSchemasFiltered(disabled map[string]bool) []provider.Tool {
@@ -554,19 +642,18 @@ func GetToolSchemasFiltered(disabled map[string]bool) []provider.Tool {
 	return filtered
 }
 
-// PlanModeTaskSchema is a Task tool schema for plan mode.
-// It omits run_in_background and resume (foreground-only, no resume needed),
-// and restricts agent types to Explore and Plan.
-var PlanModeTaskSchema = provider.Tool{
-	Name: "Task",
-	Description: `Launch a subagent to explore the codebase or design an implementation plan.
+// PlanModeAgentSchema is an Agent tool schema for plan mode.
+// It omits run_in_background (foreground-only) and restricts to read-only agents.
+var PlanModeAgentSchema = provider.Tool{
+	Name: "Agent",
+	Description: `Launch a subagent to research the codebase.
 
 Available agent types in plan mode:
-- Explore: Fast codebase exploration. Use to find files, search code, and answer questions. (Tools: Read, Glob, Grep, WebFetch, WebSearch)
-- Plan: Software architect for designing implementation plans. Returns step-by-step plans, identifies critical files, and considers trade-offs. (Tools: Read, Glob, Grep, WebFetch, WebSearch)
+- Explore: Fast codebase exploration. Use to find files, search code, and answer questions. (Tools: Read, Glob, Grep, Bash, WebFetch, WebSearch)
+- Plan: Software architect for designing implementation plans. (Tools: Read, Glob, Grep, Bash, WebFetch, WebSearch)
 
 Usage notes:
-- Launch multiple agents by making multiple Task calls in a single message
+- Launch multiple agents by making multiple Agent calls in a single message
 - Always include a short description (3-5 words) summarizing what the agent will do
 - Provide each agent with specific questions, not just "explore X"`,
 	Parameters: map[string]any{
@@ -574,7 +661,7 @@ Usage notes:
 		"properties": map[string]any{
 			"subagent_type": map[string]any{
 				"type":        "string",
-				"description": "The type of agent to spawn: Explore or Plan",
+				"description": "The type of agent to spawn (Explore or Plan).",
 			},
 			"prompt": map[string]any{
 				"type":        "string",
@@ -616,8 +703,8 @@ func GetPlanModeToolSchemas() []provider.Tool {
 		}
 	}
 
-	// Add plan-mode Task schema (no run_in_background, restricted agent types)
-	tools = append(tools, PlanModeTaskSchema)
+	// Add plan-mode Agent schema (no run_in_background, restricted agent types)
+	tools = append(tools, PlanModeAgentSchema)
 
 	// Add ExitPlanMode
 	tools = append(tools, ExitPlanModeSchema)

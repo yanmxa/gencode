@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/app/render"
 )
@@ -26,9 +27,9 @@ func New(width int) Model {
 func newSpinner() spinner.Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Spinner{
-		Frames: []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
-		FPS:    80 * time.Millisecond,
+		Frames: []string{"◐", "◓", "◑", "◒"},
+		FPS:    120 * time.Millisecond,
 	}
-	sp.Style = render.ThinkingStyle
+	sp.Style = lipgloss.NewStyle()
 	return sp
 }

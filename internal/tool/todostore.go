@@ -1,7 +1,10 @@
 package tool
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -9,17 +12,18 @@ import (
 
 // TodoTask represents a tracked task
 type TodoTask struct {
-	ID          string         `json:"id"`
-	Subject     string         `json:"subject"`
-	Description string         `json:"description"`
-	ActiveForm  string         `json:"activeForm,omitempty"`
-	Status      string         `json:"status"`
-	Owner       string         `json:"owner,omitempty"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
-	Blocks      []string       `json:"blocks,omitempty"`
-	BlockedBy   []string       `json:"blockedBy,omitempty"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
+	ID              string         `json:"id"`
+	Subject         string         `json:"subject"`
+	Description     string         `json:"description"`
+	ActiveForm      string         `json:"activeForm,omitempty"`
+	Status          string         `json:"status"`
+	Owner           string         `json:"owner,omitempty"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
+	Blocks          []string       `json:"blocks"`
+	BlockedBy       []string       `json:"blockedBy"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
+	StatusChangedAt time.Time      `json:"statusChangedAt"` // when status last changed (for elapsed time display)
 }
 
 // Task status constants
@@ -30,14 +34,17 @@ const (
 	TodoStatusDeleted    = "deleted"
 )
 
-// TodoStore is a thread-safe in-memory task store
+// TodoStore is a thread-safe task store with optional disk persistence.
+// When a storageDir is set, each task is persisted as {id}.json.
 type TodoStore struct {
-	mu     sync.RWMutex
-	tasks  map[string]*TodoTask
-	nextID int
+	mu         sync.RWMutex
+	tasks      map[string]*TodoTask
+	nextID     int
+	storageDir string    // empty = in-memory only
+	lastDirMod time.Time // last known dir mtime, for change detection in ReloadFromDisk
 }
 
-// NewTodoStore creates a new TodoStore
+// NewTodoStore creates a new in-memory TodoStore
 func NewTodoStore() *TodoStore {
 	return &TodoStore{
 		tasks:  make(map[string]*TodoTask),
@@ -47,6 +54,90 @@ func NewTodoStore() *TodoStore {
 
 // DefaultTodoStore is the global task store singleton
 var DefaultTodoStore = NewTodoStore()
+
+// SetStorageDir sets the directory for disk persistence and loads existing tasks.
+// If dir is empty, the store operates in memory-only mode.
+func (s *TodoStore) SetStorageDir(dir string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.storageDir = dir
+	if dir == "" {
+		return nil
+	}
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create task storage dir: %w", err)
+	}
+
+	// Create lock file
+	lockPath := filepath.Join(dir, ".lock")
+	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		os.WriteFile(lockPath, nil, 0o644)
+	}
+
+	// Load existing tasks from disk
+	return s.loadFromDisk()
+}
+
+// loadFromDisk reads all {id}.json files from storageDir into memory.
+// Must be called with s.mu held.
+func (s *TodoStore) loadFromDisk() error {
+	entries, err := os.ReadDir(s.storageDir)
+	if err != nil {
+		return err
+	}
+
+	s.tasks = make(map[string]*TodoTask)
+	s.nextID = 1
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || filepath.Ext(name) != ".json" {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(s.storageDir, name))
+		if err != nil {
+			continue
+		}
+
+		var task TodoTask
+		if err := json.Unmarshal(data, &task); err != nil {
+			continue
+		}
+
+		normalizeTaskSlices(&task)
+		s.tasks[task.ID] = &task
+		var idNum int
+		if _, err := fmt.Sscanf(task.ID, "%d", &idNum); err == nil && idNum >= s.nextID {
+			s.nextID = idNum + 1
+		}
+	}
+
+	return nil
+}
+
+// persistTask writes a single task to disk. Must be called with s.mu held.
+func (s *TodoStore) persistTask(task *TodoTask) {
+	if s.storageDir == "" {
+		return
+	}
+	data, err := json.MarshalIndent(task, "", "  ")
+	if err != nil {
+		return
+	}
+	path := filepath.Join(s.storageDir, task.ID+".json")
+	os.WriteFile(path, data, 0o644)
+}
+
+// removeTaskFile deletes a task file from disk. Must be called with s.mu held.
+func (s *TodoStore) removeTaskFile(id string) {
+	if s.storageDir == "" {
+		return
+	}
+	os.Remove(filepath.Join(s.storageDir, id+".json"))
+}
 
 // Create adds a new task and returns it
 func (s *TodoStore) Create(subject, description, activeForm string, metadata map[string]any) *TodoTask {
@@ -58,17 +149,21 @@ func (s *TodoStore) Create(subject, description, activeForm string, metadata map
 
 	now := time.Now()
 	task := &TodoTask{
-		ID:          id,
-		Subject:     subject,
-		Description: description,
-		ActiveForm:  activeForm,
-		Status:      TodoStatusPending,
-		Metadata:    metadata,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:              id,
+		Subject:         subject,
+		Description:     description,
+		ActiveForm:      activeForm,
+		Status:          TodoStatusPending,
+		Metadata:        metadata,
+		Blocks:          []string{},
+		BlockedBy:       []string{},
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		StatusChangedAt: now,
 	}
 
 	s.tasks[id] = task
+	s.persistTask(task)
 	return task
 }
 
@@ -99,6 +194,7 @@ func (s *TodoStore) Update(id string, opts ...UpdateOption) error {
 	}
 
 	task.UpdatedAt = time.Now()
+	s.persistTask(task)
 	return nil
 }
 
@@ -160,7 +256,7 @@ func (s *TodoStore) OpenBlockers(id string) []string {
 	return open
 }
 
-// Delete marks a task as deleted
+// Delete marks a task as deleted and removes its file from disk
 func (s *TodoStore) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -172,6 +268,7 @@ func (s *TodoStore) Delete(id string) error {
 
 	task.Status = TodoStatusDeleted
 	task.UpdatedAt = time.Now()
+	s.removeTaskFile(id)
 	return nil
 }
 
@@ -179,6 +276,13 @@ func (s *TodoStore) Delete(id string) error {
 func (s *TodoStore) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Remove all task files from disk
+	if s.storageDir != "" {
+		for id := range s.tasks {
+			os.Remove(filepath.Join(s.storageDir, id+".json"))
+		}
+	}
 
 	s.tasks = make(map[string]*TodoTask)
 	s.nextID = 1
@@ -208,21 +312,75 @@ func (s *TodoStore) Import(tasks []TodoTask) {
 	s.nextID = 1
 	for i := range tasks {
 		t := tasks[i]
+		normalizeTaskSlices(&t)
 		s.tasks[t.ID] = &t
-		// Parse ID to maintain nextID counter
 		var idNum int
 		if _, err := fmt.Sscanf(t.ID, "%d", &idNum); err == nil && idNum >= s.nextID {
 			s.nextID = idNum + 1
 		}
+		s.persistTask(&t)
 	}
+}
+
+// GetStorageDir returns the current storage directory.
+func (s *TodoStore) GetStorageDir() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.storageDir
+}
+
+// ReloadFromDisk re-reads all task files from the storage directory.
+// This picks up changes made by other processes (e.g., background agents).
+// No-op if no storage directory is configured or if directory hasn't been modified.
+func (s *TodoStore) ReloadFromDisk() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.storageDir == "" {
+		return
+	}
+
+	// Check if any task file has been modified since last reload.
+	// We can't rely on directory mtime alone because modifying existing
+	// files in-place doesn't update the directory mtime on macOS/most
+	// filesystems.
+	entries, err := os.ReadDir(s.storageDir)
+	if err != nil {
+		return
+	}
+
+	changed := false
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(s.lastDirMod) {
+			changed = true
+			break
+		}
+	}
+
+	if !changed && !s.lastDirMod.IsZero() {
+		return
+	}
+
+	s.lastDirMod = time.Now()
+	_ = s.loadFromDisk()
 }
 
 // UpdateOption is a functional option for updating a task
 type UpdateOption func(*TodoTask)
 
-// WithStatus sets the task status
+// WithStatus sets the task status and records the status change timestamp.
 func WithStatus(status string) UpdateOption {
 	return func(t *TodoTask) {
+		if t.Status != status {
+			t.StatusChangedAt = time.Now()
+		}
 		t.Status = status
 	}
 }
@@ -240,6 +398,7 @@ func WithDescription(description string) UpdateOption {
 		t.Description = description
 	}
 }
+
 
 // WithActiveForm sets the task activeForm
 func WithActiveForm(activeForm string) UpdateOption {
@@ -282,6 +441,16 @@ func WithAddBlocks(ids []string) UpdateOption {
 func WithAddBlockedBy(ids []string) UpdateOption {
 	return func(t *TodoTask) {
 		t.BlockedBy = appendUnique(t.BlockedBy, ids)
+	}
+}
+
+// normalizeTaskSlices ensures Blocks and BlockedBy are non-nil slices.
+func normalizeTaskSlices(t *TodoTask) {
+	if t.Blocks == nil {
+		t.Blocks = []string{}
+	}
+	if t.BlockedBy == nil {
+		t.BlockedBy = []string{}
 	}
 }
 

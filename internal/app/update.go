@@ -29,6 +29,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.handleSkillInvocation()
 		}
 		return m, nil
+	case ctrlOSingleTickMsg:
+		return m, m.handleCtrlOSingleTick()
 	case shared.DismissedMsg, apptool.ToggleMsg, appskill.CycleMsg, appagent.ToggleMsg:
 		return m, nil
 	}
@@ -64,7 +66,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if c, ok := m.updateMemory(msg); ok {
 		return m, c
 	}
-
 	// ── Fallthrough: forward to textarea & spinner ────────────
 	return m, m.updateTextarea(msg)
 }

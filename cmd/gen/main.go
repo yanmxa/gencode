@@ -83,9 +83,11 @@ Non-interactive mode:
 			printPrompt = readStdin()
 		}
 
+		prompt := strings.Join(args, " ")
+
 		opts := options.RunOptions{
 			Print:     printPrompt,
-			Prompt:    strings.Join(args, " "),
+			Prompt:    prompt,
 			PluginDir: cliOpts.pluginDir,
 			PlanMode:  cliOpts.plan,
 			Continue:  cliOpts.cont,
@@ -153,6 +155,7 @@ Session:
 
 Commands:
   version      Print the version number
+  agent run    Run a headless agent
   help         Show this help message
 
 Keybindings:
@@ -160,6 +163,7 @@ Keybindings:
   Alt+Enter    Insert newline
   Up/Down      Navigate input history
   Esc          Stop AI response
+  Ctrl+T       Toggle task list display
   Ctrl+C       Clear input / Quit
 
 Slash Commands:

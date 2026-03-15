@@ -269,22 +269,29 @@ func (p *Model) RenderInline() string {
 	return sb.String()
 }
 
-// getTitle returns a simple action title (used with Accent color)
+// getTitle returns a simple action title (used with Accent color).
+// When a team agent triggers the permission, the agent name is shown as a prefix.
 func (p *Model) getTitle() string {
+	var title string
 	switch p.request.ToolName {
 	case "Edit":
-		return "Edit file"
+		title = "Edit file"
 	case "Write":
-		return "Write to file"
+		title = "Write to file"
 	case "Bash":
-		return "Bash command"
+		title = "Bash command"
 	case "Skill":
-		return "Load skill"
-	case "Task":
-		return "Spawn agent"
+		title = "Load skill"
+	case "Agent":
+		title = "Spawn agent"
 	default:
-		return p.request.Description
+		title = p.request.Description
 	}
+
+	if p.request.CallerAgent != "" {
+		title = "@" + p.request.CallerAgent + " · " + title
+	}
+	return title
 }
 
 // getAllSessionLabel returns the "allow all" label for this tool
@@ -298,7 +305,7 @@ func (p *Model) getAllSessionLabel() string {
 		return "Yes, allow all commands during this session"
 	case "Skill":
 		return "Yes, allow all skills during this session"
-	case "Task":
+	case "Agent":
 		return "Yes, allow all agents during this session"
 	default:
 		return "Yes, allow all during this session"

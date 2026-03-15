@@ -545,6 +545,85 @@ func GenerateShortID() string {
 	return fmt.Sprintf("%x", b[:])
 }
 
+// LoadSubagent loads a subagent session by its ID, searching across all parent sessions.
+// Subagent files are stored at {baseDir}/{parentSessionID}/subagents/{agentID}.jsonl.
+func (s *Store) LoadSubagent(agentID string) (*Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Scan all directories for a subagents/ subdirectory containing this agent ID
+	entries, err := os.ReadDir(s.baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read base directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		candidate := filepath.Join(s.baseDir, entry.Name(), "subagents", agentID+".jsonl")
+		if _, err := os.Stat(candidate); err != nil {
+			continue
+		}
+		return s.loadFromFile(candidate, agentID)
+	}
+
+	return nil, fmt.Errorf("subagent session not found: %s", agentID)
+}
+
+// loadFromFile reads a JSONL file at the given path and reconstructs a Session.
+func (s *Store) loadFromFile(filePath, id string) (*Session, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open session file: %w", err)
+	}
+	defer f.Close()
+
+	var (
+		entries []Entry
+		meta    *EntryMetadata_
+	)
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var entry Entry
+		if err := json.Unmarshal(line, &entry); err != nil {
+			continue
+		}
+		switch entry.Type {
+		case EntryUser, EntryAssistant:
+			entries = append(entries, entry)
+		case EntryMetadata:
+			meta = entry.Metadata
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read session file: %w", err)
+	}
+
+	sess := &Session{
+		Metadata: SessionMetadata{ID: id},
+		Entries:  entries,
+	}
+	if meta != nil {
+		sess.Metadata.Title = meta.Title
+		sess.Metadata.Provider = meta.Provider
+		sess.Metadata.Model = meta.Model
+		sess.Metadata.Cwd = meta.Cwd
+		sess.Metadata.CreatedAt = meta.CreatedAt
+		sess.Metadata.UpdatedAt = meta.UpdatedAt
+		sess.Metadata.MessageCount = meta.MessageCount
+		sess.Tasks = meta.Tasks
+	}
+
+	return sess, nil
+}
+
 // PersistToolResult saves a large tool result to disk under {sessionID}/tool-results/.
 // This prevents oversized tool outputs from bloating the session JSONL file.
 func (s *Store) PersistToolResult(sessionID, toolCallID, content string) error {

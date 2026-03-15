@@ -30,6 +30,11 @@ func (t *TodoCreateTool) Execute(ctx context.Context, params map[string]any, cwd
 
 	task := DefaultTodoStore.Create(subject, description, activeForm, metadata)
 
+	// Set dependencies if provided
+	if ids := parseStringSlice(params["addBlockedBy"]); len(ids) > 0 {
+		DefaultTodoStore.Update(task.ID, WithAddBlockedBy(ids))
+	}
+
 	return ui.ToolResult{
 		Success: true,
 		Output:  fmt.Sprintf("Task #%s created: %s", task.ID, task.Subject),

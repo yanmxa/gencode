@@ -10,18 +10,18 @@ import (
 )
 
 const (
-	IconTaskOutput = ">"
+	IconAgentOutput = ">"
 )
 
-// TaskOutputTool retrieves output from background tasks
-type TaskOutputTool struct{}
+// AgentOutputTool retrieves output from background tasks
+type AgentOutputTool struct{}
 
-func (t *TaskOutputTool) Name() string        { return "TaskOutput" }
-func (t *TaskOutputTool) Description() string { return "Retrieve output from a background task" }
-func (t *TaskOutputTool) Icon() string        { return IconTaskOutput }
+func (t *AgentOutputTool) Name() string        { return "AgentOutput" }
+func (t *AgentOutputTool) Description() string { return "Retrieve output from a background task" }
+func (t *AgentOutputTool) Icon() string        { return IconAgentOutput }
 
 // Execute retrieves task output
-func (t *TaskOutputTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
+func (t *AgentOutputTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
 	taskID, ok := params["task_id"].(string)
@@ -69,11 +69,11 @@ func (t *TaskOutputTool) Execute(ctx context.Context, params map[string]any, cwd
 		if !bgTask.WaitForCompletion(timeout) {
 			// Task still running - return friendly status with options
 			info := bgTask.GetStatus()
-			output := formatTaskOutput(info, "still running")
+			output := formatAgentOutput(info, "still running")
 			output += fmt.Sprintf("\nOptions:\n"+
-				"  - Wait longer: TaskOutput(task_id=\"%s\", timeout=60000)\n"+
-				"  - Check status: TaskOutput(task_id=\"%s\", block=false)\n"+
-				"  - Stop: TaskStop(task_id=\"%s\")\n", taskID, taskID, taskID)
+				"  - Wait longer: AgentOutput(task_id=\"%s\", timeout=60000)\n"+
+				"  - Check status: AgentOutput(task_id=\"%s\", block=false)\n"+
+				"  - Stop: AgentStop(task_id=\"%s\")\n", taskID, taskID, taskID)
 
 			if info.Output != "" {
 				output += fmt.Sprintf("\nCurrent output:\n%s", info.Output)
@@ -95,7 +95,7 @@ func (t *TaskOutputTool) Execute(ctx context.Context, params map[string]any, cwd
 	// Get task status
 	info := bgTask.GetStatus()
 	statusStr := formatStatusString(info)
-	output := formatTaskOutput(info, statusStr)
+	output := formatAgentOutput(info, statusStr)
 
 	if !info.EndTime.IsZero() {
 		output += fmt.Sprintf("Duration: %v\n", info.EndTime.Sub(info.StartTime))
@@ -138,8 +138,8 @@ func formatStatusString(info task.TaskInfo) string {
 	}
 }
 
-// formatTaskOutput builds the output string based on task type
-func formatTaskOutput(info task.TaskInfo, status string) string {
+// formatAgentOutput builds the output string based on task type
+func formatAgentOutput(info task.TaskInfo, status string) string {
 	switch info.Type {
 	case task.TaskTypeAgent:
 		return fmt.Sprintf("Agent: %s\nStatus: %s\nTurns: %d\nTokens: %d\n",
@@ -156,5 +156,5 @@ func formatTaskOutput(info task.TaskInfo, status string) string {
 }
 
 func init() {
-	Register(&TaskOutputTool{})
+	Register(&AgentOutputTool{})
 }

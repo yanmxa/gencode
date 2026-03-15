@@ -119,6 +119,7 @@ func loadAgentFromFileWithNamespace(filePath string, namespace string) {
 		// Apply namespace if provided (from plugin)
 		if namespace != "" && !strings.Contains(config.Name, ":") {
 			config.Name = namespace + ":" + config.Name
+			config.Source = "plugin"
 		}
 
 		// Register with the default registry
@@ -168,6 +169,19 @@ func parseAgentFile(content, filePath string) (*AgentConfig, error) {
 	_ = body // Body will be loaded lazily via GetSystemPrompt()
 
 	config.SourceFile = filePath
+
+	// Auto-detect source from file path
+	if config.Source == "" {
+		homeDir, _ := os.UserHomeDir()
+		switch {
+		case strings.HasPrefix(filePath, filepath.Join(homeDir, ".gen", "agents")),
+			strings.HasPrefix(filePath, filepath.Join(homeDir, ".claude", "agents")):
+			config.Source = "user"
+		default:
+			// Project-level paths (cwd-relative .gen/agents/ or .claude/agents/)
+			config.Source = "project"
+		}
+	}
 
 	return &config, nil
 }

@@ -6,6 +6,7 @@ type PermissionRequest struct {
 	ToolName    string         // Name of the tool requesting permission
 	FilePath    string         // File path being modified
 	Description string         // Human-readable description of the action
+	CallerAgent string         // Name of the agent requesting permission (e.g., "@reviewer-1")
 	DiffMeta    *DiffMetadata  // Diff metadata (for Edit/Write tools)
 	BashMeta    *BashMetadata  // Bash metadata (for Bash tool)
 	SkillMeta   *SkillMetadata // Skill metadata (for Skill tool)

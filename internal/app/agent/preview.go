@@ -115,9 +115,11 @@ func (p *Preview) formatPermissionMode(mode string) string {
 	case "default":
 		return "Standard permissions"
 	case "acceptEdits":
-		return "Auto-accept file edits"
-	case "dontAsk":
+		return "Auto-accept edits"
+	case "dontAsk", "bypassPermissions":
 		return "Autonomous (all permissions)"
+	case "auto":
+		return "Auto (determines best level)"
 	default:
 		return mode
 	}

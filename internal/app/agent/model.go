@@ -18,7 +18,7 @@ type Item struct {
 	Name           string
 	Description    string
 	Model          string // inherit/sonnet/opus/haiku
-	PermissionMode string // default/acceptEdits/dontAsk/plan
+	PermissionMode string // default/dontAsk/plan/bypass
 	Tools          string // Tool list as string
 	IsCustom       bool   // Whether this is a custom agent
 	PluginName     string // Plugin name if from a plugin (e.g., "code-simplifier")
@@ -96,7 +96,7 @@ func (s *Model) EnterSelect(width, height int) error {
 			Description:    cfg.Description,
 			Model:          cfg.Model,
 			PermissionMode: formatPermissionMode(cfg.PermissionMode),
-			Tools:          formatToolsAccess(cfg.Tools),
+			Tools:          formatTools(cfg.Tools),
 			IsCustom:       cfg.SourceFile != "" && pluginName == "",
 			PluginName:     pluginName,
 			Enabled:        !disabledAgents[lowerName],
@@ -120,30 +120,27 @@ func formatPermissionMode(mode coreagent.PermissionMode) string {
 	case coreagent.PermissionPlan:
 		return "plan"
 	case coreagent.PermissionAcceptEdits:
-		return "accept"
+		return "acceptEdits"
 	case coreagent.PermissionDontAsk:
 		return "dontAsk"
+	case coreagent.PermissionBypassPermissions:
+		return "bypass"
+	case coreagent.PermissionAuto:
+		return "auto"
 	default:
 		return "default"
 	}
 }
 
-// formatToolsAccess formats tool access config for display.
-func formatToolsAccess(access coreagent.ToolAccess) string {
-	switch access.Mode {
-	case coreagent.ToolAccessAllowlist:
-		if len(access.Allow) == 0 {
-			return "none"
-		}
-		return strings.Join(access.Allow, ", ")
-	case coreagent.ToolAccessDenylist:
-		if len(access.Deny) == 0 {
-			return "all tools"
-		}
-		return fmt.Sprintf("all except %s", strings.Join(access.Deny, ", "))
-	default:
-		return "default"
+// formatTools formats a tool list for display.
+func formatTools(tools coreagent.ToolList) string {
+	if tools == nil {
+		return "all tools"
 	}
+	if len(tools) == 0 {
+		return "none"
+	}
+	return strings.Join([]string(tools), ", ")
 }
 
 // IsActive returns whether the selector is active.

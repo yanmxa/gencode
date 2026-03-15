@@ -4,10 +4,12 @@
 package agent
 
 import (
+	"strings"
 	"time"
 
 	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/message"
+	"gopkg.in/yaml.v3"
 )
 
 // PermissionMode controls how the agent handles permission requests
@@ -16,29 +18,66 @@ type PermissionMode string
 const (
 	// PermissionDefault uses normal permission flow
 	PermissionDefault PermissionMode = "default"
-	// PermissionAcceptEdits auto-accepts file edits but asks for commands
+	// PermissionAcceptEdits auto-accepts file edits but prompts for other operations
 	PermissionAcceptEdits PermissionMode = "acceptEdits"
 	// PermissionDontAsk auto-accepts all operations
 	PermissionDontAsk PermissionMode = "dontAsk"
 	// PermissionPlan is read-only mode (plan mode)
 	PermissionPlan PermissionMode = "plan"
+	// PermissionBypassPermissions auto-approves everything without asking
+	PermissionBypassPermissions PermissionMode = "bypassPermissions"
+	// PermissionAuto automatically determines the best permission level
+	PermissionAuto PermissionMode = "auto"
 )
 
-// ToolAccessMode controls how tool access is configured
-type ToolAccessMode string
+// ToolList is a list of tool names with flexible YAML parsing.
+// nil means "all tools". Non-nil means only these tools are allowed.
+// Supports CC-compatible formats: string, array, or map.
+type ToolList []string
 
-const (
-	// ToolAccessAllowlist only allows specified tools
-	ToolAccessAllowlist ToolAccessMode = "allowlist"
-	// ToolAccessDenylist allows all except specified tools
-	ToolAccessDenylist ToolAccessMode = "denylist"
-)
-
-// ToolAccess configures which tools are available to the agent
-type ToolAccess struct {
-	Mode  ToolAccessMode `yaml:"mode" json:"mode"`
-	Allow []string       `yaml:"allow,omitempty" json:"allow,omitempty"`
-	Deny  []string       `yaml:"deny,omitempty" json:"deny,omitempty"`
+// UnmarshalYAML handles multiple YAML formats for tool lists:
+//   - string: "Read, Write, Bash" (comma-separated)
+//   - array:  [Read, Write, Bash]
+//   - map:    {Read: true, Write: true} (CC format)
+//   - legacy: {mode: allowlist, allow: [...]} (old GenCode format)
+func (t *ToolList) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		for _, p := range strings.Split(value.Value, ",") {
+			if s := strings.TrimSpace(p); s != "" {
+				*t = append(*t, s)
+			}
+		}
+	case yaml.SequenceNode:
+		var items []string
+		if err := value.Decode(&items); err != nil {
+			return err
+		}
+		*t = items
+	case yaml.MappingNode:
+		var m map[string]any
+		if err := value.Decode(&m); err != nil {
+			return err
+		}
+		// Legacy GenCode format: {mode: allowlist, allow: [...]}
+		if _, hasMode := m["mode"]; hasMode {
+			if allow, ok := m["allow"].([]any); ok {
+				for _, a := range allow {
+					if s, ok := a.(string); ok {
+						*t = append(*t, s)
+					}
+				}
+			}
+			return nil
+		}
+		// CC format: {Read: true, Write: true}
+		for k, v := range m {
+			if b, ok := v.(bool); ok && b {
+				*t = append(*t, k)
+			}
+		}
+	}
+	return nil
 }
 
 // AgentConfig defines the configuration for an agent type
@@ -55,8 +94,9 @@ type AgentConfig struct {
 	// PermissionMode controls how permissions are handled
 	PermissionMode PermissionMode `yaml:"permission-mode" json:"permission_mode"`
 
-	// Tools configures available tools
-	Tools ToolAccess `yaml:"tools" json:"tools"`
+	// Tools lists allowed tools. nil = all tools; non-nil = only listed tools.
+	// Supports CC-compatible formats (comma string, array, map).
+	Tools ToolList `yaml:"tools" json:"tools"`
 
 	// Skills lists skills to preload
 	Skills []string `yaml:"skills,omitempty" json:"skills,omitempty"`
@@ -67,8 +107,11 @@ type AgentConfig struct {
 	// MaxTurns limits the number of conversation turns
 	MaxTurns int `yaml:"max-turns" json:"max_turns"`
 
-	// Background indicates whether this agent runs in background by default
-	Background bool `yaml:"background" json:"background"`
+	// Source indicates where this agent was loaded from (built-in, user, project, plugin)
+	Source string `yaml:"-" json:"source,omitempty"`
+
+	// McpServers lists MCP servers this agent should connect to
+	McpServers []string `yaml:"mcp-servers,omitempty" json:"mcp_servers,omitempty"`
 
 	// SourceFile is the file path if loaded from AGENT.md (internal use)
 	SourceFile string `yaml:"-" json:"-"`
@@ -83,22 +126,17 @@ func (c *AgentConfig) GetSystemPrompt() string {
 	if c.systemPromptLoaded || c.SourceFile == "" {
 		return c.SystemPrompt
 	}
-	// Lazy load from file
 	c.loadSystemPromptFromFile()
 	return c.SystemPrompt
 }
 
 // loadSystemPromptFromFile loads the full system prompt from the source file.
-// This is called lazily when the agent is actually executed.
 func (c *AgentConfig) loadSystemPromptFromFile() {
 	if c.SourceFile == "" || c.systemPromptLoaded {
 		return
 	}
 	c.systemPromptLoaded = true
-
-	// Use the loader's function to extract the body
-	prompt := LoadAgentSystemPrompt(c.SourceFile)
-	if prompt != "" {
+	if prompt := LoadAgentSystemPrompt(c.SourceFile); prompt != "" {
 		c.SystemPrompt = prompt
 	}
 }
@@ -111,6 +149,9 @@ type AgentRequest struct {
 	// Agent is the name of the agent type to use
 	Agent string
 
+	// Name is an optional display name for the agent instance
+	Name string
+
 	// Prompt is the task for the agent to perform
 	Prompt string
 
@@ -120,20 +161,26 @@ type AgentRequest struct {
 	// Background if true, runs the agent in background
 	Background bool
 
-	// ResumeID is the ID of a previous agent to resume
-	ResumeID string
-
 	// Model overrides the agent's default model
 	Model string
 
 	// MaxTurns overrides the agent's max turns
 	MaxTurns int
 
+	// Mode overrides the agent's permission mode for this invocation
+	Mode string
+
+	// ResumeID is an optional agent ID to resume from a previous invocation
+	ResumeID string
+
+	// Isolation specifies isolation mode (e.g., "worktree" for git worktree)
+	Isolation string
+
+	// TeamName is the team name for spawning
+	TeamName string
+
 	// ParentMessages is the conversation history from the parent (for context)
 	ParentMessages []message.Message
-
-	// Cwd is the current working directory
-	Cwd string
 
 	// OnProgress is called when the agent makes progress (tool execution, etc.)
 	OnProgress ProgressCallback
@@ -146,6 +193,9 @@ type AgentResult struct {
 
 	// AgentName is the name of the agent type used
 	AgentName string
+
+	// Model is the model ID used for execution
+	Model string
 
 	// Success indicates whether the agent completed successfully
 	Success bool
@@ -170,6 +220,9 @@ type AgentResult struct {
 
 	// Duration is the total execution time
 	Duration time.Duration
+
+	// Progress contains all intermediate progress messages (tool calls made)
+	Progress []string
 
 	// Error contains any error message if not successful
 	Error string

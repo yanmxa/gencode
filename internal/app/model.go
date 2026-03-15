@@ -5,10 +5,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"strings"
 
 	"github.com/yanmxa/gencode/internal/agent"
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
@@ -41,7 +44,13 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
 
-const defaultWidth = 80
+const (
+	defaultWidth = 80
+
+	// taskReminderThreshold is the number of LLM turns without any Task* tool use
+	// before a reminder is injected into the system prompt.
+	taskReminderThreshold = 5
+)
 
 type model struct {
 	// IO
@@ -69,6 +78,10 @@ type model struct {
 	agent    appagent.State
 	approval *appapproval.Model
 
+	// UI toggles
+	showTasks bool // Ctrl+T toggles task list visibility
+	isGit     bool // cached: whether cwd is a git repository
+
 	// Config and Infra
 	settings   *config.Settings
 	hookEngine *hooks.Engine
@@ -92,7 +105,9 @@ func newModel(opts options.RunOptions) (model, error) {
 		if currentModel != nil {
 			modelID = currentModel.ModelID
 		}
-		appprovider.ConfigureTaskTool(llmProvider, cwd, modelID, hookEngine, nil, "")
+		userInstr, projInstr := system.LoadInstructions(cwd)
+		appprovider.ConfigureAgentTool(llmProvider, cwd, modelID, hookEngine, nil, "",
+			appprovider.WithContext(userInstr, projInstr, isGitRepo(cwd)))
 	}
 
 	matchFunc := func(query string) []suggest.Suggestion {
@@ -138,6 +153,9 @@ func newModel(opts options.RunOptions) (model, error) {
 		plugin: appplugin.State{Selector: appplugin.New()},
 		agent:    appagent.State{Selector: appagent.New()},
 		approval: appapproval.New(),
+
+		showTasks: true,
+		isGit:     isGitRepo(cwd),
 
 		settings:   settings,
 		hookEngine: hookEngine,
@@ -188,6 +206,15 @@ func newModel(opts options.RunOptions) (model, error) {
 		m.session.PendingSelector = true
 	}
 
+	// When GEN_TASK_LIST_ID is set, initialize task storage immediately
+	// (don't wait for session creation) so tasks persist from the start.
+	if taskListID := os.Getenv("GEN_TASK_LIST_ID"); taskListID != "" {
+		homeDir, _ := os.UserHomeDir()
+		if homeDir != "" {
+			tool.DefaultTodoStore.SetStorageDir(filepath.Join(homeDir, ".gen", "tasks", taskListID))
+		}
+	}
+
 	return m, nil
 }
 
@@ -202,6 +229,7 @@ func (m model) Init() tea.Cmd {
 			Model:  m.getModelID(),
 		})
 	}
+
 	return tea.Batch(textarea.Blink, m.output.Spinner.Tick, appmcp.AutoConnect())
 }
 
@@ -253,6 +281,17 @@ func isGitRepo(dir string) bool {
 	return err == nil
 }
 
+// agentToolOpts returns the common options for ConfigureAgentTool calls.
+func (m *model) agentToolOpts() []appprovider.AgentToolOption {
+	opts := []appprovider.AgentToolOption{
+		appprovider.WithContext(m.memory.CachedUser, m.memory.CachedProject, m.isGit),
+	}
+	if m.mcp.Registry != nil {
+		opts = append(opts, appprovider.WithMCP(m.mcp.Registry.GetToolSchemas, m.mcp.Registry))
+	}
+	return opts
+}
+
 func (m *model) configureLoop(extra []string) {
 	var mcpToolsGetter func() []provider.Tool
 	if m.mcp.Registry != nil {
@@ -281,6 +320,11 @@ func (m *model) configureLoop(extra []string) {
 		allExtra = append(allExtra, m.skill.ActiveInvocation)
 	}
 
+	// Inject task reminder nudge when tasks exist and haven't been updated recently
+	if reminder := m.buildTaskReminder(); reminder != "" {
+		allExtra = append(allExtra, reminder)
+	}
+
 	m.loop.Client = &client.Client{
 		Provider:  m.provider.LLM,
 		Model:     m.getModelID(),
@@ -289,7 +333,7 @@ func (m *model) configureLoop(extra []string) {
 	m.loop.System = &system.System{
 		Client:              m.loop.Client,
 		Cwd:                 m.cwd,
-		IsGit:               isGitRepo(m.cwd),
+		IsGit:               m.isGit,
 		PlanMode:            m.mode.Enabled,
 		UserInstructions:    m.memory.CachedUser,
 		ProjectInstructions: m.memory.CachedProject,
@@ -305,6 +349,41 @@ func (m *model) configureLoop(extra []string) {
 	}
 	m.loop.Permission = nil
 	m.loop.Hooks = m.hookEngine
+}
+
+// buildTaskReminder returns a task reminder string if tasks exist and haven't
+// been updated for taskReminderThreshold turns. Returns empty string otherwise.
+func (m *model) buildTaskReminder() string {
+	if m.conv.TurnsSinceLastTaskTool < taskReminderThreshold {
+		return ""
+	}
+	tasks := tool.DefaultTodoStore.List()
+	if len(tasks) == 0 {
+		return ""
+	}
+
+	// Check if all tasks are completed
+	allDone := true
+	for _, t := range tasks {
+		if t.Status != tool.TodoStatusCompleted {
+			allDone = false
+			break
+		}
+	}
+	if allDone {
+		return ""
+	}
+
+	// Build reminder with current task list
+	var sb strings.Builder
+	sb.WriteString("<task-reminder>\n")
+	sb.WriteString("You have active tasks that haven't been updated recently. Consider updating task status:\n")
+	for _, t := range tasks {
+		sb.WriteString(fmt.Sprintf("  %s #%s: %s [%s]\n", tool.TaskIcon(t), t.ID, t.Subject, t.Status))
+	}
+	sb.WriteString("Use TaskUpdate to mark tasks as in_progress when starting or completed when done.\n")
+	sb.WriteString("</task-reminder>")
+	return sb.String()
 }
 
 func (m model) getModelID() string {

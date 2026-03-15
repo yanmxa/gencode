@@ -10,18 +10,18 @@ import (
 )
 
 const (
-	IconTaskStop = "x"
+	IconAgentStop = "x"
 )
 
-// TaskStopTool stops a running background task
-type TaskStopTool struct{}
+// AgentStopTool stops a running background task
+type AgentStopTool struct{}
 
-func (t *TaskStopTool) Name() string        { return "TaskStop" }
-func (t *TaskStopTool) Description() string { return "Stops a running background task by its ID" }
-func (t *TaskStopTool) Icon() string        { return IconTaskStop }
+func (t *AgentStopTool) Name() string        { return "AgentStop" }
+func (t *AgentStopTool) Description() string { return "Stops a running background task by its ID" }
+func (t *AgentStopTool) Icon() string        { return IconAgentStop }
 
 // Execute stops a running background task
-func (t *TaskStopTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
+func (t *AgentStopTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
 	taskID, ok := params["task_id"].(string)
@@ -116,5 +116,5 @@ func (t *TaskStopTool) Execute(ctx context.Context, params map[string]any, cwd s
 }
 
 func init() {
-	Register(&TaskStopTool{})
+	Register(&AgentStopTool{})
 }

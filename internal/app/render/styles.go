@@ -24,6 +24,7 @@ var (
 	ToolCallStyle           lipgloss.Style
 	ToolResultStyle         lipgloss.Style
 	ToolResultExpandedStyle lipgloss.Style
+	AgentLabelStyle         lipgloss.Style // Labels like "Prompt:" and "Response:" in agent results
 )
 
 // Todo styles
@@ -58,7 +59,7 @@ func init() {
 		Foreground(theme.CurrentTheme.Separator)
 
 	ThinkingStyle = lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Accent)
+		Foreground(theme.CurrentTheme.Muted)
 
 	ThinkingContentStyle = lipgloss.NewStyle().
 		Faint(true)
@@ -67,23 +68,26 @@ func init() {
 		Foreground(theme.CurrentTheme.TextDim).
 		PaddingLeft(2)
 
-	// Tool display styles
+	// Tool display styles — unified muted color family
 	ToolCallStyle = lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Accent)
+		Foreground(theme.CurrentTheme.TextDim)
 
 	ToolResultStyle = lipgloss.NewStyle().
 		Foreground(theme.CurrentTheme.Muted)
 
 	ToolResultExpandedStyle = lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.TextDim).
+		Foreground(theme.CurrentTheme.Muted).
 		PaddingLeft(4)
+
+	AgentLabelStyle = lipgloss.NewStyle().
+		Foreground(theme.CurrentTheme.Success)
 
 	// Todo styles
 	TodoPendingStyle = lipgloss.NewStyle().
 		Foreground(theme.CurrentTheme.Muted)
 
 	TodoInProgressStyle = lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Warning).
+		Foreground(theme.CurrentTheme.Primary).
 		Bold(true)
 
 	TodoCompletedStyle = lipgloss.NewStyle().

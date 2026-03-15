@@ -6,21 +6,11 @@ import (
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
-// AccessMode controls how tool access is configured for agents.
-type AccessMode string
-
-const (
-	// AccessAllowlist only allows specified tools.
-	AccessAllowlist AccessMode = "allowlist"
-	// AccessDenylist allows all except specified tools.
-	AccessDenylist AccessMode = "denylist"
-)
-
-// AccessConfig configures agent allow/deny lists.
-type AccessConfig struct {
-	Mode  AccessMode
-	Allow []string
-	Deny  []string
+// parentOnlyTools are tools that only the parent conversation can use.
+// Subagents never get these regardless of their allow list.
+var parentOnlyTools = map[string]bool{
+	ToolEnterPlanMode: true,
+	ToolExitPlanMode:  true,
 }
 
 // Set provides tools for a conversation turn.
@@ -31,7 +21,8 @@ type Set struct {
 	Disabled map[string]bool        // excluded tools
 	PlanMode bool                   // plan mode filter
 	MCP      func() []provider.Tool // MCP tools getter
-	Access   *AccessConfig          // agent allow/deny lists
+	Allow    []string               // agent allow list (nil = all tools, non-nil = only these)
+	IsAgent  bool                   // true for subagent tool sets (excludes parent-only tools)
 }
 
 // Tools returns the resolved tool set for a turn.
@@ -41,9 +32,14 @@ func (s *Set) Tools() []provider.Tool {
 		return s.Static
 	}
 
-	// Agent mode: filtered by allow/deny lists
-	if s.Access != nil {
+	// Agent with explicit allow list
+	if s.Allow != nil {
 		return s.agentTools()
+	}
+
+	// Agent with nil allow = all tools minus parent-only
+	if s.IsAgent {
+		return s.agentAllTools()
 	}
 
 	// Default mode: full set with disabled/plan filtering
@@ -70,51 +66,46 @@ func (s *Set) defaultTools() []provider.Tool {
 	return filtered
 }
 
-// agentBlockedTools are tools that agents cannot use.
-var agentBlockedTools = map[string]bool{
-	"Task":          true, // prevents nested spawning
-	"EnterPlanMode": true, // plan mode is parent-only
-	"ExitPlanMode":  true,
-}
-
-// agentTools returns tools filtered by agent allow/deny lists.
-func (s *Set) agentTools() []provider.Tool {
-	allTools := GetToolSchemas()
+// agentAllTools returns all tools except parent-only tools.
+// Used for agents with nil Allow (= all tools).
+func (s *Set) agentAllTools() []provider.Tool {
+	allTools := GetToolSchemasWithMCP(s.MCP)
 	filtered := make([]provider.Tool, 0, len(allTools))
-
 	for _, t := range allTools {
-		if agentBlockedTools[t.Name] {
-			continue
+		if !parentOnlyTools[t.Name] {
+			filtered = append(filtered, t)
 		}
-
-		if !s.isToolAllowed(t.Name) {
-			continue
-		}
-
-		filtered = append(filtered, t)
 	}
-
 	return filtered
 }
 
-// isToolAllowed checks if a tool is allowed by the access config.
-func (s *Set) isToolAllowed(name string) bool {
-	switch s.Access.Mode {
-	case AccessAllowlist:
-		for _, allowed := range s.Access.Allow {
-			if strings.EqualFold(name, allowed) {
-				return true
-			}
-		}
-		return false
-	case AccessDenylist:
-		for _, denied := range s.Access.Deny {
-			if strings.EqualFold(name, denied) {
-				return false
-			}
-		}
-		return true
-	default:
-		return true
+// agentTools returns tools filtered by the allow list.
+// Only tools in the Allow list are included. MCP tools matching
+// the allow list (e.g. "mcp__server__tool") are also included.
+func (s *Set) agentTools() []provider.Tool {
+	allTools := GetToolSchemas()
+
+	// Build allow set for fast lookup
+	allowSet := make(map[string]bool, len(s.Allow))
+	for _, name := range s.Allow {
+		allowSet[strings.ToLower(name)] = true
 	}
+
+	filtered := make([]provider.Tool, 0, len(s.Allow))
+	for _, t := range allTools {
+		if allowSet[strings.ToLower(t.Name)] {
+			filtered = append(filtered, t)
+		}
+	}
+
+	// Include MCP tools that match the allow list
+	if s.MCP != nil {
+		for _, t := range s.MCP() {
+			if allowSet[strings.ToLower(t.Name)] {
+				filtered = append(filtered, t)
+			}
+		}
+	}
+
+	return filtered
 }

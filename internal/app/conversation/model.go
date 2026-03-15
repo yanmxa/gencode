@@ -9,8 +9,13 @@ import (
 type Model struct {
 	Messages       []message.ChatMessage
 	CommittedCount int
-	Stream StreamState
+	Stream  StreamState
 	Compact appcompact.State
+
+	// TurnsSinceLastTaskTool counts LLM turns since the last Task* tool was used.
+	// Reset to 0 when any TaskCreate/TaskGet/TaskUpdate/TaskList tool is called.
+	// Used to inject task reminder nudges after a threshold.
+	TurnsSinceLastTaskTool int
 }
 
 // New returns an empty conversation model.

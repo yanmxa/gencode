@@ -20,28 +20,23 @@ The Subagent system allows GenCode to spawn specialized AI agents for complex ta
 │     └────────┬────────┘             └────────┬────────┘         │
 │              │                               │                   │
 │              ▼                               ▼                   │
-│     Return final result            TaskOutput / TaskStop         │
+│     Return final result            AgentOutput / AgentStop         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Task Tool
+## Agent Tool
 
-The `Task` tool spawns a subagent to handle complex tasks.
+The `Agent` tool spawns a subagent to handle complex tasks.
 
 ### Schema
 
 ```json
 {
-  "name": "Task",
-  "description": "Launch a new agent to handle complex, multi-step tasks autonomously",
+  "name": "Agent",
+  "description": "Launch a subagent to handle complex, multi-step tasks autonomously",
   "parameters": {
-    "subagent_type": {
-      "type": "string",
-      "description": "Agent type: Explore, Plan, Bash, Review, general-purpose, or custom",
-      "required": true
-    },
     "prompt": {
       "type": "string",
       "description": "The task for the agent to perform",
@@ -49,7 +44,16 @@ The `Task` tool spawns a subagent to handle complex tasks.
     },
     "description": {
       "type": "string",
-      "description": "A short (3-5 word) description of the task"
+      "description": "A short (3-5 word) description of the task",
+      "required": true
+    },
+    "subagent_type": {
+      "type": "string",
+      "description": "Agent type: Explore, Plan, general-purpose, or custom"
+    },
+    "name": {
+      "type": "string",
+      "description": "Name for the spawned agent"
     },
     "run_in_background": {
       "type": "boolean",
@@ -67,7 +71,17 @@ The `Task` tool spawns a subagent to handle complex tasks.
     },
     "resume": {
       "type": "string",
-      "description": "Agent ID to resume from a previous execution"
+      "description": "Agent ID to resume from a previous invocation"
+    },
+    "mode": {
+      "type": "string",
+      "description": "Permission mode for spawned agent",
+      "enum": ["acceptEdits", "bypassPermissions", "default", "dontAsk", "plan", "auto"]
+    },
+    "isolation": {
+      "type": "string",
+      "description": "Isolation mode (worktree for git worktree isolation)",
+      "enum": ["worktree"]
     }
   }
 }
@@ -94,7 +108,7 @@ Task(subagent_type="Explore", prompt="Analyze codebase", run_in_background=true)
 
 ---
 
-## TaskOutput Tool
+## AgentOutput Tool
 
 Retrieves output from a background task.
 
@@ -102,7 +116,7 @@ Retrieves output from a background task.
 
 ```json
 {
-  "name": "TaskOutput",
+  "name": "AgentOutput",
   "description": "Retrieve output from a background task",
   "parameters": {
     "task_id": {
@@ -143,9 +157,9 @@ Turns: 5
 Tokens: 1000
 
 Options:
-  - Wait longer: TaskOutput(task_id="xxx", timeout=60000)
-  - Check status: TaskOutput(task_id="xxx", block=false)
-  - Stop: TaskStop(task_id="xxx")
+  - Wait longer: AgentOutput(task_id="xxx", timeout=60000)
+  - Check status: AgentOutput(task_id="xxx", block=false)
+  - Stop: AgentStop(task_id="xxx")
 ```
 
 **For completed tasks:**
@@ -162,7 +176,7 @@ Output:
 
 ---
 
-## TaskStop Tool
+## AgentStop Tool
 
 Stops a running background task.
 
@@ -170,7 +184,7 @@ Stops a running background task.
 
 ```json
 {
-  "name": "TaskStop",
+  "name": "AgentStop",
   "description": "Stop a running background task by its ID",
   "parameters": {
     "task_id": {
@@ -223,7 +237,7 @@ for chunk := range streamChan {
 
 ### Limitations
 
-| Task Type | TaskStop Works? | Reason |
+| Task Type | AgentStop Works? | Reason |
 |-----------|-----------------|--------|
 | Background Agent | ✅ Yes | Registered in TaskManager |
 | Background Bash | ✅ Yes | Registered in TaskManager |
@@ -245,62 +259,31 @@ Fast codebase exploration and understanding.
 | Property | Value |
 |----------|-------|
 | Permission Mode | `plan` (read-only) |
-| Tools | Read, Glob, Grep, WebFetch, WebSearch |
-| Max Turns | 30 |
+| Tools | Read, Glob, Grep, Bash, WebFetch, WebSearch |
+| Max Turns | 100 |
 | Model | inherit (from parent) |
 
 **Use Cases:**
 - Find files by pattern
 - Search code for keywords
 - Answer questions about the codebase
+- Run investigative commands (git log, wc, find, etc.)
 
 ### Plan
 
-Software architect for designing implementation plans.
+Software architect agent for designing implementation plans.
 
 | Property | Value |
 |----------|-------|
 | Permission Mode | `plan` (read-only) |
-| Tools | Read, Glob, Grep, WebFetch, WebSearch |
-| Max Turns | 50 |
+| Tools | Read, Glob, Grep, Bash, WebFetch, WebSearch |
+| Max Turns | 100 |
 | Model | inherit |
 
 **Use Cases:**
 - Design implementation strategies
-- Identify critical files
-- Consider architectural trade-offs
-
-### Bash
-
-Command execution specialist.
-
-| Property | Value |
-|----------|-------|
-| Permission Mode | `default` |
-| Tools | Bash, Read, Glob, Grep |
-| Max Turns | 30 |
-| Model | inherit |
-
-**Use Cases:**
-- Run complex command sequences
-- Git operations
-- Build and test commands
-
-### Review
-
-Code review specialist.
-
-| Property | Value |
-|----------|-------|
-| Permission Mode | `plan` (read-only) |
-| Tools | Read, Glob, Grep, Bash |
-| Max Turns | 30 |
-| Model | inherit |
-
-**Use Cases:**
-- Analyze code changes
-- Identify issues
-- Suggest improvements
+- Identify critical files and dependencies
+- Create step-by-step implementation plans
 
 ### general-purpose
 
@@ -309,8 +292,8 @@ Full-access agent for complex tasks.
 | Property | Value |
 |----------|-------|
 | Permission Mode | `default` |
-| Tools | All except Task |
-| Max Turns | 50 |
+| Tools | All tools |
+| Max Turns | 100 |
 | Model | inherit |
 
 **Use Cases:**
@@ -444,20 +427,20 @@ You are specialized in implementing machine learning models and data pipelines.
 | `name` | string | Unique agent identifier |
 | `description` | string | Short description for LLM selection |
 | `model` | string | `inherit`, `sonnet`, `opus`, `haiku` |
-| `permission-mode` | string | `plan`, `default`, `acceptEdits`, `dontAsk` |
+| `permission-mode` | string | `plan`, `default`, `acceptEdits`, `dontAsk`, `bypassPermissions`, `auto` |
 | `max-turns` | int | Maximum conversation turns |
-| `tools.mode` | string | `allowlist` or `denylist` |
-| `tools.allow` | []string | Tools to allow (allowlist mode) |
-| `tools.deny` | []string | Tools to deny (denylist mode) |
+| `tools` | []string / nil | Tool allow list. nil = all tools |
 
 ### Permission Modes
 
 | Mode | Description |
 |------|-------------|
-| `plan` | Read-only, only Read/Glob/Grep/WebFetch/WebSearch allowed |
+| `plan` | Read-only, only read tools allowed |
 | `default` | Normal permission handling |
-| `acceptEdits` | Auto-approve Write/Edit |
+| `acceptEdits` | Auto-accept file edits, prompt for others |
 | `dontAsk` | Full autonomy, all operations auto-approved |
+| `bypassPermissions` | Bypass all permission checks |
+| `auto` | Automatically determines best permission level |
 
 ---
 
@@ -487,8 +470,8 @@ messages = [                         messages = [
 | File | Purpose |
 |------|---------|
 | `internal/tool/task.go` | Task tool implementation |
-| `internal/tool/taskoutput.go` | TaskOutput tool |
-| `internal/tool/taskstop.go` | TaskStop tool |
+| `internal/tool/taskoutput.go` | AgentOutput tool |
+| `internal/tool/taskstop.go` | AgentStop tool |
 | `internal/agent/types.go` | Core type definitions |
 | `internal/agent/registry.go` | Built-in agent configs |
 | `internal/agent/loader.go` | Custom agent loading |

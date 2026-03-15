@@ -3,7 +3,8 @@ package agent
 import (
 	"context"
 	"fmt"
-	"runtime"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -11,10 +12,12 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/session"
+	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -23,12 +26,17 @@ import (
 
 // Executor runs agent LLM loops
 type Executor struct {
-	provider        provider.LLMProvider
-	cwd             string
-	parentModelID   string // Parent conversation's model ID (used when inheriting)
-	hooks           *hooks.Engine
-	sessionStore    *session.Store  // Optional: when set, subagent sessions are persisted
-	parentSessionID string          // Parent session ID for linking subagent sessions
+	provider             provider.LLMProvider
+	cwd                  string
+	parentModelID        string // Parent conversation's model ID (used when inheriting)
+	hooks                *hooks.Engine
+	sessionStore         *session.Store // Optional: when set, subagent sessions are persisted
+	parentSessionID      string         // Parent session ID for linking subagent sessions
+	userInstructions     string         // ~/.gen/GEN.md + rules
+	projectInstructions  string         // .gen/GEN.md + rules + local
+	isGit                bool           // whether cwd is a git repository
+	mcpGetter            func() []provider.Tool // MCP tool schemas from parent
+	mcpRegistry          *mcp.Registry          // MCP registry for tool execution
 }
 
 // NewExecutor creates a new agent executor
@@ -41,6 +49,21 @@ func NewExecutor(llmProvider provider.LLMProvider, cwd string, parentModelID str
 		parentModelID: parentModelID,
 		hooks:         hookEngine,
 	}
+}
+
+// SetContext provides project context (instructions, git status) so subagents
+// get the same system prompt foundation as the parent conversation.
+func (e *Executor) SetContext(userInstructions, projectInstructions string, isGit bool) {
+	e.userInstructions = userInstructions
+	e.projectInstructions = projectInstructions
+	e.isGit = isGit
+}
+
+// SetMCP provides the parent's MCP tool getter and registry so subagents
+// can access MCP tools (schemas via getter, execution via registry).
+func (e *Executor) SetMCP(getter func() []provider.Tool, registry *mcp.Registry) {
+	e.mcpGetter = getter
+	e.mcpRegistry = registry
 }
 
 // SetSessionStore configures session persistence for subagent conversations.
@@ -59,6 +82,22 @@ func (e *Executor) GetParentModelID() string {
 // For background agents, this should be called in a goroutine.
 func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, error) {
 	start := time.Now()
+
+	// Validate unsupported features early
+	if req.TeamName != "" {
+		return nil, fmt.Errorf("team spawning is not yet supported (team: %s)", req.TeamName)
+	}
+
+	// Set up git worktree isolation if requested
+	agentCwd := e.cwd
+	if req.Isolation == "worktree" {
+		worktreePath, cleanup, err := e.createWorktree()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create worktree: %w", err)
+		}
+		defer cleanup()
+		agentCwd = worktreePath
+	}
 
 	// Get agent configuration
 	config, ok := DefaultRegistry.Get(req.Agent)
@@ -81,32 +120,78 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 	// Build the agent-specific system prompt as Extra
 	agentPrompt := e.buildSystemPrompt(config, req)
 
+	// Use custom name if provided, otherwise use config name
+	displayName := config.Name
+	if req.Name != "" {
+		displayName = req.Name
+	}
+
 	// Create turn tracker for hierarchical DEV_DIR logging
-	tracker := log.NewAgentTurnTracker(config.Name, nil)
+	tracker := log.NewAgentTurnTracker(displayName, nil)
 	ctx = log.WithAgentTracker(ctx, tracker)
 
 	log.Logger().Info("Starting agent execution",
-		zap.String("agent", config.Name),
+		zap.String("agent", displayName),
 		zap.String("description", req.Description),
 		zap.Int("maxTurns", maxTurns),
 	)
 
 	// Build core.Loop
-	c := &client.Client{Provider: e.provider, Model: modelID, MaxTokens: 8192}
+	permMode := config.PermissionMode
+	// Per-invocation mode override (highest priority)
+	if req.Mode != "" {
+		permMode = PermissionMode(req.Mode)
+	}
+
+	// Connect agent-specific MCP servers if configured
+	if len(config.McpServers) > 0 && e.mcpRegistry != nil {
+		cleanup, errs := mcp.ConnectServers(ctx, e.mcpRegistry, config.McpServers)
+		defer cleanup()
+		for _, err := range errs {
+			log.Logger().Warn("Agent MCP server connection failed", zap.Error(err))
+		}
+	}
+
+	c := &client.Client{Provider: e.provider, Model: modelID} // MaxTokens=0 → resolved dynamically from provider
 	loop := &core.Loop{
-		System:     &system.System{Client: c, Cwd: e.cwd, Extra: []string{agentPrompt}},
+		System: &system.System{
+			Client:              c,
+			Cwd:                 agentCwd,
+			IsGit:               e.isGit,
+			PlanMode:            permMode == PermissionPlan,
+			UserInstructions:    e.userInstructions,
+			ProjectInstructions: e.projectInstructions,
+			Extra:               []string{agentPrompt},
+		},
 		Client:     c,
-		Tool:       &tool.Set{Access: convertToolAccess(config.Tools)},
-		Permission: agentPermission(config.PermissionMode),
+		Tool:       &tool.Set{Allow: []string(config.Tools), MCP: e.mcpGetter, IsAgent: true},
+		Permission: agentPermission(permMode),
 		Hooks:      e.hooks,
 	}
-	loop.AddUser(req.Prompt, nil)
+
+	// Set up MCP caller for tool execution if registry is available
+	if e.mcpRegistry != nil {
+		loop.MCP = mcp.NewCaller(e.mcpRegistry)
+	}
+
+	// Resume from previous invocation or start fresh
+	if req.ResumeID != "" {
+		if err := e.resumeFromSession(loop, req.ResumeID, req.Prompt); err != nil {
+			return nil, fmt.Errorf("failed to resume agent: %w", err)
+		}
+	} else {
+		loop.AddUser(req.Prompt, nil)
+	}
+
+	// Accumulate all progress messages for the result
+	allProgress := make([]string, 0, 16)
 
 	// Create progress callback
 	onToolStart := func(tc message.ToolCall) bool {
+		params, _ := message.ParseToolInput(tc.Input)
+		progressMsg := formatToolProgress(tc.Name, params)
+		allProgress = append(allProgress, progressMsg)
 		if req.OnProgress != nil {
-			params, _ := message.ParseToolInput(tc.Input)
-			progressMsg := formatToolProgress(tc.Name, params)
 			req.OnProgress(progressMsg)
 		}
 		return true
@@ -117,6 +202,7 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 		if result != nil && result.StopReason == "cancelled" {
 			return &AgentResult{
 				AgentName:  config.Name,
+				Model:      modelID,
 				Success:    false,
 				Content:    result.Content,
 				Messages:   result.Messages,
@@ -137,7 +223,7 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 	}
 
 	logFields := []zap.Field{
-		zap.String("agent", config.Name),
+		zap.String("agent", displayName),
 		zap.String("stopReason", result.StopReason),
 		zap.Int("turns", result.Turns),
 		zap.Int("inputTokens", result.Tokens.InputTokens),
@@ -149,8 +235,13 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 		log.Logger().Warn("Agent completed", logFields...)
 	}
 
+	// Persist subagent session if store is configured
+	agentSessionID := e.persistSubagentSession(displayName, modelID, req.Description, result.Messages)
+
 	agentResult := &AgentResult{
-		AgentName:  config.Name,
+		AgentID:    agentSessionID,
+		AgentName:  displayName,
+		Model:      modelID,
 		Success:    success,
 		Content:    result.Content,
 		Messages:   result.Messages,
@@ -158,11 +249,9 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 		ToolUses:   result.ToolUses,
 		TokenUsage: result.Tokens,
 		Duration:   time.Since(start),
+		Progress:   allProgress,
 		Error:      errMsg,
 	}
-
-	// Persist subagent session if store is configured
-	e.persistSubagentSession(config.Name, modelID, req.Description, result.Messages)
 
 	return agentResult, nil
 }
@@ -178,10 +267,16 @@ func (e *Executor) RunBackground(req AgentRequest) (*task.AgentTask, error) {
 	// Create context with cancel
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Use custom name if provided, otherwise use config name
+	displayName := config.Name
+	if req.Name != "" {
+		displayName = req.Name
+	}
+
 	// Create agent task
 	agentTask := task.NewAgentTask(
 		task.GenerateID(),
-		config.Name,
+		displayName,
 		req.Description,
 		ctx,
 		cancel,
@@ -238,21 +333,15 @@ func (e *Executor) resolveModelID(requestModel string) string {
 	return FallbackModel
 }
 
-// buildSystemPrompt builds the agent-specific system prompt.
+// buildSystemPrompt builds agent-specific Extra content for the system prompt.
+// Identity, environment, instructions, and tool guidelines are already provided
+// by system.System — this method only adds agent-specific content.
 func (e *Executor) buildSystemPrompt(config *AgentConfig, req AgentRequest) string {
 	var sb strings.Builder
 
-	// Base agent identity
-	sb.WriteString("You are a specialized AI agent within GenCode, an AI coding assistant.\n\n")
-
-	// Agent-specific prompt
+	// Agent type header
 	sb.WriteString(fmt.Sprintf("## Agent Type: %s\n", config.Name))
 	sb.WriteString(config.Description)
-	sb.WriteString("\n\n")
-
-	// Task context
-	sb.WriteString("## Your Task\n")
-	sb.WriteString(req.Prompt)
 	sb.WriteString("\n\n")
 
 	// Mode-specific instructions
@@ -260,24 +349,29 @@ func (e *Executor) buildSystemPrompt(config *AgentConfig, req AgentRequest) stri
 	case PermissionPlan:
 		sb.WriteString("## Mode: Read-Only\n")
 		sb.WriteString("You are in read-only mode. You can only use tools that read information (Read, Glob, Grep, WebFetch, WebSearch). Do not attempt to modify any files.\n\n")
-	case PermissionDontAsk:
+	case PermissionDontAsk, PermissionBypassPermissions:
 		sb.WriteString("## Mode: Autonomous\n")
 		sb.WriteString("You have full autonomy to complete your task. You can read and modify files, execute commands, and make changes as needed.\n\n")
 	}
 
-	// Custom system prompt from config (lazily loaded)
+	// Custom system prompt from config (lazily loaded from AGENT.md body)
 	if sysPrompt := config.GetSystemPrompt(); sysPrompt != "" {
 		sb.WriteString("## Additional Instructions\n")
 		sb.WriteString(sysPrompt)
 		sb.WriteString("\n\n")
 	}
 
-	// Environment info
-	sb.WriteString("## Environment\n")
-	sb.WriteString(fmt.Sprintf("- Working directory: %s\n", e.cwd))
-	sb.WriteString(fmt.Sprintf("- Platform: %s\n", runtime.GOOS))
-	sb.WriteString(fmt.Sprintf("- Date: %s\n", time.Now().Format("2006-01-02")))
-	sb.WriteString("\n")
+	// Preload skills into agent system prompt
+	if len(config.Skills) > 0 && skill.DefaultRegistry != nil {
+		for _, skillName := range config.Skills {
+			prompt := skill.DefaultRegistry.GetSkillInvocationPrompt(skillName)
+			if prompt != "" {
+				sb.WriteString("\n")
+				sb.WriteString(prompt)
+				sb.WriteString("\n")
+			}
+		}
+	}
 
 	// Guidelines
 	sb.WriteString("## Guidelines\n")
@@ -288,48 +382,46 @@ func (e *Executor) buildSystemPrompt(config *AgentConfig, req AgentRequest) stri
 	return sb.String()
 }
 
-// toolProgressFormats maps tool names to their progress format templates and param keys.
-var toolProgressFormats = map[string]struct {
-	verb  string
-	param string
-}{
-	"Read":      {"Reading", "file_path"},
-	"Glob":      {"Finding", "pattern"},
-	"Grep":      {"Searching", "pattern"},
-	"WebFetch":  {"Fetching", "url"},
-	"WebSearch": {"Searching web", "query"},
-	"Bash":      {"Running", "command"},
+// toolProgressParams maps tool names to the parameter key used for display.
+var toolProgressParams = map[string]string{
+	"Read":      "file_path",
+	"Glob":      "pattern",
+	"Grep":      "pattern",
+	"WebFetch":  "url",
+	"WebSearch": "query",
+	"Bash":      "command",
 }
 
-// formatToolProgress creates a progress message for a tool call.
+// formatToolProgress creates a progress message for a tool call in ToolName(args) format.
 func formatToolProgress(toolName string, params map[string]any) string {
-	format, ok := toolProgressFormats[toolName]
+	paramKey, ok := toolProgressParams[toolName]
 	if !ok {
-		return fmt.Sprintf("Executing: %s", toolName)
+		return fmt.Sprintf("%s()", toolName)
 	}
 
-	value, ok := params[format.param].(string)
+	value, ok := params[paramKey].(string)
 	if !ok {
-		return fmt.Sprintf("Executing: %s", toolName)
+		return fmt.Sprintf("%s()", toolName)
 	}
 
-	// Truncate long command strings
-	if toolName == "Bash" && len(value) > 50 {
-		value = value[:47] + "..."
+	// Truncate long strings
+	if len(value) > 60 {
+		value = value[:57] + "..."
 	}
 
-	return fmt.Sprintf("%s: %s", format.verb, value)
+	return fmt.Sprintf("%s(%s)", toolName, value)
 }
 
 // persistSubagentSession saves the subagent conversation to disk if a session store is configured.
-func (e *Executor) persistSubagentSession(agentName, modelID, description string, messages []message.Message) {
+// Returns the session ID assigned to the subagent (empty if not persisted).
+func (e *Executor) persistSubagentSession(agentName, modelID, description string, messages []message.Message) string {
 	if e.sessionStore == nil || e.parentSessionID == "" {
-		return
+		return ""
 	}
 
 	entries := session.MessagesToEntries(messages)
 	if len(entries) == 0 {
-		return
+		return ""
 	}
 
 	title := description
@@ -352,24 +444,91 @@ func (e *Executor) persistSubagentSession(agentName, modelID, description string
 			zap.String("agent", agentName),
 			zap.Error(err),
 		)
+		return ""
 	}
+
+	return sess.Metadata.ID
+}
+
+// --- Resume & Isolation ---
+
+// resumeFromSession loads a previous subagent session and restores its conversation,
+// then appends the new prompt as a continuation.
+func (e *Executor) resumeFromSession(loop *core.Loop, agentID, newPrompt string) error {
+	if e.sessionStore == nil {
+		return fmt.Errorf("session store not configured, cannot resume")
+	}
+
+	sess, err := e.sessionStore.LoadSubagent(agentID)
+	if err != nil {
+		return err
+	}
+
+	// Convert persisted entries back to messages
+	prevMessages := session.EntriesToMessages(sess.Entries)
+	if len(prevMessages) == 0 {
+		return fmt.Errorf("no messages found in session %s", agentID)
+	}
+
+	// Restore previous conversation and append continuation prompt
+	loop.SetMessages(prevMessages)
+	loop.AddUser(newPrompt, nil)
+
+	log.Logger().Info("Resumed agent from previous session",
+		zap.String("agentID", agentID),
+		zap.Int("previousMessages", len(prevMessages)),
+	)
+	return nil
+}
+
+// createWorktree creates a temporary git worktree for isolated agent execution.
+// Returns the worktree path and a cleanup function that removes it.
+func (e *Executor) createWorktree() (string, func(), error) {
+	// Generate a unique worktree directory name
+	worktreeID := session.GenerateShortID()
+	worktreePath := filepath.Join(e.cwd, ".git", "agent-worktrees", worktreeID)
+
+	// Get current HEAD for the worktree
+	cmd := exec.Command("git", "worktree", "add", "--detach", worktreePath)
+	cmd.Dir = e.cwd
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", nil, fmt.Errorf("git worktree add failed: %s: %w", string(out), err)
+	}
+
+	log.Logger().Info("Created git worktree for agent isolation",
+		zap.String("path", worktreePath),
+	)
+
+	cleanup := func() {
+		removeCmd := exec.Command("git", "worktree", "remove", "--force", worktreePath)
+		removeCmd.Dir = e.cwd
+		if out, err := removeCmd.CombinedOutput(); err != nil {
+			log.Logger().Warn("Failed to remove agent worktree",
+				zap.String("path", worktreePath),
+				zap.String("output", string(out)),
+				zap.Error(err),
+			)
+		} else {
+			log.Logger().Info("Removed agent worktree", zap.String("path", worktreePath))
+		}
+	}
+
+	return worktreePath, cleanup, nil
 }
 
 // --- Internal helpers ---
 
 // agentPermission maps PermissionMode to a permission.Checker.
 func agentPermission(mode PermissionMode) permission.Checker {
-	if mode == PermissionPlan {
+	switch mode {
+	case PermissionPlan:
 		return permission.ReadOnly()
+	case PermissionAcceptEdits:
+		return permission.AcceptEdits()
+	case PermissionDefault:
+		return permission.PermitAll() // Non-interactive agents auto-approve
+	default:
+		return permission.PermitAll()
 	}
-	return permission.PermitAll()
 }
 
-// convertToolAccess converts agent.ToolAccess to tool.AccessConfig.
-func convertToolAccess(ta ToolAccess) *tool.AccessConfig {
-	return &tool.AccessConfig{
-		Mode:  tool.AccessMode(ta.Mode),
-		Allow: ta.Allow,
-		Deny:  ta.Deny,
-	}
-}

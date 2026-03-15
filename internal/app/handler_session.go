@@ -1,6 +1,9 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	appprovider "github.com/yanmxa/gencode/internal/app/provider"
@@ -67,11 +70,13 @@ func (m *model) saveSession() error {
 
 	// Update current session ID
 	m.session.CurrentID = sess.Metadata.ID
+	m.initTaskStorage()
 
-	// Reconfigure task tool with updated parent session ID so subsequent
+	// Reconfigure agent tool with updated parent session ID so subsequent
 	// subagent invocations link to this session.
 	if m.provider.LLM != nil {
-		appprovider.ConfigureTaskTool(m.provider.LLM, m.cwd, m.getModelID(), m.hookEngine, m.session.Store, m.session.CurrentID)
+		appprovider.ConfigureAgentTool(m.provider.LLM, m.cwd, m.getModelID(), m.hookEngine, m.session.Store, m.session.CurrentID,
+			m.agentToolOpts()...)
 	}
 
 	return nil
@@ -90,7 +95,7 @@ func (m *model) loadSession(id string) error {
 
 	m.restoreSessionData(sess)
 
-	// Reset tasks if none in session (switching sessions at runtime)
+	// Reset tasks if none in session (switching sessions at runtime).
 	if len(sess.Tasks) == 0 {
 		tool.DefaultTodoStore.Reset()
 	}
@@ -115,10 +120,42 @@ func (m *model) restoreSessionData(sess *session.Session) {
 		}
 	}
 
+	// Init task storage for this session
+	m.initTaskStorage()
+
 	// Restore tasks
 	if len(sess.Tasks) > 0 {
 		tool.DefaultTodoStore.Import(sess.Tasks)
 	}
+}
+
+// initTaskStorage sets up disk-based task persistence for the current session.
+// If GEN_TASK_LIST_ID is set, uses that as the storage directory name instead of
+// the session ID, enabling cross-session task sharing.
+func (m *model) initTaskStorage() {
+	// Already initialized for this session
+	if tool.DefaultTodoStore.GetStorageDir() != "" {
+		return
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	// GEN_TASK_LIST_ID allows sharing tasks across concurrent sessions
+	taskListID := os.Getenv("GEN_TASK_LIST_ID")
+	if taskListID != "" {
+		dir := filepath.Join(homeDir, ".gen", "tasks", taskListID)
+		tool.DefaultTodoStore.SetStorageDir(dir)
+		return
+	}
+
+	if m.session.CurrentID == "" {
+		return
+	}
+	dir := filepath.Join(homeDir, ".gen", "tasks", m.session.CurrentID)
+	tool.DefaultTodoStore.SetStorageDir(dir)
 }
 
 // updateSession routes session selection messages.

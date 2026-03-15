@@ -12,6 +12,7 @@ import (
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plugin"
+	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/ui/progress"
 )
 
@@ -59,8 +60,13 @@ func (m *model) handleToolResult(msg apptool.ExecResultMsg) tea.Cmd {
 	}
 
 	// Clear task progress for this agent when Task tool completes
-	if msg.ToolName == "Task" {
+	if msg.ToolName == tool.ToolAgent {
 		delete(m.output.TaskProgress, msg.Index)
+	}
+
+	// Reset task reminder counter when any Task* tool is used
+	if isTaskTool(msg.ToolName) {
+		m.conv.TurnsSinceLastTaskTool = 0
 	}
 
 	// Execute PostToolUse or PostToolUseFailure hook asynchronously
@@ -94,6 +100,11 @@ func (m *model) handleToolResult(msg apptool.ExecResultMsg) tea.Cmd {
 }
 
 func (m *model) handleParallelToolResult(msg apptool.ExecResultMsg) tea.Cmd {
+	// Reset task reminder counter when any Task* tool is used
+	if isTaskTool(msg.ToolName) {
+		m.conv.TurnsSinceLastTaskTool = 0
+	}
+
 	// Store result in the parallel results map
 	if m.tool.ParallelResults == nil {
 		m.tool.ParallelResults = make(map[int]message.ToolResult)
@@ -197,6 +208,15 @@ func (m *model) isExpectedToolResult(msg apptool.ExecResultMsg) bool {
 	return m.tool.PendingCalls[msg.Index].ID == msg.Result.ToolCallID
 }
 
+// isTaskTool returns true if the tool name is a task management tool.
+func isTaskTool(name string) bool {
+	switch name {
+	case tool.ToolTaskCreate, tool.ToolTaskGet, tool.ToolTaskUpdate, tool.ToolTaskList:
+		return true
+	}
+	return false
+}
+
 func (m *model) handleTaskProgress(msg progress.UpdateMsg) tea.Cmd {
 	return m.output.HandleProgress(msg)
 }
@@ -215,7 +235,7 @@ func (m *model) hasRunningTaskTools() bool {
 // hasRunningParallelTaskTools checks for unfinished Task tools in parallel mode.
 func (m *model) hasRunningParallelTaskTools() bool {
 	for i, tc := range m.tool.PendingCalls {
-		if tc.Name == "Task" {
+		if tc.Name == tool.ToolAgent {
 			if _, done := m.tool.ParallelResults[i]; !done {
 				return true
 			}
@@ -229,7 +249,7 @@ func (m *model) hasRunningSequentialTaskTool() bool {
 	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
 		return false
 	}
-	return m.tool.PendingCalls[m.tool.CurrentIdx].Name == "Task"
+	return m.tool.PendingCalls[m.tool.CurrentIdx].Name == "Agent"
 }
 
 // installPlugin creates a tea.Cmd that installs the requested plugin.

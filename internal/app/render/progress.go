@@ -8,9 +8,22 @@ import (
 	"github.com/yanmxa/gencode/internal/message"
 )
 
-// RenderTaskProgressInline renders live progress for a parallel Task tool call.
-// Shows spinner+progress while running, or a done marker when completed.
-func RenderTaskProgressInline(tc message.ToolCall, pendingCalls []message.ToolCall, parallelResults map[int]bool, taskProgress map[int][]string, spinnerView string) string {
+// renderAgentProgress renders all agent progress lines accumulated so far.
+func renderAgentProgress(progress []string) string {
+	if len(progress) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, p := range progress {
+		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  ⎿  %s", p)) + "\n")
+	}
+	return sb.String()
+}
+
+// RenderTaskProgressInline renders live progress for a parallel Agent tool call.
+// Spinner is on the header line; this only renders progress lines below it.
+func RenderTaskProgressInline(tc message.ToolCall, pendingCalls []message.ToolCall, parallelResults map[int]bool, taskProgress map[int][]string) string {
 	idx := -1
 	for i, pending := range pendingCalls {
 		if pending.ID == tc.ID {
@@ -22,27 +35,14 @@ func RenderTaskProgressInline(tc message.ToolCall, pendingCalls []message.ToolCa
 		return ""
 	}
 
-	var sb strings.Builder
-
 	// Check if completed in parallel results (not yet committed to messages)
 	if parallelResults != nil {
 		if _, done := parallelResults[idx]; done {
-			sb.WriteString(ToolResultStyle.Render("  ✓ Done") + "\n")
-			return sb.String()
+			return ""
 		}
 	}
 
-	// Show spinner and progress lines
-	progress := taskProgress[idx]
-	status := "starting..."
-	if len(progress) > 0 {
-		status = "running..."
-	}
-	sb.WriteString(ThinkingStyle.Render(fmt.Sprintf("  %s %s", spinnerView, status)) + "\n")
-	for _, p := range progress {
-		sb.WriteString(ToolResultExpandedStyle.Render(fmt.Sprintf("     %s", p)) + "\n")
-	}
-	return sb.String()
+	return renderAgentProgress(taskProgress[idx])
 }
 
 // PendingToolSpinnerParams holds the parameters for rendering a pending tool spinner.
@@ -86,23 +86,12 @@ func RenderPendingToolSpinner(params PendingToolSpinnerParams) string {
 		return ""
 	}
 
-	var sb strings.Builder
-
-	// Task tool has special rendering with per-agent progress
-	if toolName == "Task" {
-		progress := params.TaskProgress[params.CurrentIdx]
-		status := "Agent starting..."
-		if len(progress) > 0 {
-			status = "Agent running..."
-		}
-		sb.WriteString(ThinkingStyle.Render(fmt.Sprintf("  %s %s", params.SpinnerView, status)) + "\n")
-		for _, p := range progress {
-			sb.WriteString(ToolResultExpandedStyle.Render(fmt.Sprintf("     %s", p)) + "\n")
-		}
-		return sb.String()
+	// Agent tool: spinner is on the header line; only render progress lines here
+	if toolName == "Agent" {
+		return renderAgentProgress(params.TaskProgress[params.CurrentIdx])
 	}
 
-	// Standard tool spinner
-	sb.WriteString(ThinkingStyle.Render(fmt.Sprintf("  %s %s", params.SpinnerView, GetToolExecutionDesc(toolName))) + "\n")
-	return sb.String()
+	// Standard tools: spinner is shown inline in the assistant message row,
+	// no separate spinner line needed.
+	return ""
 }

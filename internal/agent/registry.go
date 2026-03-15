@@ -66,74 +66,37 @@ func (r *Registry) ListConfigs() []*AgentConfig {
 
 // registerBuiltins registers the built-in agent types
 func (r *Registry) registerBuiltins() {
-	// Explore agent - read-only codebase exploration
+	// Explore agent - fast codebase exploration (read-only + Bash)
 	r.agents["explore"] = &AgentConfig{
 		Name:           "Explore",
 		Description:    "Fast codebase exploration and understanding. Use for questions that require reading and cross-referencing multiple files. NOT for questions answerable with a single direct tool call (one Bash command, one Grep, one Read) — use those tools directly instead.",
 		Model:          "inherit",
 		PermissionMode: PermissionPlan,
-		Tools: ToolAccess{
-			Mode:  ToolAccessAllowlist,
-			Allow: []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"},
-		},
-		MaxTurns:   100,
-		Background: false,
+		Tools:          ToolList{"Read", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"},
+		MaxTurns:       100,
+		Source:         "built-in",
 	}
 
-	// Plan agent - implementation planning
+	// Plan agent - software architect for designing implementation plans
 	r.agents["plan"] = &AgentConfig{
 		Name:           "Plan",
-		Description:    "Software architect for designing implementation plans. Use for planning complex tasks, identifying critical files, and considering architectural trade-offs.",
+		Description:    "Software architect agent for designing implementation plans. Use when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.",
 		Model:          "inherit",
 		PermissionMode: PermissionPlan,
-		Tools: ToolAccess{
-			Mode:  ToolAccessAllowlist,
-			Allow: []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"},
-		},
-		MaxTurns:   100,
-		Background: false,
+		Tools:          ToolList{"Read", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"},
+		MaxTurns:       100,
+		Source:         "built-in",
 	}
 
-	// Bash agent - command execution specialist
-	r.agents["bash"] = &AgentConfig{
-		Name:           "Bash",
-		Description:    "Command execution specialist for running bash commands, git operations, and terminal tasks.",
-		Model:          "inherit",
-		PermissionMode: PermissionDefault,
-		Tools: ToolAccess{
-			Mode:  ToolAccessAllowlist,
-			Allow: []string{"Bash", "Read", "Glob", "Grep"},
-		},
-		MaxTurns:   100,
-		Background: false,
-	}
-
-	// Review agent - code review specialist
-	r.agents["review"] = &AgentConfig{
-		Name:           "Review",
-		Description:    "Code review specialist for analyzing code changes, identifying issues, and suggesting improvements.",
-		Model:          "inherit",
-		PermissionMode: PermissionPlan,
-		Tools: ToolAccess{
-			Mode:  ToolAccessAllowlist,
-			Allow: []string{"Read", "Glob", "Grep", "Bash"},
-		},
-		MaxTurns:   100,
-		Background: false,
-	}
-
-	// General-purpose agent - full access
+	// General-purpose agent - all tools (including nested Agent)
 	r.agents["general-purpose"] = &AgentConfig{
 		Name:           "general-purpose",
 		Description:    "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.",
 		Model:          "inherit",
 		PermissionMode: PermissionDefault,
-		Tools: ToolAccess{
-			Mode: ToolAccessDenylist,
-			Deny: []string{"Task"}, // Prevent nested Task spawning
-		},
-		MaxTurns:   100,
-		Background: false,
+		Tools:          nil, // nil = all tools
+		MaxTurns:       100,
+		Source:         "built-in",
 	}
 }
 
@@ -244,7 +207,11 @@ func (r *Registry) GetAgentsSection() string {
 		if r.isDisabledInternal(name) {
 			continue
 		}
-		lines = append(lines, "- "+config.Name+": "+config.Description)
+		toolsDesc := "*"
+		if config.Tools != nil {
+			toolsDesc = strings.Join([]string(config.Tools), ", ")
+		}
+		lines = append(lines, "- "+config.Name+": "+config.Description+" (Tools: "+toolsDesc+")")
 	}
 
 	if len(lines) == 0 {
@@ -253,7 +220,7 @@ func (r *Registry) GetAgentsSection() string {
 
 	var sb strings.Builder
 	sb.WriteString("<available-agents>\n")
-	sb.WriteString("Available agent types for the Task tool:\n\n")
+	sb.WriteString("Available agent types for the Agent tool:\n\n")
 	for _, line := range lines {
 		sb.WriteString(line)
 		sb.WriteString("\n")

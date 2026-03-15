@@ -21,6 +21,9 @@ func (t *TodoGetTool) Execute(ctx context.Context, params map[string]any, cwd st
 		return ui.NewErrorResult(t.Name(), "taskId is required")
 	}
 
+	// Reload from disk to pick up changes from other processes
+	DefaultTodoStore.ReloadFromDisk()
+
 	task, ok := DefaultTodoStore.Get(taskID)
 	if !ok {
 		return ui.NewErrorResult(t.Name(), fmt.Sprintf("task %s not found", taskID))

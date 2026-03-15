@@ -43,6 +43,15 @@ type Result struct {
 
 // --- Loop ---
 
+// MCPCaller can execute MCP tool calls. This interface decouples core.Loop
+// from the mcp package to avoid import cycles.
+type MCPCaller interface {
+	// CallTool calls an MCP tool by its full name (mcp__server__tool).
+	CallTool(ctx context.Context, fullName string, arguments map[string]any) (content string, isError bool, err error)
+	// IsMCPTool returns true if the name is an MCP tool (mcp__*__*).
+	IsMCPTool(name string) bool
+}
+
 // Loop is a reusable agent runtime that manages conversation state
 // and orchestrates LLM interactions. It supports two execution models:
 //
@@ -54,6 +63,7 @@ type Loop struct {
 	Tool       *tool.Set
 	Permission permission.Checker
 	Hooks      *hooks.Engine
+	MCP        MCPCaller // optional: routes mcp__*__* tool calls
 
 	// State (managed by the loop)
 	messages []message.Message
@@ -122,6 +132,10 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 			result := l.ExecTool(ctx, tc)
 			l.AddToolResult(*result)
 			toolUses++
+
+			// Fire PostToolUse / PostToolUseFailure hooks
+			l.firePostToolHook(ctx, tc, result)
+
 			if opts.OnToolDone != nil {
 				opts.OnToolDone(tc, *result)
 			}
@@ -278,6 +292,31 @@ func (l *Loop) FilterToolCalls(ctx context.Context, calls []message.ToolCall) (
 	return allowed, blocked
 }
 
+// firePostToolHook fires PostToolUse or PostToolUseFailure hooks after tool execution.
+func (l *Loop) firePostToolHook(ctx context.Context, tc message.ToolCall, result *message.ToolResult) {
+	if l.Hooks == nil {
+		return
+	}
+
+	params, _ := message.ParseToolInput(tc.Input)
+	event := hooks.PostToolUse
+	if result.IsError {
+		event = hooks.PostToolUseFailure
+	}
+
+	input := hooks.HookInput{
+		ToolName:     tc.Name,
+		ToolInput:    params,
+		ToolUseID:    tc.ID,
+		ToolResponse: result.Content,
+	}
+	if result.IsError {
+		input.Error = result.Content
+	}
+
+	l.Hooks.ExecuteAsync(event, input)
+}
+
 // ExecTool executes a single tool call, consulting the Permission checker.
 // Rejected tools return an error result; Prompt decisions are auto-approved.
 func (l *Loop) ExecTool(ctx context.Context, tc message.ToolCall) *message.ToolResult {
@@ -304,6 +343,20 @@ func (l *Loop) runTool(ctx context.Context, tc message.ToolCall, params map[stri
 	cwd := ""
 	if l.System != nil {
 		cwd = l.System.Cwd
+	}
+
+	// Route MCP tools to the MCP caller
+	if l.MCP != nil && l.MCP.IsMCPTool(tc.Name) {
+		content, isError, err := l.MCP.CallTool(ctx, tc.Name, params)
+		if err != nil {
+			return message.ErrorResult(tc, fmt.Sprintf("MCP tool error: %v", err))
+		}
+		return &message.ToolResult{
+			ToolCallID: tc.ID,
+			ToolName:   tc.Name,
+			Content:    content,
+			IsError:    isError,
+		}
 	}
 
 	t, ok := tool.Get(tc.Name)

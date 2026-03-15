@@ -11,11 +11,11 @@ import (
 )
 
 const (
-	IconTask = "t"
+	IconAgent = "a"
 )
 
 // AgentExecutor is the interface for executing agents
-// This allows the Task tool to be decoupled from the agent package
+// This allows the Agent tool to be decoupled from the agent package
 type AgentExecutor interface {
 	// Run executes an agent in foreground and returns the result
 	Run(ctx context.Context, req AgentExecRequest) (*AgentExecResult, error)
@@ -36,25 +36,31 @@ type ProgressFunc func(msg string)
 // AgentExecRequest contains parameters for agent execution
 type AgentExecRequest struct {
 	Agent       string
+	Name        string // Display name for the agent instance
 	Prompt      string
 	Description string
 	Background  bool
-	ResumeID    string
 	Model       string // Explicit model override (highest priority)
 	MaxTurns    int
-	Cwd         string
+	Mode        string // Per-invocation permission mode override
+	ResumeID    string // Agent ID to resume from
+	Isolation   string // Isolation mode (e.g., "worktree")
+	TeamName    string // Team name for spawning
 	OnProgress  ProgressFunc // Called when agent makes progress
 }
 
 // AgentExecResult contains the result of agent execution
 type AgentExecResult struct {
+	AgentID     string        // Session ID for resume
 	AgentName   string
+	Model       string        // Model ID used for execution
 	Success     bool
 	Content     string
 	TurnCount   int
 	ToolUses    int
 	TotalTokens int
 	Duration    time.Duration
+	Progress    []string      // Intermediate progress messages (tool calls)
 	Error       string
 }
 
@@ -72,38 +78,37 @@ type AgentConfigInfo struct {
 	Tools          []string
 }
 
-// TaskTool spawns subagents to handle complex tasks
-// It implements PermissionAwareTool to require user confirmation
-type TaskTool struct {
-	// Executor runs agent tasks
+// AgentTool spawns subagents to handle complex tasks.
+// It implements PermissionAwareTool to require user confirmation.
+type AgentTool struct {
 	Executor AgentExecutor
 }
 
-// NewTaskTool creates a new TaskTool
-func NewTaskTool() *TaskTool {
-	return &TaskTool{}
+// NewAgentTool creates a new AgentTool
+func NewAgentTool() *AgentTool {
+	return &AgentTool{}
 }
 
-func (t *TaskTool) Name() string        { return "Task" }
-func (t *TaskTool) Description() string { return "Launch a subagent to handle complex tasks" }
-func (t *TaskTool) Icon() string        { return IconTask }
+func (t *AgentTool) Name() string        { return "Agent" }
+func (t *AgentTool) Description() string { return "Launch a subagent to handle complex tasks" }
+func (t *AgentTool) Icon() string        { return IconAgent }
 
-// RequiresPermission returns true - Task always requires permission
-func (t *TaskTool) RequiresPermission() bool {
+// RequiresPermission returns true - Agent always requires permission
+func (t *AgentTool) RequiresPermission() bool {
 	return true
 }
 
 // SetExecutor sets the agent executor
-func (t *TaskTool) SetExecutor(executor AgentExecutor) {
+func (t *AgentTool) SetExecutor(executor AgentExecutor) {
 	t.Executor = executor
 }
 
 // PreparePermission prepares a permission request with agent metadata
-func (t *TaskTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*permission.PermissionRequest, error) {
-	// Get agent type
-	agentType, ok := params["subagent_type"].(string)
-	if !ok || agentType == "" {
-		return nil, fmt.Errorf("subagent_type is required")
+func (t *AgentTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*permission.PermissionRequest, error) {
+	// Get agent type (default to "general-purpose" if not specified)
+	agentType, _ := params["subagent_type"].(string)
+	if agentType == "" {
+		agentType = "general-purpose"
 	}
 
 	// Get prompt
@@ -164,23 +169,23 @@ func (t *TaskTool) PreparePermission(ctx context.Context, params map[string]any,
 }
 
 // ExecuteApproved executes the agent after user approval
-func (t *TaskTool) ExecuteApproved(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
+func (t *AgentTool) ExecuteApproved(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	return t.execute(ctx, params, cwd)
 }
 
 // Execute implements the Tool interface
-func (t *TaskTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
+func (t *AgentTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	return t.execute(ctx, params, cwd)
 }
 
 // execute is the internal implementation
-func (t *TaskTool) execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
+func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
-	// Get agent type
-	agentType, ok := params["subagent_type"].(string)
-	if !ok || agentType == "" {
-		return ui.NewErrorResult(t.Name(), "subagent_type is required")
+	// Get agent type (default to "general-purpose" if not specified)
+	agentType, _ := params["subagent_type"].(string)
+	if agentType == "" {
+		agentType = "general-purpose"
 	}
 
 	// Get prompt
@@ -191,9 +196,13 @@ func (t *TaskTool) execute(ctx context.Context, params map[string]any, cwd strin
 
 	// Get optional parameters
 	description, _ := params["description"].(string)
+	agentName, _ := params["name"].(string)
 	runBackground, _ := params["run_in_background"].(bool)
-	resumeID, _ := params["resume"].(string)
 	model, _ := params["model"].(string)
+	mode, _ := params["mode"].(string)
+	resumeID, _ := params["resume"].(string)
+	isolation, _ := params["isolation"].(string)
+	teamName, _ := params["team_name"].(string)
 
 	// Get progress callback (set by TUI)
 	var onProgress ProgressFunc
@@ -215,13 +224,16 @@ func (t *TaskTool) execute(ctx context.Context, params map[string]any, cwd strin
 	// Build request
 	req := AgentExecRequest{
 		Agent:       agentType,
+		Name:        agentName,
 		Prompt:      prompt,
 		Description: description,
 		Background:  runBackground,
-		ResumeID:    resumeID,
 		Model:       model,
 		MaxTurns:    maxTurns,
-		Cwd:         cwd,
+		Mode:        mode,
+		ResumeID:    resumeID,
+		Isolation:   isolation,
+		TeamName:    teamName,
 		OnProgress:  onProgress,
 	}
 
@@ -235,7 +247,7 @@ func (t *TaskTool) execute(ctx context.Context, params map[string]any, cwd strin
 		duration := time.Since(start)
 		return ui.ToolResult{
 			Success: true,
-			Output: fmt.Sprintf("Agent started in background.\nTask ID: %s\nAgent: %s\nDescription: %s\n\nUse TaskOutput with task_id=\"%s\" to check the result.",
+			Output: fmt.Sprintf("Agent started in background.\nTask ID: %s\nAgent: %s\nDescription: %s\n\nUse AgentOutput with task_id=\"%s\" to check the result.",
 				taskInfo.TaskID, taskInfo.AgentName, description, taskInfo.TaskID),
 			Metadata: ui.ResultMetadata{
 				Title:    t.Name(),
@@ -269,19 +281,33 @@ func (t *TaskTool) execute(ctx context.Context, params map[string]any, cwd strin
 	}
 
 	// Format output with structured metadata for TUI rendering
-	agentName := result.AgentName
-	if agentName == "" {
-		agentName = agentType
+	displayName := result.AgentName
+	if displayName == "" {
+		displayName = agentType
 	}
 	agentDuration := result.Duration
 	if agentDuration == 0 {
 		agentDuration = duration
 	}
 	var outputBuilder strings.Builder
-	fmt.Fprintf(&outputBuilder, "Agent: %s\nTurns: %d\nToolUses: %d\nTokens: %d\nDuration: %s\n",
-		agentName, result.TurnCount, result.ToolUses, result.TotalTokens, formatDuration(agentDuration))
+	fmt.Fprintf(&outputBuilder, "Agent: %s\nModel: %s\nTurns: %d\nToolUses: %d\nTokens: %d\nDuration: %s\n",
+		displayName, result.Model, result.TurnCount, result.ToolUses, result.TotalTokens, formatDuration(agentDuration))
+	if result.AgentID != "" {
+		fmt.Fprintf(&outputBuilder, "AgentID: %s\n", result.AgentID)
+	}
+
+	// Include process count as metadata, then process lines + response after blank line
+	if len(result.Progress) > 0 {
+		fmt.Fprintf(&outputBuilder, "Process: %d\n", len(result.Progress))
+	}
+	outputBuilder.WriteString("\n")
+	if len(result.Progress) > 0 {
+		for _, p := range result.Progress {
+			outputBuilder.WriteString(p)
+			outputBuilder.WriteString("\n")
+		}
+	}
 	if result.Content != "" {
-		outputBuilder.WriteString("\n")
 		outputBuilder.WriteString(result.Content)
 	}
 
@@ -311,5 +337,5 @@ func formatDuration(d time.Duration) string {
 }
 
 func init() {
-	Register(NewTaskTool())
+	Register(NewAgentTool())
 }

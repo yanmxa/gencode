@@ -25,7 +25,7 @@ func (m model) View() string {
 	todoView := m.renderTodoList()
 	todoPrefix := ""
 	if todoView != "" {
-		todoPrefix = strings.TrimSuffix(todoView, "\n") + "\n"
+		todoPrefix = "\n" + strings.TrimSuffix(todoView, "\n") + "\n"
 	}
 
 	if m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive() {
@@ -57,7 +57,7 @@ func (m model) View() string {
 	}
 
 	if todoView != "" {
-		parts = append(parts, strings.TrimSuffix(todoView, "\n"))
+		parts = append(parts, "\n"+strings.TrimSuffix(todoView, "\n"))
 	}
 
 	if pendingImagesView != "" {
@@ -79,12 +79,14 @@ func (m model) View() string {
 	statusLine := m.renderModeStatus()
 	suggestions := m.input.Suggestions.Render(m.width)
 
+	topSeparator := separator
+
 	var view strings.Builder
 	if chatSection != "" {
 		view.WriteString(chatSection)
 	}
 	view.WriteString("\n")
-	view.WriteString(separator)
+	view.WriteString(topSeparator)
 	view.WriteString("\n")
 	view.WriteString(inputView)
 	if suggestions != "" {
@@ -128,7 +130,11 @@ func (m model) renderActiveSelector() string {
 }
 
 // renderTodoList renders a compact task list above the input area.
+// Returns empty string when task display is toggled off via Ctrl+T.
 func (m model) renderTodoList() string {
+	if !m.showTasks {
+		return ""
+	}
 	return render.RenderTodoList(render.TodoListParams{
 		StreamActive: m.conv.Stream.Active,
 		Width:        m.width,
@@ -296,14 +302,15 @@ func (m model) renderToolResult(msg message.ChatMessage) string {
 func (m model) renderAssistantMessage(msg message.ChatMessage, idx int, isLast bool) string {
 	// Render the base assistant message (thinking + content)
 	base := render.RenderAssistantMessage(render.AssistantParams{
-		Content:      msg.Content,
-		Thinking:     msg.Thinking,
-		ToolCalls:    msg.ToolCalls,
-		StreamActive: m.conv.Stream.Active,
-		IsLast:       isLast,
-		SpinnerView:  m.output.Spinner.View(),
-		MDRenderer:   m.output.MDRenderer,
-		Width:        m.width,
+		Content:       msg.Content,
+		Thinking:      msg.Thinking,
+		ToolCalls:     msg.ToolCalls,
+		StreamActive:  m.conv.Stream.Active,
+		IsLast:        isLast,
+		SpinnerView:   m.output.Spinner.View(),
+		MDRenderer:    m.output.MDRenderer,
+		Width:         m.width,
+		ExecutingTool: m.getExecutingToolName(),
 	})
 
 	if len(msg.ToolCalls) == 0 {
@@ -348,6 +355,8 @@ func (m model) renderAssistantMessage(msg message.ChatMessage, idx int, isLast b
 		TaskProgress:      m.output.TaskProgress,
 		PendingCalls:      m.tool.PendingCalls,
 		SpinnerView:       m.output.Spinner.View(),
+		TaskOwnerMap:      m.buildTaskOwnerMap(),
+		MDRenderer:        m.output.MDRenderer,
 	}))
 
 	return sb.String()
@@ -378,12 +387,41 @@ func (m model) renderPendingToolSpinner() string {
 	})
 }
 
+// getExecutingToolName returns the name of the tool currently being executed, or "".
+func (m model) getExecutingToolName() string {
+	if m.conv.Stream.BuildingTool != "" {
+		return m.conv.Stream.BuildingTool
+	}
+	if m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls) {
+		return m.tool.PendingCalls[m.tool.CurrentIdx].Name
+	}
+	return ""
+}
+
 // hasParallelTaskTools returns true if any pending tool call is a Task tool.
 func (m model) hasParallelTaskTools() bool {
 	for _, tc := range m.tool.PendingCalls {
-		if tc.Name == "Task" {
+		if tc.Name == tool.ToolAgent {
 			return true
 		}
 	}
 	return false
+}
+
+// buildTaskOwnerMap builds a map of task ID → owner name for TaskGet display.
+func (m model) buildTaskOwnerMap() map[string]string {
+	tasks := tool.DefaultTodoStore.List()
+	if len(tasks) == 0 {
+		return nil
+	}
+	ownerMap := make(map[string]string, len(tasks))
+	for _, t := range tasks {
+		if t.Owner != "" {
+			ownerMap[t.ID] = t.Owner
+		}
+	}
+	if len(ownerMap) == 0 {
+		return nil
+	}
+	return ownerMap
 }

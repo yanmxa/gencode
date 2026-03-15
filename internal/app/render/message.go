@@ -12,6 +12,7 @@ import (
 
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
@@ -21,6 +22,10 @@ const (
 
 	// AutoCompactThreshold is the percentage of context usage that triggers auto-compact.
 	AutoCompactThreshold = 95
+
+	// agentContentIndent is the extra indent for agent prompt/response content
+	// beyond ToolResultExpandedStyle's PaddingLeft(4). Total indent = 4 + 4 = 8 chars.
+	agentContentIndent = "    "
 )
 
 // RenderWelcome renders the welcome screen.
@@ -32,7 +37,7 @@ func RenderWelcome() string {
 	icon := bracketStyle.Render("   < ") +
 		genStyle.Render("GEN") +
 		slashStyle.Render(" ✦ ") +
-		slashStyle.Render("/") +
+		slashStyle.Render("/ ") +
 		bracketStyle.Render(">")
 
 	return "\n" + icon
@@ -217,13 +222,17 @@ type AssistantParams struct {
 	IsLast            bool
 	SpinnerView       string
 	MDRenderer        *MDRenderer
-	Width             int // terminal width for word wrapping
+	Width             int    // terminal width for word wrapping
+	ExecutingTool     string // tool name currently being executed (for spinner display)
 }
 
 // RenderAssistantMessage renders an assistant message with thinking, content, and tool calls.
 func RenderAssistantMessage(params AssistantParams) string {
 	var sb strings.Builder
 	aiIcon := AIPromptStyle.Render("● ")
+	if params.StreamActive && params.IsLast {
+		aiIcon = AIPromptStyle.Render(params.SpinnerView + " ")
+	}
 	aiIndent := "  "
 
 	// Display thinking content (reasoning_content) if available
@@ -255,9 +264,12 @@ func RenderAssistantMessage(params AssistantParams) string {
 
 // FormatAssistantContent formats the assistant message content based on streaming state.
 func FormatAssistantContent(params AssistantParams) string {
-	// Waiting for response with no content yet
+	// Waiting for response with no content yet — show "Thinking..." or tool execution status
 	if params.Content == "" && len(params.ToolCalls) == 0 && params.StreamActive && params.Thinking == "" {
-		return ThinkingStyle.Render(params.SpinnerView + " Thinking...")
+		if params.ExecutingTool != "" {
+			return ThinkingStyle.Render(GetToolExecutionDesc(params.ExecutingTool))
+		}
+		return ThinkingStyle.Render("Thinking...")
 	}
 
 	// Streaming in progress - show cursor
@@ -303,14 +315,19 @@ type ToolCallsParams struct {
 	PendingCalls []message.ToolCall
 	// SpinnerView is the current spinner frame.
 	SpinnerView string
+	// TaskOwnerMap maps task ID to owner name for better TaskGet display.
+	TaskOwnerMap map[string]string
+	// MDRenderer for rendering markdown in agent results.
+	MDRenderer *MDRenderer
 }
 
 // ToolResultData holds the data needed to render a tool result inline.
 type ToolResultData struct {
-	ToolName string
-	Content  string
-	IsError  bool
-	Expanded bool
+	ToolName  string
+	Content   string
+	IsError   bool
+	Expanded  bool
+	ToolInput string // Original tool call input JSON (for Agent expanded view)
 }
 
 // RenderToolCalls renders the tool calls section of an assistant message.
@@ -318,8 +335,31 @@ func RenderToolCalls(params ToolCallsParams) string {
 	var sb strings.Builder
 
 	for _, tc := range params.ToolCalls {
-		if params.ToolCallsExpanded {
-			toolLine := ToolCallStyle.Render(fmt.Sprintf("⚙ %s", tc.Name))
+		// Hide task management tools from conversation stream — visible in the todo panel
+		switch tc.Name {
+		case tool.ToolTaskList, tool.ToolTaskCreate, tool.ToolTaskUpdate:
+			continue
+		}
+		// Agent tool has its own rendering logic
+		if tc.Name == tool.ToolAgent {
+			label := FormatAgentLabel(tc.Input)
+			_, hasResult := params.ResultMap[tc.ID]
+			if hasResult {
+				sb.WriteString(ToolCallStyle.Render(fmt.Sprintf("● %s", label)) + "\n")
+			} else {
+				sb.WriteString(ToolCallStyle.Render(fmt.Sprintf("%s %s", params.SpinnerView, label)))
+				if !params.ToolCallsExpanded {
+					sb.WriteString(ThinkingStyle.Render("  (ctrl+o to expand)"))
+				}
+				sb.WriteString("\n")
+			}
+			// Expanded: show agent definition + prompt (only when no result yet;
+			// once complete, the expanded result view shows it instead)
+			if params.ToolCallsExpanded && !hasResult {
+				sb.WriteString(formatAgentDefinition(tc.Input))
+			}
+		} else if params.ToolCallsExpanded {
+			toolLine := ToolCallStyle.Render(fmt.Sprintf("● %s", tc.Name))
 			sb.WriteString(toolLine + "\n")
 			var p map[string]any
 			if err := json.Unmarshal([]byte(tc.Input), &p); err == nil {
@@ -335,23 +375,26 @@ func RenderToolCalls(params ToolCallsParams) string {
 				}
 			}
 		} else {
-			// Special formatting for Task tool
-			if tc.Name == "Task" {
-				toolLine := FormatTaskToolCall(tc.Input)
-				sb.WriteString(ToolCallStyle.Render(toolLine) + "\n")
+			if tc.Name == tool.ToolTaskGet && params.TaskOwnerMap != nil {
+				// Show owner name instead of raw task ID
+				args := extractTaskGetDisplay(tc.Input, params.TaskOwnerMap)
+				toolLine := ToolCallStyle.Render(fmt.Sprintf("● %s(%s)", tc.Name, args))
+				sb.WriteString(toolLine + "\n")
 			} else {
 				args := ExtractToolArgs(tc.Input)
-				toolLine := ToolCallStyle.Render(fmt.Sprintf("⚙ %s(%s)", tc.Name, args))
+				toolLine := ToolCallStyle.Render(fmt.Sprintf("● %s(%s)", tc.Name, args))
 				sb.WriteString(toolLine + "\n")
 			}
 		}
 
 		// Render the corresponding result inline if found
 		if resultData, ok := params.ResultMap[tc.ID]; ok {
-			sb.WriteString(RenderToolResultInline(resultData, nil))
-		} else if params.ParallelMode && tc.Name == "Task" {
-			// Parallel mode: show live progress inline under each Task
-			sb.WriteString(RenderTaskProgressInline(tc, params.PendingCalls, params.ParallelResults, params.TaskProgress, params.SpinnerView))
+			// Pass tool call input so expanded Agent results can show prompt/model
+			resultData.ToolInput = tc.Input
+			sb.WriteString(RenderToolResultInline(resultData, params.MDRenderer))
+		} else if params.ParallelMode && tc.Name == tool.ToolAgent {
+			// Parallel mode: show live progress inline under each Agent
+			sb.WriteString(RenderTaskProgressInline(tc, params.PendingCalls, params.ParallelResults, params.TaskProgress))
 		}
 	}
 
@@ -366,18 +409,18 @@ func RenderToolResultInline(data ToolResultData, mdRenderer *MDRenderer) string 
 	}
 
 	// Special handling for Skill tool
-	if toolName == "Skill" {
+	if toolName == tool.ToolSkill {
 		return RenderSkillResultInline(data)
 	}
 
 	// Special handling for Task tool
-	if toolName == "Task" {
-		return RenderTaskResultInline(data)
+	if toolName == tool.ToolAgent {
+		return RenderTaskResultInline(data, mdRenderer)
 	}
 
-	// Special handling for TaskOutput
-	if toolName == "TaskOutput" {
-		return RenderTaskOutputResultInline(data)
+	// Special handling for AgentOutput
+	if toolName == tool.ToolAgentOutput {
+		return RenderAgentOutputResultInline(data)
 	}
 
 	sizeInfo := FormatToolResultSize(toolName, data.Content)
@@ -448,69 +491,137 @@ func RenderSkillResultInline(data ToolResultData) string {
 }
 
 // RenderTaskResultInline renders a Task tool result with agent-specific formatting.
-func RenderTaskResultInline(data ToolResultData) string {
+func RenderTaskResultInline(data ToolResultData, mdRenderer *MDRenderer) string {
 	icon := toolResultIcon(data.IsError)
 
 	var sb strings.Builder
 	content := data.Content
 
 	if data.IsError {
-		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  Task → Error", icon)) + "\n")
+		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  Agent → Error", icon)) + "\n")
 		sb.WriteString(ToolResultExpandedStyle.Render("    "+content) + "\n")
 		return sb.String()
 	}
 
 	// Parse task info using helper
-	agentName := ExtractField(content, "Agent: ", "Agent")
 	taskID := ExtractField(content, "Task ID: ", "")
 	isBackground := strings.Contains(content, "started in background")
 
 	if isBackground && taskID != "" {
-		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  %s → background", icon, agentName)) + "\n")
-		sb.WriteString(ToolResultExpandedStyle.Render(fmt.Sprintf("     Task ID: %s", taskID)) + "\n")
-		sb.WriteString(ToolResultExpandedStyle.Render(fmt.Sprintf("     Check:   TaskOutput(\"%s\")", taskID)) + "\n")
-	} else {
-		// Build stats summary: (N tool uses, XYk tokens, Nm Ns)
-		toolUses := ExtractIntField(content, "ToolUses: ")
-		tokens := ExtractIntField(content, "Tokens: ")
-		duration := ExtractField(content, "Duration: ", "")
-
-		var stats []string
-		if toolUses > 0 {
-			stats = append(stats, fmt.Sprintf("%d tool uses", toolUses))
-		}
-		if tokens > 0 {
-			stats = append(stats, FormatTokenCount(tokens)+" tokens")
-		}
-		if duration != "" {
-			stats = append(stats, duration)
-		}
-
-		agentLine := fmt.Sprintf("  %s  %s → Done", icon, agentName)
-		if len(stats) > 0 {
-			agentLine += " (" + strings.Join(stats, " · ") + ")"
-		}
-		sb.WriteString(ToolResultStyle.Render(agentLine) + "\n")
+		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  → background (Task ID: %s)", icon, taskID)) + "\n")
+		return sb.String()
 	}
 
-	if data.Expanded {
-		for line := range strings.SplitSeq(content, "\n") {
-			sb.WriteString(ToolResultExpandedStyle.Render("    "+line) + "\n")
+	// Parse stats
+	toolUses := ExtractIntField(content, "ToolUses: ")
+	tokens := ExtractIntField(content, "Tokens: ")
+	duration := ExtractField(content, "Duration: ", "")
+	resultModel := ExtractField(content, "Model: ", "\n")
+	doneStats := buildDoneStats(toolUses, tokens, duration, resultModel)
+
+	if !data.Expanded {
+		// Collapsed: one-line summary
+		resultLine := fmt.Sprintf("  %s  Done", icon)
+		if doneStats != "" {
+			resultLine += " (" + doneStats + ")"
+		}
+		sb.WriteString(ToolResultStyle.Render(resultLine))
+		sb.WriteString(ThinkingStyle.Render("  (ctrl+o to expand)") + "\n")
+		return sb.String()
+	}
+
+	// Show agent definition (prompt) when expanded
+	if data.ToolInput != "" {
+		sb.WriteString(formatAgentDefinition(data.ToolInput))
+	}
+
+	// Split content into header (metadata) and body (process lines + response)
+	body := ""
+	if _, rest, found := strings.Cut(content, "\n\n"); found {
+		body = rest
+	}
+
+	// Use "Process: N" metadata field to split process lines from response
+	processCount := ExtractIntField(content, "Process: ")
+	process, response := splitByProcessCount(body, processCount)
+
+	// Process section: intermediate tool calls the agent made
+	if process != "" {
+		for line := range strings.SplitSeq(process, "\n") {
+			sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  ⎿  %s", line)) + "\n")
 		}
 	}
+
+	// Response section — render markdown with narrower width to fit indented container.
+	// Content indent = ToolResultExpandedStyle.PaddingLeft(4) + agentContentIndent = 8 chars total.
+	if response != "" {
+		sb.WriteString(AgentLabelStyle.Render("  ⎿  Response:") + "\n")
+		rendered := response
+		if mdRenderer != nil {
+			narrowRenderer := NewMDRenderer(mdRenderer.width - len(agentContentIndent))
+			if md, err := narrowRenderer.Render(response); err == nil {
+				rendered = strings.TrimSpace(md)
+			}
+		}
+		for line := range strings.SplitSeq(rendered, "\n") {
+			sb.WriteString(ToolResultExpandedStyle.Render(agentContentIndent+line) + "\n")
+		}
+	}
+
+	// Done line at the bottom
+	resultLine := "  ⎿  Done"
+	if doneStats != "" {
+		resultLine += " (" + doneStats + ")"
+	}
+	sb.WriteString(ToolResultStyle.Render(resultLine) + "\n")
 
 	return sb.String()
 }
 
-// RenderTaskOutputResultInline renders a TaskOutput result with agent-specific formatting.
-func RenderTaskOutputResultInline(data ToolResultData) string {
+// stripMarkdownHeading removes leading `#` markers from markdown headings.
+// "### Title" → "Title", "## Section" → "Section", non-headings pass through unchanged.
+func stripMarkdownHeading(line string) string {
+	trimmed := strings.TrimLeft(line, " ")
+	if !strings.HasPrefix(trimmed, "#") {
+		return line
+	}
+	// Strip all leading '#' and one optional space after them
+	stripped := strings.TrimLeft(trimmed, "#")
+	stripped = strings.TrimPrefix(stripped, " ")
+	// Preserve original leading whitespace
+	indent := line[:len(line)-len(trimmed)]
+	return indent + stripped
+}
+
+// splitByProcessCount splits body into process lines and response using a known line count.
+// The first processCount lines are process (tool progress), the rest is the response.
+func splitByProcessCount(body string, processCount int) (process, response string) {
+	if body == "" {
+		return "", ""
+	}
+	if processCount <= 0 {
+		return "", strings.TrimSpace(body)
+	}
+
+	lines := strings.SplitN(body, "\n", processCount+1)
+	if len(lines) <= processCount {
+		// All lines are process, no response
+		return strings.TrimSpace(strings.Join(lines, "\n")), ""
+	}
+	processLines := lines[:processCount]
+	rest := lines[processCount]
+	return strings.TrimSpace(strings.Join(processLines, "\n")), strings.TrimSpace(rest)
+}
+
+// RenderAgentOutputResultInline renders a AgentOutput result with agent-specific formatting.
+func RenderAgentOutputResultInline(data ToolResultData) string {
 	icon := toolResultIcon(data.IsError)
 
 	var sb strings.Builder
 	content := data.Content
 
 	if data.IsError {
-		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  TaskOutput → Error", icon)) + "\n")
+		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  AgentOutput → Error", icon)) + "\n")
 		if content != "" {
 			sb.WriteString(ToolResultExpandedStyle.Render("    "+content) + "\n")
 		}
@@ -538,7 +649,7 @@ func RenderTaskOutputResultInline(data ToolResultData) string {
 		summaryText = strings.Join(info, ", ")
 	}
 
-	sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  TaskOutput → %s", icon, summaryText)) + "\n")
+	sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  AgentOutput → %s", icon, summaryText)) + "\n")
 
 	// Show output content if present
 	if _, outputContent, found := strings.Cut(content, "Output:\n"); found {
@@ -554,7 +665,7 @@ func RenderTaskOutputResultInline(data ToolResultData) string {
 				sb.WriteString(ToolResultExpandedStyle.Render("    ...") + "\n")
 				break
 			}
-			sb.WriteString(ToolResultExpandedStyle.Render("    "+line) + "\n")
+			sb.WriteString(ToolResultExpandedStyle.Render("    "+stripMarkdownHeading(line)) + "\n")
 		}
 	}
 
@@ -662,7 +773,7 @@ func ExtractIntField(content, prefix string) int {
 // GetToolExecutionDesc returns a human-readable description for a tool being executed.
 func GetToolExecutionDesc(toolName string) string {
 	switch toolName {
-	case "ExitPlanMode":
+	case tool.ToolExitPlanMode:
 		return "Preparing implementation plan..."
 	case "Read":
 		return "Reading file..."
@@ -682,22 +793,76 @@ func GetToolExecutionDesc(toolName string) string {
 		return "Searching the web..."
 	case "AskUserQuestion":
 		return "Preparing question..."
-	case "Skill":
+	case tool.ToolSkill:
 		return "Loading skill..."
 	default:
 		return "Executing..."
 	}
 }
 
-// FormatTaskToolCall formats a Task tool call with agent type and description.
-func FormatTaskToolCall(input string) string {
+// formatAgentDefinition renders the agent definition block for expanded view.
+// Shows agent type, prompt, and optional parameters extracted from tool call input.
+// Uses ⎿ prefix with accent color for labels to distinguish from progress lines.
+func formatAgentDefinition(input string) string {
 	var params map[string]any
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
-		return "⚙ Task(...)"
+		return ""
+	}
+
+	var sb strings.Builder
+
+	// Show optional params (model is shown in the Done line instead)
+	var meta []string
+	if mode, ok := params["mode"].(string); ok && mode != "" {
+		meta = append(meta, fmt.Sprintf("mode=%s", mode))
+	}
+	if bg, ok := params["run_in_background"].(bool); ok && bg {
+		meta = append(meta, "background")
+	}
+	if len(meta) > 0 {
+		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  ⎿  [%s]", strings.Join(meta, ", "))) + "\n")
+	}
+
+	// Prompt — use accent style for label, indented content on next level
+	if prompt, ok := params["prompt"].(string); ok && prompt != "" {
+		sb.WriteString(AgentLabelStyle.Render("  ⎿  Prompt:") + "\n")
+		for line := range strings.SplitSeq(prompt, "\n") {
+			sb.WriteString(ToolResultExpandedStyle.Render(agentContentIndent+line) + "\n")
+		}
+	}
+
+	return sb.String()
+}
+
+// buildDoneStats builds the stats string for the Done line (e.g. "1 tool use · 13.2k tokens · 12s · claude-sonnet-4-6").
+func buildDoneStats(toolUses, tokens int, duration, model string) string {
+	var stats []string
+	if toolUses == 1 {
+		stats = append(stats, "1 tool use")
+	} else if toolUses > 1 {
+		stats = append(stats, fmt.Sprintf("%d tool uses", toolUses))
+	}
+	if tokens > 0 {
+		stats = append(stats, FormatTokenCount(tokens)+" tokens")
+	}
+	if duration != "" {
+		stats = append(stats, duration)
+	}
+	if model != "" {
+		stats = append(stats, model)
+	}
+	return strings.Join(stats, " · ")
+}
+
+// FormatAgentLabel formats an Agent tool call as "AgentType: description" (no icon prefix).
+func FormatAgentLabel(input string) string {
+	var params map[string]any
+	if err := json.Unmarshal([]byte(input), &params); err != nil {
+		return "Agent"
 	}
 
 	agentType := "Agent"
-	if a, ok := params["subagent_type"].(string); ok {
+	if a, ok := params["subagent_type"].(string); ok && a != "" {
 		agentType = a
 	}
 
@@ -711,18 +876,27 @@ func FormatTaskToolCall(input string) string {
 		}
 	}
 
-	bgSuffix := ""
-	if bg, ok := params["run_in_background"].(bool); ok && bg {
-		bgSuffix = " ⏳"
-	}
-
 	if desc != "" {
-		return fmt.Sprintf("⚙ Task(%s: %s)%s", agentType, desc, bgSuffix)
+		return fmt.Sprintf("%s: %s", agentType, desc)
 	}
-	return fmt.Sprintf("⚙ Task(%s)%s", agentType, bgSuffix)
+	return agentType
 }
 
 // ExtractToolArgs extracts the most relevant argument from a tool call input JSON.
+// extractTaskGetDisplay returns owner name for a TaskGet call if available,
+// falling back to the raw task ID.
+func extractTaskGetDisplay(input string, ownerMap map[string]string) string {
+	var params map[string]any
+	if err := json.Unmarshal([]byte(input), &params); err != nil {
+		return ""
+	}
+	id, _ := params["taskId"].(string)
+	if owner, ok := ownerMap[id]; ok && owner != "" {
+		return owner
+	}
+	return id
+}
+
 func ExtractToolArgs(input string) string {
 	var params map[string]any
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
@@ -800,8 +974,11 @@ func FormatTokenCount(count int) string {
 	if count >= 1000000 {
 		return fmt.Sprintf("%.1fM", float64(count)/1000000)
 	}
+	if count >= 10000 {
+		return fmt.Sprintf("%.1fk", float64(count)/1000)
+	}
 	if count >= 1000 {
-		return fmt.Sprintf("%dK", count/1000)
+		return fmt.Sprintf("%.1fk", float64(count)/1000)
 	}
 	return fmt.Sprintf("%d", count)
 }

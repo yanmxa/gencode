@@ -79,7 +79,7 @@ func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
 		m.applyAllowAllPermission(msg.Request.ToolName)
 	}
 
-	if msg.Request != nil && msg.Request.ToolName == "Task" {
+	if msg.Request != nil && msg.Request.ToolName == "Agent" {
 		m.output.TaskProgress = nil
 		return tea.Batch(
 			apptool.ExecuteApproved(m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd),
@@ -100,7 +100,7 @@ func (m *model) applyAllowAllPermission(toolName string) {
 		m.mode.SessionPermissions.AllowAllBash = true
 	case "Skill":
 		m.mode.SessionPermissions.AllowAllSkills = true
-	case "Task":
+	case "Agent":
 		m.mode.SessionPermissions.AllowAllTasks = true
 	default:
 		m.mode.SessionPermissions.AllowTool(toolName)

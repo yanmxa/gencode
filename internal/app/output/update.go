@@ -18,9 +18,6 @@ func (m *Model) HandleProgress(msg progress.UpdateMsg) tea.Cmd {
 		m.TaskProgress = make(map[int][]string)
 	}
 	m.TaskProgress[msg.Index] = append(m.TaskProgress[msg.Index], msg.Message)
-	if len(m.TaskProgress[msg.Index]) > 5 {
-		m.TaskProgress[msg.Index] = m.TaskProgress[msg.Index][1:]
-	}
 
 	return tea.Batch(m.Spinner.Tick, progress.Check())
 }

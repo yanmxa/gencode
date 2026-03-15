@@ -43,6 +43,9 @@ func (m *model) handleStreamChunk(msg appconv.ChunkMsg) tea.Cmd {
 func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 	m.conv.Stream.BuildingTool = ""
 
+	// Increment turns-since-last-task-tool counter for nudge system
+	m.conv.TurnsSinceLastTaskTool++
+
 	if msg.Usage != nil {
 		m.provider.InputTokens = msg.Usage.InputTokens
 		m.provider.OutputTokens = msg.Usage.OutputTokens

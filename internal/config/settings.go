@@ -150,7 +150,7 @@ func (sp *SessionPermissions) IsToolAllowed(toolName string) bool {
 	if toolName == "Skill" && sp.AllowAllSkills {
 		return true
 	}
-	if toolName == "Task" && sp.AllowAllTasks {
+	if toolName == "Agent" && sp.AllowAllTasks {
 		return true
 	}
 	return false

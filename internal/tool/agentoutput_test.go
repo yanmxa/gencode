@@ -9,7 +9,7 @@ import (
 	"github.com/yanmxa/gencode/internal/task"
 )
 
-func TestTaskOutputTool_StillRunning(t *testing.T) {
+func TestAgentOutputTool_StillRunning(t *testing.T) {
 	// Create a test agent task that stays running
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -23,7 +23,7 @@ func TestTaskOutputTool_StillRunning(t *testing.T) {
 	defer task.DefaultManager.Remove("test-agent-123")
 
 	// Execute TaskOutput with short timeout
-	tool := &TaskOutputTool{}
+	tool := &AgentOutputTool{}
 	result := tool.Execute(context.Background(), map[string]any{
 		"task_id": "test-agent-123",
 		"block":   true,
@@ -48,16 +48,16 @@ func TestTaskOutputTool_StillRunning(t *testing.T) {
 		t.Errorf("Expected 'Options:' in output, got: %s", result.Output)
 	}
 
-	if !strings.Contains(result.Output, "TaskOutput") {
-		t.Errorf("Expected TaskOutput suggestion in output, got: %s", result.Output)
+	if !strings.Contains(result.Output, "AgentOutput") {
+		t.Errorf("Expected AgentOutput suggestion in output, got: %s", result.Output)
 	}
 
-	if !strings.Contains(result.Output, "TaskStop") {
-		t.Errorf("Expected TaskStop suggestion in output, got: %s", result.Output)
+	if !strings.Contains(result.Output, "AgentStop") {
+		t.Errorf("Expected AgentStop suggestion in output, got: %s", result.Output)
 	}
 }
 
-func TestTaskOutputTool_Completed(t *testing.T) {
+func TestAgentOutputTool_Completed(t *testing.T) {
 	// Create a test agent task and complete it
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -72,7 +72,7 @@ func TestTaskOutputTool_Completed(t *testing.T) {
 	defer task.DefaultManager.Remove("test-agent-456")
 
 	// Execute TaskOutput
-	tool := &TaskOutputTool{}
+	tool := &AgentOutputTool{}
 	result := tool.Execute(context.Background(), map[string]any{
 		"task_id": "test-agent-456",
 		"block":   true,
@@ -94,8 +94,8 @@ func TestTaskOutputTool_Completed(t *testing.T) {
 	}
 }
 
-func TestTaskOutputTool_NotFound(t *testing.T) {
-	tool := &TaskOutputTool{}
+func TestAgentOutputTool_NotFound(t *testing.T) {
+	tool := &AgentOutputTool{}
 	result := tool.Execute(context.Background(), map[string]any{
 		"task_id": "nonexistent-task",
 		"block":   false,
@@ -110,7 +110,7 @@ func TestTaskOutputTool_NotFound(t *testing.T) {
 	}
 }
 
-func TestTaskOutputTool_NonBlocking(t *testing.T) {
+func TestAgentOutputTool_NonBlocking(t *testing.T) {
 	// Create a running task
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -122,7 +122,7 @@ func TestTaskOutputTool_NonBlocking(t *testing.T) {
 	defer task.DefaultManager.Remove("test-agent-789")
 
 	// Execute with block=false
-	tool := &TaskOutputTool{}
+	tool := &AgentOutputTool{}
 	start := time.Now()
 	result := tool.Execute(context.Background(), map[string]any{
 		"task_id": "test-agent-789",

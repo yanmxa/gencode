@@ -46,6 +46,31 @@ func (denyAll) Check(_ string, _ map[string]any) Decision { return Reject }
 // DenyAll returns a Checker that always rejects.
 func DenyAll() Checker { return denyAll{} }
 
+type acceptEdits struct{}
+
+func (acceptEdits) Check(name string, _ map[string]any) Decision {
+	// Auto-approve read tools and file editing tools
+	if IsReadOnlyTool(name) || isEditTool(name) {
+		return Permit
+	}
+	return Prompt
+}
+
+// AcceptEdits returns a Checker that auto-approves reads and edits but prompts for others.
+func AcceptEdits() Checker { return acceptEdits{} }
+
+// Auto returns a Checker equivalent to PermitAll (auto-determines best level).
+func Auto() Checker { return permitAll{} }
+
+// isEditTool checks if a tool is a file editing tool.
+func isEditTool(name string) bool {
+	switch name {
+	case "Edit", "Write", "NotebookEdit":
+		return true
+	}
+	return false
+}
+
 // readOnlyTools is the set of tools that only read data without modifications.
 var readOnlyTools = map[string]bool{
 	"Read":      true,

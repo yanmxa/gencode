@@ -90,7 +90,7 @@ func executeToolAsync(tc message.ToolCall, index int, cwd string, settings *conf
 			return newResult(tc, index, "Error parsing tool input: "+err.Error(), true)
 		}
 
-		if tc.Name == "Task" {
+		if tc.Name == "Agent" {
 			idx := index
 			params["_onProgress"] = coretool.ProgressFunc(func(msg string) {
 				progress.SendForAgent(idx, msg)
@@ -239,7 +239,7 @@ func ExecuteApproved(toolCalls []message.ToolCall, idx int, cwd string) tea.Cmd 
 			return newResult(tc, idx, "Error parsing tool input: "+err.Error(), true)
 		}
 
-		if tc.Name == "Task" {
+		if tc.Name == "Agent" {
 			agentIdx := idx
 			params["_onProgress"] = coretool.ProgressFunc(func(msg string) {
 				progress.SendForAgent(agentIdx, msg)
@@ -292,7 +292,7 @@ func ExecuteInteractive[T any](tc message.ToolCall, response T, cwd string) tea.
 
 // RequiresUserInteraction checks if a tool call needs user approval.
 func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool) bool {
-	if planMode && tc.Name == "Task" {
+	if planMode && tc.Name == "Agent" {
 		return false
 	}
 
@@ -306,8 +306,15 @@ func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, ses
 		return true
 	}
 
+	// Check settings + session permissions first.
+	// If explicitly allowed (e.g., "allow all agents this session"),
+	// skip the tool's built-in permission requirement.
 	if settings != nil {
-		if settings.CheckPermission(tc.Name, params, sessionPerms) == config.PermissionAsk {
+		perm := settings.CheckPermission(tc.Name, params, sessionPerms)
+		switch perm {
+		case config.PermissionAllow:
+			return false // session/settings explicitly allow — no interaction needed
+		case config.PermissionAsk:
 			return true
 		}
 	}
