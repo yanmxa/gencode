@@ -926,9 +926,6 @@ func ExtractToolArgs(input string) string {
 	sort.Strings(keys)
 	for _, k := range keys {
 		if s, ok := params[k].(string); ok {
-			if len(s) > 60 {
-				return s[:60] + "..."
-			}
 			return s
 		}
 	}
