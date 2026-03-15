@@ -252,6 +252,79 @@ func TestRenderMarkdownContent(t *testing.T) {
 	}
 }
 
+func TestNormalizeLineBreaks(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "joins paragraph lines",
+			input: "This is line one.\nThis is line two.\nThis is line three.",
+			want:  "This is line one. This is line two. This is line three.",
+		},
+		{
+			name:  "preserves paragraph breaks",
+			input: "Paragraph one.\n\nParagraph two.",
+			want:  "Paragraph one.\n\nParagraph two.",
+		},
+		{
+			name:  "preserves headers",
+			input: "# Header\nSome text.\nMore text.",
+			want:  "# Header\nSome text. More text.",
+		},
+		{
+			name:  "preserves list items",
+			input: "- item one\n- item two\n- item three",
+			want:  "- item one\n- item two\n- item three",
+		},
+		{
+			name:  "preserves ordered list",
+			input: "1. first\n2. second\n3. third",
+			want:  "1. first\n2. second\n3. third",
+		},
+		{
+			name:  "preserves code blocks",
+			input: "```go\nfunc main() {\n  fmt.Println(\"hello\")\n}\n```",
+			want:  "```go\nfunc main() {\n  fmt.Println(\"hello\")\n}\n```",
+		},
+		{
+			name:  "preserves blockquotes",
+			input: "> quote line one\n> quote line two",
+			want:  "> quote line one\n> quote line two",
+		},
+		{
+			name:  "preserves hard breaks (trailing spaces)",
+			input: "line one  \nline two",
+			want:  "line one  \nline two",
+		},
+		{
+			name:  "preserves indented code blocks",
+			input: "    code line 1\n    code line 2",
+			want:  "    code line 1\n    code line 2",
+		},
+		{
+			name:  "LLM-style wrapped paragraph",
+			input: "This is a long description that the LLM wrapped at 80\ncolumns, but the terminal is much wider so it should\nbe reflowed.",
+			want:  "This is a long description that the LLM wrapped at 80 columns, but the terminal is much wider so it should be reflowed.",
+		},
+		{
+			name:  "mixed content",
+			input: "# Title\n\nFirst paragraph that wraps\nat 80 columns.\n\n- list item\n- another item\n\nAnother paragraph\nthat also wraps.",
+			want:  "# Title\n\nFirst paragraph that wraps at 80 columns.\n\n- list item\n- another item\n\nAnother paragraph that also wraps.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeLineBreaks(tt.input)
+			if got != tt.want {
+				t.Errorf("normalizeLineBreaks()\ngot:  %q\nwant: %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMDRenderer_Table(t *testing.T) {
 	r := NewMDRenderer(80)
 

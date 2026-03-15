@@ -49,6 +49,10 @@ func NewMDRenderer(width int) *MDRenderer {
 // Tables are extracted and rendered with lipgloss/table for full border control,
 // everything else (including code blocks) goes through glamour natively.
 func (r *MDRenderer) Render(content string) (string, error) {
+	// Normalize paragraph line breaks: LLMs often hard-wrap at ~80 columns,
+	// producing softbreaks that glamour preserves as newlines. Joining them
+	// lets glamour re-wrap at the actual terminal width.
+	content = normalizeLineBreaks(content)
 	segments := splitTables(content)
 
 	var parts []string
@@ -164,7 +168,7 @@ func (r *MDRenderer) renderTable(content string) string {
 		BorderRight(true).
 		BorderHeader(true).
 		BorderColumn(true).
-		BorderRow(false).
+		BorderRow(true).
 		Width(r.width).
 		StyleFunc(func(row, _ int) lipgloss.Style {
 			if row == table.HeaderRow {
@@ -235,7 +239,7 @@ func renderInlineMarkdown(text string) string {
 			end := strings.Index(text[i+1:], "`")
 			if end != -1 {
 				code := text[i+1 : i+1+end]
-				codeStyle := lipgloss.NewStyle().Background(theme.CurrentTheme.Background)
+				codeStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Accent)
 				result.WriteString(codeStyle.Render(code))
 				i += end + 2
 				continue
@@ -296,12 +300,16 @@ func customizeStyle(s *ansi.StyleConfig, width int) {
 	s.HorizontalRule.Format = "\n" + hr + "\n"
 	s.HorizontalRule.Color = &muted
 
-	// Inline code: subtle background only
-	bg := string(theme.CurrentTheme.Background)
-	s.Code.StylePrimitive.BackgroundColor = &bg
+	// Inline code: no background, just color distinction
+	s.Code.StylePrimitive.BackgroundColor = nil
 	s.Code.StylePrimitive.Prefix = ""
 	s.Code.StylePrimitive.Suffix = ""
 	s.Code.StylePrimitive.Color = nil
+
+	// Code blocks: remove Chroma background color for cleaner look
+	if s.CodeBlock.Chroma != nil {
+		s.CodeBlock.Chroma.Background = ansi.StylePrimitive{}
+	}
 
 	// Reduce document margin for tighter layout
 	margin := uint(0)
@@ -309,3 +317,102 @@ func customizeStyle(s *ansi.StyleConfig, width int) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// normalizeLineBreaks joins single-newline breaks within plain paragraphs so
+// that glamour's word-wrap can reflow text to the terminal width. Structural
+// markdown lines (headers, lists, blockquotes, code blocks, tables) and blank
+// lines (paragraph separators) are preserved as-is.
+func normalizeLineBreaks(content string) string {
+	lines := strings.Split(content, "\n")
+	var result []string
+	inCodeBlock := false
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Track fenced code blocks
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inCodeBlock = !inCodeBlock
+			result = append(result, line)
+			continue
+		}
+		if inCodeBlock {
+			result = append(result, line)
+			continue
+		}
+
+		// Blank line = paragraph separator
+		if trimmed == "" {
+			result = append(result, line)
+			continue
+		}
+
+		// Indented code block (4+ spaces or tab)
+		if strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t") {
+			result = append(result, line)
+			continue
+		}
+
+		// Structural markdown lines: preserve as-is
+		if isMarkdownStructural(trimmed) {
+			result = append(result, line)
+			continue
+		}
+
+		// Try to join with the previous line if it was a plain paragraph line
+		if i > 0 && len(result) > 0 {
+			prev := result[len(result)-1]
+			prevTrimmed := strings.TrimSpace(prev)
+			// Join if previous line is non-blank, non-structural, non-code-fence,
+			// not indented code, and doesn't end with a hard break (two trailing spaces)
+			if prevTrimmed != "" &&
+				!strings.HasPrefix(prevTrimmed, "```") && !strings.HasPrefix(prevTrimmed, "~~~") &&
+				!strings.HasPrefix(prev, "    ") && !strings.HasPrefix(prev, "\t") &&
+				!isMarkdownStructural(prevTrimmed) &&
+				!strings.HasSuffix(prev, "  ") {
+				result[len(result)-1] = prev + " " + trimmed
+				continue
+			}
+		}
+
+		result = append(result, line)
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// isMarkdownStructural returns true for lines that start markdown block structures
+// (headers, list items, blockquotes, table rows, thematic breaks).
+func isMarkdownStructural(line string) bool {
+	if strings.HasPrefix(line, "#") {
+		return true
+	}
+	if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") || strings.HasPrefix(line, "+ ") {
+		return true
+	}
+	if strings.HasPrefix(line, "> ") || line == ">" {
+		return true
+	}
+	if strings.HasPrefix(line, "|") {
+		return true
+	}
+	// Thematic break: ---, ***, ___
+	cleaned := strings.ReplaceAll(line, " ", "")
+	if len(cleaned) >= 3 &&
+		(strings.Count(cleaned, "-") == len(cleaned) ||
+			strings.Count(cleaned, "*") == len(cleaned) ||
+			strings.Count(cleaned, "_") == len(cleaned)) {
+		return true
+	}
+	// Ordered list: digit(s) + . + space
+	for i, c := range line {
+		if c >= '0' && c <= '9' {
+			continue
+		}
+		if c == '.' && i > 0 && i+1 < len(line) && line[i+1] == ' ' {
+			return true
+		}
+		break
+	}
+	return false
+}
