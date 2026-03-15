@@ -906,6 +906,12 @@ func ExtractToolArgs(input string) string {
 	if fp, ok := params["file_path"].(string); ok {
 		return fp
 	}
+	if c, ok := params["command"].(string); ok {
+		if len(c) > 60 {
+			return c[:60] + "..."
+		}
+		return c
+	}
 	if p, ok := params["pattern"].(string); ok {
 		return p
 	}
