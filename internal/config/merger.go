@@ -1,9 +1,9 @@
 package config
 
-// MergeSettings merges two Settings objects.
-// Values from 'overlay' override values in 'base'.
-// For slices (like permission rules), overlay values replace base values.
-// For maps, overlay values are merged with base values.
+import "maps"
+
+// MergeSettings merges two Settings, with overlay taking precedence over base.
+// Slices (permission rules) are deduplicated unions. Maps are merged with overlay winning on conflicts.
 func MergeSettings(base, overlay *Settings) *Settings {
 	if base == nil {
 		return overlay
@@ -13,124 +13,60 @@ func MergeSettings(base, overlay *Settings) *Settings {
 	}
 
 	result := NewSettings()
+	result.Permissions = mergePermissions(base.Permissions, overlay.Permissions)
+	result.Model = coalesce(overlay.Model, base.Model)
+	result.Theme = coalesce(overlay.Theme, base.Theme)
+	result.Hooks = mergeHooks(base.Hooks, overlay.Hooks)
+	result.Env = mergeMaps(base.Env, overlay.Env)
+	result.EnabledPlugins = mergeMaps(base.EnabledPlugins, overlay.EnabledPlugins)
+	result.DisabledTools = mergeMaps(base.DisabledTools, overlay.DisabledTools)
 
-	// Merge Permissions
-	result.Permissions = mergePermissionSettings(base.Permissions, overlay.Permissions)
+	return result
+}
 
-	// Merge Model (overlay wins if set)
-	if overlay.Model != "" {
-		result.Model = overlay.Model
-	} else {
-		result.Model = base.Model
+func mergePermissions(base, overlay PermissionSettings) PermissionSettings {
+	return PermissionSettings{
+		Allow: mergeStringSlices(base.Allow, overlay.Allow),
+		Deny:  mergeStringSlices(base.Deny, overlay.Deny),
+		Ask:   mergeStringSlices(base.Ask, overlay.Ask),
 	}
-
-	// Merge Hooks (map merge)
-	result.Hooks = mergeMaps(base.Hooks, overlay.Hooks)
-
-	// Merge Env (map merge)
-	result.Env = mergeStringMaps(base.Env, overlay.Env)
-
-	// Merge EnabledPlugins (map merge)
-	result.EnabledPlugins = mergeBoolMaps(base.EnabledPlugins, overlay.EnabledPlugins)
-
-	// Merge DisabledTools (map merge)
-	result.DisabledTools = mergeBoolMaps(base.DisabledTools, overlay.DisabledTools)
-
-	return result
 }
 
-// mergePermissionSettings merges two PermissionSettings.
-// Overlay values are appended to base values (deduplicated).
-func mergePermissionSettings(base, overlay PermissionSettings) PermissionSettings {
-	result := PermissionSettings{}
-
-	// Allow: merge both lists, deduplicate
-	result.Allow = mergeStringSlices(base.Allow, overlay.Allow)
-
-	// Deny: merge both lists, deduplicate
-	result.Deny = mergeStringSlices(base.Deny, overlay.Deny)
-
-	// Ask: merge both lists, deduplicate
-	result.Ask = mergeStringSlices(base.Ask, overlay.Ask)
-
-	return result
-}
-
-// mergeStringSlices merges two string slices, removing duplicates.
 func mergeStringSlices(base, overlay []string) []string {
-	seen := make(map[string]bool)
-	var result []string
-
-	for _, s := range base {
+	seen := make(map[string]bool, len(base)+len(overlay))
+	result := make([]string, 0, len(base)+len(overlay))
+	for _, s := range append(base, overlay...) {
 		if !seen[s] {
 			seen[s] = true
 			result = append(result, s)
 		}
 	}
-	for _, s := range overlay {
-		if !seen[s] {
-			seen[s] = true
-			result = append(result, s)
-		}
-	}
-
 	return result
 }
 
-// mergeMaps merges two map[string][]Hook.
-// Hooks for the same event are appended together (not replaced).
-// This allows user and project hooks for the same event to all execute.
-func mergeMaps(base, overlay map[string][]Hook) map[string][]Hook {
-	result := make(map[string][]Hook)
-
-	// Copy base hooks
+func mergeHooks(base, overlay map[string][]Hook) map[string][]Hook {
+	result := make(map[string][]Hook, len(base)+len(overlay))
 	for k, v := range base {
 		result[k] = append([]Hook{}, v...)
 	}
-
-	// Append overlay hooks (not replace)
 	for k, v := range overlay {
-		if existing, ok := result[k]; ok {
-			// Append new hooks to existing ones
-			result[k] = append(existing, v...)
-		} else {
-			result[k] = append([]Hook{}, v...)
-		}
+		result[k] = append(result[k], v...)
 	}
-
 	return result
 }
 
-// mergeStringMaps merges two map[string]string.
-func mergeStringMaps(base, overlay map[string]string) map[string]string {
-	result := make(map[string]string)
-
-	// Copy base
-	for k, v := range base {
-		result[k] = v
+// coalesce returns the first non-empty string.
+func coalesce(a, b string) string {
+	if a != "" {
+		return a
 	}
-
-	// Overlay
-	for k, v := range overlay {
-		result[k] = v
-	}
-
-	return result
+	return b
 }
 
-// mergeBoolMaps merges two map[string]bool.
-func mergeBoolMaps(base, overlay map[string]bool) map[string]bool {
-	result := make(map[string]bool)
-
-	// Copy base
-	for k, v := range base {
-		result[k] = v
-	}
-
-	// Overlay
-	for k, v := range overlay {
-		result[k] = v
-	}
-
+// mergeMaps merges two maps with overlay taking precedence over base.
+func mergeMaps[V any](base, overlay map[string]V) map[string]V {
+	result := make(map[string]V, len(base)+len(overlay))
+	maps.Copy(result, base)
+	maps.Copy(result, overlay)
 	return result
 }

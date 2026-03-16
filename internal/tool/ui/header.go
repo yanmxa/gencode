@@ -85,7 +85,7 @@ func RenderHeader(meta ResultMetadata, width int) string {
 func RenderErrorHeader(toolName, errorMsg string, width int) string {
 	title := HeaderTitleStyle.Render(toolName)
 	errorLine := fmt.Sprintf("%s %s", IconError, ErrorStyle.Render("Error"))
-	msgLine := ErrorMsgStyle.Render(errorMsg)
+	msgLine := ErrorStyle.Render(errorMsg)
 
 	content := fmt.Sprintf("%s\n%s\n%s", title, errorLine, msgLine)
 

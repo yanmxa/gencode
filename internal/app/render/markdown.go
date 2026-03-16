@@ -17,38 +17,54 @@ import (
 
 // MDRenderer renders markdown content to styled terminal output using glamour.
 type MDRenderer struct {
-	renderer *glamour.TermRenderer
-	width    int
+	renderer   *glamour.TermRenderer
+	width      int
+	darkBg     bool // tracks last known terminal background to detect theme changes
 }
 
 // NewMDRenderer creates a new markdown renderer with the given width.
 func NewMDRenderer(width int) *MDRenderer {
 	w := max(width-4, MinWrapWidth)
+	dark := theme.IsDarkBackground()
+	r := buildGlamourRenderer(w, dark)
+	return &MDRenderer{renderer: r, width: w, darkBg: dark}
+}
 
-	// Pick base style based on terminal background
+// buildGlamourRenderer constructs a glamour TermRenderer for the given width and background.
+func buildGlamourRenderer(width int, dark bool) *glamour.TermRenderer {
 	var style ansi.StyleConfig
-	if lipgloss.HasDarkBackground() {
+	if dark {
 		style = styles.DarkStyleConfig
 	} else {
 		style = styles.LightStyleConfig
 	}
-	customizeStyle(&style, w)
+	customizeStyle(&style, width)
 
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStyles(style),
-		glamour.WithWordWrap(w),
+		glamour.WithWordWrap(width),
 		glamour.WithChromaFormatter("terminal256"),
 	)
 	if err != nil {
 		r, _ = glamour.NewTermRenderer(glamour.WithAutoStyle())
 	}
-	return &MDRenderer{renderer: r, width: w}
+	return r
+}
+
+// rebuildIfNeeded recreates the glamour renderer when the terminal background changes.
+func (r *MDRenderer) rebuildIfNeeded() {
+	dark := theme.IsDarkBackground()
+	if dark != r.darkBg {
+		r.renderer = buildGlamourRenderer(r.width, dark)
+		r.darkBg = dark
+	}
 }
 
 // Render parses markdown source and returns styled terminal output.
 // Tables are extracted and rendered with lipgloss/table for full border control,
 // everything else (including code blocks) goes through glamour natively.
 func (r *MDRenderer) Render(content string) (string, error) {
+	r.rebuildIfNeeded()
 	// Normalize paragraph line breaks: LLMs often hard-wrap at ~80 columns,
 	// producing softbreaks that glamour preserves as newlines. Joining them
 	// lets glamour re-wrap at the actual terminal width.
@@ -155,7 +171,7 @@ func (r *MDRenderer) renderTable(content string) string {
 	}
 
 	borderColor := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Separator)
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(theme.CurrentTheme.Text)
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(theme.CurrentTheme.TextBright)
 
 	t := table.New().
 		Headers(headers...).
@@ -174,7 +190,7 @@ func (r *MDRenderer) renderTable(content string) string {
 			if row == table.HeaderRow {
 				return headerStyle
 			}
-			return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Text)
+			return lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
 		})
 
 	return "\n" + t.String() + "\n"
@@ -273,11 +289,20 @@ func renderInlineMarkdown(text string) string {
 	return result.String()
 }
 
+// adaptiveColorHex resolves an AdaptiveColor to its hex string based on the
+// current terminal background. Used for glamour StyleConfig which requires *string.
+func adaptiveColorHex(c lipgloss.AdaptiveColor) string {
+	if theme.IsDarkBackground() {
+		return c.Dark
+	}
+	return c.Light
+}
+
 // customizeStyle adjusts glamour's default style for a clean, unified look.
 // Uses only 3 accent colors: blue (keywords/headings), green (strings/functions), muted (comments).
 func customizeStyle(s *ansi.StyleConfig, width int) {
-	blue := string(theme.CurrentTheme.Primary)
-	muted := string(theme.CurrentTheme.Muted)
+	blue := adaptiveColorHex(theme.CurrentTheme.Primary)
+	muted := adaptiveColorHex(theme.CurrentTheme.Muted)
 
 	// Headings: blue, bold, no prefix markers
 	s.H1.Prefix = ""
@@ -384,35 +409,48 @@ func normalizeLineBreaks(content string) string {
 // isMarkdownStructural returns true for lines that start markdown block structures
 // (headers, list items, blockquotes, table rows, thematic breaks).
 func isMarkdownStructural(line string) bool {
+	// Headers
 	if strings.HasPrefix(line, "#") {
 		return true
 	}
+	// Unordered lists
 	if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") || strings.HasPrefix(line, "+ ") {
 		return true
 	}
+	// Blockquotes
 	if strings.HasPrefix(line, "> ") || line == ">" {
 		return true
 	}
+	// Table rows
 	if strings.HasPrefix(line, "|") {
 		return true
 	}
-	// Thematic break: ---, ***, ___
-	cleaned := strings.ReplaceAll(line, " ", "")
-	if len(cleaned) >= 3 &&
-		(strings.Count(cleaned, "-") == len(cleaned) ||
-			strings.Count(cleaned, "*") == len(cleaned) ||
-			strings.Count(cleaned, "_") == len(cleaned)) {
+	// Thematic breaks (---, ***, ___)
+	if isThematicBreak(line) {
 		return true
 	}
-	// Ordered list: digit(s) + . + space
+	// Ordered lists (digit(s) + . + space)
+	return isOrderedListItem(line)
+}
+
+// isThematicBreak checks if line is a markdown thematic break (---, ***, ___).
+func isThematicBreak(line string) bool {
+	cleaned := strings.ReplaceAll(line, " ", "")
+	if len(cleaned) < 3 {
+		return false
+	}
+	return strings.Count(cleaned, "-") == len(cleaned) ||
+		strings.Count(cleaned, "*") == len(cleaned) ||
+		strings.Count(cleaned, "_") == len(cleaned)
+}
+
+// isOrderedListItem checks if line starts with a numbered list marker (e.g., "1. ").
+func isOrderedListItem(line string) bool {
 	for i, c := range line {
 		if c >= '0' && c <= '9' {
 			continue
 		}
-		if c == '.' && i > 0 && i+1 < len(line) && line[i+1] == ' ' {
-			return true
-		}
-		break
+		return c == '.' && i > 0 && i+1 < len(line) && line[i+1] == ' '
 	}
 	return false
 }

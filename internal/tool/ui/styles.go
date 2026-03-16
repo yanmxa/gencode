@@ -5,35 +5,32 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
-// Colors
 var (
-	ColorSuccess = lipgloss.Color("#10B981") // green
-	ColorError   = lipgloss.Color("#EF4444") // red
-	ColorMuted   = lipgloss.Color("#6B7280") // gray
-	ColorAccent  = lipgloss.Color("#60A5FA") // blue
-	ColorWarn    = lipgloss.Color("#F59E0B") // yellow
-	ColorMatch   = lipgloss.Color("#FBBF24") // yellow (highlight match)
-	ColorBorder  = lipgloss.Color("#374151") // dark gray for borders
+	ColorSuccess = theme.CurrentTheme.Success
+	ColorError   = theme.CurrentTheme.Error
+	ColorMuted   = theme.CurrentTheme.Muted
+	ColorAccent  = theme.CurrentTheme.Primary
+	ColorWarn    = theme.CurrentTheme.Warning
+	ColorMatch   = theme.CurrentTheme.Warning
+	ColorBorder  = theme.CurrentTheme.Border
 )
 
-// Icons
 const (
 	IconRead     = "\U0001F4C4" // 📄
 	IconGlob     = "\U0001F50D" // 🔍
 	IconGrep     = "\U0001F50E" // 🔎
 	IconWeb      = "\U0001F310" // 🌐
-	IconSearch   = "\U0001F50D" // 🔍 (web search)
 	IconError    = "\u274C"     // ❌
 	IconSuccess  = "\u2713"     // ✓
 	IconFile     = "\U0001F4C1" // 📁
 	IconDuration = "\u23F1"     // ⏱
 )
 
-// Styles
 var (
-	// Header box styles
 	HeaderStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(ColorBorder).
@@ -44,18 +41,15 @@ var (
 				Foreground(ColorAccent)
 
 	HeaderSubtitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#E5E7EB"))
+				Foreground(theme.CurrentTheme.Text)
 
 	HeaderMetaStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted)
 
-	// Content styles
 	LineNumberStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted).
 			Width(5).
 			Align(lipgloss.Right)
-
-	LineContentStyle = lipgloss.NewStyle()
 
 	MatchStyle = lipgloss.NewStyle().
 			Foreground(ColorMatch).
@@ -68,14 +62,9 @@ var (
 			Foreground(ColorMuted).
 			Italic(true)
 
-	// Error styles
 	ErrorStyle = lipgloss.NewStyle().
 			Foreground(ColorError)
 
-	ErrorMsgStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FCA5A5"))
-
-	// Progress styles
 	SpinnerStyle = lipgloss.NewStyle().
 			Foreground(ColorWarn)
 
@@ -83,14 +72,12 @@ var (
 				Foreground(ColorMuted)
 )
 
-// FormatSize formats bytes to human readable size
 func FormatSize(bytes int64) string {
 	const (
 		KB = 1024
 		MB = KB * 1024
 		GB = MB * 1024
 	)
-
 	switch {
 	case bytes >= GB:
 		return fmt.Sprintf("%.1f GB", float64(bytes)/GB)
@@ -103,7 +90,6 @@ func FormatSize(bytes int64) string {
 	}
 }
 
-// FormatDuration formats duration to human readable string
 func FormatDuration(d time.Duration) string {
 	switch {
 	case d >= time.Second:

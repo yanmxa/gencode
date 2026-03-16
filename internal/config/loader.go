@@ -2,30 +2,23 @@ package config
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 
-	"github.com/yanmxa/gencode/internal/log"
 	"go.uber.org/zap"
+
+	"github.com/yanmxa/gencode/internal/log"
 )
 
 // Loader handles loading and merging settings from multiple sources.
 type Loader struct {
-	// userDir is the user-level config directory (e.g., ~/.gen)
-	userDir string
-
-	// projectDir is the project-level config directory (e.g., .gen)
-	projectDir string
-
-	// claudeCompat enables loading from .claude directories
+	userDir      string
+	projectDir   string
 	claudeCompat bool
 }
 
-// NewLoader creates a new settings loader.
-// It defaults to:
-//   - userDir: ~/.gen
-//   - projectDir: .gen
-//   - claudeCompat: true (also loads from .claude directories)
+// NewLoader creates a loader with default paths (~/.gen, .gen) and Claude compatibility enabled.
 func NewLoader() *Loader {
 	homeDir, _ := os.UserHomeDir()
 	return &Loader{
@@ -44,61 +37,49 @@ func NewLoaderWithOptions(userDir, projectDir string, claudeCompat bool) *Loader
 	}
 }
 
-// Load loads and merges settings from all sources.
-// Priority (lowest to highest):
-//  1. ~/.claude/settings.json (Claude user level)
-//  2. ~/.gen/settings.json (Gen user level)
-//  3. .claude/settings.json (Claude project level)
-//  4. .gen/settings.json (Gen project level)
-//  5. .claude/settings.local.json (Claude local level)
-//  6. .gen/settings.local.json (Gen local level)
-//
-// Later sources override earlier ones.
+// Load loads and merges settings from all sources in priority order (lowest to highest):
+//  1. ~/.claude/settings.json
+//  2. ~/.gen/settings.json
+//  3. .claude/settings.json
+//  4. .gen/settings.json
+//  5. .claude/settings.local.json
+//  6. .gen/settings.local.json
 func (l *Loader) Load() (*Settings, error) {
-	settings := NewSettings()
 	homeDir, _ := os.UserHomeDir()
 
-	// Build list of config sources in priority order (lowest to highest)
-	var sources []string
-
+	sources := make([]string, 0, 6)
 	if l.claudeCompat {
-		// Claude user level (lowest priority)
-		sources = append(sources, filepath.Join(homeDir, ".claude", "settings.json"))
+		sources = append(sources,
+			filepath.Join(homeDir, ".claude", "settings.json"),
+		)
 	}
-
-	// Gen user level
 	sources = append(sources, filepath.Join(l.userDir, "settings.json"))
-
 	if l.claudeCompat {
-		// Claude project level
-		sources = append(sources, filepath.Join(".claude", "settings.json"))
+		sources = append(sources,
+			filepath.Join(".claude", "settings.json"),
+		)
 	}
-
-	// Gen project level
 	sources = append(sources, filepath.Join(l.projectDir, "settings.json"))
-
 	if l.claudeCompat {
-		// Claude local level
-		sources = append(sources, filepath.Join(".claude", "settings.local.json"))
+		sources = append(sources,
+			filepath.Join(".claude", "settings.local.json"),
+		)
 	}
-
-	// Gen local level (highest user-controllable priority)
 	sources = append(sources, filepath.Join(l.projectDir, "settings.local.json"))
 
-	// Load and merge each source
+	settings := NewSettings()
 	for _, src := range sources {
-		if data, err := os.ReadFile(src); err == nil {
-			var s Settings
-			if err := json.Unmarshal(data, &s); err != nil {
-				log.Logger().Warn("failed to parse config file",
-					zap.String("path", src),
-					zap.Error(err))
-				continue
-			}
-			settings = MergeSettings(settings, &s)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue
 		}
+		var s Settings
+		if err := json.Unmarshal(data, &s); err != nil {
+			log.Logger().Warn("failed to parse config file", zap.String("path", src), zap.Error(err))
+			continue
+		}
+		settings = MergeSettings(settings, &s)
 	}
-
 	return settings, nil
 }
 
@@ -108,132 +89,79 @@ func (l *Loader) LoadFile(path string) (*Settings, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	var settings Settings
-	if err := json.Unmarshal(data, &settings); err != nil {
+	var s Settings
+	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, err
 	}
-
-	return &settings, nil
+	return &s, nil
 }
 
-// GetUserDir returns the user config directory path.
-func (l *Loader) GetUserDir() string {
-	return l.userDir
-}
-
-// GetProjectDir returns the project config directory path.
-func (l *Loader) GetProjectDir() string {
-	return l.projectDir
-}
-
-// EnsureUserDir creates the user config directory if it doesn't exist.
-func (l *Loader) EnsureUserDir() error {
-	return os.MkdirAll(l.userDir, 0o755)
-}
-
-// EnsureProjectDir creates the project config directory if it doesn't exist.
-func (l *Loader) EnsureProjectDir() error {
-	return os.MkdirAll(l.projectDir, 0o755)
-}
-
-// SaveToProject saves settings to the project-level settings file.
-// It merges with existing settings if the file exists.
+// SaveToProject saves settings to the project-level settings file, merging with existing.
 func (l *Loader) SaveToProject(settings *Settings) error {
 	return l.saveToFile(filepath.Join(l.projectDir, "settings.json"), settings)
 }
 
-// SaveToUser saves settings to the user-level settings file.
-// It merges with existing settings if the file exists.
+// SaveToUser saves settings to the user-level settings file, merging with existing.
 func (l *Loader) SaveToUser(settings *Settings) error {
 	return l.saveToFile(filepath.Join(l.userDir, "settings.json"), settings)
 }
 
-// saveToFile saves settings to a specific file, merging with existing content.
 func (l *Loader) saveToFile(path string, settings *Settings) error {
-	// Ensure directory exists
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 
-	// Load existing settings if file exists
-	var existing *Settings
+	toSave := settings
 	if data, err := os.ReadFile(path); err == nil {
-		existing = NewSettings()
-		if err := json.Unmarshal(data, existing); err != nil {
-			existing = nil
+		existing := NewSettings()
+		if err := json.Unmarshal(data, existing); err == nil {
+			toSave = MergeSettings(existing, settings)
 		}
 	}
 
-	// Merge with existing settings
-	var toSave *Settings
-	if existing != nil {
-		toSave = MergeSettings(existing, settings)
-	} else {
-		toSave = settings
-	}
-
-	// Write to file with pretty formatting
 	data, err := json.MarshalIndent(toSave, "", "  ")
 	if err != nil {
 		return err
 	}
-
 	return os.WriteFile(path, data, 0o644)
 }
 
-// defaultSettings is a cached instance of the default settings
-var defaultSettings *Settings
-
-// loadedSettings is a cached instance of the loaded settings
 var loadedSettings *Settings
 
-// Load is a convenience function that loads settings using the default loader.
+// Load loads settings using the default loader (cached after first call).
 func Load() (*Settings, error) {
 	if loadedSettings != nil {
 		return loadedSettings, nil
 	}
-	loader := NewLoader()
-	settings, err := loader.Load()
+	s, err := NewLoader().Load()
 	if err != nil {
 		return nil, err
 	}
-	loadedSettings = settings
-	return loadedSettings, nil
+	loadedSettings = s
+	return s, nil
 }
 
-// Reload forces reloading of settings, clearing the cache.
+// Reload clears the settings cache and reloads from disk.
 func Reload() (*Settings, error) {
 	loadedSettings = nil
 	return Load()
 }
 
-// Default returns the default settings without loading from files.
+// Default returns default settings without loading from disk.
 func Default() *Settings {
-	if defaultSettings == nil {
-		defaultSettings = NewSettings()
-	}
-	return defaultSettings
+	return NewSettings()
 }
 
-// UpdateDisabledTools updates the disabled tools in project-level settings.
-// It only saves the DisabledTools field, preserving other settings.
+// UpdateDisabledTools updates disabled tools in project-level settings.
 func UpdateDisabledTools(disabledTools map[string]bool) error {
 	return UpdateDisabledToolsAt(disabledTools, false)
 }
 
-// UpdateDisabledToolsAt updates the disabled tools at the specified level.
-// If userLevel is true, saves to ~/.gen/settings.json, otherwise to .gen/settings.json.
+// UpdateDisabledToolsAt updates disabled tools at user level (true) or project level (false).
 func UpdateDisabledToolsAt(disabledTools map[string]bool, userLevel bool) error {
 	loader := NewLoader()
+	settings := &Settings{DisabledTools: disabledTools}
 
-	// Create settings with only DisabledTools
-	settings := &Settings{
-		DisabledTools: disabledTools,
-	}
-
-	// Save to appropriate level
 	var err error
 	if userLevel {
 		err = loader.SaveToUser(settings)
@@ -244,47 +172,41 @@ func UpdateDisabledToolsAt(disabledTools map[string]bool, userLevel bool) error 
 		return err
 	}
 
-	// Clear cache so next Load() picks up changes
 	loadedSettings = nil
 	return nil
 }
 
-// GetDisabledTools returns the disabled tools from loaded settings.
+// GetDisabledTools returns the merged disabled tools map from loaded settings.
 func GetDisabledTools() map[string]bool {
-	settings, err := Load()
-	if err != nil {
+	s, err := Load()
+	if err != nil || s.DisabledTools == nil {
 		return make(map[string]bool)
 	}
-	if settings.DisabledTools == nil {
-		return make(map[string]bool)
-	}
-	return settings.DisabledTools
+	return s.DisabledTools
 }
 
-// GetDisabledToolsAt returns the disabled tools from a specific level (not merged).
-// If userLevel is true, loads from ~/.gen/settings.json, otherwise from .gen/settings.json.
+// GetDisabledToolsAt returns disabled tools from a single settings file (not merged).
+// userLevel=true reads from ~/.gen/settings.json; false reads from .gen/settings.json.
 func GetDisabledToolsAt(userLevel bool) map[string]bool {
 	loader := NewLoader()
-
-	var path string
+	path := filepath.Join(loader.projectDir, "settings.json")
 	if userLevel {
 		path = filepath.Join(loader.userDir, "settings.json")
-	} else {
-		path = filepath.Join(loader.projectDir, "settings.json")
 	}
-
-	settings, err := loader.LoadFile(path)
-	if err != nil {
+	s, err := loader.LoadFile(path)
+	if err != nil || s.DisabledTools == nil {
 		return make(map[string]bool)
 	}
-	if settings.DisabledTools == nil {
-		return make(map[string]bool)
-	}
-
-	// Return a copy to avoid mutation
-	result := make(map[string]bool)
-	for k, v := range settings.DisabledTools {
-		result[k] = v
-	}
+	result := make(map[string]bool, len(s.DisabledTools))
+	maps.Copy(result, s.DisabledTools)
 	return result
+}
+
+// SaveTheme persists the chosen theme to ~/.gen/settings.json.
+func SaveTheme(t string) error {
+	if err := NewLoader().SaveToUser(&Settings{Theme: t}); err != nil {
+		return err
+	}
+	loadedSettings = nil
+	return nil
 }

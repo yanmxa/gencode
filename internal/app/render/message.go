@@ -82,7 +82,7 @@ func RenderModeStatus(params OperationModeParams) string {
 // RenderOperationModeIndicator returns the mode status indicator for auto-accept or plan mode.
 func RenderOperationModeIndicator(mode int) string {
 	var icon, label string
-	var color lipgloss.Color
+	var color lipgloss.TerminalColor
 
 	switch appmode.OperationMode(mode) {
 	case appmode.AutoAccept:
@@ -139,17 +139,17 @@ func toolResultIcon(isError bool) string {
 }
 
 // TokenUsageColorAndHint returns the color and hint text for token usage percentage.
-func TokenUsageColorAndHint(percent float64) (lipgloss.Color, string) {
-	switch {
-	case percent >= AutoCompactThreshold:
+func TokenUsageColorAndHint(percent float64) (lipgloss.TerminalColor, string) {
+	if percent >= AutoCompactThreshold {
 		return theme.CurrentTheme.Error, " ⚠ auto-compact"
-	case percent >= 85:
-		return theme.CurrentTheme.Warning, fmt.Sprintf(" (compact at %d%%)", AutoCompactThreshold)
-	case percent >= 70:
-		return theme.CurrentTheme.Accent, ""
-	default:
-		return theme.CurrentTheme.Muted, ""
 	}
+	if percent >= 85 {
+		return theme.CurrentTheme.Warning, fmt.Sprintf(" (compact at %d%%)", AutoCompactThreshold)
+	}
+	if percent >= 70 {
+		return theme.CurrentTheme.Accent, ""
+	}
+	return theme.CurrentTheme.Muted, ""
 }
 
 // RenderUserMessage renders a user message with prompt and optional images.
@@ -243,11 +243,11 @@ func RenderAssistantMessage(params AssistantParams) string {
 		var lines []string
 		for _, line := range strings.Split(wrapped, "\n") {
 			if strings.TrimSpace(line) != "" {
-				lines = append(lines, ThinkingContentStyle.Render(line))
+				lines = append(lines, ThinkingStyle.Render(line))
 			}
 		}
 
-		thinkingIcon := ThinkingContentStyle.Render("✦ ")
+		thinkingIcon := ThinkingStyle.Render("✦ ")
 		thinkingContent := strings.Join(lines, "\n"+aiIndent)
 		sb.WriteString(thinkingIcon + thinkingContent + "\n\n")
 	}
@@ -882,7 +882,6 @@ func FormatAgentLabel(input string) string {
 	return agentType
 }
 
-// ExtractToolArgs extracts the most relevant argument from a tool call input JSON.
 // extractTaskGetDisplay returns owner name for a TaskGet call if available,
 // falling back to the raw task ID.
 func extractTaskGetDisplay(input string, ownerMap map[string]string) string {
@@ -897,6 +896,7 @@ func extractTaskGetDisplay(input string, ownerMap map[string]string) string {
 	return id
 }
 
+// ExtractToolArgs extracts the most relevant argument from a tool call input JSON.
 func ExtractToolArgs(input string) string {
 	var params map[string]any
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
@@ -942,46 +942,61 @@ func ExtractToolArgs(input string) string {
 func FormatToolResultSize(toolName, content string) string {
 	switch toolName {
 	case "WebFetch":
-		size := len(content)
-		if size >= 1024*1024 {
-			return fmt.Sprintf("%.1f MB", float64(size)/(1024*1024))
-		}
-		if size >= 1024 {
-			return fmt.Sprintf("%.1f KB", float64(size)/1024)
-		}
-		return fmt.Sprintf("%d bytes", size)
-
+		return formatByteSize(len(content))
 	case "Write", "Edit":
-		start := strings.Index(content, "(")
-		if start == -1 {
-			return "completed"
-		}
-		end := strings.Index(content[start:], ")")
-		if end == -1 {
-			return "completed"
-		}
-		return content[start+1 : start+end]
-
+		return extractParenContent(content, "completed")
 	default:
-		trimmed := strings.TrimSuffix(content, "\n")
-		if trimmed == "" {
-			return "0 lines"
-		}
-		lineCount := strings.Count(trimmed, "\n") + 1
-		return fmt.Sprintf("%d lines", lineCount)
+		return formatLineCount(content)
 	}
+}
+
+// formatByteSize formats a byte count as human-readable size.
+func formatByteSize(size int) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+	)
+	switch {
+	case size >= MB:
+		return fmt.Sprintf("%.1f MB", float64(size)/MB)
+	case size >= KB:
+		return fmt.Sprintf("%.1f KB", float64(size)/KB)
+	default:
+		return fmt.Sprintf("%d bytes", size)
+	}
+}
+
+// extractParenContent extracts content between first ( and ), or returns fallback.
+func extractParenContent(s, fallback string) string {
+	start := strings.Index(s, "(")
+	if start == -1 {
+		return fallback
+	}
+	end := strings.Index(s[start:], ")")
+	if end == -1 {
+		return fallback
+	}
+	return s[start+1 : start+end]
+}
+
+// formatLineCount returns a line count string for the given content.
+func formatLineCount(content string) string {
+	trimmed := strings.TrimSuffix(content, "\n")
+	if trimmed == "" {
+		return "0 lines"
+	}
+	lineCount := strings.Count(trimmed, "\n") + 1
+	return fmt.Sprintf("%d lines", lineCount)
 }
 
 // FormatTokenCount formats a token count for display.
 func FormatTokenCount(count int) string {
-	if count >= 1000000 {
+	switch {
+	case count >= 1000000:
 		return fmt.Sprintf("%.1fM", float64(count)/1000000)
-	}
-	if count >= 10000 {
+	case count >= 1000:
 		return fmt.Sprintf("%.1fk", float64(count)/1000)
+	default:
+		return fmt.Sprintf("%d", count)
 	}
-	if count >= 1000 {
-		return fmt.Sprintf("%.1fk", float64(count)/1000)
-	}
-	return fmt.Sprintf("%d", count)
 }

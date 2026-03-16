@@ -1,103 +1,76 @@
-// Package theme provides shared color definitions for the TUI.
 package theme
 
 import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Theme holds all color definitions for the UI
+// Theme holds all color definitions for the UI.
+// AdaptiveColor selects dark or light values at render time based on terminal background.
 type Theme struct {
-	// Base colors
-	Muted     lipgloss.Color // muted text, placeholders
-	Accent    lipgloss.Color // spinner, highlights
-	Primary   lipgloss.Color // user prompt, links
-	AI        lipgloss.Color // AI responses
-	Separator lipgloss.Color // separator lines
+	Muted     lipgloss.AdaptiveColor
+	Accent    lipgloss.AdaptiveColor
+	Primary   lipgloss.AdaptiveColor
+	AI        lipgloss.AdaptiveColor
+	Separator lipgloss.AdaptiveColor
 
-	// Text colors
-	Text         lipgloss.Color // normal text
-	TextDim      lipgloss.Color // dimmed text
-	TextBright   lipgloss.Color // bright/highlighted text
-	TextDisabled lipgloss.Color // disabled/strikethrough text
+	Text         lipgloss.AdaptiveColor
+	TextDim      lipgloss.AdaptiveColor
+	TextBright   lipgloss.AdaptiveColor
+	TextDisabled lipgloss.AdaptiveColor
 
-	// Semantic colors
-	Success lipgloss.Color // green - added, completed
-	Error   lipgloss.Color // red - removed, errors
-	Warning lipgloss.Color // amber/orange - in progress
+	Success   lipgloss.AdaptiveColor
+	Error     lipgloss.AdaptiveColor
+	Warning   lipgloss.AdaptiveColor
+	SuccessBg lipgloss.AdaptiveColor
+	ErrorBg   lipgloss.AdaptiveColor
 
-	// Diff background colors
-	SuccessBg lipgloss.Color // subtle green background for added lines
-	ErrorBg   lipgloss.Color // subtle red/pink background for removed lines
-
-	// UI element colors
-	Border     lipgloss.Color // borders
-	Background lipgloss.Color // backgrounds for badges/boxes
+	Border     lipgloss.AdaptiveColor
+	Background lipgloss.AdaptiveColor
 }
 
-// DarkTheme is the color palette for dark terminals
-var DarkTheme = Theme{
-	Muted:     lipgloss.Color("#6B7280"),
-	Accent:    lipgloss.Color("#F59E0B"),
-	Primary:   lipgloss.Color("#60A5FA"),
-	AI:        lipgloss.Color("#A78BFA"),
-	Separator: lipgloss.Color("#4B5563"),
+var CurrentTheme = Theme{
+	Muted:     lipgloss.AdaptiveColor{Dark: "#6B7280", Light: "#4B5563"},
+	Accent:    lipgloss.AdaptiveColor{Dark: "#F59E0B", Light: "#D97706"},
+	Primary:   lipgloss.AdaptiveColor{Dark: "#60A5FA", Light: "#2563EB"},
+	AI:        lipgloss.AdaptiveColor{Dark: "#A78BFA", Light: "#6D28D9"},
+	Separator: lipgloss.AdaptiveColor{Dark: "#4B5563", Light: "#9CA3AF"},
 
-	Text:         lipgloss.Color("#D1D5DB"),
-	TextDim:      lipgloss.Color("#9CA3AF"),
-	TextBright:   lipgloss.Color("#FFFFFF"),
-	TextDisabled: lipgloss.Color("#4B5563"),
+	Text:         lipgloss.AdaptiveColor{Dark: "#D1D5DB", Light: "#111827"},
+	TextDim:      lipgloss.AdaptiveColor{Dark: "#9CA3AF", Light: "#4B5563"},
+	TextBright:   lipgloss.AdaptiveColor{Dark: "#FFFFFF", Light: "#030712"},
+	TextDisabled: lipgloss.AdaptiveColor{Dark: "#4B5563", Light: "#6B7280"},
 
-	Success: lipgloss.Color("#10B981"),
-	Error:   lipgloss.Color("#EF4444"),
-	Warning: lipgloss.Color("#FBBF24"), // Brighter amber to distinguish from Accent
+	Success:   lipgloss.AdaptiveColor{Dark: "#10B981", Light: "#059669"},
+	Error:     lipgloss.AdaptiveColor{Dark: "#EF4444", Light: "#DC2626"},
+	Warning:   lipgloss.AdaptiveColor{Dark: "#FBBF24", Light: "#B45309"},
+	SuccessBg: lipgloss.AdaptiveColor{Dark: "#1a2e1a", Light: "#dafbe1"},
+	ErrorBg:   lipgloss.AdaptiveColor{Dark: "#2e1a1a", Light: "#ffebe9"},
 
-	SuccessBg: lipgloss.Color("#1a2e1a"),
-	ErrorBg:   lipgloss.Color("#2e1a1a"),
-
-	Border:     lipgloss.Color("#374151"),
-	Background: lipgloss.Color("#1F2937"),
+	Border:     lipgloss.AdaptiveColor{Dark: "#374151", Light: "#D1D5DB"},
+	Background: lipgloss.AdaptiveColor{Dark: "#1F2937", Light: "#F3F4F6"},
 }
 
-// LightTheme is the color palette for light terminals
-var LightTheme = Theme{
-	Muted:     lipgloss.Color("#6B7280"),
-	Accent:    lipgloss.Color("#D97706"),
-	Primary:   lipgloss.Color("#2563EB"),
-	AI:        lipgloss.Color("#7C3AED"),
-	Separator: lipgloss.Color("#D1D5DB"),
+var (
+	darkModeSet bool
+	darkModeVal bool
+)
 
-	Text:         lipgloss.Color("#1F2937"),
-	TextDim:      lipgloss.Color("#4B5563"),
-	TextBright:   lipgloss.Color("#111827"),
-	TextDisabled: lipgloss.Color("#9CA3AF"),
-
-	Success: lipgloss.Color("#059669"),
-	Error:   lipgloss.Color("#DC2626"),
-	Warning: lipgloss.Color("#B45309"), // Deeper amber to distinguish from Accent
-
-	SuccessBg: lipgloss.Color("#dafbe1"),
-	ErrorBg:   lipgloss.Color("#ffebe9"),
-
-	Border:     lipgloss.Color("#E5E7EB"),
-	Background: lipgloss.Color("#F3F4F6"),
-}
-
-// CurrentTheme holds the active theme based on terminal background
-var CurrentTheme Theme
-
-// isDarkBackground caches the result of background detection
-var isDarkBackground bool
-
-func init() {
-	isDarkBackground = lipgloss.HasDarkBackground()
-	if isDarkBackground {
-		CurrentTheme = DarkTheme
-	} else {
-		CurrentTheme = LightTheme
+// Init configures the active theme. Call once at startup with "light" or "dark".
+// An empty string leaves lipgloss auto-detection in place.
+func Init(t string) {
+	if t != "light" && t != "dark" {
+		return
 	}
+	dark := t == "dark"
+	darkModeSet, darkModeVal = true, dark
+	lipgloss.SetHasDarkBackground(dark)
 }
 
-// IsDarkBackground returns whether the terminal has a dark background
+// IsDarkBackground reports whether the terminal has a dark background.
+// Uses the value set by Init if available, otherwise falls back to lipgloss auto-detection.
 func IsDarkBackground() bool {
-	return isDarkBackground
+	if darkModeSet {
+		return darkModeVal
+	}
+	return lipgloss.HasDarkBackground()
 }

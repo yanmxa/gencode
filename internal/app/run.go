@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/agent"
+	appthemeselect "github.com/yanmxa/gencode/internal/app/themeselect"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/mcp"
@@ -20,6 +21,7 @@ import (
 	_ "github.com/yanmxa/gencode/internal/provider/google"
 	_ "github.com/yanmxa/gencode/internal/provider/openai"
 	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
 // RunWithOptions routes to either print mode or interactive TUI.
@@ -27,6 +29,24 @@ func RunWithOptions(opts options.RunOptions) error {
 	if opts.Print != "" {
 		return runNonInteractive(opts.Print)
 	}
+
+	// Resolve theme: config > selector prompt
+	settings := loadSettings()
+	themeValue := settings.Theme
+	if themeValue == "" {
+		chosen, err := appthemeselect.Run()
+		if err != nil {
+			return fmt.Errorf("theme selection failed: %w", err)
+		}
+		if chosen == "" {
+			return nil // user quit
+		}
+		themeValue = chosen
+		if err := config.SaveTheme(themeValue); err != nil {
+			log.Logger().Warn("failed to save theme", zap.Error(err))
+		}
+	}
+	theme.Init(themeValue)
 
 	m, err := newModel(opts)
 	if err != nil {

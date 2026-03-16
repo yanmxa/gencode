@@ -16,7 +16,7 @@ type WebSearchTool struct{}
 
 func (t *WebSearchTool) Name() string        { return "WebSearch" }
 func (t *WebSearchTool) Description() string { return "Search the web for up-to-date information" }
-func (t *WebSearchTool) Icon() string        { return ui.IconSearch }
+func (t *WebSearchTool) Icon() string        { return ui.IconWeb }
 
 func (t *WebSearchTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
