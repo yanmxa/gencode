@@ -5,6 +5,7 @@ package render
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/ansi"
@@ -22,7 +23,10 @@ type MDRenderer struct {
 	darkBg     bool // tracks last known terminal background to detect theme changes
 }
 
-// NewMDRenderer creates a new markdown renderer with the given width.
+// NewMDRenderer creates a new markdown renderer with the given terminal width.
+// The width passed should be the raw terminal column count; the renderer
+// subtracts aiIndentWidth internally so glamour wraps exactly at the
+// visible boundary after the "● " prompt icon + indent are applied.
 func NewMDRenderer(width int) *MDRenderer {
 	w := max(width-4, MinWrapWidth)
 	dark := theme.IsDarkBackground()
@@ -81,12 +85,15 @@ func (r *MDRenderer) Render(content string) (string, error) {
 			if err != nil {
 				parts = append(parts, seg.content)
 			} else {
-				parts = append(parts, strings.TrimRight(rendered, "\n"))
+				rendered = collapseBlankLines(rendered)
+			parts = append(parts, strings.TrimRight(rendered, "\n"))
 			}
 		}
 	}
 
-	return strings.TrimRight(strings.Join(parts, ""), "\n"), nil
+	result := strings.TrimRight(strings.Join(parts, ""), "\n")
+	result = strings.TrimLeft(result, "\n")
+	return result, nil
 }
 
 // segmentKind identifies what type of markdown block a segment contains.
@@ -299,12 +306,20 @@ func adaptiveColorHex(c lipgloss.AdaptiveColor) string {
 }
 
 // customizeStyle adjusts glamour's default style for a clean, unified look.
-// Uses only 3 accent colors: blue (keywords/headings), green (strings/functions), muted (comments).
 func customizeStyle(s *ansi.StyleConfig, width int) {
 	blue := adaptiveColorHex(theme.CurrentTheme.Primary)
 	muted := adaptiveColorHex(theme.CurrentTheme.Muted)
+	text := adaptiveColorHex(theme.CurrentTheme.Text)
+	textDim := adaptiveColorHex(theme.CurrentTheme.TextDim)
 
-	// Headings: blue, bold, no prefix markers
+	// Document: set foreground color, no margin (paragraph spacing handled by glamour block prefix/suffix)
+	margin := uint(0)
+	s.Document.Margin = &margin
+	s.Document.StylePrimitive.Color = &text
+	s.Document.BlockPrefix = ""
+	s.Document.BlockSuffix = ""
+
+	// Headings: themed blue, bold, no extra prefix/suffix markers
 	s.H1.Prefix = ""
 	s.H1.Suffix = ""
 	s.H1.Color = &blue
@@ -316,32 +331,45 @@ func customizeStyle(s *ansi.StyleConfig, width int) {
 	s.H3.Prefix = ""
 	s.H3.Color = &blue
 	s.H3.Bold = boolPtr(true)
+	s.Heading.BlockSuffix = ""
 	s.H4.Prefix = ""
 	s.H5.Prefix = ""
 	s.H6.Prefix = ""
+
+	// BlockQuote: muted color with standard │ indent token
+	s.BlockQuote.StylePrimitive.Color = &textDim
+	s.BlockQuote.Indent = uintPtr(1)
+	s.BlockQuote.IndentToken = stringPtr("│ ")
 
 	// Horizontal rule: full-width thin line
 	hr := strings.Repeat("─", width)
 	s.HorizontalRule.Format = "\n" + hr + "\n"
 	s.HorizontalRule.Color = &muted
 
-	// Inline code: no background, just color distinction
+	// Inline code: no background, accent color
+	accent := adaptiveColorHex(theme.CurrentTheme.Accent)
 	s.Code.StylePrimitive.BackgroundColor = nil
 	s.Code.StylePrimitive.Prefix = ""
 	s.Code.StylePrimitive.Suffix = ""
-	s.Code.StylePrimitive.Color = nil
+	s.Code.StylePrimitive.Color = &accent
 
 	// Code blocks: remove Chroma background color for cleaner look
 	if s.CodeBlock.Chroma != nil {
 		s.CodeBlock.Chroma.Background = ansi.StylePrimitive{}
+		s.CodeBlock.Chroma.Error = ansi.StylePrimitive{}
 	}
-
-	// Reduce document margin for tighter layout
-	margin := uint(0)
-	s.Document.Margin = &margin
 }
 
-func boolPtr(b bool) *bool { return &b }
+func boolPtr(b bool) *bool   { return &b }
+
+func collapseBlankLines(s string) string {
+	for strings.Contains(s, "\n\n\n") {
+		s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
+	}
+	return s
+}
+func uintPtr(u uint) *uint   { return &u }
+func stringPtr(s string) *string { return &s }
 
 // normalizeLineBreaks joins single-newline breaks within plain paragraphs so
 // that glamour's word-wrap can reflow text to the terminal width. Structural
@@ -388,14 +416,18 @@ func normalizeLineBreaks(content string) string {
 		if i > 0 && len(result) > 0 {
 			prev := result[len(result)-1]
 			prevTrimmed := strings.TrimSpace(prev)
-			// Join if previous line is non-blank, non-structural, non-code-fence,
-			// not indented code, and doesn't end with a hard break (two trailing spaces)
 			if prevTrimmed != "" &&
 				!strings.HasPrefix(prevTrimmed, "```") && !strings.HasPrefix(prevTrimmed, "~~~") &&
 				!strings.HasPrefix(prev, "    ") && !strings.HasPrefix(prev, "\t") &&
 				!isMarkdownStructural(prevTrimmed) &&
 				!strings.HasSuffix(prev, "  ") {
-				result[len(result)-1] = prev + " " + trimmed
+				// Don't insert a space between CJK lines — Chinese/Japanese/Korean
+				// text doesn't use spaces between words.
+				sep := " "
+				if endsWithCJK(prevTrimmed) || startsWithCJK(trimmed) {
+					sep = ""
+				}
+				result[len(result)-1] = prev + sep + trimmed
 				continue
 			}
 		}
@@ -453,4 +485,25 @@ func isOrderedListItem(line string) bool {
 		return c == '.' && i > 0 && i+1 < len(line) && line[i+1] == ' '
 	}
 	return false
+}
+
+// isCJK reports whether r is a CJK (Chinese/Japanese/Korean) character.
+func isCJK(r rune) bool {
+	return (r >= 0x4E00 && r <= 0x9FFF) || // CJK Unified Ideographs
+		(r >= 0x3400 && r <= 0x4DBF) || // CJK Extension A
+		(r >= 0x20000 && r <= 0x2A6DF) || // CJK Extension B
+		(r >= 0x3000 && r <= 0x303F) || // CJK Symbols and Punctuation
+		(r >= 0xFF00 && r <= 0xFFEF) // Halfwidth/Fullwidth Forms
+}
+
+// endsWithCJK reports whether s ends with a CJK character.
+func endsWithCJK(s string) bool {
+	r, _ := utf8.DecodeLastRuneInString(s)
+	return r != utf8.RuneError && isCJK(r)
+}
+
+// startsWithCJK reports whether s starts with a CJK character.
+func startsWithCJK(s string) bool {
+	r, _ := utf8.DecodeRuneInString(s)
+	return r != utf8.RuneError && isCJK(r)
 }

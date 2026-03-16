@@ -57,7 +57,7 @@ func (m model) View() string {
 	}
 
 	if todoView != "" {
-		parts = append(parts, "\n"+strings.TrimSuffix(todoView, "\n"))
+		parts = append(parts, strings.TrimSuffix(todoView, "\n"))
 	}
 
 	if pendingImagesView != "" {
@@ -66,12 +66,12 @@ func (m model) View() string {
 
 	if m.provider.FetchingLimits {
 		spinnerView := render.ThinkingStyle.Render(m.output.Spinner.View() + " Fetching token limits...")
-		parts = append(parts, "\n"+spinnerView)
+		parts = append(parts, spinnerView)
 	}
 
 	if m.conv.Compact.Active {
 		spinnerView := render.ThinkingStyle.Render(m.output.Spinner.View() + " Compacting conversation...")
-		parts = append(parts, "\n"+spinnerView)
+		parts = append(parts, spinnerView)
 	}
 
 	chatSection := strings.Join(parts, "\n")
@@ -292,7 +292,7 @@ func (m model) renderMessageRange(startIdx, endIdx int, includeSpinner bool) str
 }
 
 func (m model) renderUserMessage(msg message.ChatMessage) string {
-	return render.RenderUserMessage(msg.Content, msg.Images, m.output.MDRenderer)
+	return render.RenderUserMessage(msg.Content, msg.Images, m.output.MDRenderer, m.width)
 }
 
 func (m model) renderToolResult(msg message.ChatMessage) string {

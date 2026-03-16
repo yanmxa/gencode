@@ -153,7 +153,7 @@ func TokenUsageColorAndHint(percent float64) (lipgloss.TerminalColor, string) {
 }
 
 // RenderUserMessage renders a user message with prompt and optional images.
-func RenderUserMessage(content string, images []message.ImageData, mdRenderer *MDRenderer) string {
+func RenderUserMessage(content string, images []message.ImageData, mdRenderer *MDRenderer, width int) string {
 	var sb strings.Builder
 	prompt := InputPromptStyle.Render("❯ ")
 
@@ -166,9 +166,8 @@ func RenderUserMessage(content string, images []message.ImageData, mdRenderer *M
 		sb.WriteString(prompt + strings.Join(parts, " ") + "\n")
 	}
 
-	// Render text content
 	if content != "" {
-		sb.WriteString(prompt + UserMsgStyle.Render(content) + "\n")
+		sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, prompt, UserMsgStyle.Render(content)) + "\n")
 	}
 
 	return sb.String()
@@ -233,30 +232,24 @@ func RenderAssistantMessage(params AssistantParams) string {
 	if params.StreamActive && params.IsLast {
 		aiIcon = AIPromptStyle.Render(params.SpinnerView + " ")
 	}
-	aiIndent := "  "
 
 	// Display thinking content (reasoning_content) if available
 	if params.Thinking != "" {
 		wrapWidth := max(params.Width-2, MinWrapWidth)
 		wrapped := lipgloss.NewStyle().Width(wrapWidth).Render(params.Thinking)
-
 		var lines []string
 		for _, line := range strings.Split(wrapped, "\n") {
 			if strings.TrimSpace(line) != "" {
 				lines = append(lines, ThinkingStyle.Render(line))
 			}
 		}
-
 		thinkingIcon := ThinkingStyle.Render("✦ ")
-		thinkingContent := strings.Join(lines, "\n"+aiIndent)
-		sb.WriteString(thinkingIcon + thinkingContent + "\n\n")
+		sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, thinkingIcon, strings.Join(lines, "\n")) + "\n\n")
 	}
 
-	// Render content based on streaming state
 	content := FormatAssistantContent(params)
 	if content != "" {
-		content = strings.ReplaceAll(content, "\n", "\n"+aiIndent)
-		sb.WriteString(aiIcon + content + "\n")
+		sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, aiIcon, content) + "\n")
 	}
 
 	return sb.String()
@@ -345,7 +338,7 @@ func RenderToolCalls(params ToolCallsParams) string {
 			label := FormatAgentLabel(tc.Input)
 			_, hasResult := params.ResultMap[tc.ID]
 			if hasResult {
-				sb.WriteString(ToolCallStyle.Render(fmt.Sprintf("● %s", label)) + "\n")
+				sb.WriteString(renderToolLine(label) + "\n")
 			} else {
 				sb.WriteString(ToolCallStyle.Render(fmt.Sprintf("%s %s", params.SpinnerView, label)))
 				if !params.ToolCallsExpanded {
@@ -359,7 +352,7 @@ func RenderToolCalls(params ToolCallsParams) string {
 				sb.WriteString(formatAgentDefinition(tc.Input))
 			}
 		} else if params.ToolCallsExpanded {
-			toolLine := ToolCallStyle.Render(fmt.Sprintf("● %s", tc.Name))
+			toolLine := renderToolLine(tc.Name)
 			sb.WriteString(toolLine + "\n")
 			var p map[string]any
 			if err := json.Unmarshal([]byte(tc.Input), &p); err == nil {
@@ -376,14 +369,11 @@ func RenderToolCalls(params ToolCallsParams) string {
 			}
 		} else {
 			if tc.Name == tool.ToolTaskGet && params.TaskOwnerMap != nil {
-				// Show owner name instead of raw task ID
 				args := extractTaskGetDisplay(tc.Input, params.TaskOwnerMap)
-				toolLine := ToolCallStyle.Render(fmt.Sprintf("● %s(%s)", tc.Name, args))
-				sb.WriteString(toolLine + "\n")
+				sb.WriteString(renderToolLine(fmt.Sprintf("%s(%s)", tc.Name, args)) + "\n")
 			} else {
 				args := ExtractToolArgs(tc.Input)
-				toolLine := ToolCallStyle.Render(fmt.Sprintf("● %s(%s)", tc.Name, args))
-				sb.WriteString(toolLine + "\n")
+				sb.WriteString(renderToolLine(fmt.Sprintf("%s(%s)", tc.Name, args)) + "\n")
 			}
 		}
 
@@ -999,4 +989,11 @@ func FormatTokenCount(count int) string {
 	default:
 		return fmt.Sprintf("%d", count)
 	}
+}
+
+// renderToolLine renders a tool call line with a bullet icon, where continuation
+// lines are automatically indented to align after the icon via JoinHorizontal.
+func renderToolLine(label string) string {
+	icon := ToolCallStyle.Render("● ")
+	return lipgloss.JoinHorizontal(lipgloss.Top, icon, ToolCallStyle.Render(label))
 }

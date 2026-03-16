@@ -350,3 +350,53 @@ func TestMDRenderer_Table(t *testing.T) {
 		t.Errorf("table should have row separators ─, got:\n%s", plain)
 	}
 }
+
+func TestMDRenderer_NoLeadingBlankLine(t *testing.T) {
+	r := NewMDRenderer(80)
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"paragraph", "Hello world."},
+		{"heading", "## Title"},
+		{"list", "- item 1\n- item 2"},
+		{"code block", "```go\nfunc main() {}\n```"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := r.Render(tt.input)
+			if err != nil {
+				t.Fatalf("Render error: %v", err)
+			}
+			if strings.HasPrefix(out, "\n") {
+				t.Errorf("output should not start with blank line, got:\n%q", out)
+			}
+		})
+	}
+}
+
+func TestMDRenderer_NoConsecutiveBlankLines(t *testing.T) {
+	r := NewMDRenderer(80)
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"heading + paragraph", "## Title\n\nSome content here."},
+		{"paragraph + list", "Here are items:\n\n- Item 1\n- Item 2"},
+		{"paragraph + code", "Code:\n\n```go\nfmt.Println(\"hi\")\n```"},
+		{"heading + list", "## Summary\n\n- Item 1\n- Item 2"},
+		{"multi section", "## S1\n\nContent 1.\n\n## S2\n\nContent 2."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := r.Render(tt.input)
+			if err != nil {
+				t.Fatalf("Render error: %v", err)
+			}
+			if strings.Contains(out, "\n\n\n") {
+				plain := stripANSI(out)
+				t.Errorf("output should not contain consecutive blank lines, got:\n%s", plain)
+			}
+		})
+	}
+}
