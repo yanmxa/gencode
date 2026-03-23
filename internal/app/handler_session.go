@@ -6,7 +6,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appprovider "github.com/yanmxa/gencode/internal/app/provider"
 	appsession "github.com/yanmxa/gencode/internal/app/session"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -72,12 +71,7 @@ func (m *model) saveSession() error {
 	m.session.CurrentID = sess.Metadata.ID
 	m.initTaskStorage()
 
-	// Reconfigure agent tool with updated parent session ID so subsequent
-	// subagent invocations link to this session.
-	if m.provider.LLM != nil {
-		appprovider.ConfigureAgentTool(m.provider.LLM, m.cwd, m.getModelID(), m.hookEngine, m.session.Store, m.session.CurrentID,
-			m.agentToolOpts()...)
-	}
+	m.reconfigureAgentTool()
 
 	return nil
 }
@@ -170,7 +164,24 @@ func (m *model) updateSession(msg tea.Msg) (tea.Cmd, bool) {
 
 // handleSessionSelected handles when a session is selected from the selector
 func (m *model) handleSessionSelected(msg appsession.SelectedMsg) tea.Cmd {
-	if err := m.loadSession(msg.SessionID); err != nil {
+	sessionID := msg.SessionID
+
+	// If fork is pending, fork the selected session instead of resuming it directly.
+	if m.session.PendingFork {
+		m.session.PendingFork = false
+		if err := m.ensureSessionStore(); err != nil {
+			m.conv.AddNotice("Failed to fork session: " + err.Error())
+			return nil
+		}
+		forked, err := m.session.Store.Fork(sessionID)
+		if err != nil {
+			m.conv.AddNotice("Failed to fork session: " + err.Error())
+			return nil
+		}
+		sessionID = forked.Metadata.ID
+	}
+
+	if err := m.loadSession(sessionID); err != nil {
 		m.conv.AddNotice("Failed to load session: " + err.Error())
 	}
 

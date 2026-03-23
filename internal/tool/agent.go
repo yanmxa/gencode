@@ -291,7 +291,7 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 	}
 	var outputBuilder strings.Builder
 	fmt.Fprintf(&outputBuilder, "Agent: %s\nModel: %s\nTurns: %d\nToolUses: %d\nTokens: %d\nDuration: %s\n",
-		displayName, result.Model, result.TurnCount, result.ToolUses, result.TotalTokens, formatDuration(agentDuration))
+		displayName, result.Model, result.TurnCount, result.ToolUses, result.TotalTokens, FormatDuration(agentDuration))
 	if result.AgentID != "" {
 		fmt.Fprintf(&outputBuilder, "AgentID: %s\n", result.AgentID)
 	}
@@ -323,8 +323,8 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 	}
 }
 
-// formatDuration formats a duration as human-readable string (e.g., "2m 30s", "45s")
-func formatDuration(d time.Duration) string {
+// FormatDuration formats a duration as human-readable string (e.g., "2m 30s", "45s")
+func FormatDuration(d time.Duration) string {
 	if d < time.Second {
 		return fmt.Sprintf("%dms", d.Milliseconds())
 	}

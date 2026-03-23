@@ -76,14 +76,15 @@ type Entry struct {
 // EntryMetadata_ holds session-level metadata written as a JSONL entry.
 // The trailing underscore avoids collision with the Entry.Metadata field name.
 type EntryMetadata_ struct {
-	Title        string        `json:"title"`
-	Provider     string        `json:"provider"`
-	Model        string        `json:"model"`
-	Cwd          string        `json:"cwd"`
-	CreatedAt    time.Time     `json:"createdAt"`
-	UpdatedAt    time.Time     `json:"updatedAt"`
-	MessageCount int           `json:"messageCount"`
-	Tasks        []tool.TodoTask `json:"tasks,omitempty"`
+	Title           string          `json:"title"`
+	Provider        string          `json:"provider"`
+	Model           string          `json:"model"`
+	Cwd             string          `json:"cwd"`
+	CreatedAt       time.Time       `json:"createdAt"`
+	UpdatedAt       time.Time       `json:"updatedAt"`
+	MessageCount    int             `json:"messageCount"`
+	ParentSessionID string          `json:"parentSessionId,omitempty"`
+	Tasks           []tool.TodoTask `json:"tasks,omitempty"`
 }
 
 // SessionMetadata contains metadata about a session

@@ -79,13 +79,15 @@ type model struct {
 	approval *appapproval.Model
 
 	// UI toggles
-	showTasks bool // Ctrl+T toggles task list visibility
-	isGit     bool // cached: whether cwd is a git repository
+	showTasks    bool   // Ctrl+T toggles task list visibility
+	isGit        bool   // cached: whether cwd is a git repository
+	initialPrompt string // initial prompt from CLI args
 
 	// Config and Infra
 	settings   *config.Settings
 	hookEngine *hooks.Engine
 	loop       *core.Loop
+	startTime  time.Time
 }
 
 // --- Constructor and Init ---
@@ -160,6 +162,7 @@ func newModel(opts options.RunOptions) (model, error) {
 		settings:   settings,
 		hookEngine: hookEngine,
 		loop:       &core.Loop{},
+		startTime:  time.Now(),
 	}
 
 	// Apply run options
@@ -168,6 +171,10 @@ func newModel(opts options.RunOptions) (model, error) {
 		if err := plugin.DefaultRegistry.LoadFromPath(ctx, opts.PluginDir); err != nil {
 			return model{}, fmt.Errorf("failed to load plugins from %s: %w", opts.PluginDir, err)
 		}
+	}
+
+	if opts.Prompt != "" && !opts.PlanMode {
+		m.initialPrompt = opts.Prompt
 	}
 
 	if opts.PlanMode {
@@ -194,6 +201,14 @@ func newModel(opts options.RunOptions) (model, error) {
 			return model{}, fmt.Errorf("no previous session to continue: %w", err)
 		}
 
+		if opts.Fork {
+			forked, err := sessionStore.Fork(sess.Metadata.ID, sess)
+			if err != nil {
+				return model{}, fmt.Errorf("failed to fork session: %w", err)
+			}
+			sess = forked
+		}
+
 		m.restoreSessionData(sess)
 	}
 
@@ -203,7 +218,25 @@ func newModel(opts options.RunOptions) (model, error) {
 			return model{}, fmt.Errorf("failed to initialize session store: %w", err)
 		}
 		m.session.Store = sessionStore
-		m.session.PendingSelector = true
+
+		if opts.ResumeID != "" {
+			sess, err := sessionStore.Load(opts.ResumeID)
+			if err != nil {
+				return model{}, fmt.Errorf("failed to load session %s: %w", opts.ResumeID, err)
+			}
+			if opts.Fork {
+				forked, err := sessionStore.Fork(sess.Metadata.ID, sess)
+				if err != nil {
+					return model{}, fmt.Errorf("failed to fork session: %w", err)
+				}
+				sess = forked
+			}
+			m.restoreSessionData(sess)
+		} else {
+			// No ID — open session selector
+			m.session.PendingSelector = true
+			m.session.PendingFork = opts.Fork
+		}
 	}
 
 	// When GEN_TASK_LIST_ID is set, initialize task storage immediately
@@ -230,7 +263,13 @@ func (m model) Init() tea.Cmd {
 		})
 	}
 
-	return tea.Batch(textarea.Blink, m.output.Spinner.Tick, appmcp.AutoConnect())
+	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, appmcp.AutoConnect()}
+	if m.initialPrompt != "" {
+		prompt := m.initialPrompt
+		m.initialPrompt = ""
+		cmds = append(cmds, func() tea.Msg { return initialPromptMsg(prompt) })
+	}
+	return tea.Batch(cmds...)
 }
 
 // --- Message commit pipeline ---
@@ -279,6 +318,14 @@ func (m *model) commitMessagesWithCheck(checkReady bool) []tea.Cmd {
 func isGitRepo(dir string) bool {
 	_, err := os.Stat(dir + "/.git")
 	return err == nil
+}
+
+// reconfigureAgentTool updates the agent tool with the current session/provider state.
+func (m *model) reconfigureAgentTool() {
+	if m.provider.LLM != nil {
+		appprovider.ConfigureAgentTool(m.provider.LLM, m.cwd, m.getModelID(), m.hookEngine, m.session.Store, m.session.CurrentID,
+			m.agentToolOpts()...)
+	}
 }
 
 // agentToolOpts returns the common options for ConfigureAgentTool calls.

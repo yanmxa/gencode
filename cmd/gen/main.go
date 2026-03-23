@@ -29,8 +29,10 @@ var version = "1.9.10"
 var cliOpts struct {
 	print     string // -p/--print: non-interactive print mode
 	plan      bool
-	cont      bool // --continue
-	resume    bool
+	cont      bool   // --continue
+	resume    bool // --resume
+
+	fork      bool // --fork: fork from continued/resumed session
 	pluginDir string
 }
 
@@ -49,6 +51,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&cliOpts.plan, "plan", false, "Enter plan mode")
 	rootCmd.Flags().BoolVarP(&cliOpts.cont, "continue", "c", false, "Resume the most recent session")
 	rootCmd.Flags().BoolVarP(&cliOpts.resume, "resume", "r", false, "Select and resume a previous session")
+	rootCmd.Flags().BoolVar(&cliOpts.fork, "fork", false, "Fork from the continued/resumed session into a new session")
 	rootCmd.Flags().StringVar(&cliOpts.pluginDir, "plugin-dir", "", "Load plugins from a specific directory")
 
 	// Register subcommands
@@ -83,6 +86,13 @@ Non-interactive mode:
 			printPrompt = readStdin()
 		}
 
+		// When -r is used with an argument, treat it as a session ID
+		var resumeID string
+		if cliOpts.resume && len(args) > 0 {
+			resumeID = args[0]
+			args = args[1:]
+		}
+
 		prompt := strings.Join(args, " ")
 
 		opts := options.RunOptions{
@@ -92,6 +102,8 @@ Non-interactive mode:
 			PlanMode:  cliOpts.plan,
 			Continue:  cliOpts.cont,
 			Resume:    cliOpts.resume,
+			ResumeID:  resumeID,
+			Fork:      cliOpts.fork,
 		}
 		if err := app.RunWithOptions(opts); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -152,6 +164,9 @@ Interactive Mode:
 Session:
   gen -c, --continue         Resume the most recent session
   gen -r, --resume           Select and resume a previous session
+  gen -r <session-id>        Resume a specific session by ID
+  gen -c --fork              Fork the most recent session into a new one
+  gen -r --fork              Select a session and fork it
 
 Commands:
   version      Print the version number

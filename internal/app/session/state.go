@@ -8,5 +8,6 @@ type State struct {
 	CurrentID       string
 	Selector        Model
 	PendingSelector bool
+	PendingFork     bool   // Fork after session selection
 	Summary         string // Loaded session summary (from compaction)
 }

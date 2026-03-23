@@ -7,6 +7,8 @@ type RunOptions struct {
 	Prompt    string // initial prompt for interactive TUI
 	PluginDir string
 	PlanMode  bool // enter plan mode
-	Continue  bool // resume most recent session
-	Resume    bool // open session selector
+	Continue  bool   // resume most recent session
+	Resume    bool   // open session selector or resume by ID
+	ResumeID  string // specific session ID to resume
+	Fork      bool // fork from the continued/resumed session
 }

@@ -4,6 +4,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
@@ -17,6 +18,7 @@ import (
 	"github.com/yanmxa/gencode/internal/options"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/tool"
 	_ "github.com/yanmxa/gencode/internal/provider/anthropic"
 	_ "github.com/yanmxa/gencode/internal/provider/google"
 	_ "github.com/yanmxa/gencode/internal/provider/openai"
@@ -53,8 +55,13 @@ func RunWithOptions(opts options.RunOptions) error {
 		return err
 	}
 
-	if _, err := tea.NewProgram(m).Run(); err != nil {
+	finalModel, err := tea.NewProgram(m).Run()
+	if err != nil {
 		return fmt.Errorf("failed to run TUI: %w", err)
+	}
+
+	if fm, ok := finalModel.(model); ok {
+		printExitMessage(fm)
 	}
 	return nil
 }
@@ -166,4 +173,15 @@ func loadSettings() *config.Settings {
 		return config.Default()
 	}
 	return settings
+}
+
+// printExitMessage prints session duration and resume command after the TUI exits.
+func printExitMessage(m model) {
+	duration := time.Since(m.startTime)
+
+	fmt.Printf("\n✻ Worked for %s\n", tool.FormatDuration(duration))
+
+	if m.session.CurrentID != "" {
+		fmt.Printf("\nResume this session with:\n  gen -r %s\n\n", m.session.CurrentID)
+	}
 }

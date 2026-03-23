@@ -12,9 +12,15 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/shared"
 )
 
+// initialPromptMsg is sent from Init() to inject an initial CLI prompt.
+type initialPromptMsg string
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// ── Input & UI chrome ────────────────────────────────────
 	switch msg := msg.(type) {
+	case initialPromptMsg:
+		m.input.Textarea.SetValue(string(msg))
+		return m, m.handleSubmit()
 	case tea.KeyMsg:
 		if c, ok := m.handleKeypress(msg); ok {
 			return m, c

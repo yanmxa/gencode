@@ -31,6 +31,7 @@ func handlerRegistry() map[string]CommandHandler {
 		"provider":   handleProviderCommand,
 		"model":      handleModelCommand,
 		"clear":      handleClearCommand,
+		"fork":       handleForkCommand,
 		"help":       handleHelpCommand,
 		"glob":       handleGlobCommand,
 		"tools":      handleToolCommand,
@@ -160,6 +161,37 @@ func handleClearCommand(ctx context.Context, m *model, args string) (string, tea
 		exec.Command("tmux", "clear-history").Run()
 	}
 	return "", tea.ClearScreen, nil
+}
+
+func handleForkCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
+	if len(m.conv.Messages) == 0 {
+		return "Nothing to fork — no messages in current session.", nil, nil
+	}
+
+	// Save current session first so all messages are persisted.
+	if err := m.saveSession(); err != nil {
+		return "", nil, fmt.Errorf("failed to save session before fork: %w", err)
+	}
+
+	if m.session.CurrentID == "" {
+		return "No active session to fork.", nil, nil
+	}
+
+	forked, err := m.session.Store.Fork(m.session.CurrentID)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to fork session: %w", err)
+	}
+
+	// Switch to the forked session.
+	m.session.CurrentID = forked.Metadata.ID
+	m.session.Summary = ""
+	tool.DefaultTodoStore.SetStorageDir("")
+	m.initTaskStorage()
+
+	m.reconfigureAgentTool()
+
+	originalID := forked.Metadata.ParentSessionID
+	return fmt.Sprintf("Forked conversation. You are now in the fork.\nTo resume the original: gen -r %s", originalID), nil, nil
 }
 
 func handleGlobCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {

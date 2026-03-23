@@ -150,14 +150,15 @@ func (s *Store) Save(session *Session) error {
 		SessionID: session.Metadata.ID,
 		Timestamp: now,
 		Metadata: &EntryMetadata_{
-			Title:        session.Metadata.Title,
-			Provider:     session.Metadata.Provider,
-			Model:        session.Metadata.Model,
-			Cwd:          session.Metadata.Cwd,
-			CreatedAt:    session.Metadata.CreatedAt,
-			UpdatedAt:    session.Metadata.UpdatedAt,
-			MessageCount: session.Metadata.MessageCount,
-			Tasks:        session.Tasks,
+			Title:           session.Metadata.Title,
+			Provider:        session.Metadata.Provider,
+			Model:           session.Metadata.Model,
+			Cwd:             session.Metadata.Cwd,
+			CreatedAt:       session.Metadata.CreatedAt,
+			UpdatedAt:       session.Metadata.UpdatedAt,
+			MessageCount:    session.Metadata.MessageCount,
+			ParentSessionID: session.Metadata.ParentSessionID,
+			Tasks:           session.Tasks,
 		},
 	}
 	if err := enc.Encode(metaEntry); err != nil {
@@ -442,10 +443,109 @@ func (s *Store) loadWithoutLock(id string) (*Session, error) {
 		sess.Metadata.CreatedAt = meta.CreatedAt
 		sess.Metadata.UpdatedAt = meta.UpdatedAt
 		sess.Metadata.MessageCount = meta.MessageCount
+		sess.Metadata.ParentSessionID = meta.ParentSessionID
 		sess.Tasks = meta.Tasks
 	}
 
 	return sess, nil
+}
+
+// Fork creates a new session by copying all entries from the source session.
+// The new session gets a fresh ID and timestamps, preserving the full conversation history.
+// If source is non-nil, it is used directly (avoiding a redundant disk load).
+func (s *Store) Fork(sourceID string, source ...*Session) (*Session, error) {
+	// Fetch git branch outside the lock (spawns subprocess).
+	gitBranch := getGitBranch(s.cwd)
+	newID := generateSessionID()
+	now := time.Now()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Use provided session or load from disk.
+	var src *Session
+	if len(source) > 0 && source[0] != nil {
+		src = source[0]
+	} else {
+		var err error
+		src, err = s.loadWithoutLock(sourceID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load source session: %w", err)
+		}
+	}
+
+	forked := &Session{
+		Metadata: SessionMetadata{
+			ID:              newID,
+			Title:           src.Metadata.Title,
+			Provider:        src.Metadata.Provider,
+			Model:           src.Metadata.Model,
+			Cwd:             src.Metadata.Cwd,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+			MessageCount:    len(src.Entries),
+			ParentSessionID: sourceID,
+		},
+		Entries: src.Entries, // share slice; entries are written to file then discarded
+		Tasks:   src.Tasks,
+	}
+
+	// Write the forked session file.
+	filePath := filepath.Join(s.baseDir, newID+".jsonl")
+	f, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create forked session file: %w", err)
+	}
+	defer f.Close()
+
+	enc := json.NewEncoder(f)
+	enc.SetEscapeHTML(false)
+
+	for _, entry := range src.Entries {
+		entry.SessionID = newID
+		entry.Timestamp = now
+		if entry.GitBranch == "" {
+			entry.GitBranch = gitBranch
+		}
+		if err := enc.Encode(entry); err != nil {
+			return nil, fmt.Errorf("failed to write entry: %w", err)
+		}
+	}
+
+	// Write metadata entry.
+	metaEntry := Entry{
+		Type:      EntryMetadata,
+		SessionID: newID,
+		Timestamp: now,
+		Metadata: &EntryMetadata_{
+			Title:           forked.Metadata.Title,
+			Provider:        forked.Metadata.Provider,
+			Model:           forked.Metadata.Model,
+			Cwd:             forked.Metadata.Cwd,
+			CreatedAt:       forked.Metadata.CreatedAt,
+			UpdatedAt:       forked.Metadata.UpdatedAt,
+			MessageCount:    forked.Metadata.MessageCount,
+			ParentSessionID: sourceID,
+			Tasks:           forked.Tasks,
+		},
+	}
+	if err := enc.Encode(metaEntry); err != nil {
+		return nil, fmt.Errorf("failed to write metadata entry: %w", err)
+	}
+
+	// Update the sessions index.
+	s.upsertIndexEntry(forked, filePath, false)
+
+	// Copy session memory if it exists.
+	srcMemory := filepath.Join(s.baseDir, sourceID, "session-memory", "summary.md")
+	if data, err := os.ReadFile(srcMemory); err == nil && len(data) > 0 {
+		dstDir := filepath.Join(s.baseDir, newID, "session-memory")
+		if err := os.MkdirAll(dstDir, 0o755); err == nil {
+			_ = os.WriteFile(filepath.Join(dstDir, "summary.md"), data, 0o644)
+		}
+	}
+
+	return forked, nil
 }
 
 // listByScanning falls back to scanning JSONL files when the index is unavailable.
@@ -618,6 +718,7 @@ func (s *Store) loadFromFile(filePath, id string) (*Session, error) {
 		sess.Metadata.CreatedAt = meta.CreatedAt
 		sess.Metadata.UpdatedAt = meta.UpdatedAt
 		sess.Metadata.MessageCount = meta.MessageCount
+		sess.Metadata.ParentSessionID = meta.ParentSessionID
 		sess.Tasks = meta.Tasks
 	}
 

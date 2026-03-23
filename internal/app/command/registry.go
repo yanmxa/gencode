@@ -23,6 +23,7 @@ func builtinCommands() []Info {
 		{Name: "provider", Description: "List and connect to LLM providers"},
 		{Name: "model", Description: "List and select models"},
 		{Name: "clear", Description: "Clear chat history"},
+		{Name: "fork", Description: "Fork current conversation into a new session"},
 		{Name: "help", Description: "Show available commands"},
 		{Name: "glob", Description: "Find files matching a pattern"},
 		{Name: "tools", Description: "Manage available tools (enable/disable)"},

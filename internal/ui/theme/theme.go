@@ -43,8 +43,8 @@ var CurrentTheme = Theme{
 	Success:   lipgloss.AdaptiveColor{Dark: "#10B981", Light: "#059669"},
 	Error:     lipgloss.AdaptiveColor{Dark: "#EF4444", Light: "#DC2626"},
 	Warning:   lipgloss.AdaptiveColor{Dark: "#FBBF24", Light: "#B45309"},
-	SuccessBg: lipgloss.AdaptiveColor{Dark: "#1a2e1a", Light: "#dafbe1"},
-	ErrorBg:   lipgloss.AdaptiveColor{Dark: "#2e1a1a", Light: "#ffebe9"},
+	SuccessBg: lipgloss.AdaptiveColor{Dark: "#1a3a1a", Light: "#c8f5d0"},
+	ErrorBg:   lipgloss.AdaptiveColor{Dark: "#3a1a1a", Light: "#fdd8d5"},
 
 	Border:     lipgloss.AdaptiveColor{Dark: "#374151", Light: "#D1D5DB"},
 	Background: lipgloss.AdaptiveColor{Dark: "#1F2937", Light: "#F3F4F6"},
