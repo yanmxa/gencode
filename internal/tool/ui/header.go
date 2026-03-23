@@ -65,15 +65,7 @@ func RenderHeader(meta ResultMetadata, width int) string {
 	content := fmt.Sprintf("%s\n%s\n%s", title, subtitle, metaLine)
 
 	// Apply border style
-	boxWidth := width
-	if boxWidth <= 0 {
-		boxWidth = 50
-	}
-	if boxWidth > 80 {
-		boxWidth = 80
-	}
-
-	box := HeaderStyle.Width(boxWidth - 4).Render(content)
+	box := HeaderStyle.Width(capBoxWidth(width) - 4).Render(content)
 	return box
 }
 
@@ -89,22 +81,26 @@ func RenderErrorHeader(toolName, errorMsg string, width int) string {
 
 	content := fmt.Sprintf("%s\n%s\n%s", title, errorLine, msgLine)
 
-	boxWidth := width
-	if boxWidth <= 0 {
-		boxWidth = 50
-	}
-	if boxWidth > 80 {
-		boxWidth = 80
-	}
-
 	// Use red border for errors
 	errorBoxStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(ColorError).
 		Padding(0, 1)
 
-	box := errorBoxStyle.Width(boxWidth - 4).Render(content)
+	box := errorBoxStyle.Width(capBoxWidth(width) - 4).Render(content)
 	return box
+}
+
+// capBoxWidth constrains a box width to 80% of screen width (min 50).
+func capBoxWidth(width int) int {
+	if width <= 0 {
+		return 50
+	}
+	maxWidth := width * 80 / 100
+	if maxWidth < 50 {
+		return 50
+	}
+	return maxWidth
 }
 
 // RenderCompactHeader renders a single-line header for compact display

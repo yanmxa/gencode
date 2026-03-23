@@ -2,6 +2,8 @@
 package app
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -37,6 +39,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case ctrlOSingleTickMsg:
 		return m, m.handleCtrlOSingleTick()
+	case promptSuggestionMsg:
+		m.handlePromptSuggestion(msg)
+		return m, nil
 	case shared.DismissedMsg, apptool.ToggleMsg, appskill.CycleMsg, appagent.ToggleMsg:
 		return m, nil
 	}
@@ -81,11 +86,25 @@ func (m *model) updateTextarea(msg tea.Msg) tea.Cmd {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
+	isPaste := false
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		isPaste = keyMsg.Paste
+	}
+
 	prevValue := m.input.Textarea.Value()
 	m.input.Textarea, cmd = m.input.Textarea.Update(msg)
 	cmds = append(cmds, cmd)
 
+	if isPaste {
+		trimmed := strings.TrimSpace(m.input.Textarea.Value())
+		if trimmed != m.input.Textarea.Value() {
+			m.input.Textarea.SetValue(trimmed)
+			m.input.Textarea.CursorEnd()
+		}
+	}
+
 	if m.input.Textarea.Value() != prevValue {
+		m.promptSuggestion.Clear()
 		m.input.UpdateHeight()
 		m.input.Suggestions.UpdateSuggestions(m.input.Textarea.Value())
 	}

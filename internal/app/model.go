@@ -84,10 +84,10 @@ type model struct {
 	initialPrompt string // initial prompt from CLI args
 
 	// Config and Infra
-	settings   *config.Settings
-	hookEngine *hooks.Engine
-	loop       *core.Loop
-	startTime  time.Time
+	settings         *config.Settings
+	hookEngine       *hooks.Engine
+	loop             *core.Loop
+	promptSuggestion promptSuggestionState
 }
 
 // --- Constructor and Init ---
@@ -162,7 +162,6 @@ func newModel(opts options.RunOptions) (model, error) {
 		settings:   settings,
 		hookEngine: hookEngine,
 		loop:       &core.Loop{},
-		startTime:  time.Now(),
 	}
 
 	// Apply run options

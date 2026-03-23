@@ -113,8 +113,17 @@ func (m *Model) HasAllToolResults(idx int) bool {
 
 // ConvertToProvider converts chat messages to provider format, skipping notices.
 func (m Model) ConvertToProvider() []message.Message {
-	providerMsgs := make([]message.Message, 0, len(m.Messages))
-	for _, msg := range m.Messages {
+	return m.ConvertToProviderFrom(0)
+}
+
+// ConvertToProviderFrom converts chat messages starting from startIdx to provider format.
+func (m Model) ConvertToProviderFrom(startIdx int) []message.Message {
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	providerMsgs := make([]message.Message, 0, len(m.Messages)-startIdx)
+	for i := startIdx; i < len(m.Messages); i++ {
+		msg := m.Messages[i]
 		if msg.Role == message.RoleNotice {
 			continue
 		}

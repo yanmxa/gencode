@@ -77,6 +77,11 @@ func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 
 	if m.shouldAutoCompact() {
 		commitCmds = append(commitCmds, m.triggerAutoCompact())
+	} else {
+		// Generate prompt suggestion in background
+		if cmd := m.startPromptSuggestion(); cmd != nil {
+			commitCmds = append(commitCmds, cmd)
+		}
 	}
 
 	return tea.Batch(commitCmds...)

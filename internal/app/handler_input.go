@@ -97,6 +97,15 @@ func (m *model) handleSuggestionKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 // handleInputKey handles general input keys (shortcuts, navigation, submit).
 func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	switch msg.Type {
+	case tea.KeyTab:
+		// Accept ghost text suggestion
+		if m.promptSuggestion.text != "" && m.input.Textarea.Value() == "" {
+			m.input.Textarea.SetValue(m.promptSuggestion.text)
+			m.input.Textarea.CursorEnd()
+			m.promptSuggestion.Clear()
+			return nil, true
+		}
+
 	case tea.KeyShiftTab:
 		if !m.conv.Stream.Active && !m.approval.IsActive() &&
 			!m.mode.Question.IsActive() &&
@@ -143,6 +152,10 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return tea.Quit, true
 
 	case tea.KeyEsc:
+		if m.promptSuggestion.text != "" {
+			m.promptSuggestion.Clear()
+			return nil, true
+		}
 		if m.input.Suggestions.IsVisible() {
 			m.input.Suggestions.Hide()
 			return nil, true
@@ -361,6 +374,7 @@ func (m *model) handleHistoryDown() tea.Cmd {
 }
 
 func (m *model) handleSubmit() tea.Cmd {
+	m.promptSuggestion.Clear()
 	if m.conv.Stream.Active {
 		return nil
 	}

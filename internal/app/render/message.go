@@ -37,7 +37,7 @@ func RenderWelcome() string {
 	icon := bracketStyle.Render("   < ") +
 		genStyle.Render("GEN") +
 		slashStyle.Render(" ✦ ") +
-		slashStyle.Render("/ ") +
+		slashStyle.Render("/") +
 		bracketStyle.Render(">")
 
 	return "\n" + icon

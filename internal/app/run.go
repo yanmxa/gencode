@@ -4,9 +4,9 @@ package app
 import (
 	"context"
 	"fmt"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/agent"
@@ -18,7 +18,6 @@ import (
 	"github.com/yanmxa/gencode/internal/options"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/tool"
 	_ "github.com/yanmxa/gencode/internal/provider/anthropic"
 	_ "github.com/yanmxa/gencode/internal/provider/google"
 	_ "github.com/yanmxa/gencode/internal/provider/openai"
@@ -175,13 +174,13 @@ func loadSettings() *config.Settings {
 	return settings
 }
 
-// printExitMessage prints session duration and resume command after the TUI exits.
+// printExitMessage prints resume command after the TUI exits.
 func printExitMessage(m model) {
-	duration := time.Since(m.startTime)
-
-	fmt.Printf("\n✻ Worked for %s\n", tool.FormatDuration(duration))
-
 	if m.session.CurrentID != "" {
-		fmt.Printf("\nResume this session with:\n  gen -r %s\n\n", m.session.CurrentID)
+		dim := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+		fmt.Println()
+		fmt.Println(dim.Render("Resume this session with:"))
+		fmt.Println(dim.Render("  gen -r " + m.session.CurrentID))
+		fmt.Println()
 	}
 }

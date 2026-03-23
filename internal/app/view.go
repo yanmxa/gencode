@@ -6,9 +6,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/yanmxa/gencode/internal/app/render"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/ui/theme"
+)
+
+var (
+	ghostTextStyle = lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+	ghostHintStyle = lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
 )
 
 func (m model) View() string {
@@ -48,7 +56,14 @@ func (m model) View() string {
 
 	prompt := render.InputPromptStyle.Render("❯ ")
 	pendingImagesView := m.input.RenderPendingImages()
-	inputView := prompt + m.input.Textarea.View()
+
+	var inputView string
+	if m.promptSuggestion.text != "" && m.input.Textarea.Value() == "" &&
+		!m.conv.Stream.Active && !m.input.Suggestions.IsVisible() {
+		inputView = prompt + ghostTextStyle.Render(m.promptSuggestion.text) + "  " + ghostHintStyle.Render("Tab")
+	} else {
+		inputView = prompt + m.input.Textarea.View()
+	}
 
 	var parts []string
 

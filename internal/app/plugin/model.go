@@ -1067,7 +1067,7 @@ func (s *Model) handleAddMarketplaceKeypress(key tea.KeyMsg) tea.Cmd {
 }
 
 func (s *Model) handleDetailKeypress(key tea.KeyMsg) tea.Cmd {
-	if s.handleNavigationKey(key) {
+	if s.handleNavigationKey(key, true) {
 		return nil
 	}
 	switch key.Type {
@@ -1084,7 +1084,7 @@ func (s *Model) handleDetailKeypress(key tea.KeyMsg) tea.Cmd {
 }
 
 func (s *Model) handleBrowseKeypress(key tea.KeyMsg) tea.Cmd {
-	if s.handleNavigationKey(key) {
+	if s.handleNavigationKey(key, true) {
 		return nil
 	}
 	switch key.Type {
@@ -1102,8 +1102,9 @@ func (s *Model) handleBrowseKeypress(key tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// handleNavigationKey handles common up/down navigation keys, returns true if handled
-func (s *Model) handleNavigationKey(key tea.KeyMsg) bool {
+// handleNavigationKey handles common up/down navigation keys, returns true if handled.
+// When vimKeys is true, j/k are also recognized as down/up.
+func (s *Model) handleNavigationKey(key tea.KeyMsg, vimKeys bool) bool {
 	switch key.Type {
 	case tea.KeyUp, tea.KeyCtrlP:
 		s.MoveUp()
@@ -1112,13 +1113,15 @@ func (s *Model) handleNavigationKey(key tea.KeyMsg) bool {
 		s.MoveDown()
 		return true
 	case tea.KeyRunes:
-		switch key.String() {
-		case "k":
-			s.MoveUp()
-			return true
-		case "j":
-			s.MoveDown()
-			return true
+		if vimKeys {
+			switch key.String() {
+			case "k":
+				s.MoveUp()
+				return true
+			case "j":
+				s.MoveDown()
+				return true
+			}
 		}
 	}
 	return false
@@ -1137,8 +1140,8 @@ func (s *Model) handleListKeypress(key tea.KeyMsg) tea.Cmd {
 		}
 	}
 
-	// Handle common navigation keys
-	if s.handleNavigationKey(key) {
+	// Handle common navigation keys (skip j/k when searching)
+	if s.handleNavigationKey(key, s.searchQuery == "") {
 		return nil
 	}
 

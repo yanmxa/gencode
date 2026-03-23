@@ -366,9 +366,8 @@ func (s *State) renderCommandSuggestions(width int) string {
 		items = items[:maxItems]
 	}
 
-	maxWidth := max(width-4, 40)
-	boxWidth := clampInt(width*80/100, 40, maxWidth)
-	contentWidth := max(boxWidth-4, 20)
+	boxWidth := max(width-2, 40)
+	contentWidth := max(boxWidth-2, 20)
 
 	var lines []string
 	for i, cmd := range items {
