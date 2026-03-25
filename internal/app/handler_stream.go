@@ -9,6 +9,7 @@ import (
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // updateStream routes LLM streaming messages.
@@ -51,6 +52,8 @@ func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 		m.provider.OutputTokens = msg.Usage.OutputTokens
 	}
 
+	m.conv.SetLastThinkingSignature(msg.ThinkingSignature)
+
 	if len(msg.ToolCalls) > 0 {
 		m.conv.SetLastToolCalls(msg.ToolCalls)
 		commitCmds := m.commitMessages()
@@ -66,6 +69,9 @@ func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 	}
 
 	m.conv.Stream.Stop()
+
+	// Reset per-turn thinking override
+	m.provider.ThinkingOverride = provider.ThinkingOff
 
 	commitCmds := m.commitMessages()
 
@@ -99,6 +105,7 @@ func (m *model) handleStreamError(err error) tea.Cmd {
 
 	m.conv.AppendErrorToLast(err)
 	m.conv.Stream.Stop()
+	m.provider.ThinkingOverride = provider.ThinkingOff
 	return tea.Batch(m.commitMessages()...)
 }
 
@@ -183,18 +190,21 @@ func convertChunkToMsg(chunk message.StreamChunk) appconv.ChunkMsg {
 
 // convertDoneChunk handles the done chunk type.
 func convertDoneChunk(chunk message.StreamChunk) appconv.ChunkMsg {
-	var usage *message.Usage
-	if chunk.Response != nil {
-		usage = &chunk.Response.Usage
+	if chunk.Response == nil {
+		return appconv.ChunkMsg{Done: true}
 	}
 
-	if chunk.Response != nil && len(chunk.Response.ToolCalls) > 0 {
+	usage := &chunk.Response.Usage
+	thinkingSig := chunk.Response.ThinkingSignature
+
+	if len(chunk.Response.ToolCalls) > 0 {
 		return appconv.ChunkMsg{
-			Done:      true,
-			ToolCalls: chunk.Response.ToolCalls,
-			Usage:     usage,
+			Done:              true,
+			ToolCalls:         chunk.Response.ToolCalls,
+			ThinkingSignature: thinkingSig,
+			Usage:             usage,
 		}
 	}
 
-	return appconv.ChunkMsg{Done: true, Usage: usage}
+	return appconv.ChunkMsg{Done: true, ThinkingSignature: thinkingSig, Usage: usage}
 }

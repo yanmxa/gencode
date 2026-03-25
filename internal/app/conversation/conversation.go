@@ -42,6 +42,13 @@ func (m *Model) SetLastToolCalls(calls []message.ToolCall) {
 	}
 }
 
+// SetLastThinkingSignature sets the thinking signature on the last message.
+func (m *Model) SetLastThinkingSignature(sig string) {
+	if len(m.Messages) > 0 && sig != "" {
+		m.Messages[len(m.Messages)-1].ThinkingSignature = sig
+	}
+}
+
 // AppendErrorToLast appends an error to the last message content.
 func (m *Model) AppendErrorToLast(err error) {
 	if len(m.Messages) > 0 {
@@ -129,11 +136,12 @@ func (m Model) ConvertToProviderFrom(startIdx int) []message.Message {
 		}
 
 		providerMsg := message.Message{
-			Role:      msg.Role,
-			Content:   msg.Content,
-			Images:    msg.Images,
-			ToolCalls: msg.ToolCalls,
-			Thinking:  msg.Thinking,
+			Role:              msg.Role,
+			Content:           msg.Content,
+			Images:            msg.Images,
+			ToolCalls:         msg.ToolCalls,
+			Thinking:          msg.Thinking,
+			ThinkingSignature: msg.ThinkingSignature,
 		}
 
 		if msg.ToolResult != nil {

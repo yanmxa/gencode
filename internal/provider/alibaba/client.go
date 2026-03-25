@@ -147,7 +147,11 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		}
 
 		if thinking {
-			params.SetExtraFields(map[string]any{"enable_thinking": true})
+			extraFields := map[string]any{"enable_thinking": true}
+			if budget := opts.ThinkingLevel.BudgetTokens(); budget > 0 {
+				extraFields["thinking_budget"] = budget
+			}
+			params.SetExtraFields(extraFields)
 		}
 
 		if opts.MaxTokens > 0 {

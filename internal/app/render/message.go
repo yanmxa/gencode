@@ -12,6 +12,7 @@ import (
 
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
@@ -45,11 +46,12 @@ func RenderWelcome() string {
 
 // OperationModeParams holds the parameters needed for rendering mode status.
 type OperationModeParams struct {
-	Mode        int // 0=normal, 1=autoAccept, 2=plan
-	InputTokens int
-	InputLimit  int
-	ModelName   string // Current model name shown right-aligned
-	Width       int    // Terminal width for right-alignment
+	Mode          int // 0=normal, 1=autoAccept, 2=plan
+	InputTokens   int
+	InputLimit    int
+	ModelName     string // Current model name shown right-aligned
+	Width         int    // Terminal width for right-alignment
+	ThinkingLevel provider.ThinkingLevel
 }
 
 // RenderModeStatus renders the combined mode status line.
@@ -58,6 +60,10 @@ func RenderModeStatus(params OperationModeParams) string {
 
 	if modeStatus := RenderOperationModeIndicator(params.Mode); modeStatus != "" {
 		parts = append(parts, modeStatus)
+	}
+
+	if thinkingStatus := RenderThinkingIndicator(params.ThinkingLevel); thinkingStatus != "" {
+		parts = append(parts, thinkingStatus)
 	}
 
 	if tokenUsage := RenderTokenUsage(params.InputTokens, params.InputLimit); tokenUsage != "" {
@@ -100,6 +106,32 @@ func RenderOperationModeIndicator(mode int) string {
 	style := lipgloss.NewStyle().Foreground(color)
 	hint := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted).Render("  shift+tab to toggle")
 	return "  " + style.Render(icon+label) + hint
+}
+
+// RenderThinkingIndicator returns a styled indicator for the current thinking level.
+func RenderThinkingIndicator(level provider.ThinkingLevel) string {
+	var icon, label string
+	var color lipgloss.TerminalColor
+
+	switch level {
+	case provider.ThinkingNormal:
+		icon = "✦"
+		label = " think"
+		color = theme.CurrentTheme.Accent
+	case provider.ThinkingHigh:
+		icon = "✦✦"
+		label = " think+"
+		color = theme.CurrentTheme.Primary
+	case provider.ThinkingUltra:
+		icon = "✦✦✦"
+		label = " ultrathink"
+		color = theme.CurrentTheme.AI
+	default:
+		return ""
+	}
+
+	style := lipgloss.NewStyle().Foreground(color)
+	return "  " + style.Render(icon+label)
 }
 
 // RenderTokenUsage returns token usage indicator.

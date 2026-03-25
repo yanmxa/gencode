@@ -252,7 +252,7 @@ func parseTableRow(line string) []string {
 	return cells
 }
 
-// renderInlineMarkdown renders inline markdown elements: `code`, **bold**, *italic*.
+// renderInlineMarkdown renders inline markdown elements: `code`, **bold**, *italic*, [text](url).
 func renderInlineMarkdown(text string) string {
 	var result strings.Builder
 	i := 0
@@ -266,6 +266,25 @@ func renderInlineMarkdown(text string) string {
 				result.WriteString(codeStyle.Render(code))
 				i += end + 2
 				continue
+			}
+		}
+		// Link: [text](url)
+		if text[i] == '[' {
+			closeBracket := strings.Index(text[i+1:], "](")
+			if closeBracket != -1 {
+				linkText := text[i+1 : i+1+closeBracket]
+				urlStart := i + 1 + closeBracket + 2
+				closeParen := strings.Index(text[urlStart:], ")")
+				if closeParen != -1 {
+					url := text[urlStart : urlStart+closeParen]
+					linkStyle := lipgloss.NewStyle().
+						Foreground(theme.CurrentTheme.Primary).
+						Underline(true)
+					styled := linkStyle.Render(linkText)
+					result.WriteString("\x1b]8;;" + url + "\x1b\\" + styled + "\x1b]8;;\x1b\\")
+					i = urlStart + closeParen + 1
+					continue
+				}
 			}
 		}
 		// Bold: **...**

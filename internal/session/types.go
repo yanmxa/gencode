@@ -26,7 +26,8 @@ type ContentBlock struct {
 	Text string `json:"text,omitempty"`
 
 	// thinking block
-	Thinking string `json:"thinking,omitempty"`
+	Thinking  string `json:"thinking,omitempty"`
+	Signature string `json:"signature,omitempty"` // opaque signature for thinking block replay
 
 	// tool_use block
 	ID    string          `json:"id,omitempty"`

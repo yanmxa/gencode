@@ -18,6 +18,8 @@ type State struct {
 	FetchingLimits bool
 	Selector       Model
 	StatusMessage  string // Temporary status shown in status bar
+	ThinkingLevel    provider.ThinkingLevel
+	ThinkingOverride provider.ThinkingLevel
 }
 
 // StatusExpiredMsg signals that the temporary status message should be cleared.

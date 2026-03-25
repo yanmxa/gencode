@@ -20,10 +20,11 @@ type TokenUsage struct {
 
 // Client wraps an LLM provider with model and token configuration.
 type Client struct {
-	Provider  provider.LLMProvider
-	Model     string
-	MaxTokens int // custom override; 0 means resolve from provider
-	tokens    TokenUsage
+	Provider      provider.LLMProvider
+	Model         string
+	MaxTokens     int // custom override; 0 means resolve from provider
+	ThinkingLevel provider.ThinkingLevel
+	tokens        TokenUsage
 }
 
 // AddUsage accumulates token usage from a completion response.
@@ -115,10 +116,11 @@ func (c *Client) opts(msgs []message.Message, tools []provider.Tool, sysPrompt s
 		maxTokens = defaultMaxTokens
 	}
 	return provider.CompletionOptions{
-		Model:        c.Model,
-		Messages:     msgs,
-		MaxTokens:    maxTokens,
-		Tools:        tools,
-		SystemPrompt: sysPrompt,
+		Model:         c.Model,
+		Messages:      msgs,
+		MaxTokens:     maxTokens,
+		Tools:         tools,
+		SystemPrompt:  sysPrompt,
+		ThinkingLevel: c.ThinkingLevel,
 	}
 }

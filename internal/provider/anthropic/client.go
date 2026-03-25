@@ -72,6 +72,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 		// Sanitizer for cross-provider tool ID compatibility (lazy, single-pass)
 		var ids toolIDSanitizer
+		thinkingBudget := int64(opts.ThinkingLevel.BudgetTokens())
 
 		// Remove orphaned tool_result blocks whose tool_use_id doesn't match
 		// any tool_use in the nearest preceding assistant message. This guards
@@ -111,30 +112,22 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					))
 				}
 			case message.RoleAssistant:
+				blocks := assistantContentBlocks(msg, thinkingBudget)
 				if len(msg.ToolCalls) > 0 {
-					// Assistant message with tool calls
-					blocks := make([]anthropic.ContentBlockParamUnion, 0, len(msg.ToolCalls)+1)
-					if msg.Content != "" {
-						blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
-					}
 					for _, tc := range msg.ToolCalls {
-						// Parse the JSON input string to any type
 						var input any
 						if tc.Input != "" {
 							if err := json.Unmarshal([]byte(tc.Input), &input); err != nil {
-								input = tc.Input // fallback to string if parse fails
+								input = tc.Input
 							}
 						} else {
-							// For tools with no parameters, use empty object instead of nil
 							input = map[string]any{}
 						}
 						blocks = append(blocks, anthropic.NewToolUseBlock(ids.resolve(tc.ID), input, tc.Name))
 					}
 					anthropicMsgs = append(anthropicMsgs, anthropic.NewAssistantMessage(blocks...))
-				} else {
-					anthropicMsgs = append(anthropicMsgs, anthropic.NewAssistantMessage(
-						anthropic.NewTextBlock(msg.Content),
-					))
+				} else if len(blocks) > 0 {
+					anthropicMsgs = append(anthropicMsgs, anthropic.NewAssistantMessage(blocks...))
 				}
 			}
 		}
@@ -146,10 +139,23 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		anthropicMsgs = mergeConsecutiveMessages(anthropicMsgs)
 
 		// Build request params
+		maxTokens := int64(opts.MaxTokens)
+
+		// When extended thinking is enabled, budget_tokens must be < max_tokens.
+		// Ensure max_tokens is large enough to accommodate the thinking budget + response.
+		if thinkingBudget > 0 && maxTokens <= thinkingBudget {
+			maxTokens = thinkingBudget + 8192 // leave room for the actual response
+		}
+
 		params := anthropic.MessageNewParams{
 			Model:     anthropic.Model(opts.Model),
-			MaxTokens: int64(opts.MaxTokens),
+			MaxTokens: maxTokens,
 			Messages:  anthropicMsgs,
+		}
+
+		// Configure extended thinking
+		if thinkingBudget > 0 {
+			params.Thinking = anthropic.ThinkingConfigParamOfEnabled(thinkingBudget)
 		}
 
 		if opts.SystemPrompt != "" {
@@ -238,6 +244,18 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 							Text: delta.Delta.Text,
 						}
 						response.Content += delta.Delta.Text
+					}
+				case "thinking_delta":
+					if delta.Delta.Thinking != "" {
+						ch <- message.StreamChunk{
+							Type: message.ChunkTypeThinking,
+							Text: delta.Delta.Thinking,
+						}
+						response.Thinking += delta.Delta.Thinking
+					}
+				case "signature_delta":
+					if delta.Delta.Signature != "" {
+						response.ThinkingSignature += delta.Delta.Signature
 					}
 				case "input_json_delta":
 					if delta.Delta.PartialJSON != "" {
@@ -398,6 +416,18 @@ func mergeConsecutiveMessages(msgs []anthropic.MessageParam) []anthropic.Message
 		}
 	}
 	return merged
+}
+
+// assistantContentBlocks builds the thinking + text content blocks for an assistant message.
+func assistantContentBlocks(msg message.Message, thinkingBudget int64) []anthropic.ContentBlockParamUnion {
+	blocks := make([]anthropic.ContentBlockParamUnion, 0, 2)
+	if msg.Thinking != "" && thinkingBudget > 0 && msg.ThinkingSignature != "" {
+		blocks = append(blocks, anthropic.NewThinkingBlock(msg.ThinkingSignature, msg.Thinking))
+	}
+	if msg.Content != "" {
+		blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
+	}
+	return blocks
 }
 
 // Ensure Client implements LLMProvider

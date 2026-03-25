@@ -11,6 +11,7 @@ import (
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/ui/history"
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
@@ -409,8 +410,12 @@ func (m *model) handleSubmit() tea.Cmd {
 		m.input.Textarea.Reset()
 		m.input.Textarea.SetHeight(appinput.MinTextareaHeight())
 
-		if result != "" {
+		// For skill commands, the user message is appended inside handleSkillInvocation
+		// before startLLMStream, so skip it here. For regular commands, append now.
+		if cmd == nil {
 			m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: input})
+		}
+		if result != "" {
 			m.conv.AddNotice(result)
 		}
 
@@ -444,7 +449,34 @@ func (m *model) handleSubmit() tea.Cmd {
 		return tea.Batch(m.commitMessages()...)
 	}
 
+	// Detect thinking keywords in the user's message
+	m.detectThinkingKeywords(content)
+
 	return m.startLLMStream(nil)
+}
+
+// detectThinkingKeywords scans the user's message for explicit thinking-level keywords
+// and sets a per-turn override (not persistent). The override resets after the turn completes.
+func (m *model) detectThinkingKeywords(input string) {
+	lower := strings.ToLower(input)
+
+	// Check for ultrathink keywords first (most specific)
+	if strings.Contains(lower, "ultrathink") ||
+		strings.Contains(lower, "think really hard") ||
+		strings.Contains(lower, "think super hard") ||
+		strings.Contains(lower, "maximum thinking") {
+		m.provider.ThinkingOverride = provider.ThinkingUltra
+		return
+	}
+
+	// Check for high thinking keywords
+	if strings.Contains(lower, "think harder") ||
+		strings.Contains(lower, "think hard") ||
+		strings.Contains(lower, "think deeply") ||
+		strings.Contains(lower, "think carefully") {
+		m.provider.ThinkingOverride = provider.ThinkingHigh
+		return
+	}
 }
 
 func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
@@ -530,13 +562,12 @@ func (m *model) handleSkillInvocation() tea.Cmd {
 		return tea.Batch(m.commitMessages()...)
 	}
 
-	// Get the user message (skill args or skill name)
-	userMessage := m.skill.PendingArgs
-	if userMessage == "" {
-		userMessage = "Execute the skill."
+	// Append user message before starting the stream so the LLM receives it
+	userMsg := m.skill.PendingArgs
+	if userMsg == "" {
+		userMsg = "Execute the skill."
 	}
-
-	m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: userMessage})
+	m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: userMsg})
 
 	// Store in ActiveInvocation for persistence across turns
 	if m.skill.PendingInstructions != "" {
@@ -545,7 +576,7 @@ func (m *model) handleSkillInvocation() tea.Cmd {
 	}
 	m.skill.PendingArgs = ""
 
-	return m.startLLMStream(nil) // No extra needed, configureLoop reads ActiveInvocation
+	return m.startLLMStream(nil)
 }
 
 // checkPromptHook runs UserPromptSubmit hook and returns (blocked, reason).

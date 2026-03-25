@@ -13,6 +13,7 @@ type ChatMessage struct {
 	Role              Role
 	Content           string
 	Thinking          string
+	ThinkingSignature string
 	Images            []ImageData
 	ToolCalls         []ToolCall
 	ToolCallsExpanded bool
@@ -34,12 +35,13 @@ const (
 
 // Message represents a chat message exchanged between user and assistant.
 type Message struct {
-	Role       Role        `json:"role"`
-	Content    string      `json:"content,omitempty"`
-	Images     []ImageData `json:"images,omitempty"`
-	Thinking   string      `json:"thinking,omitempty"`
-	ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`
-	ToolResult *ToolResult `json:"tool_result,omitempty"`
+	Role              Role        `json:"role"`
+	Content           string      `json:"content,omitempty"`
+	Images            []ImageData `json:"images,omitempty"`
+	Thinking          string      `json:"thinking,omitempty"`
+	ThinkingSignature string      `json:"thinking_signature,omitempty"`
+	ToolCalls         []ToolCall  `json:"tool_calls,omitempty"`
+	ToolResult        *ToolResult `json:"tool_result,omitempty"`
 }
 
 // ImageData represents image data for multimodal messages.
@@ -160,9 +162,10 @@ func NeedsCompaction(inputTokens, inputLimit int) bool {
 
 // CompletionResponse represents a completion response from an LLM provider.
 type CompletionResponse struct {
-	Content    string     `json:"content,omitempty"`
-	Thinking   string     `json:"thinking,omitempty"` // Reasoning content for thinking models
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	Content           string     `json:"content,omitempty"`
+	Thinking          string     `json:"thinking,omitempty"`           // Reasoning content for thinking models
+	ThinkingSignature string     `json:"thinking_signature,omitempty"` // Anthropic: signature for thinking block replay
+	ToolCalls         []ToolCall `json:"tool_calls,omitempty"`
 	StopReason string     `json:"stop_reason"` // "end_turn", "tool_use", "max_tokens"
 	Usage      Usage      `json:"usage"`
 }

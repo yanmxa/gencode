@@ -36,6 +36,7 @@ func builtinCommands() []Info {
 		{Name: "memory", Description: "View and manage memory files (list/show/edit) with @import support"},
 		{Name: "mcp", Description: "Manage MCP servers (add/edit/remove/connect/list)"},
 		{Name: "plugin", Description: "Manage plugins (list/enable/disable/info)"},
+		{Name: "think", Description: "Toggle thinking level (off/think/think+/ultrathink)"},
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -20,6 +21,8 @@ import (
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/ui"
+
+	appprovider "github.com/yanmxa/gencode/internal/app/provider"
 )
 
 type CommandHandler func(ctx context.Context, m *model, args string) (string, tea.Cmd, error)
@@ -75,6 +78,7 @@ func handlerRegistry() map[string]CommandHandler {
 			result, err := appplugin.HandleCommand(ctx, &m.plugin.Selector, m.cwd, m.width, m.height, args)
 			return result, nil, err
 		},
+		"think": handleThinkCommand,
 	}
 }
 
@@ -258,4 +262,27 @@ func handleAgentCommand(ctx context.Context, m *model, args string) (string, tea
 		return "", nil, err
 	}
 	return "", nil, nil
+}
+
+func handleThinkCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
+	args = strings.TrimSpace(strings.ToLower(args))
+
+	switch args {
+	case "off", "0":
+		m.provider.ThinkingLevel = provider.ThinkingOff
+	case "", "toggle":
+		// Cycle to next level
+		m.provider.ThinkingLevel = m.provider.ThinkingLevel.Next()
+	case "think", "normal", "1":
+		m.provider.ThinkingLevel = provider.ThinkingNormal
+	case "think+", "high", "2":
+		m.provider.ThinkingLevel = provider.ThinkingHigh
+	case "ultra", "ultrathink", "max", "3":
+		m.provider.ThinkingLevel = provider.ThinkingUltra
+	default:
+		return "Usage: /think [off|think|think+|ultra]\n\nLevels:\n  off        — No extended thinking\n  think      — Moderate thinking budget\n  think+     — Extended thinking budget\n  ultra      — Maximum thinking budget\n\nWithout arguments, cycles to the next level.", nil, nil
+	}
+
+	m.provider.StatusMessage = fmt.Sprintf("thinking: %s", m.provider.ThinkingLevel.String())
+	return "", appprovider.StatusTimer(3 * time.Second), nil
 }

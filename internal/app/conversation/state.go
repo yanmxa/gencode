@@ -24,13 +24,14 @@ func (s *StreamState) Stop() {
 
 // ChunkMsg carries a single streaming chunk from the LLM.
 type ChunkMsg struct {
-	Text             string
-	Thinking         string
-	Done             bool
-	Err              error
-	ToolCalls        []message.ToolCall
-	BuildingToolName string
-	Usage            *message.Usage
+	Text              string
+	Thinking          string
+	ThinkingSignature string // Anthropic: opaque signature for thinking block replay
+	Done              bool
+	Err               error
+	ToolCalls         []message.ToolCall
+	BuildingToolName  string
+	Usage             *message.Usage
 }
 
 // ContinueMsg requests a follow-up LLM call with the given messages.

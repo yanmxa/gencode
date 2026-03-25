@@ -45,7 +45,7 @@ func MessagesToEntries(msgs []message.Message) []Entry {
 			entry.Type = EntryAssistant
 			entry.Message = &EntryMessage{
 				Role:    "assistant",
-				Content: AssistantContentToBlocks(msg.Content, msg.Thinking, msg.ToolCalls),
+				Content: AssistantContentToBlocks(msg.Content, msg.Thinking, msg.ThinkingSignature, msg.ToolCalls),
 			}
 		default:
 			continue
@@ -128,12 +128,13 @@ func UserContentToBlocks(content string, images []message.ImageData) []ContentBl
 }
 
 // AssistantContentToBlocks converts assistant text, thinking, and tool calls to content blocks.
-func AssistantContentToBlocks(content, thinking string, toolCalls []message.ToolCall) []ContentBlock {
+func AssistantContentToBlocks(content, thinking, thinkingSignature string, toolCalls []message.ToolCall) []ContentBlock {
 	var blocks []ContentBlock
 	if thinking != "" {
 		blocks = append(blocks, ContentBlock{
-			Type:     "thinking",
-			Thinking: thinking,
+			Type:      "thinking",
+			Thinking:  thinking,
+			Signature: thinkingSignature,
 		})
 	}
 	if content != "" {
@@ -208,6 +209,7 @@ func extractAssistantContent(blocks []ContentBlock, msg *message.Message) {
 			msg.Content = block.Text
 		case "thinking":
 			msg.Thinking = block.Thinking
+			msg.ThinkingSignature = block.Signature
 		case "tool_use":
 			tc := message.ToolCall{
 				ID:   block.ID,

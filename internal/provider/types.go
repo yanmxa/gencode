@@ -39,6 +39,50 @@ func (m ProviderMeta) Key() string {
 	return string(m.Provider) + ":" + string(m.AuthMethod)
 }
 
+// ThinkingLevel controls extended thinking / reasoning effort.
+type ThinkingLevel int
+
+const (
+	ThinkingOff    ThinkingLevel = iota // No extended thinking
+	ThinkingNormal                      // Default thinking (moderate budget)
+	ThinkingHigh                        // Extended thinking (larger budget)
+	ThinkingUltra                       // Maximum thinking budget
+)
+
+// String returns a human-readable label for the thinking level.
+func (t ThinkingLevel) String() string {
+	switch t {
+	case ThinkingNormal:
+		return "think"
+	case ThinkingHigh:
+		return "think+"
+	case ThinkingUltra:
+		return "ultrathink"
+	default:
+		return "off"
+	}
+}
+
+// Next cycles to the next thinking level.
+func (t ThinkingLevel) Next() ThinkingLevel {
+	return (t + 1) % 4
+}
+
+// BudgetTokens returns the token budget for this thinking level.
+// Returns 0 for ThinkingOff.
+func (t ThinkingLevel) BudgetTokens() int {
+	switch t {
+	case ThinkingNormal:
+		return 5000
+	case ThinkingHigh:
+		return 32000
+	case ThinkingUltra:
+		return 128000
+	default:
+		return 0
+	}
+}
+
 // ModelInfo represents information about an available model
 type ModelInfo struct {
 	ID               string `json:"id"`
@@ -50,12 +94,13 @@ type ModelInfo struct {
 
 // CompletionOptions contains options for a completion request
 type CompletionOptions struct {
-	Model        string
-	Messages     []message.Message
-	MaxTokens    int
-	Temperature  float64
-	Tools        []Tool
-	SystemPrompt string
+	Model         string
+	Messages      []message.Message
+	MaxTokens     int
+	Temperature   float64
+	Tools         []Tool
+	SystemPrompt  string
+	ThinkingLevel ThinkingLevel
 }
 
 // Tool represents a tool definition

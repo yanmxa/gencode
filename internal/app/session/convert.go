@@ -48,7 +48,7 @@ func ConvertToEntries(messages []message.ChatMessage) []coresession.Entry {
 			entry.Type = coresession.EntryAssistant
 			entry.Message = &coresession.EntryMessage{
 				Role:    "assistant",
-				Content: coresession.AssistantContentToBlocks(msg.Content, msg.Thinking, msg.ToolCalls),
+				Content: coresession.AssistantContentToBlocks(msg.Content, msg.Thinking, msg.ThinkingSignature, msg.ToolCalls),
 			}
 
 		case message.RoleToolResult:
@@ -79,11 +79,12 @@ func ConvertFromEntries(entries []coresession.Entry) []message.ChatMessage {
 
 	for _, m := range coreMsgs {
 		chatMsg := message.ChatMessage{
-			Role:      m.Role,
-			Content:   m.Content,
-			Images:    m.Images,
-			Thinking:  m.Thinking,
-			ToolCalls: m.ToolCalls,
+			Role:              m.Role,
+			Content:           m.Content,
+			Images:            m.Images,
+			Thinking:          m.Thinking,
+			ThinkingSignature: m.ThinkingSignature,
+			ToolCalls:         m.ToolCalls,
 		}
 		if m.ToolResult != nil {
 			chatMsg.ToolResult = m.ToolResult

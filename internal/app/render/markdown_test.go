@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// stripANSI removes ANSI escape sequences from a string.
-var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+// stripANSI removes ANSI escape sequences (CSI and OSC 8 hyperlinks) from a string.
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\]8;;[^\x1b]*\x1b\\`)
 
 func stripANSI(s string) string {
 	return ansiRegex.ReplaceAllString(s, "")
@@ -348,6 +348,51 @@ func TestMDRenderer_Table(t *testing.T) {
 	}
 	if !strings.Contains(plain, "─") {
 		t.Errorf("table should have row separators ─, got:\n%s", plain)
+	}
+}
+
+func TestMDRenderer_TableWithLinks(t *testing.T) {
+	r := NewMDRenderer(80)
+
+	input := "| Name | Link |\n|------|------|\n| Go | [Go](https://golang.org) |\n| Rust | [Rust](https://rust-lang.org) |"
+	out, err := r.Render(input)
+	if err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	plain := stripANSI(out)
+
+	if !strings.Contains(plain, "Go") {
+		t.Errorf("table should contain link text 'Go', got:\n%s", plain)
+	}
+	if !strings.Contains(plain, "Rust") {
+		t.Errorf("table should contain link text 'Rust', got:\n%s", plain)
+	}
+	if strings.Contains(plain, "[Go]") {
+		t.Errorf("table should not contain raw markdown link syntax '[Go]', got:\n%s", plain)
+	}
+	if strings.Contains(plain, "https://golang.org") {
+		t.Errorf("table should not display URL as plain text, got:\n%s", plain)
+	}
+	if !strings.Contains(out, "\x1b]8;;https://golang.org\x1b\\") {
+		t.Errorf("table should contain OSC 8 hyperlink escape for golang.org, got:\n%s", out)
+	}
+}
+
+func TestRenderInlineMarkdown_Link(t *testing.T) {
+	out := renderInlineMarkdown("[example](https://example.com)")
+	plain := stripANSI(out)
+
+	if !strings.Contains(plain, "example") {
+		t.Errorf("should contain link text 'example', got: %s", plain)
+	}
+	if strings.Contains(plain, "https://example.com") {
+		t.Errorf("should not display URL as plain text, got: %s", plain)
+	}
+	if strings.Contains(plain, "[example]") {
+		t.Errorf("should not contain raw markdown syntax, got: %s", plain)
+	}
+	if !strings.Contains(out, "\x1b]8;;https://example.com\x1b\\") {
+		t.Errorf("should contain OSC 8 hyperlink escape, got: %s", out)
 	}
 }
 

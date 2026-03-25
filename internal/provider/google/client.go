@@ -141,6 +141,14 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 			config.Temperature = &temp
 		}
 
+		// Configure thinking
+		if opts.ThinkingLevel > provider.ThinkingOff {
+			config.ThinkingConfig = &genai.ThinkingConfig{
+				IncludeThoughts: true,
+				ThinkingBudget:  googleThinkingBudget(opts.ThinkingLevel),
+			}
+		}
+
 		// Add tools if provided
 		if len(opts.Tools) > 0 {
 			funcDecls := make([]*genai.FunctionDeclaration, 0, len(opts.Tools))
@@ -336,6 +344,16 @@ func NewAPIKeyClient(ctx context.Context) (provider.LLMProvider, error) {
 	}
 
 	return NewClient(client, "google:api_key"), nil
+}
+
+// googleThinkingBudget returns a pointer to the thinking budget for the given level.
+func googleThinkingBudget(level provider.ThinkingLevel) *int32 {
+	b := level.BudgetTokens()
+	if b == 0 {
+		return nil
+	}
+	budget := int32(b)
+	return &budget
 }
 
 // Ensure Client implements LLMProvider

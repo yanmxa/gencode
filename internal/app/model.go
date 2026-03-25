@@ -372,9 +372,10 @@ func (m *model) configureLoop(extra []string) {
 	}
 
 	m.loop.Client = &client.Client{
-		Provider:  m.provider.LLM,
-		Model:     m.getModelID(),
-		MaxTokens: m.getMaxTokens(),
+		Provider:      m.provider.LLM,
+		Model:         m.getModelID(),
+		MaxTokens:     m.getMaxTokens(),
+		ThinkingLevel: m.effectiveThinkingLevel(),
 	}
 	m.loop.System = &system.System{
 		Client:              m.loop.Client,
@@ -395,6 +396,11 @@ func (m *model) configureLoop(extra []string) {
 	}
 	m.loop.Permission = nil
 	m.loop.Hooks = m.hookEngine
+}
+
+// effectiveThinkingLevel returns the higher of the persistent level and the per-turn override.
+func (m *model) effectiveThinkingLevel() provider.ThinkingLevel {
+	return max(m.provider.ThinkingLevel, m.provider.ThinkingOverride)
 }
 
 // buildTaskReminder returns a task reminder string if tasks exist and haven't

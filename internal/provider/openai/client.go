@@ -9,6 +9,7 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
@@ -143,6 +144,13 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 
 		if opts.Temperature > 0 {
 			params.Temperature = openai.Opt(opts.Temperature)
+		}
+
+		// Configure reasoning effort for o-series models
+		if effort := openaiReasoningEffort(opts.ThinkingLevel); effort != "" {
+			params.Reasoning = shared.ReasoningParam{
+				Effort: effort,
+			}
 		}
 
 		// Add tools if provided
@@ -378,6 +386,11 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 			params.Temperature = openai.Float(opts.Temperature)
 		}
 
+		// Configure reasoning effort for o-series models
+		if effort := openaiReasoningEffort(opts.ThinkingLevel); effort != "" {
+			params.ReasoningEffort = effort
+		}
+
 		// Add tools if provided
 		if len(opts.Tools) > 0 {
 			tools := make([]openai.ChatCompletionToolUnionParam, 0, len(opts.Tools))
@@ -554,6 +567,21 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 	})
 
 	return models, nil
+}
+
+// openaiReasoningEffort maps ThinkingLevel to OpenAI's ReasoningEffort.
+// Returns empty string for ThinkingOff (no change to default).
+func openaiReasoningEffort(level provider.ThinkingLevel) shared.ReasoningEffort {
+	switch level {
+	case provider.ThinkingNormal:
+		return shared.ReasoningEffortMedium
+	case provider.ThinkingHigh:
+		return shared.ReasoningEffortHigh
+	case provider.ThinkingUltra:
+		return shared.ReasoningEffortXhigh
+	default:
+		return ""
+	}
 }
 
 // Ensure Client implements LLMProvider

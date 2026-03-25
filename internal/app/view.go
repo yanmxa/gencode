@@ -163,11 +163,12 @@ func (m model) renderWelcome() string {
 
 func (m model) renderModeStatus() string {
 	return render.RenderModeStatus(render.OperationModeParams{
-		Mode:        int(m.mode.Operation),
-		InputTokens: m.provider.InputTokens,
-		InputLimit:  m.getEffectiveInputLimit(),
-		ModelName:   m.provider.StatusMessage,
-		Width:       m.width,
+		Mode:          int(m.mode.Operation),
+		InputTokens:   m.provider.InputTokens,
+		InputLimit:    m.getEffectiveInputLimit(),
+		ModelName:     m.provider.StatusMessage,
+		Width:         m.width,
+		ThinkingLevel: m.effectiveThinkingLevel(),
 	})
 }
 
