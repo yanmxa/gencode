@@ -83,17 +83,23 @@ func (b *BashPreview) Render(width int) string {
 		truncated = true
 	}
 
+	const indent = 3
+	contentWidth := width - indent
+	if contentWidth < 8 {
+		contentWidth = 8
+	}
+
 	// Render command lines with 3-space indent (no line numbers)
 	for i := 0; i < showCount; i++ {
 		sb.WriteString("   ")
-		sb.WriteString(getBashCommandStyle().Render(lines[i]))
+		sb.WriteString(getBashCommandStyle().Render(truncateContent(lines[i], contentWidth)))
 		sb.WriteString("\n")
 	}
 
 	// Show description after command (3-space indent)
 	if b.bashMeta.Description != "" {
 		sb.WriteString("   ")
-		sb.WriteString(getBashDescStyle().Render(b.bashMeta.Description))
+		sb.WriteString(getBashDescStyle().Render(truncateContent(b.bashMeta.Description, contentWidth)))
 		sb.WriteString("\n")
 	}
 
