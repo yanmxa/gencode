@@ -228,7 +228,8 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 		}
 
 		// --- 5. Filter through hooks ---
-		allowed, blocked, _ := l.FilterToolCalls(ctx, decision.ToolCalls)
+		allowed, blocked, _, hookContext := l.FilterToolCalls(ctx, decision.ToolCalls)
+		_ = hookContext // context injection handled by incremental callers
 		for _, br := range blocked {
 			l.AddToolResult(br)
 		}
@@ -394,12 +395,13 @@ func (l *Loop) AddToolResult(r message.ToolResult) {
 // --- Tool dispatch ---
 
 // FilterToolCalls runs PreToolUse hooks, returning allowed tool calls, blocked results,
-// and a set of tool call IDs that hooks explicitly allowed (can skip permission prompts).
+// a set of tool call IDs that hooks explicitly allowed (can skip permission prompts),
+// and any additional context injected by hooks.
 func (l *Loop) FilterToolCalls(ctx context.Context, calls []message.ToolCall) (
-	allowed []message.ToolCall, blocked []message.ToolResult, hookAllowed map[string]bool,
+	allowed []message.ToolCall, blocked []message.ToolResult, hookAllowed map[string]bool, additionalContext string,
 ) {
 	if l.Hooks == nil {
-		return calls, nil, nil
+		return calls, nil, nil, ""
 	}
 
 	hookAllowed = make(map[string]bool)
@@ -423,13 +425,21 @@ func (l *Loop) FilterToolCalls(ctx context.Context, calls []message.ToolCall) (
 			}
 		}
 
+		if outcome.AdditionalContext != "" {
+			if additionalContext == "" {
+				additionalContext = outcome.AdditionalContext
+			} else {
+				additionalContext += "\n" + outcome.AdditionalContext
+			}
+		}
+
 		if outcome.PermissionAllow {
 			hookAllowed[tc.ID] = true
 		}
 
 		allowed = append(allowed, tc)
 	}
-	return allowed, blocked, hookAllowed
+	return allowed, blocked, hookAllowed, additionalContext
 }
 
 // firePostToolHook fires PostToolUse or PostToolUseFailure hooks after tool execution.

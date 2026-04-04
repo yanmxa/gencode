@@ -88,6 +88,15 @@ func ExecuteCommand(ctx context.Context, m *model, input string) (string, tea.Cm
 		return "", nil, false
 	}
 
+	// Handle /exit like CC does
+	if cmd == "exit" {
+		if m.conv.Stream.Cancel != nil {
+			m.conv.Stream.Cancel()
+		}
+		m.fireSessionEnd("user_exit")
+		return "", tea.Quit, true
+	}
+
 	handlers := handlerRegistry()
 	if handler, ok := handlers[cmd]; ok {
 		result, followUp, err := handler(ctx, m, args)

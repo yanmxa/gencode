@@ -162,8 +162,16 @@ func (m *model) handleAllToolsCompleted() tea.Cmd {
 
 // filterToolCallsWithHooks runs PreToolUse hooks and filters blocked tools.
 func (m *model) filterToolCallsWithHooks(toolCalls []message.ToolCall) []message.ToolCall {
-	allowed, blocked, hookAllowed := m.loop.FilterToolCalls(context.Background(), toolCalls)
+	allowed, blocked, hookAllowed, hookContext := m.loop.FilterToolCalls(context.Background(), toolCalls)
 	m.tool.HookAllowed = hookAllowed
+
+	// Inject additional context from hooks into conversation
+	if hookContext != "" {
+		m.conv.Append(message.ChatMessage{
+			Role:    message.RoleUser,
+			Content: hookContext,
+		})
+	}
 
 	// Add blocked results as chat messages
 	for _, br := range blocked {

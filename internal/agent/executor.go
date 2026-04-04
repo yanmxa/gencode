@@ -303,8 +303,9 @@ func (e *Executor) fireSubagentStart(req AgentRequest, agentHookID string) {
 		return
 	}
 	e.hooks.ExecuteAsync(hooks.SubagentStart, hooks.HookInput{
-		AgentType: req.Agent,
-		AgentID:   agentHookID,
+		AgentType:   req.Agent,
+		AgentID:     agentHookID,
+		Description: req.Description,
 	})
 }
 

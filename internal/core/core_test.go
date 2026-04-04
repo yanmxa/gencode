@@ -356,7 +356,7 @@ func TestFilterToolCallsNoHooks(t *testing.T) {
 		{ID: "t2", Name: "Write"},
 	}
 
-	allowed, blocked, _ := loop.FilterToolCalls(context.Background(), calls)
+	allowed, blocked, _, _ := loop.FilterToolCalls(context.Background(), calls)
 	if len(allowed) != 2 {
 		t.Errorf("expected 2 allowed, got %d", len(allowed))
 	}

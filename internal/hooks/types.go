@@ -27,7 +27,7 @@ type HookInput struct {
 	SessionID      string `json:"session_id"`
 	TranscriptPath string `json:"transcript_path"`
 	Cwd            string `json:"cwd"`
-	PermissionMode string `json:"permission_mode"`
+	PermissionMode string `json:"permission_mode,omitempty"`
 	HookEventName  string `json:"hook_event_name"`
 
 	// Tool events
@@ -52,6 +52,7 @@ type HookInput struct {
 	// Agent events
 	AgentID             string `json:"agent_id,omitempty"`
 	AgentType           string `json:"agent_type,omitempty"`
+	Description         string `json:"description,omitempty"`
 	AgentTranscriptPath string `json:"agent_transcript_path,omitempty"`
 	StopHookActive      bool   `json:"stop_hook_active,omitempty"`
 

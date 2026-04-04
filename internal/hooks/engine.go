@@ -170,12 +170,20 @@ func (e *Engine) SetTranscriptPath(path string) {
 }
 
 // populateInputFields fills common fields in hook input.
+// permission_mode is only set for events where it's contextually relevant,
+// matching Claude Code's behavior (session lifecycle events omit it).
 func (e *Engine) populateInputFields(input *HookInput, event EventType) {
 	input.SessionID = e.sessionID
 	input.TranscriptPath = e.transcriptPath
 	input.Cwd = e.cwd
-	input.PermissionMode = e.permissionMode
 	input.HookEventName = string(event)
+
+	switch event {
+	case SessionStart, SessionEnd, Notification, SubagentStart, PreCompact:
+		// These events don't include permission_mode (matches CC behavior)
+	default:
+		input.PermissionMode = e.permissionMode
+	}
 }
 
 // extractCommands filters and returns command-type hooks.

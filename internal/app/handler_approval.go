@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -103,6 +104,10 @@ func (m *model) checkPermissionHook(req *permission.PermissionRequest) (blocked,
 	if outcome.PermissionAllow {
 		// Apply structured permission updates from hook
 		m.applyPermissionUpdates(outcome.UpdatedPermissions)
+		// Propagate updated input back to the pending tool call
+		if outcome.UpdatedInput != nil {
+			m.applyUpdatedToolInput(outcome.UpdatedInput)
+		}
 		return false, true, outcome.HookSource
 	}
 
@@ -297,6 +302,19 @@ func (m *model) persistAllowRule(req *permission.PermissionRequest) {
 	}
 	// Reload settings so the rule takes effect immediately
 	config.Reload()
+}
+
+// applyUpdatedToolInput marshals the hook-provided input and updates the current
+// pending tool call so the executor uses the modified arguments.
+func (m *model) applyUpdatedToolInput(updated map[string]any) {
+	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
+		return
+	}
+	data, err := json.Marshal(updated)
+	if err != nil {
+		return
+	}
+	m.tool.PendingCalls[m.tool.CurrentIdx].Input = string(data)
 }
 
 // togglePermissionPreview toggles the expand state of permission prompt previews.
