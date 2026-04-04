@@ -438,6 +438,9 @@ func (s *Store) loadWithoutLock(id string) (*Session, error) {
 		return nil, fmt.Errorf("failed to read session file: %w", err)
 	}
 
+	// Restore full tool outputs that were truncated and persisted to disk.
+	s.restoreToolResults(id, entries)
+
 	sess := &Session{
 		Metadata: SessionMetadata{
 			ID: id,
@@ -716,6 +719,9 @@ func (s *Store) loadFromFile(filePath, id string) (*Session, error) {
 		return nil, fmt.Errorf("failed to read session file: %w", err)
 	}
 
+	// Restore full tool outputs that were truncated and persisted to disk.
+	s.restoreToolResults(id, entries)
+
 	sess := &Session{
 		Metadata: SessionMetadata{ID: id},
 		Entries:  entries,
@@ -747,6 +753,48 @@ func (s *Store) PersistToolResult(sessionID, toolCallID, content string) error {
 		return fmt.Errorf("failed to write tool result: %w", err)
 	}
 	return nil
+}
+
+// restoreToolResults scans entries for truncated tool outputs and restores the full content
+// from the on-disk tool-results directory if available.
+// The truncation marker is: "\n\n[Full output persisted to tool-results/{toolUseID}]"
+func (s *Store) restoreToolResults(sessionID string, entries []Entry) {
+	const marker = "\n\n[Full output persisted to tool-results/"
+	toolResultsDir := filepath.Join(s.baseDir, sessionID, "tool-results")
+
+	for i := range entries {
+		entry := &entries[i]
+		if entry.Message == nil {
+			continue
+		}
+		for j := range entry.Message.Content {
+			block := &entry.Message.Content[j]
+			if block.Type != "tool_result" {
+				continue
+			}
+			for k := range block.Content {
+				sub := &block.Content[k]
+				if sub.Type != "text" {
+					continue
+				}
+				idx := strings.Index(sub.Text, marker)
+				if idx < 0 {
+					continue
+				}
+				// Extract the tool call ID from the marker suffix
+				suffix := sub.Text[idx+len(marker):]
+				end := strings.Index(suffix, "]")
+				if end < 0 {
+					continue
+				}
+				toolCallID := suffix[:end]
+				fullPath := filepath.Join(toolResultsDir, toolCallID)
+				if data, err := os.ReadFile(fullPath); err == nil {
+					sub.Text = string(data)
+				}
+			}
+		}
+	}
 }
 
 // SaveSessionMemory persists a compaction summary to {sessionID}/session-memory/summary.md.
