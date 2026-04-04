@@ -74,16 +74,23 @@ func (conversationRuntime) FetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.C
 }
 
 func (conversationRuntime) CompactCmd(req compactRequest) tea.Cmd {
-	if req.HookEngine != nil {
-		req.HookEngine.ExecuteAsync(hooks.PreCompact, hooks.HookInput{
-			Trigger:            req.Trigger,
-			CustomInstructions: req.Focus,
-		})
-	}
-
 	return func() tea.Msg {
 		ctx := context.Background()
-		summary, count, err := appcompact.CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, req.Focus)
+		focus := req.Focus
+		if req.HookEngine != nil {
+			outcome := req.HookEngine.Execute(ctx, hooks.PreCompact, hooks.HookInput{
+				Trigger:            req.Trigger,
+				CustomInstructions: req.Focus,
+			})
+			if outcome.AdditionalContext != "" {
+				if focus != "" {
+					focus += "\n" + outcome.AdditionalContext
+				} else {
+					focus = outcome.AdditionalContext
+				}
+			}
+		}
+		summary, count, err := appcompact.CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
 		return appcompact.CompactResultMsg{Summary: summary, OriginalCount: count, Error: err}
 	}
 }

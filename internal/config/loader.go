@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 
 	"go.uber.org/zap"
 
@@ -175,10 +176,15 @@ func (l *Loader) saveToFile(path string, settings *Settings) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-var loadedSettings *Settings
+var (
+	loadedSettings   *Settings
+	loadedSettingsMu sync.Mutex
+)
 
 // Load loads settings using the default loader (cached after first call).
 func Load() (*Settings, error) {
+	loadedSettingsMu.Lock()
+	defer loadedSettingsMu.Unlock()
 	if loadedSettings != nil {
 		return loadedSettings, nil
 	}
@@ -192,7 +198,9 @@ func Load() (*Settings, error) {
 
 // Reload clears the settings cache and reloads from disk.
 func Reload() (*Settings, error) {
+	loadedSettingsMu.Lock()
 	loadedSettings = nil
+	loadedSettingsMu.Unlock()
 	return Load()
 }
 
@@ -221,7 +229,9 @@ func UpdateDisabledToolsAt(disabledTools map[string]bool, userLevel bool) error 
 		return err
 	}
 
+	loadedSettingsMu.Lock()
 	loadedSettings = nil
+	loadedSettingsMu.Unlock()
 	return nil
 }
 
@@ -282,7 +292,9 @@ func AddAllowRuleDirectly(rule string) error {
 	if err := loader.SaveToProject(settings); err != nil {
 		return err
 	}
+	loadedSettingsMu.Lock()
 	loadedSettings = nil
+	loadedSettingsMu.Unlock()
 	return nil
 }
 
@@ -291,6 +303,8 @@ func SaveTheme(t string) error {
 	if err := NewLoader().SaveToUser(&Settings{Theme: t}); err != nil {
 		return err
 	}
+	loadedSettingsMu.Lock()
 	loadedSettings = nil
+	loadedSettingsMu.Unlock()
 	return nil
 }

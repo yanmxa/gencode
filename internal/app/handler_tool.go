@@ -134,15 +134,13 @@ func (m *model) handleStartToolExecution(toolCalls []message.ToolCall) tea.Cmd {
 		return m.startContinueStream()
 	}
 
-	cmd := apptool.ExecuteParallel(m.tool.Ctx, m.output.ProgressHub, m.tool.PendingCalls, m.cwd, m.settings, m.mode.SessionPermissions, m.mode.Enabled, m.tool.HookAllowed)
-
 	if len(m.tool.PendingCalls) > 1 && m.canRunToolsInParallel(m.tool.PendingCalls) {
 		m.tool.Parallel = true
 		m.tool.ParallelResults = make(map[int]message.ToolResult)
 		m.tool.ParallelCount = 0
 	}
 
-	return cmd
+	return apptool.ExecuteParallel(m.tool.Ctx, m.output.ProgressHub, m.tool.PendingCalls, m.cwd, m.settings, m.mode.SessionPermissions, m.mode.Enabled, m.tool.HookAllowed)
 }
 
 // canRunToolsInParallel checks if all tools can run without user interaction
