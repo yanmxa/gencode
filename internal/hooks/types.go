@@ -18,6 +18,7 @@ const (
 	SubagentStop       EventType = "SubagentStop"       // matcher: agent_type
 	Stop               EventType = "Stop"               // no matcher
 	PreCompact         EventType = "PreCompact"         // matcher: manual, auto
+	PostCompact        EventType = "PostCompact"        // matcher: manual, auto; fire-and-forget after compact succeeds
 	SessionEnd         EventType = "SessionEnd"         // matcher: reason
 )
 

@@ -91,6 +91,6 @@ func (conversationRuntime) CompactCmd(req compactRequest) tea.Cmd {
 			}
 		}
 		summary, count, err := appcompact.CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
-		return appcompact.CompactResultMsg{Summary: summary, OriginalCount: count, Error: err}
+		return appcompact.CompactResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
 	}
 }

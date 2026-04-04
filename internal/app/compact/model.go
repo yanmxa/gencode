@@ -5,6 +5,7 @@ package compact
 type CompactResultMsg struct {
 	Summary       string
 	OriginalCount int
+	Trigger       string // "manual" or "auto"
 	Error         error
 }
 

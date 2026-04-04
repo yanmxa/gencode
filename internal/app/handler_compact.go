@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/options"
 )
@@ -154,6 +155,13 @@ func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 		_ = m.session.Store.SaveSessionMemory(m.session.CurrentID, msg.Summary)
 	}
 	m.session.Summary = msg.Summary
+
+	// Fire PostCompact hook (fire-and-forget; no blocking semantics)
+	if m.hookEngine != nil {
+		m.hookEngine.ExecuteAsync(hooks.PostCompact, hooks.HookInput{
+			Trigger: msg.Trigger,
+		})
+	}
 
 	cmds := []tea.Cmd{tea.ClearScreen}
 	if shouldContinue {
