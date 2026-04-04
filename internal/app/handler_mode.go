@@ -34,6 +34,7 @@ func (m *model) applyOperationModePermissions() {
 	if m.mode.Operation == appmode.AutoAccept {
 		m.mode.SessionPermissions.AllowAllEdits = true
 		m.mode.SessionPermissions.AllowAllWrites = true
+		m.mode.SessionPermissions.AddWorkingDirectory(m.cwd)
 		for _, pattern := range config.CommonAllowPatterns {
 			m.mode.SessionPermissions.AllowPattern(pattern)
 		}
@@ -48,7 +49,7 @@ func (m *model) operationModeName() string {
 	case appmode.Plan:
 		return "plan"
 	default:
-		return "normal"
+		return "default"
 	}
 }
 
@@ -56,6 +57,7 @@ func (m *model) operationModeName() string {
 func (m *model) enableAutoAcceptMode() {
 	m.mode.SessionPermissions.AllowAllEdits = true
 	m.mode.SessionPermissions.AllowAllWrites = true
+	m.mode.SessionPermissions.AddWorkingDirectory(m.cwd)
 	for _, pattern := range config.CommonAllowPatterns {
 		m.mode.SessionPermissions.AllowPattern(pattern)
 	}

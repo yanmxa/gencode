@@ -272,6 +272,19 @@ func (s *TodoStore) Delete(id string) error {
 	return nil
 }
 
+// HasInProgress returns true if any task has in_progress status.
+func (s *TodoStore) HasInProgress() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, task := range s.tasks {
+		if task.Status == TodoStatusInProgress {
+			return true
+		}
+	}
+	return false
+}
+
 // Reset clears all tasks (for new sessions)
 func (s *TodoStore) Reset() {
 	s.mu.Lock()

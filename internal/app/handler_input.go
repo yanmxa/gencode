@@ -150,6 +150,7 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		if m.conv.Stream.Cancel != nil {
 			m.conv.Stream.Cancel()
 		}
+		m.fireSessionEnd("quit")
 		return tea.Quit, true
 
 	case tea.KeyEsc:
@@ -376,6 +377,7 @@ func (m *model) handleHistoryDown() tea.Cmd {
 
 func (m *model) handleSubmit() tea.Cmd {
 	m.promptSuggestion.Clear()
+	m.maxOutputRecoveryCount = 0 // Reset max-output recovery counter on new user input
 	if m.conv.Stream.Active {
 		return nil
 	}
@@ -388,6 +390,7 @@ func (m *model) handleSubmit() tea.Cmd {
 		if m.conv.Stream.Cancel != nil {
 			m.conv.Stream.Cancel()
 		}
+		m.fireSessionEnd("exit")
 		return tea.Quit
 	}
 

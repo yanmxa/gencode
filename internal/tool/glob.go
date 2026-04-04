@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -128,10 +127,12 @@ func (t *GlobTool) Execute(ctx context.Context, params map[string]any, cwd strin
 		truncated = true
 	}
 
-	// Build file list
+	// Build file list with absolute paths for hook response
 	filePaths := make([]string, len(files))
+	absFilePaths := make([]string, len(files))
 	for i, f := range files {
 		filePaths[i] = f.path
+		absFilePaths[i] = filepath.Join(basePath, f.path)
 	}
 
 	duration := time.Since(start)
@@ -150,6 +151,12 @@ func (t *GlobTool) Execute(ctx context.Context, params map[string]any, cwd strin
 	result := ui.ToolResult{
 		Success: true,
 		Files:   filePaths,
+		HookResponse: map[string]any{
+			"filenames":  absFilePaths,
+			"durationMs": duration.Milliseconds(),
+			"numFiles":   len(filePaths),
+			"truncated":  truncated,
+		},
 		Metadata: ui.ResultMetadata{
 			Title:     t.Name(),
 			Icon:      t.Icon(),
@@ -161,19 +168,6 @@ func (t *GlobTool) Execute(ctx context.Context, params map[string]any, cwd strin
 	}
 
 	return result
-}
-
-// matchPattern checks if a path matches the given glob pattern
-func matchPattern(pattern, path string) bool {
-	// Handle ** pattern
-	if strings.Contains(pattern, "**") {
-		matched, _ := doublestar.Match(pattern, path)
-		return matched
-	}
-
-	// Standard glob
-	matched, _ := filepath.Match(pattern, filepath.Base(path))
-	return matched
 }
 
 func init() {

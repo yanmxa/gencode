@@ -2,11 +2,11 @@ package app
 
 import (
 	"context"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
@@ -54,6 +54,20 @@ func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 
 	m.conv.SetLastThinkingSignature(msg.ThinkingSignature)
 
+	// Max-output-tokens recovery: if output was truncated with no tool calls,
+	// inject a resume message and continue streaming (up to 3 retries).
+	if msg.StopReason == "max_tokens" && len(msg.ToolCalls) == 0 {
+		if m.maxOutputRecoveryCount < core.DefaultMaxOutputRecovery {
+			m.maxOutputRecoveryCount++
+			m.conv.Append(message.ChatMessage{
+				Role:    message.RoleUser,
+				Content: core.MaxOutputRecoveryPrompt,
+			})
+			return m.startContinueStream()
+		}
+		// Exhausted recovery attempts — fall through to normal end
+	}
+
 	if len(msg.ToolCalls) > 0 {
 		m.conv.SetLastToolCalls(msg.ToolCalls)
 		commitCmds := m.commitMessages()
@@ -76,7 +90,15 @@ func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 	commitCmds := m.commitMessages()
 
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.Stop, hooks.HookInput{})
+		m.hookEngine.ExecuteAsync(hooks.Stop, hooks.HookInput{
+			LastAssistantMessage: m.lastAssistantContent(),
+			StopHookActive:      m.hookEngine.HasHooks(hooks.Stop),
+		})
+		// Fire idle notification
+		m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{
+			Message:          "Claude is waiting for your input",
+			NotificationType: "idle_prompt",
+		})
 	}
 
 	_ = m.saveSession()
@@ -90,13 +112,18 @@ func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 		}
 	}
 
+	// Drain queued cron prompts now that we're idle
+	if cmd := m.drainCronQueue(); cmd != nil {
+		commitCmds = append(commitCmds, cmd)
+	}
+
 	return tea.Batch(commitCmds...)
 }
 
 // handleStreamError processes a stream error.
 func (m *model) handleStreamError(err error) tea.Cmd {
 	// If "prompt too long", trigger auto-compact and retry
-	if strings.Contains(err.Error(), "prompt is too long") && len(m.conv.Messages) >= 3 {
+	if core.IsPromptTooLong(err) && len(m.conv.Messages) >= 3 {
 		m.conv.RemoveEmptyLastAssistant()
 		m.conv.Stream.Stop()
 		m.conv.Compact.AutoContinue = true // Auto-continue after compaction
@@ -188,23 +215,15 @@ func convertChunkToMsg(chunk message.StreamChunk) appconv.ChunkMsg {
 	}
 }
 
-// convertDoneChunk handles the done chunk type.
 func convertDoneChunk(chunk message.StreamChunk) appconv.ChunkMsg {
 	if chunk.Response == nil {
 		return appconv.ChunkMsg{Done: true}
 	}
-
-	usage := &chunk.Response.Usage
-	thinkingSig := chunk.Response.ThinkingSignature
-
-	if len(chunk.Response.ToolCalls) > 0 {
-		return appconv.ChunkMsg{
-			Done:              true,
-			ToolCalls:         chunk.Response.ToolCalls,
-			ThinkingSignature: thinkingSig,
-			Usage:             usage,
-		}
+	return appconv.ChunkMsg{
+		Done:              true,
+		ToolCalls:         chunk.Response.ToolCalls,
+		ThinkingSignature: chunk.Response.ThinkingSignature,
+		Usage:             &chunk.Response.Usage,
+		StopReason:        chunk.Response.StopReason,
 	}
-
-	return appconv.ChunkMsg{Done: true, ThinkingSignature: thinkingSig, Usage: usage}
 }

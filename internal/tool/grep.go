@@ -192,9 +192,36 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any, cwd strin
 
 	truncated := len(matches) >= maxGrepMatches
 
+	// Build structured hook response (CC-compatible)
+	var contentBuf strings.Builder
+	matchedFiles := make(map[string]bool)
+	for _, m := range matches {
+		if m.File != "" {
+			absFile := filepath.Join(basePath, m.File)
+			matchedFiles[absFile] = true
+			contentBuf.WriteString(absFile)
+		} else {
+			contentBuf.WriteString(basePath)
+		}
+		contentBuf.WriteString(":")
+		contentBuf.WriteString(strings.TrimSpace(m.Text))
+		contentBuf.WriteByte('\n')
+	}
+	hookFilenames := make([]string, 0, len(matchedFiles))
+	for f := range matchedFiles {
+		hookFilenames = append(hookFilenames, f)
+	}
+
 	result := ui.ToolResult{
 		Success: true,
 		Lines:   matches,
+		HookResponse: map[string]any{
+			"mode":      "content",
+			"numFiles":  len(matchedFiles),
+			"numLines":  len(matches),
+			"filenames": hookFilenames,
+			"content":   contentBuf.String(),
+		},
 		Metadata: ui.ResultMetadata{
 			Title:     t.Name(),
 			Icon:      t.Icon(),

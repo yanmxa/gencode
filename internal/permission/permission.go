@@ -16,6 +16,9 @@ const (
 	Reject
 	// Prompt delegates to the caller for interactive approval.
 	Prompt
+	// Defer means the checker has no opinion — defer to the next layer.
+	// This maps to Claude Code's "passthrough" behavior.
+	Defer Decision = 99
 )
 
 // --- Convenience constructors ---
@@ -59,6 +62,23 @@ func (acceptEdits) Check(name string, _ map[string]any) Decision {
 // AcceptEdits returns a Checker that auto-approves reads and edits but prompts for others.
 func AcceptEdits() Checker { return acceptEdits{} }
 
+// BypassPermissions returns a Checker that permits everything except bypass-immune tools.
+// Bypass-immune checks (sensitive paths, destructive commands) are handled upstream
+// by config.HasPermissionToUseTool, not by this Checker.
+func BypassPermissions() Checker { return permitAll{} }
+
+// DontAsk returns a Checker that converts prompts to rejections (never prompts).
+func DontAsk() Checker { return dontAsk{} }
+
+type dontAsk struct{}
+
+func (dontAsk) Check(name string, _ map[string]any) Decision {
+	if IsReadOnlyTool(name) || IsSafeTool(name) {
+		return Permit
+	}
+	return Reject
+}
+
 // Auto returns a Checker equivalent to PermitAll (auto-determines best level).
 func Auto() Checker { return permitAll{} }
 
@@ -84,4 +104,25 @@ var readOnlyTools = map[string]bool{
 // IsReadOnlyTool checks if a tool is read-only.
 func IsReadOnlyTool(name string) bool {
 	return readOnlyTools[name]
+}
+
+// safeTools is the set of tools that are inherently safe and can skip
+// permission checks entirely (task management, UI, coordination).
+var safeTools = map[string]bool{
+	"TaskCreate":      true,
+	"TaskGet":         true,
+	"TaskList":        true,
+	"TaskUpdate":      true,
+	"AskUserQuestion": true,
+	"EnterPlanMode":   true,
+	"ExitPlanMode":    true,
+	"TeamCreate":      true,
+	"TeamDelete":      true,
+	"CronList":        true,
+	"ToolSearch":      true,
+}
+
+// IsSafeTool returns true if the tool is on the safe allowlist.
+func IsSafeTool(name string) bool {
+	return safeTools[name]
 }

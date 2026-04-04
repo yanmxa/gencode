@@ -106,6 +106,7 @@ type (
 	ResponseMsg struct {
 		Approved bool
 		AllowAll bool // True if user selected "allow all during session"
+		Persist  bool // True if user selected "always allow" (persist to settings)
 		Request  *permission.PermissionRequest
 	}
 )
@@ -125,7 +126,7 @@ func (p *Model) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *ResponseMsg) {
 		return nil, nil
 
 	case tea.KeyDown, tea.KeyCtrlN:
-		if p.selectedIdx < 2 {
+		if p.selectedIdx < 3 {
 			p.selectedIdx++
 		}
 		return nil, nil
@@ -134,7 +135,7 @@ func (p *Model) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *ResponseMsg) {
 		return p.confirmSelection()
 
 	case tea.KeyShiftTab:
-		return p.respond(true, true)
+		return p.respondFull(true, true, false)
 
 	case tea.KeyCtrlO:
 		if p.diffPreview != nil {
@@ -146,37 +147,41 @@ func (p *Model) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *ResponseMsg) {
 		return nil, nil
 
 	case tea.KeyEsc, tea.KeyCtrlC:
-		return p.respond(false, false)
+		return p.respondFull(false, false, false)
 	}
 
 	switch msg.String() {
 	case "1", "y", "Y":
-		return p.respond(true, false)
+		return p.respondFull(true, false, false)
 	case "2":
-		return p.respond(true, true)
-	case "3", "n", "N":
-		return p.respond(false, false)
+		return p.respondFull(true, true, false)
+	case "3":
+		return p.respondFull(true, false, true)
+	case "4", "n", "N":
+		return p.respondFull(false, false, false)
 	}
 
 	return nil, nil
 }
 
-// respond creates a response and hides the prompt.
-func (p *Model) respond(approved, allowAll bool) (tea.Cmd, *ResponseMsg) {
+// respondFull creates a response with all options and hides the prompt.
+func (p *Model) respondFull(approved, allowAll, persist bool) (tea.Cmd, *ResponseMsg) {
 	req := p.request
 	p.Hide()
-	return nil, &ResponseMsg{Approved: approved, AllowAll: allowAll, Request: req}
+	return nil, &ResponseMsg{Approved: approved, AllowAll: allowAll, Persist: persist, Request: req}
 }
 
 // confirmSelection confirms the currently selected menu option.
 func (p *Model) confirmSelection() (tea.Cmd, *ResponseMsg) {
 	switch p.selectedIdx {
-	case 0:
-		return p.respond(true, false)
-	case 1:
-		return p.respond(true, true)
-	case 2:
-		return p.respond(false, false)
+	case 0: // Yes
+		return p.respondFull(true, false, false)
+	case 1: // Allow all during session
+		return p.respondFull(true, true, false)
+	case 2: // Always allow (persist)
+		return p.respondFull(true, false, true)
+	case 3: // No
+		return p.respondFull(false, false, false)
 	}
 	return nil, nil
 }
@@ -312,6 +317,14 @@ func (p *Model) getAllSessionLabel() string {
 	}
 }
 
+// getAlwaysAllowLabel returns the "always allow" label, showing the suggested rule if available.
+func (p *Model) getAlwaysAllowLabel() string {
+	if p.request != nil && len(p.request.SuggestedRules) > 0 {
+		return "Always allow: " + p.request.SuggestedRules[0]
+	}
+	return "Always allow"
+}
+
 // renderMenu renders the selection menu
 func (p *Model) renderMenu() string {
 	var sb strings.Builder
@@ -322,6 +335,7 @@ func (p *Model) renderMenu() string {
 	}{
 		{"Yes", ""},
 		{p.getAllSessionLabel(), "(shift+tab)"},
+		{p.getAlwaysAllowLabel(), ""},
 		{"No", ""},
 	}
 

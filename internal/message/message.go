@@ -62,10 +62,11 @@ type ToolCall struct {
 
 // ToolResult represents the result of a tool execution.
 type ToolResult struct {
-	ToolCallID string `json:"tool_call_id"`
-	ToolName   string `json:"tool_name,omitempty"`
-	Content    string `json:"content"`
-	IsError    bool   `json:"is_error,omitempty"`
+	ToolCallID   string `json:"tool_call_id"`
+	ToolName     string `json:"tool_name,omitempty"`
+	Content      string `json:"content"`
+	IsError      bool   `json:"is_error,omitempty"`
+	HookResponse any    `json:"-"` // structured response for hooks, not serialized to LLM
 }
 
 // UserMessage creates a user message with optional images.

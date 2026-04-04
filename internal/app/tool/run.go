@@ -45,13 +45,14 @@ func newResult(tc message.ToolCall, index int, content string, isError bool) Exe
 func newResultFromOutput(tc message.ToolCall, index int, output ui.ToolResult) ExecResultMsg {
 	return ExecResultMsg{
 		Index:    index,
-		Result:   message.ToolResult{ToolCallID: tc.ID, Content: output.FormatForLLM(), IsError: !output.Success},
+		Result:   message.ToolResult{ToolCallID: tc.ID, Content: output.FormatForLLM(), IsError: !output.Success, HookResponse: output.HookResponse},
 		ToolName: tc.Name,
 	}
 }
 
 // ExecuteParallel dispatches tool calls in parallel when possible, sequentially otherwise.
-func ExecuteParallel(toolCalls []message.ToolCall, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool) tea.Cmd {
+// hookAllowed contains tool call IDs that were pre-approved by hooks (may be nil).
+func ExecuteParallel(toolCalls []message.ToolCall, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool) tea.Cmd {
 	if len(toolCalls) == 0 {
 		return func() tea.Msg {
 			return ExecDoneMsg{}
@@ -59,14 +60,14 @@ func ExecuteParallel(toolCalls []message.ToolCall, cwd string, settings *config.
 	}
 
 	if len(toolCalls) == 1 {
-		if !RequiresUserInteraction(toolCalls[0], settings, sessionPerms, planMode) {
+		if !RequiresUserInteraction(toolCalls[0], settings, sessionPerms, planMode, hookAllowed) {
 			return executeToolAsync(toolCalls[0], 0, cwd, settings, sessionPerms)
 		}
 		return ProcessNext(toolCalls, 0, cwd, settings, sessionPerms)
 	}
 
 	for _, tc := range toolCalls {
-		if RequiresUserInteraction(tc, settings, sessionPerms, planMode) {
+		if RequiresUserInteraction(tc, settings, sessionPerms, planMode, hookAllowed) {
 			return ProcessNext(toolCalls, 0, cwd, settings, sessionPerms)
 		}
 	}
@@ -291,7 +292,8 @@ func ExecuteInteractive[T any](tc message.ToolCall, response T, cwd string) tea.
 }
 
 // RequiresUserInteraction checks if a tool call needs user approval.
-func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool) bool {
+// hookAllowed contains tool call IDs that were pre-approved by hooks (may be nil).
+func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool) bool {
 	if planMode && tc.Name == "Agent" {
 		return false
 	}
@@ -299,6 +301,14 @@ func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, ses
 	params, err := parseToolInput(tc.Input)
 	if err != nil {
 		return true
+	}
+
+	// If hook pre-approved this tool call, validate against safety invariant
+	if hookAllowed[tc.ID] && settings != nil {
+		if settings.ResolveHookAllow(tc.Name, params, sessionPerms) {
+			return false // hook allow is valid, skip interaction
+		}
+		// Safety invariant denied the hook allow — fall through to normal check
 	}
 
 	t, ok := coretool.Get(tc.Name)

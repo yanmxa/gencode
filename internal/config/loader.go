@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"go.uber.org/zap"
 
@@ -47,39 +48,87 @@ func NewLoaderWithOptions(userDir, projectDir string, claudeCompat bool) *Loader
 func (l *Loader) Load() (*Settings, error) {
 	homeDir, _ := os.UserHomeDir()
 
-	sources := make([]string, 0, 6)
-	if l.claudeCompat {
-		sources = append(sources,
-			filepath.Join(homeDir, ".claude", "settings.json"),
-		)
+	// Two-phase loading: first load Claude-compat settings, then GenCode-native.
+	// For hooks, GenCode-native settings override Claude-compat settings per event
+	// to prevent incompatible hooks (e.g., Claude Code's interactive protocol)
+	// from blocking GenCode's own hooks.
+
+	type source struct {
+		path        string
+		claudeCompat bool
 	}
-	sources = append(sources, filepath.Join(l.userDir, "settings.json"))
+
+	var sources []source
 	if l.claudeCompat {
-		sources = append(sources,
-			filepath.Join(".claude", "settings.json"),
-		)
+		sources = append(sources, source{filepath.Join(homeDir, ".claude", "settings.json"), true})
 	}
-	sources = append(sources, filepath.Join(l.projectDir, "settings.json"))
+	sources = append(sources, source{filepath.Join(l.userDir, "settings.json"), false})
 	if l.claudeCompat {
-		sources = append(sources,
-			filepath.Join(".claude", "settings.local.json"),
-		)
+		sources = append(sources, source{filepath.Join(".claude", "settings.json"), true})
 	}
-	sources = append(sources, filepath.Join(l.projectDir, "settings.local.json"))
+	sources = append(sources, source{filepath.Join(l.projectDir, "settings.json"), false})
+	if l.claudeCompat {
+		sources = append(sources, source{filepath.Join(".claude", "settings.local.json"), true})
+	}
+	sources = append(sources, source{filepath.Join(l.projectDir, "settings.local.json"), false})
+
+	// Collect hooks separately: Claude-compat hooks and GenCode-native hooks.
+	// For native hooks, higher-priority sources REPLACE lower-priority sources
+	// per event (project overrides user, local overrides project).
+	claudeHooks := make(map[string][]Hook)
+	nativeHooks := make(map[string][]Hook) // last write wins per event
 
 	settings := NewSettings()
 	for _, src := range sources {
-		data, err := os.ReadFile(src)
+		data, err := os.ReadFile(src.path)
 		if err != nil {
 			continue
 		}
 		var s Settings
 		if err := json.Unmarshal(data, &s); err != nil {
-			log.Logger().Warn("failed to parse config file", zap.String("path", src), zap.Error(err))
+			log.Logger().Warn("failed to parse config file", zap.String("path", src.path), zap.Error(err))
 			continue
 		}
+
+		// Extract hooks before merging — we'll merge hooks manually
+		srcHooks := s.Hooks
+		s.Hooks = nil
 		settings = MergeSettings(settings, &s)
+
+		// Accumulate hooks by source type.
+		// Native hooks: higher-priority sources replace lower-priority per event.
+		// This means project .gen/settings.json can set "PermissionRequest": []
+		// to disable user-level PermissionRequest hooks.
+		for event, hooks := range srcHooks {
+			if src.claudeCompat {
+				claudeHooks[event] = append(claudeHooks[event], hooks...)
+			} else {
+				nativeHooks[event] = hooks
+			}
+		}
 	}
+
+	// Merge hooks: for each event, use native hooks if available, otherwise use Claude-compat hooks.
+	// PermissionRequest hooks are NEVER inherited from Claude-compat sources because
+	// Claude Code's interactive permission protocol (e.g., vibe-island-bridge) is
+	// incompatible with GenCode's TUI-based approval flow and can cause hangs.
+	merged := make(map[string][]Hook)
+	for event, hooks := range claudeHooks {
+		if event == "PermissionRequest" {
+			continue // skip — incompatible protocol
+		}
+		if _, hasNative := nativeHooks[event]; !hasNative {
+			merged[event] = hooks
+		}
+	}
+	for event, hooks := range nativeHooks {
+		if len(hooks) > 0 {
+			merged[event] = hooks
+		}
+		// Empty hooks array means explicitly disabled — don't add to merged
+	}
+	settings.Hooks = merged
+
 	return settings, nil
 }
 
@@ -200,6 +249,41 @@ func GetDisabledToolsAt(userLevel bool) map[string]bool {
 	result := make(map[string]bool, len(s.DisabledTools))
 	maps.Copy(result, s.DisabledTools)
 	return result
+}
+
+// AddAllowRule appends a permission allow rule to project-level settings.
+// The rule is built from the tool name and arguments (e.g., "Bash(git:*)").
+func AddAllowRule(toolName string, args map[string]any) error {
+	return AddAllowRuleDirectly(BuildRule(toolName, args))
+}
+
+// AddAllowRuleDirectly appends a pre-built permission allow rule string
+// to project-level settings. Unlike AddAllowRule, it does not build the rule
+// from tool name + args — the caller provides the final rule string.
+func AddAllowRuleDirectly(rule string) error {
+	if rule == "" {
+		return nil
+	}
+
+	loader := NewLoader()
+	path := filepath.Join(loader.projectDir, "settings.json")
+
+	// Load existing to check for duplicates
+	existing, _ := loader.LoadFile(path)
+	if existing != nil && slices.Contains(existing.Permissions.Allow, rule) {
+		return nil // already exists
+	}
+
+	settings := &Settings{
+		Permissions: PermissionSettings{
+			Allow: []string{rule},
+		},
+	}
+	if err := loader.SaveToProject(settings); err != nil {
+		return err
+	}
+	loadedSettings = nil
+	return nil
 }
 
 // SaveTheme persists the chosen theme to ~/.gen/settings.json.

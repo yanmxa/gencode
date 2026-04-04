@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/yanmxa/gencode/internal/tool/ui"
@@ -135,10 +136,33 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any, cwd strin
 
 	duration := time.Since(start)
 
+	// Build content string for hook response
+	var hookBuf strings.Builder
+	for _, l := range lines {
+		hookBuf.WriteString(l.Text)
+		hookBuf.WriteByte('\n')
+	}
+	contentForHook := hookBuf.String()
+
+	startLine := 1
+	if offset > 0 {
+		startLine = offset
+	}
+
 	// Build result
 	result := ui.ToolResult{
 		Success: true,
 		Lines:   lines,
+		HookResponse: map[string]any{
+			"type": "text",
+			"file": map[string]any{
+				"filePath":  filePath,
+				"content":   contentForHook,
+				"numLines":  len(lines),
+				"startLine": startLine,
+				"totalLines": lineNo,
+			},
+		},
 		Metadata: ui.ResultMetadata{
 			Title:     t.Name(),
 			Icon:      t.Icon(),

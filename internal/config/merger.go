@@ -44,6 +44,7 @@ func mergeStringSlices(base, overlay []string) []string {
 	return result
 }
 
+// mergeHooks merges hook configurations, appending overlay hooks to base hooks per event.
 func mergeHooks(base, overlay map[string][]Hook) map[string][]Hook {
 	result := make(map[string][]Hook, len(base)+len(overlay))
 	for k, v := range base {

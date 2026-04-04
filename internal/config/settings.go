@@ -48,6 +48,7 @@ type HookCmd struct {
 
 // SessionPermissions tracks runtime permission state for the current session.
 type SessionPermissions struct {
+	Mode            OperationMode   // Active permission mode (Normal, BypassPermissions, DontAsk, etc.)
 	AllowAllEdits   bool
 	AllowAllWrites  bool
 	AllowAllBash    bool
@@ -55,6 +56,20 @@ type SessionPermissions struct {
 	AllowAllTasks   bool
 	AllowedTools    map[string]bool
 	AllowedPatterns map[string]bool
+	Denials         DenialTracking // Tracks denial frequency for fallback
+
+	// WorkingDirectories restricts Edit/Write operations to these directories.
+	// When non-empty, file edits outside these dirs always prompt (bypass-immune).
+	// Set automatically when entering AutoAccept mode.
+	WorkingDirectories []string
+
+	// IsBypassAvailable controls whether BypassPermissions mode can be entered.
+	// In plan mode, this remembers if bypass was available before entering plan.
+	IsBypassAvailable bool
+
+	// ShouldAvoidPrompts is set for headless/async subagents that cannot
+	// show interactive dialogs. When true, ask → deny automatically.
+	ShouldAvoidPrompts bool
 }
 
 func NewSessionPermissions() *SessionPermissions {
@@ -95,14 +110,31 @@ func (sp *SessionPermissions) IsPatternAllowed(pattern string) bool {
 	return sp.AllowedPatterns[pattern]
 }
 
+// AddWorkingDirectory adds a directory to the allowed working directories list.
+func (sp *SessionPermissions) AddWorkingDirectory(dir string) {
+	// Avoid duplicates
+	for _, d := range sp.WorkingDirectories {
+		if d == dir {
+			return
+		}
+	}
+	sp.WorkingDirectories = append(sp.WorkingDirectories, dir)
+}
+
 // OperationMode defines the current operation mode.
 type OperationMode int
 
 const (
-	ModeNormal     OperationMode = iota
-	ModeAutoAccept               // auto-approve edits/writes
-	ModePlan                     // read-only tools only
+	ModeNormal             OperationMode = iota
+	ModeAutoAccept                       // auto-approve edits/writes
+	ModePlan                             // read-only tools only
+	ModeBypassPermissions                // allow all (bypass-immune checks still apply)
+	ModeDontAsk                          // convert ask → deny (never prompt)
 )
+
+// allModes lists the modes that the user can cycle through with the mode toggle.
+// BypassPermissions and DontAsk are entered explicitly, not via cycling.
+var cycleModes = []OperationMode{ModeNormal, ModeAutoAccept, ModePlan}
 
 func (m OperationMode) String() string {
 	switch m {
@@ -110,13 +142,24 @@ func (m OperationMode) String() string {
 		return "accept edits"
 	case ModePlan:
 		return "plan mode"
+	case ModeBypassPermissions:
+		return "bypass permissions"
+	case ModeDontAsk:
+		return "don't ask"
 	default:
 		return "normal"
 	}
 }
 
 func (m OperationMode) Next() OperationMode {
-	return (m + 1) % 3
+	for i, mode := range cycleModes {
+		if mode == m {
+			return cycleModes[(i+1)%len(cycleModes)]
+		}
+	}
+	// If current mode is not in the cycle list (e.g. BypassPermissions),
+	// return to normal.
+	return ModeNormal
 }
 
 func NewSettings() *Settings {

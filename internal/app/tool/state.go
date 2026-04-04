@@ -15,6 +15,7 @@ type ExecState struct {
 	Parallel        bool
 	ParallelResults map[int]message.ToolResult
 	ParallelCount   int
+	HookAllowed     map[string]bool // Tool call IDs pre-approved by hooks
 }
 
 // Reset clears all tool execution state.
@@ -24,4 +25,5 @@ func (t *ExecState) Reset() {
 	t.Parallel = false
 	t.ParallelResults = nil
 	t.ParallelCount = 0
+	t.HookAllowed = nil
 }

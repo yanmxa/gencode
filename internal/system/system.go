@@ -38,6 +38,7 @@ type System struct {
 	SessionSummary      string   // <session-summary> from compaction
 	Skills              string   // <available-skills> from active skills
 	Agents              string   // <available-agents> from enabled agents
+	DeferredTools       string   // <available-deferred-tools> from progressive disclosure
 	Extra               []string // ad-hoc content (agent-identity, skill-invocation, etc.)
 
 	cached string
@@ -130,6 +131,9 @@ func (s *System) buildPrompt() string {
 	}
 	if s.Agents != "" {
 		parts = append(parts, s.Agents)
+	}
+	if s.DeferredTools != "" {
+		parts = append(parts, s.DeferredTools)
 	}
 
 	// 6. Guidelines

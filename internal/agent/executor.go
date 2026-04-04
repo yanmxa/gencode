@@ -3,8 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,6 +19,7 @@ import (
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/worktree"
 	"go.uber.org/zap"
 )
 
@@ -91,12 +90,12 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 	// Set up git worktree isolation if requested
 	agentCwd := e.cwd
 	if req.Isolation == "worktree" {
-		worktreePath, cleanup, err := e.createWorktree()
+		result, cleanup, err := worktree.Create(e.cwd, "")
 		if err != nil {
 			return nil, fmt.Errorf("failed to create worktree: %w", err)
 		}
 		defer cleanup()
-		agentCwd = worktreePath
+		agentCwd = result.Path
 	}
 
 	// Get agent configuration
@@ -135,6 +134,17 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 		zap.String("description", req.Description),
 		zap.Int("maxTurns", maxTurns),
 	)
+
+	// Generate agent ID for hook correlation
+	agentHookID := fmt.Sprintf("a%016x", time.Now().UnixNano())
+
+	// Fire SubagentStart hook
+	if e.hooks != nil {
+		e.hooks.ExecuteAsync(hooks.SubagentStart, hooks.HookInput{
+			AgentType: req.Agent,
+			AgentID:   agentHookID,
+		})
+	}
 
 	// Build core.Loop
 	permMode := config.PermissionMode
@@ -199,7 +209,7 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 
 	result, err := loop.Run(ctx, core.RunOptions{MaxTurns: maxTurns, OnToolStart: onToolStart})
 	if err != nil {
-		if result != nil && result.StopReason == "cancelled" {
+		if result != nil && result.StopReason == core.StopCancelled {
 			return &AgentResult{
 				AgentName:  config.Name,
 				Model:      modelID,
@@ -216,10 +226,15 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 		return nil, fmt.Errorf("LLM completion failed: %w", err)
 	}
 
-	success := result.StopReason == "end_turn"
+	success := result.StopReason == core.StopEndTurn
 	errMsg := ""
-	if result.StopReason == "max_turns" {
+	switch result.StopReason {
+	case core.StopMaxTurns:
 		errMsg = fmt.Sprintf("reached maximum turns (%d)", maxTurns)
+	case core.StopMaxOutputRecoveryExhausted:
+		errMsg = "output was repeatedly truncated and recovery was exhausted"
+	case core.StopHook:
+		errMsg = result.StopDetail
 	}
 
 	logFields := []zap.Field{
@@ -236,7 +251,22 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 	}
 
 	// Persist subagent session if store is configured
-	agentSessionID := e.persistSubagentSession(displayName, modelID, req.Description, result.Messages)
+	agentSessionID, agentTranscriptPath := e.persistSubagentSession(displayName, modelID, req.Description, result.Messages)
+
+	// Fire SubagentStop hook (after session persist so agentSessionID is available)
+	if e.hooks != nil {
+		stopAgentID := agentHookID
+		if agentSessionID != "" {
+			stopAgentID = agentSessionID
+		}
+		e.hooks.ExecuteAsync(hooks.SubagentStop, hooks.HookInput{
+			AgentType:            req.Agent,
+			AgentID:              stopAgentID,
+			AgentTranscriptPath:  agentTranscriptPath,
+			LastAssistantMessage: result.Content,
+			StopHookActive:       e.hooks.HasHooks(hooks.Stop),
+		})
+	}
 
 	agentResult := &AgentResult{
 		AgentID:    agentSessionID,
@@ -413,15 +443,15 @@ func formatToolProgress(toolName string, params map[string]any) string {
 }
 
 // persistSubagentSession saves the subagent conversation to disk if a session store is configured.
-// Returns the session ID assigned to the subagent (empty if not persisted).
-func (e *Executor) persistSubagentSession(agentName, modelID, description string, messages []message.Message) string {
+// Returns the session ID and transcript path (both empty if not persisted).
+func (e *Executor) persistSubagentSession(agentName, modelID, description string, messages []message.Message) (string, string) {
 	if e.sessionStore == nil || e.parentSessionID == "" {
-		return ""
+		return "", ""
 	}
 
 	entries := session.MessagesToEntries(messages)
 	if len(entries) == 0 {
-		return ""
+		return "", ""
 	}
 
 	title := description
@@ -444,10 +474,11 @@ func (e *Executor) persistSubagentSession(agentName, modelID, description string
 			zap.String("agent", agentName),
 			zap.Error(err),
 		)
-		return ""
+		return "", ""
 	}
 
-	return sess.Metadata.ID
+	transcriptPath := e.sessionStore.SubagentPath(e.parentSessionID, sess.Metadata.ID)
+	return sess.Metadata.ID, transcriptPath
 }
 
 // --- Resume & Isolation ---
@@ -481,40 +512,6 @@ func (e *Executor) resumeFromSession(loop *core.Loop, agentID, newPrompt string)
 	return nil
 }
 
-// createWorktree creates a temporary git worktree for isolated agent execution.
-// Returns the worktree path and a cleanup function that removes it.
-func (e *Executor) createWorktree() (string, func(), error) {
-	// Generate a unique worktree directory name
-	worktreeID := session.GenerateShortID()
-	worktreePath := filepath.Join(e.cwd, ".git", "agent-worktrees", worktreeID)
-
-	// Get current HEAD for the worktree
-	cmd := exec.Command("git", "worktree", "add", "--detach", worktreePath)
-	cmd.Dir = e.cwd
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", nil, fmt.Errorf("git worktree add failed: %s: %w", string(out), err)
-	}
-
-	log.Logger().Info("Created git worktree for agent isolation",
-		zap.String("path", worktreePath),
-	)
-
-	cleanup := func() {
-		removeCmd := exec.Command("git", "worktree", "remove", "--force", worktreePath)
-		removeCmd.Dir = e.cwd
-		if out, err := removeCmd.CombinedOutput(); err != nil {
-			log.Logger().Warn("Failed to remove agent worktree",
-				zap.String("path", worktreePath),
-				zap.String("output", string(out)),
-				zap.Error(err),
-			)
-		} else {
-			log.Logger().Info("Removed agent worktree", zap.String("path", worktreePath))
-		}
-	}
-
-	return worktreePath, cleanup, nil
-}
 
 // --- Internal helpers ---
 

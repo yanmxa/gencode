@@ -131,9 +131,22 @@ func (t *WriteTool) ExecuteApproved(ctx context.Context, params map[string]any, 
 		}
 	}
 
+	// Determine CC-compatible write type
+	writeType := "create"
+	if !isNewFile {
+		writeType = "update"
+	}
+
 	return ui.ToolResult{
 		Success: true,
 		Output:  action + " " + filePath + " (" + strconv.Itoa(lineCount) + " lines)",
+		HookResponse: map[string]any{
+			"type":            writeType,
+			"filePath":        filePath,
+			"content":         content,
+			"structuredPatch": []any{},
+			"originalFile":    nil,
+		},
 		Metadata: ui.ResultMetadata{
 			Title:     t.Name(),
 			Icon:      t.Icon(),

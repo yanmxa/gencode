@@ -59,33 +59,16 @@ func (m *model) handleToolResult(msg apptool.ExecResultMsg) tea.Cmd {
 		return m.handleParallelToolResult(msg)
 	}
 
-	// Clear task progress for this agent when Task tool completes
 	if msg.ToolName == tool.ToolAgent {
 		delete(m.output.TaskProgress, msg.Index)
 	}
 
-	// Reset task reminder counter when any Task* tool is used
 	if isTaskTool(msg.ToolName) {
 		m.conv.TurnsSinceLastTaskTool = 0
 	}
 
-	// Execute PostToolUse or PostToolUseFailure hook asynchronously
-	if m.hookEngine != nil {
-		eventType := hooks.PostToolUse
-		if msg.Result.IsError {
-			eventType = hooks.PostToolUseFailure
-		}
-		input := hooks.HookInput{
-			ToolName:     msg.ToolName,
-			ToolResponse: msg.Result.Content,
-		}
-		if msg.Result.IsError {
-			input.Error = msg.Result.Content
-		}
-		m.hookEngine.ExecuteAsync(eventType, input)
-	}
+	m.firePostToolUseHook(msg)
 
-	// Sequential mode - original behavior
 	r := msg.Result
 	m.persistToolResultOverflow(&r)
 	m.conv.Append(message.ChatMessage{
@@ -100,12 +83,12 @@ func (m *model) handleToolResult(msg apptool.ExecResultMsg) tea.Cmd {
 }
 
 func (m *model) handleParallelToolResult(msg apptool.ExecResultMsg) tea.Cmd {
-	// Reset task reminder counter when any Task* tool is used
 	if isTaskTool(msg.ToolName) {
 		m.conv.TurnsSinceLastTaskTool = 0
 	}
 
-	// Store result in the parallel results map
+	m.firePostToolUseHook(msg)
+
 	if m.tool.ParallelResults == nil {
 		m.tool.ParallelResults = make(map[int]message.ToolResult)
 	}
@@ -149,7 +132,7 @@ func (m *model) handleStartToolExecution(toolCalls []message.ToolCall) tea.Cmd {
 		return m.startContinueStream()
 	}
 
-	cmd := apptool.ExecuteParallel(m.tool.PendingCalls, m.cwd, m.settings, m.mode.SessionPermissions, m.mode.Enabled)
+	cmd := apptool.ExecuteParallel(m.tool.PendingCalls, m.cwd, m.settings, m.mode.SessionPermissions, m.mode.Enabled, m.tool.HookAllowed)
 
 	if len(m.tool.PendingCalls) > 1 && m.canRunToolsInParallel(m.tool.PendingCalls) {
 		m.tool.Parallel = true
@@ -163,7 +146,7 @@ func (m *model) handleStartToolExecution(toolCalls []message.ToolCall) tea.Cmd {
 // canRunToolsInParallel checks if all tools can run without user interaction
 func (m *model) canRunToolsInParallel(toolCalls []message.ToolCall) bool {
 	for _, tc := range toolCalls {
-		if apptool.RequiresUserInteraction(tc, m.settings, m.mode.SessionPermissions, m.mode.Enabled) {
+		if apptool.RequiresUserInteraction(tc, m.settings, m.mode.SessionPermissions, m.mode.Enabled, m.tool.HookAllowed) {
 			return false
 		}
 	}
@@ -177,7 +160,8 @@ func (m *model) handleAllToolsCompleted() tea.Cmd {
 
 // filterToolCallsWithHooks runs PreToolUse hooks and filters blocked tools.
 func (m *model) filterToolCallsWithHooks(toolCalls []message.ToolCall) []message.ToolCall {
-	allowed, blocked := m.loop.FilterToolCalls(context.Background(), toolCalls)
+	allowed, blocked, hookAllowed := m.loop.FilterToolCalls(context.Background(), toolCalls)
+	m.tool.HookAllowed = hookAllowed
 
 	// Add blocked results as chat messages
 	for _, br := range blocked {
@@ -193,6 +177,35 @@ func (m *model) filterToolCallsWithHooks(toolCalls []message.ToolCall) []message
 	}
 
 	return allowed
+}
+
+// firePostToolUseHook fires the PostToolUse or PostToolUseFailure hook for a tool result.
+func (m *model) firePostToolUseHook(msg apptool.ExecResultMsg) {
+	if m.hookEngine == nil {
+		return
+	}
+	eventType := hooks.PostToolUse
+	if msg.Result.IsError {
+		eventType = hooks.PostToolUseFailure
+	}
+	toolResponse := any(msg.Result.Content)
+	if msg.Result.HookResponse != nil {
+		toolResponse = msg.Result.HookResponse
+	}
+	input := hooks.HookInput{
+		ToolName:     msg.ToolName,
+		ToolUseID:    msg.Result.ToolCallID,
+		ToolResponse: toolResponse,
+	}
+	if msg.Index >= 0 && msg.Index < len(m.tool.PendingCalls) {
+		if params, err := message.ParseToolInput(m.tool.PendingCalls[msg.Index].Input); err == nil {
+			input.ToolInput = params
+		}
+	}
+	if msg.Result.IsError {
+		input.Error = msg.Result.Content
+	}
+	m.hookEngine.ExecuteAsync(eventType, input)
 }
 
 // isExpectedToolResult checks whether an incoming tool result belongs to the

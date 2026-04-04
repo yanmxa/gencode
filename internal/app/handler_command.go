@@ -16,13 +16,13 @@ import (
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appplugin "github.com/yanmxa/gencode/internal/app/plugin"
+	appprovider "github.com/yanmxa/gencode/internal/app/provider"
+	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/ui"
-
-	appprovider "github.com/yanmxa/gencode/internal/app/provider"
 )
 
 type CommandHandler func(ctx context.Context, m *model, args string) (string, tea.Cmd, error)
@@ -157,6 +157,9 @@ func handleClearCommand(ctx context.Context, m *model, args string) (string, tea
 	m.provider.InputTokens = 0
 	m.provider.OutputTokens = 0
 	tool.DefaultTodoStore.Reset()
+	tool.ResetFetched()
+	cron.DefaultStore.Reset()
+	m.cronQueue = nil
 	if tty, err := os.OpenFile("/dev/tty", os.O_WRONLY, 0); err == nil {
 		tty.WriteString("\033[2J\033[3J\033[H")
 		tty.Close()

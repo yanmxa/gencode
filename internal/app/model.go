@@ -78,6 +78,12 @@ type model struct {
 	agent    appagent.State
 	approval *appapproval.Model
 
+	// Cron scheduler
+	cronQueue []string // queued cron prompts waiting for idle REPL
+
+	// Max-output-tokens recovery counter (reset on new user input)
+	maxOutputRecoveryCount int
+
 	// UI toggles
 	showTasks    bool   // Ctrl+T toggles task list visibility
 	isGit        bool   // cached: whether cwd is a git repository
@@ -100,7 +106,14 @@ func newModel(opts options.RunOptions) (model, error) {
 	settings := loadSettings()
 
 	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
-	hookEngine := hooks.NewEngine(settings, sessionID, cwd, "")
+
+	// Eagerly initialize session store so we can set transcript_path on hooks
+	var transcriptPath string
+	earlySessionStore, _ := session.NewStore(cwd)
+	if earlySessionStore != nil {
+		transcriptPath = earlySessionStore.SessionPath(sessionID)
+	}
+	hookEngine := hooks.NewEngine(settings, sessionID, cwd, transcriptPath)
 
 	if llmProvider != nil {
 		modelID := ""
@@ -135,6 +148,7 @@ func newModel(opts options.RunOptions) (model, error) {
 		},
 		session: appsession.State{
 			Selector: appsession.New(),
+			Store:    earlySessionStore,
 		},
 		skill: appskill.State{
 			Selector: appskill.New(),
@@ -250,6 +264,26 @@ func newModel(opts options.RunOptions) (model, error) {
 	return m, nil
 }
 
+// lastAssistantContent returns the text content of the most recent assistant message.
+func (m *model) lastAssistantContent() string {
+	for i := len(m.conv.Messages) - 1; i >= 0; i-- {
+		if m.conv.Messages[i].Role == message.RoleAssistant && m.conv.Messages[i].Content != "" {
+			return m.conv.Messages[i].Content
+		}
+	}
+	return ""
+}
+
+// fireSessionEnd fires the SessionEnd hook synchronously before quitting.
+// Uses Execute (not ExecuteAsync) to ensure the hook completes before the process exits.
+func (m *model) fireSessionEnd(reason string) {
+	if m.hookEngine != nil {
+		m.hookEngine.Execute(context.Background(), hooks.SessionEnd, hooks.HookInput{
+			Reason: reason,
+		})
+	}
+}
+
 func (m model) Init() tea.Cmd {
 	if m.hookEngine != nil {
 		source := "startup"
@@ -262,7 +296,7 @@ func (m model) Init() tea.Cmd {
 		})
 	}
 
-	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, appmcp.AutoConnect()}
+	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, appmcp.AutoConnect(), startCronTicker()}
 	if m.initialPrompt != "" {
 		prompt := m.initialPrompt
 		m.initialPrompt = ""
@@ -387,6 +421,7 @@ func (m *model) configureLoop(extra []string) {
 		SessionSummary:      sessionSummary,
 		Skills:              skills,
 		Agents:              agents,
+		DeferredTools:       tool.FormatDeferredToolsPrompt(),
 		Extra:               allExtra,
 	}
 	m.loop.Tool = &tool.Set{

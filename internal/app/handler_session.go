@@ -71,6 +71,11 @@ func (m *model) saveSession() error {
 	m.session.CurrentID = sess.Metadata.ID
 	m.initTaskStorage()
 
+	// Set transcript path on hook engine so all subsequent hook events include it
+	if m.hookEngine != nil {
+		m.hookEngine.SetTranscriptPath(m.session.Store.SessionPath(sess.Metadata.ID))
+	}
+
 	m.reconfigureAgentTool()
 
 	return nil
@@ -93,6 +98,8 @@ func (m *model) loadSession(id string) error {
 	if len(sess.Tasks) == 0 {
 		tool.DefaultTodoStore.Reset()
 	}
+	// Reset deferred tool state for new session context
+	tool.ResetFetched()
 
 	// Reset token usage (will be updated on next API call)
 	m.provider.InputTokens = 0

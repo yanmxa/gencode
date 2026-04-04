@@ -1,10 +1,12 @@
 package hooks
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -25,6 +27,7 @@ type Engine struct {
 	cwd            string
 	transcriptPath string
 	permissionMode string
+	promptCallback PromptCallback // optional; nil = one-shot stdin mode
 }
 
 // NewEngine creates a new hook execution engine.
@@ -34,7 +37,7 @@ func NewEngine(settings *config.Settings, sessionID, cwd, transcriptPath string)
 		sessionID:      sessionID,
 		cwd:            cwd,
 		transcriptPath: transcriptPath,
-		permissionMode: "normal",
+		permissionMode: "default",
 	}
 }
 
@@ -43,22 +46,45 @@ func (e *Engine) SetPermissionMode(mode string) {
 	e.permissionMode = mode
 }
 
+// SetPromptCallback sets the callback for bidirectional prompt exchanges.
+// When set, hooks that write PromptRequest JSON to stdout will trigger the
+// callback to collect user input, which is then written back to the hook's stdin.
+// When nil (default), hooks use one-shot stdin mode (backward compatible).
+func (e *Engine) SetPromptCallback(cb PromptCallback) {
+	e.promptCallback = cb
+}
+
 // Execute runs all matching hooks for an event synchronously.
 func (e *Engine) Execute(ctx context.Context, event EventType, input HookInput) HookOutcome {
 	outcome := HookOutcome{ShouldContinue: true}
 
 	hooks := e.getMatchingHooks(event, &input)
+	log.Logger().Debug("Engine.Execute: matching hooks",
+		zap.String("event", string(event)),
+		zap.Int("count", len(hooks)))
+
 	if len(hooks) == 0 {
 		return outcome
 	}
 
 	for _, cmd := range hooks {
+		log.Logger().Debug("Engine.Execute: running hook",
+			zap.String("event", string(event)),
+			zap.String("command", cmd.Command),
+			zap.Bool("async", cmd.Async),
+			zap.Int("timeout", cmd.Timeout))
+
 		if cmd.Async {
 			go e.executeCommand(context.Background(), cmd, input)
 			continue
 		}
 
-		result := e.executeCommand(ctx, cmd, input)
+		var result HookOutcome
+		if e.promptCallback != nil {
+			result = e.executeCommandBidirectional(ctx, cmd, input)
+		} else {
+			result = e.executeCommand(ctx, cmd, input)
+		}
 		if result.Error != nil {
 			log.Logger().Warn("hook execution failed",
 				zap.String("event", string(event)),
@@ -83,12 +109,22 @@ func (e *Engine) mergeOutcome(outcome, result HookOutcome) HookOutcome {
 	if result.UpdatedInput != nil {
 		outcome.UpdatedInput = result.UpdatedInput
 	}
+	if result.PermissionAllow {
+		outcome.PermissionAllow = true
+		outcome.HookSource = result.HookSource
+	}
+	if len(result.UpdatedPermissions) > 0 {
+		outcome.UpdatedPermissions = append(outcome.UpdatedPermissions, result.UpdatedPermissions...)
+	}
 	return outcome
 }
 
 // ExecuteAsync runs all matching hooks asynchronously (fire-and-forget).
 func (e *Engine) ExecuteAsync(event EventType, input HookInput) {
 	hooks := e.getMatchingHooks(event, &input)
+	if len(hooks) == 0 {
+		return
+	}
 	for _, cmd := range hooks {
 		cmdCopy, inputCopy := cmd, input
 		go e.executeCommand(context.Background(), cmdCopy, inputCopy)
@@ -125,6 +161,12 @@ func (e *Engine) getMatchingHooks(event EventType, input *HookInput) []config.Ho
 		}
 	}
 	return cmds
+}
+
+// SetTranscriptPath updates the transcript path after engine creation.
+// This is useful when the session file path is determined lazily.
+func (e *Engine) SetTranscriptPath(path string) {
+	e.transcriptPath = path
 }
 
 // populateInputFields fills common fields in hook input.
@@ -178,9 +220,10 @@ func (e *Engine) executeCommand(ctx context.Context, hookCmd config.HookCmd, inp
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	exitCode := getExitCode(cmd.Run())
+	runErr := cmd.Run()
+	exitCode := getExitCode(runErr)
 	if exitCode < 0 {
-		outcome.Error = err
+		outcome.Error = runErr
 		return outcome
 	}
 
@@ -272,10 +315,14 @@ func (e *Engine) parseOutput(output string, outcome HookOutcome) HookOutcome {
 
 // applySpecificOutput applies hook-specific output to the outcome.
 func (e *Engine) applySpecificOutput(outcome HookOutcome, hso *HookSpecificOutput) HookOutcome {
-	if hso.PermissionDecision == "deny" {
+	switch hso.PermissionDecision {
+	case "deny":
 		outcome.ShouldContinue = false
 		outcome.ShouldBlock = true
 		outcome.BlockReason = hso.PermissionDecisionReason
+	case "allow":
+		outcome.PermissionAllow = true
+		outcome.HookSource = "PreToolUse"
 	}
 
 	if hso.UpdatedInput != nil {
@@ -293,12 +340,33 @@ func (e *Engine) applySpecificOutput(outcome HookOutcome, hso *HookSpecificOutpu
 
 // applyPermissionDecision applies permission decision to the outcome.
 func (e *Engine) applyPermissionDecision(outcome HookOutcome, prd *PermissionRequestDecision) HookOutcome {
-	if prd.Behavior == "deny" || prd.Interrupt {
+	switch prd.Behavior {
+	case "deny":
 		outcome.ShouldContinue = false
 		outcome.ShouldBlock = true
+		outcome.BlockReason = "denied by hook"
 		if prd.Message != "" {
 			outcome.BlockReason = prd.Message
 		}
+	case "allow":
+		outcome.PermissionAllow = true
+		outcome.HookSource = "PermissionRequest"
+		if prd.UpdatedInput != nil {
+			outcome.UpdatedInput = prd.UpdatedInput
+		}
+		// Extract structured updatedPermissions
+		for _, p := range prd.UpdatedPermissions {
+			pu := parsePermissionUpdate(p)
+			if pu.Type != "" {
+				outcome.UpdatedPermissions = append(outcome.UpdatedPermissions, pu)
+			}
+		}
+		return outcome
+	}
+
+	if prd.Interrupt {
+		outcome.ShouldContinue = false
+		outcome.ShouldBlock = true
 	}
 
 	if prd.UpdatedInput != nil {
@@ -306,6 +374,139 @@ func (e *Engine) applyPermissionDecision(outcome HookOutcome, prd *PermissionReq
 	}
 
 	return outcome
+}
+
+// executeCommandBidirectional runs a hook with stdin kept open for multi-turn
+// prompt exchanges. The protocol:
+//  1. Write input JSON + "\n" to stdin
+//  2. Read stdout line-by-line:
+//     a. First line: if {"async":true}, detach to goroutine and return
+//     b. If line is a PromptRequest, call promptCallback, write response to stdin
+//     c. Otherwise, treat as final HookOutput
+//  3. Close stdin, wait for exit
+func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd config.HookCmd, input HookInput) HookOutcome {
+	outcome := HookOutcome{ShouldContinue: true}
+
+	if hookCmd.Command == "" {
+		return outcome
+	}
+
+	timeout := DefaultTimeout
+	if hookCmd.Timeout > 0 {
+		timeout = hookCmd.Timeout
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		outcome.Error = fmt.Errorf("failed to marshal input: %w", err)
+		return outcome
+	}
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", hookCmd.Command)
+	cmd.Dir = e.cwd
+	cmd.Env = e.buildEnv(input)
+
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		outcome.Error = fmt.Errorf("failed to create stdin pipe: %w", err)
+		return outcome
+	}
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		outcome.Error = fmt.Errorf("failed to create stdout pipe: %w", err)
+		return outcome
+	}
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Start(); err != nil {
+		outcome.Error = fmt.Errorf("failed to start hook: %w", err)
+		return outcome
+	}
+
+	// Write input JSON to stdin
+	if _, err := io.WriteString(stdinPipe, string(inputJSON)+"\n"); err != nil {
+		outcome.Error = fmt.Errorf("failed to write to stdin: %w", err)
+		_ = cmd.Wait()
+		return outcome
+	}
+
+	// Read stdout line-by-line
+	scanner := bufio.NewScanner(stdoutPipe)
+	var finalOutput string
+	firstLine := true
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		// First line: check for async detection
+		if firstLine {
+			firstLine = false
+			var async asyncFirstLine
+			if json.Unmarshal([]byte(line), &async) == nil && async.Async {
+				// Detach: close stdin and let process run in background
+				stdinPipe.Close()
+				go func() { _ = cmd.Wait() }()
+				log.Logger().Debug("hook self-detected as async, backgrounded",
+					zap.String("command", hookCmd.Command))
+				return outcome
+			}
+		}
+
+		// Try to parse as PromptRequest
+		var promptReq PromptRequest
+		if err := json.Unmarshal([]byte(line), &promptReq); err == nil && promptReq.Prompt != "" && promptReq.Message != "" {
+			if e.promptCallback == nil {
+				// No callback — cannot handle prompt requests in this mode
+				log.Logger().Warn("hook sent prompt request but no callback is set",
+					zap.String("command", hookCmd.Command))
+				continue
+			}
+			resp, cancelled := e.promptCallback(promptReq)
+			if cancelled {
+				stdinPipe.Close()
+				_ = cmd.Wait()
+				return outcome
+			}
+			respJSON, err := json.Marshal(resp)
+			if err != nil {
+				log.Logger().Warn("failed to marshal prompt response", zap.Error(err))
+				continue
+			}
+			if _, err := io.WriteString(stdinPipe, string(respJSON)+"\n"); err != nil {
+				log.Logger().Warn("failed to write prompt response to stdin", zap.Error(err))
+			}
+			continue
+		}
+
+		// Not a prompt request — this is the final output line
+		finalOutput = line
+	}
+
+	// Close stdin and wait for process to exit
+	stdinPipe.Close()
+	exitCode := getExitCode(cmd.Wait())
+
+	if exitCode == 2 {
+		return e.handleBlockingExit(&stderr)
+	}
+
+	if exitCode != 0 && exitCode >= 0 {
+		log.Logger().Debug("hook exited with non-zero code",
+			zap.Int("exitCode", exitCode),
+			zap.String("stderr", stderr.String()))
+		return outcome
+	}
+
+	return e.parseOutput(finalOutput, outcome)
 }
 
 // appendContext appends b to a with newline separator if both non-empty.
@@ -325,6 +526,62 @@ func firstNonEmpty(strs ...string) string {
 		if s != "" {
 			return s
 		}
+	}
+	return ""
+}
+
+// parsePermissionUpdate converts an untyped permission update (from JSON []any)
+// into a structured PermissionUpdate. Handles both map objects and legacy strings.
+func parsePermissionUpdate(v any) PermissionUpdate {
+	m, ok := v.(map[string]any)
+	if !ok {
+		// Legacy string format: treat as an addRules with a single rule string
+		if s, ok := v.(string); ok && s != "" {
+			return PermissionUpdate{
+				Type:        "addRules",
+				Behavior:    "allow",
+				Destination: "session",
+				Rules:       []PermissionRule{{RuleContent: s}},
+			}
+		}
+		return PermissionUpdate{}
+	}
+
+	pu := PermissionUpdate{
+		Type:        getString(m, "type"),
+		Mode:        getString(m, "mode"),
+		Behavior:    getString(m, "behavior"),
+		Destination: getString(m, "destination"),
+	}
+
+	// Parse rules array
+	if rules, ok := m["rules"].([]any); ok {
+		for _, r := range rules {
+			if rm, ok := r.(map[string]any); ok {
+				pu.Rules = append(pu.Rules, PermissionRule{
+					ToolName:    getString(rm, "toolName"),
+					RuleContent: getString(rm, "ruleContent"),
+				})
+			}
+		}
+	}
+
+	// Parse directories array
+	if dirs, ok := m["directories"].([]any); ok {
+		for _, d := range dirs {
+			if s, ok := d.(string); ok {
+				pu.Directories = append(pu.Directories, s)
+			}
+		}
+	}
+
+	return pu
+}
+
+// getString safely extracts a string value from a map.
+func getString(m map[string]any, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
 	}
 	return ""
 }

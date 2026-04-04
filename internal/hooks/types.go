@@ -38,6 +38,9 @@ type HookInput struct {
 	Error        string         `json:"error,omitempty"`
 	IsInterrupt  bool           `json:"is_interrupt,omitempty"`
 
+	// PermissionRequest suggestions
+	PermissionSuggestions []PermissionSuggestion `json:"permission_suggestions,omitempty"`
+
 	// UserPromptSubmit
 	Prompt string `json:"prompt,omitempty"`
 
@@ -51,6 +54,9 @@ type HookInput struct {
 	AgentType           string `json:"agent_type,omitempty"`
 	AgentTranscriptPath string `json:"agent_transcript_path,omitempty"`
 	StopHookActive      bool   `json:"stop_hook_active,omitempty"`
+
+	// Stop event
+	LastAssistantMessage string `json:"last_assistant_message,omitempty"`
 
 	// Session events
 	Source             string `json:"source,omitempty"`
@@ -83,19 +89,85 @@ type HookSpecificOutput struct {
 
 // PermissionRequestDecision represents permission request hook decision.
 type PermissionRequestDecision struct {
-	Behavior           string         `json:"behavior"`
+	Behavior           string         `json:"behavior"` // "allow", "deny"
 	UpdatedInput       map[string]any `json:"updatedInput,omitempty"`
 	UpdatedPermissions []any          `json:"updatedPermissions,omitempty"`
 	Message            string         `json:"message,omitempty"`
 	Interrupt          bool           `json:"interrupt,omitempty"`
 }
 
+// PermissionUpdate represents a structured permission change from a hook response.
+// Matches Claude Code's updatedPermissions objects:
+//
+//	{type: "setMode", mode: "bypassPermissions", destination: "session"}
+//	{type: "addRules", rules: [...], behavior: "allow", destination: "session"}
+//	{type: "addDirectories", directories: [...], destination: "session"}
+type PermissionUpdate struct {
+	Type        string           `json:"type"`                  // "setMode", "addRules", "addDirectories"
+	Mode        string           `json:"mode,omitempty"`        // for setMode: "bypassPermissions", "acceptEdits", etc.
+	Rules       []PermissionRule `json:"rules,omitempty"`       // for addRules
+	Behavior    string           `json:"behavior,omitempty"`    // for addRules: "allow", "deny", "ask"
+	Directories []string         `json:"directories,omitempty"` // for addDirectories
+	Destination string           `json:"destination,omitempty"` // "session" or "persistent"
+}
+
+// PermissionRule represents a single permission rule within an addRules update.
+type PermissionRule struct {
+	ToolName    string `json:"toolName"`
+	RuleContent string `json:"ruleContent,omitempty"` // e.g. command prefix for Bash
+}
+
+// PermissionSuggestion is a suggested permission change sent in PermissionRequest hook input.
+// Matches Claude Code's permission_suggestions field.
+type PermissionSuggestion struct {
+	Type        string   `json:"type"`                  // "setMode", "addDirectories"
+	Mode        string   `json:"mode,omitempty"`        // for setMode
+	Directories []string `json:"directories,omitempty"` // for addDirectories
+	Destination string   `json:"destination,omitempty"` // "session" or "persistent"
+}
+
 // HookOutcome is the processed result from hook execution.
 type HookOutcome struct {
-	ShouldContinue    bool
-	ShouldBlock       bool
-	BlockReason       string
-	AdditionalContext string
-	UpdatedInput      map[string]any
-	Error             error
+	ShouldContinue     bool
+	ShouldBlock        bool
+	BlockReason        string
+	AdditionalContext  string
+	UpdatedInput       map[string]any
+	PermissionAllow    bool               // Hook explicitly granted permission (allow path)
+	UpdatedPermissions []PermissionUpdate // Structured permission changes from hook
+	HookSource         string             // Which hook made the decision (for logging)
+	Error              error
+}
+
+// --- Bidirectional prompt protocol types ---
+
+// PromptRequest is sent by a hook process via stdout to request user input.
+// The hook writes one JSON line per request; Claude Code / GenCode reads it,
+// collects the answer, and writes a PromptResponse back to the hook's stdin.
+type PromptRequest struct {
+	Prompt  string         `json:"prompt"`           // request ID / discriminator
+	Message string         `json:"message"`          // question text for user
+	Options []PromptOption `json:"options,omitempty"` // optional choices
+}
+
+// PromptOption is a selectable choice in a PromptRequest.
+type PromptOption struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// PromptResponse is sent back to the hook process via stdin.
+type PromptResponse struct {
+	PromptResponse string `json:"prompt_response"` // matches original Prompt field
+	Selected       string `json:"selected"`         // chosen option key or free text
+}
+
+// PromptCallback is called by the engine when a hook requests user input.
+// Returns the user's response. If cancelled is true, the hook should abort.
+type PromptCallback func(req PromptRequest) (resp PromptResponse, cancelled bool)
+
+// asyncFirstLine is used to detect async hooks via their first stdout line.
+type asyncFirstLine struct {
+	Async bool `json:"async"`
 }

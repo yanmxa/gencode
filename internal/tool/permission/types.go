@@ -2,15 +2,16 @@ package permission
 
 // PermissionRequest represents a request for user permission before executing a tool
 type PermissionRequest struct {
-	ID          string         // Unique request ID
-	ToolName    string         // Name of the tool requesting permission
-	FilePath    string         // File path being modified
-	Description string         // Human-readable description of the action
-	CallerAgent string         // Name of the agent requesting permission (e.g., "@reviewer-1")
-	DiffMeta    *DiffMetadata  // Diff metadata (for Edit/Write tools)
-	BashMeta    *BashMetadata  // Bash metadata (for Bash tool)
-	SkillMeta   *SkillMetadata // Skill metadata (for Skill tool)
-	AgentMeta   *AgentMetadata // Agent metadata (for Task tool)
+	ID             string         // Unique request ID
+	ToolName       string         // Name of the tool requesting permission
+	FilePath       string         // File path being modified
+	Description    string         // Human-readable description of the action
+	CallerAgent    string         // Name of the agent requesting permission (e.g., "@reviewer-1")
+	SuggestedRules []string       // Smart allow rule suggestions for "Always allow"
+	DiffMeta       *DiffMetadata  // Diff metadata (for Edit/Write tools)
+	BashMeta       *BashMetadata  // Bash metadata (for Bash tool)
+	SkillMeta      *SkillMetadata // Skill metadata (for Skill tool)
+	AgentMeta      *AgentMetadata // Agent metadata (for Task tool)
 }
 
 // DiffMetadata contains diff information for file modifications

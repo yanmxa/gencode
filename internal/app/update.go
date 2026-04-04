@@ -77,6 +77,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if c, ok := m.updateMemory(msg); ok {
 		return m, c
 	}
+	if c, ok := m.updateCron(msg); ok {
+		return m, c
+	}
 	// ── Fallthrough: forward to textarea & spinner ────────────
 	return m, m.updateTextarea(msg)
 }

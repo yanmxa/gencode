@@ -1,0 +1,76 @@
+// Package worktree provides git worktree creation and management.
+// Used by both the standalone EnterWorktree tool (main conversation)
+// and the Agent tool's isolation mode (subagents).
+package worktree
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+
+const worktreeDir = "agent-worktrees"
+
+// Result contains the outcome of creating a worktree.
+type Result struct {
+	Path   string // absolute path to the worktree
+	Branch string // branch name (empty for detached HEAD)
+}
+
+// Create creates a git worktree under baseCwd/.git/agent-worktrees/<slug>.
+// If slug is empty, a random short ID is used.
+// Returns the worktree path and a cleanup function that removes it.
+func Create(baseCwd, slug string) (*Result, func(), error) {
+	if slug == "" {
+		b := make([]byte, 4)
+		rand.Read(b)
+		slug = hex.EncodeToString(b)
+	}
+
+	worktreePath := filepath.Join(baseCwd, ".git", worktreeDir, slug)
+
+	cmd := exec.Command("git", "worktree", "add", "--detach", worktreePath)
+	cmd.Dir = baseCwd
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, nil, fmt.Errorf("git worktree add failed: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+
+	cleanup := func() { Remove(baseCwd, worktreePath) }
+
+	return &Result{Path: worktreePath}, cleanup, nil
+}
+
+// Remove force-removes a git worktree.
+func Remove(baseCwd, worktreePath string) error {
+	cmd := exec.Command("git", "worktree", "remove", "--force", worktreePath)
+	cmd.Dir = baseCwd
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git worktree remove failed: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// HasUncommittedChanges returns true if the worktree has uncommitted modifications.
+func HasUncommittedChanges(worktreePath string) bool {
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = worktreePath
+	out, err := cmd.Output()
+	if err != nil {
+		return true // assume dirty on error
+	}
+	return len(strings.TrimSpace(string(out))) > 0
+}
+
+// HasUnmergedCommits returns true if the worktree has commits not present in the main repo.
+func HasUnmergedCommits(worktreePath string) bool {
+	cmd := exec.Command("git", "log", "--oneline", "HEAD", "--not", "--remotes", "--max-count=1")
+	cmd.Dir = worktreePath
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return len(strings.TrimSpace(string(out))) > 0
+}

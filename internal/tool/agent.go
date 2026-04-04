@@ -247,7 +247,7 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 		duration := time.Since(start)
 		return ui.ToolResult{
 			Success: true,
-			Output: fmt.Sprintf("Agent started in background.\nTask ID: %s\nAgent: %s\nDescription: %s\n\nUse AgentOutput with task_id=\"%s\" to check the result.",
+			Output: fmt.Sprintf("Agent started in background.\nTask ID: %s\nAgent: %s\nDescription: %s\n\nUse TaskOutput with task_id=\"%s\" to check the result.",
 				taskInfo.TaskID, taskInfo.AgentName, description, taskInfo.TaskID),
 			Metadata: ui.ResultMetadata{
 				Title:    t.Name(),

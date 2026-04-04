@@ -21,24 +21,67 @@ import (
 	"github.com/yanmxa/gencode/internal/tool/ui"
 )
 
-const defaultMaxTurns = 100
+const (
+	defaultMaxTurns = 100
+
+	// DefaultMaxOutputRecovery is the default number of retries when LLM output
+	// is truncated due to max_tokens. Exported so the TUI layer can reuse it.
+	DefaultMaxOutputRecovery = 3
+)
+
+// MaxOutputRecoveryPrompt is the message injected when the LLM output is truncated.
+const MaxOutputRecoveryPrompt = "Your response was truncated due to output token limits. Resume directly from where you left off. Do not repeat any content."
+
+// Stop reason constants returned in Result.StopReason.
+const (
+	StopEndTurn                    = "end_turn"
+	StopMaxTurns                   = "max_turns"
+	StopCancelled                  = "cancelled"
+	StopHook                       = "stop_hook"
+	StopMaxOutputRecoveryExhausted = "max_output_recovery_exhausted"
+)
+
+// TransitionReason describes why the loop moved to its current state.
+type TransitionReason string
+
+const (
+	TransitionNextTurn          TransitionReason = "next_turn"
+	TransitionMaxOutputRecovery TransitionReason = "max_output_tokens_recovery"
+	TransitionPromptTooLong     TransitionReason = "prompt_too_long_compact"
+	TransitionStopHookBlocking  TransitionReason = "stop_hook_blocking"
+)
+
+// loopState holds the explicit state of the agent loop per iteration.
+type loopState struct {
+	turnCount                    int
+	maxOutputTokensRecoveryCount int
+	transition                   TransitionReason
+}
 
 // RunOptions controls the synchronous Run() loop.
 type RunOptions struct {
-	MaxTurns    int
-	OnResponse  func(resp *message.CompletionResponse)
-	OnToolStart func(tc message.ToolCall) bool
-	OnToolDone  func(tc message.ToolCall, result message.ToolResult)
+	MaxTurns         int
+	MaxOutputRecovery int // max retries on truncated output (default: 3)
+	OnResponse       func(resp *message.CompletionResponse)
+	OnToolStart      func(tc message.ToolCall) bool
+	OnToolDone       func(tc message.ToolCall, result message.ToolResult)
+
+	// Context compaction support (opt-in)
+	SessionMemory string // previous compaction summary
+	CompactFocus  string // optional focus for compaction
+	InputLimit    int    // context window input limit (enables pre-stream check & reactive compact)
 }
 
 // Result is returned by Loop.Run() upon completion.
 type Result struct {
-	Content    string
-	Messages   []message.Message
-	Turns      int
-	ToolUses   int
-	Tokens     client.TokenUsage
-	StopReason string // "end_turn", "max_turns", "cancelled"
+	Content     string
+	Messages    []message.Message
+	Turns       int
+	ToolUses    int
+	Tokens      client.TokenUsage
+	StopReason  string
+	Transitions []TransitionReason
+	StopDetail  string
 }
 
 // --- Loop ---
@@ -71,57 +114,109 @@ type Loop struct {
 
 // --- High-level: synchronous agent loop ---
 
-// Run drives the full conversation loop: stream -> response -> tools -> repeat.
-// Stops on end_turn, max turns, or context cancellation.
+// Run drives the full conversation loop using an explicit state machine:
+// while-true { pre-check → stream → error recovery → tools → next state }.
+// Stops on end_turn, max turns, stop hook, recovery exhaustion, or context cancellation.
 func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 	maxTurns := opts.MaxTurns
 	if maxTurns <= 0 {
 		maxTurns = defaultMaxTurns
 	}
+	maxRecovery := opts.MaxOutputRecovery
+	if maxRecovery <= 0 {
+		maxRecovery = DefaultMaxOutputRecovery
+	}
 
-	toolUses := 0
-	for turn := 0; turn < maxTurns; turn++ {
+	state := loopState{
+		turnCount:  1,
+		transition: TransitionNextTurn,
+	}
+	var toolUses int
+	var transitions []TransitionReason
+
+	terminate := func(reason string) *Result {
+		return l.buildResult(reason, state.turnCount, toolUses, transitions)
+	}
+
+	for {
+		// --- 0. Context cancellation check ---
 		select {
 		case <-ctx.Done():
-			r := l.buildResult("cancelled", turn)
-			r.ToolUses = toolUses
-			return r, ctx.Err()
+			return terminate(StopCancelled), ctx.Err()
 		default:
 		}
 
-		// 1. Stream + collect response
+		transitions = append(transitions, state.transition)
+
+		// --- 1. Pre-stream: reactive compaction (prevent prompt-too-long) ---
+		if opts.InputLimit > 0 && l.Client != nil {
+			tokens := l.Client.Tokens()
+			if message.NeedsCompaction(tokens.InputTokens, opts.InputLimit) && len(l.messages) >= 3 {
+				if l.compactAndReplace(ctx, opts) {
+					state.transition = TransitionPromptTooLong
+					continue
+				}
+			}
+		}
+
+		// --- 2. Stream + collect response ---
 		resp, err := Collect(ctx, l.Stream(ctx))
 		if err != nil {
+			if IsPromptTooLong(err) && len(l.messages) >= 3 {
+				if l.compactAndReplace(ctx, opts) {
+					state.transition = TransitionPromptTooLong
+					continue
+				}
+			}
 			return nil, err
 		}
 
-		// 2. Process response
+		// --- 3. Process response ---
 		calls := l.AddResponse(resp)
 		if opts.OnResponse != nil {
 			opts.OnResponse(resp)
 		}
 
-		// 3. No tool calls -> done
-		if len(calls) == 0 {
-			r := l.buildResult("end_turn", turn+1)
-			r.Content = resp.Content
-			r.ToolUses = toolUses
-			return r, nil
+		// --- 3a. Max-output-tokens recovery ---
+		if resp.StopReason == "max_tokens" && len(calls) == 0 {
+			if state.maxOutputTokensRecoveryCount < maxRecovery {
+				l.AddUser(MaxOutputRecoveryPrompt, nil)
+				state.maxOutputTokensRecoveryCount++
+				state.transition = TransitionMaxOutputRecovery
+				continue
+			}
+			return terminate(StopMaxOutputRecoveryExhausted), nil
 		}
 
-		// 4. Filter through hooks
-		allowed, blocked := l.FilterToolCalls(ctx, calls)
+		// --- 4. No tool calls → fire stop hooks, then end ---
+		if len(calls) == 0 {
+			if l.Hooks != nil && l.Hooks.HasHooks(hooks.Stop) {
+				stopInput := hooks.HookInput{
+					LastAssistantMessage: l.lastAssistantContent(),
+					StopHookActive:      true,
+				}
+				outcome := l.Hooks.Execute(ctx, hooks.Stop, stopInput)
+				if outcome.ShouldBlock {
+					r := terminate(StopHook)
+					r.StopDetail = "Stop hook blocked: " + outcome.BlockReason
+					r.Transitions = append(r.Transitions, TransitionStopHookBlocking)
+					return r, nil
+				}
+			}
+			return terminate(StopEndTurn), nil
+		}
+
+		// --- 5. Filter through hooks ---
+		allowed, blocked, _ := l.FilterToolCalls(ctx, calls)
 		for _, br := range blocked {
 			l.AddToolResult(br)
 		}
 
-		// 5. Execute tools
+		// --- 6. Execute tools ---
 		for _, tc := range allowed {
 			select {
 			case <-ctx.Done():
-				r := l.buildResult("cancelled", turn+1)
-				r.ToolUses = toolUses
-				return r, ctx.Err()
+				return terminate(StopCancelled), ctx.Err()
 			default:
 			}
 
@@ -133,31 +228,39 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 			l.AddToolResult(*result)
 			toolUses++
 
-			// Fire PostToolUse / PostToolUseFailure hooks
 			l.firePostToolHook(ctx, tc, result)
 
 			if opts.OnToolDone != nil {
 				opts.OnToolDone(tc, *result)
 			}
 		}
-	}
 
-	r := l.buildResult("max_turns", maxTurns)
-	r.ToolUses = toolUses
-	return r, nil
+		// --- 7. Turn limit check ---
+		if state.turnCount >= maxTurns {
+			return terminate(StopMaxTurns), nil
+		}
+
+		// --- 8. Build next state ---
+		state = loopState{
+			turnCount:                    state.turnCount + 1,
+			maxOutputTokensRecoveryCount: state.maxOutputTokensRecoveryCount,
+			transition:                   TransitionNextTurn,
+		}
+	}
 }
 
-func (l *Loop) buildResult(reason string, turns int) *Result {
+func (l *Loop) buildResult(reason string, turns, toolUses int, transitions []TransitionReason) *Result {
 	return &Result{
-		Content:    l.lastAssistantContent(),
-		Messages:   l.messages,
-		Turns:      turns,
-		Tokens:     l.Client.Tokens(),
-		StopReason: reason,
+		Content:     l.lastAssistantContent(),
+		Messages:    l.messages,
+		Turns:       turns,
+		ToolUses:    toolUses,
+		Tokens:      l.Client.Tokens(),
+		StopReason:  reason,
+		Transitions: transitions,
 	}
 }
 
-// lastAssistantContent returns the content of the most recent assistant message.
 func (l *Loop) lastAssistantContent() string {
 	for i := len(l.messages) - 1; i >= 0; i-- {
 		msg := l.messages[i]
@@ -219,17 +322,9 @@ func Collect(ctx context.Context, ch <-chan message.StreamChunk) (*message.Compl
 
 // --- Message management ---
 
-// Messages returns the current conversation messages.
-func (l *Loop) Messages() []message.Message {
-	return l.messages
-}
+func (l *Loop) Messages() []message.Message    { return l.messages }
+func (l *Loop) SetMessages(msgs []message.Message) { l.messages = msgs }
 
-// SetMessages replaces the conversation messages.
-func (l *Loop) SetMessages(msgs []message.Message) {
-	l.messages = msgs
-}
-
-// Tokens returns the accumulated token usage from the client.
 func (l *Loop) Tokens() client.TokenUsage {
 	if l.Client == nil {
 		return client.TokenUsage{}
@@ -237,13 +332,11 @@ func (l *Loop) Tokens() client.TokenUsage {
 	return l.Client.Tokens()
 }
 
-// AddUser appends a user message to the conversation.
 func (l *Loop) AddUser(content string, images []message.ImageData) {
 	l.messages = append(l.messages, message.UserMessage(content, images))
 }
 
-// AddResponse processes a CompletionResponse: appends the assistant message
-// to the conversation, updates token counters, and returns the tool calls.
+// AddResponse appends the assistant message, updates token counters, and returns tool calls.
 func (l *Loop) AddResponse(resp *message.CompletionResponse) []message.ToolCall {
 	if l.Client != nil {
 		l.Client.AddUsage(resp.Usage)
@@ -254,20 +347,22 @@ func (l *Loop) AddResponse(resp *message.CompletionResponse) []message.ToolCall 
 	return resp.ToolCalls
 }
 
-// AddToolResult appends a tool result message to the conversation.
 func (l *Loop) AddToolResult(r message.ToolResult) {
 	l.messages = append(l.messages, message.ToolResultMessage(r))
 }
 
 // --- Tool dispatch ---
 
-// FilterToolCalls runs PreToolUse hooks, returning allowed tool calls and blocked results.
+// FilterToolCalls runs PreToolUse hooks, returning allowed tool calls, blocked results,
+// and a set of tool call IDs that hooks explicitly allowed (can skip permission prompts).
 func (l *Loop) FilterToolCalls(ctx context.Context, calls []message.ToolCall) (
-	allowed []message.ToolCall, blocked []message.ToolResult,
+	allowed []message.ToolCall, blocked []message.ToolResult, hookAllowed map[string]bool,
 ) {
 	if l.Hooks == nil {
-		return calls, nil
+		return calls, nil, nil
 	}
+
+	hookAllowed = make(map[string]bool)
 
 	for _, tc := range calls {
 		params, _ := message.ParseToolInput(tc.Input)
@@ -287,9 +382,14 @@ func (l *Loop) FilterToolCalls(ctx context.Context, calls []message.ToolCall) (
 				tc.Input = string(updated)
 			}
 		}
+
+		if outcome.PermissionAllow {
+			hookAllowed[tc.ID] = true
+		}
+
 		allowed = append(allowed, tc)
 	}
-	return allowed, blocked
+	return allowed, blocked, hookAllowed
 }
 
 // firePostToolHook fires PostToolUse or PostToolUseFailure hooks after tool execution.
@@ -304,11 +404,15 @@ func (l *Loop) firePostToolHook(ctx context.Context, tc message.ToolCall, result
 		event = hooks.PostToolUseFailure
 	}
 
+	toolResponse := any(result.Content)
+	if result.HookResponse != nil {
+		toolResponse = result.HookResponse
+	}
 	input := hooks.HookInput{
 		ToolName:     tc.Name,
 		ToolInput:    params,
 		ToolUseID:    tc.ID,
-		ToolResponse: result.Content,
+		ToolResponse: toolResponse,
 	}
 	if result.IsError {
 		input.Error = result.Content
@@ -382,6 +486,31 @@ func (l *Loop) runTool(ctx context.Context, tc message.ToolCall, params map[stri
 		Content:    toolResult.FormatForLLM(),
 		IsError:    !toolResult.Success,
 	}
+}
+
+// --- Helpers ---
+
+// IsPromptTooLong checks if an API error indicates the prompt exceeded the context window.
+func IsPromptTooLong(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "prompt is too long") ||
+		strings.Contains(msg, "prompt_too_long")
+}
+
+// compactAndReplace summarizes the conversation and replaces messages with the summary.
+// Returns true if compaction succeeded.
+func (l *Loop) compactAndReplace(ctx context.Context, opts RunOptions) bool {
+	summary, _, err := Compact(ctx, l.Client, l.messages, opts.SessionMemory, opts.CompactFocus)
+	if err != nil {
+		return false
+	}
+	l.messages = []message.Message{message.UserMessage(
+		"Previous context summary:\n"+summary+"\n\nContinue with the task.", nil,
+	)}
+	return true
 }
 
 // --- Compaction ---

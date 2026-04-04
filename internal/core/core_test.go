@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/client"
@@ -321,7 +322,7 @@ func TestFilterToolCallsNoHooks(t *testing.T) {
 		{ID: "t2", Name: "Write"},
 	}
 
-	allowed, blocked := loop.FilterToolCalls(context.Background(), calls)
+	allowed, blocked, _ := loop.FilterToolCalls(context.Background(), calls)
 	if len(allowed) != 2 {
 		t.Errorf("expected 2 allowed, got %d", len(allowed))
 	}
@@ -329,6 +330,149 @@ func TestFilterToolCallsNoHooks(t *testing.T) {
 		t.Errorf("expected 0 blocked, got %d", len(blocked))
 	}
 }
+
+// --- State machine tests ---
+
+func TestRunMaxOutputRecovery(t *testing.T) {
+	// Provider returns max_tokens twice, then end_turn.
+	// The loop should inject resume messages and succeed.
+	mp := &mockProvider{
+		responses: []message.CompletionResponse{
+			{Content: "partial1", StopReason: "max_tokens", Usage: message.Usage{InputTokens: 10, OutputTokens: 100}},
+			{Content: "partial2", StopReason: "max_tokens", Usage: message.Usage{InputTokens: 20, OutputTokens: 100}},
+			{Content: "done", StopReason: "end_turn", Usage: message.Usage{InputTokens: 30, OutputTokens: 50}},
+		},
+	}
+
+	loop := newTestLoop(mp)
+	loop.AddUser("hello", nil)
+
+	result, err := loop.Run(context.Background(), RunOptions{})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if result.StopReason != StopEndTurn {
+		t.Errorf("expected stop reason %q, got %q", StopEndTurn, result.StopReason)
+	}
+	if result.Content != "done" {
+		t.Errorf("expected content 'done', got %q", result.Content)
+	}
+	recoveryCount := 0
+	for _, tr := range result.Transitions {
+		if tr == TransitionMaxOutputRecovery {
+			recoveryCount++
+		}
+	}
+	if recoveryCount != 2 {
+		t.Errorf("expected 2 recovery transitions, got %d (transitions: %v)", recoveryCount, result.Transitions)
+	}
+}
+
+func TestRunMaxOutputRecoveryExhausted(t *testing.T) {
+	mp := &mockProvider{}
+	for i := 0; i < 5; i++ {
+		mp.responses = append(mp.responses, message.CompletionResponse{
+			Content:    "truncated",
+			StopReason: "max_tokens",
+			Usage:      message.Usage{InputTokens: 10, OutputTokens: 100},
+		})
+	}
+
+	loop := newTestLoop(mp)
+	loop.AddUser("hello", nil)
+
+	result, err := loop.Run(context.Background(), RunOptions{})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if result.StopReason != StopMaxOutputRecoveryExhausted {
+		t.Errorf("expected stop reason %q, got %q", StopMaxOutputRecoveryExhausted, result.StopReason)
+	}
+}
+
+func TestRunPromptTooLongRecovery(t *testing.T) {
+	mp := &errorThenSuccessProvider{
+		errMsg:      "prompt is too long",
+		successResp: message.CompletionResponse{Content: "recovered", StopReason: "end_turn", Usage: message.Usage{InputTokens: 5, OutputTokens: 5}},
+	}
+
+	loop := newTestLoop(mp)
+	loop.AddUser("hello", nil)
+	loop.AddUser("msg2", nil)
+	loop.AddUser("msg3", nil)
+
+	result, err := loop.Run(context.Background(), RunOptions{})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if result.StopReason != StopEndTurn {
+		t.Errorf("expected stop reason %q, got %q", StopEndTurn, result.StopReason)
+	}
+	// Should have a prompt-too-long transition
+	found := false
+	for _, tr := range result.Transitions {
+		if tr == TransitionPromptTooLong {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected TransitionPromptTooLong in transitions: %v", result.Transitions)
+	}
+}
+
+func TestRunTransitions(t *testing.T) {
+	// Multi-turn with tool calls: verify transition log.
+	mp := &mockProvider{
+		responses: []message.CompletionResponse{
+			{Content: "", StopReason: "tool_use", ToolCalls: []message.ToolCall{{ID: "t1", Name: "UnknownTool", Input: "{}"}}, Usage: message.Usage{InputTokens: 1, OutputTokens: 1}},
+			{Content: "done", StopReason: "end_turn", Usage: message.Usage{InputTokens: 2, OutputTokens: 2}},
+		},
+	}
+
+	loop := newTestLoop(mp)
+	loop.AddUser("go", nil)
+
+	result, err := loop.Run(context.Background(), RunOptions{})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(result.Transitions) != 2 {
+		t.Errorf("expected 2 transitions, got %d: %v", len(result.Transitions), result.Transitions)
+	}
+	if result.Transitions[0] != TransitionNextTurn {
+		t.Errorf("expected first transition 'next_turn', got %q", result.Transitions[0])
+	}
+	if result.Transitions[1] != TransitionNextTurn {
+		t.Errorf("expected second transition 'next_turn', got %q", result.Transitions[1])
+	}
+}
+
+// errorThenSuccessProvider returns an error on the first Stream call, then succeeds.
+type errorThenSuccessProvider struct {
+	errMsg      string
+	successResp message.CompletionResponse
+	callCount   int
+}
+
+func (p *errorThenSuccessProvider) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
+	ch := make(chan message.StreamChunk, 1)
+	go func() {
+		defer close(ch)
+		p.callCount++
+		if p.callCount == 1 {
+			ch <- message.StreamChunk{Type: message.ChunkTypeError, Error: errors.New(p.errMsg)}
+			return
+		}
+		ch <- message.StreamChunk{Type: message.ChunkTypeDone, Response: &p.successResp}
+	}()
+	return ch
+}
+
+func (p *errorThenSuccessProvider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
+
+func (p *errorThenSuccessProvider) Name() string { return "error-then-success" }
 
 func TestRunEndTurn(t *testing.T) {
 	mp := &mockProvider{
@@ -344,11 +488,11 @@ func TestRunEndTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
-	if result.StopReason != "end_turn" {
-		t.Errorf("expected stop reason 'end_turn', got '%s'", result.StopReason)
+	if result.StopReason != StopEndTurn {
+		t.Errorf("expected stop reason %q, got %q", StopEndTurn, result.StopReason)
 	}
 	if result.Content != "done" {
-		t.Errorf("expected content 'done', got '%s'", result.Content)
+		t.Errorf("expected content 'done', got %q", result.Content)
 	}
 	if result.Turns != 1 {
 		t.Errorf("expected 1 turn, got %d", result.Turns)
@@ -359,7 +503,6 @@ func TestRunEndTurn(t *testing.T) {
 }
 
 func TestRunMaxTurns(t *testing.T) {
-	// Provider always returns tool calls, forcing the loop to hit max turns.
 	mp := &mockProvider{}
 	for i := 0; i < 5; i++ {
 		mp.responses = append(mp.responses, message.CompletionResponse{
@@ -379,7 +522,7 @@ func TestRunMaxTurns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
-	if result.StopReason != "max_turns" {
+	if result.StopReason != StopMaxTurns {
 		t.Errorf("expected stop reason 'max_turns', got '%s'", result.StopReason)
 	}
 }
@@ -401,7 +544,7 @@ func TestRunCancelled(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}
-	if result.StopReason != "cancelled" {
+	if result.StopReason != StopCancelled {
 		t.Errorf("expected stop reason 'cancelled', got '%s'", result.StopReason)
 	}
 }

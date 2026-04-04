@@ -150,6 +150,15 @@ func (t *EditTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 	return ui.ToolResult{
 		Success: true,
 		Output:  "Successfully edited " + filePath + " (" + strconv.Itoa(replaceCount) + " replacement(s))",
+		HookResponse: map[string]any{
+			"filePath":        filePath,
+			"oldString":       oldString,
+			"newString":       newString,
+			"originalFile":    oldContent,
+			"structuredPatch": []any{},
+			"userModified":    false,
+			"replaceAll":      replaceAll,
+		},
 		Metadata: ui.ResultMetadata{
 			Title:    t.Name(),
 			Icon:     t.Icon(),

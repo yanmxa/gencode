@@ -32,6 +32,7 @@ type ChunkMsg struct {
 	ToolCalls         []message.ToolCall
 	BuildingToolName  string
 	Usage             *message.Usage
+	StopReason        string // "end_turn", "tool_use", "max_tokens"
 }
 
 // ContinueMsg requests a follow-up LLM call with the given messages.

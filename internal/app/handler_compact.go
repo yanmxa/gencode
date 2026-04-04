@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/options"
 )
@@ -111,6 +112,18 @@ func startCompact(m *model) tea.Cmd {
 	client := m.loop.Client
 	msgs := m.conv.ConvertToProvider()
 	sessionSummary := m.session.Summary
+
+	// Fire PreCompact hook
+	trigger := "manual"
+	if m.conv.Compact.AutoContinue {
+		trigger = "auto"
+	}
+	if m.hookEngine != nil {
+		m.hookEngine.ExecuteAsync(hooks.PreCompact, hooks.HookInput{
+			Trigger: trigger,
+		})
+	}
+
 	return func() tea.Msg {
 		ctx := context.Background()
 		summary, count, err := appcompact.CompactConversation(ctx, client, msgs, sessionSummary, focus)

@@ -117,13 +117,23 @@ func (t *BashTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 		truncated = true
 	}
 
+	// Build CC-compatible structured response for hooks
+	hookResponse := map[string]any{
+		"stdout":           output,
+		"stderr":           errOutput,
+		"interrupted":      ctx.Err() == context.DeadlineExceeded,
+		"isImage":          false,
+		"noOutputExpected": false,
+	}
+
 	if err != nil {
 		// Check if it's a timeout
 		if ctx.Err() == context.DeadlineExceeded {
 			return ui.ToolResult{
-				Success: false,
-				Output:  fullOutput,
-				Error:   "command timed out after " + timeout.String(),
+				Success:      false,
+				Output:       fullOutput,
+				Error:        "command timed out after " + timeout.String(),
+				HookResponse: hookResponse,
 				Metadata: ui.ResultMetadata{
 					Title:     t.Name(),
 					Icon:      t.Icon(),
@@ -141,9 +151,10 @@ func (t *BashTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 		}
 
 		return ui.ToolResult{
-			Success: false,
-			Output:  fullOutput,
-			Error:   errorMsg,
+			Success:      false,
+			Output:       fullOutput,
+			Error:        errorMsg,
+			HookResponse: hookResponse,
 			Metadata: ui.ResultMetadata{
 				Title:     t.Name(),
 				Icon:      t.Icon(),
@@ -174,8 +185,9 @@ func (t *BashTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 	}
 
 	return ui.ToolResult{
-		Success: true,
-		Output:  fullOutput,
+		Success:      true,
+		Output:       fullOutput,
+		HookResponse: hookResponse,
 		Metadata: ui.ResultMetadata{
 			Title:     t.Name(),
 			Icon:      t.Icon(),

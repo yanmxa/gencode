@@ -11,6 +11,8 @@ import (
 var parentOnlyTools = map[string]bool{
 	ToolEnterPlanMode: true,
 	ToolExitPlanMode:  true,
+	ToolEnterWorktree: true,
+	ToolExitWorktree:  true,
 }
 
 // Set provides tools for a conversation turn.
@@ -46,7 +48,7 @@ func (s *Set) Tools() []provider.Tool {
 	return s.defaultTools()
 }
 
-// defaultTools returns the full tool set filtered by disabled/plan mode.
+// defaultTools returns the full tool set filtered by disabled/plan/deferred mode.
 func (s *Set) defaultTools() []provider.Tool {
 	if s.PlanMode {
 		return GetPlanModeToolSchemasFiltered(s.Disabled)
@@ -54,14 +56,16 @@ func (s *Set) defaultTools() []provider.Tool {
 
 	tools := GetToolSchemasWithMCP(s.MCP)
 
-	if len(s.Disabled) == 0 {
-		return tools
-	}
 	filtered := make([]provider.Tool, 0, len(tools))
 	for _, t := range tools {
-		if !s.Disabled[t.Name] {
-			filtered = append(filtered, t)
+		if s.Disabled[t.Name] {
+			continue
 		}
+		// Skip deferred tools unless they've been fetched via ToolSearch
+		if IsDeferred(t.Name) && !IsFetched(t.Name) {
+			continue
+		}
+		filtered = append(filtered, t)
 	}
 	return filtered
 }

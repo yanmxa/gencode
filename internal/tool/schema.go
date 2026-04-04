@@ -6,9 +6,13 @@ import (
 
 // Tool name constants used in runtime comparisons across the codebase.
 const (
-	ToolAgent         = "Agent"
-	ToolAgentOutput   = "AgentOutput"
-	ToolAgentStop     = "AgentStop"
+	ToolAgent      = "Agent"
+	ToolTaskOutput = "TaskOutput"
+	ToolTaskStop   = "TaskStop"
+
+	// Deprecated aliases — kept for backward compatibility with cached model contexts.
+	ToolAgentOutput = ToolTaskOutput
+	ToolAgentStop   = ToolTaskStop
 	ToolSkill         = "Skill"
 	ToolEnterPlanMode = "EnterPlanMode"
 	ToolExitPlanMode  = "ExitPlanMode"
@@ -16,6 +20,12 @@ const (
 	ToolTaskGet       = "TaskGet"
 	ToolTaskUpdate    = "TaskUpdate"
 	ToolTaskList      = "TaskList"
+	ToolCronCreate      = "CronCreate"
+	ToolCronDelete      = "CronDelete"
+	ToolCronList        = "CronList"
+	ToolEnterWorktree   = "EnterWorktree"
+	ToolExitWorktree    = "ExitWorktree"
+	ToolToolSearch      = "ToolSearch"
 )
 
 // ToolSchema defines the JSON schema for a tool
@@ -34,70 +44,100 @@ func GetToolSchemas() []provider.Tool {
 func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Tool {
 	tools := []provider.Tool{
 		{
-			Name:        "Read",
-			Description: "Read file contents. Use this to read source code, configuration files, or any text file.",
+			Name: "Read",
+			Description: `Reads a file from the local filesystem. You can access any file directly by using this tool.
+Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
+
+Usage:
+- The file_path parameter must be an absolute path, not a relative path
+- By default, it reads up to 2000 lines starting from the beginning of the file
+- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters
+- Results are returned with line numbers starting at 1
+- This tool can only read files, not directories. To read a directory, use an ls command via the Bash tool.
+- You will regularly be asked to read screenshots. If the user provides a path to a screenshot, ALWAYS use this tool to view the file at the path.
+- If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"file_path": map[string]any{
 						"type":        "string",
-						"description": "The path to the file to read (absolute or relative to current directory)",
+						"description": "The absolute path to the file to read",
 					},
 					"offset": map[string]any{
 						"type":        "integer",
-						"description": "Line number to start reading from (1-based). Default is 1.",
+						"description": "The line number to start reading from (1-based). Only provide if the file is too large to read at once.",
 					},
 					"limit": map[string]any{
 						"type":        "integer",
-						"description": "Maximum number of lines to read. Default is 2000.",
+						"description": "The number of lines to read. Only provide if the file is too large to read at once.",
 					},
 				},
 				"required": []string{"file_path"},
 			},
 		},
 		{
-			Name:        "Glob",
-			Description: "Find files matching a glob pattern. Supports ** for recursive matching. Results are sorted by modification time (newest first).",
+			Name: "Glob",
+			Description: `Fast file pattern matching tool that works with any codebase size.
+- Supports glob patterns like "**/*.go" or "src/**/*.ts"
+- Returns matching file paths sorted by modification time (newest first)
+- Use this tool when you need to find files by name patterns
+- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"pattern": map[string]any{
 						"type":        "string",
-						"description": "Glob pattern to match files (e.g., '**/*.go', 'src/**/*.ts')",
+						"description": "The glob pattern to match files against",
 					},
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Base directory to search in. Default is current directory.",
+						"description": "The directory to search in. Defaults to current working directory.",
 					},
 				},
 				"required": []string{"pattern"},
 			},
 		},
 		{
-			Name:        "Grep",
-			Description: "Search for patterns in files using regular expressions. Returns matching lines with file paths and line numbers.",
+			Name: "Grep",
+			Description: `A search tool built on ripgrep for searching file contents.
+- ALWAYS use Grep for content search tasks. NEVER invoke grep or rg as a Bash command.
+- Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")
+- Filter files with include parameter (e.g., "*.go", "*.py")
+- Returns matching lines with file paths and line numbers
+- Use Agent tool for open-ended searches requiring multiple rounds`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"pattern": map[string]any{
 						"type":        "string",
-						"description": "Regular expression pattern to search for",
+						"description": "The regular expression pattern to search for in file contents",
 					},
 					"path": map[string]any{
 						"type":        "string",
-						"description": "File or directory to search in. Default is current directory.",
+						"description": "File or directory to search in. Defaults to current working directory.",
 					},
 					"include": map[string]any{
 						"type":        "string",
 						"description": "File pattern to include (e.g., '*.go', '*.py')",
 					},
+					"case_sensitive": map[string]any{
+						"type":        "boolean",
+						"description": "If true, search is case-sensitive. Default is false (case-insensitive).",
+					},
 				},
 				"required": []string{"pattern"},
 			},
 		},
 		{
-			Name:        "WebFetch",
-			Description: "Fetch content from a URL. Converts HTML to Markdown for better readability.",
+			Name: "WebFetch",
+			Description: `Fetches content from a specified URL and converts HTML to Markdown for readability.
+
+Usage notes:
+- The URL must be a fully-formed valid URL
+- HTTP URLs will be automatically upgraded to HTTPS
+- This tool is read-only and does not modify any files
+- Results may be truncated if the content is very large
+- For GitHub URLs, prefer using the gh CLI via Bash instead (e.g., gh pr view, gh issue view, gh api)`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -114,8 +154,9 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Too
 			},
 		},
 		{
-			Name:        "WebSearch",
-			Description: "Search the web for up-to-date information. Returns a list of relevant results with titles, URLs, and snippets.",
+			Name: "WebSearch",
+			Description: `Search the web for up-to-date information. Returns a list of relevant results with titles, URLs, and snippets.
+When searching for current information, always use the present year rather than previous years.`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -142,40 +183,56 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Too
 			},
 		},
 		{
-			Name:        "Edit",
-			Description: "Edit file contents using string replacement. The old_string must be unique in the file unless replace_all is true.",
+			Name: "Edit",
+			Description: `Performs exact string replacements in files.
+
+Usage:
+- You must use your Read tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
+- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. Never include any part of the line number prefix in the old_string or new_string.
+- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
+- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
+- The edit will FAIL if old_string is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use replace_all to change every instance of old_string.
+- Use replace_all for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"file_path": map[string]any{
 						"type":        "string",
-						"description": "The path to the file to edit (absolute or relative to current directory)",
+						"description": "The absolute path to the file to modify",
 					},
 					"old_string": map[string]any{
 						"type":        "string",
-						"description": "The text to replace. Must be unique in the file unless replace_all is true.",
+						"description": "The text to replace (must be different from new_string)",
 					},
 					"new_string": map[string]any{
 						"type":        "string",
-						"description": "The replacement text. Can be empty to delete old_string.",
+						"description": "The text to replace it with (must be different from old_string)",
 					},
 					"replace_all": map[string]any{
 						"type":        "boolean",
-						"description": "If true, replace all occurrences. Default is false (replace first occurrence only).",
+						"description": "Replace all occurrences of old_string (default false)",
+						"default":     false,
 					},
 				},
 				"required": []string{"file_path", "old_string", "new_string"},
 			},
 		},
 		{
-			Name:        "Write",
-			Description: "Write content to a file. Creates parent directories if needed. Overwrites existing file if present.",
+			Name: "Write",
+			Description: `Writes a file to the local filesystem.
+
+Usage:
+- This tool will overwrite the existing file if there is one at the provided path.
+- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.
+- Prefer the Edit tool for modifying existing files — it only sends the diff. Only use this tool to create new files or for complete rewrites.
+- NEVER create documentation files (*.md) or README files unless explicitly requested by the User.
+- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"file_path": map[string]any{
 						"type":        "string",
-						"description": "The path to the file to write (absolute or relative to current directory)",
+						"description": "The absolute path to the file to write (must be absolute, not relative)",
 					},
 					"content": map[string]any{
 						"type":        "string",
@@ -186,34 +243,46 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Too
 			},
 		},
 		{
-			Name:        "Bash",
-			Description: "Execute shell commands. Use for running git commands, build tools, package managers, or any system operations. Commands run in bash with the current working directory.",
+			Name: "Bash",
+			Description: `Executes a given bash command and returns its output.
+
+The working directory persists between commands, but shell state does not.
+
+IMPORTANT: Avoid using this tool to run grep, find, cat, head, tail, sed, awk, or echo commands. Instead, use the appropriate dedicated tool:
+- File search: Use Glob (NOT find or ls)
+- Content search: Use Grep (NOT grep or rg)
+- Read files: Use Read (NOT cat/head/tail)
+- Edit files: Use Edit (NOT sed/awk)
+- Write files: Use Write (NOT echo/cat with redirection)
+
+You may specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). By default, your command will timeout after 120000ms (2 minutes).
+You can use the run_in_background parameter to run the command in the background. You will be notified when it finishes.`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"command": map[string]any{
 						"type":        "string",
-						"description": "The shell command to execute",
+						"description": "The command to execute",
 					},
 					"description": map[string]any{
 						"type":        "string",
-						"description": "Brief description of what this command does (shown in permission prompt)",
+						"description": "Clear, concise description of what this command does in active voice",
 					},
 					"timeout": map[string]any{
 						"type":        "integer",
-						"description": "Timeout in milliseconds (default: 120000, max: 600000)",
+						"description": "Optional timeout in milliseconds (max 600000)",
 					},
 					"run_in_background": map[string]any{
 						"type":        "boolean",
-						"description": "Run command in background (default: false)",
+						"description": "Set to true to run this command in the background. You will be notified when it completes.",
 					},
 				},
 				"required": []string{"command"},
 			},
 		},
 		{
-			Name:        "AgentOutput",
-			Description: "Retrieve output from a running or completed background agent. Use this to check on background agents started with Agent run_in_background=true.",
+			Name:        "TaskOutput",
+			Description: "Retrieve output from a running or completed background task. Use this to check on background agents started with Agent run_in_background=true.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -236,8 +305,8 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Too
 			},
 		},
 		{
-			Name:        "AgentStop",
-			Description: "Stops a running background agent by its ID. Takes a task_id parameter identifying the agent to stop. Returns a success or failure status. Use this tool when you need to terminate a long-running agent.",
+			Name:        "TaskStop",
+			Description: "Stops a running background task by its ID. Returns a success or failure status. Use this tool when you need to terminate a long-running background agent or command.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -250,8 +319,10 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Too
 			},
 		},
 		{
-			Name:        "AskUserQuestion",
-			Description: "Ask the user questions to gather preferences, clarify requirements, or get decisions on implementation choices. Use when you need user input to proceed.",
+			Name: "AskUserQuestion",
+			Description: `Ask the user questions to gather preferences, clarify requirements, or get decisions on implementation choices. Use when you need user input to proceed.
+
+Plan mode note: In plan mode, use this tool to clarify requirements or choose between approaches BEFORE finalizing your plan. Do NOT use this tool to ask "Is my plan ready?" or "Should I proceed?" — use ExitPlanMode for plan approval. Do not reference "the plan" in your questions because the user cannot see the plan until you call ExitPlanMode.`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -316,8 +387,17 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.Tool) []provider.Too
 	// Add Agent tool
 	tools = append(tools, AgentToolSchema)
 
+	// Add ToolSearch (always available — enables progressive disclosure)
+	tools = append(tools, ToolSearchSchema)
+
 	// Add Todo tools
 	tools = append(tools, TodoToolSchemas...)
+
+	// Add Cron tools
+	tools = append(tools, CronToolSchemas...)
+
+	// Add Worktree tools
+	tools = append(tools, WorktreeToolSchemas...)
 
 	// Add MCP tools if getter is provided
 	if mcpToolsGetter != nil {
@@ -335,16 +415,18 @@ var AgentToolSchema = provider.Tool{
 Check <available-agents> for available agent types. Use agent name as subagent_type. If omitted, the general-purpose agent is used.
 
 When NOT to use Agent (use direct tools instead):
-- If you want to read a specific file, use Read or Glob directly
-- If searching for code within 2-3 files, use Read directly
-- Only spawn agents for multi-step autonomous work (3+ tool calls)
+- If you want to read a specific file path, use the Read tool or the Glob tool instead
+- If searching for code within a specific file or set of 2-3 files, use Read directly
+- Other tasks that are simple enough for 1-2 direct tool calls
 
-Usage:
-- Each agent runs in isolated context — only final result returns. Summarize it in your response.
-- The result returned by the agent is not visible to the user. To show the user the result, you should send a text message with a concise summary.
-- Foreground (default): blocks until agent completes, result inline
-- Background (run_in_background=true): returns task_id, you will be automatically notified on completion — do NOT poll or check progress
-- For parallel independent tasks: send multiple Agent calls in a SINGLE message`,
+Usage notes:
+- Always include a short description (3-5 words) summarizing what the agent will do
+- Launch multiple agents concurrently whenever possible; to do that, use a single message with multiple Agent calls
+- Each agent runs in isolated context — the result returned by the agent is not visible to the user. To show the user the result, you should send a text message back with a concise summary.
+- Foreground (default): blocks until agent completes, use when you need results before proceeding
+- Background (run_in_background=true): returns task_id, you will be automatically notified on completion — do NOT sleep, poll, or proactively check progress
+- Provide clear, detailed prompts so the agent can work autonomously and return exactly the information you need
+- Clearly tell the agent whether you expect it to write code or just to do research`,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -420,8 +502,12 @@ How to invoke:
 - skill: "git:pr" - invoke using namespace:name format
 
 Important:
-- Invoke this tool IMMEDIATELY when a skill is relevant
-- Do not invoke a skill that is already running`,
+- Available skills are listed in system-reminder messages in the conversation
+- When a skill matches the user's request, this is a BLOCKING REQUIREMENT: invoke the relevant Skill tool BEFORE generating any other response about the task
+- NEVER mention a skill without actually calling this tool
+- Do not invoke a skill that is already running
+- Do not use this tool for built-in CLI commands (like /help, /clear, etc.)
+- If you see a <command-name> tag in the current conversation turn, the skill has ALREADY been loaded - follow the instructions directly instead of calling this tool again`,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -444,14 +530,19 @@ var EnterPlanModeSchema = provider.Tool{
 	Description: `Request to enter plan mode for tasks that need exploration before implementation. The user must approve entering plan mode.
 
 When to use:
-- New feature implementation with architectural decisions
-- Tasks where multiple valid approaches exist and you need to explore first
+- Adding meaningful new features (e.g., new endpoints, form validation, auth flows)
+- Multiple valid approaches exist and you need to explore first
+- Changes affect existing behavior or code structure
+- Architectural decisions are required
+- Tasks will modify more than 2-3 files
+- Requirements are unclear and need exploration
 
 When NOT to use:
 - User already gave clear, specific instructions (use TaskCreate to track steps instead)
 - User provided a numbered list of tasks (just execute them)
 - Pure research or exploration (use Agent with Explore instead)
-- Simple fixes, obvious bugs, or straightforward multi-file changes
+- Simple fixes like typos, obvious bugs, or single functions with clear requirements
+- Straightforward multi-file changes where the approach is obvious
 - Answering questions about the codebase`,
 	Parameters: map[string]any{
 		"type": "object",
@@ -626,6 +717,129 @@ Prefer working on tasks in ID order (lowest first).`,
 	},
 }
 
+
+// CronToolSchemas defines the schemas for cron/scheduler tools.
+var CronToolSchemas = []provider.Tool{
+	{
+		Name: "CronCreate",
+		Description: `Schedule a prompt on a cron schedule. Uses standard 5-field cron: minute hour day-of-month month day-of-week.
+Recurring jobs (default) auto-expire after 7 days. One-shot jobs (recurring=false) fire once then auto-delete.
+Jobs only fire while the REPL is idle. Returns a job ID for CronDelete.`,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"cron": map[string]any{
+					"type":        "string",
+					"description": "5-field cron expression in local time (e.g., '*/5 * * * *', '0 9 * * 1-5')",
+				},
+				"prompt": map[string]any{
+					"type":        "string",
+					"description": "The prompt to enqueue at each fire time",
+				},
+				"recurring": map[string]any{
+					"type":        "boolean",
+					"description": "true (default) = fire repeatedly. false = fire once then auto-delete.",
+				},
+				"durable": map[string]any{
+					"type":        "boolean",
+					"description": "If true, job persists across sessions (saved to ~/.gen/scheduled_tasks.json). Default: false (session-only).",
+				},
+			},
+			"required": []string{"cron", "prompt"},
+		},
+	},
+	{
+		Name:        "CronDelete",
+		Description: "Cancel a scheduled cron job by its ID.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id": map[string]any{
+					"type":        "string",
+					"description": "The job ID returned by CronCreate",
+				},
+			},
+			"required": []string{"id"},
+		},
+	},
+	{
+		Name:        "CronList",
+		Description: "List all scheduled cron jobs with their status, next fire time, and prompt.",
+		Parameters: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+	},
+}
+
+// WorktreeToolSchemas defines the schemas for git worktree tools.
+var WorktreeToolSchemas = []provider.Tool{
+	{
+		Name: "EnterWorktree",
+		Description: `Switch the current conversation into a git worktree for safe experimentation.
+Creates an isolated copy of the repository where you can make changes without affecting the main working tree.
+Use ExitWorktree to return to the original directory when done.`,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name": map[string]any{
+					"type":        "string",
+					"description": "Optional slug for the worktree directory name (letters, digits, dots, underscores, dashes; max 64 chars)",
+				},
+			},
+		},
+	},
+	{
+		Name: "ExitWorktree",
+		Description: `Exit the current worktree session and return to the original working directory.
+Use action "keep" to preserve the worktree for later, or "remove" (default) to clean it up.
+If removing with uncommitted changes, set discard_changes=true.`,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"action": map[string]any{
+					"type":        "string",
+					"description": "What to do with the worktree: 'keep' (preserve for later) or 'remove' (clean up). Default: 'remove'.",
+					"enum":        []string{"keep", "remove"},
+				},
+				"discard_changes": map[string]any{
+					"type":        "boolean",
+					"description": "If true, discard uncommitted changes when removing. Required when action='remove' and changes exist.",
+				},
+			},
+		},
+	},
+}
+
+// ToolSearchSchema defines the schema for the ToolSearch tool.
+var ToolSearchSchema = provider.Tool{
+	Name: "ToolSearch",
+	Description: `Fetches full schema definitions for deferred tools so they can be called.
+
+Deferred tools appear by name in <available-deferred-tools> messages. Until fetched, only the name is known — there is no parameter schema, so the tool cannot be invoked. This tool takes a query, matches it against the deferred tool list, and returns the matched tools' complete JSONSchema definitions inside a <functions> block. Once a tool's schema appears in that result, it is callable exactly like any tool defined at the top of the prompt.
+
+Result format: each matched tool appears as one <function>{"description": "...", "name": "...", "parameters": {...}}</function> line inside the <functions> block.
+
+Query forms:
+- "select:CronCreate,CronDelete" — fetch these exact tools by name
+- "cron schedule" — keyword search, up to max_results best matches
+- "+worktree" — require "worktree" in the name, rank by remaining terms`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"query": map[string]any{
+				"type":        "string",
+				"description": `Query to find deferred tools. Use "select:<tool_name>" for direct selection, or keywords to search.`,
+			},
+			"max_results": map[string]any{
+				"type":        "number",
+				"description": "Maximum number of results to return (default: 5)",
+				"default":     5,
+			},
+		},
+		"required": []string{"query"},
+	},
+}
 
 // GetToolSchemasFiltered returns tool schemas excluding disabled tools
 func GetToolSchemasFiltered(disabled map[string]bool) []provider.Tool {

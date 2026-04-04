@@ -250,6 +250,16 @@ func (s *Store) SaveSubagent(parentSessionID string, sess *Session) error {
 	return nil
 }
 
+// SessionPath returns the filesystem path for a session file.
+func (s *Store) SessionPath(sessionID string) string {
+	return filepath.Join(s.baseDir, sessionID+".jsonl")
+}
+
+// SubagentPath returns the filesystem path for a subagent session file.
+func (s *Store) SubagentPath(parentSessionID, agentSessionID string) string {
+	return filepath.Join(s.baseDir, parentSessionID, "subagents", agentSessionID+".jsonl")
+}
+
 // Load reads a JSONL session file and reconstructs the Session.
 func (s *Store) Load(id string) (*Session, error) {
 	s.mu.RLock()

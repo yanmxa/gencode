@@ -440,9 +440,9 @@ func RenderToolResultInline(data ToolResultData, mdRenderer *MDRenderer) string 
 		return RenderTaskResultInline(data, mdRenderer)
 	}
 
-	// Special handling for AgentOutput
-	if toolName == tool.ToolAgentOutput {
-		return RenderAgentOutputResultInline(data)
+	// Special handling for TaskOutput (formerly AgentOutput)
+	if toolName == tool.ToolTaskOutput {
+		return RenderTaskOutputResultInline(data)
 	}
 
 	sizeInfo := FormatToolResultSize(toolName, data.Content)
@@ -635,15 +635,15 @@ func splitByProcessCount(body string, processCount int) (process, response strin
 	return strings.TrimSpace(strings.Join(processLines, "\n")), strings.TrimSpace(rest)
 }
 
-// RenderAgentOutputResultInline renders a AgentOutput result with agent-specific formatting.
-func RenderAgentOutputResultInline(data ToolResultData) string {
+// RenderTaskOutputResultInline renders a TaskOutput result with task-specific formatting.
+func RenderTaskOutputResultInline(data ToolResultData) string {
 	icon := toolResultIcon(data.IsError)
 
 	var sb strings.Builder
 	content := data.Content
 
 	if data.IsError {
-		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  AgentOutput → Error", icon)) + "\n")
+		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  TaskOutput → Error", icon)) + "\n")
 		if content != "" {
 			sb.WriteString(ToolResultExpandedStyle.Render("    "+content) + "\n")
 		}
@@ -671,7 +671,7 @@ func RenderAgentOutputResultInline(data ToolResultData) string {
 		summaryText = strings.Join(info, ", ")
 	}
 
-	sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  AgentOutput → %s", icon, summaryText)) + "\n")
+	sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  TaskOutput → %s", icon, summaryText)) + "\n")
 
 	// Show output content if present
 	if _, outputContent, found := strings.Cut(content, "Output:\n"); found {
