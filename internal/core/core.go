@@ -125,6 +125,10 @@ type Loop struct {
 	Hooks      *hooks.Engine
 	MCP        MCPCaller // optional: routes mcp__*__* tool calls
 
+	// Agent context: when set, tool hook events include agent_id/agent_type (subagent mode)
+	AgentID   string
+	AgentType string
+
 	// State (managed by the loop)
 	messages []message.Message
 }
@@ -214,7 +218,6 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 			if l.Hooks != nil && l.Hooks.HasHooks(hooks.Stop) {
 				stopInput := hooks.HookInput{
 					LastAssistantMessage: l.lastAssistantContent(),
-					StopHookActive:       true,
 				}
 				outcome := l.Hooks.Execute(ctx, hooks.Stop, stopInput)
 				if outcome.ShouldBlock {
@@ -408,11 +411,16 @@ func (l *Loop) FilterToolCalls(ctx context.Context, calls []message.ToolCall) (
 
 	for _, tc := range calls {
 		params, _ := message.ParseToolInput(tc.Input)
-		outcome := l.Hooks.Execute(ctx, hooks.PreToolUse, hooks.HookInput{
+		hookInput := hooks.HookInput{
 			ToolName:  tc.Name,
 			ToolInput: params,
 			ToolUseID: tc.ID,
-		})
+		}
+		if l.AgentID != "" {
+			hookInput.AgentID = l.AgentID
+			hookInput.AgentType = l.AgentType
+		}
+		outcome := l.Hooks.Execute(ctx, hooks.PreToolUse, hookInput)
 
 		if outcome.ShouldBlock {
 			blocked = append(blocked, *message.ErrorResult(tc, "Blocked by hook: "+outcome.BlockReason))
@@ -463,6 +471,10 @@ func (l *Loop) firePostToolHook(ctx context.Context, tc message.ToolCall, result
 		ToolInput:    params,
 		ToolUseID:    tc.ID,
 		ToolResponse: toolResponse,
+	}
+	if l.AgentID != "" {
+		input.AgentID = l.AgentID
+		input.AgentType = l.AgentType
 	}
 	if result.IsError {
 		input.Error = result.Content

@@ -128,6 +128,10 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 	}
 	defer cleanupLoop()
 
+	// Set agent context so tool hook events include agent_id/agent_type
+	loop.AgentID = agentHookID
+	loop.AgentType = req.Agent
+
 	if err := e.loadConversation(loop, req); err != nil {
 		return nil, err
 	}

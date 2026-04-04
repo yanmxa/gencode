@@ -267,10 +267,12 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 	duration := time.Since(start)
 
 	if !result.Success {
+		hookResponse := buildAgentHookResponse(result, agentType, prompt)
 		return ui.ToolResult{
-			Success: false,
-			Output:  result.Content,
-			Error:   result.Error,
+			Success:      false,
+			Output:       result.Content,
+			Error:        result.Error,
+			HookResponse: hookResponse,
 			Metadata: ui.ResultMetadata{
 				Title:    t.Name(),
 				Icon:     t.Icon(),
@@ -311,14 +313,38 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 		outputBuilder.WriteString(result.Content)
 	}
 
+	hookResponse := buildAgentHookResponse(result, agentType, prompt)
 	return ui.ToolResult{
-		Success: true,
-		Output:  outputBuilder.String(),
+		Success:      true,
+		Output:       outputBuilder.String(),
+		HookResponse: hookResponse,
 		Metadata: ui.ResultMetadata{
 			Title:    t.Name(),
 			Icon:     t.Icon(),
 			Subtitle: fmt.Sprintf("%s: done (%d turns)", agentType, result.TurnCount),
 			Duration: duration,
+		},
+	}
+}
+
+// buildAgentHookResponse creates a CC-compatible structured response for PostToolUse hooks.
+func buildAgentHookResponse(result *AgentExecResult, agentType, prompt string) map[string]any {
+	status := "completed"
+	if !result.Success {
+		status = "error"
+	}
+
+	return map[string]any{
+		"agentId":           result.AgentID,
+		"agentType":         agentType,
+		"content":           result.Content,
+		"status":            status,
+		"prompt":            prompt,
+		"totalDurationMs":   result.Duration.Milliseconds(),
+		"totalTokens":       result.TotalTokens,
+		"totalToolUseCount": result.ToolUses,
+		"usage": map[string]any{
+			"total_tokens": result.TotalTokens,
 		},
 	}
 }
