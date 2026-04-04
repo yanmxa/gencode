@@ -76,7 +76,8 @@ func (conversationRuntime) FetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.C
 func (conversationRuntime) CompactCmd(req compactRequest) tea.Cmd {
 	if req.HookEngine != nil {
 		req.HookEngine.ExecuteAsync(hooks.PreCompact, hooks.HookInput{
-			Trigger: req.Trigger,
+			Trigger:            req.Trigger,
+			CustomInstructions: req.Focus,
 		})
 	}
 

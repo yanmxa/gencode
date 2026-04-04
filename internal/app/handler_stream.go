@@ -91,7 +91,6 @@ func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 	if m.hookEngine != nil {
 		m.hookEngine.ExecuteAsync(hooks.Stop, hooks.HookInput{
 			LastAssistantMessage: m.lastAssistantContent(),
-			StopHookActive:       m.hookEngine.HasHooks(hooks.Stop),
 		})
 		// Fire idle notification
 		m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{

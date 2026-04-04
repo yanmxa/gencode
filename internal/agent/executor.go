@@ -416,7 +416,6 @@ func (e *Executor) fireSubagentStop(req AgentRequest, agentHookID, agentSessionI
 		AgentID:              stopAgentID,
 		AgentTranscriptPath:  agentTranscriptPath,
 		LastAssistantMessage: resultContent,
-		StopHookActive:       e.hooks.HasHooks(hooks.Stop),
 	})
 }
 
