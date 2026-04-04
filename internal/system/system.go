@@ -169,14 +169,9 @@ func (s *System) formatEnv(model string) string {
 	if s.IsGit {
 		gitStatus = "Yes"
 	}
-	return fmt.Sprintf(`<env>
-Working directory: %s
-Is git repo: %s
-Platform: %s
-Date: %s
-Model: %s
-</env>`, s.Cwd, gitStatus, runtime.GOOS,
-		time.Now().Format("2006-01-02"), model)
+	today := time.Now().Format("2006-01-02")
+	return fmt.Sprintf("# currentDate\nToday's date is %s.\n\n<env>\nWorking directory: %s\nIs git repo: %s\nPlatform: %s\nModel: %s\n</env>",
+		today, s.Cwd, gitStatus, runtime.GOOS, model)
 }
 
 // load reads a prompt file from the embedded filesystem.

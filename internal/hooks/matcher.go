@@ -29,7 +29,7 @@ func GetMatchValue(event EventType, input HookInput) string {
 		return input.NotificationType
 	case SubagentStart, SubagentStop:
 		return input.AgentType
-	case PreCompact:
+	case PreCompact, PostCompact:
 		return input.Trigger
 	default:
 		return ""
