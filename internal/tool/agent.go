@@ -12,7 +12,14 @@ import (
 
 const (
 	IconAgent = "a"
+
+	// MaxAgentNestingDepth is the maximum allowed nesting depth for subagents.
+	// This prevents infinite recursion when agents spawn other agents.
+	MaxAgentNestingDepth = 5
 )
+
+// agentDepthKey is the context key used to track agent nesting depth.
+type agentDepthKey struct{}
 
 // AgentExecutor is the interface for executing agents
 // This allows the Agent tool to be decoupled from the agent package
@@ -181,6 +188,20 @@ func (t *AgentTool) Execute(ctx context.Context, params map[string]any, cwd stri
 // execute is the internal implementation
 func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
+
+	// Check and enforce nesting depth limit to prevent infinite recursion.
+	currentDepth := 0
+	if d, ok := ctx.Value(agentDepthKey{}).(int); ok {
+		currentDepth = d
+	}
+	if currentDepth >= MaxAgentNestingDepth {
+		return ui.NewErrorResult(t.Name(), fmt.Sprintf(
+			"maximum agent nesting depth (%d) exceeded — agents cannot spawn agents more than %d levels deep",
+			MaxAgentNestingDepth, MaxAgentNestingDepth,
+		))
+	}
+	// Pass incremented depth to child context so nested agents can detect it.
+	ctx = context.WithValue(ctx, agentDepthKey{}, currentDepth+1)
 
 	// Get agent type (default to "general-purpose" if not specified)
 	agentType, _ := params["subagent_type"].(string)
