@@ -92,7 +92,7 @@ func (s *Store) Save(session *Session) error {
 	var lastUUID string
 	if f, err := os.Open(filePath); err == nil {
 		scanner := bufio.NewScanner(f)
-		scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+		scanner.Buffer(make([]byte, 16*1024*1024), 16*1024*1024)
 		for scanner.Scan() {
 			var entry Entry
 			if json.Unmarshal(scanner.Bytes(), &entry) == nil && isMessageEntry(entry.Type) {
@@ -415,7 +415,7 @@ func (s *Store) loadWithoutLock(id string) (*Session, error) {
 	)
 
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 16*1024*1024), 16*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -695,7 +695,7 @@ func (s *Store) loadFromFile(filePath, id string) (*Session, error) {
 	)
 
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 16*1024*1024), 16*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {

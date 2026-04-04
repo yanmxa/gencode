@@ -91,11 +91,12 @@ func GetToolSchemasFiltered(disabled map[string]bool) []provider.Tool {
 func GetPlanModeToolSchemas() []provider.Tool {
 	// Read-only tools allowed in plan mode
 	allowedTools := map[string]bool{
-		"Read":      true,
-		"Glob":      true,
-		"Grep":      true,
-		"WebFetch":  true,
-		"WebSearch": true,
+		"Read":            true,
+		"Glob":            true,
+		"Grep":            true,
+		"WebFetch":        true,
+		"WebSearch":       true,
+		"AskUserQuestion": true, // allow LLM to ask clarifying questions in plan mode
 	}
 
 	// Filter to allowed read-only tools

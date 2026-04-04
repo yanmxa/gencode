@@ -17,6 +17,11 @@ func (m *model) cycleOperationMode() {
 	m.applyOperationModePermissions()
 	m.mode.Enabled = m.mode.Operation == appmode.Plan
 
+	// Ensure plan store is initialized when entering plan mode via shift+tab.
+	if m.mode.Enabled && m.mode.Store == nil {
+		m.mode.Store, _ = plan.NewStore()
+	}
+
 	if m.hookEngine != nil {
 		m.hookEngine.SetPermissionMode(m.operationModeName())
 	}
@@ -157,6 +162,7 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 		m.mode.Enabled = false
 	case "modify":
 		m.mode.Operation = appmode.Plan
+		m.mode.Enabled = true
 	}
 
 	return apptool.ExecuteInteractive(m.tool.Ctx, tc, msg.Response, m.cwd)
