@@ -122,7 +122,13 @@ func (t *SSETransport) readLoop(r io.ReadCloser) {
 		if after, found := strings.CutPrefix(line, "event:"); found {
 			event = strings.TrimSpace(after)
 		} else if after, found := strings.CutPrefix(line, "data:"); found {
-			data = strings.TrimSpace(after)
+			// Per SSE spec (RFC 8895): multiple data: lines in one event are
+			// joined with U+000A LINE FEED (newline). Use append semantics.
+			if data == "" {
+				data = strings.TrimSpace(after)
+			} else {
+				data += "\n" + strings.TrimSpace(after)
+			}
 		}
 	}
 

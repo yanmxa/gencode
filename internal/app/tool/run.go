@@ -334,6 +334,16 @@ func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, ses
 
 	t, ok := coretool.Get(tc.Name)
 	if !ok {
+		// For unknown tools (includes MCP tools), still check settings/session
+		// permissions before requiring user interaction.
+		if settings != nil {
+			switch settings.CheckPermission(tc.Name, params, sessionPerms) {
+			case config.PermissionAllow:
+				return false
+			case config.PermissionDeny:
+				return false // denied — ProcessNext will handle denial
+			}
+		}
 		return true
 	}
 
@@ -377,23 +387,6 @@ func progressHub(hub *progress.Hub) *progress.Hub {
 		return hub
 	}
 	return progress.NewHub(100)
-}
-
-func executeMCPTool(ctx context.Context, tc message.ToolCall, params map[string]any) ui.ToolResult {
-	if mcp.DefaultRegistry == nil {
-		return ui.NewErrorResult(tc.Name, "MCP registry not initialized")
-	}
-
-	result, err := mcp.DefaultRegistry.CallTool(ctx, tc.Name, params)
-	if err != nil {
-		return ui.NewErrorResult(tc.Name, err.Error())
-	}
-
-	return ui.ToolResult{
-		Success:  !result.IsError,
-		Output:   extractMCPContent(result.Content),
-		Metadata: ui.ResultMetadata{Title: tc.Name, Icon: "🔌"},
-	}
 }
 
 func extractMCPContent(contents []mcp.ToolResultContent) string {

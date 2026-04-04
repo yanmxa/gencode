@@ -204,7 +204,13 @@ func (t *HTTPTransport) parseSSEResponse(r io.Reader, requestID uint64) (*JSONRP
 		}
 
 		if after, found := strings.CutPrefix(line, "data:"); found {
-			data = strings.TrimSpace(after)
+			// Per SSE spec (RFC 8895): multiple data: lines in one event are
+			// joined with U+000A LINE FEED. Use append semantics.
+			if data == "" {
+				data = strings.TrimSpace(after)
+			} else {
+				data += "\n" + strings.TrimSpace(after)
+			}
 		}
 	}
 
