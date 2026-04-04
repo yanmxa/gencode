@@ -149,6 +149,9 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		if m.conv.Stream.Cancel != nil {
 			m.conv.Stream.Cancel()
 		}
+		if m.tool.Cancel != nil {
+			m.tool.Cancel()
+		}
 		m.fireSessionEnd("quit")
 		return tea.Quit, true
 

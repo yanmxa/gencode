@@ -260,10 +260,15 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				msgDelta := event.AsMessageDelta()
 				state.Response.StopReason = string(msgDelta.Delta.StopReason)
 				state.UpdateUsage(0, int(msgDelta.Usage.OutputTokens))
+				state.UpdateCacheUsage(0, int(msgDelta.Usage.CacheReadInputTokens))
 
 			case "message_start":
 				msgStart := event.AsMessageStart()
 				state.UpdateUsage(int(msgStart.Message.Usage.InputTokens), 0)
+				state.UpdateCacheUsage(
+					int(msgStart.Message.Usage.CacheCreationInputTokens),
+					int(msgStart.Message.Usage.CacheReadInputTokens),
+				)
 			}
 		}
 

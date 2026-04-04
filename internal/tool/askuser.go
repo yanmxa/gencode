@@ -18,7 +18,7 @@ type QuestionOption struct {
 // Question represents a question to ask the user
 type Question struct {
 	Question    string           `json:"question"`    // The complete question text
-	Header      string           `json:"header"`      // Short label (max 24 chars)
+	Header      string           `json:"header"`      // Short label (max 12 chars)
 	Options     []QuestionOption `json:"options"`     // 2-4 options
 	MultiSelect bool             `json:"multiSelect"` // Allow multiple selections
 }
@@ -89,8 +89,8 @@ func (t *AskUserQuestionTool) PrepareInteraction(ctx context.Context, params map
 		if q.Question == "" {
 			return nil, fmt.Errorf("question[%d]: question text is required", i)
 		}
-		if len(q.Header) > 24 {
-			return nil, fmt.Errorf("question[%d]: header must be at most 24 characters", i)
+		if len(q.Header) > 12 {
+			return nil, fmt.Errorf("question[%d]: header must be at most 12 characters", i)
 		}
 		if len(q.Options) < 2 || len(q.Options) > 4 {
 			return nil, fmt.Errorf("question[%d]: must have 2-4 options, got %d", i, len(q.Options))

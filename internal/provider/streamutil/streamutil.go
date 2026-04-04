@@ -85,6 +85,16 @@ func (s *State) UpdateUsage(inputTokens, outputTokens int) {
 	}
 }
 
+// UpdateCacheUsage records prompt-caching token counts from the provider response.
+func (s *State) UpdateCacheUsage(cacheCreation, cacheRead int) {
+	if cacheCreation > 0 {
+		s.Response.Usage.CacheCreationInputTokens = cacheCreation
+	}
+	if cacheRead > 0 {
+		s.Response.Usage.CacheReadInputTokens = cacheRead
+	}
+}
+
 // AddToolCallsSorted appends tool calls from an indexed accumulator in stable index order.
 func (s *State) AddToolCallsSorted(toolCalls map[int]*message.ToolCall) {
 	if len(toolCalls) == 0 {

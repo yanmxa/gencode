@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -117,8 +118,7 @@ func (r ToolResult) FormatForLLM() string {
 	case "Read":
 		if len(r.Lines) > 0 {
 			for _, line := range r.Lines {
-				sb.WriteString(line.Text)
-				sb.WriteString("\n")
+				fmt.Fprintf(&sb, "%6d\t%s\n", line.LineNo, line.Text)
 			}
 		} else if r.Output != "" {
 			sb.WriteString(r.Output)
