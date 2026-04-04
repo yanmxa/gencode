@@ -35,6 +35,7 @@ func handlerRegistry() map[string]CommandHandler {
 		"model":      handleModelCommand,
 		"clear":      handleClearCommand,
 		"fork":       handleForkCommand,
+		"resume":     handleResumeCommand,
 		"help":       handleHelpCommand,
 		"glob":       handleGlobCommand,
 		"tools":      handleToolCommand,
@@ -208,6 +209,16 @@ func handleForkCommand(ctx context.Context, m *model, args string) (string, tea.
 
 	originalID := forked.Metadata.ParentSessionID
 	return fmt.Sprintf("Forked conversation. You are now in the fork.\nTo resume the original: gen -r %s", originalID), nil, nil
+}
+
+func handleResumeCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
+	if err := m.ensureSessionStore(); err != nil {
+		return "", nil, fmt.Errorf("failed to initialize session store: %w", err)
+	}
+	if err := m.session.Selector.EnterSelect(m.width, m.height, m.session.Store, m.cwd); err != nil {
+		return "", nil, fmt.Errorf("failed to open session selector: %w", err)
+	}
+	return "", nil, nil
 }
 
 func handleGlobCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {

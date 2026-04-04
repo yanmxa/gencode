@@ -24,6 +24,7 @@ func builtinCommands() []Info {
 		{Name: "model", Description: "List and select models"},
 		{Name: "clear", Description: "Clear chat history"},
 		{Name: "fork", Description: "Fork current conversation into a new session"},
+		{Name: "resume", Description: "Resume a previous session (opens session selector)"},
 		{Name: "help", Description: "Show available commands"},
 		{Name: "glob", Description: "Find files matching a pattern"},
 		{Name: "tools", Description: "Manage available tools (enable/disable)"},
