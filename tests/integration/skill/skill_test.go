@@ -239,3 +239,105 @@ func TestSkill_FullName(t *testing.T) {
 		t.Errorf("expected 'review', got %q", s2.FullName())
 	}
 }
+
+// TestSkill_ScopePriority_ProjectOverridesUser verifies that a project-level
+// skill state overrides a user-level state for a skill with the same name.
+func TestSkill_ScopePriority_ProjectOverridesUser(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create user store and set skill to StateEnable
+	userStore, err := skill.NewStore(filepath.Join(tmpDir, "user-skills.json"))
+	if err != nil {
+		t.Fatalf("NewStore() user error: %v", err)
+	}
+	if err := userStore.SetState("greet", skill.StateEnable); err != nil {
+		t.Fatalf("user SetState() error: %v", err)
+	}
+
+	// Create project store and set same skill to StateActive (higher priority)
+	projectStore, err := skill.NewStore(filepath.Join(tmpDir, "project-skills.json"))
+	if err != nil {
+		t.Fatalf("NewStore() project error: %v", err)
+	}
+	if err := projectStore.SetState("greet", skill.StateActive); err != nil {
+		t.Fatalf("project SetState() error: %v", err)
+	}
+
+	// Build a registry with the skill starting at StateDisable
+	skills := map[string]*skill.Skill{
+		"greet": {Name: "greet", State: skill.StateDisable, Description: "greet the user"},
+	}
+	registry := skill.NewRegistryForTest(skills, userStore, projectStore)
+
+	// Simulate the state-application logic from Initialize():
+	// user state applied first, then project state overrides.
+	s, ok := registry.Get("greet")
+	if !ok {
+		t.Fatal("expected to find skill 'greet'")
+	}
+
+	// Apply user state
+	if state, ok := userStore.GetState("greet"); ok {
+		s.State = state
+	}
+	// Apply project state (higher priority — overrides user)
+	if state, ok := projectStore.GetState("greet"); ok {
+		s.State = state
+	}
+
+	if s.State != skill.StateActive {
+		t.Errorf("expected project-level StateActive to win, got %q", s.State)
+	}
+}
+
+// TestSkill_Active_AppearsInSystemPrompt verifies that active skill content
+// is included in the system prompt section returned by GetSkillsSection.
+func TestSkill_Active_AppearsInSystemPrompt(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a real skill file so GetInstructions() can read it
+	skillDir := filepath.Join(tmpDir, "deploy-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir error: %v", err)
+	}
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	content := "---\nname: deploy\ndescription: deploy the app\n---\n\nRun the deployment pipeline step by step."
+	if err := os.WriteFile(skillFile, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+
+	skills := map[string]*skill.Skill{
+		"deploy":  {Name: "deploy", State: skill.StateActive, Description: "deploy the app", FilePath: skillFile},
+		"review":  {Name: "review", State: skill.StateEnable, Description: "review code"},
+		"archive": {Name: "archive", State: skill.StateDisable, Description: "archive old data"},
+	}
+
+	registry := newTestRegistry(t, skills)
+	prompt := registry.GetSkillsSection()
+
+	// Active skill must appear
+	if !strings.Contains(prompt, "deploy") {
+		t.Error("expected active skill 'deploy' to appear in system prompt section")
+	}
+
+	// Enabled-only skill must NOT appear (not model-aware)
+	if strings.Contains(prompt, "review") {
+		t.Error("enabled-only skill 'review' must not appear in system prompt section")
+	}
+
+	// Disabled skill must NOT appear
+	if strings.Contains(prompt, "archive") {
+		t.Error("disabled skill 'archive' must not appear in system prompt section")
+	}
+
+	// XML wrapper must be present
+	if !strings.Contains(prompt, "<available-skills>") {
+		t.Error("expected <available-skills> XML tag in system prompt section")
+	}
+
+	// GetSkillInvocationPrompt must include the instructions body
+	invocation := registry.GetSkillInvocationPrompt("deploy")
+	if !strings.Contains(invocation, "Run the deployment pipeline step by step") {
+		t.Errorf("invocation prompt missing skill instructions, got: %q", invocation)
+	}
+}

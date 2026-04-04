@@ -212,3 +212,36 @@ func TestParseMCPToolName(t *testing.T) {
 		})
 	}
 }
+
+func TestMCP_ResourceListing(t *testing.T) {
+	// Create a client; before connect, cached resources should be empty
+	client := NewClient(ServerConfig{Command: "echo"})
+
+	resources := client.GetCachedResources()
+	if len(resources) != 0 {
+		t.Errorf("expected empty cached resources before connect, got %d", len(resources))
+	}
+
+	// Inject resources directly (same package) to simulate a connected state
+	client.mu.Lock()
+	client.connected = true
+	client.resources = []MCPResource{
+		{URI: "file:///tmp/test.txt", Name: "test.txt", MimeType: "text/plain"},
+		{URI: "file:///tmp/data.json", Name: "data.json", MimeType: "application/json"},
+	}
+	client.mu.Unlock()
+
+	cached := client.GetCachedResources()
+	if len(cached) != 2 {
+		t.Fatalf("expected 2 cached resources, got %d", len(cached))
+	}
+	if cached[0].URI != "file:///tmp/test.txt" {
+		t.Errorf("expected URI 'file:///tmp/test.txt', got %q", cached[0].URI)
+	}
+	if cached[1].MimeType != "application/json" {
+		t.Errorf("expected MimeType 'application/json', got %q", cached[1].MimeType)
+	}
+	if cached[0].Name != "test.txt" {
+		t.Errorf("expected Name 'test.txt', got %q", cached[0].Name)
+	}
+}

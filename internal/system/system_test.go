@@ -637,3 +637,92 @@ func TestLoadInstructions(t *testing.T) {
 	// Just verify the function returns without error.
 	_ = user
 }
+
+// TestMemory_ImportChain verifies that @import A which itself imports B results
+// in both files being loaded and their content present in the final output.
+func TestMemory_ImportChain(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gencode-test-import-chain")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	genDir := filepath.Join(tmpDir, ".gen")
+	if err := os.MkdirAll(genDir, 0o755); err != nil {
+		t.Fatalf("Failed to create .gen dir: %v", err)
+	}
+
+	// GEN.md -> a.md -> b.md  (3-level chain)
+	genMdContent := "# Root\n@a.md"
+	aMdContent := "## Level A\n@b.md"
+	bMdContent := "### Level B\nFinal content from B"
+
+	if err := os.WriteFile(filepath.Join(genDir, "GEN.md"), []byte(genMdContent), 0o644); err != nil {
+		t.Fatalf("Failed to write GEN.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(genDir, "a.md"), []byte(aMdContent), 0o644); err != nil {
+		t.Fatalf("Failed to write a.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(genDir, "b.md"), []byte(bMdContent), 0o644); err != nil {
+		t.Fatalf("Failed to write b.md: %v", err)
+	}
+
+	files := LoadMemoryFiles(tmpDir)
+
+	// Find the project memory file
+	var projectFile *MemoryFile
+	for i := range files {
+		if files[i].Level == "project" && strings.Contains(files[i].Path, "GEN.md") {
+			projectFile = &files[i]
+			break
+		}
+	}
+
+	if projectFile == nil {
+		t.Fatal("Expected to find project GEN.md file")
+	}
+
+	// Both A and B content should be present after chain resolution
+	if !strings.Contains(projectFile.Content, "Level A") {
+		t.Errorf("Expected 'Level A' content (from a.md) in resolved output; got: %s", projectFile.Content)
+	}
+	if !strings.Contains(projectFile.Content, "Final content from B") {
+		t.Errorf("Expected 'Final content from B' (from b.md) in resolved output; got: %s", projectFile.Content)
+	}
+	// Import comments should also be present
+	if !strings.Contains(projectFile.Content, "<!-- Imported: a.md -->") {
+		t.Errorf("Expected import comment for a.md; got: %s", projectFile.Content)
+	}
+	if !strings.Contains(projectFile.Content, "<!-- Imported: b.md -->") {
+		t.Errorf("Expected import comment for b.md; got: %s", projectFile.Content)
+	}
+}
+
+// TestMemory_MissingFile_NoError verifies that the absence of GEN.md does not
+// cause a panic or returned error — LoadMemoryFiles should return gracefully.
+func TestMemory_MissingFile_NoError(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gencode-test-missing-genmd")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Intentionally do NOT create .gen/GEN.md
+
+	// This must not panic or crash
+	files := LoadMemoryFiles(tmpDir)
+
+	// No project-level file should be returned
+	for _, f := range files {
+		if f.Level == "project" && strings.Contains(f.Path, tmpDir) {
+			t.Errorf("Did not expect a project memory file when GEN.md is absent, got: %s", f.Path)
+		}
+	}
+
+	// LoadInstructions must also handle it without error
+	_, project := LoadInstructions(tmpDir)
+	// project may contain content from global user GEN.md; what matters is no panic
+	// and no project-level content from our tmpDir
+	_ = project
+}
+

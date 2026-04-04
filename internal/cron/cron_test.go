@@ -136,6 +136,64 @@ func TestStoreMaxJobs(t *testing.T) {
 	}
 }
 
+func TestCron_InvalidExpression_ReturnsError(t *testing.T) {
+	invalidExpressions := []struct {
+		expr string
+		desc string
+	}{
+		{"bad", "single word"},
+		{"1 2 3 4 5 6", "six fields"},
+		{"60 * * * *", "minute out of range"},
+		{"* 25 * * *", "hour out of range"},
+		{"", "empty string"},
+		{"* * * *", "four fields only"},
+	}
+
+	for _, tt := range invalidExpressions {
+		t.Run(tt.desc, func(t *testing.T) {
+			_, err := Parse(tt.expr)
+			if err == nil {
+				t.Errorf("Parse(%q) expected error for %s, got nil", tt.expr, tt.desc)
+			}
+		})
+	}
+}
+
+func TestCron_Once_RemovedAfterFiring(t *testing.T) {
+	store := NewStore()
+
+	// Create a non-recurring (one-shot) job
+	job, err := store.Create("* * * * *", "fire once", false, false)
+	if err != nil {
+		t.Fatalf("Create one-shot job failed: %v", err)
+	}
+
+	// Verify job was created
+	if len(store.List()) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(store.List()))
+	}
+
+	// Force next fire time to past so Tick fires it
+	store.mu.Lock()
+	store.jobs[job.ID].NextFire = time.Now().Add(-time.Minute)
+	store.mu.Unlock()
+
+	// Tick should fire the job
+	fired := store.Tick()
+	if len(fired) != 1 {
+		t.Fatalf("expected 1 fired job, got %d", len(fired))
+	}
+	if fired[0].Prompt != "fire once" {
+		t.Errorf("expected prompt 'fire once', got %q", fired[0].Prompt)
+	}
+
+	// One-shot job should be removed after firing
+	remaining := store.List()
+	if len(remaining) != 0 {
+		t.Errorf("expected 0 jobs after one-shot fires, got %d", len(remaining))
+	}
+}
+
 func TestStoreDurable(t *testing.T) {
 	tmpFile := t.TempDir() + "/scheduled_tasks.json"
 
