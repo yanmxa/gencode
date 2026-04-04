@@ -250,6 +250,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		}
 
 		state.AddToolCallsSorted(toolCalls)
+		state.EnsureToolUseStopReason()
 		state.Finish(ctx, ch)
 	}()
 

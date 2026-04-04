@@ -122,11 +122,14 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 			Messages: messages,
 		}
 
-		// Enable thinking mode for Kimi thinking models
-		// The reasoning_content will be captured and replayed in multi-turn conversations
-		params.SetExtraFields(map[string]any{
-			"thinking": map[string]any{"type": "enabled"},
-		})
+		// Enable thinking mode only when explicitly requested (ThinkingLevel > ThinkingOff).
+		// Unconditionally enabling thinking on non-thinking models (e.g. moonshot-v1-auto)
+		// causes API errors. The caller must set opts.ThinkingLevel for Kimi thinking models.
+		if opts.ThinkingLevel > provider.ThinkingOff {
+			params.SetExtraFields(map[string]any{
+				"thinking": map[string]any{"type": "enabled"},
+			})
+		}
 
 		if opts.MaxTokens > 0 {
 			params.MaxCompletionTokens = openai.Int(int64(opts.MaxTokens))
@@ -237,6 +240,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		}
 
 		state.AddToolCallsSorted(toolCalls)
+		state.EnsureToolUseStopReason()
 		state.Finish(ctx, ch)
 	}()
 

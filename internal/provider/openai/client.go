@@ -247,6 +247,7 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 		}
 
 		state.AddToolCallsByKey(toolCalls)
+		state.EnsureToolUseStopReason()
 		state.Finish(ctx, ch)
 	}()
 
@@ -444,6 +445,7 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 		}
 
 		state.AddToolCallsSorted(toolCalls)
+		state.EnsureToolUseStopReason()
 		state.Finish(ctx, ch)
 	}()
 

@@ -93,7 +93,7 @@ func ExecuteCommand(ctx context.Context, m *model, input string) (string, tea.Cm
 		if m.conv.Stream.Cancel != nil {
 			m.conv.Stream.Cancel()
 		}
-		m.fireSessionEnd("user_exit")
+		m.fireSessionEnd("prompt_input_exit")
 		return "", tea.Quit, true
 	}
 

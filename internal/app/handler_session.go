@@ -105,6 +105,9 @@ func (m *model) loadSession(id string) error {
 	m.provider.InputTokens = 0
 	m.provider.OutputTokens = 0
 
+	// Reset task reminder counter so new session starts fresh
+	m.conv.TurnsSinceLastTaskTool = 0
+
 	return nil
 }
 

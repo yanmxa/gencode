@@ -152,8 +152,25 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		if m.tool.Cancel != nil {
 			m.tool.Cancel()
 		}
-		m.fireSessionEnd("quit")
+		m.fireSessionEnd("prompt_input_exit")
 		return tea.Quit, true
+
+	case tea.KeyCtrlD:
+		if m.input.Textarea.Value() != "" {
+			return nil, false // let textarea handle deletion
+		}
+		if m.conv.Stream.Cancel != nil {
+			m.conv.Stream.Cancel()
+		}
+		if m.tool.Cancel != nil {
+			m.tool.Cancel()
+		}
+		m.fireSessionEnd("prompt_input_exit")
+		return tea.Quit, true
+
+	case tea.KeyCtrlL:
+		_, cmd, _ := handleClearCommand(context.Background(), m, "")
+		return cmd, true
 
 	case tea.KeyEsc:
 		if m.promptSuggestion.text != "" {
@@ -397,7 +414,7 @@ func (m *model) handleSubmit() tea.Cmd {
 		if m.conv.Stream.Cancel != nil {
 			m.conv.Stream.Cancel()
 		}
-		m.fireSessionEnd("exit")
+		m.fireSessionEnd("prompt_input_exit")
 		return tea.Quit
 	}
 
