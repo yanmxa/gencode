@@ -289,15 +289,14 @@ func (m *model) handleCtrlOSingleTick() tea.Cmd {
 // expandCollapseAll toggles expand/collapse for all tool results and tool calls.
 func (m *model) expandCollapseAll() tea.Cmd {
 	anyExpanded := false
-	for i := 0; i < len(m.conv.Messages); i++ {
-		msg := m.conv.Messages[i]
+	for _, msg := range m.conv.Messages {
 		if (msg.ToolResult != nil && msg.Expanded) ||
 			(len(msg.ToolCalls) > 0 && msg.ToolCallsExpanded) {
 			anyExpanded = true
 			break
 		}
 	}
-	for i := 0; i < len(m.conv.Messages); i++ {
+	for i := range m.conv.Messages {
 		if m.conv.Messages[i].ToolResult != nil {
 			m.conv.Messages[i].Expanded = !anyExpanded
 		}
@@ -449,7 +448,7 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 
 		// If resuming a session with messages, commit them to scrollback
 		if len(m.conv.Messages) > 0 {
-			cmds = append(cmds, m.commitAllMessages()...)
+			cmds = append(cmds, m.commitMessagesForce()...)
 		} else {
 			// Print welcome screen
 			cmds = append(cmds, tea.Println(m.renderWelcome()))
@@ -492,7 +491,7 @@ func (m *model) reflowScrollback() tea.Cmd {
 	cmds = append(cmds, tea.ClearScreen)
 
 	// Re-commit all previously committed messages
-	for i := 0; i < committed; i++ {
+	for i := range committed {
 		if rendered := m.renderSingleMessage(i); rendered != "" {
 			cmds = append(cmds, tea.Println(rendered))
 		}
@@ -526,7 +525,7 @@ func (m *model) handleSkillInvocation() tea.Cmd {
 	}
 	m.skill.PendingArgs = ""
 
-	return m.startLLMStream(nil)
+	return m.startStream(nil, true)
 }
 
 // checkPromptHook runs UserPromptSubmit hook and returns (blocked, reason).

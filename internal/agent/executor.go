@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -122,7 +123,7 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 	// Fire SubagentStart hook
 	e.fireSubagentStart(req, agentHookID)
 
-	loop, cleanupLoop, err := e.buildLoop(ctx, req, rc, agentCwd)
+	loop, cleanupLoop, err := e.buildLoop(ctx, rc, agentCwd)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +227,7 @@ func (e *Executor) RunBackground(req AgentRequest) (*task.AgentTask, error) {
 
 		result, err := e.Run(ctx, req)
 		if err != nil {
-			agentTask.AppendOutput([]byte(fmt.Sprintf("Error: %v\n", err)))
+			agentTask.AppendOutput(fmt.Appendf(nil, "Error: %v\n", err))
 			agentTask.Complete(err)
 			return
 		}
@@ -242,7 +243,7 @@ func (e *Executor) RunBackground(req AgentRequest) (*task.AgentTask, error) {
 		if result.Success {
 			agentTask.Complete(nil)
 		} else {
-			agentTask.Complete(fmt.Errorf("%s", result.Error))
+			agentTask.Complete(errors.New(result.Error))
 		}
 	}()
 
@@ -297,7 +298,7 @@ func (e *Executor) prepareRunConfig(req AgentRequest) (*runConfig, error) {
 		modelID:     e.resolveModelID(req.Model),
 		maxTurns:    maxTurns,
 		displayName: displayName,
-		agentPrompt: e.buildSystemPrompt(config, req),
+		agentPrompt: e.buildSystemPrompt(config),
 		permMode:    permMode,
 	}, nil
 }
@@ -313,7 +314,7 @@ func (e *Executor) fireSubagentStart(req AgentRequest, agentHookID string) {
 	})
 }
 
-func (e *Executor) buildLoop(ctx context.Context, req AgentRequest, rc *runConfig, agentCwd string) (*core.Loop, func(), error) {
+func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string) (*core.Loop, func(), error) {
 	cleanup := func() {}
 
 	if len(rc.config.McpServers) > 0 && e.mcpRegistry != nil {
@@ -440,7 +441,7 @@ func (e *Executor) resolveModelID(requestModel string) string {
 // buildSystemPrompt builds agent-specific Extra content for the system prompt.
 // Identity, environment, instructions, and tool guidelines are already provided
 // by system.System — this method only adds agent-specific content.
-func (e *Executor) buildSystemPrompt(config *AgentConfig, req AgentRequest) string {
+func (e *Executor) buildSystemPrompt(config *AgentConfig) string {
 	var sb strings.Builder
 
 	// Agent type header

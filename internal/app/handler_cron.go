@@ -88,5 +88,5 @@ func (m *model) injectCronPrompt(prompt string) tea.Cmd {
 		Content: prompt,
 	})
 
-	return m.startLLMStream(nil)
+	return m.startStream(nil, true)
 }

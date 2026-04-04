@@ -35,7 +35,7 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
 
-type modelInfra struct {
+type infraConfig struct {
 	store             *provider.Store
 	llmProvider       provider.LLMProvider
 	currentModel      *provider.CurrentModelInfo
@@ -45,10 +45,9 @@ type modelInfra struct {
 	earlySessionStore *session.Store
 }
 
-func initializeModelInfra(cwd string) (modelInfra, error) {
+func initInfra(cwd string, settings *config.Settings) (infraConfig, error) {
 	store, llmProvider, currentModel := initializeProvider()
 	mcpRegistry := initializeRegistries(cwd)
-	settings := loadSettings()
 
 	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
 
@@ -59,7 +58,7 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 	}
 	hookEngine := hooks.NewEngine(settings, sessionID, cwd, transcriptPath)
 
-	return modelInfra{
+	return infraConfig{
 		store:             store,
 		llmProvider:       llmProvider,
 		currentModel:      currentModel,
@@ -70,7 +69,7 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 	}, nil
 }
 
-func newBaseModel(cwd string, infra modelInfra) model {
+func buildModel(cwd string, infra infraConfig) model {
 	matchFunc := func(query string) []suggest.Suggestion {
 		cmds := appcommand.GetMatchingCommands(query)
 		result := make([]suggest.Suggestion, len(cmds))

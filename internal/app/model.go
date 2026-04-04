@@ -91,13 +91,13 @@ type model struct {
 }
 
 // --- Constructor and Init ---
-func newModel(opts options.RunOptions) (model, error) {
+func newModel(opts options.RunOptions, settings *config.Settings) (model, error) {
 	cwd, _ := os.Getwd()
-	infra, err := initializeModelInfra(cwd)
+	infra, err := initInfra(cwd, settings)
 	if err != nil {
 		return model{}, err
 	}
-	m := newBaseModel(cwd, infra)
+	m := buildModel(cwd, infra)
 
 	m.ensureMemoryContextLoaded()
 	m.reconfigureAgentTool()
@@ -137,14 +137,13 @@ func (m model) Init() tea.Cmd {
 		}
 		m.hookEngine.ExecuteAsync(hooks.SessionStart, hooks.HookInput{
 			Source: source,
-			Model:  m.getModelID(),
+			Model:  m.currentModelID(),
 		})
 	}
 
 	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, appmcp.AutoConnect(), startCronTicker()}
 	if m.initialPrompt != "" {
 		prompt := m.initialPrompt
-		m.initialPrompt = ""
 		cmds = append(cmds, func() tea.Msg { return initialPromptMsg(prompt) })
 	}
 	return tea.Batch(cmds...)
@@ -156,7 +155,9 @@ func (m *model) commitMessages() []tea.Cmd {
 	return m.commitMessagesWithCheck(true)
 }
 
-func (m *model) commitAllMessages() []tea.Cmd {
+// commitMessagesForce bypasses streaming/tool-result safety checks and commits all pending
+// messages. Use only when it is safe to commit everything (e.g. session restore, clear).
+func (m *model) commitMessagesForce() []tea.Cmd {
 	return m.commitMessagesWithCheck(false)
 }
 
@@ -199,10 +200,10 @@ func isGitRepo(dir string) bool {
 }
 
 // reconfigureAgentTool updates the agent tool with the current session/provider state.
+// Callers must have already called ensureMemoryContextLoaded before invoking this.
 func (m *model) reconfigureAgentTool() {
 	if m.provider.LLM != nil {
-		m.ensureMemoryContextLoaded()
-		appprovider.ConfigureAgentTool(m.provider.LLM, m.cwd, m.getModelID(), m.hookEngine, m.session.Store, m.session.CurrentID,
+		appprovider.ConfigureAgentTool(m.provider.LLM, m.cwd, m.currentModelID(), m.hookEngine, m.session.Store, m.session.CurrentID,
 			m.agentToolOpts()...)
 	}
 }
@@ -251,7 +252,7 @@ func (m *model) configureLoop(extra []string) {
 
 	m.loop.Client = &client.Client{
 		Provider:      m.provider.LLM,
-		Model:         m.getModelID(),
+		Model:         m.currentModelID(),
 		MaxTokens:     m.getMaxTokens(),
 		ThinkingLevel: m.effectiveThinkingLevel(),
 	}
@@ -324,7 +325,7 @@ func (m *model) buildTaskReminder() string {
 	return sb.String()
 }
 
-func (m model) getModelID() string {
+func (m model) currentModelID() string {
 	if m.provider.CurrentModel != nil {
 		return m.provider.CurrentModel.ModelID
 	}

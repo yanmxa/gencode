@@ -43,7 +43,7 @@ type ToolList []string
 func (t *ToolList) UnmarshalYAML(value *yaml.Node) error {
 	switch value.Kind {
 	case yaml.ScalarNode:
-		for _, p := range strings.Split(value.Value, ",") {
+		for p := range strings.SplitSeq(value.Value, ",") {
 			if s := strings.TrimSpace(p); s != "" {
 				*t = append(*t, s)
 			}
@@ -117,7 +117,7 @@ type AgentConfig struct {
 	SourceFile string `yaml:"-" json:"-"`
 
 	// systemPromptLoaded indicates if the full system prompt has been loaded
-	systemPromptLoaded bool `yaml:"-" json:"-"`
+	systemPromptLoaded bool
 }
 
 // GetSystemPrompt returns the system prompt, loading it lazily if needed.

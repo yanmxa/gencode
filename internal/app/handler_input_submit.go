@@ -43,7 +43,7 @@ func (m *model) handleCommandSubmit(input string) (tea.Cmd, bool) {
 	m.resetInputField()
 
 	// For skill commands, the user message is appended inside handleSkillInvocation
-	// before startLLMStream, so skip it here. For regular commands, append now.
+	// before startStream, so skip it here. For regular commands, append now.
 	if cmd == nil {
 		m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: input})
 	}
@@ -85,5 +85,5 @@ func (m *model) startProviderTurn(content string) tea.Cmd {
 	}
 
 	m.detectThinkingKeywords(content)
-	return m.startLLMStream(nil)
+	return m.startStream(nil, true)
 }

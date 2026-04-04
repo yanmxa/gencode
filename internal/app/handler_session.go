@@ -197,5 +197,5 @@ func (m *model) handleSessionSelected(msg appsession.SelectedMsg) tea.Cmd {
 
 	// Commit restored messages to scrollback
 	m.conv.CommittedCount = 0
-	return tea.Batch(m.commitAllMessages()...)
+	return tea.Batch(m.commitMessagesForce()...)
 }

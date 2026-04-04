@@ -65,16 +65,18 @@ func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
 }
 
 func (m *model) abortToolWithError(errorMsg string) tea.Cmd {
-	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
-	m.conv.Append(message.ChatMessage{
-		Role:     message.RoleUser,
-		ToolName: tc.Name,
-		ToolResult: &message.ToolResult{
-			ToolCallID: tc.ID,
-			Content:    errorMsg,
-			IsError:    true,
-		},
-	})
+	if m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls) {
+		tc := m.tool.PendingCalls[m.tool.CurrentIdx]
+		m.conv.Append(message.ChatMessage{
+			Role:     message.RoleUser,
+			ToolName: tc.Name,
+			ToolResult: &message.ToolResult{
+				ToolCallID: tc.ID,
+				Content:    errorMsg,
+				IsError:    true,
+			},
+		})
+	}
 	m.tool.Reset()
 	m.conv.Stream.Active = false
 	return tea.Batch(m.commitMessages()...)

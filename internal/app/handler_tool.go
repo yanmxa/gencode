@@ -3,15 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appplugin "github.com/yanmxa/gencode/internal/app/plugin"
 	apptool "github.com/yanmxa/gencode/internal/app/tool"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/ui/progress"
 )
@@ -105,8 +102,7 @@ func (m *model) handleParallelToolResult(msg apptool.ExecResultMsg) tea.Cmd {
 }
 
 func (m *model) completeParallelExecution() tea.Cmd {
-	for i := 0; i < len(m.tool.PendingCalls); i++ {
-		tc := m.tool.PendingCalls[i]
+	for i, tc := range m.tool.PendingCalls {
 		if result, ok := m.tool.ParallelResults[i]; ok {
 			m.persistToolResultOverflow(&result)
 			m.conv.Append(message.ChatMessage{
@@ -120,7 +116,7 @@ func (m *model) completeParallelExecution() tea.Cmd {
 	m.output.TaskProgress = nil // clear all agent progress
 	m.tool.Reset()
 	commitCmds := m.commitMessages()
-	commitCmds = append(commitCmds, m.startContinueStream())
+	commitCmds = append(commitCmds, m.startStream(nil, false))
 	return tea.Batch(commitCmds...)
 }
 
@@ -131,7 +127,7 @@ func (m *model) handleStartToolExecution(toolCalls []message.ToolCall) tea.Cmd {
 
 	if len(m.tool.PendingCalls) == 0 {
 		m.tool.Reset()
-		return m.startContinueStream()
+		return m.startStream(nil, false)
 	}
 
 	if len(m.tool.PendingCalls) > 1 && m.canRunToolsInParallel(m.tool.PendingCalls) {
@@ -155,7 +151,7 @@ func (m *model) canRunToolsInParallel(toolCalls []message.ToolCall) bool {
 
 func (m *model) handleAllToolsCompleted() tea.Cmd {
 	m.tool.Reset()
-	return m.startContinueStream()
+	return m.startStream(nil, false)
 }
 
 // filterToolCallsWithHooks runs PreToolUse hooks and filters blocked tools.
@@ -247,54 +243,23 @@ func (m *model) handleTaskProgressTick() tea.Cmd {
 }
 
 func (m *model) hasRunningTaskTools() bool {
-	if m.tool.Parallel {
-		return m.hasRunningParallelTaskTools()
+	if m.tool.PendingCalls == nil {
+		return false
 	}
-	return m.hasRunningSequentialTaskTool()
-}
-
-// hasRunningParallelTaskTools checks for unfinished Task tools in parallel mode.
-func (m *model) hasRunningParallelTaskTools() bool {
-	for i, tc := range m.tool.PendingCalls {
-		if tc.Name == tool.ToolAgent {
-			if _, done := m.tool.ParallelResults[i]; !done {
-				return true
+	if m.tool.Parallel {
+		for i, tc := range m.tool.PendingCalls {
+			if tc.Name == tool.ToolAgent {
+				if _, done := m.tool.ParallelResults[i]; !done {
+					return true
+				}
 			}
 		}
+		return false
 	}
-	return false
-}
-
-// hasRunningSequentialTaskTool checks if the current sequential tool is a Task.
-func (m *model) hasRunningSequentialTaskTool() bool {
-	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
+	if m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
 		return false
 	}
 	return m.tool.PendingCalls[m.tool.CurrentIdx].Name == tool.ToolAgent
-}
-
-// installPlugin creates a tea.Cmd that installs the requested plugin.
-func (m model) installPlugin(msg appplugin.InstallMsg) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-		defer cancel()
-
-		installer := plugin.NewInstaller(plugin.DefaultRegistry, m.cwd)
-		if err := installer.LoadMarketplaces(); err != nil {
-			return appplugin.InstallResultMsg{PluginName: msg.PluginName, Success: false, Error: err}
-		}
-
-		pluginRef := msg.PluginName
-		if msg.Marketplace != "" {
-			pluginRef = msg.PluginName + "@" + msg.Marketplace
-		}
-
-		if err := installer.Install(ctx, pluginRef, msg.Scope); err != nil {
-			return appplugin.InstallResultMsg{PluginName: msg.PluginName, Success: false, Error: err}
-		}
-
-		return appplugin.InstallResultMsg{PluginName: msg.PluginName, Success: true}
-	}
 }
 
 // persistToolResultOverflow checks if a tool result exceeds the overflow threshold

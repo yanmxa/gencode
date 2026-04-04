@@ -49,7 +49,7 @@ func RunWithOptions(opts options.RunOptions) error {
 	}
 	theme.Init(themeValue)
 
-	m, err := newModel(opts)
+	m, err := newModel(opts, settings)
 	if err != nil {
 		return err
 	}

@@ -78,7 +78,7 @@ func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
 		LLM:          m.provider.LLM,
 		Store:        m.provider.Store,
 		CurrentModel: m.provider.CurrentModel,
-		ModelID:      m.getModelID(),
+		ModelID:      m.currentModelID(),
 		Cwd:          m.cwd,
 	})), nil
 }
@@ -169,7 +169,7 @@ func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 			Role:    message.RoleUser,
 			Content: "Continue with the task. The conversation was auto-compacted to free up context.",
 		})
-		cmds = append(cmds, m.startLLMStream(nil))
+		cmds = append(cmds, m.startStream(nil, true))
 	} else {
 		m.conv.AddNotice(fmt.Sprintf("Compacted %d messages into session memory.", msg.OriginalCount))
 		cmds = append(cmds, m.commitMessages()...)

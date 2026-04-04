@@ -64,7 +64,7 @@ func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 			Role:    message.RoleUser,
 			Content: core.MaxOutputRecoveryPrompt,
 		})
-		return m.startContinueStream()
+		return m.startStream(nil, false)
 	}
 
 	if decision.Action == core.CompletionRunTools {
@@ -142,49 +142,25 @@ func (m *model) handleStreamError(err error) tea.Cmd {
 	return tea.Batch(m.commitMessages()...)
 }
 
-// startContinueStream sets up a follow-up LLM stream after tool results.
-func (m *model) startContinueStream() tea.Cmd {
-	ctx, cancel := context.WithCancel(context.Background())
-	m.conv.Stream.Cancel = cancel
-
-	// Configure loop and set messages BEFORE appending the empty assistant placeholder,
-	// so the placeholder is not included in the API request.
-	m.configureLoop(nil)
-	m.loop.SetMessages(m.conv.ConvertToProvider())
-
-	// Commit any pending messages before starting new stream
-	commitCmds := m.commitMessages()
-
-	m.conv.Append(message.ChatMessage{Role: message.RoleAssistant, Content: ""})
-
-	m.conv.Stream.Ch = m.loop.Stream(ctx)
-	allCmds := append(commitCmds, m.waitForChunk(), m.output.Spinner.Tick)
-	return tea.Batch(allCmds...)
-}
-
 func (m *model) handleSpinnerTick(msg tea.Msg) tea.Cmd {
 	interactiveActive := m.mode.Question.IsActive() || (m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive())
 	return m.output.HandleTick(msg, m.conv.Stream.Active, m.provider.FetchingLimits, m.conv.Compact.Active, interactiveActive, m.hasRunningTaskTools())
 }
 
-// startLLMStream sets up and starts an LLM streaming request with optional extra prompt content.
-// It appends an empty assistant message, sets up cancellation, and starts streaming.
-func (m *model) startLLMStream(extra []string) tea.Cmd {
+// startStream starts (or continues) an LLM stream.
+// extra is injected into the system prompt for this turn only.
+// setActive should be true for new user-initiated turns, false for follow-up streams after tools.
+func (m *model) startStream(extra []string, setActive bool) tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.conv.Stream.Cancel = cancel
-	m.conv.Stream.Active = true
-
-	// Configure loop with current state and set messages
+	if setActive {
+		m.conv.Stream.Active = true
+	}
 	m.configureLoop(extra)
 	m.loop.SetMessages(m.conv.ConvertToProvider())
-
-	// Commit any pending messages before starting stream
 	commitCmds := m.commitMessages()
-
 	m.conv.Append(message.ChatMessage{Role: message.RoleAssistant, Content: ""})
-
 	m.conv.Stream.Ch = m.loop.Stream(ctx)
-
 	allCmds := append(commitCmds, m.waitForChunk(), m.output.Spinner.Tick)
 	return tea.Batch(allCmds...)
 }

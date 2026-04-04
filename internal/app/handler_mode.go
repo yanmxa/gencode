@@ -178,7 +178,7 @@ func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
 	userMsg := fmt.Sprintf("Implement the following approved plan step by step. Start coding immediately — do NOT explore or investigate further.\n\n%s", planContent)
 	m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: userMsg})
 
-	return m.startLLMStream(nil)
+	return m.startStream(nil, true)
 }
 
 func (m *model) handleEnterPlanRequest(msg appmode.EnterPlanRequestMsg) tea.Cmd {
