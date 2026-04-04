@@ -9,7 +9,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
-	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/options"
 )
@@ -74,22 +73,13 @@ func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
 	}
 
 	m.provider.FetchingLimits = true
-	return "", tea.Batch(m.output.Spinner.Tick, startTokenLimitFetch(m)), nil
-}
-
-func startTokenLimitFetch(m *model) tea.Cmd {
-	deps := appcompact.AutoFetchTokenLimitsDeps{
+	return "", tea.Batch(m.output.Spinner.Tick, m.runtime.FetchTokenLimitsCmd(tokenLimitFetchRequest{
 		LLM:          m.provider.LLM,
 		Store:        m.provider.Store,
 		CurrentModel: m.provider.CurrentModel,
 		ModelID:      m.getModelID(),
 		Cwd:          m.cwd,
-	}
-	return func() tea.Msg {
-		ctx := context.Background()
-		result, err := appcompact.AutoFetchTokenLimits(ctx, deps)
-		return appcompact.TokenLimitResultMsg{Result: result, Error: err}
-	}
+	})), nil
 }
 
 func handleCompactCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
@@ -104,31 +94,14 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	}
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = strings.TrimSpace(args)
-	return "", tea.Batch(m.output.Spinner.Tick, startCompact(m)), nil
-}
-
-func startCompact(m *model) tea.Cmd {
-	focus := m.conv.Compact.Focus
-	client := m.loop.Client
-	msgs := m.conv.ConvertToProvider()
-	sessionSummary := m.session.Summary
-
-	// Fire PreCompact hook
-	trigger := "manual"
-	if m.conv.Compact.AutoContinue {
-		trigger = "auto"
-	}
-	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.PreCompact, hooks.HookInput{
-			Trigger: trigger,
-		})
-	}
-
-	return func() tea.Msg {
-		ctx := context.Background()
-		summary, count, err := appcompact.CompactConversation(ctx, client, msgs, sessionSummary, focus)
-		return appcompact.CompactResultMsg{Summary: summary, OriginalCount: count, Error: err}
-	}
+	return "", tea.Batch(m.output.Spinner.Tick, m.runtime.CompactCmd(compactRequest{
+		Client:         m.loop.Client,
+		Messages:       m.conv.ConvertToProvider(),
+		SessionSummary: m.session.Summary,
+		Focus:          m.conv.Compact.Focus,
+		HookEngine:     m.hookEngine,
+		Trigger:        "manual",
+	})), nil
 }
 
 func (m *model) getEffectiveInputLimit() int {
@@ -152,7 +125,14 @@ func (m *model) triggerAutoCompact() tea.Cmd {
 	m.conv.Compact.Focus = ""
 	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()))
 	commitCmds := m.commitMessages()
-	commitCmds = append(commitCmds, m.output.Spinner.Tick, startCompact(m))
+	commitCmds = append(commitCmds, m.output.Spinner.Tick, m.runtime.CompactCmd(compactRequest{
+		Client:         m.loop.Client,
+		Messages:       m.conv.ConvertToProvider(),
+		SessionSummary: m.session.Summary,
+		Focus:          "",
+		HookEngine:     m.hookEngine,
+		Trigger:        "auto",
+	}))
 	return tea.Batch(commitCmds...)
 }
 

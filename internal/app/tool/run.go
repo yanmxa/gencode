@@ -8,8 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
+	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/mcp"
@@ -18,6 +18,29 @@ import (
 	"github.com/yanmxa/gencode/internal/tool/ui"
 	"github.com/yanmxa/gencode/internal/ui/progress"
 )
+
+type defaultMCPExecutor struct{}
+
+func (defaultMCPExecutor) IsMCPTool(name string) bool {
+	return mcp.IsMCPTool(name)
+}
+
+func (defaultMCPExecutor) ExecuteMCP(ctx context.Context, name string, params map[string]any) (ui.ToolResult, error) {
+	if mcp.DefaultRegistry == nil {
+		return ui.NewErrorResult(name, "MCP registry not initialized"), nil
+	}
+
+	result, err := mcp.DefaultRegistry.CallTool(ctx, name, params)
+	if err != nil {
+		return ui.NewErrorResult(name, err.Error()), nil
+	}
+
+	return ui.ToolResult{
+		Success:  !result.IsError,
+		Output:   extractMCPContent(result.Content),
+		Metadata: ui.ResultMetadata{Title: name, Icon: "🔌"},
+	}, nil
+}
 
 // ExecStartMsg signals the parent to begin executing tool calls.
 type ExecStartMsg struct {
@@ -52,7 +75,7 @@ func newResultFromOutput(tc message.ToolCall, index int, output ui.ToolResult) E
 
 // ExecuteParallel dispatches tool calls in parallel when possible, sequentially otherwise.
 // hookAllowed contains tool call IDs that were pre-approved by hooks (may be nil).
-func ExecuteParallel(toolCalls []message.ToolCall, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool) tea.Cmd {
+func ExecuteParallel(ctx context.Context, hub *progress.Hub, toolCalls []message.ToolCall, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool) tea.Cmd {
 	if len(toolCalls) == 0 {
 		return func() tea.Msg {
 			return ExecDoneMsg{}
@@ -61,14 +84,14 @@ func ExecuteParallel(toolCalls []message.ToolCall, cwd string, settings *config.
 
 	if len(toolCalls) == 1 {
 		if !RequiresUserInteraction(toolCalls[0], settings, sessionPerms, planMode, hookAllowed) {
-			return executeToolAsync(toolCalls[0], 0, cwd, settings, sessionPerms)
+			return executeToolAsync(ctx, hub, toolCalls[0], 0, cwd, settings, sessionPerms)
 		}
-		return ProcessNext(toolCalls, 0, cwd, settings, sessionPerms)
+		return ProcessNext(ctx, hub, toolCalls, 0, cwd, settings, sessionPerms)
 	}
 
 	for _, tc := range toolCalls {
 		if RequiresUserInteraction(tc, settings, sessionPerms, planMode, hookAllowed) {
-			return ProcessNext(toolCalls, 0, cwd, settings, sessionPerms)
+			return ProcessNext(ctx, hub, toolCalls, 0, cwd, settings, sessionPerms)
 		}
 	}
 
@@ -76,35 +99,29 @@ func ExecuteParallel(toolCalls []message.ToolCall, cwd string, settings *config.
 	for i, tc := range toolCalls {
 		idx := i
 		tcCopy := tc
-		cmds = append(cmds, executeToolAsync(tcCopy, idx, cwd, settings, sessionPerms))
+		cmds = append(cmds, executeToolAsync(ctx, hub, tcCopy, idx, cwd, settings, sessionPerms))
 	}
 
 	return tea.Batch(cmds...)
 }
 
-func executeToolAsync(tc message.ToolCall, index int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
+func executeToolAsync(ctx context.Context, hub *progress.Hub, tc message.ToolCall, index int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
+		ctx = executionContext(ctx)
 
 		params, err := parseToolInput(tc.Input)
 		if err != nil {
 			return newResult(tc, index, "Error parsing tool input: "+err.Error(), true)
 		}
 
-		if tc.Name == "Agent" {
+		if tc.Name == coretool.ToolAgent {
 			idx := index
 			params["_onProgress"] = coretool.ProgressFunc(func(msg string) {
-				progress.SendForAgent(idx, msg)
+				progressHub(hub).SendForAgent(idx, msg)
 			})
 		}
 
-		if mcp.IsMCPTool(tc.Name) {
-			return executeAndLog(tc, index, func() ui.ToolResult {
-				return executeMCPTool(ctx, tc, params)
-			})
-		}
-
-		if _, ok := coretool.Get(tc.Name); !ok {
+		if _, ok := coretool.Get(tc.Name); !ok && !mcp.IsMCPTool(tc.Name) {
 			return newResult(tc, index, "Unknown tool: "+tc.Name, true)
 		}
 
@@ -113,7 +130,11 @@ func executeToolAsync(tc message.ToolCall, index int, cwd string, settings *conf
 		}
 
 		return executeAndLog(tc, index, func() ui.ToolResult {
-			return coretool.Execute(ctx, tc.Name, params, cwd)
+			result, err := coretool.ExecutePreparedTool(ctx, tc, params, cwd, false, defaultMCPExecutor{})
+			if err != nil {
+				return ui.NewErrorResult(tc.Name, err.Error())
+			}
+			return result
 		})
 	}
 }
@@ -138,7 +159,7 @@ func executeAndLog(tc message.ToolCall, index int, fn func() ui.ToolResult) Exec
 }
 
 // ProcessNext executes the next tool call in sequence.
-func ProcessNext(toolCalls []message.ToolCall, idx int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
+func ProcessNext(ctx context.Context, hub *progress.Hub, toolCalls []message.ToolCall, idx int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
 	if idx >= len(toolCalls) {
 		return func() tea.Msg { return ExecDoneMsg{} }
 	}
@@ -146,21 +167,15 @@ func ProcessNext(toolCalls []message.ToolCall, idx int, cwd string, settings *co
 	tc := toolCalls[idx]
 
 	return func() tea.Msg {
-		ctx := context.Background()
+		ctx = executionContext(ctx)
 
 		params, err := parseToolInput(tc.Input)
 		if err != nil {
 			return newResult(tc, idx, "Error parsing tool input: "+err.Error(), true)
 		}
 
-		if mcp.IsMCPTool(tc.Name) {
-			return executeAndLog(tc, idx, func() ui.ToolResult {
-				return executeMCPTool(ctx, tc, params)
-			})
-		}
-
 		t, ok := coretool.Get(tc.Name)
-		if !ok {
+		if !ok && !mcp.IsMCPTool(tc.Name) {
 			return newResult(tc, idx, "Unknown tool: "+tc.Name, true)
 		}
 
@@ -168,23 +183,33 @@ func ProcessNext(toolCalls []message.ToolCall, idx int, cwd string, settings *co
 			switch settings.CheckPermission(tc.Name, params, sessionPerms) {
 			case config.PermissionAllow:
 				return executeAndLog(tc, idx, func() ui.ToolResult {
-					return coretool.Execute(ctx, tc.Name, params, cwd)
+					result, err := coretool.ExecutePreparedTool(ctx, tc, params, cwd, false, defaultMCPExecutor{})
+					if err != nil {
+						return ui.NewErrorResult(tc.Name, err.Error())
+					}
+					return result
 				})
 			case config.PermissionDeny:
 				return newResult(tc, idx, "Permission denied by settings", true)
 			}
 		}
 
-		if msg := checkInteractiveTool(ctx, t, tc, idx, params, cwd); msg != nil {
-			return msg
-		}
+		if ok {
+			if msg := checkInteractiveTool(ctx, t, tc, idx, params, cwd); msg != nil {
+				return msg
+			}
 
-		if msg := checkPermissionTool(ctx, t, tc, idx, params, cwd); msg != nil {
-			return msg
+			if msg := checkPermissionTool(ctx, t, tc, idx, params, cwd); msg != nil {
+				return msg
+			}
 		}
 
 		return executeAndLog(tc, idx, func() ui.ToolResult {
-			return coretool.Execute(ctx, tc.Name, params, cwd)
+			result, err := coretool.ExecutePreparedTool(ctx, tc, params, cwd, false, defaultMCPExecutor{})
+			if err != nil {
+				return ui.NewErrorResult(tc.Name, err.Error())
+			}
+			return result
 		})
 	}
 }
@@ -225,7 +250,7 @@ func checkPermissionTool(ctx context.Context, t coretool.Tool, tc message.ToolCa
 }
 
 // ExecuteApproved executes a tool that has been approved by the user.
-func ExecuteApproved(toolCalls []message.ToolCall, idx int, cwd string) tea.Cmd {
+func ExecuteApproved(ctx context.Context, hub *progress.Hub, toolCalls []message.ToolCall, idx int, cwd string) tea.Cmd {
 	if idx >= len(toolCalls) {
 		return nil
 	}
@@ -233,41 +258,37 @@ func ExecuteApproved(toolCalls []message.ToolCall, idx int, cwd string) tea.Cmd 
 	tc := toolCalls[idx]
 
 	return func() tea.Msg {
-		ctx := context.Background()
+		ctx = executionContext(ctx)
 
 		params, err := parseToolInput(tc.Input)
 		if err != nil {
 			return newResult(tc, idx, "Error parsing tool input: "+err.Error(), true)
 		}
 
-		if tc.Name == "Agent" {
+		if tc.Name == coretool.ToolAgent {
 			agentIdx := idx
 			params["_onProgress"] = coretool.ProgressFunc(func(msg string) {
-				progress.SendForAgent(agentIdx, msg)
+				progressHub(hub).SendForAgent(agentIdx, msg)
 			})
 		}
 
-		t, ok := coretool.Get(tc.Name)
-		if !ok {
+		start := time.Now()
+		result, err := coretool.ExecutePreparedTool(ctx, tc, params, cwd, true, defaultMCPExecutor{})
+		if err != nil {
+			if mcp.IsMCPTool(tc.Name) {
+				return newResult(tc, idx, "Internal error: "+err.Error(), true)
+			}
 			return newResult(tc, idx, "Internal error: unknown tool: "+tc.Name, true)
 		}
-
-		pat, ok := t.(coretool.PermissionAwareTool)
-		if !ok {
-			return newResult(tc, idx, "Internal error: tool does not implement PermissionAwareTool: "+tc.Name, true)
-		}
-
-		start := time.Now()
-		result := pat.ExecuteApproved(ctx, params, cwd)
 		log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
 		return newResultFromOutput(tc, idx, result)
 	}
 }
 
 // ExecuteInteractive executes a tool with an interactive response.
-func ExecuteInteractive[T any](tc message.ToolCall, response T, cwd string) tea.Cmd {
+func ExecuteInteractive[T any](ctx context.Context, tc message.ToolCall, response T, cwd string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
+		ctx = executionContext(ctx)
 
 		params, err := parseToolInput(tc.Input)
 		if err != nil {
@@ -294,7 +315,7 @@ func ExecuteInteractive[T any](tc message.ToolCall, response T, cwd string) tea.
 // RequiresUserInteraction checks if a tool call needs user approval.
 // hookAllowed contains tool call IDs that were pre-approved by hooks (may be nil).
 func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool) bool {
-	if planMode && tc.Name == "Agent" {
+	if planMode && tc.Name == coretool.ToolAgent {
 		return false
 	}
 
@@ -342,6 +363,20 @@ func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, ses
 
 func parseToolInput(input string) (map[string]any, error) {
 	return message.ParseToolInput(input)
+}
+
+func executionContext(ctx context.Context) context.Context {
+	if ctx != nil {
+		return ctx
+	}
+	return context.Background()
+}
+
+func progressHub(hub *progress.Hub) *progress.Hub {
+	if hub != nil {
+		return hub
+	}
+	return progress.NewHub(100)
 }
 
 func executeMCPTool(ctx context.Context, tc message.ToolCall, params map[string]any) ui.ToolResult {

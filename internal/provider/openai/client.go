@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
@@ -14,6 +13,7 @@ import (
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider/streamutil"
 )
 
 // Client implements the LLMProvider interface using the OpenAI SDK
@@ -178,28 +178,21 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 		// Create streaming request
 		stream := c.client.Responses.NewStreaming(ctx, params)
 
+		state := streamutil.NewState(c.name)
+
 		// Track tool calls by item ID
 		toolCalls := make(map[string]*message.ToolCall)
-		var response message.CompletionResponse
 		hasToolCalls := false
-
-		// Stream timing and counting
-		streamStart := time.Now()
-		chunkCount := 0
 
 		// Read stream events
 		for stream.Next() {
 			event := stream.Current()
-			chunkCount++
+			state.Count()
 
 			switch event.Type {
 			case "response.output_text.delta":
 				delta := event.AsResponseOutputTextDelta()
-				ch <- message.StreamChunk{
-					Type: message.ChunkTypeText,
-					Text: delta.Delta,
-				}
-				response.Content += delta.Delta
+				state.EmitText(ch, delta.Delta)
 
 			case "response.output_item.added":
 				itemEvent := event.AsResponseOutputItemAdded()
@@ -210,22 +203,14 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 						ID:   funcCall.CallID,
 						Name: funcCall.Name,
 					}
-					ch <- message.StreamChunk{
-						Type:     message.ChunkTypeToolStart,
-						ToolID:   funcCall.CallID,
-						ToolName: funcCall.Name,
-					}
+					state.EmitToolStart(ch, funcCall.CallID, funcCall.Name)
 				}
 
 			case "response.function_call_arguments.delta":
 				delta := event.AsResponseFunctionCallArgumentsDelta()
 				if tc, ok := toolCalls[delta.ItemID]; ok {
 					tc.Input += delta.Delta
-					ch <- message.StreamChunk{
-						Type:   message.ChunkTypeToolInput,
-						ToolID: tc.ID,
-						Text:   delta.Delta,
-					}
+					state.EmitToolInput(ch, tc.ID, delta.Delta)
 				}
 
 			case "response.completed":
@@ -233,58 +218,36 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 				resp := completed.Response
 
 				// Map usage
-				response.Usage.InputTokens = int(resp.Usage.InputTokens)
-				response.Usage.OutputTokens = int(resp.Usage.OutputTokens)
+				state.UpdateUsage(int(resp.Usage.InputTokens), int(resp.Usage.OutputTokens))
 
 				// Determine stop reason
 				switch resp.Status {
 				case responses.ResponseStatusCompleted:
 					if hasToolCalls {
-						response.StopReason = "tool_use"
+						state.Response.StopReason = "tool_use"
 					} else {
-						response.StopReason = "end_turn"
+						state.Response.StopReason = "end_turn"
 					}
 				case responses.ResponseStatusIncomplete:
-					response.StopReason = "max_tokens"
+					state.Response.StopReason = "max_tokens"
 				default:
-					response.StopReason = string(resp.Status)
+					state.Response.StopReason = string(resp.Status)
 				}
 
 			case "error":
 				errEvent := event.AsError()
-				log.LogError(c.name, fmt.Errorf("responses API error: %s", errEvent.Message))
-				ch <- message.StreamChunk{
-					Type:  message.ChunkTypeError,
-					Error: fmt.Errorf("responses API error: %s", errEvent.Message),
-				}
+				state.Fail(ch, fmt.Errorf("responses API error: %s", errEvent.Message))
 				return
 			}
 		}
 
-		// Log stream done
-		log.LogStreamDone(c.name, time.Since(streamStart), chunkCount)
-
 		if err := stream.Err(); err != nil {
-			log.LogError(c.name, err)
-			ch <- message.StreamChunk{
-				Type:  message.ChunkTypeError,
-				Error: err,
-			}
+			state.Fail(ch, err)
 			return
 		}
 
-		// Collect tool calls
-		for _, tc := range toolCalls {
-			response.ToolCalls = append(response.ToolCalls, *tc)
-		}
-
-		// Log response
-		log.LogResponseCtx(ctx, c.name, response)
-
-		ch <- message.StreamChunk{
-			Type:     message.ChunkTypeDone,
-			Response: &response,
-		}
+		state.AddToolCallsByKey(toolCalls)
+		state.Finish(ctx, ch)
 	}()
 
 	return ch
@@ -420,27 +383,20 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 		// Create streaming request
 		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 
+		state := streamutil.NewState(c.name)
+
 		// Track tool calls
 		toolCalls := make(map[int]*message.ToolCall)
-		var response message.CompletionResponse
-
-		// Stream timing and counting
-		streamStart := time.Now()
-		chunkCount := 0
 
 		// Read stream events
 		for stream.Next() {
 			chunk := stream.Current()
-			chunkCount++
+			state.Count()
 
 			for _, choice := range chunk.Choices {
 				// Handle text delta
 				if choice.Delta.Content != "" {
-					ch <- message.StreamChunk{
-						Type: message.ChunkTypeText,
-						Text: choice.Delta.Content,
-					}
-					response.Content += choice.Delta.Content
+					state.EmitText(ch, choice.Delta.Content)
 				}
 
 				// Handle tool calls
@@ -453,21 +409,13 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 							ID:   tc.ID,
 							Name: tc.Function.Name,
 						}
-						ch <- message.StreamChunk{
-							Type:     message.ChunkTypeToolStart,
-							ToolID:   tc.ID,
-							ToolName: tc.Function.Name,
-						}
+						state.EmitToolStart(ch, tc.ID, tc.Function.Name)
 					}
 
 					// Accumulate arguments
 					if tc.Function.Arguments != "" {
 						toolCalls[idx].Input += tc.Function.Arguments
-						ch <- message.StreamChunk{
-							Type:   message.ChunkTypeToolInput,
-							ToolID: toolCalls[idx].ID,
-							Text:   tc.Function.Arguments,
-						}
+						state.EmitToolInput(ch, toolCalls[idx].ID, tc.Function.Arguments)
 					}
 				}
 
@@ -475,50 +423,28 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 				if choice.FinishReason != "" {
 					switch choice.FinishReason {
 					case "stop":
-						response.StopReason = "end_turn"
+						state.Response.StopReason = "end_turn"
 					case "tool_calls":
-						response.StopReason = "tool_use"
+						state.Response.StopReason = "tool_use"
 					case "length":
-						response.StopReason = "max_tokens"
+						state.Response.StopReason = "max_tokens"
 					default:
-						response.StopReason = choice.FinishReason
+						state.Response.StopReason = choice.FinishReason
 					}
 				}
 			}
 
 			// Handle usage
-			if chunk.Usage.PromptTokens > 0 {
-				response.Usage.InputTokens = int(chunk.Usage.PromptTokens)
-			}
-			if chunk.Usage.CompletionTokens > 0 {
-				response.Usage.OutputTokens = int(chunk.Usage.CompletionTokens)
-			}
+			state.UpdateUsage(int(chunk.Usage.PromptTokens), int(chunk.Usage.CompletionTokens))
 		}
 
-		// Log stream done
-		log.LogStreamDone(c.name, time.Since(streamStart), chunkCount)
-
 		if err := stream.Err(); err != nil {
-			log.LogError(c.name, err)
-			ch <- message.StreamChunk{
-				Type:  message.ChunkTypeError,
-				Error: err,
-			}
+			state.Fail(ch, err)
 			return
 		}
 
-		// Collect tool calls
-		for _, tc := range toolCalls {
-			response.ToolCalls = append(response.ToolCalls, *tc)
-		}
-
-		// Log response
-		log.LogResponseCtx(ctx, c.name, response)
-
-		ch <- message.StreamChunk{
-			Type:     message.ChunkTypeDone,
-			Response: &response,
-		}
+		state.AddToolCallsSorted(toolCalls)
+		state.Finish(ctx, ch)
 	}()
 
 	return ch

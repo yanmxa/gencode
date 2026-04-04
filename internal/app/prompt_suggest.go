@@ -62,28 +62,24 @@ func (m *model) startPromptSuggestion() tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.promptSuggestion.cancel = cancel
 
-	// Convert only the last N messages to keep the API call lightweight
 	startIdx := 0
 	if len(m.conv.Messages) > maxSuggestionMessages {
 		startIdx = len(m.conv.Messages) - maxSuggestionMessages
 	}
 	msgs := m.conv.ConvertToProviderFrom(startIdx)
-
-	// Append prediction request
 	msgs = append(msgs, message.Message{
 		Role:    message.RoleUser,
 		Content: suggestionUserPrompt,
 	})
 
-	client := m.loop.Client
-
-	return func() tea.Msg {
-		resp, err := client.Complete(ctx, suggestionSystemPrompt, msgs, 60)
-		if err != nil {
-			return promptSuggestionMsg{err: err}
-		}
-		return promptSuggestionMsg{text: resp.Content}
-	}
+	return m.runtime.SuggestPromptCmd(promptSuggestionRequest{
+		Ctx:          ctx,
+		Client:       m.loop.Client,
+		Messages:     msgs,
+		SystemPrompt: suggestionSystemPrompt,
+		UserPrompt:   suggestionUserPrompt,
+		MaxTokens:    60,
+	})
 }
 
 // handlePromptSuggestion processes the suggestion result.

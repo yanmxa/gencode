@@ -96,7 +96,7 @@ func (m *model) handleQuestionResponse(msg appmode.QuestionResponseMsg) tea.Cmd 
 
 	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 	m.mode.PendingQuestion = nil
-	return apptool.ExecuteInteractive(tc, msg.Response, m.cwd)
+	return apptool.ExecuteInteractive(m.tool.Ctx, tc, msg.Response, m.cwd)
 }
 
 func (m *model) handlePlanRequest(msg appmode.PlanRequestMsg) tea.Cmd {
@@ -159,7 +159,7 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 		m.mode.Operation = appmode.Plan
 	}
 
-	return apptool.ExecuteInteractive(tc, msg.Response, m.cwd)
+	return apptool.ExecuteInteractive(m.tool.Ctx, tc, msg.Response, m.cwd)
 }
 
 // handlePlanClearAutoMode handles the "clear-auto" approve mode for plans.
@@ -167,8 +167,7 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
 	m.conv.Clear()
 	m.enableAutoAcceptMode()
-	m.tool.PendingCalls = nil
-	m.tool.CurrentIdx = 0
+	m.tool.Reset()
 
 	userMsg := fmt.Sprintf("Implement the following approved plan step by step. Start coding immediately — do NOT explore or investigate further.\n\n%s", planContent)
 	m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: userMsg})
@@ -195,6 +194,5 @@ func (m *model) handleEnterPlanResponse(msg appmode.EnterPlanResponseMsg) tea.Cm
 		}
 	}
 
-	return apptool.ExecuteInteractive(tc, msg.Response, m.cwd)
+	return apptool.ExecuteInteractive(m.tool.Ctx, tc, msg.Response, m.cwd)
 }
-

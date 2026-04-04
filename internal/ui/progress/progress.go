@@ -1,7 +1,6 @@
 package progress
 
 import (
-	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,35 +20,41 @@ type UpdateMsg struct {
 // CheckTickMsg triggers a check for new progress updates.
 type CheckTickMsg struct{}
 
-var (
-	ch   chan update
-	once sync.Once
-)
-
-func getChan() chan update {
-	once.Do(func() {
-		ch = make(chan update, 100)
-	})
-	return ch
+// Hub is an instance-scoped progress transport.
+// The package-level helpers below delegate to DefaultHub for backward compatibility.
+type Hub struct {
+	ch chan update
 }
 
-func Send(msg string) {
-	SendForAgent(0, msg)
+// DefaultHub preserves the historical package-global behavior.
+var DefaultHub = NewHub(100)
+
+// NewHub creates a new progress hub with the given buffer size.
+func NewHub(buffer int) *Hub {
+	if buffer <= 0 {
+		buffer = 100
+	}
+	return &Hub{ch: make(chan update, buffer)}
 }
 
-func SendForAgent(index int, msg string) {
-	c := getChan()
+// Send enqueues a progress message for the default agent index.
+func (h *Hub) Send(msg string) {
+	h.SendForAgent(0, msg)
+}
+
+// SendForAgent enqueues a progress message for a specific agent index.
+func (h *Hub) SendForAgent(index int, msg string) {
 	select {
-	case c <- update{Index: index, Message: msg}:
+	case h.ch <- update{Index: index, Message: msg}:
 	default:
 	}
 }
 
-func Check() tea.Cmd {
+// Check returns a tea.Cmd that polls this hub for the next update.
+func (h *Hub) Check() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
-		c := getChan()
 		select {
-		case u := <-c:
+		case u := <-h.ch:
 			return UpdateMsg{Index: u.Index, Message: u.Message}
 		default:
 			return CheckTickMsg{}
@@ -57,11 +62,11 @@ func Check() tea.Cmd {
 	})
 }
 
-func Drain(taskProgress map[int][]string) map[int][]string {
-	c := getChan()
+// Drain pulls all pending updates into taskProgress.
+func (h *Hub) Drain(taskProgress map[int][]string) map[int][]string {
 	for {
 		select {
-		case u := <-c:
+		case u := <-h.ch:
 			if taskProgress == nil {
 				taskProgress = make(map[int][]string)
 			}
@@ -73,4 +78,20 @@ func Drain(taskProgress map[int][]string) map[int][]string {
 			return taskProgress
 		}
 	}
+}
+
+func Send(msg string) {
+	DefaultHub.Send(msg)
+}
+
+func SendForAgent(index int, msg string) {
+	DefaultHub.SendForAgent(index, msg)
+}
+
+func Check() tea.Cmd {
+	return DefaultHub.Check()
+}
+
+func Drain(taskProgress map[int][]string) map[int][]string {
+	return DefaultHub.Drain(taskProgress)
 }

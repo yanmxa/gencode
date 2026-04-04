@@ -61,6 +61,7 @@ var ReadOnlyTools = map[string]bool{
 	"Grep":      true,
 	"WebFetch":  true,
 	"WebSearch": true,
+	"LSP":       true,
 }
 
 // IsReadOnlyTool returns true if the tool is read-only.
@@ -630,18 +631,18 @@ var sensitiveDirectories = []string{
 // confirmation because they can execute code on shell startup or contain
 // credentials.
 var sensitiveFiles = map[string]string{
-	".bashrc":       "shell startup script",
-	".bash_profile": "shell startup script",
-	".zshrc":        "shell startup script",
-	".zprofile":     "shell startup script",
-	".profile":      "shell startup script",
-	".zshenv":       "shell startup script",
-	".login":        "shell startup script",
-	".gitconfig":    "git configuration (hooks, aliases)",
-	".gitmodules":   "git submodule config",
-	".npmrc":        "npm config (may contain auth tokens)",
-	".pypirc":       "PyPI config (may contain auth tokens)",
-	".netrc":        "network credentials",
+	".bashrc":             "shell startup script",
+	".bash_profile":       "shell startup script",
+	".zshrc":              "shell startup script",
+	".zprofile":           "shell startup script",
+	".profile":            "shell startup script",
+	".zshenv":             "shell startup script",
+	".login":              "shell startup script",
+	".gitconfig":          "git configuration (hooks, aliases)",
+	".gitmodules":         "git submodule config",
+	".npmrc":              "npm config (may contain auth tokens)",
+	".pypirc":             "PyPI config (may contain auth tokens)",
+	".netrc":              "network credentials",
 	".docker/config.json": "Docker credentials",
 }
 
@@ -698,27 +699,27 @@ func IsSensitivePath(filePath string) string {
 // zshDangerousCommands are Zsh-specific builtins that can bypass restrictions
 // or access system resources directly.
 var zshDangerousCommands = []string{
-	"zmodload",  // Load kernel modules
-	"emulate",   // Change shell emulation mode
-	"sysopen",   // Direct file descriptor access
-	"sysread",   // Direct system read
-	"syswrite",  // Direct system write
-	"sysseek",   // Direct seek
-	"zpty",      // Pseudo-terminal control
-	"ztcp",      // Raw TCP connections
-	"zsocket",   // Unix socket access
-	"zf_rm",     // Bypass safe rm
-	"zf_mv",     // Bypass safe mv
-	"zf_ln",     // Bypass safe ln
-	"zf_chmod",  // Direct chmod
-	"zf_chown",  // Direct chown
+	"zmodload", // Load kernel modules
+	"emulate",  // Change shell emulation mode
+	"sysopen",  // Direct file descriptor access
+	"sysread",  // Direct system read
+	"syswrite", // Direct system write
+	"sysseek",  // Direct seek
+	"zpty",     // Pseudo-terminal control
+	"ztcp",     // Raw TCP connections
+	"zsocket",  // Unix socket access
+	"zf_rm",    // Bypass safe rm
+	"zf_mv",    // Bypass safe mv
+	"zf_ln",    // Bypass safe ln
+	"zf_chmod", // Direct chmod
+	"zf_chown", // Direct chown
 }
 
 // bashSecurityPatterns defines patterns that indicate potential shell injection
 // or obfuscation attempts.
 var bashSecurityPatterns = []struct {
-	check   func(string) bool
-	reason  string
+	check  func(string) bool
+	reason string
 }{
 	{hasCommandSubstitution, "command substitution detected"},
 	{hasObfuscatedFlags, "obfuscated flags detected"},

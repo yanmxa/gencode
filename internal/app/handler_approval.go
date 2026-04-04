@@ -13,8 +13,8 @@ import (
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/permission"
-	"github.com/yanmxa/gencode/internal/ui/progress"
 )
 
 // updateApproval routes permission request messages.
@@ -40,7 +40,7 @@ func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
 		args := m.buildPermissionArgs(msg.Request)
 		if m.settings != nil && m.settings.ResolveHookAllow(msg.Request.ToolName, args, m.mode.SessionPermissions) {
 			// Hook allow is valid, skip permission prompt
-			return apptool.ExecuteApproved(m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
+			return apptool.ExecuteApproved(m.tool.Ctx, m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
 		}
 		// Safety invariant denied the hook allow — fall through to normal approval modal
 	}
@@ -74,8 +74,7 @@ func (m *model) abortToolWithError(errorMsg string) tea.Cmd {
 			IsError:    true,
 		},
 	})
-	m.tool.PendingCalls = nil
-	m.tool.CurrentIdx = 0
+	m.tool.Reset()
 	m.conv.Stream.Active = false
 	return tea.Batch(m.commitMessages()...)
 }
@@ -254,15 +253,15 @@ func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
 		m.persistAllowRule(msg.Request)
 	}
 
-	if msg.Request != nil && msg.Request.ToolName == "Agent" {
+	if msg.Request != nil && msg.Request.ToolName == tool.ToolAgent {
 		m.output.TaskProgress = nil
 		return tea.Batch(
-			apptool.ExecuteApproved(m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd),
-			progress.Check(),
+			apptool.ExecuteApproved(m.tool.Ctx, m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd),
+			m.output.HandleProgressTick(true),
 		)
 	}
 
-	return apptool.ExecuteApproved(m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
+	return apptool.ExecuteApproved(m.tool.Ctx, m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
 }
 
 func (m *model) applyAllowAllPermission(toolName string) {
@@ -273,9 +272,9 @@ func (m *model) applyAllowAllPermission(toolName string) {
 		m.mode.SessionPermissions.AllowAllWrites = true
 	case "Bash":
 		m.mode.SessionPermissions.AllowAllBash = true
-	case "Skill":
+	case tool.ToolSkill:
 		m.mode.SessionPermissions.AllowAllSkills = true
-	case "Agent":
+	case tool.ToolAgent:
 		m.mode.SessionPermissions.AllowAllTasks = true
 	default:
 		m.mode.SessionPermissions.AllowTool(toolName)

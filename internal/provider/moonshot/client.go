@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/openai/openai-go/v3"
 
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider/streamutil"
 )
 
 // Client implements the LLMProvider interface for Moonshot AI using the OpenAI SDK.
@@ -164,18 +164,15 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		// Create streaming request
 		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 
+		state := streamutil.NewState(c.name)
+
 		// Track tool calls
 		toolCalls := make(map[int]*message.ToolCall)
-		var response message.CompletionResponse
-
-		// Stream timing and counting
-		streamStart := time.Now()
-		chunkCount := 0
 
 		// Read stream events
 		for stream.Next() {
 			chunk := stream.Current()
-			chunkCount++
+			state.Count()
 
 			for _, choice := range chunk.Choices {
 				// Handle reasoning_content (thinking) for Kimi thinking models
@@ -186,11 +183,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					if err := json.Unmarshal([]byte(rawJSON), &deltaMap); err == nil {
 						if rc, ok := deltaMap["reasoning_content"]; ok && rc != nil {
 							if content, ok := rc.(string); ok && content != "" {
-								ch <- message.StreamChunk{
-									Type: message.ChunkTypeThinking,
-									Text: content,
-								}
-								response.Thinking += content
+								state.EmitThinking(ch, content)
 							}
 						}
 					}
@@ -198,11 +191,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 				// Handle text delta
 				if choice.Delta.Content != "" {
-					ch <- message.StreamChunk{
-						Type: message.ChunkTypeText,
-						Text: choice.Delta.Content,
-					}
-					response.Content += choice.Delta.Content
+					state.EmitText(ch, choice.Delta.Content)
 				}
 
 				// Handle tool calls
@@ -214,20 +203,12 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 							ID:   tc.ID,
 							Name: tc.Function.Name,
 						}
-						ch <- message.StreamChunk{
-							Type:     message.ChunkTypeToolStart,
-							ToolID:   tc.ID,
-							ToolName: tc.Function.Name,
-						}
+						state.EmitToolStart(ch, tc.ID, tc.Function.Name)
 					}
 
 					if tc.Function.Arguments != "" {
 						toolCalls[idx].Input += tc.Function.Arguments
-						ch <- message.StreamChunk{
-							Type:   message.ChunkTypeToolInput,
-							ToolID: toolCalls[idx].ID,
-							Text:   tc.Function.Arguments,
-						}
+						state.EmitToolInput(ch, toolCalls[idx].ID, tc.Function.Arguments)
 					}
 				}
 
@@ -235,50 +216,28 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				if choice.FinishReason != "" {
 					switch choice.FinishReason {
 					case "stop":
-						response.StopReason = "end_turn"
+						state.Response.StopReason = "end_turn"
 					case "tool_calls":
-						response.StopReason = "tool_use"
+						state.Response.StopReason = "tool_use"
 					case "length":
-						response.StopReason = "max_tokens"
+						state.Response.StopReason = "max_tokens"
 					default:
-						response.StopReason = choice.FinishReason
+						state.Response.StopReason = choice.FinishReason
 					}
 				}
 			}
 
 			// Handle usage
-			if chunk.Usage.PromptTokens > 0 {
-				response.Usage.InputTokens = int(chunk.Usage.PromptTokens)
-			}
-			if chunk.Usage.CompletionTokens > 0 {
-				response.Usage.OutputTokens = int(chunk.Usage.CompletionTokens)
-			}
+			state.UpdateUsage(int(chunk.Usage.PromptTokens), int(chunk.Usage.CompletionTokens))
 		}
 
-		// Log stream done
-		log.LogStreamDone(c.name, time.Since(streamStart), chunkCount)
-
 		if err := stream.Err(); err != nil {
-			log.LogError(c.name, err)
-			ch <- message.StreamChunk{
-				Type:  message.ChunkTypeError,
-				Error: err,
-			}
+			state.Fail(ch, err)
 			return
 		}
 
-		// Collect tool calls
-		for _, tc := range toolCalls {
-			response.ToolCalls = append(response.ToolCalls, *tc)
-		}
-
-		// Log response
-		log.LogResponseCtx(ctx, c.name, response)
-
-		ch <- message.StreamChunk{
-			Type:     message.ChunkTypeDone,
-			Response: &response,
-		}
+		state.AddToolCallsSorted(toolCalls)
+		state.Finish(ctx, ch)
 	}()
 
 	return ch

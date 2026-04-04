@@ -44,12 +44,7 @@ func (m *model) handleProviderSelected(msg appprovider.SelectedMsg) tea.Cmd {
 		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: result})
 		if p, err := provider.GetProvider(ctx, msg.Provider, msg.AuthMethod); err == nil {
 			m.provider.LLM = p
-			modelID := ""
-			if m.provider.CurrentModel != nil {
-				modelID = m.provider.CurrentModel.ModelID
-			}
-			appprovider.ConfigureAgentTool(p, m.cwd, modelID, m.hookEngine, m.session.Store, m.session.CurrentID,
-				m.agentToolOpts()...)
+			m.reconfigureAgentTool()
 		}
 	}
 	return tea.Batch(m.commitMessages()...)
@@ -70,8 +65,7 @@ func (m *model) handleModelSelected(msg appprovider.ModelSelectedMsg) tea.Cmd {
 	ctx := context.Background()
 	if p, err := provider.GetProvider(ctx, provider.Provider(msg.ProviderName), msg.AuthMethod); err == nil {
 		m.provider.LLM = p
-		appprovider.ConfigureAgentTool(p, m.cwd, msg.ModelID, m.hookEngine, m.session.Store, m.session.CurrentID,
-			m.agentToolOpts()...)
+		m.reconfigureAgentTool()
 	}
 
 	// Show model name in status bar for 5 seconds

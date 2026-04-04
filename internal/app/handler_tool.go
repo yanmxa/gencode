@@ -78,7 +78,7 @@ func (m *model) handleToolResult(msg apptool.ExecResultMsg) tea.Cmd {
 	})
 	m.tool.CurrentIdx++
 	commitCmds := m.commitMessages()
-	nextTool := apptool.ProcessNext(m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd, m.settings, m.mode.SessionPermissions)
+	nextTool := apptool.ProcessNext(m.tool.Ctx, m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd, m.settings, m.mode.SessionPermissions)
 	return tea.Batch(append(commitCmds, nextTool)...)
 }
 
@@ -127,12 +127,14 @@ func (m *model) completeParallelExecution() tea.Cmd {
 func (m *model) handleStartToolExecution(toolCalls []message.ToolCall) tea.Cmd {
 	m.tool.PendingCalls = m.filterToolCallsWithHooks(toolCalls)
 	m.tool.CurrentIdx = 0
+	m.tool.Ctx, m.tool.Cancel = context.WithCancel(context.Background())
 
 	if len(m.tool.PendingCalls) == 0 {
+		m.tool.Reset()
 		return m.startContinueStream()
 	}
 
-	cmd := apptool.ExecuteParallel(m.tool.PendingCalls, m.cwd, m.settings, m.mode.SessionPermissions, m.mode.Enabled, m.tool.HookAllowed)
+	cmd := apptool.ExecuteParallel(m.tool.Ctx, m.output.ProgressHub, m.tool.PendingCalls, m.cwd, m.settings, m.mode.SessionPermissions, m.mode.Enabled, m.tool.HookAllowed)
 
 	if len(m.tool.PendingCalls) > 1 && m.canRunToolsInParallel(m.tool.PendingCalls) {
 		m.tool.Parallel = true
@@ -262,7 +264,7 @@ func (m *model) hasRunningSequentialTaskTool() bool {
 	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
 		return false
 	}
-	return m.tool.PendingCalls[m.tool.CurrentIdx].Name == "Agent"
+	return m.tool.PendingCalls[m.tool.CurrentIdx].Name == tool.ToolAgent
 }
 
 // installPlugin creates a tea.Cmd that installs the requested plugin.
