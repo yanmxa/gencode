@@ -28,6 +28,7 @@ type Engine struct {
 	transcriptPath string
 	permissionMode string
 	promptCallback PromptCallback // optional; nil = one-shot stdin mode
+	executedOnce   map[string]bool // tracks once:true commands that have already fired
 }
 
 // NewEngine creates a new hook execution engine.
@@ -38,6 +39,7 @@ func NewEngine(settings *config.Settings, sessionID, cwd, transcriptPath string)
 		cwd:            cwd,
 		transcriptPath: transcriptPath,
 		permissionMode: "default",
+		executedOnce:   make(map[string]bool),
 	}
 }
 
@@ -187,12 +189,23 @@ func (e *Engine) populateInputFields(input *HookInput, event EventType) {
 }
 
 // extractCommands filters and returns command-type hooks.
+// Commands marked Once:true are only included if they have not fired before.
 func (e *Engine) extractCommands(hooks []config.HookCmd) []config.HookCmd {
 	var cmds []config.HookCmd
 	for _, cmd := range hooks {
-		if cmd.Type == "" || cmd.Type == "command" {
-			cmds = append(cmds, cmd)
+		if cmd.Type != "" && cmd.Type != "command" {
+			continue
 		}
+		if cmd.Once {
+			key := cmd.Command
+			if e.executedOnce[key] {
+				log.Logger().Debug("skipping once:true hook that already fired",
+					zap.String("command", cmd.Command))
+				continue
+			}
+			e.executedOnce[key] = true
+		}
+		cmds = append(cmds, cmd)
 	}
 	return cmds
 }

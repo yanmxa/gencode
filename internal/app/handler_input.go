@@ -146,27 +146,13 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 			m.input.HistoryIdx = -1
 			return nil, true
 		}
-		if m.conv.Stream.Cancel != nil {
-			m.conv.Stream.Cancel()
-		}
-		if m.tool.Cancel != nil {
-			m.tool.Cancel()
-		}
-		m.fireSessionEnd("prompt_input_exit")
-		return tea.Quit, true
+		return m.quitWithCancel()
 
 	case tea.KeyCtrlD:
 		if m.input.Textarea.Value() != "" {
 			return nil, false // let textarea handle deletion
 		}
-		if m.conv.Stream.Cancel != nil {
-			m.conv.Stream.Cancel()
-		}
-		if m.tool.Cancel != nil {
-			m.tool.Cancel()
-		}
-		m.fireSessionEnd("prompt_input_exit")
-		return tea.Quit, true
+		return m.quitWithCancel()
 
 	case tea.KeyCtrlL:
 		_, cmd, _ := handleClearCommand(context.Background(), m, "")
@@ -250,30 +236,11 @@ func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 		return true, cmd
 	}
 
-	// Check selectors
-	if m.provider.Selector.IsActive() {
-		return true, m.provider.Selector.HandleKeypress(msg)
-	}
-	if m.tool.Selector.IsActive() {
-		return true, m.tool.Selector.HandleKeypress(msg)
-	}
-	if m.skill.Selector.IsActive() {
-		return true, m.skill.Selector.HandleKeypress(msg)
-	}
-	if m.agent.Selector.IsActive() {
-		return true, m.agent.Selector.HandleKeypress(msg)
-	}
-	if m.mcp.Selector.IsActive() {
-		return true, m.mcp.Selector.HandleKeypress(msg)
-	}
-	if m.plugin.Selector.IsActive() {
-		return true, m.plugin.Selector.HandleKeypress(msg)
-	}
-	if m.session.Selector.IsActive() {
-		return true, m.session.Selector.HandleKeypress(msg)
-	}
-	if m.memory.Selector.IsActive() {
-		return true, m.memory.Selector.HandleKeypress(msg)
+	// Check selectors via unified interface dispatch.
+	for _, sel := range m.selectorDispatchers() {
+		if sel.IsActive() {
+			return true, sel.HandleKeypress(msg)
+		}
 	}
 
 	return false, nil
@@ -411,11 +378,8 @@ func (m *model) handleSubmit() tea.Cmd {
 	}
 
 	if strings.ToLower(input) == "exit" {
-		if m.conv.Stream.Cancel != nil {
-			m.conv.Stream.Cancel()
-		}
-		m.fireSessionEnd("prompt_input_exit")
-		return tea.Quit
+		cmd, _ := m.quitWithCancel()
+		return cmd
 	}
 
 	// Execute UserPromptSubmit hook before processing
@@ -587,4 +551,38 @@ func (m *model) pasteImageFromClipboard() (tea.Cmd, bool) {
 	}
 	m.input.Images.Pending = append(m.input.Images.Pending, *imgData)
 	return nil, true
+}
+
+// quitWithCancel cancels any active stream and tool execution before quitting.
+// Use this as the single exit point for all quit paths (Ctrl+C, Ctrl+D, "exit").
+func (m *model) quitWithCancel() (tea.Cmd, bool) {
+	if m.conv.Stream.Cancel != nil {
+		m.conv.Stream.Cancel()
+	}
+	if m.tool.Cancel != nil {
+		m.tool.Cancel()
+	}
+	m.fireSessionEnd("prompt_input_exit")
+	return tea.Quit, true
+}
+
+// selectorDispatcher is implemented by all overlay selector components.
+type selectorDispatcher interface {
+	IsActive() bool
+	HandleKeypress(tea.KeyMsg) tea.Cmd
+}
+
+// selectorDispatchers returns all active selector components in priority order.
+// Used by delegateToActiveModal to dispatch keypresses without repetition.
+func (m *model) selectorDispatchers() []selectorDispatcher {
+	return []selectorDispatcher{
+		&m.provider.Selector,
+		&m.tool.Selector,
+		&m.skill.Selector,
+		&m.agent.Selector,
+		&m.mcp.Selector,
+		&m.plugin.Selector,
+		&m.session.Selector,
+		&m.memory.Selector,
+	}
 }

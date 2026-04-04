@@ -206,6 +206,71 @@ func TestBashTask_ConcurrentAccess(t *testing.T) {
 	task.Complete(0, nil)
 }
 
+func TestBashTask_StatusRunning(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "echo", "test")
+	cmd.Start()
+
+	task := NewBashTask("running-status-id", "echo test", "Running status task", cmd, ctx, cancel)
+
+	// Newly created task should be in Running state
+	if task.Status != StatusRunning {
+		t.Errorf("expected initial status %q, got %q", StatusRunning, task.Status)
+	}
+
+	// GetStatus should also show Running
+	info := task.GetStatus()
+	if info.Status != StatusRunning {
+		t.Errorf("GetStatus() expected %q, got %q", StatusRunning, info.Status)
+	}
+}
+
+func TestBashTask_AllStateTransitions(t *testing.T) {
+	// Running -> Completed
+	t.Run("Running to Completed", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "echo", "test")
+		cmd.Start()
+		task := NewBashTask("t1", "echo test", "test", cmd, ctx, cancel)
+		if task.Status != StatusRunning {
+			t.Errorf("want %s, got %s", StatusRunning, task.Status)
+		}
+		task.Complete(0, nil)
+		if task.Status != StatusCompleted {
+			t.Errorf("want %s, got %s", StatusCompleted, task.Status)
+		}
+	})
+
+	// Running -> Failed (non-zero exit)
+	t.Run("Running to Failed", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "echo", "test")
+		cmd.Start()
+		task := NewBashTask("t2", "exit 1", "test", cmd, ctx, cancel)
+		task.Complete(2, nil)
+		if task.Status != StatusFailed {
+			t.Errorf("want %s, got %s", StatusFailed, task.Status)
+		}
+	})
+
+	// Running -> Killed
+	t.Run("Running to Killed", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "echo", "test")
+		cmd.Start()
+		task := NewBashTask("t3", "sleep 100", "test", cmd, ctx, cancel)
+		task.MarkKilled()
+		if task.Status != StatusKilled {
+			t.Errorf("want %s, got %s", StatusKilled, task.Status)
+		}
+	})
+}
+
 func TestBashTask_ImplementsBackgroundTask(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

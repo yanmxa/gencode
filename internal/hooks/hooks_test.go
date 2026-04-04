@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/yanmxa/gencode/internal/config"
 )
@@ -297,4 +298,123 @@ func TestEnginePermissionMode(t *testing.T) {
 	engine.SetPermissionMode("auto")
 
 	// Just verify it doesn't panic - we'd need a hook that reads stdin to fully test
+}
+
+func TestHooks_Timeout_TerminatesHook(t *testing.T) {
+	// Create a script that uses exec to replace the shell process so
+	// exec.CommandContext can kill it directly (no orphaned children).
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "sleep.sh")
+	err := os.WriteFile(scriptPath, []byte(`#!/bin/bash
+exec sleep 30
+`), 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	settings := config.NewSettings()
+	// Timeout of 1 second — the sleep process will be killed after 1s
+	settings.Hooks["PreToolUse"] = []config.Hook{
+		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath, Timeout: 1}}},
+	}
+
+	engine := NewEngine(settings, "test-session", tmpDir, "")
+
+	start := time.Now()
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
+	elapsed := time.Since(start)
+
+	// Should terminate well before the sleep duration (30s)
+	if elapsed > 5*time.Second {
+		t.Errorf("expected hook to be killed within ~1s, took %v", elapsed)
+	}
+
+	// A timeout-killed process: engine should still continue (not exit 2)
+	if !outcome.ShouldContinue {
+		t.Error("expected main loop to continue after hook timeout")
+	}
+	if outcome.ShouldBlock {
+		t.Error("expected ShouldBlock=false after hook timeout (not exit 2)")
+	}
+}
+
+func TestHooks_Once_ExecutesExactlyOnce(t *testing.T) {
+	tmpDir := t.TempDir()
+	counterFile := filepath.Join(tmpDir, "count.txt")
+
+	// Script increments a counter file each time it runs
+	scriptPath := filepath.Join(tmpDir, "counter.sh")
+	err := os.WriteFile(scriptPath, []byte(`#!/bin/bash
+echo -n "x" >> `+counterFile+`
+`), 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	settings := config.NewSettings()
+	settings.Hooks["PreToolUse"] = []config.Hook{
+		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath, Once: true}}},
+	}
+
+	engine := NewEngine(settings, "test-session", tmpDir, "")
+
+	// Fire the hook twice
+	engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
+	engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
+
+	// Read the counter — should be exactly 1 character (fired once)
+	content, err := os.ReadFile(counterFile)
+	if err != nil {
+		t.Fatalf("counter file not created: %v", err)
+	}
+	if len(content) != 1 {
+		t.Errorf("expected hook to fire exactly once, but counter=%d (content=%q)", len(content), content)
+	}
+}
+
+func TestHooks_InputContains_SessionContext(t *testing.T) {
+	tmpDir := t.TempDir()
+	captureFile := filepath.Join(tmpDir, "input.json")
+
+	// Script captures stdin (the hook input JSON) to a file
+	scriptPath := filepath.Join(tmpDir, "capture.sh")
+	err := os.WriteFile(scriptPath, []byte(`#!/bin/bash
+cat > `+captureFile+`
+`), 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	settings := config.NewSettings()
+	settings.Hooks["PreToolUse"] = []config.Hook{
+		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	}
+
+	const sessionID = "test-session-xyz"
+	engine := NewEngine(settings, sessionID, tmpDir, "")
+
+	engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
+
+	// Read captured JSON
+	data, err := os.ReadFile(captureFile)
+	if err != nil {
+		t.Fatalf("capture file not created: %v", err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("captured input is not valid JSON: %v\nContent: %s", err, data)
+	}
+
+	// Must include session_id
+	sid, ok := parsed["session_id"].(string)
+	if !ok || sid != sessionID {
+		t.Errorf("expected session_id=%q in hook input, got %v", sessionID, parsed["session_id"])
+	}
+
+	// Must include cwd
+	cwd, ok := parsed["cwd"].(string)
+	if !ok || cwd != tmpDir {
+		t.Errorf("expected cwd=%q in hook input, got %v", tmpDir, parsed["cwd"])
+	}
 }

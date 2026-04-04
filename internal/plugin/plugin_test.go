@@ -255,6 +255,77 @@ func TestValidatePlugin(t *testing.T) {
 	}
 }
 
+func TestPlugin_Validate_InvalidManifest(t *testing.T) {
+	tests := []struct {
+		name        string
+		manifestFn  func(dir string) error
+		expectError bool
+		desc        string
+	}{
+		{
+			name: "missing_name",
+			manifestFn: func(dir string) error {
+				metaDir := filepath.Join(dir, ".gen-plugin")
+				os.MkdirAll(metaDir, 0o755)
+				m := Manifest{Version: "1.0.0"} // Name empty
+				data, _ := json.Marshal(m)
+				return os.WriteFile(filepath.Join(metaDir, "plugin.json"), data, 0o644)
+			},
+			expectError: true,
+			desc:        "manifest missing 'name' field should fail validation",
+		},
+		{
+			name: "no_manifest_file",
+			manifestFn: func(dir string) error {
+				// Don't create any manifest
+				return nil
+			},
+			expectError: true,
+			desc:        "missing manifest file should fail validation",
+		},
+		{
+			name: "invalid_semver",
+			manifestFn: func(dir string) error {
+				metaDir := filepath.Join(dir, ".gen-plugin")
+				os.MkdirAll(metaDir, 0o755)
+				m := Manifest{Name: "my-plugin", Version: "not-semver"}
+				data, _ := json.Marshal(m)
+				return os.WriteFile(filepath.Join(metaDir, "plugin.json"), data, 0o644)
+			},
+			expectError: true,
+			desc:        "invalid semver version should fail validation",
+		},
+		{
+			name: "valid_manifest",
+			manifestFn: func(dir string) error {
+				metaDir := filepath.Join(dir, ".gen-plugin")
+				os.MkdirAll(metaDir, 0o755)
+				m := Manifest{Name: "valid-plugin", Version: "1.2.3"}
+				data, _ := json.Marshal(m)
+				return os.WriteFile(filepath.Join(metaDir, "plugin.json"), data, 0o644)
+			},
+			expectError: false,
+			desc:        "valid manifest should pass validation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			if err := tt.manifestFn(tmpDir); err != nil {
+				t.Fatalf("setup error: %v", err)
+			}
+
+			err := ValidatePlugin(tmpDir)
+			if tt.expectError && err == nil {
+				t.Errorf("%s: expected error, got nil", tt.desc)
+			} else if !tt.expectError && err != nil {
+				t.Errorf("%s: unexpected error: %v", tt.desc, err)
+			}
+		})
+	}
+}
+
 func TestLoadFromPath(t *testing.T) {
 	// Create a test plugin
 	tmpDir := t.TempDir()

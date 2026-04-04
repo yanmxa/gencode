@@ -2,6 +2,7 @@ package session_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -495,4 +496,126 @@ func TestSession_MemoryEndToEnd(t *testing.T) {
 	// 5. Verify the memory file exists on disk at the expected path
 	dir := filepath.Join(t.TempDir(), "sessions") // matches newTestStore
 	_ = dir // path used by store internally
+}
+
+// TestSession_JSONL_Integrity verifies that every line written to a JSONL
+// session file is valid JSON. This guards against serialisation regressions
+// where a malformed entry silently breaks session loading.
+func TestSession_JSONL_Integrity(t *testing.T) {
+	dir := t.TempDir()
+	store := session.NewStoreWithDir(dir)
+
+	sess := &session.Session{
+		Metadata: session.SessionMetadata{
+			ID:       "jsonl-integrity-test",
+			Title:    "JSONL Integrity Test",
+			Provider: "fake",
+			Model:    "fake-model",
+			Cwd:      "/tmp/project",
+		},
+		Entries: []session.Entry{
+			makeUserEntry("u1", "first message"),
+			makeAssistantEntry("a1", "first response"),
+			makeUserEntry("u2", "second message"),
+			makeAssistantEntry("a2", "second response with special chars: <>&\"'"),
+		},
+	}
+
+	if err := store.Save(sess); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+
+	// Read the raw JSONL file and verify every non-empty line is valid JSON.
+	filePath := filepath.Join(dir, sess.Metadata.ID+".jsonl")
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("ReadFile() error: %v", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	validLines := 0
+	for i, line := range lines {
+		if line == "" {
+			continue // trailing newline is expected
+		}
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+			t.Errorf("line %d is not valid JSON: %v\ncontent: %s", i+1, err, line)
+		} else {
+			validLines++
+		}
+	}
+
+	// Expect at least entries + 1 metadata line
+	if validLines < len(sess.Entries)+1 {
+		t.Errorf("expected at least %d valid JSON lines, got %d", len(sess.Entries)+1, validLines)
+	}
+}
+
+// TestSession_ContinueRestoresMessages verifies that loading a session after
+// multiple Save calls returns all messages in the original order. This
+// simulates the "-c" (--continue) flag behaviour where the previous
+// conversation must be fully replayed.
+func TestSession_ContinueRestoresMessages(t *testing.T) {
+	store := newTestStore(t)
+
+	// Build a multi-turn conversation.
+	turns := []struct{ role, text string }{
+		{"user", "hello"},
+		{"assistant", "hi there"},
+		{"user", "what is 2+2?"},
+		{"assistant", "4"},
+		{"user", "thanks"},
+	}
+
+	var entries []session.Entry
+	for i, turn := range turns {
+		uuid := fmt.Sprintf("id-%d", i)
+		switch turn.role {
+		case "user":
+			entries = append(entries, makeUserEntry(uuid, turn.text))
+		case "assistant":
+			entries = append(entries, makeAssistantEntry(uuid, turn.text))
+		}
+	}
+
+	sess := &session.Session{
+		Metadata: session.SessionMetadata{
+			ID:       "continue-test",
+			Title:    "Continue Test",
+			Provider: "fake",
+			Model:    "fake-model",
+			Cwd:      "/tmp/project",
+		},
+		Entries: entries,
+	}
+
+	if err := store.Save(sess); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+
+	// Simulate "-c": load the session and verify messages are in order.
+	loaded, err := store.Load("continue-test")
+	if err != nil {
+		t.Fatalf("Load() (continue) error: %v", err)
+	}
+
+	if len(loaded.Entries) != len(turns) {
+		t.Fatalf("expected %d entries after continue, got %d", len(turns), len(loaded.Entries))
+	}
+
+	for i, want := range turns {
+		got := getEntryText(loaded.Entries[i])
+		if got != want.text {
+			t.Errorf("entry[%d]: want %q, got %q", i, want.text, got)
+		}
+
+		wantType := session.EntryUser
+		if want.role == "assistant" {
+			wantType = session.EntryAssistant
+		}
+		if loaded.Entries[i].Type != wantType {
+			t.Errorf("entry[%d]: want type %q, got %q", i, wantType, loaded.Entries[i].Type)
+		}
+	}
 }

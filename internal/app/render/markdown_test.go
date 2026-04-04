@@ -396,6 +396,43 @@ func TestRenderInlineMarkdown_Link(t *testing.T) {
 	}
 }
 
+func TestRender_Markdown_NestedList(t *testing.T) {
+	r := NewMDRenderer(80)
+
+	input := "- parent one\n  - child a\n  - child b\n- parent two"
+	out, err := r.Render(input)
+	if err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	plain := stripANSI(out)
+
+	if !strings.Contains(plain, "parent one") {
+		t.Errorf("output should contain 'parent one', got:\n%s", plain)
+	}
+	if !strings.Contains(plain, "parent two") {
+		t.Errorf("output should contain 'parent two', got:\n%s", plain)
+	}
+	if !strings.Contains(plain, "child a") {
+		t.Errorf("output should contain nested item 'child a', got:\n%s", plain)
+	}
+	if !strings.Contains(plain, "child b") {
+		t.Errorf("output should contain nested item 'child b', got:\n%s", plain)
+	}
+}
+
+func TestRender_EmptyMessage_NoOutput(t *testing.T) {
+	r := NewMDRenderer(80)
+
+	out, err := r.Render("")
+	if err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	plain := strings.TrimSpace(stripANSI(out))
+	if plain != "" {
+		t.Errorf("expected empty output for empty input, got %q", plain)
+	}
+}
+
 func TestMDRenderer_NoLeadingBlankLine(t *testing.T) {
 	r := NewMDRenderer(80)
 	tests := []struct {

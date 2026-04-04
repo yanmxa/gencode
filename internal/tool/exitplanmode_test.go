@@ -101,3 +101,42 @@ func TestExitPlanMode_Rejected(t *testing.T) {
 		t.Errorf("expected subtitle 'Rejected', got %q", result.Metadata.Subtitle)
 	}
 }
+
+func TestPlanMode_BlocksWriteTools(t *testing.T) {
+	// In plan mode, Write and Edit are NOT in the tool schema.
+	set := &Set{PlanMode: true}
+	tools := set.Tools()
+
+	writeBlocked := []string{"Write", "Edit", "Bash"}
+	for _, name := range writeBlocked {
+		for _, t := range tools {
+			if t.Name == name {
+				te := t // avoid name shadowing
+				_ = te
+				// found — this is the failure
+				goto found
+			}
+		}
+		continue
+	found:
+		t.Errorf("plan mode should not expose %q tool, but it was found in tool set", name)
+	}
+}
+
+func TestPlanMode_AllowsReadTools(t *testing.T) {
+	// In plan mode, Read/Glob/Grep and ExitPlanMode must be available.
+	set := &Set{PlanMode: true}
+	tools := set.Tools()
+
+	toolIndex := make(map[string]bool, len(tools))
+	for _, t := range tools {
+		toolIndex[t.Name] = true
+	}
+
+	required := []string{"Read", "Glob", "Grep", ToolExitPlanMode}
+	for _, name := range required {
+		if !toolIndex[name] {
+			t.Errorf("plan mode should expose %q tool, but it was not found in tool set", name)
+		}
+	}
+}
