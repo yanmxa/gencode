@@ -131,6 +131,14 @@ func (m *model) handleStreamError(err error) tea.Cmd {
 	m.conv.AppendErrorToLast(err)
 	m.conv.Stream.Stop()
 	m.provider.ThinkingOverride = provider.ThinkingOff
+
+	if m.hookEngine != nil {
+		m.hookEngine.ExecuteAsync(hooks.StopFailure, hooks.HookInput{
+			LastAssistantMessage: m.lastAssistantContent(),
+			Error:                err.Error(),
+		})
+	}
+
 	return tea.Batch(m.commitMessages()...)
 }
 

@@ -73,12 +73,12 @@ func TestGetMatchValue(t *testing.T) {
 func TestEventSupportsMatcher(t *testing.T) {
 	supported := []EventType{
 		PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest,
-		SessionStart, SessionEnd, Notification,
+		PermissionDenied, SessionStart, SessionEnd, Notification,
 		SubagentStart, SubagentStop, PreCompact,
 	}
 
 	notSupported := []EventType{
-		UserPromptSubmit, Stop,
+		UserPromptSubmit, Stop, StopFailure,
 	}
 
 	for _, event := range supported {

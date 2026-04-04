@@ -19,7 +19,7 @@ func MatchesEvent(matcher, matchValue string) bool {
 // GetMatchValue extracts the value to match against based on event type.
 func GetMatchValue(event EventType, input HookInput) string {
 	switch event {
-	case PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest:
+	case PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, PermissionDenied:
 		return input.ToolName
 	case SessionStart:
 		return input.Source
@@ -38,5 +38,10 @@ func GetMatchValue(event EventType, input HookInput) string {
 
 // EventSupportsMatcher returns true if the event type supports matcher filtering.
 func EventSupportsMatcher(event EventType) bool {
-	return event != UserPromptSubmit && event != Stop
+	switch event {
+	case UserPromptSubmit, Stop, StopFailure:
+		return false
+	default:
+		return true
+	}
 }

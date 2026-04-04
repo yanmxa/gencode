@@ -247,6 +247,12 @@ func buildRuleString(rule hooks.PermissionRule) string {
 
 func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
 	if !msg.Approved {
+		if m.hookEngine != nil && msg.Request != nil {
+			m.hookEngine.ExecuteAsync(hooks.PermissionDenied, hooks.HookInput{
+				ToolName:  msg.Request.ToolName,
+				ToolInput: m.buildPermissionArgs(msg.Request),
+			})
+		}
 		return m.abortToolWithError("User denied permission")
 	}
 

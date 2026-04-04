@@ -17,6 +17,8 @@ const (
 	SubagentStart      EventType = "SubagentStart"      // matcher: agent_type
 	SubagentStop       EventType = "SubagentStop"       // matcher: agent_type
 	Stop               EventType = "Stop"               // no matcher
+	StopFailure        EventType = "StopFailure"        // no matcher; fires when assistant stops due to an error
+	PermissionDenied   EventType = "PermissionDenied"   // matcher: tool name; fires when tool execution is denied
 	PreCompact         EventType = "PreCompact"         // matcher: manual, auto
 	PostCompact        EventType = "PostCompact"        // matcher: manual, auto; fire-and-forget after compact succeeds
 	SessionEnd         EventType = "SessionEnd"         // matcher: reason
