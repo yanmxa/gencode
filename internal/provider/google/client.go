@@ -9,13 +9,13 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"google.golang.org/genai"
 
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider/streamutil"
 )
 
 // Client implements the LLMProvider interface using the Google GenAI SDK
@@ -171,23 +171,14 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		// Log request
 		log.LogRequestCtx(ctx, c.name, opts.Model, opts)
 
-		// Create streaming request
-		var response message.CompletionResponse
-
-		// Stream timing and counting
-		streamStart := time.Now()
-		chunkCount := 0
+		state := streamutil.NewState(c.name)
 
 		for result, err := range c.client.Models.GenerateContentStream(ctx, opts.Model, contents, config) {
 			if err != nil {
-				log.LogError(c.name, err)
-				ch <- message.StreamChunk{
-					Type:  message.ChunkTypeError,
-					Error: err,
-				}
+				state.Fail(ch, err)
 				return
 			}
-			chunkCount++
+			state.Count()
 
 			// Process candidates
 			for _, candidate := range result.Candidates {
@@ -199,17 +190,9 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					// Handle text (distinguish thinking from regular text)
 					if part.Text != "" {
 						if part.Thought {
-							ch <- message.StreamChunk{
-								Type: message.ChunkTypeThinking,
-								Text: part.Text,
-							}
-							response.Thinking += part.Text
+							state.EmitThinking(ch, part.Text)
 						} else {
-							ch <- message.StreamChunk{
-								Type: message.ChunkTypeText,
-								Text: part.Text,
-							}
-							response.Content += part.Text
+							state.EmitText(ch, part.Text)
 						}
 					}
 
@@ -218,19 +201,10 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 						fc := part.FunctionCall
 						argsJSON, _ := json.Marshal(fc.Args)
 
-						ch <- message.StreamChunk{
-							Type:     message.ChunkTypeToolStart,
-							ToolID:   fc.ID,
-							ToolName: fc.Name,
-						}
+						state.EmitToolStart(ch, fc.ID, fc.Name)
+						state.EmitToolInput(ch, fc.ID, string(argsJSON))
 
-						ch <- message.StreamChunk{
-							Type:   message.ChunkTypeToolInput,
-							ToolID: fc.ID,
-							Text:   string(argsJSON),
-						}
-
-						response.ToolCalls = append(response.ToolCalls, message.ToolCall{
+						state.Response.ToolCalls = append(state.Response.ToolCalls, message.ToolCall{
 							ID:               fc.ID,
 							Name:             fc.Name,
 							Input:            string(argsJSON),
@@ -243,37 +217,23 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				if candidate.FinishReason != "" {
 					switch candidate.FinishReason {
 					case "STOP":
-						response.StopReason = "end_turn"
+						state.Response.StopReason = "end_turn"
 					case "MAX_TOKENS":
-						response.StopReason = "max_tokens"
+						state.Response.StopReason = "max_tokens"
 					default:
-						response.StopReason = string(candidate.FinishReason)
+						state.Response.StopReason = string(candidate.FinishReason)
 					}
 				}
 			}
 
 			// Handle usage
 			if result.UsageMetadata != nil {
-				response.Usage.InputTokens = int(result.UsageMetadata.PromptTokenCount)
-				response.Usage.OutputTokens = int(result.UsageMetadata.CandidatesTokenCount)
+				state.UpdateUsage(int(result.UsageMetadata.PromptTokenCount), int(result.UsageMetadata.CandidatesTokenCount))
 			}
 		}
 
-		// Log stream done
-		log.LogStreamDone(c.name, time.Since(streamStart), chunkCount)
-
-		// Check for tool calls stop reason
-		if len(response.ToolCalls) > 0 && response.StopReason == "" {
-			response.StopReason = "tool_use"
-		}
-
-		// Log response
-		log.LogResponseCtx(ctx, c.name, response)
-
-		ch <- message.StreamChunk{
-			Type:     message.ChunkTypeDone,
-			Response: &response,
-		}
+		state.EnsureToolUseStopReason()
+		state.Finish(ctx, ch)
 	}()
 
 	return ch

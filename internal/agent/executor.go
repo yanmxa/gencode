@@ -25,17 +25,26 @@ import (
 
 // Executor runs agent LLM loops
 type Executor struct {
-	provider             provider.LLMProvider
-	cwd                  string
-	parentModelID        string // Parent conversation's model ID (used when inheriting)
-	hooks                *hooks.Engine
-	sessionStore         *session.Store // Optional: when set, subagent sessions are persisted
-	parentSessionID      string         // Parent session ID for linking subagent sessions
-	userInstructions     string         // ~/.gen/GEN.md + rules
-	projectInstructions  string         // .gen/GEN.md + rules + local
-	isGit                bool           // whether cwd is a git repository
-	mcpGetter            func() []provider.Tool // MCP tool schemas from parent
-	mcpRegistry          *mcp.Registry          // MCP registry for tool execution
+	provider            provider.LLMProvider
+	cwd                 string
+	parentModelID       string // Parent conversation's model ID (used when inheriting)
+	hooks               *hooks.Engine
+	sessionStore        *session.Store         // Optional: when set, subagent sessions are persisted
+	parentSessionID     string                 // Parent session ID for linking subagent sessions
+	userInstructions    string                 // ~/.gen/GEN.md + rules
+	projectInstructions string                 // .gen/GEN.md + rules + local
+	isGit               bool                   // whether cwd is a git repository
+	mcpGetter           func() []provider.Tool // MCP tool schemas from parent
+	mcpRegistry         *mcp.Registry          // MCP registry for tool execution
+}
+
+type runConfig struct {
+	config      *AgentConfig
+	modelID     string
+	maxTurns    int
+	displayName string
+	agentPrompt string
+	permMode    PermissionMode
 }
 
 // NewExecutor creates a new agent executor
@@ -82,163 +91,64 @@ func (e *Executor) GetParentModelID() string {
 func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, error) {
 	start := time.Now()
 
-	// Validate unsupported features early
-	if req.TeamName != "" {
-		return nil, fmt.Errorf("team spawning is not yet supported (team: %s)", req.TeamName)
+	if err := e.validateRequest(req); err != nil {
+		return nil, err
 	}
 
-	// Set up git worktree isolation if requested
-	agentCwd := e.cwd
-	if req.Isolation == "worktree" {
-		result, cleanup, err := worktree.Create(e.cwd, "")
-		if err != nil {
-			return nil, fmt.Errorf("failed to create worktree: %w", err)
-		}
-		defer cleanup()
-		agentCwd = result.Path
+	agentCwd, cleanupWorkspace, err := e.prepareWorkspace(req)
+	if err != nil {
+		return nil, err
 	}
+	defer cleanupWorkspace()
 
-	// Get agent configuration
-	config, ok := DefaultRegistry.Get(req.Agent)
-	if !ok {
-		return nil, fmt.Errorf("unknown agent type: %s", req.Agent)
-	}
-
-	// Determine model to use (priority: request > parent > fallback)
-	modelID := e.resolveModelID(req.Model)
-
-	// Determine max turns
-	maxTurns := config.MaxTurns
-	if req.MaxTurns > 0 {
-		maxTurns = req.MaxTurns
-	}
-	if maxTurns <= 0 {
-		maxTurns = DefaultMaxTurns
-	}
-
-	// Build the agent-specific system prompt as Extra
-	agentPrompt := e.buildSystemPrompt(config, req)
-
-	// Use custom name if provided, otherwise use config name
-	displayName := config.Name
-	if req.Name != "" {
-		displayName = req.Name
+	rc, err := e.prepareRunConfig(req)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create turn tracker for hierarchical DEV_DIR logging
-	tracker := log.NewAgentTurnTracker(displayName, nil)
+	tracker := log.NewAgentTurnTracker(rc.displayName, nil)
 	ctx = log.WithAgentTracker(ctx, tracker)
 
 	log.Logger().Info("Starting agent execution",
-		zap.String("agent", displayName),
+		zap.String("agent", rc.displayName),
 		zap.String("description", req.Description),
-		zap.Int("maxTurns", maxTurns),
+		zap.Int("maxTurns", rc.maxTurns),
 	)
 
 	// Generate agent ID for hook correlation
 	agentHookID := fmt.Sprintf("a%016x", time.Now().UnixNano())
 
 	// Fire SubagentStart hook
-	if e.hooks != nil {
-		e.hooks.ExecuteAsync(hooks.SubagentStart, hooks.HookInput{
-			AgentType: req.Agent,
-			AgentID:   agentHookID,
-		})
-	}
+	e.fireSubagentStart(req, agentHookID)
 
-	// Build core.Loop
-	permMode := config.PermissionMode
-	// Per-invocation mode override (highest priority)
-	if req.Mode != "" {
-		permMode = PermissionMode(req.Mode)
+	loop, cleanupLoop, err := e.buildLoop(ctx, req, rc, agentCwd)
+	if err != nil {
+		return nil, err
 	}
+	defer cleanupLoop()
 
-	// Connect agent-specific MCP servers if configured
-	if len(config.McpServers) > 0 && e.mcpRegistry != nil {
-		cleanup, errs := mcp.ConnectServers(ctx, e.mcpRegistry, config.McpServers)
-		defer cleanup()
-		for _, err := range errs {
-			log.Logger().Warn("Agent MCP server connection failed", zap.Error(err))
-		}
-	}
-
-	c := &client.Client{Provider: e.provider, Model: modelID} // MaxTokens=0 → resolved dynamically from provider
-	loop := &core.Loop{
-		System: &system.System{
-			Client:              c,
-			Cwd:                 agentCwd,
-			IsGit:               e.isGit,
-			PlanMode:            permMode == PermissionPlan,
-			UserInstructions:    e.userInstructions,
-			ProjectInstructions: e.projectInstructions,
-			Extra:               []string{agentPrompt},
-		},
-		Client:     c,
-		Tool:       &tool.Set{Allow: []string(config.Tools), MCP: e.mcpGetter, IsAgent: true},
-		Permission: agentPermission(permMode),
-		Hooks:      e.hooks,
-	}
-
-	// Set up MCP caller for tool execution if registry is available
-	if e.mcpRegistry != nil {
-		loop.MCP = mcp.NewCaller(e.mcpRegistry)
-	}
-
-	// Resume from previous invocation or start fresh
-	if req.ResumeID != "" {
-		if err := e.resumeFromSession(loop, req.ResumeID, req.Prompt); err != nil {
-			return nil, fmt.Errorf("failed to resume agent: %w", err)
-		}
-	} else {
-		loop.AddUser(req.Prompt, nil)
+	if err := e.loadConversation(loop, req); err != nil {
+		return nil, err
 	}
 
 	// Accumulate all progress messages for the result
 	allProgress := make([]string, 0, 16)
+	onToolStart := e.buildOnToolStart(req, &allProgress)
 
-	// Create progress callback
-	onToolStart := func(tc message.ToolCall) bool {
-		params, _ := message.ParseToolInput(tc.Input)
-		progressMsg := formatToolProgress(tc.Name, params)
-		allProgress = append(allProgress, progressMsg)
-		if req.OnProgress != nil {
-			req.OnProgress(progressMsg)
-		}
-		return true
-	}
-
-	result, err := loop.Run(ctx, core.RunOptions{MaxTurns: maxTurns, OnToolStart: onToolStart})
+	result, err := loop.Run(ctx, core.RunOptions{MaxTurns: rc.maxTurns, OnToolStart: onToolStart})
 	if err != nil {
-		if result != nil && result.StopReason == core.StopCancelled {
-			return &AgentResult{
-				AgentName:  config.Name,
-				Model:      modelID,
-				Success:    false,
-				Content:    result.Content,
-				Messages:   result.Messages,
-				TurnCount:  result.Turns,
-				ToolUses:   result.ToolUses,
-				TokenUsage: result.Tokens,
-				Duration:   time.Since(start),
-				Error:      "agent cancelled",
-			}, err
+		cancelled := e.cancelledRunResult(result, rc, start)
+		if cancelled != nil {
+			return cancelled, err
 		}
 		return nil, fmt.Errorf("LLM completion failed: %w", err)
 	}
 
-	success := result.StopReason == core.StopEndTurn
-	errMsg := ""
-	switch result.StopReason {
-	case core.StopMaxTurns:
-		errMsg = fmt.Sprintf("reached maximum turns (%d)", maxTurns)
-	case core.StopMaxOutputRecoveryExhausted:
-		errMsg = "output was repeatedly truncated and recovery was exhausted"
-	case core.StopHook:
-		errMsg = result.StopDetail
-	}
+	success, errMsg := interpretStopReason(result, rc.maxTurns)
 
 	logFields := []zap.Field{
-		zap.String("agent", displayName),
+		zap.String("agent", rc.displayName),
 		zap.String("stopReason", result.StopReason),
 		zap.Int("turns", result.Turns),
 		zap.Int("inputTokens", result.Tokens.InputTokens),
@@ -251,27 +161,15 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 	}
 
 	// Persist subagent session if store is configured
-	agentSessionID, agentTranscriptPath := e.persistSubagentSession(displayName, modelID, req.Description, result.Messages)
+	agentSessionID, agentTranscriptPath := e.persistSubagentSession(rc.displayName, rc.modelID, req.Description, result.Messages)
 
 	// Fire SubagentStop hook (after session persist so agentSessionID is available)
-	if e.hooks != nil {
-		stopAgentID := agentHookID
-		if agentSessionID != "" {
-			stopAgentID = agentSessionID
-		}
-		e.hooks.ExecuteAsync(hooks.SubagentStop, hooks.HookInput{
-			AgentType:            req.Agent,
-			AgentID:              stopAgentID,
-			AgentTranscriptPath:  agentTranscriptPath,
-			LastAssistantMessage: result.Content,
-			StopHookActive:       e.hooks.HasHooks(hooks.Stop),
-		})
-	}
+	e.fireSubagentStop(req, agentHookID, agentSessionID, agentTranscriptPath, result.Content)
 
-	agentResult := &AgentResult{
+	return &AgentResult{
 		AgentID:    agentSessionID,
-		AgentName:  displayName,
-		Model:      modelID,
+		AgentName:  rc.displayName,
+		Model:      rc.modelID,
 		Success:    success,
 		Content:    result.Content,
 		Messages:   result.Messages,
@@ -281,9 +179,7 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 		Duration:   time.Since(start),
 		Progress:   allProgress,
 		Error:      errMsg,
-	}
-
-	return agentResult, nil
+	}, nil
 }
 
 // RunBackground executes an agent in the background and returns the task
@@ -347,6 +243,180 @@ func (e *Executor) RunBackground(req AgentRequest) (*task.AgentTask, error) {
 	}()
 
 	return agentTask, nil
+}
+
+func (e *Executor) validateRequest(req AgentRequest) error {
+	if req.TeamName != "" {
+		return fmt.Errorf("team spawning is not yet supported (team: %s)", req.TeamName)
+	}
+	return nil
+}
+
+func (e *Executor) prepareWorkspace(req AgentRequest) (string, func(), error) {
+	if req.Isolation != "worktree" {
+		return e.cwd, func() {}, nil
+	}
+
+	result, cleanup, err := worktree.Create(e.cwd, "")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create worktree: %w", err)
+	}
+	return result.Path, cleanup, nil
+}
+
+func (e *Executor) prepareRunConfig(req AgentRequest) (*runConfig, error) {
+	config, ok := DefaultRegistry.Get(req.Agent)
+	if !ok {
+		return nil, fmt.Errorf("unknown agent type: %s", req.Agent)
+	}
+
+	displayName := config.Name
+	if req.Name != "" {
+		displayName = req.Name
+	}
+
+	permMode := config.PermissionMode
+	if req.Mode != "" {
+		permMode = PermissionMode(req.Mode)
+	}
+
+	maxTurns := config.MaxTurns
+	if req.MaxTurns > 0 {
+		maxTurns = req.MaxTurns
+	}
+	if maxTurns <= 0 {
+		maxTurns = DefaultMaxTurns
+	}
+
+	return &runConfig{
+		config:      config,
+		modelID:     e.resolveModelID(req.Model),
+		maxTurns:    maxTurns,
+		displayName: displayName,
+		agentPrompt: e.buildSystemPrompt(config, req),
+		permMode:    permMode,
+	}, nil
+}
+
+func (e *Executor) fireSubagentStart(req AgentRequest, agentHookID string) {
+	if e.hooks == nil {
+		return
+	}
+	e.hooks.ExecuteAsync(hooks.SubagentStart, hooks.HookInput{
+		AgentType: req.Agent,
+		AgentID:   agentHookID,
+	})
+}
+
+func (e *Executor) buildLoop(ctx context.Context, req AgentRequest, rc *runConfig, agentCwd string) (*core.Loop, func(), error) {
+	cleanup := func() {}
+
+	if len(rc.config.McpServers) > 0 && e.mcpRegistry != nil {
+		mcpCleanup, errs := mcp.ConnectServers(ctx, e.mcpRegistry, rc.config.McpServers)
+		if mcpCleanup != nil {
+			cleanup = mcpCleanup
+		}
+		for _, err := range errs {
+			log.Logger().Warn("Agent MCP server connection failed", zap.Error(err))
+		}
+	}
+
+	c := &client.Client{Provider: e.provider, Model: rc.modelID}
+	loop := &core.Loop{
+		System: &system.System{
+			Client:              c,
+			Cwd:                 agentCwd,
+			IsGit:               e.isGit,
+			PlanMode:            rc.permMode == PermissionPlan,
+			UserInstructions:    e.userInstructions,
+			ProjectInstructions: e.projectInstructions,
+			Extra:               []string{rc.agentPrompt},
+		},
+		Client:     c,
+		Tool:       &tool.Set{Allow: []string(rc.config.Tools), MCP: e.mcpGetter, IsAgent: true},
+		Permission: agentPermission(rc.permMode),
+		Hooks:      e.hooks,
+	}
+
+	if e.mcpRegistry != nil {
+		loop.MCP = mcp.NewCaller(e.mcpRegistry)
+	}
+
+	return loop, cleanup, nil
+}
+
+func (e *Executor) loadConversation(loop *core.Loop, req AgentRequest) error {
+	if req.ResumeID == "" {
+		loop.AddUser(req.Prompt, nil)
+		return nil
+	}
+
+	if err := e.resumeFromSession(loop, req.ResumeID, req.Prompt); err != nil {
+		return fmt.Errorf("failed to resume agent: %w", err)
+	}
+	return nil
+}
+
+func (e *Executor) buildOnToolStart(req AgentRequest, allProgress *[]string) func(tc message.ToolCall) bool {
+	return func(tc message.ToolCall) bool {
+		params, _ := message.ParseToolInput(tc.Input)
+		progressMsg := formatToolProgress(tc.Name, params)
+		*allProgress = append(*allProgress, progressMsg)
+		if req.OnProgress != nil {
+			req.OnProgress(progressMsg)
+		}
+		return true
+	}
+}
+
+func (e *Executor) cancelledRunResult(result *core.Result, rc *runConfig, start time.Time) *AgentResult {
+	if result == nil || result.StopReason != core.StopCancelled {
+		return nil
+	}
+
+	return &AgentResult{
+		AgentName:  rc.config.Name,
+		Model:      rc.modelID,
+		Success:    false,
+		Content:    result.Content,
+		Messages:   result.Messages,
+		TurnCount:  result.Turns,
+		ToolUses:   result.ToolUses,
+		TokenUsage: result.Tokens,
+		Duration:   time.Since(start),
+		Error:      "agent cancelled",
+	}
+}
+
+func interpretStopReason(result *core.Result, maxTurns int) (success bool, errMsg string) {
+	success = result.StopReason == core.StopEndTurn
+	switch result.StopReason {
+	case core.StopMaxTurns:
+		errMsg = fmt.Sprintf("reached maximum turns (%d)", maxTurns)
+	case core.StopMaxOutputRecoveryExhausted:
+		errMsg = "output was repeatedly truncated and recovery was exhausted"
+	case core.StopHook:
+		errMsg = result.StopDetail
+	}
+	return success, errMsg
+}
+
+func (e *Executor) fireSubagentStop(req AgentRequest, agentHookID, agentSessionID, agentTranscriptPath, resultContent string) {
+	if e.hooks == nil {
+		return
+	}
+
+	stopAgentID := agentHookID
+	if agentSessionID != "" {
+		stopAgentID = agentSessionID
+	}
+	e.hooks.ExecuteAsync(hooks.SubagentStop, hooks.HookInput{
+		AgentType:            req.Agent,
+		AgentID:              stopAgentID,
+		AgentTranscriptPath:  agentTranscriptPath,
+		LastAssistantMessage: resultContent,
+		StopHookActive:       e.hooks.HasHooks(hooks.Stop),
+	})
 }
 
 // resolveModelID determines the model to use based on priority:
@@ -512,7 +582,6 @@ func (e *Executor) resumeFromSession(loop *core.Loop, agentID, newPrompt string)
 	return nil
 }
 
-
 // --- Internal helpers ---
 
 // agentPermission maps PermissionMode to a permission.Checker.
@@ -528,4 +597,3 @@ func agentPermission(mode PermissionMode) permission.Checker {
 		return permission.PermitAll()
 	}
 }
-

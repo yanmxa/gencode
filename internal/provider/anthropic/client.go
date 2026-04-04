@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider/streamutil"
 )
 
 // validToolIDPattern matches the Claude API requirement for tool_use IDs.
@@ -205,20 +205,17 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		// Create streaming request
 		stream := c.client.Messages.NewStreaming(ctx, params)
 
+		state := streamutil.NewState(c.name)
+
 		// Track tool calls
 		var currentToolID string
 		var currentToolName string
 		var currentToolInput string
-		var response message.CompletionResponse
-
-		// Stream timing and counting
-		streamStart := time.Now()
-		chunkCount := 0
 
 		// Read stream events
 		for stream.Next() {
 			event := stream.Current()
-			chunkCount++
+			state.Count()
 
 			switch event.Type {
 			case "content_block_start":
@@ -227,51 +224,29 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					currentToolID = block.ContentBlock.ID
 					currentToolName = block.ContentBlock.Name
 					currentToolInput = ""
-					ch <- message.StreamChunk{
-						Type:     message.ChunkTypeToolStart,
-						ToolID:   currentToolID,
-						ToolName: currentToolName,
-					}
+					state.EmitToolStart(ch, currentToolID, currentToolName)
 				}
 
 			case "content_block_delta":
 				delta := event.AsContentBlockDelta()
 				switch delta.Delta.Type {
 				case "text_delta":
-					if delta.Delta.Text != "" {
-						ch <- message.StreamChunk{
-							Type: message.ChunkTypeText,
-							Text: delta.Delta.Text,
-						}
-						response.Content += delta.Delta.Text
-					}
+					state.EmitText(ch, delta.Delta.Text)
 				case "thinking_delta":
-					if delta.Delta.Thinking != "" {
-						ch <- message.StreamChunk{
-							Type: message.ChunkTypeThinking,
-							Text: delta.Delta.Thinking,
-						}
-						response.Thinking += delta.Delta.Thinking
-					}
+					state.EmitThinking(ch, delta.Delta.Thinking)
 				case "signature_delta":
 					if delta.Delta.Signature != "" {
-						response.ThinkingSignature += delta.Delta.Signature
+						state.Response.ThinkingSignature += delta.Delta.Signature
 					}
 				case "input_json_delta":
-					if delta.Delta.PartialJSON != "" {
-						ch <- message.StreamChunk{
-							Type:   message.ChunkTypeToolInput,
-							ToolID: currentToolID,
-							Text:   delta.Delta.PartialJSON,
-						}
-						currentToolInput += delta.Delta.PartialJSON
-					}
+					state.EmitToolInput(ch, currentToolID, delta.Delta.PartialJSON)
+					currentToolInput += delta.Delta.PartialJSON
 				}
 
 			case "content_block_stop":
 				// When a tool block ends, add the accumulated tool call
 				if currentToolID != "" && currentToolName != "" {
-					response.ToolCalls = append(response.ToolCalls, message.ToolCall{
+					state.Response.ToolCalls = append(state.Response.ToolCalls, message.ToolCall{
 						ID:    currentToolID,
 						Name:  currentToolName,
 						Input: currentToolInput,
@@ -283,34 +258,21 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 			case "message_delta":
 				msgDelta := event.AsMessageDelta()
-				response.StopReason = string(msgDelta.Delta.StopReason)
-				response.Usage.OutputTokens = int(msgDelta.Usage.OutputTokens)
+				state.Response.StopReason = string(msgDelta.Delta.StopReason)
+				state.UpdateUsage(0, int(msgDelta.Usage.OutputTokens))
 
 			case "message_start":
 				msgStart := event.AsMessageStart()
-				response.Usage.InputTokens = int(msgStart.Message.Usage.InputTokens)
+				state.UpdateUsage(int(msgStart.Message.Usage.InputTokens), 0)
 			}
 		}
 
-		// Log stream done
-		log.LogStreamDone(c.name, time.Since(streamStart), chunkCount)
-
 		if err := stream.Err(); err != nil {
-			log.LogError(c.name, err)
-			ch <- message.StreamChunk{
-				Type:  message.ChunkTypeError,
-				Error: err,
-			}
+			state.Fail(ch, err)
 			return
 		}
 
-		// Log response
-		log.LogResponseCtx(ctx, c.name, response)
-
-		ch <- message.StreamChunk{
-			Type:     message.ChunkTypeDone,
-			Response: &response,
-		}
+		state.Finish(ctx, ch)
 	}()
 
 	return ch

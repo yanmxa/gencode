@@ -1,0 +1,363 @@
+package tool
+
+import "github.com/yanmxa/gencode/internal/provider"
+
+var readToolSchema = provider.Tool{
+	Name: "Read",
+	Description: `Reads a file from the local filesystem. You can access any file directly by using this tool.
+Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
+
+Usage:
+- The file_path parameter must be an absolute path, not a relative path
+- By default, it reads up to 2000 lines starting from the beginning of the file
+- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters
+- Results are returned with line numbers starting at 1
+- This tool can only read files, not directories. To read a directory, use an ls command via the Bash tool.
+- You will regularly be asked to read screenshots. If the user provides a path to a screenshot, ALWAYS use this tool to view the file at the path.
+- If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"file_path": map[string]any{
+				"type":        "string",
+				"description": "The absolute path to the file to read",
+			},
+			"offset": map[string]any{
+				"type":        "integer",
+				"description": "The line number to start reading from (1-based). Only provide if the file is too large to read at once.",
+			},
+			"limit": map[string]any{
+				"type":        "integer",
+				"description": "The number of lines to read. Only provide if the file is too large to read at once.",
+			},
+		},
+		"required": []string{"file_path"},
+	},
+}
+
+var globToolSchema = provider.Tool{
+	Name: "Glob",
+	Description: `Fast file pattern matching tool that works with any codebase size.
+- Supports glob patterns like "**/*.go" or "src/**/*.ts"
+- Returns matching file paths sorted by modification time (newest first)
+- Use this tool when you need to find files by name patterns
+- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"pattern": map[string]any{
+				"type":        "string",
+				"description": "The glob pattern to match files against",
+			},
+			"path": map[string]any{
+				"type":        "string",
+				"description": "The directory to search in. Defaults to current working directory.",
+			},
+		},
+		"required": []string{"pattern"},
+	},
+}
+
+var grepToolSchema = provider.Tool{
+	Name: "Grep",
+	Description: `A search tool built on ripgrep for searching file contents.
+- ALWAYS use Grep for content search tasks. NEVER invoke grep or rg as a Bash command.
+- Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")
+- Filter files with include parameter (e.g., "*.go", "*.py")
+- Returns matching lines with file paths and line numbers
+- Use Agent tool for open-ended searches requiring multiple rounds`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"pattern": map[string]any{
+				"type":        "string",
+				"description": "The regular expression pattern to search for in file contents",
+			},
+			"path": map[string]any{
+				"type":        "string",
+				"description": "File or directory to search in. Defaults to current working directory.",
+			},
+			"include": map[string]any{
+				"type":        "string",
+				"description": "File pattern to include (e.g., '*.go', '*.py')",
+			},
+			"case_sensitive": map[string]any{
+				"type":        "boolean",
+				"description": "If true, search is case-sensitive. Default is false (case-insensitive).",
+			},
+		},
+		"required": []string{"pattern"},
+	},
+}
+
+var webFetchToolSchema = provider.Tool{
+	Name: "WebFetch",
+	Description: `Fetches content from a specified URL and converts HTML to Markdown for readability.
+
+Usage notes:
+- The URL must be a fully-formed valid URL
+- HTTP URLs will be automatically upgraded to HTTPS
+- This tool is read-only and does not modify any files
+- Results may be truncated if the content is very large
+- For GitHub URLs, prefer using the gh CLI via Bash instead (e.g., gh pr view, gh issue view, gh api)`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"url": map[string]any{
+				"type":        "string",
+				"description": "The URL to fetch content from",
+			},
+			"format": map[string]any{
+				"type":        "string",
+				"description": "Output format: 'markdown' (default) or 'raw'",
+			},
+		},
+		"required": []string{"url"},
+	},
+}
+
+var webSearchToolSchema = provider.Tool{
+	Name: "WebSearch",
+	Description: `Search the web for up-to-date information. Returns a list of relevant results with titles, URLs, and snippets.
+When searching for current information, always use the present year rather than previous years.`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"query": map[string]any{
+				"type":        "string",
+				"description": "The search query",
+			},
+			"num_results": map[string]any{
+				"type":        "integer",
+				"description": "Number of results to return (default: 10)",
+			},
+			"allowed_domains": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": "Only include results from these domains",
+			},
+			"blocked_domains": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": "Exclude results from these domains",
+			},
+		},
+		"required": []string{"query"},
+	},
+}
+
+var editToolSchema = provider.Tool{
+	Name: "Edit",
+	Description: `Performs exact string replacements in files.
+
+Usage:
+- You must use your Read tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
+- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. Never include any part of the line number prefix in the old_string or new_string.
+- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
+- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
+- The edit will FAIL if old_string is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use replace_all to change every instance of old_string.
+- Use replace_all for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"file_path": map[string]any{
+				"type":        "string",
+				"description": "The absolute path to the file to modify",
+			},
+			"old_string": map[string]any{
+				"type":        "string",
+				"description": "The text to replace (must be different from new_string)",
+			},
+			"new_string": map[string]any{
+				"type":        "string",
+				"description": "The text to replace it with (must be different from old_string)",
+			},
+			"replace_all": map[string]any{
+				"type":        "boolean",
+				"description": "Replace all occurrences of old_string (default false)",
+				"default":     false,
+			},
+		},
+		"required": []string{"file_path", "old_string", "new_string"},
+	},
+}
+
+var writeToolSchema = provider.Tool{
+	Name: "Write",
+	Description: `Writes a file to the local filesystem.
+
+Usage:
+- This tool will overwrite the existing file if there is one at the provided path.
+- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.
+- Prefer the Edit tool for modifying existing files — it only sends the diff. Only use this tool to create new files or for complete rewrites.
+- NEVER create documentation files (*.md) or README files unless explicitly requested by the User.
+- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"file_path": map[string]any{
+				"type":        "string",
+				"description": "The absolute path to the file to write (must be absolute, not relative)",
+			},
+			"content": map[string]any{
+				"type":        "string",
+				"description": "The content to write to the file",
+			},
+		},
+		"required": []string{"file_path", "content"},
+	},
+}
+
+var bashToolSchema = provider.Tool{
+	Name: "Bash",
+	Description: `Executes a given bash command and returns its output.
+
+The working directory persists between commands, but shell state does not.
+
+IMPORTANT: Avoid using this tool to run grep, find, cat, head, tail, sed, awk, or echo commands. Instead, use the appropriate dedicated tool:
+- File search: Use Glob (NOT find or ls)
+- Content search: Use Grep (NOT grep or rg)
+- Read files: Use Read (NOT cat/head/tail)
+- Edit files: Use Edit (NOT sed/awk)
+- Write files: Use Write (NOT echo/cat with redirection)
+
+You may specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). By default, your command will timeout after 120000ms (2 minutes).
+You can use the run_in_background parameter to run the command in the background. You will be notified when it finishes.`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"command": map[string]any{
+				"type":        "string",
+				"description": "The command to execute",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "Clear, concise description of what this command does in active voice",
+			},
+			"timeout": map[string]any{
+				"type":        "integer",
+				"description": "Optional timeout in milliseconds (max 600000)",
+			},
+			"run_in_background": map[string]any{
+				"type":        "boolean",
+				"description": "Set to true to run this command in the background. You will be notified when it completes.",
+			},
+		},
+		"required": []string{"command"},
+	},
+}
+
+var taskOutputToolSchema = provider.Tool{
+	Name:        ToolTaskOutput,
+	Description: "Retrieve output from a running or completed background task. Use this to check on background agents started with Agent run_in_background=true.",
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": map[string]any{
+				"type":        "string",
+				"description": "The ID of the background task to get output from",
+			},
+			"block": map[string]any{
+				"type":        "boolean",
+				"description": "If true (default), wait for task completion. If false, return current output immediately.",
+				"default":     true,
+			},
+			"timeout": map[string]any{
+				"type":        "integer",
+				"description": "Maximum time to wait in milliseconds when block=true (default: 30000, max: 600000)",
+				"default":     30000,
+			},
+		},
+		"required": []string{"task_id"},
+	},
+}
+
+var taskStopToolSchema = provider.Tool{
+	Name:        ToolTaskStop,
+	Description: "Stops a running background task by its ID. Returns a success or failure status. Use this tool when you need to terminate a long-running background agent or command.",
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": map[string]any{
+				"type":        "string",
+				"description": "The ID of the background task to stop",
+			},
+		},
+		"required": []string{"task_id"},
+	},
+}
+
+var askUserQuestionToolSchema = provider.Tool{
+	Name: "AskUserQuestion",
+	Description: `Ask the user questions to gather preferences, clarify requirements, or get decisions on implementation choices. Use when you need user input to proceed.
+
+Plan mode note: In plan mode, use this tool to clarify requirements or choose between approaches BEFORE finalizing your plan. Do NOT use this tool to ask "Is my plan ready?" or "Should I proceed?" — use ExitPlanMode for plan approval. Do not reference "the plan" in your questions because the user cannot see the plan until you call ExitPlanMode.`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"questions": map[string]any{
+				"type":        "array",
+				"description": "Questions to ask the user (1-4 questions)",
+				"minItems":    1,
+				"maxItems":    4,
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"question": map[string]any{
+							"type":        "string",
+							"description": "The complete question to ask the user",
+						},
+						"header": map[string]any{
+							"type":        "string",
+							"maxLength":   12,
+							"description": "Very short label displayed as a chip/tag (max 12 chars)",
+						},
+						"options": map[string]any{
+							"type":        "array",
+							"description": "The available choices (2-4 options). 'Other' option is added automatically.",
+							"minItems":    2,
+							"maxItems":    4,
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"label": map[string]any{
+										"type":        "string",
+										"description": "The display text for this option (1-5 words)",
+									},
+									"description": map[string]any{
+										"type":        "string",
+										"description": "Explanation of what this option means",
+									},
+								},
+								"required": []string{"label", "description"},
+							},
+						},
+						"multiSelect": map[string]any{
+							"type":        "boolean",
+							"default":     false,
+							"description": "Set to true to allow multiple options to be selected",
+						},
+					},
+					"required": []string{"question", "header", "options", "multiSelect"},
+				},
+			},
+		},
+		"required": []string{"questions"},
+	},
+}
+
+func baseToolSchemas() []provider.Tool {
+	return []provider.Tool{
+		readToolSchema,
+		globToolSchema,
+		grepToolSchema,
+		webFetchToolSchema,
+		webSearchToolSchema,
+		editToolSchema,
+		writeToolSchema,
+		bashToolSchema,
+		taskOutputToolSchema,
+		taskStopToolSchema,
+		askUserQuestionToolSchema,
+	}
+}

@@ -12,7 +12,6 @@ import (
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/ui/history"
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
 
@@ -324,7 +323,9 @@ func (m *model) expandCollapseAll() tea.Cmd {
 }
 
 func (m *model) handleStreamCancel() tea.Cmd {
-	m.conv.Stream.Cancel()
+	if m.conv.Stream.Cancel != nil {
+		m.conv.Stream.Cancel()
+	}
 	m.conv.Stream.Stop()
 
 	// Cancel pending tool calls
@@ -341,10 +342,13 @@ func (m *model) handleStreamCancel() tea.Cmd {
 func (m *model) cancelPendingToolCalls() {
 	var toolCalls []message.ToolCall
 
+	if m.tool.Cancel != nil {
+		m.tool.Cancel()
+	}
+
 	if m.tool.PendingCalls != nil {
 		toolCalls = m.tool.PendingCalls[m.tool.CurrentIdx:]
-		m.tool.PendingCalls = nil
-		m.tool.CurrentIdx = 0
+		m.tool.Reset()
 	} else if len(m.conv.Messages) > 0 {
 		lastMsg := m.conv.Messages[len(m.conv.Messages)-1]
 		if lastMsg.Role == message.RoleAssistant {
@@ -396,66 +400,25 @@ func (m *model) handleSubmit() tea.Cmd {
 
 	// Execute UserPromptSubmit hook before processing
 	if blocked, reason := m.checkPromptHook(input); blocked {
-		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "Prompt blocked: " + reason})
-		m.input.Textarea.Reset()
-		m.input.Textarea.SetHeight(appinput.MinTextareaHeight())
-		return tea.Batch(m.commitMessages()...)
+		return m.blockPromptSubmission(reason)
 	}
 
-	if input != "" {
-		m.input.History = append(m.input.History, input)
-		m.input.HistoryIdx = -1
-		m.input.TempInput = ""
-		history.Save(m.cwd, m.input.History)
-	}
+	m.recordSubmittedInput(input)
 
-	if result, cmd, isCmd := ExecuteCommand(context.Background(), m, input); isCmd {
-		m.input.Textarea.Reset()
-		m.input.Textarea.SetHeight(appinput.MinTextareaHeight())
-
-		// For skill commands, the user message is appended inside handleSkillInvocation
-		// before startLLMStream, so skip it here. For regular commands, append now.
-		if cmd == nil {
-			m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: input})
-		}
-		if result != "" {
-			m.conv.AddNotice(result)
-		}
-
-		cmds := m.commitMessages()
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-		return tea.Batch(cmds...)
+	if cmd, handled := m.handleCommandSubmit(input); handled {
+		return cmd
 	}
 
 	// Clear active skill invocation on new user input
 	m.skill.ActiveInvocation = ""
 
-	// Process @image.png references
-	content, fileImages, err := appinput.ProcessImageRefs(m.cwd, input)
-	if err != nil {
-		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "Image error: " + err.Error()})
-		return tea.Batch(m.commitMessages()...)
+	userMsg, cmd, handled := m.prepareSubmittedUserMessage(input)
+	if handled {
+		return cmd
 	}
-
-	// Combine pending clipboard images with file reference images
-	allImages := append(m.input.Images.Pending, fileImages...)
-	m.input.Images.Pending = nil // Clear pending images
-
-	m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: content, Images: allImages})
-	m.input.Textarea.Reset()
-	m.input.Textarea.SetHeight(appinput.MinTextareaHeight())
-
-	if m.provider.LLM == nil {
-		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "No provider connected. Use /provider to connect."})
-		return tea.Batch(m.commitMessages()...)
-	}
-
-	// Detect thinking keywords in the user's message
-	m.detectThinkingKeywords(content)
-
-	return m.startLLMStream(nil)
+	m.conv.Append(userMsg)
+	m.resetInputField()
+	return m.startProviderTurn(userMsg.Content)
 }
 
 // detectThinkingKeywords scans the user's message for explicit thinking-level keywords

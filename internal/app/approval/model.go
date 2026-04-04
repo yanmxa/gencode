@@ -9,6 +9,7 @@ import (
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appskill "github.com/yanmxa/gencode/internal/app/skill"
+	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/permission"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
@@ -285,9 +286,9 @@ func (p *Model) getTitle() string {
 		title = "Write to file"
 	case "Bash":
 		title = "Bash command"
-	case "Skill":
+	case tool.ToolSkill:
 		title = "Load skill"
-	case "Agent":
+	case tool.ToolAgent:
 		title = "Spawn agent"
 	default:
 		title = p.request.Description
@@ -308,9 +309,9 @@ func (p *Model) getAllSessionLabel() string {
 		return "Yes, allow all writes during this session"
 	case "Bash":
 		return "Yes, allow all commands during this session"
-	case "Skill":
+	case tool.ToolSkill:
 		return "Yes, allow all skills during this session"
-	case "Agent":
+	case tool.ToolAgent:
 		return "Yes, allow all agents during this session"
 	default:
 		return "Yes, allow all during this session"

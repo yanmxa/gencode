@@ -176,6 +176,40 @@ func TestSetMessages(t *testing.T) {
 	}
 }
 
+func TestDecideCompletion(t *testing.T) {
+	t.Run("recover truncated response without tools", func(t *testing.T) {
+		decision := DecideCompletion("max_tokens", nil, 0, DefaultMaxOutputRecovery)
+		if decision.Action != CompletionRecoverMaxTokens {
+			t.Fatalf("expected CompletionRecoverMaxTokens, got %v", decision.Action)
+		}
+	})
+
+	t.Run("stop after recovery exhausted", func(t *testing.T) {
+		decision := DecideCompletion("max_tokens", nil, DefaultMaxOutputRecovery, DefaultMaxOutputRecovery)
+		if decision.Action != CompletionStopMaxOutputRecovery {
+			t.Fatalf("expected CompletionStopMaxOutputRecovery, got %v", decision.Action)
+		}
+	})
+
+	t.Run("run tools when tool calls exist", func(t *testing.T) {
+		calls := []message.ToolCall{{ID: "tc1", Name: "Read"}}
+		decision := DecideCompletion("tool_use", calls, 0, DefaultMaxOutputRecovery)
+		if decision.Action != CompletionRunTools {
+			t.Fatalf("expected CompletionRunTools, got %v", decision.Action)
+		}
+		if len(decision.ToolCalls) != 1 || decision.ToolCalls[0].Name != "Read" {
+			t.Fatalf("unexpected tool calls: %+v", decision.ToolCalls)
+		}
+	})
+
+	t.Run("end turn when no tools and not truncated", func(t *testing.T) {
+		decision := DecideCompletion("end_turn", nil, 0, DefaultMaxOutputRecovery)
+		if decision.Action != CompletionEndTurn {
+			t.Fatalf("expected CompletionEndTurn, got %v", decision.Action)
+		}
+	})
+}
+
 func TestDecisionConstants(t *testing.T) {
 	if permission.Permit != 0 {
 		t.Error("Permit should be 0")

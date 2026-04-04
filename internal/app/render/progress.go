@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 // renderAgentProgress renders all agent progress lines accumulated so far.
@@ -87,7 +88,7 @@ func RenderPendingToolSpinner(params PendingToolSpinnerParams) string {
 	}
 
 	// Agent tool: spinner is on the header line; only render progress lines here
-	if toolName == "Agent" {
+	if toolName == tool.ToolAgent {
 		return renderAgentProgress(params.TaskProgress[params.CurrentIdx])
 	}
 

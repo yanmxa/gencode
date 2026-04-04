@@ -1,6 +1,8 @@
 // Package permission provides tool execution permission checking.
 package permission
 
+import "github.com/yanmxa/gencode/internal/config"
+
 // Checker decides whether a tool call is permitted.
 type Checker interface {
 	Check(name string, params map[string]any) Decision
@@ -91,38 +93,12 @@ func isEditTool(name string) bool {
 	return false
 }
 
-// readOnlyTools is the set of tools that only read data without modifications.
-var readOnlyTools = map[string]bool{
-	"Read":      true,
-	"Glob":      true,
-	"Grep":      true,
-	"WebFetch":  true,
-	"WebSearch": true,
-	"LSP":       true,
-}
-
 // IsReadOnlyTool checks if a tool is read-only.
 func IsReadOnlyTool(name string) bool {
-	return readOnlyTools[name]
-}
-
-// safeTools is the set of tools that are inherently safe and can skip
-// permission checks entirely (task management, UI, coordination).
-var safeTools = map[string]bool{
-	"TaskCreate":      true,
-	"TaskGet":         true,
-	"TaskList":        true,
-	"TaskUpdate":      true,
-	"AskUserQuestion": true,
-	"EnterPlanMode":   true,
-	"ExitPlanMode":    true,
-	"TeamCreate":      true,
-	"TeamDelete":      true,
-	"CronList":        true,
-	"ToolSearch":      true,
+	return config.IsReadOnlyTool(name)
 }
 
 // IsSafeTool returns true if the tool is on the safe allowlist.
 func IsSafeTool(name string) bool {
-	return safeTools[name]
+	return config.IsSafeTool(name)
 }

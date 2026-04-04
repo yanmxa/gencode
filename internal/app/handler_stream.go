@@ -54,22 +54,21 @@ func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 
 	m.conv.SetLastThinkingSignature(msg.ThinkingSignature)
 
+	decision := core.DecideCompletion(msg.StopReason, msg.ToolCalls, m.maxOutputRecoveryCount, core.DefaultMaxOutputRecovery)
+
 	// Max-output-tokens recovery: if output was truncated with no tool calls,
 	// inject a resume message and continue streaming (up to 3 retries).
-	if msg.StopReason == "max_tokens" && len(msg.ToolCalls) == 0 {
-		if m.maxOutputRecoveryCount < core.DefaultMaxOutputRecovery {
-			m.maxOutputRecoveryCount++
-			m.conv.Append(message.ChatMessage{
-				Role:    message.RoleUser,
-				Content: core.MaxOutputRecoveryPrompt,
-			})
-			return m.startContinueStream()
-		}
-		// Exhausted recovery attempts — fall through to normal end
+	if decision.Action == core.CompletionRecoverMaxTokens {
+		m.maxOutputRecoveryCount++
+		m.conv.Append(message.ChatMessage{
+			Role:    message.RoleUser,
+			Content: core.MaxOutputRecoveryPrompt,
+		})
+		return m.startContinueStream()
 	}
 
-	if len(msg.ToolCalls) > 0 {
-		m.conv.SetLastToolCalls(msg.ToolCalls)
+	if decision.Action == core.CompletionRunTools {
+		m.conv.SetLastToolCalls(decision.ToolCalls)
 		commitCmds := m.commitMessages()
 
 		if m.shouldAutoCompact() {
@@ -78,7 +77,7 @@ func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 			return tea.Batch(commitCmds...)
 		}
 
-		commitCmds = append(commitCmds, m.handleStartToolExecution(msg.ToolCalls))
+		commitCmds = append(commitCmds, m.handleStartToolExecution(decision.ToolCalls))
 		return tea.Batch(commitCmds...)
 	}
 
@@ -92,7 +91,7 @@ func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 	if m.hookEngine != nil {
 		m.hookEngine.ExecuteAsync(hooks.Stop, hooks.HookInput{
 			LastAssistantMessage: m.lastAssistantContent(),
-			StopHookActive:      m.hookEngine.HasHooks(hooks.Stop),
+			StopHookActive:       m.hookEngine.HasHooks(hooks.Stop),
 		})
 		// Fire idle notification
 		m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{

@@ -58,13 +58,30 @@ type loopState struct {
 	transition                   TransitionReason
 }
 
+// CompletionAction describes what the runtime should do after receiving a completed response.
+type CompletionAction int
+
+const (
+	CompletionEndTurn CompletionAction = iota
+	CompletionRunTools
+	CompletionRecoverMaxTokens
+	CompletionStopMaxOutputRecovery
+)
+
+// CompletionDecision is the shared decision result used by both the synchronous
+// core loop and the TUI-driven incremental loop.
+type CompletionDecision struct {
+	Action    CompletionAction
+	ToolCalls []message.ToolCall
+}
+
 // RunOptions controls the synchronous Run() loop.
 type RunOptions struct {
-	MaxTurns         int
+	MaxTurns          int
 	MaxOutputRecovery int // max retries on truncated output (default: 3)
-	OnResponse       func(resp *message.CompletionResponse)
-	OnToolStart      func(tc message.ToolCall) bool
-	OnToolDone       func(tc message.ToolCall, result message.ToolResult)
+	OnResponse        func(resp *message.CompletionResponse)
+	OnToolStart       func(tc message.ToolCall) bool
+	OnToolDone        func(tc message.ToolCall, result message.ToolResult)
 
 	// Context compaction support (opt-in)
 	SessionMemory string // previous compaction summary
@@ -177,23 +194,27 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 			opts.OnResponse(resp)
 		}
 
+		decision := DecideCompletion(resp.StopReason, calls, state.maxOutputTokensRecoveryCount, maxRecovery)
+
 		// --- 3a. Max-output-tokens recovery ---
-		if resp.StopReason == "max_tokens" && len(calls) == 0 {
+		if decision.Action == CompletionRecoverMaxTokens {
 			if state.maxOutputTokensRecoveryCount < maxRecovery {
 				l.AddUser(MaxOutputRecoveryPrompt, nil)
 				state.maxOutputTokensRecoveryCount++
 				state.transition = TransitionMaxOutputRecovery
 				continue
 			}
+		}
+		if decision.Action == CompletionStopMaxOutputRecovery {
 			return terminate(StopMaxOutputRecoveryExhausted), nil
 		}
 
 		// --- 4. No tool calls → fire stop hooks, then end ---
-		if len(calls) == 0 {
+		if decision.Action == CompletionEndTurn {
 			if l.Hooks != nil && l.Hooks.HasHooks(hooks.Stop) {
 				stopInput := hooks.HookInput{
 					LastAssistantMessage: l.lastAssistantContent(),
-					StopHookActive:      true,
+					StopHookActive:       true,
 				}
 				outcome := l.Hooks.Execute(ctx, hooks.Stop, stopInput)
 				if outcome.ShouldBlock {
@@ -207,7 +228,7 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 		}
 
 		// --- 5. Filter through hooks ---
-		allowed, blocked, _ := l.FilterToolCalls(ctx, calls)
+		allowed, blocked, _ := l.FilterToolCalls(ctx, decision.ToolCalls)
 		for _, br := range blocked {
 			l.AddToolResult(br)
 		}
@@ -259,6 +280,25 @@ func (l *Loop) buildResult(reason string, turns, toolUses int, transitions []Tra
 		StopReason:  reason,
 		Transitions: transitions,
 	}
+}
+
+// DecideCompletion determines the next action after a completed assistant response.
+func DecideCompletion(stopReason string, calls []message.ToolCall, recoveryCount, maxRecovery int) CompletionDecision {
+	if stopReason == "max_tokens" && len(calls) == 0 {
+		if recoveryCount < maxRecovery {
+			return CompletionDecision{Action: CompletionRecoverMaxTokens}
+		}
+		return CompletionDecision{Action: CompletionStopMaxOutputRecovery}
+	}
+
+	if len(calls) > 0 {
+		return CompletionDecision{
+			Action:    CompletionRunTools,
+			ToolCalls: calls,
+		}
+	}
+
+	return CompletionDecision{Action: CompletionEndTurn}
 }
 
 func (l *Loop) lastAssistantContent() string {
@@ -322,7 +362,7 @@ func Collect(ctx context.Context, ch <-chan message.StreamChunk) (*message.Compl
 
 // --- Message management ---
 
-func (l *Loop) Messages() []message.Message    { return l.messages }
+func (l *Loop) Messages() []message.Message        { return l.messages }
 func (l *Loop) SetMessages(msgs []message.Message) { l.messages = msgs }
 
 func (l *Loop) Tokens() client.TokenUsage {
@@ -449,30 +489,16 @@ func (l *Loop) runTool(ctx context.Context, tc message.ToolCall, params map[stri
 		cwd = l.System.Cwd
 	}
 
-	// Route MCP tools to the MCP caller
-	if l.MCP != nil && l.MCP.IsMCPTool(tc.Name) {
-		content, isError, err := l.MCP.CallTool(ctx, tc.Name, params)
-		if err != nil {
-			return message.ErrorResult(tc, fmt.Sprintf("MCP tool error: %v", err))
-		}
-		return &message.ToolResult{
-			ToolCallID: tc.ID,
-			ToolName:   tc.Name,
-			Content:    content,
-			IsError:    isError,
-		}
-	}
-
-	t, ok := tool.Get(tc.Name)
-	if !ok {
+	if _, ok := tool.Get(tc.Name); !ok && (l.MCP == nil || !l.MCP.IsMCPTool(tc.Name)) {
 		return message.ErrorResult(tc, fmt.Sprintf("Unknown tool: %s", tc.Name))
 	}
 
-	var toolResult ui.ToolResult
-	if pat, ok := t.(tool.PermissionAwareTool); ok && pat.RequiresPermission() {
-		toolResult = pat.ExecuteApproved(ctx, params, cwd)
-	} else {
-		toolResult = t.Execute(ctx, params, cwd)
+	toolResult, err := tool.ExecutePreparedTool(ctx, tc, params, cwd, true, mcpAdapter{caller: l.MCP})
+	if err != nil {
+		if l.MCP != nil && l.MCP.IsMCPTool(tc.Name) {
+			return message.ErrorResult(tc, fmt.Sprintf("MCP tool error: %v", err))
+		}
+		return message.ErrorResult(tc, fmt.Sprintf("Unknown tool: %s", tc.Name))
 	}
 
 	log.Logger().Debug("Tool executed",
@@ -486,6 +512,33 @@ func (l *Loop) runTool(ctx context.Context, tc message.ToolCall, params map[stri
 		Content:    toolResult.FormatForLLM(),
 		IsError:    !toolResult.Success,
 	}
+}
+
+type mcpAdapter struct {
+	caller MCPCaller
+}
+
+func (a mcpAdapter) IsMCPTool(name string) bool {
+	return a.caller != nil && a.caller.IsMCPTool(name)
+}
+
+func (a mcpAdapter) ExecuteMCP(ctx context.Context, name string, params map[string]any) (ui.ToolResult, error) {
+	if a.caller == nil {
+		return ui.ToolResult{}, fmt.Errorf("MCP caller not configured")
+	}
+
+	content, isError, err := a.caller.CallTool(ctx, name, params)
+	if err != nil {
+		return ui.ToolResult{}, err
+	}
+
+	return ui.ToolResult{
+		Success: !isError,
+		Output:  content,
+		Metadata: ui.ResultMetadata{
+			Title: name,
+		},
+	}, nil
 }
 
 // --- Helpers ---
