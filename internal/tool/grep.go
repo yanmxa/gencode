@@ -1,23 +1,20 @@
 package tool
 
 import (
-	"bufio"
+	"bytes"
 	"context"
-	"os"
+	"fmt"
+	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/yanmxa/gencode/internal/tool/ui"
 )
 
-const (
-	maxGrepMatches = 50
-	maxGrepFiles   = 100
-)
+const rgBinary = "/usr/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg"
 
-// GrepTool searches for patterns in files
+// GrepTool searches for patterns in files using ripgrep.
 type GrepTool struct{}
 
 func (t *GrepTool) Name() string        { return "Grep" }
@@ -27,222 +24,192 @@ func (t *GrepTool) Icon() string        { return ui.IconGrep }
 func (t *GrepTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
-	// Get pattern parameter
 	pattern, ok := params["pattern"].(string)
 	if !ok || pattern == "" {
 		return ui.NewErrorResult(t.Name(), "pattern is required")
 	}
 
-	// Check case sensitivity flag (default: case insensitive)
-	caseSensitive := false
-	if cs, ok := params["case_sensitive"].(bool); ok {
-		caseSensitive = cs
+	// Output mode: "content" | "files_with_matches" (default) | "count"
+	outputMode := "files_with_matches"
+	if om, ok := params["output_mode"].(string); ok && om != "" {
+		outputMode = om
 	}
 
-	// Compile regex
-	regexPattern := pattern
-	if !caseSensitive {
-		regexPattern = "(?i)" + pattern
+	// Limits
+	headLimit := 250
+	if hl, ok := params["head_limit"].(float64); ok && hl > 0 {
+		headLimit = int(hl)
+	} else if hl, ok := params["head_limit"].(int); ok && hl > 0 {
+		headLimit = hl
 	}
-	re, err := regexp.Compile(regexPattern)
-	if err != nil {
-		return ui.NewErrorResult(t.Name(), "invalid pattern: "+err.Error())
+	offset := 0
+	if off, ok := params["offset"].(float64); ok && off > 0 {
+		offset = int(off)
+	} else if off, ok := params["offset"].(int); ok && off > 0 {
+		offset = off
 	}
 
-	// Get optional path parameter
-	basePath := cwd
+	// Build rg args
+	args := []string{"--no-messages"}
+
+	// Case sensitivity
+	caseInsensitive := true
+	if ci, ok := params["-i"].(bool); ok {
+		caseInsensitive = ci
+	} else if cs, ok := params["case_sensitive"].(bool); ok && cs {
+		caseInsensitive = false
+	}
+	if caseInsensitive {
+		args = append(args, "--ignore-case")
+	}
+
+	// Multiline
+	if ml, ok := params["multiline"].(bool); ok && ml {
+		args = append(args, "--multiline", "--multiline-dotall")
+	}
+
+	// Output mode flags
+	switch outputMode {
+	case "files_with_matches":
+		args = append(args, "--files-with-matches")
+	case "count":
+		args = append(args, "--count")
+	default: // "content"
+		args = append(args, "--line-number", "--with-filename", "--no-heading")
+
+		// Context lines
+		contextLines := 0
+		if c, ok := params["context"].(float64); ok {
+			contextLines = int(c)
+		} else if c, ok := params["-C"].(float64); ok {
+			contextLines = int(c)
+		}
+		if contextLines > 0 {
+			args = append(args, fmt.Sprintf("--context=%d", contextLines))
+		} else {
+			afterLines := 0
+			if a, ok := params["-A"].(float64); ok {
+				afterLines = int(a)
+			}
+			beforeLines := 0
+			if b, ok := params["-B"].(float64); ok {
+				beforeLines = int(b)
+			}
+			if afterLines > 0 {
+				args = append(args, fmt.Sprintf("--after-context=%d", afterLines))
+			}
+			if beforeLines > 0 {
+				args = append(args, fmt.Sprintf("--before-context=%d", beforeLines))
+			}
+		}
+	}
+
+	// File type filter
+	if fileType, ok := params["type"].(string); ok && fileType != "" {
+		args = append(args, "--type", fileType)
+	}
+
+	// Glob filter
+	if glob, ok := params["glob"].(string); ok && glob != "" {
+		args = append(args, "--glob", glob)
+	} else if include, ok := params["include"].(string); ok && include != "" {
+		args = append(args, "--glob", include)
+	}
+
+	// Pattern
+	args = append(args, "--", pattern)
+
+	// Path
+	searchPath := cwd
 	if path, ok := params["path"].(string); ok && path != "" {
 		if filepath.IsAbs(path) {
-			basePath = path
+			searchPath = path
 		} else {
-			basePath = filepath.Join(cwd, path)
+			searchPath = filepath.Join(cwd, path)
 		}
 	}
+	args = append(args, searchPath)
 
-	// Get optional include pattern
-	includePattern := ""
-	if include, ok := params["include"].(string); ok {
-		includePattern = include
-	}
+	// Execute rg
+	rgPath := findRG()
+	cmd := exec.CommandContext(ctx, rgPath, args...)
+	cmd.Dir = cwd
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
-	// Check if base path exists
-	info, err := os.Stat(basePath)
+	err := cmd.Run()
+	// rg exits 1 when no matches found (not an error), 2 on actual error
 	if err != nil {
-		if os.IsNotExist(err) {
-			return ui.NewErrorResult(t.Name(), "path not found: "+basePath)
-		}
-		return ui.NewErrorResult(t.Name(), "failed to access path: "+err.Error())
-	}
-
-	var matches []ui.ContentLine
-	filesSearched := 0
-	filesWithMatches := 0
-
-	// Search in a single file
-	searchFile := func(filePath, relPath string) error {
-		file, err := os.Open(filePath)
-		if err != nil {
-			return nil // Skip files we can't read
-		}
-		defer file.Close()
-
-		// Check if binary file (skip)
-		buf := make([]byte, 512)
-		n, _ := file.Read(buf)
-		if n > 0 && isBinary(buf[:n]) {
-			return nil
-		}
-
-		// Reset to beginning
-		file.Seek(0, 0)
-
-		scanner := bufio.NewScanner(file)
-		lineNo := 0
-		fileHasMatch := false
-
-		for scanner.Scan() {
-			lineNo++
-			line := scanner.Text()
-
-			if re.MatchString(line) {
-				if !fileHasMatch {
-					filesWithMatches++
-					fileHasMatch = true
-				}
-
-				// Truncate long lines
-				displayLine := line
-				if len(displayLine) > maxLineLength {
-					displayLine = displayLine[:maxLineLength] + "..."
-				}
-
-				matches = append(matches, ui.ContentLine{
-					LineNo: lineNo,
-					Text:   strings.TrimSpace(displayLine),
-					Type:   ui.LineMatch,
-					File:   relPath,
-				})
-
-				// Check limit
-				if len(matches) >= maxGrepMatches {
-					return filepath.SkipAll
-				}
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if exitErr.ExitCode() == 2 {
+				return ui.NewErrorResult(t.Name(), "search error: "+stderr.String())
 			}
 		}
-
-		return nil
-	}
-
-	// If path is a file, search only that file
-	if !info.IsDir() {
-		relPath := filepath.Base(basePath)
-		searchFile(basePath, relPath)
-	} else {
-		// Walk directory tree
-		filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-
-			// Check context cancellation
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-
-			// Skip directories
-			if d.IsDir() {
-				if ignoredDirs[d.Name()] {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-
-			// Check include pattern
-			if includePattern != "" {
-				matched, _ := filepath.Match(includePattern, d.Name())
-				if !matched {
-					return nil
-				}
-			}
-
-			// Get relative path
-			relPath, err := filepath.Rel(basePath, path)
-			if err != nil {
-				relPath = path
-			}
-
-			filesSearched++
-			if filesSearched > maxGrepFiles {
-				return filepath.SkipAll
-			}
-
-			return searchFile(path, relPath)
-		})
 	}
 
 	duration := time.Since(start)
 
-	// Build subtitle
-	subtitle := "pattern: \"" + pattern + "\""
-	if includePattern != "" {
-		subtitle += " (" + includePattern + ")"
+	// Parse output, applying offset and head_limit
+	rawLines := strings.Split(strings.TrimRight(stdout.String(), "\n"), "\n")
+	if len(rawLines) == 1 && rawLines[0] == "" {
+		rawLines = nil
 	}
 
-	truncated := len(matches) >= maxGrepMatches
-
-	// Build structured hook response (CC-compatible)
-	var contentBuf strings.Builder
-	matchedFiles := make(map[string]bool)
-	for _, m := range matches {
-		if m.File != "" {
-			absFile := filepath.Join(basePath, m.File)
-			matchedFiles[absFile] = true
-			contentBuf.WriteString(absFile)
-		} else {
-			contentBuf.WriteString(basePath)
-		}
-		contentBuf.WriteString(":")
-		contentBuf.WriteString(strings.TrimSpace(m.Text))
-		contentBuf.WriteByte('\n')
-	}
-	hookFilenames := make([]string, 0, len(matchedFiles))
-	for f := range matchedFiles {
-		hookFilenames = append(hookFilenames, f)
+	// Apply offset
+	if offset > 0 && offset < len(rawLines) {
+		rawLines = rawLines[offset:]
+	} else if offset >= len(rawLines) {
+		rawLines = nil
 	}
 
-	result := ui.ToolResult{
+	truncated := false
+	if headLimit > 0 && len(rawLines) > headLimit {
+		rawLines = rawLines[:headLimit]
+		truncated = true
+	}
+
+	// Build content lines for UI
+	var lines []ui.ContentLine
+	for _, line := range rawLines {
+		lines = append(lines, ui.ContentLine{Text: line, Type: ui.LineMatch})
+	}
+
+	subtitle := fmt.Sprintf("pattern: %q mode: %s", pattern, outputMode)
+
+	hookContent := strings.Join(rawLines, "\n")
+	if truncated {
+		hookContent += "\n(results truncated)"
+	}
+
+	return ui.ToolResult{
 		Success: true,
-		Lines:   matches,
+		Lines:   lines,
 		HookResponse: map[string]any{
-			"mode":      "content",
-			"numFiles":  len(matchedFiles),
-			"numLines":  len(matches),
-			"filenames": hookFilenames,
-			"content":   contentBuf.String(),
+			"mode":     outputMode,
+			"numLines": len(rawLines),
+			"content":  hookContent,
 		},
 		Metadata: ui.ResultMetadata{
 			Title:     t.Name(),
 			Icon:      t.Icon(),
 			Subtitle:  subtitle,
-			ItemCount: len(matches),
+			ItemCount: len(rawLines),
 			Duration:  duration,
 			Truncated: truncated,
 		},
 	}
-
-	return result
 }
 
-// isBinary checks if data appears to be binary
-func isBinary(data []byte) bool {
-	for _, b := range data {
-		if b == 0 {
-			return true
-		}
+// findRG returns the path to the rg binary, preferring the bundled vendor binary.
+func findRG() string {
+	if _, err := exec.LookPath(rgBinary); err == nil {
+		return rgBinary
 	}
-	return false
+	if path, err := exec.LookPath("rg"); err == nil {
+		return path
+	}
+	return "rg"
 }
 
 func init() {
