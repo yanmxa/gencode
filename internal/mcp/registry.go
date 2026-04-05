@@ -111,9 +111,9 @@ func (r *Registry) RemoveServer(name string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Disconnect if connected
+	// Disconnect if connected (best-effort; errors are ignored during cleanup)
 	if client, ok := r.clients[name]; ok {
-		client.Disconnect()
+		_ = client.Disconnect()
 		delete(r.clients, name)
 	}
 
@@ -203,7 +203,7 @@ func (r *Registry) DisconnectAll() {
 	defer r.mu.Unlock()
 
 	for name, client := range r.clients {
-		client.Disconnect()
+		_ = client.Disconnect()
 		delete(r.clients, name)
 	}
 }

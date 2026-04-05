@@ -104,7 +104,7 @@ func (l *ConfigLoader) SaveServer(name string, config ServerConfig, scope Scope)
 	// Load existing config
 	var mcpConfig MCPConfig
 	if data, err := os.ReadFile(filePath); err == nil {
-		json.Unmarshal(data, &mcpConfig)
+		_ = json.Unmarshal(data, &mcpConfig)
 	}
 
 	if mcpConfig.MCPServers == nil {
@@ -186,7 +186,7 @@ func (l *ConfigLoader) removeServerFromFile(filePath, name string) {
 	if err != nil {
 		return
 	}
-	os.WriteFile(filePath, data, 0o644)
+	_ = os.WriteFile(filePath, data, 0o644)
 }
 
 // GetUserDir returns the user config directory
