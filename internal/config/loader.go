@@ -55,7 +55,7 @@ func (l *Loader) Load() (*Settings, error) {
 	// from blocking GenCode's own hooks.
 
 	type source struct {
-		path        string
+		path         string
 		claudeCompat bool
 	}
 

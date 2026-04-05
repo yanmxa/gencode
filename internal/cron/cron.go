@@ -17,12 +17,12 @@ type Field struct {
 // Expression represents a parsed 5-field cron expression:
 // minute hour day-of-month month day-of-week
 type Expression struct {
-	Raw     string
-	Minute  Field
-	Hour    Field
-	DOM     Field // day of month
-	Month   Field
-	DOW     Field // day of week (0=Sunday)
+	Raw    string
+	Minute Field
+	Hour   Field
+	DOM    Field // day of month
+	Month  Field
+	DOW    Field // day of week (0=Sunday)
 }
 
 // fieldSpec defines the range for a cron field.
@@ -32,11 +32,11 @@ type fieldSpec struct {
 }
 
 var specs = [5]fieldSpec{
-	{0, 59, nil},                                                                                                                 // minute
-	{0, 23, nil},                                                                                                                 // hour
-	{1, 31, nil},                                                                                                                 // day of month
+	{0, 59, nil}, // minute
+	{0, 23, nil}, // hour
+	{1, 31, nil}, // day of month
 	{1, 12, map[string]int{"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}}, // month
-	{0, 6, map[string]int{"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}},                                // day of week
+	{0, 6, map[string]int{"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}},                                                       // day of week
 }
 
 // Parse parses a standard 5-field cron expression.

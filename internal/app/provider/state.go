@@ -10,14 +10,14 @@ import (
 
 // State holds all provider-related state for the TUI model.
 type State struct {
-	LLM            provider.LLMProvider
-	Store          *provider.Store
-	CurrentModel   *provider.CurrentModelInfo
-	InputTokens    int
-	OutputTokens   int
-	FetchingLimits bool
-	Selector       Model
-	StatusMessage  string // Temporary status shown in status bar
+	LLM              provider.LLMProvider
+	Store            *provider.Store
+	CurrentModel     *provider.CurrentModelInfo
+	InputTokens      int
+	OutputTokens     int
+	FetchingLimits   bool
+	Selector         Model
+	StatusMessage    string // Temporary status shown in status bar
 	ThinkingLevel    provider.ThinkingLevel
 	ThinkingOverride provider.ThinkingLevel
 }

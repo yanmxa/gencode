@@ -63,7 +63,6 @@ type ToggleMsg struct {
 	Enabled   bool
 }
 
-
 // New creates a new agent selector Model.
 func New() Model {
 	return Model{

@@ -5,7 +5,8 @@ package moonshot
 import (
 	"context"
 	"encoding/json"
-	"sort"
+	"cmp"
+	"slices"
 
 	"github.com/openai/openai-go/v3"
 
@@ -163,7 +164,7 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 		return staticModels, nil
 	}
 
-	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+	slices.SortFunc(models, func(a, b provider.ModelInfo) int { return cmp.Compare(a.ID, b.ID) })
 	return models, nil
 }
 

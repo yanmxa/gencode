@@ -302,9 +302,14 @@ func (l *Loop) Stream(ctx context.Context) <-chan message.StreamChunk {
 
 // --- Message management ---
 
-func (l *Loop) Messages() []message.Message        { return l.messages }
+// Messages returns the current conversation history (read-only; do not mutate).
+func (l *Loop) Messages() []message.Message { return l.messages }
+
+// SetMessages replaces the conversation history. Used for session restore and forking.
 func (l *Loop) SetMessages(msgs []message.Message) { l.messages = msgs }
 
+// Tokens returns the cumulative token usage tracked by the underlying client.
+// Returns a zero value if no client is attached.
 func (l *Loop) Tokens() client.TokenUsage {
 	if l.Client == nil {
 		return client.TokenUsage{}
@@ -312,6 +317,7 @@ func (l *Loop) Tokens() client.TokenUsage {
 	return l.Client.Tokens()
 }
 
+// AddUser appends a user message (text + optional images) to the conversation.
 func (l *Loop) AddUser(content string, images []message.ImageData) {
 	l.messages = append(l.messages, message.UserMessage(content, images))
 }
@@ -327,6 +333,7 @@ func (l *Loop) AddResponse(resp *message.CompletionResponse) []message.ToolCall 
 	return resp.ToolCalls
 }
 
+// AddToolResult appends a tool result message to the conversation.
 func (l *Loop) AddToolResult(r message.ToolResult) {
 	l.messages = append(l.messages, message.ToolResultMessage(r))
 }

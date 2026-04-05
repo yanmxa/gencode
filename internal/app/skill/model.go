@@ -67,7 +67,6 @@ type CycleMsg struct {
 	NewState  coreskill.SkillState
 }
 
-
 // InvokeMsg is sent when a skill is invoked from the selector.
 type InvokeMsg struct {
 	SkillName string
