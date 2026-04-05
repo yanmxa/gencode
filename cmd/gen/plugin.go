@@ -148,9 +148,7 @@ Examples:
 		}
 
 		installer := plugin.NewInstaller(plugin.DefaultRegistry, cwd)
-		if err := installer.LoadMarketplaces(); err != nil {
-			// Non-fatal, continue with empty marketplaces
-		}
+		_ = installer.LoadMarketplaces() // Non-fatal, continue with empty marketplaces
 
 		scope := parsePluginScope(pluginScope)
 		if err := installer.Install(ctx, ref, scope); err != nil {
