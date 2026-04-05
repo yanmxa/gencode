@@ -19,6 +19,11 @@ func (s *Model) EnterProviderSelect(width, height int) error {
 		return fmt.Errorf("failed to load store: %w", err)
 	}
 	s.store = store
+	s.resetNavigation()
+	s.resetModelSearch()
+	s.resetConnectionResult()
+	s.models = nil
+	s.filteredModels = nil
 
 	providersWithStatus := coreprovider.GetProvidersWithStatus(store)
 
@@ -67,10 +72,7 @@ func (s *Model) EnterProviderSelect(width, height int) error {
 
 	s.active = true
 	s.selectorType = SelectorTypeProvider
-	s.level = LevelProvider
 	s.tab = TabLLM
-	s.selectedIdx = 0
-	s.parentIdx = 0
 	s.width = width
 	s.height = height
 
@@ -118,6 +120,11 @@ func (s *Model) EnterModelSelect(ctx context.Context, width, height int) error {
 		return fmt.Errorf("failed to load store: %w", err)
 	}
 	s.store = store
+	s.resetNavigation()
+	s.resetModelSearch()
+	s.resetConnectionResult()
+	s.providers = nil
+	s.searchProviders = nil
 
 	current := store.GetCurrentModel()
 	var currentModelID string
@@ -137,9 +144,6 @@ func (s *Model) EnterModelSelect(ctx context.Context, width, height int) error {
 	sortModelsWithCurrentFirst(s.models)
 
 	s.filteredModels = s.models
-	s.searchQuery = ""
-	s.scrollOffset = 0
-	s.selectedIdx = 0
 	s.ensureVisible()
 	s.active = true
 	s.selectorType = SelectorTypeModel

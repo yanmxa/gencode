@@ -1,0 +1,126 @@
+package app
+
+import (
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/yanmxa/gencode/internal/image"
+	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/provider"
+)
+
+func (m *model) handleStreamCancel() tea.Cmd {
+	if m.conv.Stream.Cancel != nil {
+		m.conv.Stream.Cancel()
+	}
+	m.conv.Stream.Stop()
+	m.cancelPendingToolCalls()
+	m.conv.MarkLastInterrupted()
+	return tea.Batch(m.commitMessages()...)
+}
+
+// cancelPendingToolCalls adds cancellation messages for pending tool calls.
+func (m *model) cancelPendingToolCalls() {
+	var toolCalls []message.ToolCall
+
+	if m.tool.Cancel != nil {
+		m.tool.Cancel()
+	}
+
+	if m.tool.PendingCalls != nil {
+		toolCalls = m.tool.PendingCalls[m.tool.CurrentIdx:]
+		m.tool.Reset()
+	} else if len(m.conv.Messages) > 0 {
+		lastMsg := m.conv.Messages[len(m.conv.Messages)-1]
+		if lastMsg.Role == message.RoleAssistant {
+			toolCalls = lastMsg.ToolCalls
+		}
+	}
+
+	for _, tc := range toolCalls {
+		m.conv.Append(message.ChatMessage{
+			Role:     message.RoleUser,
+			ToolName: tc.Name,
+			ToolResult: &message.ToolResult{
+				ToolCallID: tc.ID,
+				Content:    "Tool execution cancelled by user",
+				IsError:    true,
+			},
+		})
+	}
+}
+
+// detectThinkingKeywords scans the user's message for explicit thinking-level keywords
+// and sets a per-turn override (not persistent). The override resets after the turn completes.
+func (m *model) detectThinkingKeywords(input string) {
+	lower := strings.ToLower(input)
+
+	if strings.Contains(lower, "ultrathink") ||
+		strings.Contains(lower, "think really hard") ||
+		strings.Contains(lower, "think super hard") ||
+		strings.Contains(lower, "maximum thinking") {
+		m.provider.ThinkingOverride = provider.ThinkingUltra
+		return
+	}
+
+	if strings.Contains(lower, "think harder") ||
+		strings.Contains(lower, "think hard") ||
+		strings.Contains(lower, "think deeply") ||
+		strings.Contains(lower, "think carefully") {
+		m.provider.ThinkingOverride = provider.ThinkingHigh
+		return
+	}
+}
+
+// handleSkillInvocation handles skill command invocation by sending the skill
+// instructions and args to the LLM.
+func (m *model) handleSkillInvocation() tea.Cmd {
+	if m.provider.LLM == nil {
+		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "No provider connected. Use /provider to connect."})
+		m.skill.PendingInstructions = ""
+		m.skill.PendingArgs = ""
+		return tea.Batch(m.commitMessages()...)
+	}
+
+	userMsg := m.skill.PendingArgs
+	if userMsg == "" {
+		userMsg = "Execute the skill."
+	}
+	m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: userMsg})
+
+	if m.skill.PendingInstructions != "" {
+		m.skill.ActiveInvocation = m.skill.PendingInstructions
+		m.skill.PendingInstructions = ""
+	}
+	m.skill.PendingArgs = ""
+
+	return m.startLLMStream(nil)
+}
+
+// pasteImageFromClipboard handles pasting image from clipboard.
+func (m *model) pasteImageFromClipboard() (tea.Cmd, bool) {
+	imgData, err := image.ReadImageToProviderData()
+	if err != nil {
+		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "Image paste error: " + err.Error()})
+		return tea.Batch(m.commitMessages()...), true
+	}
+	if imgData == nil {
+		return nil, false
+	}
+	m.input.Images.Pending = append(m.input.Images.Pending, *imgData)
+	return nil, true
+}
+
+// quitWithCancel cancels any active stream and tool execution before quitting.
+// Use this as the single exit point for all quit paths (Ctrl+C, Ctrl+D, "exit").
+func (m *model) quitWithCancel() (tea.Cmd, bool) {
+	if m.conv.Stream.Cancel != nil {
+		m.conv.Stream.Cancel()
+	}
+	if m.tool.Cancel != nil {
+		m.tool.Cancel()
+	}
+	m.fireSessionEnd("prompt_input_exit")
+	return tea.Quit, true
+}

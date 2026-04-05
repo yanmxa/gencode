@@ -18,19 +18,12 @@ func (s *Model) EnterSelect(width, height int) error {
 	s.active = true
 	s.width = width
 	s.height = height
+	s.resetListState()
+	s.resetDetailState()
+	s.resetBrowseState()
+	s.resetInputState()
+	s.resetLoadingState()
 	s.clearMessage()
-	s.searchQuery = ""
-	s.level = LevelTabList
-	s.selectedIdx = 0
-	s.scrollOffset = 0
-	s.parentIdx = 0
-	s.detailPlugin = nil
-	s.detailDiscover = nil
-	s.detailMarketplace = nil
-	s.actions = nil
-	s.actionIdx = 0
-	s.addMarketplaceInput = ""
-	s.browseMarketplaceID = ""
 
 	availableLines := height - 13
 	s.maxVisible = max(3, availableLines/3)

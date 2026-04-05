@@ -11,7 +11,6 @@ import (
 
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/agent"
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
@@ -25,14 +24,12 @@ import (
 	appsession "github.com/yanmxa/gencode/internal/app/session"
 	appskill "github.com/yanmxa/gencode/internal/app/skill"
 	apptool "github.com/yanmxa/gencode/internal/app/tool"
-	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/options"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -111,12 +108,7 @@ func newModel(opts options.RunOptions) (model, error) {
 
 // lastAssistantContent returns the text content of the most recent assistant message.
 func (m *model) lastAssistantContent() string {
-	for i := len(m.conv.Messages) - 1; i >= 0; i-- {
-		if m.conv.Messages[i].Role == message.RoleAssistant && m.conv.Messages[i].Content != "" {
-			return m.conv.Messages[i].Content
-		}
-	}
-	return ""
+	return message.LastAssistantChatContent(m.conv.Messages)
 }
 
 // fireSessionEnd fires the SessionEnd hook synchronously before quitting.
@@ -219,60 +211,10 @@ func (m *model) agentToolOpts() []appprovider.AgentToolOption {
 }
 
 func (m *model) configureLoop(extra []string) {
-	var mcpToolsGetter func() []provider.Tool
-	if m.mcp.Registry != nil {
-		mcpToolsGetter = m.mcp.Registry.GetToolSchemas
-	}
-
 	m.ensureMemoryContextLoaded()
-
-	var skills, agents string
-	if skill.DefaultRegistry != nil {
-		skills = skill.DefaultRegistry.GetSkillsSection()
-	}
-	if agent.DefaultRegistry != nil {
-		agents = agent.DefaultRegistry.GetAgentsSection()
-	}
-	var sessionSummary string
-	if m.session.Summary != "" {
-		sessionSummary = fmt.Sprintf("<session-summary>\n%s\n</session-summary>", m.session.Summary)
-	}
-
-	// Include active skill invocation if present
-	allExtra := extra
-	if m.skill.ActiveInvocation != "" {
-		allExtra = append(allExtra, m.skill.ActiveInvocation)
-	}
-
-	// Inject task reminder nudge when tasks exist and haven't been updated recently
-	if reminder := m.buildTaskReminder(); reminder != "" {
-		allExtra = append(allExtra, reminder)
-	}
-
-	m.loop.Client = &client.Client{
-		Provider:      m.provider.LLM,
-		Model:         m.getModelID(),
-		MaxTokens:     m.getMaxTokens(),
-		ThinkingLevel: m.effectiveThinkingLevel(),
-	}
-	m.loop.System = &system.System{
-		Client:              m.loop.Client,
-		Cwd:                 m.cwd,
-		IsGit:               m.isGit,
-		PlanMode:            m.mode.Enabled,
-		UserInstructions:    m.memory.CachedUser,
-		ProjectInstructions: m.memory.CachedProject,
-		SessionSummary:      sessionSummary,
-		Skills:              skills,
-		Agents:              agents,
-		DeferredTools:       tool.FormatDeferredToolsPrompt(),
-		Extra:               allExtra,
-	}
-	m.loop.Tool = &tool.Set{
-		Disabled: m.mode.DisabledTools,
-		PlanMode: m.mode.Enabled,
-		MCP:      mcpToolsGetter,
-	}
+	m.loop.Client = m.buildLoopClient()
+	m.loop.System = m.buildLoopSystem(extra, m.loop.Client)
+	m.loop.Tool = m.buildLoopToolSet()
 	m.loop.Permission = nil
 	m.loop.Hooks = m.hookEngine
 }

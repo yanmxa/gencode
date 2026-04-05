@@ -47,38 +47,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// ── Feature routing ──────────────────────────────────────
-	if c, ok := m.updateStream(msg); ok {
-		return m, c
-	}
-	if c, ok := m.updateTool(msg); ok {
-		return m, c
-	}
-	if c, ok := m.updateApproval(msg); ok {
-		return m, c
-	}
-	if c, ok := m.updateMode(msg); ok {
-		return m, c
-	}
-	if c, ok := m.updateCompact(msg); ok {
-		return m, c
-	}
-	if c, ok := m.updateProvider(msg); ok {
-		return m, c
-	}
-	if c, ok := m.updateMCP(msg); ok {
-		return m, c
-	}
-	if c, ok := m.updatePlugin(msg); ok {
-		return m, c
-	}
-	if c, ok := m.updateSession(msg); ok {
-		return m, c
-	}
-	if c, ok := m.updateMemory(msg); ok {
-		return m, c
-	}
-	if c, ok := m.updateCron(msg); ok {
-		return m, c
+	if cmd, handled := m.routeFeatureUpdate(msg); handled {
+		return m, cmd
 	}
 	// ── Fallthrough: forward to textarea & spinner ────────────
 	return m, m.updateTextarea(msg)

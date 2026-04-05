@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/core"
@@ -89,101 +88,26 @@ func (e *Executor) GetParentModelID() string {
 // Run executes an agent request and returns the result.
 // For background agents, this should be called in a goroutine.
 func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, error) {
-	start := time.Now()
-
-	if err := e.validateRequest(req); err != nil {
-		return nil, err
-	}
-
-	agentCwd, cleanupWorkspace, err := e.prepareWorkspace(req)
+	run, err := e.prepareRun(req)
 	if err != nil {
 		return nil, err
 	}
-	defer cleanupWorkspace()
+	defer run.close()
 
-	rc, err := e.prepareRunConfig(req)
+	ctx = e.attachRunContext(ctx, run.cfg.displayName)
+	e.logRunStart(run)
+	e.fireSubagentStart(run.req, run.hookID)
+
+	result, err := e.executePreparedRun(ctx, run)
 	if err != nil {
-		return nil, err
-	}
-
-	// Create turn tracker for hierarchical DEV_DIR logging
-	tracker := log.NewAgentTurnTracker(rc.displayName, nil)
-	ctx = log.WithAgentTracker(ctx, tracker)
-
-	log.Logger().Info("Starting agent execution",
-		zap.String("agent", rc.displayName),
-		zap.String("description", req.Description),
-		zap.Int("maxTurns", rc.maxTurns),
-	)
-
-	// Generate agent ID for hook correlation
-	agentHookID := fmt.Sprintf("a%016x", time.Now().UnixNano())
-
-	// Fire SubagentStart hook
-	e.fireSubagentStart(req, agentHookID)
-
-	loop, cleanupLoop, err := e.buildLoop(ctx, req, rc, agentCwd)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanupLoop()
-
-	// Set agent context so tool hook events include agent_id/agent_type
-	loop.AgentID = agentHookID
-	loop.AgentType = req.Agent
-
-	if err := e.loadConversation(loop, req); err != nil {
-		return nil, err
-	}
-
-	// Accumulate all progress messages for the result
-	allProgress := make([]string, 0, 16)
-	onToolStart := e.buildOnToolStart(req, &allProgress)
-
-	result, err := loop.Run(ctx, core.RunOptions{MaxTurns: rc.maxTurns, OnToolStart: onToolStart})
-	if err != nil {
-		cancelled := e.cancelledRunResult(result, rc, start)
+		cancelled := e.buildCancelledAgentResult(run, result)
 		if cancelled != nil {
 			return cancelled, err
 		}
 		return nil, fmt.Errorf("LLM completion failed: %w", err)
 	}
 
-	success, errMsg := interpretStopReason(result, rc.maxTurns)
-
-	logFields := []zap.Field{
-		zap.String("agent", rc.displayName),
-		zap.String("stopReason", result.StopReason),
-		zap.Int("turns", result.Turns),
-		zap.Int("inputTokens", result.Tokens.InputTokens),
-		zap.Int("outputTokens", result.Tokens.OutputTokens),
-	}
-	if success {
-		log.Logger().Info("Agent completed", logFields...)
-	} else {
-		log.Logger().Warn("Agent completed", logFields...)
-	}
-
-	// Persist subagent session if store is configured
-	agentSessionID, agentTranscriptPath := e.persistSubagentSession(rc.displayName, rc.modelID, req.Description, result.Messages)
-
-	// Fire SubagentStop hook (after session persist so agentSessionID is available)
-	e.fireSubagentStop(req, agentHookID, agentSessionID, agentTranscriptPath, result.Content)
-
-	return &AgentResult{
-		AgentID:    agentSessionID,
-		AgentName:  rc.displayName,
-		Model:      rc.modelID,
-		Success:    success,
-		Content:    result.Content,
-		Messages:   result.Messages,
-		TurnCount:  result.Turns,
-		ToolUses:   result.ToolUses,
-		TokenUsage: result.Tokens,
-		Duration:   time.Since(start),
-		Progress:   allProgress,
-		Error:      errMsg,
-	}, nil
+	return e.buildAgentResult(run, result), nil
 }
 
 // RunBackground executes an agent in the background and returns the task
@@ -198,10 +122,7 @@ func (e *Executor) RunBackground(req AgentRequest) (*task.AgentTask, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Use custom name if provided, otherwise use config name
-	displayName := config.Name
-	if req.Name != "" {
-		displayName = req.Name
-	}
+	displayName := displayNameFor(config, req)
 
 	// Create agent task
 	agentTask := task.NewAgentTask(
@@ -274,10 +195,7 @@ func (e *Executor) prepareRunConfig(req AgentRequest) (*runConfig, error) {
 		return nil, fmt.Errorf("unknown agent type: %s", req.Agent)
 	}
 
-	displayName := config.Name
-	if req.Name != "" {
-		displayName = req.Name
-	}
+	displayName := displayNameFor(config, req)
 
 	permMode := config.PermissionMode
 	if req.Mode != "" {
@@ -297,7 +215,7 @@ func (e *Executor) prepareRunConfig(req AgentRequest) (*runConfig, error) {
 		modelID:     e.resolveModelID(req.Model),
 		maxTurns:    maxTurns,
 		displayName: displayName,
-		agentPrompt: e.buildSystemPrompt(config, req),
+		agentPrompt: e.buildSystemPrompt(config, permMode),
 		permMode:    permMode,
 	}, nil
 }
@@ -313,7 +231,7 @@ func (e *Executor) fireSubagentStart(req AgentRequest, agentHookID string) {
 	})
 }
 
-func (e *Executor) buildLoop(ctx context.Context, req AgentRequest, rc *runConfig, agentCwd string) (*core.Loop, func(), error) {
+func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string) (*core.Loop, func(), error) {
 	cleanup := func() {}
 
 	if len(rc.config.McpServers) > 0 && e.mcpRegistry != nil {
@@ -374,25 +292,6 @@ func (e *Executor) buildOnToolStart(req AgentRequest, allProgress *[]string) fun
 	}
 }
 
-func (e *Executor) cancelledRunResult(result *core.Result, rc *runConfig, start time.Time) *AgentResult {
-	if result == nil || result.StopReason != core.StopCancelled {
-		return nil
-	}
-
-	return &AgentResult{
-		AgentName:  rc.config.Name,
-		Model:      rc.modelID,
-		Success:    false,
-		Content:    result.Content,
-		Messages:   result.Messages,
-		TurnCount:  result.Turns,
-		ToolUses:   result.ToolUses,
-		TokenUsage: result.Tokens,
-		Duration:   time.Since(start),
-		Error:      "agent cancelled",
-	}
-}
-
 func interpretStopReason(result *core.Result, maxTurns int) (success bool, errMsg string) {
 	success = result.StopReason == core.StopEndTurn
 	switch result.StopReason {
@@ -440,7 +339,7 @@ func (e *Executor) resolveModelID(requestModel string) string {
 // buildSystemPrompt builds agent-specific Extra content for the system prompt.
 // Identity, environment, instructions, and tool guidelines are already provided
 // by system.System — this method only adds agent-specific content.
-func (e *Executor) buildSystemPrompt(config *AgentConfig, req AgentRequest) string {
+func (e *Executor) buildSystemPrompt(config *AgentConfig, permMode PermissionMode) string {
 	var sb strings.Builder
 
 	// Agent type header
@@ -449,7 +348,7 @@ func (e *Executor) buildSystemPrompt(config *AgentConfig, req AgentRequest) stri
 	sb.WriteString("\n\n")
 
 	// Mode-specific instructions
-	switch config.PermissionMode {
+	switch permMode {
 	case PermissionPlan:
 		sb.WriteString("## Mode: Read-Only\n")
 		sb.WriteString("You are in read-only mode. You can only use tools that read information (Read, Glob, Grep, WebFetch, WebSearch). Do not attempt to modify any files.\n\n")
@@ -484,6 +383,13 @@ func (e *Executor) buildSystemPrompt(config *AgentConfig, req AgentRequest) stri
 	sb.WriteString("- If you encounter errors, report them clearly\n")
 
 	return sb.String()
+}
+
+func displayNameFor(config *AgentConfig, req AgentRequest) string {
+	if req.Name != "" {
+		return req.Name
+	}
+	return config.Name
 }
 
 // toolProgressParams maps tool names to the parameter key used for display.

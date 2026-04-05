@@ -42,10 +42,7 @@ func (m *model) handleProviderSelected(msg appprovider.SelectedMsg) tea.Cmd {
 		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "Error: " + err.Error()})
 	} else {
 		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: result})
-		if p, err := provider.GetProvider(ctx, msg.Provider, msg.AuthMethod); err == nil {
-			m.provider.LLM = p
-			m.reconfigureAgentTool()
-		}
+		m.refreshProviderConnection(ctx, msg.Provider, msg.AuthMethod)
 	}
 	return tea.Batch(m.commitMessages()...)
 }
@@ -63,12 +60,18 @@ func (m *model) handleModelSelected(msg appprovider.ModelSelectedMsg) tea.Cmd {
 		AuthMethod: msg.AuthMethod,
 	}
 	ctx := context.Background()
-	if p, err := provider.GetProvider(ctx, provider.Provider(msg.ProviderName), msg.AuthMethod); err == nil {
-		m.provider.LLM = p
-		m.reconfigureAgentTool()
-	}
+	m.refreshProviderConnection(ctx, provider.Provider(msg.ProviderName), msg.AuthMethod)
 
 	// Show model name in status bar for 5 seconds
 	m.provider.StatusMessage = msg.ModelID
 	return appprovider.StatusTimer(5 * time.Second)
+}
+
+func (m *model) refreshProviderConnection(ctx context.Context, providerName provider.Provider, authMethod provider.AuthMethod) {
+	p, err := provider.GetProvider(ctx, providerName, authMethod)
+	if err != nil {
+		return
+	}
+	m.provider.LLM = p
+	m.reconfigureAgentTool()
 }

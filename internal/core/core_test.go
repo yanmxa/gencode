@@ -11,6 +11,7 @@ import (
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/ui"
 )
 
 // --- Test helpers ---
@@ -44,6 +45,19 @@ func (m *mockProvider) ListModels(ctx context.Context) ([]provider.ModelInfo, er
 }
 
 func (m *mockProvider) Name() string { return "mock" }
+
+type hookResponseTestTool struct{}
+
+func (t *hookResponseTestTool) Name() string        { return "CoreHookResponseTestTool" }
+func (t *hookResponseTestTool) Description() string { return "test tool" }
+func (t *hookResponseTestTool) Icon() string        { return "t" }
+func (t *hookResponseTestTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
+	return ui.ToolResult{
+		Success:      true,
+		Output:       "ok",
+		HookResponse: map[string]any{"status": "structured"},
+	}
+}
 
 // newTestLoop creates a Loop with the new struct layout for testing.
 func newTestLoop(mp provider.LLMProvider) *Loop {
@@ -161,6 +175,31 @@ func TestAddToolResult(t *testing.T) {
 	}
 }
 
+func TestExecToolPreservesHookResponse(t *testing.T) {
+	tool.Register(&hookResponseTestTool{})
+
+	loop := newTestLoop(&mockProvider{})
+	result := loop.ExecTool(context.Background(), message.ToolCall{
+		ID:    "tc-hook",
+		Name:  "CoreHookResponseTestTool",
+		Input: `{}`,
+	})
+
+	if result == nil {
+		t.Fatal("expected tool result")
+	}
+	if result.IsError {
+		t.Fatalf("expected successful tool result, got error: %s", result.Content)
+	}
+	response, ok := result.HookResponse.(map[string]any)
+	if !ok {
+		t.Fatalf("expected structured hook response, got %T", result.HookResponse)
+	}
+	if response["status"] != "structured" {
+		t.Fatalf("unexpected hook response: %#v", response)
+	}
+}
+
 func TestSetMessages(t *testing.T) {
 	loop := &Loop{}
 
@@ -208,6 +247,27 @@ func TestDecideCompletion(t *testing.T) {
 			t.Fatalf("expected CompletionEndTurn, got %v", decision.Action)
 		}
 	})
+}
+
+func TestCanCompactMessages(t *testing.T) {
+	if CanCompactMessages(2) {
+		t.Fatal("expected short conversation to skip compaction")
+	}
+	if !CanCompactMessages(3) {
+		t.Fatal("expected 3-message conversation to allow compaction")
+	}
+}
+
+func TestShouldCompactPromptTooLong(t *testing.T) {
+	if ShouldCompactPromptTooLong(nil, 10) {
+		t.Fatal("nil error should not trigger compaction")
+	}
+	if ShouldCompactPromptTooLong(errors.New("prompt is too long"), 2) {
+		t.Fatal("too-short conversation should not trigger compaction")
+	}
+	if !ShouldCompactPromptTooLong(errors.New("prompt_too_long"), 3) {
+		t.Fatal("expected prompt-too-long with enough messages to trigger compaction")
+	}
 }
 
 func TestDecisionConstants(t *testing.T) {

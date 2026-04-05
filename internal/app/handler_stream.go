@@ -1,8 +1,6 @@
 package app
 
 import (
-	"context"
-
 	tea "github.com/charmbracelet/bubbletea"
 
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
@@ -42,63 +40,59 @@ func (m *model) handleStreamChunk(msg appconv.ChunkMsg) tea.Cmd {
 
 // handleStreamDone processes a completed stream.
 func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
+	m.applyCompletedStreamState(msg)
+	decision := core.DecideCompletion(msg.StopReason, msg.ToolCalls, m.maxOutputRecoveryCount, core.DefaultMaxOutputRecovery)
+	return m.handleCompletionDecision(decision)
+}
+
+func (m *model) applyCompletedStreamState(msg appconv.ChunkMsg) {
 	m.conv.Stream.BuildingTool = ""
-
-	// Increment turns-since-last-task-tool counter for nudge system
 	m.conv.TurnsSinceLastTaskTool++
-
 	if msg.Usage != nil {
 		m.provider.InputTokens = msg.Usage.InputTokens
 		m.provider.OutputTokens = msg.Usage.OutputTokens
 	}
-
 	m.conv.SetLastThinkingSignature(msg.ThinkingSignature)
+}
 
-	decision := core.DecideCompletion(msg.StopReason, msg.ToolCalls, m.maxOutputRecoveryCount, core.DefaultMaxOutputRecovery)
-
-	// Max-output-tokens recovery: if output was truncated with no tool calls,
-	// inject a resume message and continue streaming (up to 3 retries).
-	if decision.Action == core.CompletionRecoverMaxTokens {
-		m.maxOutputRecoveryCount++
-		m.conv.Append(message.ChatMessage{
-			Role:    message.RoleUser,
-			Content: core.MaxOutputRecoveryPrompt,
-		})
-		return m.startContinueStream()
+func (m *model) handleCompletionDecision(decision core.CompletionDecision) tea.Cmd {
+	switch decision.Action {
+	case core.CompletionRecoverMaxTokens:
+		return m.recoverMaxOutputStream()
+	case core.CompletionRunTools:
+		return m.handleCompletionToolCalls(decision.ToolCalls)
+	default:
+		return m.finalizeCompletedTurn()
 	}
+}
 
-	if decision.Action == core.CompletionRunTools {
-		m.conv.SetLastToolCalls(decision.ToolCalls)
-		commitCmds := m.commitMessages()
+func (m *model) recoverMaxOutputStream() tea.Cmd {
+	m.maxOutputRecoveryCount++
+	m.conv.Append(message.ChatMessage{
+		Role:    message.RoleUser,
+		Content: core.MaxOutputRecoveryPrompt,
+	})
+	return m.startContinueStream()
+}
 
-		if m.shouldAutoCompact() {
-			m.conv.Compact.AutoContinue = true // Auto-continue after compaction
-			commitCmds = append(commitCmds, m.triggerAutoCompact())
-			return tea.Batch(commitCmds...)
-		}
-
-		commitCmds = append(commitCmds, m.handleStartToolExecution(decision.ToolCalls))
+func (m *model) handleCompletionToolCalls(toolCalls []message.ToolCall) tea.Cmd {
+	m.conv.SetLastToolCalls(toolCalls)
+	commitCmds := m.commitMessages()
+	if m.shouldAutoCompact() {
+		m.conv.Compact.AutoContinue = true
+		commitCmds = append(commitCmds, m.triggerAutoCompact())
 		return tea.Batch(commitCmds...)
 	}
+	commitCmds = append(commitCmds, m.handleStartToolExecution(toolCalls))
+	return tea.Batch(commitCmds...)
+}
 
+func (m *model) finalizeCompletedTurn() tea.Cmd {
 	m.conv.Stream.Stop()
-
-	// Reset per-turn thinking override
 	m.provider.ThinkingOverride = provider.ThinkingOff
 
 	commitCmds := m.commitMessages()
-
-	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.Stop, hooks.HookInput{
-			LastAssistantMessage: m.lastAssistantContent(),
-		})
-		// Fire idle notification
-		m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{
-			Message:          "Claude is waiting for your input",
-			NotificationType: "idle_prompt",
-		})
-	}
-
+	m.fireIdleHooks()
 	_ = m.saveSession()
 
 	if m.shouldAutoCompact() {
@@ -118,10 +112,23 @@ func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 	return tea.Batch(commitCmds...)
 }
 
+func (m *model) fireIdleHooks() {
+	if m.hookEngine == nil {
+		return
+	}
+	m.hookEngine.ExecuteAsync(hooks.Stop, hooks.HookInput{
+		LastAssistantMessage: m.lastAssistantContent(),
+	})
+	m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{
+		Message:          "Claude is waiting for your input",
+		NotificationType: "idle_prompt",
+	})
+}
+
 // handleStreamError processes a stream error.
 func (m *model) handleStreamError(err error) tea.Cmd {
 	// If "prompt too long", trigger auto-compact and retry
-	if core.IsPromptTooLong(err) && len(m.conv.Messages) >= 3 {
+	if core.ShouldCompactPromptTooLong(err, len(m.conv.Messages)) {
 		m.conv.RemoveEmptyLastAssistant()
 		m.conv.Stream.Stop()
 		m.conv.Compact.AutoContinue = true // Auto-continue after compaction
@@ -144,22 +151,7 @@ func (m *model) handleStreamError(err error) tea.Cmd {
 
 // startContinueStream sets up a follow-up LLM stream after tool results.
 func (m *model) startContinueStream() tea.Cmd {
-	ctx, cancel := context.WithCancel(context.Background())
-	m.conv.Stream.Cancel = cancel
-
-	// Configure loop and set messages BEFORE appending the empty assistant placeholder,
-	// so the placeholder is not included in the API request.
-	m.configureLoop(nil)
-	m.loop.SetMessages(m.conv.ConvertToProvider())
-
-	// Commit any pending messages before starting new stream
-	commitCmds := m.commitMessages()
-
-	m.conv.Append(message.ChatMessage{Role: message.RoleAssistant, Content: ""})
-
-	m.conv.Stream.Ch = m.loop.Stream(ctx)
-	allCmds := append(commitCmds, m.waitForChunk(), m.output.Spinner.Tick)
-	return tea.Batch(allCmds...)
+	return m.startConversationStream(m.buildStreamRequest(nil))
 }
 
 func (m *model) handleSpinnerTick(msg tea.Msg) tea.Cmd {
@@ -170,23 +162,7 @@ func (m *model) handleSpinnerTick(msg tea.Msg) tea.Cmd {
 // startLLMStream sets up and starts an LLM streaming request with optional extra prompt content.
 // It appends an empty assistant message, sets up cancellation, and starts streaming.
 func (m *model) startLLMStream(extra []string) tea.Cmd {
-	ctx, cancel := context.WithCancel(context.Background())
-	m.conv.Stream.Cancel = cancel
-	m.conv.Stream.Active = true
-
-	// Configure loop with current state and set messages
-	m.configureLoop(extra)
-	m.loop.SetMessages(m.conv.ConvertToProvider())
-
-	// Commit any pending messages before starting stream
-	commitCmds := m.commitMessages()
-
-	m.conv.Append(message.ChatMessage{Role: message.RoleAssistant, Content: ""})
-
-	m.conv.Stream.Ch = m.loop.Stream(ctx)
-
-	allCmds := append(commitCmds, m.waitForChunk(), m.output.Spinner.Tick)
-	return tea.Batch(allCmds...)
+	return m.startConversationStream(m.buildStreamRequest(extra))
 }
 
 func (m model) waitForChunk() tea.Cmd {
