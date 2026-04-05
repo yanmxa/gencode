@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/yanmxa/gencode/internal/config"
@@ -236,6 +237,13 @@ func (e *Engine) executeCommand(ctx context.Context, hookCmd config.HookCmd, inp
 	cmd.Dir = e.cwd
 	cmd.Stdin = bytes.NewReader(inputJSON)
 	cmd.Env = e.buildEnv(input)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		return nil
+	}
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -429,6 +437,13 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd config
 	cmd := exec.CommandContext(ctx, "sh", "-c", hookCmd.Command)
 	cmd.Dir = e.cwd
 	cmd.Env = e.buildEnv(input)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		return nil
+	}
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
