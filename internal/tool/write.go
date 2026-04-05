@@ -30,9 +30,9 @@ func (t *WriteTool) RequiresPermission() bool {
 // PreparePermission prepares a permission request with diff information
 func (t *WriteTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*permission.PermissionRequest, error) {
 	// Get parameters
-	filePath, ok := params["file_path"].(string)
-	if !ok || filePath == "" {
-		return nil, &ToolError{Message: "file_path is required"}
+	filePath, err := requireString(params, "file_path")
+	if err != nil {
+		return nil, err
 	}
 
 	content, ok := params["content"].(string)
@@ -46,10 +46,11 @@ func (t *WriteTool) PreparePermission(ctx context.Context, params map[string]any
 	}
 
 	// Check if file exists
-	_, err := os.Stat(filePath)
-	isNewFile := os.IsNotExist(err)
-	if err != nil && !isNewFile {
-		return nil, &ToolError{Message: "failed to check file: " + err.Error()}
+	var statErr error
+	_, statErr = os.Stat(filePath)
+	isNewFile := os.IsNotExist(statErr)
+	if statErr != nil && !isNewFile {
+		return nil, &ToolError{Message: "failed to check file: " + statErr.Error()}
 	}
 
 	// Generate appropriate preview based on whether file exists
@@ -85,7 +86,7 @@ func (t *WriteTool) ExecuteApproved(ctx context.Context, params map[string]any, 
 	start := time.Now()
 
 	// Get parameters
-	filePath, _ := params["file_path"].(string)
+	filePath := getString(params, "file_path")
 	content, _ := params["content"].(string)
 
 	// Resolve relative path
@@ -104,12 +105,7 @@ func (t *WriteTool) ExecuteApproved(ctx context.Context, params map[string]any, 
 	isNewFile := os.IsNotExist(err)
 
 	// Get optional mode parameter (default 0644)
-	mode := os.FileMode(0o644)
-	if modeVal, ok := params["mode"].(float64); ok && modeVal > 0 {
-		mode = os.FileMode(int(modeVal))
-	} else if modeVal, ok := params["mode"].(int); ok && modeVal > 0 {
-		mode = os.FileMode(modeVal)
-	}
+	mode := os.FileMode(getInt(params, "mode", 0o644))
 
 	// Write file
 	if err := os.WriteFile(filePath, []byte(content), mode); err != nil {

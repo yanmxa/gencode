@@ -16,13 +16,13 @@ func (t *TodoUpdateTool) Description() string { return "Update task status or de
 func (t *TodoUpdateTool) Icon() string        { return "📋" }
 
 func (t *TodoUpdateTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
-	taskID, _ := params["taskId"].(string)
+	taskID := getString(params, "taskId")
 	if taskID == "" {
 		return ui.NewErrorResult(t.Name(), "taskId is required")
 	}
 
 	// Handle deletion separately
-	if status, _ := params["status"].(string); status == TodoStatusDeleted {
+	if status := getString(params, "status"); status == TodoStatusDeleted {
 		if err := DefaultTodoStore.Delete(taskID); err != nil {
 			return ui.NewErrorResult(t.Name(), err.Error())
 		}
@@ -71,7 +71,7 @@ func buildUpdateOptions(params map[string]any) ([]UpdateOption, string, error) {
 	var opts []UpdateOption
 	var statusChange string
 
-	if status, ok := params["status"].(string); ok && status != "" {
+	if status := getString(params, "status"); status != "" {
 		switch status {
 		case TodoStatusPending, TodoStatusInProgress, TodoStatusCompleted:
 			opts = append(opts, WithStatus(status))
@@ -81,16 +81,16 @@ func buildUpdateOptions(params map[string]any) ([]UpdateOption, string, error) {
 		}
 	}
 
-	if subject, ok := params["subject"].(string); ok && subject != "" {
+	if subject := getString(params, "subject"); subject != "" {
 		opts = append(opts, WithSubject(subject))
 	}
-	if description, ok := params["description"].(string); ok && description != "" {
+	if description := getString(params, "description"); description != "" {
 		opts = append(opts, WithDescription(description))
 	}
-	if activeForm, ok := params["activeForm"].(string); ok && activeForm != "" {
+	if activeForm := getString(params, "activeForm"); activeForm != "" {
 		opts = append(opts, WithActiveForm(activeForm))
 	}
-	if owner, ok := params["owner"].(string); ok && owner != "" {
+	if owner := getString(params, "owner"); owner != "" {
 		opts = append(opts, WithOwner(owner))
 	}
 	if metadata, ok := params["metadata"].(map[string]any); ok {

@@ -16,7 +16,7 @@ func (t *TodoGetTool) Description() string { return "Retrieve task details by ID
 func (t *TodoGetTool) Icon() string        { return "📋" }
 
 func (t *TodoGetTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
-	taskID, _ := params["taskId"].(string)
+	taskID := getString(params, "taskId")
 	if taskID == "" {
 		return ui.NewErrorResult(t.Name(), "taskId is required")
 	}

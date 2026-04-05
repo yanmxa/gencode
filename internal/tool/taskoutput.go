@@ -25,8 +25,8 @@ func (t *TaskOutputTool) Icon() string        { return IconTaskOutput }
 func (t *TaskOutputTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
-	taskID, ok := params["task_id"].(string)
-	if !ok || taskID == "" {
+	taskID := getString(params, "task_id")
+	if taskID == "" {
 		return ui.ToolResult{
 			Success: false,
 			Error:   "task_id is required",
@@ -37,20 +37,13 @@ func (t *TaskOutputTool) Execute(ctx context.Context, params map[string]any, cwd
 		}
 	}
 
-	// Get block parameter (default true)
+	// Get block parameter (default true — absent means block)
 	block := true
 	if b, ok := params["block"].(bool); ok {
 		block = b
 	}
 
-	// Get timeout (default 30 seconds, max 600 seconds)
-	timeout := 30 * time.Second
-	if timeoutMs, ok := params["timeout"].(float64); ok && timeoutMs > 0 {
-		timeout = time.Duration(timeoutMs) * time.Millisecond
-		if timeout > 600*time.Second {
-			timeout = 600 * time.Second
-		}
-	}
+	timeout := min(time.Duration(getFloat64(params, "timeout", 30000))*time.Millisecond, 600*time.Second)
 
 	// Get task
 	bgTask, found := task.DefaultManager.Get(taskID)

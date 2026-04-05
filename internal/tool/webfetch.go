@@ -27,20 +27,17 @@ func (t *WebFetchTool) Icon() string        { return ui.IconWeb }
 func (t *WebFetchTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
-	// Get URL parameter
-	urlStr, ok := params["url"].(string)
-	if !ok || urlStr == "" {
-		return ui.NewErrorResult(t.Name(), "url is required")
+	urlStr, err := requireString(params, "url")
+	if err != nil {
+		return ui.NewErrorResult(t.Name(), err.Error())
 	}
 
-	// Normalize URL
 	if !strings.HasPrefix(urlStr, "http://") && !strings.HasPrefix(urlStr, "https://") {
 		urlStr = "https://" + urlStr
 	}
 
-	// Get optional format parameter
 	format := "markdown"
-	if f, ok := params["format"].(string); ok && f != "" {
+	if f := getString(params, "format"); f != "" {
 		format = f
 	}
 

@@ -15,15 +15,12 @@ func (t *ToolSearchTool) Description() string { return "Fetch schemas for deferr
 func (t *ToolSearchTool) Icon() string        { return "search" }
 
 func (t *ToolSearchTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
-	query, _ := params["query"].(string)
+	query := getString(params, "query")
 	if query == "" {
 		return ui.NewErrorResult(t.Name(), "query is required")
 	}
 
-	maxResults := 5
-	if v, ok := params["max_results"].(float64); ok && v > 0 {
-		maxResults = int(v)
-	}
+	maxResults := getInt(params, "max_results", 5)
 
 	matched := SearchDeferredTools(query, maxResults)
 

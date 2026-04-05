@@ -24,13 +24,7 @@ func (m *Model) UpdateHeight() {
 	content := m.Textarea.Value()
 	lines := strings.Count(content, "\n") + 1
 
-	newHeight := lines
-	if newHeight < minTextareaHeight {
-		newHeight = minTextareaHeight
-	}
-	if newHeight > maxTextareaHeight {
-		newHeight = maxTextareaHeight
-	}
+	newHeight := max(min(lines, maxTextareaHeight), minTextareaHeight)
 
 	m.Textarea.SetHeight(newHeight)
 }
