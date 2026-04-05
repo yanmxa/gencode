@@ -159,18 +159,18 @@ func PrepareServerEdit(name string) (*EditInfo, error) {
 	}
 
 	if _, writeErr := tmpFile.Write(append(data, '\n')); writeErr != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
 		return nil, fmt.Errorf("failed to write temp file: %w", writeErr)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	return &EditInfo{TempFile: tmpFile.Name(), ServerName: name, Scope: scope}, nil
 }
 
 // ApplyServerEdit reads the edited temp file and saves the updated config back.
 func ApplyServerEdit(info *EditInfo) error {
-	defer os.Remove(info.TempFile)
+	defer func() { _ = os.Remove(info.TempFile) }()
 
 	data, err := os.ReadFile(info.TempFile)
 	if err != nil {

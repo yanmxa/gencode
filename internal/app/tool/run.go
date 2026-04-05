@@ -144,7 +144,7 @@ func checkPermission(tc message.ToolCall, index int, params map[string]any, sett
 		return nil
 	}
 	switch settings.CheckPermission(tc.Name, params, sessionPerms) {
-	case config.PermissionDeny:
+	case config.Deny:
 		return newResult(tc, index, "Permission denied by settings", true)
 	default:
 		return nil
@@ -181,7 +181,7 @@ func ProcessNext(ctx context.Context, hub *progress.Hub, toolCalls []message.Too
 
 		if settings != nil {
 			switch settings.CheckPermission(tc.Name, params, sessionPerms) {
-			case config.PermissionAllow:
+			case config.Allow:
 				return executeAndLog(tc, idx, func() ui.ToolResult {
 					result, err := coretool.ExecutePreparedTool(ctx, tc, params, cwd, false, defaultMCPExecutor{})
 					if err != nil {
@@ -189,7 +189,7 @@ func ProcessNext(ctx context.Context, hub *progress.Hub, toolCalls []message.Too
 					}
 					return result
 				})
-			case config.PermissionDeny:
+			case config.Deny:
 				return newResult(tc, idx, "Permission denied by settings", true)
 			}
 		}
@@ -338,9 +338,9 @@ func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, ses
 		// permissions before requiring user interaction.
 		if settings != nil {
 			switch settings.CheckPermission(tc.Name, params, sessionPerms) {
-			case config.PermissionAllow:
+			case config.Allow:
 				return false
-			case config.PermissionDeny:
+			case config.Deny:
 				return false // denied — ProcessNext will handle denial
 			}
 		}
@@ -353,9 +353,9 @@ func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, ses
 	if settings != nil {
 		perm := settings.CheckPermission(tc.Name, params, sessionPerms)
 		switch perm {
-		case config.PermissionAllow:
+		case config.Allow:
 			return false // session/settings explicitly allow — no interaction needed
-		case config.PermissionAsk:
+		case config.Ask:
 			return true
 		}
 	}
