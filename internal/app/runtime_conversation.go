@@ -7,12 +7,20 @@ import (
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
 	"github.com/yanmxa/gencode/internal/client"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
-type conversationRuntime struct{}
+type conversationRuntime interface {
+	SuggestPromptCmd(promptSuggestionRequest) tea.Cmd
+	FetchTokenLimitsCmd(tokenLimitFetchRequest) tea.Cmd
+	CompactCmd(compactRequest) tea.Cmd
+	StartStream(streamRequest) streamStartResult
+}
+
+type defaultConversationRuntime struct{}
 
 type promptSuggestionRequest struct {
 	Ctx          context.Context
@@ -40,11 +48,21 @@ type compactRequest struct {
 	Trigger        string
 }
 
-func newConversationRuntime() conversationRuntime {
-	return conversationRuntime{}
+type streamRequest struct {
+	Loop     *core.Loop
+	Messages []message.Message
 }
 
-func (conversationRuntime) SuggestPromptCmd(req promptSuggestionRequest) tea.Cmd {
+type streamStartResult struct {
+	Cancel context.CancelFunc
+	Ch     <-chan message.StreamChunk
+}
+
+func newConversationRuntime() conversationRuntime {
+	return defaultConversationRuntime{}
+}
+
+func (defaultConversationRuntime) SuggestPromptCmd(req promptSuggestionRequest) tea.Cmd {
 	if req.Client == nil {
 		return nil
 	}
@@ -58,7 +76,7 @@ func (conversationRuntime) SuggestPromptCmd(req promptSuggestionRequest) tea.Cmd
 	}
 }
 
-func (conversationRuntime) FetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.Cmd {
+func (defaultConversationRuntime) FetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.Cmd {
 	deps := appcompact.AutoFetchTokenLimitsDeps{
 		LLM:          req.LLM,
 		Store:        req.Store,
@@ -73,7 +91,7 @@ func (conversationRuntime) FetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.C
 	}
 }
 
-func (conversationRuntime) CompactCmd(req compactRequest) tea.Cmd {
+func (defaultConversationRuntime) CompactCmd(req compactRequest) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 		focus := req.Focus
@@ -92,5 +110,14 @@ func (conversationRuntime) CompactCmd(req compactRequest) tea.Cmd {
 		}
 		summary, count, err := appcompact.CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
 		return appcompact.CompactResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
+	}
+}
+
+func (defaultConversationRuntime) StartStream(req streamRequest) streamStartResult {
+	ctx, cancel := context.WithCancel(context.Background())
+	req.Loop.SetMessages(req.Messages)
+	return streamStartResult{
+		Cancel: cancel,
+		Ch:     req.Loop.Stream(ctx),
 	}
 }

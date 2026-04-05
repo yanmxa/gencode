@@ -9,9 +9,6 @@ import (
 
 	appinput "github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/image"
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
 
@@ -237,7 +234,7 @@ func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 	}
 
 	// Check selectors via unified interface dispatch.
-	for _, sel := range m.selectorDispatchers() {
+	for _, sel := range m.overlaySelectors() {
 		if sel.IsActive() {
 			return true, sel.HandleKeypress(msg)
 		}
@@ -309,53 +306,6 @@ func (m *model) expandCollapseAll() tea.Cmd {
 	return m.reflowScrollback()
 }
 
-func (m *model) handleStreamCancel() tea.Cmd {
-	if m.conv.Stream.Cancel != nil {
-		m.conv.Stream.Cancel()
-	}
-	m.conv.Stream.Stop()
-
-	// Cancel pending tool calls
-	m.cancelPendingToolCalls()
-
-	// Mark the last assistant message as interrupted
-	m.conv.MarkLastInterrupted()
-
-	// Commit all messages to scrollback
-	return tea.Batch(m.commitMessages()...)
-}
-
-// cancelPendingToolCalls adds cancellation messages for pending tool calls.
-func (m *model) cancelPendingToolCalls() {
-	var toolCalls []message.ToolCall
-
-	if m.tool.Cancel != nil {
-		m.tool.Cancel()
-	}
-
-	if m.tool.PendingCalls != nil {
-		toolCalls = m.tool.PendingCalls[m.tool.CurrentIdx:]
-		m.tool.Reset()
-	} else if len(m.conv.Messages) > 0 {
-		lastMsg := m.conv.Messages[len(m.conv.Messages)-1]
-		if lastMsg.Role == message.RoleAssistant {
-			toolCalls = lastMsg.ToolCalls
-		}
-	}
-
-	for _, tc := range toolCalls {
-		m.conv.Append(message.ChatMessage{
-			Role:     message.RoleUser,
-			ToolName: tc.Name,
-			ToolResult: &message.ToolResult{
-				ToolCallID: tc.ID,
-				Content:    "Tool execution cancelled by user",
-				IsError:    true,
-			},
-		})
-	}
-}
-
 func (m *model) handleHistoryUp() tea.Cmd {
 	m.input.HistoryUp()
 	return nil
@@ -366,169 +316,6 @@ func (m *model) handleHistoryDown() tea.Cmd {
 	return nil
 }
 
-func (m *model) handleSubmit() tea.Cmd {
-	m.promptSuggestion.Clear()
-	m.maxOutputRecoveryCount = 0 // Reset max-output recovery counter on new user input
-	if m.conv.Stream.Active {
-		return nil
-	}
-	input := strings.TrimSpace(m.input.Textarea.Value())
-	if input == "" && len(m.input.Images.Pending) == 0 {
-		return nil
-	}
-
-	if strings.ToLower(input) == "exit" {
-		cmd, _ := m.quitWithCancel()
-		return cmd
-	}
-
-	// Execute UserPromptSubmit hook before processing
-	if blocked, reason := m.checkPromptHook(input); blocked {
-		return m.blockPromptSubmission(reason)
-	}
-
-	m.recordSubmittedInput(input)
-
-	if cmd, handled := m.handleCommandSubmit(input); handled {
-		return cmd
-	}
-
-	// Clear active skill invocation on new user input
-	m.skill.ActiveInvocation = ""
-
-	userMsg, cmd, handled := m.prepareSubmittedUserMessage(input)
-	if handled {
-		return cmd
-	}
-	m.conv.Append(userMsg)
-	m.resetInputField()
-	return m.startProviderTurn(userMsg.Content)
-}
-
-// detectThinkingKeywords scans the user's message for explicit thinking-level keywords
-// and sets a per-turn override (not persistent). The override resets after the turn completes.
-func (m *model) detectThinkingKeywords(input string) {
-	lower := strings.ToLower(input)
-
-	// Check for ultrathink keywords first (most specific)
-	if strings.Contains(lower, "ultrathink") ||
-		strings.Contains(lower, "think really hard") ||
-		strings.Contains(lower, "think super hard") ||
-		strings.Contains(lower, "maximum thinking") {
-		m.provider.ThinkingOverride = provider.ThinkingUltra
-		return
-	}
-
-	// Check for high thinking keywords
-	if strings.Contains(lower, "think harder") ||
-		strings.Contains(lower, "think hard") ||
-		strings.Contains(lower, "think deeply") ||
-		strings.Contains(lower, "think carefully") {
-		m.provider.ThinkingOverride = provider.ThinkingHigh
-		return
-	}
-}
-
-func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
-	oldWidth := m.width
-	m.width = msg.Width
-	m.height = msg.Height
-
-	// Update markdown renderer before rendering any content
-	m.output.ResizeMDRenderer(msg.Width)
-
-	// Resize plan prompt if active
-	if m.mode.PlanApproval != nil {
-		m.mode.PlanApproval.SetSize(msg.Width, msg.Height)
-	}
-
-	if !m.ready {
-		m.ready = true
-
-		var cmds []tea.Cmd
-
-		// If resuming a session with messages, commit them to scrollback
-		if len(m.conv.Messages) > 0 {
-			cmds = append(cmds, m.commitAllMessages()...)
-		} else {
-			// Print welcome screen
-			cmds = append(cmds, tea.Println(m.renderWelcome()))
-		}
-
-		// Open session selector if pending (for --resume flag)
-		if m.session.PendingSelector {
-			m.session.PendingSelector = false
-			if m.session.Store != nil {
-				_ = m.session.Selector.EnterSelect(m.width, m.height, m.session.Store, m.cwd)
-			}
-		}
-
-		m.input.Textarea.SetWidth(msg.Width - 4 - 2)
-		if len(cmds) > 0 {
-			return tea.Batch(cmds...)
-		}
-		return nil
-	}
-
-	m.input.Textarea.SetWidth(msg.Width - 4 - 2)
-
-	// If width changed and there are committed messages, clear screen and
-	// re-render all committed content at the new width.
-	if oldWidth != msg.Width && m.conv.CommittedCount > 0 {
-		return m.reflowScrollback()
-	}
-
-	return nil
-}
-
-// reflowScrollback clears the terminal and re-commits all previously committed
-// messages at the current width. This is needed when the pane width changes
-// (e.g., after tmux split) to fix content that was rendered at the old width.
-func (m *model) reflowScrollback() tea.Cmd {
-	committed := m.conv.CommittedCount
-	m.conv.CommittedCount = 0
-
-	var cmds []tea.Cmd
-	cmds = append(cmds, tea.ClearScreen)
-
-	// Re-commit all previously committed messages
-	for i := 0; i < committed; i++ {
-		if rendered := m.renderSingleMessage(i); rendered != "" {
-			cmds = append(cmds, tea.Println(rendered))
-		}
-		m.conv.CommittedCount = i + 1
-	}
-
-	return tea.Sequence(cmds...)
-}
-
-// handleSkillInvocation handles skill command invocation by sending the skill
-// instructions and args to the LLM.
-func (m *model) handleSkillInvocation() tea.Cmd {
-	if m.provider.LLM == nil {
-		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "No provider connected. Use /provider to connect."})
-		m.skill.PendingInstructions = ""
-		m.skill.PendingArgs = ""
-		return tea.Batch(m.commitMessages()...)
-	}
-
-	// Append user message before starting the stream so the LLM receives it
-	userMsg := m.skill.PendingArgs
-	if userMsg == "" {
-		userMsg = "Execute the skill."
-	}
-	m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: userMsg})
-
-	// Store in ActiveInvocation for persistence across turns
-	if m.skill.PendingInstructions != "" {
-		m.skill.ActiveInvocation = m.skill.PendingInstructions
-		m.skill.PendingInstructions = ""
-	}
-	m.skill.PendingArgs = ""
-
-	return m.startLLMStream(nil)
-}
-
 // checkPromptHook runs UserPromptSubmit hook and returns (blocked, reason).
 func (m *model) checkPromptHook(prompt string) (bool, string) {
 	if m.hookEngine == nil {
@@ -536,53 +323,4 @@ func (m *model) checkPromptHook(prompt string) (bool, string) {
 	}
 	outcome := m.hookEngine.Execute(context.Background(), hooks.UserPromptSubmit, hooks.HookInput{Prompt: prompt})
 	return outcome.ShouldBlock, outcome.BlockReason
-}
-
-// pasteImageFromClipboard handles pasting image from clipboard
-func (m *model) pasteImageFromClipboard() (tea.Cmd, bool) {
-	imgData, err := image.ReadImageToProviderData()
-	if err != nil {
-		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "Image paste error: " + err.Error()})
-		return tea.Batch(m.commitMessages()...), true
-	}
-	if imgData == nil {
-		// No image in clipboard, let textarea handle the key
-		return nil, false
-	}
-	m.input.Images.Pending = append(m.input.Images.Pending, *imgData)
-	return nil, true
-}
-
-// quitWithCancel cancels any active stream and tool execution before quitting.
-// Use this as the single exit point for all quit paths (Ctrl+C, Ctrl+D, "exit").
-func (m *model) quitWithCancel() (tea.Cmd, bool) {
-	if m.conv.Stream.Cancel != nil {
-		m.conv.Stream.Cancel()
-	}
-	if m.tool.Cancel != nil {
-		m.tool.Cancel()
-	}
-	m.fireSessionEnd("prompt_input_exit")
-	return tea.Quit, true
-}
-
-// selectorDispatcher is implemented by all overlay selector components.
-type selectorDispatcher interface {
-	IsActive() bool
-	HandleKeypress(tea.KeyMsg) tea.Cmd
-}
-
-// selectorDispatchers returns all active selector components in priority order.
-// Used by delegateToActiveModal to dispatch keypresses without repetition.
-func (m *model) selectorDispatchers() []selectorDispatcher {
-	return []selectorDispatcher{
-		&m.provider.Selector,
-		&m.tool.Selector,
-		&m.skill.Selector,
-		&m.agent.Selector,
-		&m.mcp.Selector,
-		&m.plugin.Selector,
-		&m.session.Selector,
-		&m.memory.Selector,
-	}
 }

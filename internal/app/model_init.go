@@ -71,51 +71,23 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 }
 
 func newBaseModel(cwd string, infra modelInfra) model {
-	matchFunc := func(query string) []suggest.Suggestion {
-		cmds := appcommand.GetMatchingCommands(query)
-		result := make([]suggest.Suggestion, len(cmds))
-		for i, c := range cmds {
-			result[i] = suggest.Suggestion{Name: c.Name, Description: c.Description}
-		}
-		return result
-	}
-
 	progressHub := progress.NewHub(100)
 
 	return model{
-		input:  appinput.New(cwd, defaultWidth, matchFunc),
+		input:  appinput.New(cwd, defaultWidth, commandSuggestionMatcher()),
 		output: appoutput.New(defaultWidth, progressHub),
 		conv:   appconv.New(),
 		cwd:    cwd,
 
-		provider: appprovider.State{
-			LLM:          infra.llmProvider,
-			Store:        infra.store,
-			CurrentModel: infra.currentModel,
-			Selector:     appprovider.New(),
-		},
-		session: appsession.State{
-			Selector: appsession.New(),
-			Store:    infra.earlySessionStore,
-		},
-		skill: appskill.State{
-			Selector: appskill.New(),
-		},
-		memory: appmemory.State{
-			Selector: appmemory.New(),
-		},
-		mode: appmode.State{
-			Operation:          appmode.Normal,
-			SessionPermissions: config.NewSessionPermissions(),
-			DisabledTools:      config.GetDisabledTools(),
-			PlanApproval:       appmode.NewPlanPrompt(),
-			PlanEntry:          appmode.NewEnterPlanPrompt(),
-			Question:           appmode.NewQuestionPrompt(),
-		},
-		tool:     apptool.State{Selector: apptool.New()},
-		mcp:      appmcp.State{Selector: appmcp.New(), Registry: infra.mcpRegistry},
-		plugin:   appplugin.State{Selector: appplugin.New()},
-		agent:    appagent.State{Selector: appagent.New()},
+		provider: newProviderState(infra),
+		session:  newSessionState(infra),
+		skill:    newSkillState(),
+		memory:   newMemoryState(),
+		mode:     newModeState(),
+		tool:     newToolState(),
+		mcp:      newMCPState(infra),
+		plugin:   newPluginState(),
+		agent:    newAgentState(),
 		approval: appapproval.New(),
 
 		showTasks: true,
@@ -126,6 +98,68 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		loop:       &core.Loop{},
 		runtime:    newConversationRuntime(),
 	}
+}
+
+func commandSuggestionMatcher() func(string) []suggest.Suggestion {
+	return func(query string) []suggest.Suggestion {
+		cmds := appcommand.GetMatchingCommands(query)
+		result := make([]suggest.Suggestion, len(cmds))
+		for i, c := range cmds {
+			result[i] = suggest.Suggestion{Name: c.Name, Description: c.Description}
+		}
+		return result
+	}
+}
+
+func newProviderState(infra modelInfra) appprovider.State {
+	return appprovider.State{
+		LLM:          infra.llmProvider,
+		Store:        infra.store,
+		CurrentModel: infra.currentModel,
+		Selector:     appprovider.New(),
+	}
+}
+
+func newSessionState(infra modelInfra) appsession.State {
+	return appsession.State{
+		Selector: appsession.New(),
+		Store:    infra.earlySessionStore,
+	}
+}
+
+func newSkillState() appskill.State {
+	return appskill.State{Selector: appskill.New()}
+}
+
+func newMemoryState() appmemory.State {
+	return appmemory.State{Selector: appmemory.New()}
+}
+
+func newModeState() appmode.State {
+	return appmode.State{
+		Operation:          appmode.Normal,
+		SessionPermissions: config.NewSessionPermissions(),
+		DisabledTools:      config.GetDisabledTools(),
+		PlanApproval:       appmode.NewPlanPrompt(),
+		PlanEntry:          appmode.NewEnterPlanPrompt(),
+		Question:           appmode.NewQuestionPrompt(),
+	}
+}
+
+func newToolState() apptool.State {
+	return apptool.State{Selector: apptool.New()}
+}
+
+func newMCPState(infra modelInfra) appmcp.State {
+	return appmcp.State{Selector: appmcp.New(), Registry: infra.mcpRegistry}
+}
+
+func newPluginState() appplugin.State {
+	return appplugin.State{Selector: appplugin.New()}
+}
+
+func newAgentState() appagent.State {
+	return appagent.State{Selector: appagent.New()}
 }
 
 func (m *model) applyRunOptions(opts options.RunOptions) error {

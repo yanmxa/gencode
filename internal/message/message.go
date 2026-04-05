@@ -153,6 +153,26 @@ func BuildConversationText(msgs []Message) string {
 	return sb.String()
 }
 
+// LastAssistantContent returns the most recent non-empty assistant content from provider messages.
+func LastAssistantContent(msgs []Message) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == RoleAssistant && msgs[i].Content != "" {
+			return msgs[i].Content
+		}
+	}
+	return ""
+}
+
+// LastAssistantChatContent returns the most recent non-empty assistant content from chat messages.
+func LastAssistantChatContent(msgs []ChatMessage) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == RoleAssistant && msgs[i].Content != "" {
+			return msgs[i].Content
+		}
+	}
+	return ""
+}
+
 // NeedsCompaction checks if token usage exceeds the threshold percentage of the input limit.
 func NeedsCompaction(inputTokens, inputLimit int) bool {
 	if inputLimit == 0 || inputTokens == 0 {
@@ -167,8 +187,8 @@ type CompletionResponse struct {
 	Thinking          string     `json:"thinking,omitempty"`           // Reasoning content for thinking models
 	ThinkingSignature string     `json:"thinking_signature,omitempty"` // Anthropic: signature for thinking block replay
 	ToolCalls         []ToolCall `json:"tool_calls,omitempty"`
-	StopReason string     `json:"stop_reason"` // "end_turn", "tool_use", "max_tokens"
-	Usage      Usage      `json:"usage"`
+	StopReason        string     `json:"stop_reason"` // "end_turn", "tool_use", "max_tokens"
+	Usage             Usage      `json:"usage"`
 }
 
 // Usage contains token usage information.

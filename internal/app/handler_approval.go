@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 
@@ -41,7 +40,7 @@ func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
 		args := m.buildPermissionArgs(msg.Request)
 		if m.settings != nil && m.settings.ResolveHookAllow(msg.Request.ToolName, args, m.mode.SessionPermissions) {
 			// Hook allow is valid, skip permission prompt
-			return apptool.ExecuteApproved(m.tool.Ctx, m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
+			return apptool.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
 		}
 		// Safety invariant denied the hook allow — fall through to normal approval modal
 	}
@@ -95,7 +94,7 @@ func (m *model) checkPermissionHook(req *permission.PermissionRequest) (blocked,
 	}
 	hookInput.PermissionSuggestions = m.buildPermissionSuggestions(req)
 
-	outcome := m.hookEngine.Execute(context.Background(), hooks.PermissionRequest, hookInput)
+	outcome := m.hookEngine.Execute(m.tool.Context(), hooks.PermissionRequest, hookInput)
 
 	if outcome.ShouldBlock {
 		return true, false, outcome.BlockReason
@@ -267,12 +266,12 @@ func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
 	if msg.Request != nil && msg.Request.ToolName == tool.ToolAgent {
 		m.output.TaskProgress = nil
 		return tea.Batch(
-			apptool.ExecuteApproved(m.tool.Ctx, m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd),
+			apptool.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd),
 			m.output.HandleProgressTick(true),
 		)
 	}
 
-	return apptool.ExecuteApproved(m.tool.Ctx, m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
+	return apptool.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
 }
 
 func (m *model) applyAllowAllPermission(toolName string) {

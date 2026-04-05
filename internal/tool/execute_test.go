@@ -84,3 +84,41 @@ func TestExecutePreparedToolReturnsUnknownToolError(t *testing.T) {
 		t.Fatal("expected unknown tool error")
 	}
 }
+
+func TestPrepareToolCallParsesAndResolvesBuiltInTool(t *testing.T) {
+	Register(&testPermissionAwareTool{})
+
+	prepared, err := PrepareToolCall(message.ToolCall{
+		ID:    "tc5",
+		Name:  "TestPermissionAwareTool",
+		Input: `{"path":"x"}`,
+	}, nil)
+	if err != nil {
+		t.Fatalf("PrepareToolCall returned error: %v", err)
+	}
+	if prepared.Tool == nil {
+		t.Fatal("expected resolved tool")
+	}
+	if prepared.Params["path"] != "x" {
+		t.Fatalf("unexpected params: %#v", prepared.Params)
+	}
+}
+
+func TestPrepareToolCallResolvesMCPTool(t *testing.T) {
+	mcpExec := &testMCPExecutor{}
+
+	prepared, err := PrepareToolCall(message.ToolCall{
+		ID:    "tc6",
+		Name:  "mcp__test__tool",
+		Input: `{"query":"ok"}`,
+	}, mcpExec)
+	if err != nil {
+		t.Fatalf("PrepareToolCall returned error: %v", err)
+	}
+	if !prepared.IsMCP {
+		t.Fatal("expected MCP tool to be marked")
+	}
+	if prepared.Params["query"] != "ok" {
+		t.Fatalf("unexpected params: %#v", prepared.Params)
+	}
+}

@@ -27,60 +27,31 @@ import (
 
 type CommandHandler func(ctx context.Context, m *model, args string) (string, tea.Cmd, error)
 
+var builtinCommandHandlers = map[string]CommandHandler{
+	"provider":   handleProviderCommand,
+	"model":      handleModelCommand,
+	"clear":      handleClearCommand,
+	"fork":       handleForkCommand,
+	"resume":     handleResumeCommand,
+	"help":       handleHelpCommand,
+	"glob":       handleGlobCommand,
+	"tools":      handleToolCommand,
+	"plan":       handlePlanCommand,
+	"skills":     handleSkillCommand,
+	"agents":     handleAgentCommand,
+	"tokenlimit": handleTokenLimitCommand,
+	"compact":    handleCompactCommand,
+	"init":       handleInitCommand,
+	"memory":     handleMemoryCommand,
+	"mcp":        handleMCPCommand,
+	"plugin":     handlePluginCommand,
+	"think":      handleThinkCommand,
+}
+
 // handlerRegistry maps command names to their handler functions.
 // The set of names must match command.BuiltinNames().
 func handlerRegistry() map[string]CommandHandler {
-	return map[string]CommandHandler{
-		"provider":   handleProviderCommand,
-		"model":      handleModelCommand,
-		"clear":      handleClearCommand,
-		"fork":       handleForkCommand,
-		"resume":     handleResumeCommand,
-		"help":       handleHelpCommand,
-		"glob":       handleGlobCommand,
-		"tools":      handleToolCommand,
-		"plan":       handlePlanCommand,
-		"skills":     handleSkillCommand,
-		"agents":     handleAgentCommand,
-		"tokenlimit": handleTokenLimitCommand,
-		"compact":    handleCompactCommand,
-		"init": func(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-			result, err := appmemory.HandleInitCommand(m.cwd, args)
-			return result, nil, err
-		},
-		"memory": func(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-			result, editPath, err := appmemory.HandleMemoryCommand(&m.memory.Selector, m.cwd, m.width, m.height, args)
-			if err != nil {
-				return "", nil, err
-			}
-			if editPath != "" {
-				m.memory.EditingFile = editPath
-				return result, startExternalEditor(editPath), nil
-			}
-			return result, nil, nil
-		},
-		"mcp": func(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-			result, editInfo, err := appmcp.HandleCommand(ctx, &m.mcp.Selector, m.width, m.height, args)
-			if err != nil {
-				return "", nil, err
-			}
-			if editInfo != nil {
-				m.mcp.EditingFile = editInfo.TempFile
-				m.mcp.EditingServer = editInfo.ServerName
-				m.mcp.EditingScope = editInfo.Scope
-				return result, startMCPEditor(editInfo.TempFile), nil
-			}
-			if m.mcp.Selector.IsActive() {
-				return result, m.mcp.Selector.AutoReconnect(), nil
-			}
-			return result, nil, nil
-		},
-		"plugin": func(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-			result, err := appplugin.HandleCommand(ctx, &m.plugin.Selector, m.cwd, m.width, m.height, args)
-			return result, nil, err
-		},
-		"think": handleThinkCommand,
-	}
+	return builtinCommandHandlers
 }
 
 func ExecuteCommand(ctx context.Context, m *model, input string) (string, tea.Cmd, bool) {
@@ -89,31 +60,19 @@ func ExecuteCommand(ctx context.Context, m *model, input string) (string, tea.Cm
 		return "", nil, false
 	}
 
-	// Handle /exit like CC does
-	if cmd == "exit" {
-		if m.conv.Stream.Cancel != nil {
-			m.conv.Stream.Cancel()
-		}
-		m.fireSessionEnd("prompt_input_exit")
-		return "", tea.Quit, true
+	if result, followUp, handled := executeExitCommand(m, cmd); handled {
+		return result, followUp, true
 	}
 
-	handlers := handlerRegistry()
-	if handler, ok := handlers[cmd]; ok {
-		result, followUp, err := handler(ctx, m, args)
-		if err != nil {
-			return fmt.Sprintf("Error: %v", err), nil, true
-		}
+	if result, followUp, handled := executeBuiltinCommand(ctx, m, cmd, args); handled {
 		return result, followUp, true
 	}
 
 	if sk, ok := command.IsSkillCommand(cmd); ok {
-		executeSkillCommand(m, sk, args)
-		followUp := m.handleSkillInvocation()
-		return "", followUp, true
+		return executeSkillSlashCommand(m, sk, args), m.handleSkillInvocation(), true
 	}
 
-	return fmt.Sprintf("Unknown command: /%s\nType /help for available commands.", cmd), nil, true
+	return unknownCommandResult(cmd), nil, true
 }
 
 func executeSkillCommand(m *model, sk *skill.Skill, args string) {
@@ -126,6 +85,78 @@ func executeSkillCommand(m *model, sk *skill.Skill, args string) {
 	} else {
 		m.skill.PendingArgs = fmt.Sprintf("/%s", sk.FullName())
 	}
+}
+
+func executeExitCommand(m *model, cmd string) (string, tea.Cmd, bool) {
+	if cmd != "exit" {
+		return "", nil, false
+	}
+	if m.conv.Stream.Cancel != nil {
+		m.conv.Stream.Cancel()
+	}
+	m.fireSessionEnd("prompt_input_exit")
+	return "", tea.Quit, true
+}
+
+func executeBuiltinCommand(ctx context.Context, m *model, cmd, args string) (string, tea.Cmd, bool) {
+	handler, ok := handlerRegistry()[cmd]
+	if !ok {
+		return "", nil, false
+	}
+
+	result, followUp, err := handler(ctx, m, args)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err), nil, true
+	}
+	return result, followUp, true
+}
+
+func executeSkillSlashCommand(m *model, sk *skill.Skill, args string) string {
+	executeSkillCommand(m, sk, args)
+	return ""
+}
+
+func unknownCommandResult(cmd string) string {
+	return fmt.Sprintf("Unknown command: /%s\nType /help for available commands.", cmd)
+}
+
+func handleInitCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
+	result, err := appmemory.HandleInitCommand(m.cwd, args)
+	return result, nil, err
+}
+
+func handleMemoryCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
+	result, editPath, err := appmemory.HandleMemoryCommand(&m.memory.Selector, m.cwd, m.width, m.height, args)
+	if err != nil {
+		return "", nil, err
+	}
+	if editPath != "" {
+		m.memory.EditingFile = editPath
+		return result, startExternalEditor(editPath), nil
+	}
+	return result, nil, nil
+}
+
+func handleMCPCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
+	result, editInfo, err := appmcp.HandleCommand(ctx, &m.mcp.Selector, m.width, m.height, args)
+	if err != nil {
+		return "", nil, err
+	}
+	if editInfo != nil {
+		m.mcp.EditingFile = editInfo.TempFile
+		m.mcp.EditingServer = editInfo.ServerName
+		m.mcp.EditingScope = editInfo.Scope
+		return result, startMCPEditor(editInfo.TempFile), nil
+	}
+	if m.mcp.Selector.IsActive() {
+		return result, m.mcp.Selector.AutoReconnect(), nil
+	}
+	return result, nil, nil
+}
+
+func handlePluginCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
+	result, err := appplugin.HandleCommand(ctx, &m.plugin.Selector, m.cwd, m.width, m.height, args)
+	return result, nil, err
 }
 
 func handleProviderCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {

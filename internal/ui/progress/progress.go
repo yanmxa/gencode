@@ -21,13 +21,9 @@ type UpdateMsg struct {
 type CheckTickMsg struct{}
 
 // Hub is an instance-scoped progress transport.
-// The package-level helpers below delegate to DefaultHub for backward compatibility.
 type Hub struct {
 	ch chan update
 }
-
-// DefaultHub preserves the historical package-global behavior.
-var DefaultHub = NewHub(100)
 
 // NewHub creates a new progress hub with the given buffer size.
 func NewHub(buffer int) *Hub {
@@ -78,20 +74,4 @@ func (h *Hub) Drain(taskProgress map[int][]string) map[int][]string {
 			return taskProgress
 		}
 	}
-}
-
-func Send(msg string) {
-	DefaultHub.Send(msg)
-}
-
-func SendForAgent(index int, msg string) {
-	DefaultHub.SendForAgent(index, msg)
-}
-
-func Check() tea.Cmd {
-	return DefaultHub.Check()
-}
-
-func Drain(taskProgress map[int][]string) map[int][]string {
-	return DefaultHub.Drain(taskProgress)
 }

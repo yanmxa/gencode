@@ -101,7 +101,7 @@ func (m *model) handleQuestionResponse(msg appmode.QuestionResponseMsg) tea.Cmd 
 
 	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 	m.mode.PendingQuestion = nil
-	return apptool.ExecuteInteractive(m.tool.Ctx, tc, msg.Response, m.cwd)
+	return apptool.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
 }
 
 func (m *model) handlePlanRequest(msg appmode.PlanRequestMsg) tea.Cmd {
@@ -165,7 +165,7 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 		m.mode.Enabled = true
 	}
 
-	return apptool.ExecuteInteractive(m.tool.Ctx, tc, msg.Response, m.cwd)
+	return apptool.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
 }
 
 // handlePlanClearAutoMode handles the "clear-auto" approve mode for plans.
@@ -200,5 +200,5 @@ func (m *model) handleEnterPlanResponse(msg appmode.EnterPlanResponseMsg) tea.Cm
 		}
 	}
 
-	return apptool.ExecuteInteractive(m.tool.Ctx, tc, msg.Response, m.cwd)
+	return apptool.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
 }

@@ -191,3 +191,25 @@ func TestNeedsCompaction(t *testing.T) {
 		})
 	}
 }
+
+func TestLastAssistantContent(t *testing.T) {
+	msgs := []Message{
+		{Role: RoleUser, Content: "u1"},
+		{Role: RoleAssistant, Content: ""},
+		{Role: RoleAssistant, Content: "answer"},
+	}
+	if got := LastAssistantContent(msgs); got != "answer" {
+		t.Fatalf("LastAssistantContent() = %q, want %q", got, "answer")
+	}
+}
+
+func TestLastAssistantChatContent(t *testing.T) {
+	msgs := []ChatMessage{
+		{Role: RoleNotice, Content: "notice"},
+		{Role: RoleAssistant, Content: "draft"},
+		{Role: RoleAssistant, Content: ""},
+	}
+	if got := LastAssistantChatContent(msgs); got != "draft" {
+		t.Fatalf("LastAssistantChatContent() = %q, want %q", got, "draft")
+	}
+}

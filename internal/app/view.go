@@ -3,7 +3,6 @@
 package app
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -25,7 +24,7 @@ func (m model) View() string {
 	}
 
 	// Render full-screen selectors if any are active
-	if selectorView := m.renderActiveSelector(); selectorView != "" {
+	if selectorView := m.renderOverlaySelector(); selectorView != "" {
 		return selectorView
 	}
 
@@ -36,20 +35,8 @@ func (m model) View() string {
 		todoPrefix = "\n" + strings.TrimSuffix(todoView, "\n") + "\n"
 	}
 
-	if m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive() {
-		return fmt.Sprintf("%s%s\n%s\n%s", todoPrefix, separator, m.mode.PlanApproval.RenderMenu(), separator)
-	}
-
-	if m.approval.IsActive() {
-		return fmt.Sprintf("%s%s\n%s", todoPrefix, separator, m.approval.Render())
-	}
-
-	if m.mode.Question.IsActive() {
-		return fmt.Sprintf("%s%s\n%s", todoPrefix, separator, m.mode.Question.Render())
-	}
-
-	if m.mode.PlanEntry.IsActive() {
-		return fmt.Sprintf("%s%s\n%s", todoPrefix, separator, m.mode.PlanEntry.Render())
+	if modalView := m.renderActiveModal(separator, todoPrefix); modalView != "" {
+		return modalView
 	}
 
 	activeContent := m.renderActiveContent()
@@ -118,30 +105,6 @@ func (m model) View() string {
 	}
 
 	return view.String()
-}
-
-// renderActiveSelector returns the view for any active full-screen selector, or empty string if none.
-func (m model) renderActiveSelector() string {
-	switch {
-	case m.provider.Selector.IsActive():
-		return m.provider.Selector.Render()
-	case m.tool.Selector.IsActive():
-		return m.tool.Selector.Render()
-	case m.skill.Selector.IsActive():
-		return m.skill.Selector.Render()
-	case m.agent.Selector.IsActive():
-		return m.agent.Selector.Render()
-	case m.mcp.Selector.IsActive():
-		return m.mcp.Selector.Render()
-	case m.plugin.Selector.IsActive():
-		return m.plugin.Selector.Render()
-	case m.session.Selector.IsActive():
-		return m.session.Selector.Render()
-	case m.memory.Selector.IsActive():
-		return m.memory.Selector.Render()
-	default:
-		return ""
-	}
 }
 
 // renderTodoList renders a compact task list above the input area.

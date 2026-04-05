@@ -109,53 +109,49 @@ func executeToolAsync(ctx context.Context, hub *progress.Hub, tc message.ToolCal
 	return func() tea.Msg {
 		ctx = executionContext(ctx)
 
-		params, err := parseToolInput(tc.Input)
+		prepared, err := coretool.PrepareToolCall(tc, defaultMCPExecutor{})
 		if err != nil {
-			return newResult(tc, index, "Error parsing tool input: "+err.Error(), true)
+			return newResult(tc, index, formatPrepareError(err), true)
 		}
 
 		if tc.Name == coretool.ToolAgent {
 			idx := index
-			params["_onProgress"] = coretool.ProgressFunc(func(msg string) {
-				progressHub(hub).SendForAgent(idx, msg)
+			prepared.Params["_onProgress"] = coretool.ProgressFunc(func(msg string) {
+				sendAgentProgress(hub, idx, msg)
 			})
 		}
 
-		if _, ok := coretool.Get(tc.Name); !ok && !mcp.IsMCPTool(tc.Name) {
-			return newResult(tc, index, "Unknown tool: "+tc.Name, true)
-		}
-
-		if msg := checkPermission(tc, index, params, settings, sessionPerms); msg != nil {
+		if msg := checkPermission(prepared, index, settings, sessionPerms); msg != nil {
 			return msg
 		}
 
-		return executeAndLog(tc, index, func() ui.ToolResult {
-			result, err := coretool.ExecutePreparedTool(ctx, tc, params, cwd, false, defaultMCPExecutor{})
+		return executeAndLog(prepared, index, func() ui.ToolResult {
+			result, err := prepared.Execute(ctx, cwd, false, defaultMCPExecutor{})
 			if err != nil {
-				return ui.NewErrorResult(tc.Name, err.Error())
+				return ui.NewErrorResult(prepared.Call.Name, err.Error())
 			}
 			return result
 		})
 	}
 }
 
-func checkPermission(tc message.ToolCall, index int, params map[string]any, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Msg {
+func checkPermission(prepared *coretool.PreparedToolCall, index int, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Msg {
 	if settings == nil {
 		return nil
 	}
-	switch settings.CheckPermission(tc.Name, params, sessionPerms) {
+	switch settings.CheckPermission(prepared.Call.Name, prepared.Params, sessionPerms) {
 	case config.PermissionDeny:
-		return newResult(tc, index, "Permission denied by settings", true)
+		return newResult(prepared.Call, index, "Permission denied by settings", true)
 	default:
 		return nil
 	}
 }
 
-func executeAndLog(tc message.ToolCall, index int, fn func() ui.ToolResult) ExecResultMsg {
+func executeAndLog(prepared *coretool.PreparedToolCall, index int, fn func() ui.ToolResult) ExecResultMsg {
 	start := time.Now()
 	result := fn()
-	log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
-	return newResultFromOutput(tc, index, result)
+	log.LogTool(prepared.Call.Name, prepared.Call.ID, time.Since(start).Milliseconds(), result.Success)
+	return newResultFromOutput(prepared.Call, index, result)
 }
 
 // ProcessNext executes the next tool call in sequence.
@@ -169,23 +165,18 @@ func ProcessNext(ctx context.Context, hub *progress.Hub, toolCalls []message.Too
 	return func() tea.Msg {
 		ctx = executionContext(ctx)
 
-		params, err := parseToolInput(tc.Input)
+		prepared, err := coretool.PrepareToolCall(tc, defaultMCPExecutor{})
 		if err != nil {
-			return newResult(tc, idx, "Error parsing tool input: "+err.Error(), true)
-		}
-
-		t, ok := coretool.Get(tc.Name)
-		if !ok && !mcp.IsMCPTool(tc.Name) {
-			return newResult(tc, idx, "Unknown tool: "+tc.Name, true)
+			return newResult(tc, idx, formatPrepareError(err), true)
 		}
 
 		if settings != nil {
-			switch settings.CheckPermission(tc.Name, params, sessionPerms) {
+			switch settings.CheckPermission(prepared.Call.Name, prepared.Params, sessionPerms) {
 			case config.PermissionAllow:
-				return executeAndLog(tc, idx, func() ui.ToolResult {
-					result, err := coretool.ExecutePreparedTool(ctx, tc, params, cwd, false, defaultMCPExecutor{})
+				return executeAndLog(prepared, idx, func() ui.ToolResult {
+					result, err := prepared.Execute(ctx, cwd, false, defaultMCPExecutor{})
 					if err != nil {
-						return ui.NewErrorResult(tc.Name, err.Error())
+						return ui.NewErrorResult(prepared.Call.Name, err.Error())
 					}
 					return result
 				})
@@ -194,35 +185,33 @@ func ProcessNext(ctx context.Context, hub *progress.Hub, toolCalls []message.Too
 			}
 		}
 
-		if ok {
-			if msg := checkInteractiveTool(ctx, t, tc, idx, params, cwd); msg != nil {
-				return msg
-			}
-
-			if msg := checkPermissionTool(ctx, t, tc, idx, params, cwd); msg != nil {
-				return msg
-			}
+		if msg := checkInteractiveTool(ctx, prepared, idx, cwd); msg != nil {
+			return msg
 		}
 
-		return executeAndLog(tc, idx, func() ui.ToolResult {
-			result, err := coretool.ExecutePreparedTool(ctx, tc, params, cwd, false, defaultMCPExecutor{})
+		if msg := checkPermissionTool(ctx, prepared, idx, cwd); msg != nil {
+			return msg
+		}
+
+		return executeAndLog(prepared, idx, func() ui.ToolResult {
+			result, err := prepared.Execute(ctx, cwd, false, defaultMCPExecutor{})
 			if err != nil {
-				return ui.NewErrorResult(tc.Name, err.Error())
+				return ui.NewErrorResult(prepared.Call.Name, err.Error())
 			}
 			return result
 		})
 	}
 }
 
-func checkInteractiveTool(ctx context.Context, t coretool.Tool, tc message.ToolCall, idx int, params map[string]any, cwd string) tea.Msg {
-	it, ok := t.(coretool.InteractiveTool)
+func checkInteractiveTool(ctx context.Context, prepared *coretool.PreparedToolCall, idx int, cwd string) tea.Msg {
+	it, ok := prepared.Tool.(coretool.InteractiveTool)
 	if !ok || !it.RequiresInteraction() {
 		return nil
 	}
 
-	req, err := it.PrepareInteraction(ctx, params, cwd)
+	req, err := it.PrepareInteraction(ctx, prepared.Params, cwd)
 	if err != nil {
-		return newResult(tc, idx, "Error: "+err.Error(), true)
+		return newResult(prepared.Call, idx, "Error: "+err.Error(), true)
 	}
 
 	switch r := req.(type) {
@@ -236,15 +225,15 @@ func checkInteractiveTool(ctx context.Context, t coretool.Tool, tc message.ToolC
 	return nil
 }
 
-func checkPermissionTool(ctx context.Context, t coretool.Tool, tc message.ToolCall, idx int, params map[string]any, cwd string) tea.Msg {
-	pat, ok := t.(coretool.PermissionAwareTool)
+func checkPermissionTool(ctx context.Context, prepared *coretool.PreparedToolCall, idx int, cwd string) tea.Msg {
+	pat, ok := prepared.Tool.(coretool.PermissionAwareTool)
 	if !ok || !pat.RequiresPermission() {
 		return nil
 	}
 
-	req, err := pat.PreparePermission(ctx, params, cwd)
+	req, err := pat.PreparePermission(ctx, prepared.Params, cwd)
 	if err != nil {
-		return newResult(tc, idx, "Error: "+err.Error(), true)
+		return newResult(prepared.Call, idx, "Error: "+err.Error(), true)
 	}
 	return appapproval.RequestMsg{Request: req}
 }
@@ -260,20 +249,20 @@ func ExecuteApproved(ctx context.Context, hub *progress.Hub, toolCalls []message
 	return func() tea.Msg {
 		ctx = executionContext(ctx)
 
-		params, err := parseToolInput(tc.Input)
+		prepared, err := coretool.PrepareToolCall(tc, defaultMCPExecutor{})
 		if err != nil {
-			return newResult(tc, idx, "Error parsing tool input: "+err.Error(), true)
+			return newResult(tc, idx, formatPrepareError(err), true)
 		}
 
 		if tc.Name == coretool.ToolAgent {
 			agentIdx := idx
-			params["_onProgress"] = coretool.ProgressFunc(func(msg string) {
-				progressHub(hub).SendForAgent(agentIdx, msg)
+			prepared.Params["_onProgress"] = coretool.ProgressFunc(func(msg string) {
+				sendAgentProgress(hub, agentIdx, msg)
 			})
 		}
 
 		start := time.Now()
-		result, err := coretool.ExecutePreparedTool(ctx, tc, params, cwd, true, defaultMCPExecutor{})
+		result, err := prepared.Execute(ctx, cwd, true, defaultMCPExecutor{})
 		if err != nil {
 			if mcp.IsMCPTool(tc.Name) {
 				return newResult(tc, idx, "Internal error: "+err.Error(), true)
@@ -290,23 +279,18 @@ func ExecuteInteractive[T any](ctx context.Context, tc message.ToolCall, respons
 	return func() tea.Msg {
 		ctx = executionContext(ctx)
 
-		params, err := parseToolInput(tc.Input)
+		prepared, err := coretool.PrepareToolCall(tc, defaultMCPExecutor{})
 		if err != nil {
-			return newResult(tc, 0, "Error parsing tool input: "+err.Error(), true)
+			return newResult(tc, 0, formatPrepareError(err), true)
 		}
 
-		t, ok := coretool.Get(tc.Name)
-		if !ok {
-			return newResult(tc, 0, "Unknown tool: "+tc.Name, true)
-		}
-
-		it, ok := t.(coretool.InteractiveTool)
+		it, ok := prepared.Tool.(coretool.InteractiveTool)
 		if !ok {
 			return newResult(tc, 0, "Tool is not interactive: "+tc.Name, true)
 		}
 
 		start := time.Now()
-		result := it.ExecuteWithResponse(ctx, params, response, cwd)
+		result := it.ExecuteWithResponse(ctx, prepared.Params, response, cwd)
 		log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
 		return newResultFromOutput(tc, 0, result)
 	}
@@ -375,6 +359,16 @@ func parseToolInput(input string) (map[string]any, error) {
 	return message.ParseToolInput(input)
 }
 
+func formatPrepareError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if strings.HasPrefix(err.Error(), "unknown tool: ") {
+		return "Unknown tool: " + strings.TrimPrefix(err.Error(), "unknown tool: ")
+	}
+	return "Error parsing tool input: " + err.Error()
+}
+
 func executionContext(ctx context.Context) context.Context {
 	if ctx != nil {
 		return ctx
@@ -382,11 +376,11 @@ func executionContext(ctx context.Context) context.Context {
 	return context.Background()
 }
 
-func progressHub(hub *progress.Hub) *progress.Hub {
-	if hub != nil {
-		return hub
+func sendAgentProgress(hub *progress.Hub, index int, msg string) {
+	if hub == nil {
+		return
 	}
-	return progress.NewHub(100)
+	hub.SendForAgent(index, msg)
 }
 
 func extractMCPContent(contents []mcp.ToolResultContent) string {

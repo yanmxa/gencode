@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -10,9 +11,71 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/history"
 )
 
+type submitRequest struct {
+	Input string
+}
+
 func (m *model) resetInputField() {
 	m.input.Textarea.Reset()
 	m.input.Textarea.SetHeight(appinput.MinTextareaHeight())
+}
+
+func (m *model) handleSubmit() tea.Cmd {
+	m.promptSuggestion.Clear()
+	m.maxOutputRecoveryCount = 0
+
+	req, ok := m.readSubmitRequest()
+	if !ok {
+		return nil
+	}
+
+	return m.executeSubmitRequest(req)
+}
+
+func (m *model) readSubmitRequest() (submitRequest, bool) {
+	if m.conv.Stream.Active {
+		return submitRequest{}, false
+	}
+
+	input := strings.TrimSpace(m.input.Textarea.Value())
+	if input == "" && len(m.input.Images.Pending) == 0 {
+		return submitRequest{}, false
+	}
+
+	return submitRequest{
+		Input: input,
+	}, true
+}
+
+func (m *model) executeSubmitRequest(req submitRequest) tea.Cmd {
+	if isExitRequest(req.Input) {
+		cmd, _ := m.quitWithCancel()
+		return cmd
+	}
+
+	if blocked, reason := m.checkPromptHook(req.Input); blocked {
+		return m.blockPromptSubmission(reason)
+	}
+
+	m.recordSubmittedInput(req.Input)
+
+	if cmd, handled := m.handleCommandSubmit(req.Input); handled {
+		return cmd
+	}
+
+	m.skill.ActiveInvocation = ""
+
+	userMsg, cmd, handled := m.prepareSubmittedUserMessage(req.Input)
+	if handled {
+		return cmd
+	}
+	m.conv.Append(userMsg)
+	m.resetInputField()
+	return m.startProviderTurn(userMsg.Content)
+}
+
+func isExitRequest(input string) bool {
+	return strings.EqualFold(input, "exit")
 }
 
 func (m *model) blockPromptSubmission(reason string) tea.Cmd {

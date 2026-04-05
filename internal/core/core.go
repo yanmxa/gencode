@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"go.uber.org/zap"
 
@@ -22,7 +21,8 @@ import (
 )
 
 const (
-	defaultMaxTurns = 100
+	defaultMaxTurns          = 100
+	minMessagesForCompaction = 3
 
 	// DefaultMaxOutputRecovery is the default number of retries when LLM output
 	// is truncated due to max_tokens. Exported so the TUI layer can reuse it.
@@ -31,6 +31,10 @@ const (
 
 // MaxOutputRecoveryPrompt is the message injected when the LLM output is truncated.
 const MaxOutputRecoveryPrompt = "Your response was truncated due to output token limits. Resume directly from where you left off. Do not repeat any content."
+
+// AutoCompactResumePrompt is the user message injected after an auto-compaction
+// when the caller should continue the task immediately.
+const AutoCompactResumePrompt = "Continue with the task. The conversation was auto-compacted to free up context."
 
 // Stop reason constants returned in Result.StopReason.
 const (
@@ -172,7 +176,7 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 		// --- 1. Pre-stream: reactive compaction (prevent prompt-too-long) ---
 		if opts.InputLimit > 0 && l.Client != nil {
 			tokens := l.Client.Tokens()
-			if message.NeedsCompaction(tokens.InputTokens, opts.InputLimit) && len(l.messages) >= 3 {
+			if message.NeedsCompaction(tokens.InputTokens, opts.InputLimit) && CanCompactMessages(len(l.messages)) {
 				if l.compactAndReplace(ctx, opts) {
 					state.transition = TransitionPromptTooLong
 					continue
@@ -183,7 +187,7 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 		// --- 2. Stream + collect response ---
 		resp, err := Collect(ctx, l.Stream(ctx))
 		if err != nil {
-			if IsPromptTooLong(err) && len(l.messages) >= 3 {
+			if ShouldCompactPromptTooLong(err, len(l.messages)) {
 				if l.compactAndReplace(ctx, opts) {
 					state.transition = TransitionPromptTooLong
 					continue
@@ -286,35 +290,6 @@ func (l *Loop) buildResult(reason string, turns, toolUses int, transitions []Tra
 	}
 }
 
-// DecideCompletion determines the next action after a completed assistant response.
-func DecideCompletion(stopReason string, calls []message.ToolCall, recoveryCount, maxRecovery int) CompletionDecision {
-	if stopReason == "max_tokens" && len(calls) == 0 {
-		if recoveryCount < maxRecovery {
-			return CompletionDecision{Action: CompletionRecoverMaxTokens}
-		}
-		return CompletionDecision{Action: CompletionStopMaxOutputRecovery}
-	}
-
-	if len(calls) > 0 {
-		return CompletionDecision{
-			Action:    CompletionRunTools,
-			ToolCalls: calls,
-		}
-	}
-
-	return CompletionDecision{Action: CompletionEndTurn}
-}
-
-func (l *Loop) lastAssistantContent() string {
-	for i := len(l.messages) - 1; i >= 0; i-- {
-		msg := l.messages[i]
-		if msg.Role == message.RoleAssistant && msg.Content != "" {
-			return msg.Content
-		}
-	}
-	return ""
-}
-
 // --- Low-level: incremental control (for TUI / event-driven callers) ---
 
 // Stream starts an LLM stream and returns the chunk channel.
@@ -323,45 +298,6 @@ func (l *Loop) Stream(ctx context.Context) <-chan message.StreamChunk {
 	sysPrompt := l.System.Prompt()
 	tools := l.Tool.Tools()
 	return l.Client.Stream(ctx, l.messages, tools, sysPrompt)
-}
-
-// Collect synchronously drains a stream into a CompletionResponse.
-func Collect(ctx context.Context, ch <-chan message.StreamChunk) (*message.CompletionResponse, error) {
-	var response message.CompletionResponse
-
-	for chunk := range ch {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
-		switch chunk.Type {
-		case message.ChunkTypeText:
-			response.Content += chunk.Text
-		case message.ChunkTypeThinking:
-			response.Thinking += chunk.Text
-		case message.ChunkTypeToolStart:
-			response.ToolCalls = append(response.ToolCalls, message.ToolCall{
-				ID:   chunk.ToolID,
-				Name: chunk.ToolName,
-			})
-		case message.ChunkTypeToolInput:
-			if len(response.ToolCalls) > 0 {
-				idx := len(response.ToolCalls) - 1
-				response.ToolCalls[idx].Input += chunk.Text
-			}
-		case message.ChunkTypeDone:
-			if chunk.Response != nil {
-				return chunk.Response, nil
-			}
-			return &response, nil
-		case message.ChunkTypeError:
-			return nil, chunk.Error
-		}
-	}
-
-	return &response, nil
 }
 
 // --- Message management ---
@@ -486,14 +422,14 @@ func (l *Loop) firePostToolHook(ctx context.Context, tc message.ToolCall, result
 // ExecTool executes a single tool call, consulting the Permission checker.
 // Rejected tools return an error result; Prompt decisions are auto-approved.
 func (l *Loop) ExecTool(ctx context.Context, tc message.ToolCall) *message.ToolResult {
-	params, err := message.ParseToolInput(tc.Input)
+	prepared, err := tool.PrepareToolCall(tc, mcpAdapter{caller: l.MCP})
 	if err != nil {
 		return message.ErrorResult(tc, fmt.Sprintf("Error parsing tool input: %v", err))
 	}
 
 	decision := permission.Permit
 	if l.Permission != nil {
-		decision = l.Permission.Check(tc.Name, params)
+		decision = l.Permission.Check(prepared.Call.Name, prepared.Params)
 	}
 
 	if decision == permission.Reject {
@@ -501,38 +437,35 @@ func (l *Loop) ExecTool(ctx context.Context, tc message.ToolCall) *message.ToolR
 	}
 
 	// Permit and Prompt both execute the tool (non-interactive callers auto-approve)
-	return l.runTool(ctx, tc, params)
+	return l.runTool(ctx, prepared)
 }
 
 // runTool runs the actual tool execution.
-func (l *Loop) runTool(ctx context.Context, tc message.ToolCall, params map[string]any) *message.ToolResult {
+func (l *Loop) runTool(ctx context.Context, prepared *tool.PreparedToolCall) *message.ToolResult {
 	cwd := ""
 	if l.System != nil {
 		cwd = l.System.Cwd
 	}
 
-	if _, ok := tool.Get(tc.Name); !ok && (l.MCP == nil || !l.MCP.IsMCPTool(tc.Name)) {
-		return message.ErrorResult(tc, fmt.Sprintf("Unknown tool: %s", tc.Name))
-	}
-
-	toolResult, err := tool.ExecutePreparedTool(ctx, tc, params, cwd, true, mcpAdapter{caller: l.MCP})
+	toolResult, err := prepared.Execute(ctx, cwd, true, mcpAdapter{caller: l.MCP})
 	if err != nil {
-		if l.MCP != nil && l.MCP.IsMCPTool(tc.Name) {
-			return message.ErrorResult(tc, fmt.Sprintf("MCP tool error: %v", err))
+		if prepared.IsMCP {
+			return message.ErrorResult(prepared.Call, fmt.Sprintf("MCP tool error: %v", err))
 		}
-		return message.ErrorResult(tc, fmt.Sprintf("Unknown tool: %s", tc.Name))
+		return message.ErrorResult(prepared.Call, fmt.Sprintf("Unknown tool: %s", prepared.Call.Name))
 	}
 
 	log.Logger().Debug("Tool executed",
-		zap.String("tool", tc.Name),
+		zap.String("tool", prepared.Call.Name),
 		zap.Bool("success", toolResult.Success),
 	)
 
 	return &message.ToolResult{
-		ToolCallID: tc.ID,
-		ToolName:   tc.Name,
-		Content:    toolResult.FormatForLLM(),
-		IsError:    !toolResult.Success,
+		ToolCallID:   prepared.Call.ID,
+		ToolName:     prepared.Call.Name,
+		Content:      toolResult.FormatForLLM(),
+		IsError:      !toolResult.Success,
+		HookResponse: toolResult.HookResponse,
 	}
 }
 
@@ -561,63 +494,4 @@ func (a mcpAdapter) ExecuteMCP(ctx context.Context, name string, params map[stri
 			Title: name,
 		},
 	}, nil
-}
-
-// --- Helpers ---
-
-// IsPromptTooLong checks if an API error indicates the prompt exceeded the context window.
-func IsPromptTooLong(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "prompt is too long") ||
-		strings.Contains(msg, "prompt_too_long")
-}
-
-// compactAndReplace summarizes the conversation and replaces messages with the summary.
-// Returns true if compaction succeeded.
-func (l *Loop) compactAndReplace(ctx context.Context, opts RunOptions) bool {
-	summary, _, err := Compact(ctx, l.Client, l.messages, opts.SessionMemory, opts.CompactFocus)
-	if err != nil {
-		return false
-	}
-	l.messages = []message.Message{message.UserMessage(
-		"Previous context summary:\n"+summary+"\n\nContinue with the task.", nil,
-	)}
-	return true
-}
-
-// --- Compaction ---
-
-// Compact summarizes a conversation to reduce context window usage.
-// It sends the conversation to the LLM with a compact prompt and returns
-// the summary text, the original message count, and any error.
-// sessionMemory is the previous compaction summary; if non-empty it is
-// prepended so the new summary incorporates prior context.
-func Compact(ctx context.Context, c *client.Client,
-	msgs []message.Message, sessionMemory, focus string,
-) (summary string, count int, err error) {
-	count = len(msgs)
-
-	conversationText := message.BuildConversationText(msgs)
-
-	if sessionMemory != "" {
-		conversationText = fmt.Sprintf("Previous session context:\n\n%s\n\n---\n\nRecent conversation:\n\n%s", sessionMemory, conversationText)
-	}
-
-	if focus != "" {
-		conversationText += fmt.Sprintf("\n\n**Important**: Focus the summary on: %s", focus)
-	}
-
-	response, err := c.Complete(ctx,
-		system.CompactPrompt(),
-		[]message.Message{message.UserMessage(conversationText, nil)},
-		2048,
-	)
-	if err != nil {
-		return "", count, fmt.Errorf("failed to generate summary: %w", err)
-	}
-
-	return strings.TrimSpace(response.Content), count, nil
 }

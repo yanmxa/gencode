@@ -28,20 +28,18 @@ func ExecutePreparedTool(
 	approved bool,
 	mcpExec MCPExecutor,
 ) (ui.ToolResult, error) {
-	if mcpExec != nil && mcpExec.IsMCPTool(tc.Name) {
-		return mcpExec.ExecuteMCP(ctx, tc.Name, params)
+	prepared := &PreparedToolCall{
+		Call:   tc,
+		Params: params,
 	}
 
-	t, ok := Get(tc.Name)
-	if !ok {
+	if resolved, ok := Get(tc.Name); ok {
+		prepared.Tool = resolved
+	} else if mcpExec != nil && mcpExec.IsMCPTool(tc.Name) {
+		prepared.IsMCP = true
+	} else {
 		return ui.ToolResult{}, fmt.Errorf("unknown tool: %s", tc.Name)
 	}
 
-	if approved {
-		if pat, ok := t.(PermissionAwareTool); ok && pat.RequiresPermission() {
-			return pat.ExecuteApproved(ctx, params, cwd), nil
-		}
-	}
-
-	return t.Execute(ctx, params, cwd), nil
+	return prepared.Execute(ctx, cwd, approved, mcpExec)
 }

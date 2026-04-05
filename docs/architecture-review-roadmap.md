@@ -4,6 +4,44 @@ Branch: `architecture-review`
 
 Date: 2026-04-04
 
+## Implemented In This Iteration
+
+### Completed
+
+- introduced `internal/tool.PreparedToolCall` as a shared parse-and-resolve runtime used by both `internal/app/tool` and `internal/core`
+- removed duplicated built-in/MCP resolution logic from the TUI tool runner and the shared core loop
+- centralized TUI tool execution context lifecycle in `internal/app/tool.ExecState`
+- propagated the active tool execution context into:
+  - pre-tool hook filtering
+  - permission-request hooks
+  - interactive tool responses
+  - approved tool execution
+- fixed structured `HookResponse` propagation in `core.Loop.ExecTool`, which previously dropped tool hook payloads in the shared/core path
+- split `agent.Executor.Run()` into explicit stages:
+  - request/workspace preparation
+  - run context attachment and lifecycle logging
+  - loop execution
+  - final result mapping
+- fixed agent permission-mode prompt generation so per-invocation `Mode` overrides now match the actual runtime mode instead of the agent default
+- removed package-global progress helpers from `internal/ui/progress` and kept progress transport instance-scoped
+- removed implicit progress hub creation from lower layers so progress routing is now explicit and local to the active app model
+- centralized `internal/app` feature-update and selector priority ordering so update/input/view layers now share one routing definition
+- changed the conversation runtime dependency in `internal/app` from a concrete implementation to an interface, making runtime services replaceable in tests and future refactors
+- moved prompt-suggestion, compact, and token-limit runtime request assembly behind model-level builders so command/handler code now expresses intent instead of rebuilding state snapshots inline
+- centralized modal render priority in `internal/app` so blocking prompt overlays no longer rely on duplicated `if` chains in `View()`
+- split `internal/app/provider` selector logic into focused state-reset, navigation, selection, and load/render modules and tightened selector reset semantics
+- split `internal/app/plugin` selector logic into focused state-reset, navigation, action, and keymap modules and tightened selector reset semantics
+- introduced an explicit conversation stream start runtime path in `internal/app` so stream launch now goes through a shared request/result boundary instead of inline loop/channel setup in handlers
+- split completed-stream handling into explicit metadata, decision, recovery, tool-dispatch, and idle-finalization stages to reduce orchestration density in `handler_stream.go`
+- split main chat loop assembly in `internal/app` into explicit client/system/tool builders, making active skill injection, task reminders, MCP schema wiring, and session-summary wrapping individually testable
+- split `internal/app/handler_input` further so runtime cancellation, window reflow, clipboard/skill actions, and per-turn thinking override detection no longer live inside the main key routing file
+- split `internal/app/newBaseModel()` initialization into focused feature-state builders so base app construction no longer depends on one broad struct literal
+- split `internal/app/render/message_tool.go` into focused inline-result, agent/task-specific, and parsing/formatting modules so tool result rendering no longer depends on one large mixed-responsibility file
+
+### Remaining High-Priority Work
+
+- converge more of the main chat continuation logic on explicit shared runtime services
+
 ## Scope
 
 This document consolidates the architecture review for GenCode, a Bubble Tea based AI coding assistant CLI, and turns the findings into an executable refactor roadmap.
@@ -331,4 +369,3 @@ That delivers the highest-value structural fixes:
 - provider stream adapters share reusable helpers
 - input flow is easier to test and extend
 - tool names and common runtime errors are normalized
-

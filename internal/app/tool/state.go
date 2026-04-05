@@ -24,6 +24,23 @@ type ExecState struct {
 	Cancel          context.CancelFunc
 }
 
+// Begin initializes a fresh execution context for a tool run and returns it.
+func (t *ExecState) Begin() context.Context {
+	if t.Cancel != nil {
+		t.Cancel()
+	}
+	t.Ctx, t.Cancel = context.WithCancel(context.Background())
+	return t.Ctx
+}
+
+// Context returns the active execution context, or Background when idle.
+func (t *ExecState) Context() context.Context {
+	if t.Ctx != nil {
+		return t.Ctx
+	}
+	return context.Background()
+}
+
 // Reset clears all tool execution state.
 func (t *ExecState) Reset() {
 	if t.Cancel != nil {

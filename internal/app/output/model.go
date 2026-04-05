@@ -19,10 +19,8 @@ type Model struct {
 }
 
 // New creates a fully initialized output Model.
+// hub may be nil to disable progress transport for tests or non-interactive use.
 func New(width int, hub *progress.Hub) Model {
-	if hub == nil {
-		hub = progress.NewHub(100)
-	}
 	return Model{
 		Spinner:     newSpinner(),
 		MDRenderer:  render.NewMDRenderer(width),

@@ -6,8 +6,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-
-	"github.com/yanmxa/gencode/internal/message"
 )
 
 // promptSuggestionMsg carries the result of a background suggestion generation.
@@ -41,18 +39,8 @@ const maxSuggestionMessages = 20
 
 // startPromptSuggestion launches a background API call to generate a prompt suggestion.
 func (m *model) startPromptSuggestion() tea.Cmd {
-	if m.loop.Client == nil {
-		return nil
-	}
-
-	// Need at least 2 assistant messages for meaningful suggestion
-	assistantCount := 0
-	for _, msg := range m.conv.Messages {
-		if msg.Role == message.RoleAssistant {
-			assistantCount++
-		}
-	}
-	if assistantCount < 2 {
+	req, ok := m.buildPromptSuggestionRequest()
+	if !ok {
 		return nil
 	}
 
@@ -61,25 +49,9 @@ func (m *model) startPromptSuggestion() tea.Cmd {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.promptSuggestion.cancel = cancel
+	req.Ctx = ctx
 
-	startIdx := 0
-	if len(m.conv.Messages) > maxSuggestionMessages {
-		startIdx = len(m.conv.Messages) - maxSuggestionMessages
-	}
-	msgs := m.conv.ConvertToProviderFrom(startIdx)
-	msgs = append(msgs, message.Message{
-		Role:    message.RoleUser,
-		Content: suggestionUserPrompt,
-	})
-
-	return m.runtime.SuggestPromptCmd(promptSuggestionRequest{
-		Ctx:          ctx,
-		Client:       m.loop.Client,
-		Messages:     msgs,
-		SystemPrompt: suggestionSystemPrompt,
-		UserPrompt:   suggestionUserPrompt,
-		MaxTokens:    60,
-	})
+	return m.runtime.SuggestPromptCmd(req)
 }
 
 // handlePromptSuggestion processes the suggestion result.

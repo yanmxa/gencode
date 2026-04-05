@@ -8,17 +8,12 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/progress"
 )
 
-func (m *Model) progressHub() *progress.Hub {
-	if m.ProgressHub != nil {
-		return m.ProgressHub
-	}
-	m.ProgressHub = progress.NewHub(100)
-	return m.ProgressHub
-}
-
 // DrainProgress drains all pending task progress messages from the channel.
 func (m *Model) DrainProgress() {
-	m.TaskProgress = m.progressHub().Drain(m.TaskProgress)
+	if m.ProgressHub == nil {
+		return
+	}
+	m.TaskProgress = m.ProgressHub.Drain(m.TaskProgress)
 }
 
 // HandleProgress processes a task progress message.
@@ -28,13 +23,19 @@ func (m *Model) HandleProgress(msg progress.UpdateMsg) tea.Cmd {
 	}
 	m.TaskProgress[msg.Index] = append(m.TaskProgress[msg.Index], msg.Message)
 
-	return tea.Batch(m.Spinner.Tick, m.progressHub().Check())
+	if m.ProgressHub == nil {
+		return m.Spinner.Tick
+	}
+	return tea.Batch(m.Spinner.Tick, m.ProgressHub.Check())
 }
 
 // HandleProgressTick processes a progress tick when tasks may be running.
 func (m *Model) HandleProgressTick(hasRunningTasks bool) tea.Cmd {
 	if hasRunningTasks {
-		return tea.Batch(m.Spinner.Tick, m.progressHub().Check())
+		if m.ProgressHub == nil {
+			return m.Spinner.Tick
+		}
+		return tea.Batch(m.Spinner.Tick, m.ProgressHub.Check())
 	}
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/options"
@@ -74,20 +75,14 @@ func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
 	}
 
 	m.provider.FetchingLimits = true
-	return "", tea.Batch(m.output.Spinner.Tick, m.runtime.FetchTokenLimitsCmd(tokenLimitFetchRequest{
-		LLM:          m.provider.LLM,
-		Store:        m.provider.Store,
-		CurrentModel: m.provider.CurrentModel,
-		ModelID:      m.getModelID(),
-		Cwd:          m.cwd,
-	})), nil
+	return "", tea.Batch(m.output.Spinner.Tick, m.runtime.FetchTokenLimitsCmd(m.buildTokenLimitFetchRequest())), nil
 }
 
 func handleCompactCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
 	if m.provider.LLM == nil {
 		return "No provider connected. Use /provider to connect.", nil, nil
 	}
-	if len(m.conv.Messages) < 3 {
+	if !core.CanCompactMessages(len(m.conv.Messages)) {
 		return "Not enough conversation history to compact.", nil, nil
 	}
 	if m.conv.Stream.Active {
@@ -95,14 +90,7 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	}
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = strings.TrimSpace(args)
-	return "", tea.Batch(m.output.Spinner.Tick, m.runtime.CompactCmd(compactRequest{
-		Client:         m.loop.Client,
-		Messages:       m.conv.ConvertToProvider(),
-		SessionSummary: m.session.Summary,
-		Focus:          m.conv.Compact.Focus,
-		HookEngine:     m.hookEngine,
-		Trigger:        "manual",
-	})), nil
+	return "", tea.Batch(m.output.Spinner.Tick, m.runtime.CompactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
 }
 
 func (m *model) getEffectiveInputLimit() int {
@@ -126,14 +114,7 @@ func (m *model) triggerAutoCompact() tea.Cmd {
 	m.conv.Compact.Focus = ""
 	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()))
 	commitCmds := m.commitMessages()
-	commitCmds = append(commitCmds, m.output.Spinner.Tick, m.runtime.CompactCmd(compactRequest{
-		Client:         m.loop.Client,
-		Messages:       m.conv.ConvertToProvider(),
-		SessionSummary: m.session.Summary,
-		Focus:          "",
-		HookEngine:     m.hookEngine,
-		Trigger:        "auto",
-	}))
+	commitCmds = append(commitCmds, m.output.Spinner.Tick, m.runtime.CompactCmd(m.buildCompactRequest("", "auto")))
 	return tea.Batch(commitCmds...)
 }
 
@@ -167,7 +148,7 @@ func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 	if shouldContinue {
 		m.conv.Append(message.ChatMessage{
 			Role:    message.RoleUser,
-			Content: "Continue with the task. The conversation was auto-compacted to free up context.",
+			Content: core.AutoCompactResumePrompt,
 		})
 		cmds = append(cmds, m.startLLMStream(nil))
 	} else {
