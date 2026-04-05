@@ -34,14 +34,12 @@ func (t *SkillTool) RequiresPermission() bool {
 
 // PreparePermission prepares a permission request with skill metadata
 func (t *SkillTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*permission.PermissionRequest, error) {
-	// Get skill name
-	skillName, ok := params["skill"].(string)
-	if !ok || skillName == "" {
+	skillName, err := requireString(params, "skill")
+	if err != nil {
 		return nil, fmt.Errorf("skill parameter is required")
 	}
 
-	// Get optional args
-	args, _ := params["args"].(string)
+	args := getString(params, "args")
 
 	// Find skill in registry
 	if skill.DefaultRegistry == nil {
@@ -97,14 +95,12 @@ func (t *SkillTool) Execute(ctx context.Context, params map[string]any, cwd stri
 func (t *SkillTool) execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
-	// Get skill name
-	skillName, ok := params["skill"].(string)
-	if !ok || skillName == "" {
+	skillName := getString(params, "skill")
+	if skillName == "" {
 		return ui.NewErrorResult(t.Name(), "skill parameter is required")
 	}
 
-	// Get optional args
-	args, _ := params["args"].(string)
+	args := getString(params, "args")
 
 	// Find skill in registry
 	if skill.DefaultRegistry == nil {

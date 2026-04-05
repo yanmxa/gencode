@@ -16,22 +16,23 @@ func (t *CronCreateTool) Description() string { return "Schedule a prompt to run
 func (t *CronCreateTool) Icon() string        { return "clock" }
 
 func (t *CronCreateTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
-	cronExpr, _ := params["cron"].(string)
+	cronExpr := getString(params, "cron")
 	if cronExpr == "" {
 		return ui.NewErrorResult(t.Name(), "cron expression is required")
 	}
 
-	prompt, _ := params["prompt"].(string)
+	prompt := getString(params, "prompt")
 	if prompt == "" {
 		return ui.NewErrorResult(t.Name(), "prompt is required")
 	}
 
+	// recurring defaults to true if not specified
 	recurring := true
 	if v, ok := params["recurring"].(bool); ok {
 		recurring = v
 	}
 
-	durable, _ := params["durable"].(bool)
+	durable := getBool(params, "durable")
 
 	job, err := cron.DefaultStore.Create(cronExpr, prompt, recurring, durable)
 	if err != nil {

@@ -47,11 +47,7 @@ func (t *EnterPlanModeTool) RequiresInteraction() bool {
 
 // PrepareInteraction parses parameters and returns an EnterPlanRequest
 func (t *EnterPlanModeTool) PrepareInteraction(ctx context.Context, params map[string]any, cwd string) (any, error) {
-	// Optional message parameter
-	message := ""
-	if msg, ok := params["message"].(string); ok {
-		message = msg
-	}
+	message := getString(params, "message")
 
 	t.requestCounter++
 	return &EnterPlanRequest{

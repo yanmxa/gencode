@@ -36,15 +36,13 @@ func (t *GlobTool) Icon() string        { return ui.IconGlob }
 func (t *GlobTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
-	// Get pattern parameter
-	pattern, ok := params["pattern"].(string)
-	if !ok || pattern == "" {
-		return ui.NewErrorResult(t.Name(), "pattern is required")
+	pattern, err := requireString(params, "pattern")
+	if err != nil {
+		return ui.NewErrorResult(t.Name(), err.Error())
 	}
 
-	// Get optional path parameter
 	basePath := cwd
-	if path, ok := params["path"].(string); ok && path != "" {
+	if path := getString(params, "path"); path != "" {
 		if filepath.IsAbs(path) {
 			basePath = path
 		} else {
@@ -68,7 +66,7 @@ func (t *GlobTool) Execute(ctx context.Context, params map[string]any, cwd strin
 	var files []fileInfo
 
 	// Walk the directory tree
-	err := filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // Skip errors
 		}

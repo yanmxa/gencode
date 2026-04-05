@@ -31,11 +31,12 @@ func (t *EditTool) RequiresPermission() bool {
 // PreparePermission prepares a permission request with diff information
 func (t *EditTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*permission.PermissionRequest, error) {
 	// Get parameters
-	filePath, ok := params["file_path"].(string)
-	if !ok || filePath == "" {
-		return nil, &ToolError{Message: "file_path is required"}
+	filePath, err := requireString(params, "file_path")
+	if err != nil {
+		return nil, err
 	}
 
+	// old_string may be empty (inserting at start), so we only check presence not value
 	oldString, ok := params["old_string"].(string)
 	if !ok {
 		return nil, &ToolError{Message: "old_string is required"}
@@ -68,11 +69,7 @@ func (t *EditTool) PreparePermission(ctx context.Context, params map[string]any,
 		return nil, &ToolError{Message: "old_string not found in file"}
 	}
 
-	// Check if replace_all is set
-	replaceAll := false
-	if v, ok := params["replace_all"].(bool); ok {
-		replaceAll = v
-	}
+	replaceAll := getBool(params, "replace_all")
 
 	// If not replace_all, check uniqueness
 	if !replaceAll && count > 1 {
@@ -104,7 +101,7 @@ func (t *EditTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 	start := time.Now()
 
 	// Get parameters
-	filePath, _ := params["file_path"].(string)
+	filePath := getString(params, "file_path")
 	oldString, _ := params["old_string"].(string)
 	newString, _ := params["new_string"].(string)
 
@@ -121,11 +118,7 @@ func (t *EditTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 
 	oldContent := string(content)
 
-	// Check replace_all
-	replaceAll := false
-	if v, ok := params["replace_all"].(bool); ok {
-		replaceAll = v
-	}
+	replaceAll := getBool(params, "replace_all")
 
 	// Perform replacement
 	var newContent string

@@ -580,6 +580,7 @@ func IsPromptTooLong(err error) bool {
 func (l *Loop) compactAndReplace(ctx context.Context, opts RunOptions) bool {
 	summary, _, err := Compact(ctx, l.Client, l.messages, opts.SessionMemory, opts.CompactFocus)
 	if err != nil {
+		log.Logger().Warn("compaction failed", zap.Error(err))
 		return false
 	}
 	l.messages = []message.Message{message.UserMessage(

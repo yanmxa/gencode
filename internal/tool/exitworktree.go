@@ -31,7 +31,7 @@ func (t *ExitWorktreeTool) RequiresInteraction() bool { return true }
 
 // PrepareInteraction returns the request for the TUI.
 func (t *ExitWorktreeTool) PrepareInteraction(_ context.Context, params map[string]any, _ string) (any, error) {
-	action, _ := params["action"].(string)
+	action := getString(params, "action")
 	if action == "" {
 		action = "remove"
 	}
@@ -39,7 +39,7 @@ func (t *ExitWorktreeTool) PrepareInteraction(_ context.Context, params map[stri
 		return nil, fmt.Errorf("action must be 'keep' or 'remove', got %q", action)
 	}
 
-	discardChanges, _ := params["discard_changes"].(bool)
+	discardChanges := getBool(params, "discard_changes")
 
 	return &ExitWorktreeRequest{
 		Action:         action,

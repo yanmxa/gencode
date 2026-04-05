@@ -49,8 +49,8 @@ func (t *ExitPlanModeTool) RequiresInteraction() bool {
 
 // PrepareInteraction parses parameters and returns a PlanRequest
 func (t *ExitPlanModeTool) PrepareInteraction(ctx context.Context, params map[string]any, cwd string) (any, error) {
-	planContent, ok := params["plan"].(string)
-	if !ok || planContent == "" {
+	planContent := getString(params, "plan")
+	if planContent == "" {
 		return nil, fmt.Errorf("missing required parameter: plan (the implementation plan content)")
 	}
 

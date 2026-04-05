@@ -11,7 +11,7 @@ type JSONRPCRequest struct {
 	JSONRPC string      `json:"jsonrpc"`
 	ID      uint64      `json:"id"`
 	Method  string      `json:"method"`
-	Params  interface{} `json:"params,omitempty"`
+	Params  any `json:"params,omitempty"`
 }
 
 // JSONRPCResponse represents a JSON-RPC 2.0 response
@@ -33,7 +33,7 @@ type JSONRPCError struct {
 type JSONRPCNotification struct {
 	JSONRPC string      `json:"jsonrpc"`
 	Method  string      `json:"method"`
-	Params  interface{} `json:"params,omitempty"`
+	Params  any `json:"params,omitempty"`
 }
 
 // Transport defines the interface for MCP transport implementations.

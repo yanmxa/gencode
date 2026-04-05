@@ -112,26 +112,23 @@ func (t *AgentTool) SetExecutor(executor AgentExecutor) {
 
 // PreparePermission prepares a permission request with agent metadata
 func (t *AgentTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*permission.PermissionRequest, error) {
-	// Get agent type (default to "general-purpose" if not specified)
-	agentType, _ := params["subagent_type"].(string)
+	agentType := getString(params, "subagent_type")
 	if agentType == "" {
 		agentType = "general-purpose"
 	}
 
-	// Get prompt
-	prompt, ok := params["prompt"].(string)
-	if !ok || prompt == "" {
-		return nil, fmt.Errorf("prompt is required")
+	prompt, err := requireString(params, "prompt")
+	if err != nil {
+		return nil, err
 	}
 
-	// Get optional parameters
-	description, _ := params["description"].(string)
+	description := getString(params, "description")
 	if description == "" {
 		description = "Run agent task"
 	}
 
-	runBackground, _ := params["run_in_background"].(bool)
-	requestModel, _ := params["model"].(string)
+	runBackground := getBool(params, "run_in_background")
+	requestModel := getString(params, "model")
 
 	// Check if executor is configured
 	if t.Executor == nil {
@@ -203,39 +200,31 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 	// Pass incremented depth to child context so nested agents can detect it.
 	ctx = context.WithValue(ctx, agentDepthKey{}, currentDepth+1)
 
-	// Get agent type (default to "general-purpose" if not specified)
-	agentType, _ := params["subagent_type"].(string)
+	agentType := getString(params, "subagent_type")
 	if agentType == "" {
 		agentType = "general-purpose"
 	}
 
-	// Get prompt
-	prompt, ok := params["prompt"].(string)
-	if !ok || prompt == "" {
+	prompt := getString(params, "prompt")
+	if prompt == "" {
 		return ui.NewErrorResult(t.Name(), "prompt is required")
 	}
 
-	// Get optional parameters
-	description, _ := params["description"].(string)
-	agentName, _ := params["name"].(string)
-	runBackground, _ := params["run_in_background"].(bool)
-	model, _ := params["model"].(string)
-	mode, _ := params["mode"].(string)
-	resumeID, _ := params["resume"].(string)
-	isolation, _ := params["isolation"].(string)
-	teamName, _ := params["team_name"].(string)
+	description := getString(params, "description")
+	agentName := getString(params, "name")
+	runBackground := getBool(params, "run_in_background")
+	model := getString(params, "model")
+	mode := getString(params, "mode")
+	resumeID := getString(params, "resume")
+	isolation := getString(params, "isolation")
+	teamName := getString(params, "team_name")
 
-	// Get progress callback (set by TUI)
 	var onProgress ProgressFunc
 	if cb, ok := params["_onProgress"].(ProgressFunc); ok {
 		onProgress = cb
 	}
 
-	// Get max turns
-	maxTurns := 0
-	if mt, ok := params["max_turns"].(float64); ok {
-		maxTurns = int(mt)
-	}
+	maxTurns := getInt(params, "max_turns", 0)
 
 	// Check executor
 	if t.Executor == nil {

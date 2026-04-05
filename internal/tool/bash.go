@@ -33,13 +33,13 @@ func (t *BashTool) RequiresPermission() bool {
 
 // PreparePermission prepares a permission request with command preview
 func (t *BashTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*permission.PermissionRequest, error) {
-	command, ok := params["command"].(string)
-	if !ok || command == "" {
-		return nil, &ToolError{Message: "command is required"}
+	command, err := requireString(params, "command")
+	if err != nil {
+		return nil, err
 	}
 
-	description, _ := params["description"].(string)
-	runBackground, _ := params["run_in_background"].(bool)
+	description := getString(params, "description")
+	runBackground := getBool(params, "run_in_background")
 
 	// Count lines in command
 	lineCount := strings.Count(command, "\n") + 1
@@ -61,15 +61,12 @@ func (t *BashTool) PreparePermission(ctx context.Context, params map[string]any,
 func (t *BashTool) ExecuteApproved(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
-	command, _ := params["command"].(string)
-	description, _ := params["description"].(string)
-	runBackground, _ := params["run_in_background"].(bool)
+	command := getString(params, "command")
+	description := getString(params, "description")
+	runBackground := getBool(params, "run_in_background")
 
 	// Get timeout (default 120 seconds, max 600 seconds)
-	timeout := 120 * time.Second
-	if timeoutMs, ok := params["timeout"].(float64); ok && timeoutMs > 0 {
-		timeout = min(time.Duration(timeoutMs)*time.Millisecond, 600*time.Second)
-	}
+	timeout := min(time.Duration(getFloat64(params, "timeout", 120000))*time.Millisecond, 600*time.Second)
 
 	// Handle background execution
 	if runBackground {
@@ -266,12 +263,12 @@ func (t *BashTool) executeBackground(ctx context.Context, command, description, 
 		// Read stdout and stderr concurrently
 		var stdoutBuf bytes.Buffer
 		go func() {
-			io.Copy(&stdoutBuf, stdout)
+			_, _ = io.Copy(&stdoutBuf, stdout)
 		}()
 
 		var stderrBuf bytes.Buffer
 		go func() {
-			io.Copy(&stderrBuf, stderr)
+			_, _ = io.Copy(&stderrBuf, stderr)
 		}()
 
 		// Wait for command to complete

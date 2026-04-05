@@ -15,17 +15,17 @@ func (t *TodoCreateTool) Description() string { return "Create a task to track p
 func (t *TodoCreateTool) Icon() string        { return "📋" }
 
 func (t *TodoCreateTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
-	subject, _ := params["subject"].(string)
+	subject := getString(params, "subject")
 	if subject == "" {
 		return ui.NewErrorResult(t.Name(), "subject is required")
 	}
 
-	description, _ := params["description"].(string)
+	description := getString(params, "description")
 	if description == "" {
 		return ui.NewErrorResult(t.Name(), "description is required")
 	}
 
-	activeForm, _ := params["activeForm"].(string)
+	activeForm := getString(params, "activeForm")
 	metadata, _ := params["metadata"].(map[string]any)
 
 	task := DefaultTodoStore.Create(subject, description, activeForm, metadata)

@@ -24,47 +24,33 @@ func (t *GrepTool) Icon() string        { return ui.IconGrep }
 func (t *GrepTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
-	pattern, ok := params["pattern"].(string)
-	if !ok || pattern == "" {
-		return ui.NewErrorResult(t.Name(), "pattern is required")
+	pattern, err := requireString(params, "pattern")
+	if err != nil {
+		return ui.NewErrorResult(t.Name(), err.Error())
 	}
 
 	// Output mode: "content" | "files_with_matches" (default) | "count"
 	outputMode := "files_with_matches"
-	if om, ok := params["output_mode"].(string); ok && om != "" {
+	if om := getString(params, "output_mode"); om != "" {
 		outputMode = om
 	}
 
-	// Limits
-	headLimit := 250
-	if hl, ok := params["head_limit"].(float64); ok && hl > 0 {
-		headLimit = int(hl)
-	} else if hl, ok := params["head_limit"].(int); ok && hl > 0 {
-		headLimit = hl
-	}
-	offset := 0
-	if off, ok := params["offset"].(float64); ok && off > 0 {
-		offset = int(off)
-	} else if off, ok := params["offset"].(int); ok && off > 0 {
-		offset = off
-	}
+	headLimit := getInt(params, "head_limit", 250)
+	offset := getInt(params, "offset", 0)
 
 	// Build rg args
 	args := []string{"--no-messages"}
 
-	// Case sensitivity
-	caseInsensitive := true
-	if ci, ok := params["-i"].(bool); ok {
-		caseInsensitive = ci
-	} else if cs, ok := params["case_sensitive"].(bool); ok && cs {
-		caseInsensitive = false
+	// Case sensitivity (-i param overrides case_sensitive)
+	caseInsensitive := !getBool(params, "case_sensitive")
+	if v, ok := params["-i"].(bool); ok {
+		caseInsensitive = v
 	}
 	if caseInsensitive {
 		args = append(args, "--ignore-case")
 	}
 
-	// Multiline
-	if ml, ok := params["multiline"].(bool); ok && ml {
+	if getBool(params, "multiline") {
 		args = append(args, "--multiline", "--multiline-dotall")
 	}
 
@@ -78,50 +64,34 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any, cwd strin
 		args = append(args, "--line-number", "--with-filename", "--no-heading")
 
 		// Context lines
-		contextLines := 0
-		if c, ok := params["context"].(float64); ok {
-			contextLines = int(c)
-		} else if c, ok := params["-C"].(float64); ok {
-			contextLines = int(c)
-		}
+		contextLines := getInt(params, "context", getInt(params, "-C", 0))
 		if contextLines > 0 {
 			args = append(args, fmt.Sprintf("--context=%d", contextLines))
 		} else {
-			afterLines := 0
-			if a, ok := params["-A"].(float64); ok {
-				afterLines = int(a)
+			if a := getInt(params, "-A", 0); a > 0 {
+				args = append(args, fmt.Sprintf("--after-context=%d", a))
 			}
-			beforeLines := 0
-			if b, ok := params["-B"].(float64); ok {
-				beforeLines = int(b)
-			}
-			if afterLines > 0 {
-				args = append(args, fmt.Sprintf("--after-context=%d", afterLines))
-			}
-			if beforeLines > 0 {
-				args = append(args, fmt.Sprintf("--before-context=%d", beforeLines))
+			if b := getInt(params, "-B", 0); b > 0 {
+				args = append(args, fmt.Sprintf("--before-context=%d", b))
 			}
 		}
 	}
 
-	// File type filter
-	if fileType, ok := params["type"].(string); ok && fileType != "" {
+	if fileType := getString(params, "type"); fileType != "" {
 		args = append(args, "--type", fileType)
 	}
 
-	// Glob filter
-	if glob, ok := params["glob"].(string); ok && glob != "" {
+	if glob := getString(params, "glob"); glob != "" {
 		args = append(args, "--glob", glob)
-	} else if include, ok := params["include"].(string); ok && include != "" {
+	} else if include := getString(params, "include"); include != "" {
 		args = append(args, "--glob", include)
 	}
 
 	// Pattern
 	args = append(args, "--", pattern)
 
-	// Path
 	searchPath := cwd
-	if path, ok := params["path"].(string); ok && path != "" {
+	if path := getString(params, "path"); path != "" {
 		if filepath.IsAbs(path) {
 			searchPath = path
 		} else {
@@ -138,7 +108,7 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any, cwd strin
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 	// rg exits 1 when no matches found (not an error), 2 on actual error
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

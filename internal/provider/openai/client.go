@@ -13,6 +13,7 @@ import (
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider/openai_compat"
 	"github.com/yanmxa/gencode/internal/provider/streamutil"
 )
 
@@ -261,82 +262,8 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 	go func() {
 		defer close(ch)
 
-		// Convert messages to OpenAI format
-		messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(opts.Messages)+1)
+		messages := openai_compat.ConvertMessages(opts.Messages, opts.SystemPrompt, openai_compat.DefaultAssistantMessage)
 
-		// Add system prompt if provided
-		if opts.SystemPrompt != "" {
-			messages = append(messages, openai.SystemMessage(opts.SystemPrompt))
-		}
-
-		for _, msg := range opts.Messages {
-			switch msg.Role {
-			case message.RoleUser:
-				if msg.ToolResult != nil {
-					// Tool result message
-					messages = append(messages, openai.ToolMessage(
-						msg.ToolResult.Content,
-						msg.ToolResult.ToolCallID,
-					))
-				} else if len(msg.Images) > 0 {
-					// Multimodal message with images
-					parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(msg.Images)+1)
-					for _, img := range msg.Images {
-						dataURI := fmt.Sprintf("data:%s;base64,%s", img.MediaType, img.Data)
-						parts = append(parts, openai.ChatCompletionContentPartUnionParam{
-							OfImageURL: &openai.ChatCompletionContentPartImageParam{
-								ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
-									URL: dataURI,
-								},
-							},
-						})
-					}
-					if msg.Content != "" {
-						parts = append(parts, openai.ChatCompletionContentPartUnionParam{
-							OfText: &openai.ChatCompletionContentPartTextParam{
-								Text: msg.Content,
-							},
-						})
-					}
-					messages = append(messages, openai.ChatCompletionMessageParamUnion{
-						OfUser: &openai.ChatCompletionUserMessageParam{
-							Content: openai.ChatCompletionUserMessageParamContentUnion{
-								OfArrayOfContentParts: parts,
-							},
-						},
-					})
-				} else {
-					messages = append(messages, openai.UserMessage(msg.Content))
-				}
-			case message.RoleAssistant:
-				if len(msg.ToolCalls) > 0 {
-					// Assistant message with tool calls
-					var asstMsg openai.ChatCompletionAssistantMessageParam
-					if msg.Content != "" {
-						asstMsg.Content.OfString = openai.Opt(msg.Content)
-					}
-					asstMsg.ToolCalls = make([]openai.ChatCompletionMessageToolCallUnionParam, len(msg.ToolCalls))
-					for i, tc := range msg.ToolCalls {
-						asstMsg.ToolCalls[i] = openai.ChatCompletionMessageToolCallUnionParam{
-							OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
-								ID: tc.ID,
-								Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
-									Name:      tc.Name,
-									Arguments: tc.Input,
-								},
-							},
-						}
-					}
-					messages = append(messages, openai.ChatCompletionMessageParamUnion{OfAssistant: &asstMsg})
-				} else {
-					messages = append(messages, openai.AssistantMessage(msg.Content))
-				}
-			default: // system messages
-				messages = append(messages, openai.SystemMessage(msg.Content))
-			}
-		}
-
-		// Build request params
 		params := openai.ChatCompletionNewParams{
 			Model:    opts.Model,
 			Messages: messages,
@@ -357,25 +284,7 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 
 		// Add tools if provided
 		if len(opts.Tools) > 0 {
-			tools := make([]openai.ChatCompletionToolUnionParam, 0, len(opts.Tools))
-			for _, t := range opts.Tools {
-				// Convert parameters to FunctionParameters
-				var funcParams openai.FunctionParameters
-				if props, ok := t.Parameters.(map[string]any); ok {
-					funcParams = props
-				}
-
-				tools = append(tools, openai.ChatCompletionToolUnionParam{
-					OfFunction: &openai.ChatCompletionFunctionToolParam{
-						Function: openai.FunctionDefinitionParam{
-							Name:        t.Name,
-							Description: openai.String(t.Description),
-							Parameters:  funcParams,
-						},
-					},
-				})
-			}
-			params.Tools = tools
+			params.Tools = openai_compat.ConvertTools(opts.Tools)
 		}
 
 		// Log request
@@ -422,16 +331,7 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 
 				// Handle finish reason
 				if choice.FinishReason != "" {
-					switch choice.FinishReason {
-					case "stop":
-						state.Response.StopReason = "end_turn"
-					case "tool_calls":
-						state.Response.StopReason = "tool_use"
-					case "length":
-						state.Response.StopReason = "max_tokens"
-					default:
-						state.Response.StopReason = choice.FinishReason
-					}
+					state.Response.StopReason = openai_compat.MapFinishReason(choice.FinishReason)
 				}
 			}
 
