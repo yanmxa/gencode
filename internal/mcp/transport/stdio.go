@@ -79,8 +79,8 @@ func (t *STDIOTransport) Start(ctx context.Context) error {
 
 	// Start the process
 	if err := t.cmd.Start(); err != nil {
-		t.stdin.Close()
-		t.stdout.Close()
+		_ = t.stdin.Close()
+		_ = t.stdout.Close()
 		return fmt.Errorf("failed to start MCP server: %w", err)
 	}
 
@@ -218,7 +218,7 @@ func (t *STDIOTransport) Close() error {
 
 	// Close stdin to signal EOF
 	if t.stdin != nil {
-		t.stdin.Close()
+		_ = t.stdin.Close()
 	}
 
 	// Wait for read loop to finish
@@ -230,7 +230,7 @@ func (t *STDIOTransport) Close() error {
 	// Terminate process
 	if t.cmd != nil && t.cmd.Process != nil {
 		// Try graceful shutdown first
-		t.cmd.Process.Signal(syscall.SIGTERM)
+		_ = t.cmd.Process.Signal(syscall.SIGTERM)
 
 		// Wait with timeout
 		done := make(chan error, 1)
@@ -242,7 +242,7 @@ func (t *STDIOTransport) Close() error {
 		case <-done:
 		case <-time.After(5 * time.Second):
 			// Force kill if still running
-			t.cmd.Process.Kill()
+			_ = t.cmd.Process.Kill()
 			<-done
 		}
 	}

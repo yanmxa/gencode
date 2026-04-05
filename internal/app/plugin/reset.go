@@ -25,7 +25,6 @@ func (s *Model) resetInputState() {
 	s.filteredItems = nil
 	s.addMarketplaceInput = ""
 	s.addDialogCursor = 0
-	s.installScopeIdx = 0
 }
 
 func (s *Model) resetLoadingState() {

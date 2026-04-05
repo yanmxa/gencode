@@ -474,7 +474,7 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd config
 			var async asyncFirstLine
 			if json.Unmarshal([]byte(line), &async) == nil && async.Async {
 				// Detach: close stdin and let process run in background
-				stdinPipe.Close()
+				_ = stdinPipe.Close()
 				go func() { _ = cmd.Wait() }()
 				log.Logger().Debug("hook self-detected as async, backgrounded",
 					zap.String("command", hookCmd.Command))
@@ -493,7 +493,7 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd config
 			}
 			resp, cancelled := e.promptCallback(promptReq)
 			if cancelled {
-				stdinPipe.Close()
+				_ = stdinPipe.Close()
 				_ = cmd.Wait()
 				return outcome
 			}
@@ -513,7 +513,7 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd config
 	}
 
 	// Close stdin and wait for process to exit
-	stdinPipe.Close()
+	_ = stdinPipe.Close()
 	exitCode := getExitCode(cmd.Wait())
 
 	if exitCode == 2 {
