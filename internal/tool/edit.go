@@ -2,8 +2,6 @@ package tool
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -173,26 +171,6 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any, cwd strin
 	// This will be called if permission flow is bypassed
 	// For safety, we still perform the edit but without permission check
 	return t.ExecuteApproved(ctx, params, cwd)
-}
-
-// ToolError represents a tool-specific error
-type ToolError struct {
-	Message string
-}
-
-func (e *ToolError) Error() string {
-	return e.Message
-}
-
-// generateRequestID generates a unique request ID using cryptographic randomness.
-// This avoids collisions that could occur with time-based IDs in high-speed scenarios.
-func generateRequestID() string {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		// Fallback to time-based if crypto/rand fails (unlikely)
-		return "req_" + strconv.FormatInt(time.Now().UnixNano()%1000000, 10)
-	}
-	return "req_" + hex.EncodeToString(b)
 }
 
 func init() {
