@@ -224,7 +224,7 @@ func (m *model) applyPermissionUpdates(updates []hooks.PermissionUpdate) {
 		}
 	}
 	if needReload {
-		config.Reload()
+		_, _ = config.Reload()
 	}
 }
 
@@ -306,7 +306,7 @@ func (m *model) persistAllowRule(req *permission.PermissionRequest) {
 		}
 	}
 	// Reload settings so the rule takes effect immediately
-	config.Reload()
+	_, _ = config.Reload()
 }
 
 // applyUpdatedToolInput marshals the hook-provided input and updates the current

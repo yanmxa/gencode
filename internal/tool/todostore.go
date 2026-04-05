@@ -136,7 +136,7 @@ func (s *TodoStore) removeTaskFile(id string) {
 	if s.storageDir == "" {
 		return
 	}
-	os.Remove(filepath.Join(s.storageDir, id+".json"))
+	_ = os.Remove(filepath.Join(s.storageDir, id+".json"))
 }
 
 // Create adds a new task and returns it
@@ -293,7 +293,7 @@ func (s *TodoStore) Reset() {
 	// Remove all task files from disk
 	if s.storageDir != "" {
 		for id := range s.tasks {
-			os.Remove(filepath.Join(s.storageDir, id+".json"))
+			_ = os.Remove(filepath.Join(s.storageDir, id+".json"))
 		}
 	}
 

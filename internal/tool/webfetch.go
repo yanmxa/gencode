@@ -63,7 +63,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, params map[string]any, cwd s
 	if err != nil {
 		return ui.NewErrorResult(t.Name(), "request failed: "+err.Error())
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check status code
 	if resp.StatusCode >= 400 {

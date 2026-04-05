@@ -178,7 +178,7 @@ var mcpEditCmd = &cobra.Command{
 		editorCmd.Stderr = os.Stderr
 
 		if err := editorCmd.Run(); err != nil {
-			os.Remove(info.TempFile)
+			_ = os.Remove(info.TempFile)
 			return fmt.Errorf("editor failed: %w", err)
 		}
 
