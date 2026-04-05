@@ -55,7 +55,7 @@ func (h *Hub) Check() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		select {
 		case u := <-h.ch:
-			return UpdateMsg{Index: u.Index, Message: u.Message}
+			return UpdateMsg(u)
 		default:
 			return CheckTickMsg{}
 		}

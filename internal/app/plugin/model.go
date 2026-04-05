@@ -116,9 +116,6 @@ type Model struct {
 	actionIdx         int
 	parentIdx         int
 
-	installScopes   []coreplugin.Scope
-	installScopeIdx int
-
 	addMarketplaceInput string
 	addDialogCursor     int
 

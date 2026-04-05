@@ -149,7 +149,7 @@ func (p *ExaProvider) Search(ctx context.Context, query string, opts SearchOptio
 	}
 
 	if mcpResp.Error != nil {
-		return nil, fmt.Errorf("Exa error: %s", mcpResp.Error.Message)
+		return nil, fmt.Errorf("exa error: %s", mcpResp.Error.Message)
 	}
 
 	// Parse the result

@@ -266,14 +266,6 @@ func (p *PlanPrompt) submitInlineInput() (tea.Cmd, *PlanResponseMsg) {
 }
 
 // Plan prompt styles
-func getPlanSeparatorStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Separator)
-}
-
-func getPlanTitleStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
-}
-
 func getPlanSelectedStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Success).Bold(true)
 }
