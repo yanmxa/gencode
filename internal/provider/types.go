@@ -107,7 +107,7 @@ type CompletionOptions struct {
 type Tool struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description"`
-	Parameters  interface{} `json:"parameters"` // JSON Schema
+	Parameters  any `json:"parameters"` // JSON Schema
 }
 
 // LLMProvider is the interface that all providers must implement

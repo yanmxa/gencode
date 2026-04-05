@@ -66,7 +66,7 @@ func Save(cwd string, history []string) {
 
 	w := bufio.NewWriter(f)
 	for _, entry := range truncate(history) {
-		fmt.Fprintln(w, escapeEntry(entry))
+		_, _ = fmt.Fprintln(w, escapeEntry(entry))
 	}
-	w.Flush()
+	_ = w.Flush()
 }

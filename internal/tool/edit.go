@@ -2,8 +2,6 @@ package tool
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -33,11 +31,12 @@ func (t *EditTool) RequiresPermission() bool {
 // PreparePermission prepares a permission request with diff information
 func (t *EditTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*permission.PermissionRequest, error) {
 	// Get parameters
-	filePath, ok := params["file_path"].(string)
-	if !ok || filePath == "" {
-		return nil, &ToolError{Message: "file_path is required"}
+	filePath, err := requireString(params, "file_path")
+	if err != nil {
+		return nil, err
 	}
 
+	// old_string may be empty (inserting at start), so we only check presence not value
 	oldString, ok := params["old_string"].(string)
 	if !ok {
 		return nil, &ToolError{Message: "old_string is required"}
@@ -70,11 +69,7 @@ func (t *EditTool) PreparePermission(ctx context.Context, params map[string]any,
 		return nil, &ToolError{Message: "old_string not found in file"}
 	}
 
-	// Check if replace_all is set
-	replaceAll := false
-	if v, ok := params["replace_all"].(bool); ok {
-		replaceAll = v
-	}
+	replaceAll := getBool(params, "replace_all")
 
 	// If not replace_all, check uniqueness
 	if !replaceAll && count > 1 {
@@ -106,7 +101,7 @@ func (t *EditTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 	start := time.Now()
 
 	// Get parameters
-	filePath, _ := params["file_path"].(string)
+	filePath := getString(params, "file_path")
 	oldString, _ := params["old_string"].(string)
 	newString, _ := params["new_string"].(string)
 
@@ -123,11 +118,7 @@ func (t *EditTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 
 	oldContent := string(content)
 
-	// Check replace_all
-	replaceAll := false
-	if v, ok := params["replace_all"].(bool); ok {
-		replaceAll = v
-	}
+	replaceAll := getBool(params, "replace_all")
 
 	// Perform replacement
 	var newContent string
@@ -173,26 +164,6 @@ func (t *EditTool) Execute(ctx context.Context, params map[string]any, cwd strin
 	// This will be called if permission flow is bypassed
 	// For safety, we still perform the edit but without permission check
 	return t.ExecuteApproved(ctx, params, cwd)
-}
-
-// ToolError represents a tool-specific error
-type ToolError struct {
-	Message string
-}
-
-func (e *ToolError) Error() string {
-	return e.Message
-}
-
-// generateRequestID generates a unique request ID using cryptographic randomness.
-// This avoids collisions that could occur with time-based IDs in high-speed scenarios.
-func generateRequestID() string {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		// Fallback to time-based if crypto/rand fails (unlikely)
-		return "req_" + strconv.FormatInt(time.Now().UnixNano()%1000000, 10)
-	}
-	return "req_" + hex.EncodeToString(b)
 }
 
 func init() {

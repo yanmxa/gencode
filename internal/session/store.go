@@ -8,10 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 const (
@@ -295,9 +297,8 @@ func (s *Store) List() ([]*SessionMetadata, error) {
 		})
 	}
 
-	// Sort by update time (newest first)
-	sort.Slice(sessions, func(i, j int) bool {
-		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
+	slices.SortFunc(sessions, func(a, b *SessionMetadata) int {
+		return b.UpdatedAt.Compare(a.UpdatedAt) // newest first
 	})
 
 	return sessions, nil
@@ -402,65 +403,7 @@ func (s *Store) Cleanup() error {
 
 // loadWithoutLock reads a JSONL file and reconstructs a Session (caller must hold lock).
 func (s *Store) loadWithoutLock(id string) (*Session, error) {
-	filePath := filepath.Join(s.baseDir, id+".jsonl")
-	f, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open session file: %w", err)
-	}
-	defer f.Close()
-
-	var (
-		entries []Entry
-		meta    *EntryMetadata_
-	)
-
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 16*1024*1024), 16*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-
-		var entry Entry
-		if err := json.Unmarshal(line, &entry); err != nil {
-			continue // skip malformed lines
-		}
-
-		switch entry.Type {
-		case EntryUser, EntryAssistant:
-			entries = append(entries, entry)
-		case EntryMetadata:
-			meta = entry.Metadata // last one wins
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read session file: %w", err)
-	}
-
-	// Restore full tool outputs that were truncated and persisted to disk.
-	s.restoreToolResults(id, entries)
-
-	sess := &Session{
-		Metadata: SessionMetadata{
-			ID: id,
-		},
-		Entries: entries,
-	}
-
-	if meta != nil {
-		sess.Metadata.Title = meta.Title
-		sess.Metadata.Provider = meta.Provider
-		sess.Metadata.Model = meta.Model
-		sess.Metadata.Cwd = meta.Cwd
-		sess.Metadata.CreatedAt = meta.CreatedAt
-		sess.Metadata.UpdatedAt = meta.UpdatedAt
-		sess.Metadata.MessageCount = meta.MessageCount
-		sess.Metadata.ParentSessionID = meta.ParentSessionID
-		sess.Tasks = meta.Tasks
-	}
-
-	return sess, nil
+	return s.loadFromFile(filepath.Join(s.baseDir, id+".jsonl"), id)
 }
 
 // Fork creates a new session by copying all entries from the source session.
@@ -585,8 +528,8 @@ func (s *Store) listByScanning() ([]*SessionMetadata, error) {
 		sessions = append(sessions, &sess.Metadata)
 	}
 
-	sort.Slice(sessions, func(i, j int) bool {
-		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
+	slices.SortFunc(sessions, func(a, b *SessionMetadata) int {
+		return b.UpdatedAt.Compare(a.UpdatedAt) // newest first
 	})
 
 	return sessions, nil
@@ -685,6 +628,7 @@ func (s *Store) LoadSubagent(agentID string) (*Session, error) {
 }
 
 // loadFromFile reads a JSONL file at the given path and reconstructs a Session.
+// It is the single canonical loader used by loadWithoutLock and LoadSubagent.
 func (s *Store) loadFromFile(filePath, id string) (*Session, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -706,13 +650,13 @@ func (s *Store) loadFromFile(filePath, id string) (*Session, error) {
 		}
 		var entry Entry
 		if err := json.Unmarshal(line, &entry); err != nil {
-			continue
+			continue // skip malformed lines
 		}
 		switch entry.Type {
 		case EntryUser, EntryAssistant:
 			entries = append(entries, entry)
 		case EntryMetadata:
-			meta = entry.Metadata
+			meta = entry.Metadata // last one wins
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -726,19 +670,25 @@ func (s *Store) loadFromFile(filePath, id string) (*Session, error) {
 		Metadata: SessionMetadata{ID: id},
 		Entries:  entries,
 	}
-	if meta != nil {
-		sess.Metadata.Title = meta.Title
-		sess.Metadata.Provider = meta.Provider
-		sess.Metadata.Model = meta.Model
-		sess.Metadata.Cwd = meta.Cwd
-		sess.Metadata.CreatedAt = meta.CreatedAt
-		sess.Metadata.UpdatedAt = meta.UpdatedAt
-		sess.Metadata.MessageCount = meta.MessageCount
-		sess.Metadata.ParentSessionID = meta.ParentSessionID
-		sess.Tasks = meta.Tasks
-	}
-
+	applyMetadata(&sess.Metadata, &sess.Tasks, meta)
 	return sess, nil
+}
+
+// applyMetadata copies fields from the persisted EntryMetadata_ into a SessionMetadata.
+// meta may be nil (no metadata entry found), in which case this is a no-op.
+func applyMetadata(m *SessionMetadata, tasks *[]tool.TodoTask, meta *EntryMetadata_) {
+	if meta == nil {
+		return
+	}
+	m.Title = meta.Title
+	m.Provider = meta.Provider
+	m.Model = meta.Model
+	m.Cwd = meta.Cwd
+	m.CreatedAt = meta.CreatedAt
+	m.UpdatedAt = meta.UpdatedAt
+	m.MessageCount = meta.MessageCount
+	m.ParentSessionID = meta.ParentSessionID
+	*tasks = meta.Tasks
 }
 
 // PersistToolResult saves a large tool result to disk under {sessionID}/tool-results/.

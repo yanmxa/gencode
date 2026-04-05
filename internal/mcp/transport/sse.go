@@ -96,7 +96,7 @@ func (t *SSETransport) Start(ctx context.Context) error {
 // readLoop reads SSE events from the connection
 func (t *SSETransport) readLoop(r io.ReadCloser) {
 	defer close(t.readLoopDone)
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	reader := bufio.NewReader(r)
 	var event, data string
@@ -193,7 +193,7 @@ func (t *SSETransport) postMessage(ctx context.Context, data []byte) error {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	return nil
 }

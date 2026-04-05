@@ -40,15 +40,16 @@ func (p PermissionBehavior) String() string {
 	}
 }
 
-// Backward-compatible aliases for callers that use the old names.
-// These will be removed after all callers are migrated.
-const (
-	PermissionAllow PermissionBehavior = Allow
-	PermissionDeny  PermissionBehavior = Deny
-	PermissionAsk   PermissionBehavior = Ask
-)
+// Deprecated: PermissionAllow is an alias for Allow. Use Allow directly.
+const PermissionAllow PermissionBehavior = Allow
 
-// PermissionResult is the old name — alias kept for backward compatibility.
+// Deprecated: PermissionDeny is an alias for Deny. Use Deny directly.
+const PermissionDeny PermissionBehavior = Deny
+
+// Deprecated: PermissionAsk is an alias for Ask. Use Ask directly.
+const PermissionAsk PermissionBehavior = Ask
+
+// Deprecated: PermissionResult is an alias for PermissionBehavior. Use PermissionBehavior directly.
 type PermissionResult = PermissionBehavior
 
 // ReadOnlyTools is a list of tools that are considered read-only.
@@ -374,10 +375,8 @@ func extractBashCommands(cmd string) []string {
 	var commands []string
 
 	// Split on && first, then on ;
-	parts := strings.Split(cmd, "&&")
-	for _, part := range parts {
-		subParts := strings.Split(part, ";")
-		for _, subPart := range subParts {
+	for part := range strings.SplitSeq(cmd, "&&") {
+		for subPart := range strings.SplitSeq(part, ";") {
 			trimmed := strings.TrimSpace(subPart)
 			if trimmed != "" {
 				commands = append(commands, trimmed)

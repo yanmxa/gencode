@@ -58,7 +58,7 @@ func NewClient(config ServerConfig) *Client {
 }
 
 // newRequest creates a new JSON-RPC request
-func newRequest(method string, params interface{}) *transport.JSONRPCRequest {
+func newRequest(method string, params any) *transport.JSONRPCRequest {
 	return &transport.JSONRPCRequest{
 		JSONRPC: "2.0",
 		ID:      nextRequestID(),
@@ -68,7 +68,7 @@ func newRequest(method string, params interface{}) *transport.JSONRPCRequest {
 }
 
 // newNotification creates a new JSON-RPC notification
-func newNotification(method string, params interface{}) *transport.JSONRPCNotification {
+func newNotification(method string, params any) *transport.JSONRPCNotification {
 	return &transport.JSONRPCNotification{
 		JSONRPC: "2.0",
 		Method:  method,
@@ -77,7 +77,7 @@ func newNotification(method string, params interface{}) *transport.JSONRPCNotifi
 }
 
 // parseResponse parses a JSON-RPC response and unmarshals the result
-func parseResponse(resp *transport.JSONRPCResponse, target interface{}) error {
+func parseResponse(resp *transport.JSONRPCResponse, target any) error {
 	if resp.Error != nil {
 		return fmt.Errorf("JSON-RPC error %d: %s", resp.Error.Code, resp.Error.Message)
 	}
@@ -153,13 +153,13 @@ func (c *Client) Connect(ctx context.Context) error {
 	req := newRequest(MethodInitialize, initParams)
 	resp, err := c.transport.Send(ctx, req)
 	if err != nil {
-		c.transport.Close()
+		_ = c.transport.Close()
 		return fmt.Errorf("initialize request failed: %w", err)
 	}
 
 	var initResult InitializeResult
 	if err := parseResponse(resp, &initResult); err != nil {
-		c.transport.Close()
+		_ = c.transport.Close()
 		return fmt.Errorf("failed to parse initialize response: %w", err)
 	}
 
@@ -169,7 +169,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	// Send initialized notification
 	notif := newNotification(MethodInitialized, nil)
 	if err := c.transport.SendNotification(ctx, notif); err != nil {
-		c.transport.Close()
+		_ = c.transport.Close()
 		return fmt.Errorf("failed to send initialized notification: %w", err)
 	}
 
@@ -454,7 +454,9 @@ func (c *Client) handleNotification(method string, _ []byte) {
 
 	go func() {
 		ctx := context.Background()
-		c.ListTools(ctx)
+		if _, err := c.ListTools(ctx); err != nil {
+			return // Tool list refresh failed; will retry on next notification
+		}
 
 		c.mu.RLock()
 		callback := c.onToolsChanged

@@ -62,7 +62,7 @@ func init() {
 }
 
 func main() {
-	defer log.Sync()
+	defer func() { _ = log.Sync() }()
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

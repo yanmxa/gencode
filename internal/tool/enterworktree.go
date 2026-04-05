@@ -33,8 +33,7 @@ func (t *EnterWorktreeTool) RequiresInteraction() bool { return true }
 
 // PrepareInteraction returns the request for the TUI.
 func (t *EnterWorktreeTool) PrepareInteraction(_ context.Context, params map[string]any, cwd string) (any, error) {
-	slug, _ := params["name"].(string)
-	return &EnterWorktreeRequest{Slug: slug}, nil
+	return &EnterWorktreeRequest{Slug: getString(params, "name")}, nil
 }
 
 // ExecuteWithResponse handles the TUI's approval.
@@ -64,9 +63,7 @@ func (t *EnterWorktreeTool) ExecuteWithResponse(_ context.Context, params map[st
 
 // Execute is the non-interactive fallback (auto-approve for subagents).
 func (t *EnterWorktreeTool) Execute(_ context.Context, params map[string]any, cwd string) ui.ToolResult {
-	slug, _ := params["name"].(string)
-
-	result, cleanup, err := worktree.Create(cwd, slug)
+	result, cleanup, err := worktree.Create(cwd, getString(params, "name"))
 	if err != nil {
 		return ui.NewErrorResult(t.Name(), err.Error())
 	}

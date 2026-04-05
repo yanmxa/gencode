@@ -133,8 +133,7 @@ func (t *AskUserQuestionTool) ExecuteWithResponse(ctx context.Context, params ma
 	sb.WriteString("User responses:\n")
 
 	// Get original questions for context
-	questionsRaw, _ := params["questions"]
-	questionsJSON, _ := json.Marshal(questionsRaw)
+	questionsJSON, _ := json.Marshal(params["questions"])
 	var questions []Question
 	json.Unmarshal(questionsJSON, &questions)
 

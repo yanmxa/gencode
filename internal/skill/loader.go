@@ -129,9 +129,10 @@ func (l *Loader) getSearchPaths() []searchPath {
 		var result []searchPath
 		for _, p := range paths {
 			result = append(result, p)
-			if p.scope == ScopeUser {
+			switch p.scope {
+			case ScopeUser:
 				result = append(result, userPluginPaths...)
-			} else if p.scope == ScopeClaudeProject {
+			case ScopeClaudeProject:
 				result = append(result, projectPluginPaths...)
 			}
 		}

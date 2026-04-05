@@ -169,37 +169,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 		// Add tools if provided
 		if len(opts.Tools) > 0 {
-			tools := make([]anthropic.ToolUnionParam, 0, len(opts.Tools))
-			for _, t := range opts.Tools {
-				// Convert parameters to ToolInputSchemaParam
-				inputSchema := anthropic.ToolInputSchemaParam{}
-				if props, ok := t.Parameters.(map[string]any); ok {
-					if properties, ok := props["properties"]; ok {
-						inputSchema.Properties = properties
-					}
-					if required, ok := props["required"].([]string); ok {
-						inputSchema.Required = required
-					} else if required, ok := props["required"].([]any); ok {
-						// Convert []any to []string
-						requiredStrs := make([]string, 0, len(required))
-						for _, r := range required {
-							if s, ok := r.(string); ok {
-								requiredStrs = append(requiredStrs, s)
-							}
-						}
-						inputSchema.Required = requiredStrs
-					}
-				}
-
-				tools = append(tools, anthropic.ToolUnionParam{
-					OfTool: &anthropic.ToolParam{
-						Name:        t.Name,
-						Description: anthropic.String(t.Description),
-						InputSchema: inputSchema,
-					},
-				})
-			}
-			params.Tools = tools
+			params.Tools = convertAnthropicTools(opts.Tools)
 		}
 
 		// Log request
@@ -387,6 +357,48 @@ func mergeConsecutiveMessages(msgs []anthropic.MessageParam) []anthropic.Message
 		}
 	}
 	return merged
+}
+
+// convertAnthropicTools converts generic provider.Tool definitions to the Anthropic SDK format.
+// The JSON Schema "required" field may arrive as []string or []any (from JSON decoding);
+// anyStrings normalises both forms.
+func convertAnthropicTools(tools []provider.Tool) []anthropic.ToolUnionParam {
+	result := make([]anthropic.ToolUnionParam, 0, len(tools))
+	for _, t := range tools {
+		schema := anthropic.ToolInputSchemaParam{}
+		if props, ok := t.Parameters.(map[string]any); ok {
+			if properties, ok := props["properties"]; ok {
+				schema.Properties = properties
+			}
+			schema.Required = anyStrings(props["required"])
+		}
+		result = append(result, anthropic.ToolUnionParam{
+			OfTool: &anthropic.ToolParam{
+				Name:        t.Name,
+				Description: anthropic.String(t.Description),
+				InputSchema: schema,
+			},
+		})
+	}
+	return result
+}
+
+// anyStrings converts a "required" JSON Schema value to []string.
+// It accepts []string (typed) or []any (JSON-decoded) and ignores other types.
+func anyStrings(v any) []string {
+	switch r := v.(type) {
+	case []string:
+		return r
+	case []any:
+		out := make([]string, 0, len(r))
+		for _, item := range r {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // assistantContentBlocks builds the thinking + text content blocks for an assistant message.

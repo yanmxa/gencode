@@ -5,8 +5,8 @@ package alibaba
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
@@ -14,6 +14,7 @@ import (
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider/openai_compat"
 	"github.com/yanmxa/gencode/internal/provider/streamutil"
 )
 
@@ -25,16 +26,11 @@ type Client struct {
 
 // NewClient creates a new Qwen client with the given OpenAI SDK client.
 func NewClient(client openai.Client, name string) *Client {
-	return &Client{
-		client: client,
-		name:   name,
-	}
+	return &Client{client: client, name: name}
 }
 
 // Name returns the provider name.
-func (c *Client) Name() string {
-	return c.name
-}
+func (c *Client) Name() string { return c.name }
 
 // isThinkingModel returns true if the model supports thinking/reasoning mode.
 func isThinkingModel(model string) bool {
@@ -42,19 +38,15 @@ func isThinkingModel(model string) bool {
 	return strings.Contains(lower, "qwq") || strings.Contains(lower, "thinking")
 }
 
-// extractReasoningContent parses reasoning_content from a raw JSON delta.
-func extractReasoningContent(rawJSON string) string {
-	if rawJSON == "" {
-		return ""
+// makeAssistantConverter returns a provider-specific assistant message converter.
+// For thinking models, reasoning_content is injected only when present.
+func makeAssistantConverter(thinking bool) func(message.Message) openai.ChatCompletionMessageParamUnion {
+	if !thinking {
+		return openai_compat.DefaultAssistantMessage
 	}
-	var delta map[string]any
-	if err := json.Unmarshal([]byte(rawJSON), &delta); err != nil {
-		return ""
+	return func(msg message.Message) openai.ChatCompletionMessageParamUnion {
+		return openai_compat.AssistantMessageWithReasoning(msg, msg.Thinking)
 	}
-	if rc, ok := delta["reasoning_content"].(string); ok {
-		return rc
-	}
-	return ""
 }
 
 // Stream sends a completion request and returns a channel of streaming chunks.
@@ -66,81 +58,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 		thinking := isThinkingModel(opts.Model)
 
-		// Convert messages to OpenAI format
-		messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(opts.Messages)+1)
+		messages := openai_compat.ConvertMessages(opts.Messages, opts.SystemPrompt, makeAssistantConverter(thinking))
 
-		// Add system prompt if provided
-		if opts.SystemPrompt != "" {
-			messages = append(messages, openai.SystemMessage(opts.SystemPrompt))
-		}
-
-		for _, msg := range opts.Messages {
-			switch msg.Role {
-			case message.RoleUser:
-				if msg.ToolResult != nil {
-					messages = append(messages, openai.ToolMessage(
-						msg.ToolResult.Content,
-						msg.ToolResult.ToolCallID,
-					))
-				} else if len(msg.Images) > 0 {
-					// Multimodal message with images
-					parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(msg.Images)+1)
-					for _, img := range msg.Images {
-						dataURI := fmt.Sprintf("data:%s;base64,%s", img.MediaType, img.Data)
-						parts = append(parts, openai.ChatCompletionContentPartUnionParam{
-							OfImageURL: &openai.ChatCompletionContentPartImageParam{
-								ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
-									URL: dataURI,
-								},
-							},
-						})
-					}
-					if msg.Content != "" {
-						parts = append(parts, openai.ChatCompletionContentPartUnionParam{
-							OfText: &openai.ChatCompletionContentPartTextParam{
-								Text: msg.Content,
-							},
-						})
-					}
-					messages = append(messages, openai.ChatCompletionMessageParamUnion{
-						OfUser: &openai.ChatCompletionUserMessageParam{
-							Content: openai.ChatCompletionUserMessageParamContentUnion{
-								OfArrayOfContentParts: parts,
-							},
-						},
-					})
-				} else {
-					messages = append(messages, openai.UserMessage(msg.Content))
-				}
-			case message.RoleAssistant:
-				var asstMsg openai.ChatCompletionAssistantMessageParam
-				if msg.Content != "" {
-					asstMsg.Content.OfString = openai.Opt(msg.Content)
-				}
-				if len(msg.ToolCalls) > 0 {
-					asstMsg.ToolCalls = make([]openai.ChatCompletionMessageToolCallUnionParam, len(msg.ToolCalls))
-					for i, tc := range msg.ToolCalls {
-						asstMsg.ToolCalls[i] = openai.ChatCompletionMessageToolCallUnionParam{
-							OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
-								ID: tc.ID,
-								Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
-									Name:      tc.Name,
-									Arguments: tc.Input,
-								},
-							},
-						}
-					}
-				}
-				if thinking {
-					asstMsg.SetExtraFields(map[string]any{"reasoning_content": msg.Thinking})
-				}
-				messages = append(messages, openai.ChatCompletionMessageParamUnion{OfAssistant: &asstMsg})
-			default: // system messages
-				messages = append(messages, openai.SystemMessage(msg.Content))
-			}
-		}
-
-		// Build request params
 		params := openai.ChatCompletionNewParams{
 			Model:    opts.Model,
 			Messages: messages,
@@ -157,37 +76,16 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		if opts.MaxTokens > 0 {
 			params.MaxCompletionTokens = openai.Int(int64(opts.MaxTokens))
 		}
-
 		if opts.Temperature > 0 {
 			params.Temperature = openai.Float(opts.Temperature)
 		}
-
-		// Add tools if provided
 		if len(opts.Tools) > 0 {
-			tools := make([]openai.ChatCompletionToolUnionParam, 0, len(opts.Tools))
-			for _, t := range opts.Tools {
-				var funcParams openai.FunctionParameters
-				if props, ok := t.Parameters.(map[string]any); ok {
-					funcParams = props
-				}
-
-				tools = append(tools, openai.ChatCompletionToolUnionParam{
-					OfFunction: &openai.ChatCompletionFunctionToolParam{
-						Function: openai.FunctionDefinitionParam{
-							Name:        t.Name,
-							Description: openai.String(t.Description),
-							Parameters:  funcParams,
-						},
-					},
-				})
-			}
-			params.Tools = tools
+			params.Tools = openai_compat.ConvertTools(opts.Tools)
 		}
 
 		log.LogRequestCtx(ctx, c.name, opts.Model, opts)
 
 		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
-
 		state := streamutil.NewState(c.name)
 		toolCalls := make(map[int]*message.ToolCall)
 
@@ -196,48 +94,31 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 			state.Count()
 
 			for _, choice := range chunk.Choices {
-				// Handle reasoning_content for thinking models
+				// Extract reasoning_content for thinking models
 				if thinking {
-					if content := extractReasoningContent(choice.Delta.RawJSON()); content != "" {
+					if content := openai_compat.ExtractReasoningContent(choice.Delta.RawJSON()); content != "" {
 						state.EmitThinking(ch, content)
 					}
 				}
 
-				// Handle text delta
 				if choice.Delta.Content != "" {
 					state.EmitText(ch, choice.Delta.Content)
 				}
 
-				// Handle tool calls
 				for _, tc := range choice.Delta.ToolCalls {
 					idx := int(tc.Index)
-
 					if _, exists := toolCalls[idx]; !exists {
-						toolCalls[idx] = &message.ToolCall{
-							ID:   tc.ID,
-							Name: tc.Function.Name,
-						}
+						toolCalls[idx] = &message.ToolCall{ID: tc.ID, Name: tc.Function.Name}
 						state.EmitToolStart(ch, tc.ID, tc.Function.Name)
 					}
-
 					if tc.Function.Arguments != "" {
 						toolCalls[idx].Input += tc.Function.Arguments
 						state.EmitToolInput(ch, toolCalls[idx].ID, tc.Function.Arguments)
 					}
 				}
 
-				// Handle finish reason
 				if choice.FinishReason != "" {
-					switch choice.FinishReason {
-					case "stop":
-						state.Response.StopReason = "end_turn"
-					case "tool_calls":
-						state.Response.StopReason = "tool_use"
-					case "length":
-						state.Response.StopReason = "max_tokens"
-					default:
-						state.Response.StopReason = choice.FinishReason
-					}
+					state.Response.StopReason = openai_compat.MapFinishReason(choice.FinishReason)
 				}
 			}
 
@@ -266,17 +147,10 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 
 	models := make([]provider.ModelInfo, 0, len(page.Data))
 	for _, m := range page.Data {
-		models = append(models, provider.ModelInfo{
-			ID:          m.ID,
-			Name:        m.ID,
-			DisplayName: m.ID,
-		})
+		models = append(models, provider.ModelInfo{ID: m.ID, Name: m.ID, DisplayName: m.ID})
 	}
 
-	sort.Slice(models, func(i, j int) bool {
-		return models[i].ID < models[j].ID
-	})
-
+	slices.SortFunc(models, func(a, b provider.ModelInfo) int { return cmp.Compare(a.ID, b.ID) })
 	return models, nil
 }
 

@@ -350,7 +350,7 @@ func (s *Model) HandleConnectResult(msg ConnectResultMsg) {
 // Marks the server as disabled so it won't auto-connect on restart.
 func (s *Model) HandleDisconnect(name string) {
 	if coremcp.DefaultRegistry != nil {
-		coremcp.DefaultRegistry.Disconnect(name)
+		_ = coremcp.DefaultRegistry.Disconnect(name)
 		coremcp.DefaultRegistry.SetDisabled(name, true)
 	}
 	s.refreshAndUpdateView()

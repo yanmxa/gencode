@@ -60,7 +60,6 @@ type ToggleMsg struct {
 	Enabled  bool
 }
 
-
 // New creates a new Model
 func New() Model {
 	return Model{

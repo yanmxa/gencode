@@ -8,10 +8,10 @@ import (
 
 // JSONRPCRequest represents a JSON-RPC 2.0 request
 type JSONRPCRequest struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      uint64      `json:"id"`
-	Method  string      `json:"method"`
-	Params  interface{} `json:"params,omitempty"`
+	JSONRPC string `json:"jsonrpc"`
+	ID      uint64 `json:"id"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
 }
 
 // JSONRPCResponse represents a JSON-RPC 2.0 response
@@ -31,9 +31,9 @@ type JSONRPCError struct {
 
 // JSONRPCNotification represents a JSON-RPC 2.0 notification (no ID)
 type JSONRPCNotification struct {
-	JSONRPC string      `json:"jsonrpc"`
-	Method  string      `json:"method"`
-	Params  interface{} `json:"params,omitempty"`
+	JSONRPC string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
 }
 
 // Transport defines the interface for MCP transport implementations.

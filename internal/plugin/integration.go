@@ -18,10 +18,8 @@ func InitPlugins(ctx context.Context, cwd string) error {
 		return err
 	}
 
-	// Load Claude Code plugins if enabled
-	if err := DefaultRegistry.LoadClaudePlugins(ctx); err != nil {
-		// Non-fatal, log and continue
-	}
+	// Load Claude Code plugins if enabled (non-fatal: missing plugins are skipped)
+	_ = DefaultRegistry.LoadClaudePlugins(ctx)
 
 	// Load plugins from --plugin-dir if specified
 	if pluginDir := os.Getenv("GEN_PLUGIN_DIR"); pluginDir != "" {

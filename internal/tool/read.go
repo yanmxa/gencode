@@ -2,6 +2,7 @@ package tool
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -26,10 +27,9 @@ func (t *ReadTool) Icon() string        { return ui.IconRead }
 func (t *ReadTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
-	// Get file path parameter
-	filePath, ok := params["file_path"].(string)
-	if !ok || filePath == "" {
-		return ui.NewErrorResult(t.Name(), "file_path is required")
+	filePath, err := requireString(params, "file_path")
+	if err != nil {
+		return ui.NewErrorResult(t.Name(), err.Error())
 	}
 
 	// Resolve relative path
@@ -37,20 +37,8 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any, cwd strin
 		filePath = filepath.Join(cwd, filePath)
 	}
 
-	// Get optional parameters
-	offset := 0
-	if v, ok := params["offset"].(int); ok {
-		offset = v
-	} else if v, ok := params["offset"].(float64); ok {
-		offset = int(v)
-	}
-
-	limit := maxReadLines
-	if v, ok := params["limit"].(int); ok && v > 0 {
-		limit = v
-	} else if v, ok := params["limit"].(float64); ok && v > 0 {
-		limit = int(v)
-	}
+	offset := getInt(params, "offset", 0)
+	limit := getInt(params, "limit", maxReadLines)
 
 	// Get file info
 	info, err := os.Stat(filePath)
@@ -76,18 +64,16 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any, cwd strin
 	header := make([]byte, 512)
 	n, _ := file.Read(header)
 	if n > 0 {
-		for _, b := range header[:n] {
-			if b == 0 {
-				return ui.ToolResult{
-					Success: true,
-					Output:  "Binary file detected: " + filePath,
-					Metadata: ui.ResultMetadata{
-						Title:    t.Name(),
-						Icon:     t.Icon(),
-						Subtitle: filePath + " (binary)",
-						Size:     info.Size(),
-					},
-				}
+		if bytes.IndexByte(header[:n], 0) >= 0 {
+			return ui.ToolResult{
+				Success: true,
+				Output:  "Binary file detected: " + filePath,
+				Metadata: ui.ResultMetadata{
+					Title:    t.Name(),
+					Icon:     t.Icon(),
+					Subtitle: filePath + " (binary)",
+					Size:     info.Size(),
+				},
 			}
 		}
 	}

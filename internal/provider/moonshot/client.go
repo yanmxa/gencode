@@ -5,14 +5,15 @@ package moonshot
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"sort"
+	"cmp"
+	"slices"
 
 	"github.com/openai/openai-go/v3"
 
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider/openai_compat"
 	"github.com/yanmxa/gencode/internal/provider/streamutil"
 )
 
@@ -35,6 +36,13 @@ func (c *Client) Name() string {
 	return c.name
 }
 
+// convertAssistant converts an assistant message for Moonshot.
+// Moonshot requires reasoning_content on all assistant messages when thinking
+// is enabled — we always include the field (empty string if no thinking content).
+func convertAssistant(msg message.Message) openai.ChatCompletionMessageParamUnion {
+	return openai_compat.AssistantMessageWithReasoning(msg, msg.Thinking)
+}
+
 // Stream sends a completion request and returns a channel of streaming chunks.
 func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
 	ch := make(chan message.StreamChunk)
@@ -42,87 +50,14 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 	go func() {
 		defer close(ch)
 
-		// Convert messages to OpenAI format
-		messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(opts.Messages)+1)
+		messages := openai_compat.ConvertMessages(opts.Messages, opts.SystemPrompt, convertAssistant)
 
-		// Add system prompt if provided
-		if opts.SystemPrompt != "" {
-			messages = append(messages, openai.SystemMessage(opts.SystemPrompt))
-		}
-
-		for _, msg := range opts.Messages {
-			switch msg.Role {
-			case message.RoleUser:
-				if msg.ToolResult != nil {
-					messages = append(messages, openai.ToolMessage(
-						msg.ToolResult.Content,
-						msg.ToolResult.ToolCallID,
-					))
-				} else if len(msg.Images) > 0 {
-					// Multimodal message with images
-					parts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(msg.Images)+1)
-					for _, img := range msg.Images {
-						dataURI := fmt.Sprintf("data:%s;base64,%s", img.MediaType, img.Data)
-						parts = append(parts, openai.ChatCompletionContentPartUnionParam{
-							OfImageURL: &openai.ChatCompletionContentPartImageParam{
-								ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
-									URL: dataURI,
-								},
-							},
-						})
-					}
-					if msg.Content != "" {
-						parts = append(parts, openai.ChatCompletionContentPartUnionParam{
-							OfText: &openai.ChatCompletionContentPartTextParam{
-								Text: msg.Content,
-							},
-						})
-					}
-					messages = append(messages, openai.ChatCompletionMessageParamUnion{
-						OfUser: &openai.ChatCompletionUserMessageParam{
-							Content: openai.ChatCompletionUserMessageParamContentUnion{
-								OfArrayOfContentParts: parts,
-							},
-						},
-					})
-				} else {
-					messages = append(messages, openai.UserMessage(msg.Content))
-				}
-			case message.RoleAssistant:
-				var asstMsg openai.ChatCompletionAssistantMessageParam
-				if msg.Content != "" {
-					asstMsg.Content.OfString = openai.Opt(msg.Content)
-				}
-				if len(msg.ToolCalls) > 0 {
-					asstMsg.ToolCalls = make([]openai.ChatCompletionMessageToolCallUnionParam, len(msg.ToolCalls))
-					for i, tc := range msg.ToolCalls {
-						asstMsg.ToolCalls[i] = openai.ChatCompletionMessageToolCallUnionParam{
-							OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
-								ID: tc.ID,
-								Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
-									Name:      tc.Name,
-									Arguments: tc.Input,
-								},
-							},
-						}
-					}
-				}
-				// Use saved thinking content if available, otherwise empty string
-				// Moonshot requires reasoning_content for all assistant messages when thinking is enabled
-				asstMsg.SetExtraFields(map[string]any{"reasoning_content": msg.Thinking})
-				messages = append(messages, openai.ChatCompletionMessageParamUnion{OfAssistant: &asstMsg})
-			default: // system messages
-				messages = append(messages, openai.SystemMessage(msg.Content))
-			}
-		}
-
-		// Build request params
 		params := openai.ChatCompletionNewParams{
 			Model:    opts.Model,
 			Messages: messages,
 		}
 
-		// Enable thinking mode only when explicitly requested (ThinkingLevel > ThinkingOff).
+		// Enable thinking mode only when explicitly requested.
 		// Unconditionally enabling thinking on non-thinking models (e.g. moonshot-v1-auto)
 		// causes API errors. The caller must set opts.ThinkingLevel for Kimi thinking models.
 		if opts.ThinkingLevel > provider.ThinkingOff {
@@ -134,103 +69,50 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		if opts.MaxTokens > 0 {
 			params.MaxCompletionTokens = openai.Int(int64(opts.MaxTokens))
 		}
-
 		if opts.Temperature > 0 {
 			params.Temperature = openai.Float(opts.Temperature)
 		}
-
-		// Add tools if provided
 		if len(opts.Tools) > 0 {
-			tools := make([]openai.ChatCompletionToolUnionParam, 0, len(opts.Tools))
-			for _, t := range opts.Tools {
-				var funcParams openai.FunctionParameters
-				if props, ok := t.Parameters.(map[string]any); ok {
-					funcParams = props
-				}
-
-				tools = append(tools, openai.ChatCompletionToolUnionParam{
-					OfFunction: &openai.ChatCompletionFunctionToolParam{
-						Function: openai.FunctionDefinitionParam{
-							Name:        t.Name,
-							Description: openai.String(t.Description),
-							Parameters:  funcParams,
-						},
-					},
-				})
-			}
-			params.Tools = tools
+			params.Tools = openai_compat.ConvertTools(opts.Tools)
 		}
 
-		// Log request
 		log.LogRequestCtx(ctx, c.name, opts.Model, opts)
 
-		// Create streaming request
 		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
-
 		state := streamutil.NewState(c.name)
-
-		// Track tool calls
 		toolCalls := make(map[int]*message.ToolCall)
 
-		// Read stream events
 		for stream.Next() {
 			chunk := stream.Current()
 			state.Count()
 
 			for _, choice := range chunk.Choices {
-				// Handle reasoning_content (thinking) for Kimi thinking models
-				// Parse the raw JSON to extract reasoning_content since it's not in the SDK struct
-				rawJSON := choice.Delta.RawJSON()
-				if rawJSON != "" {
-					var deltaMap map[string]any
-					if err := json.Unmarshal([]byte(rawJSON), &deltaMap); err == nil {
-						if rc, ok := deltaMap["reasoning_content"]; ok && rc != nil {
-							if content, ok := rc.(string); ok && content != "" {
-								state.EmitThinking(ch, content)
-							}
-						}
-					}
+				// Extract reasoning_content for Kimi thinking models
+				if content := openai_compat.ExtractReasoningContent(choice.Delta.RawJSON()); content != "" {
+					state.EmitThinking(ch, content)
 				}
 
-				// Handle text delta
 				if choice.Delta.Content != "" {
 					state.EmitText(ch, choice.Delta.Content)
 				}
 
-				// Handle tool calls
 				for _, tc := range choice.Delta.ToolCalls {
 					idx := int(tc.Index)
-
 					if _, exists := toolCalls[idx]; !exists {
-						toolCalls[idx] = &message.ToolCall{
-							ID:   tc.ID,
-							Name: tc.Function.Name,
-						}
+						toolCalls[idx] = &message.ToolCall{ID: tc.ID, Name: tc.Function.Name}
 						state.EmitToolStart(ch, tc.ID, tc.Function.Name)
 					}
-
 					if tc.Function.Arguments != "" {
 						toolCalls[idx].Input += tc.Function.Arguments
 						state.EmitToolInput(ch, toolCalls[idx].ID, tc.Function.Arguments)
 					}
 				}
 
-				// Handle finish reason
 				if choice.FinishReason != "" {
-					switch choice.FinishReason {
-					case "stop":
-						state.Response.StopReason = "end_turn"
-					case "tool_calls":
-						state.Response.StopReason = "tool_use"
-					case "length":
-						state.Response.StopReason = "max_tokens"
-					default:
-						state.Response.StopReason = choice.FinishReason
-					}
+					state.Response.StopReason = openai_compat.MapFinishReason(choice.FinishReason)
 				}
 			}
 
-			// Handle usage
 			state.UpdateUsage(int(chunk.Usage.PromptTokens), int(chunk.Usage.CompletionTokens))
 		}
 
@@ -259,18 +141,13 @@ var staticModels = []provider.ModelInfo{
 func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 	page, err := c.client.Models.List(ctx)
 	if err != nil {
-		// Fall back to static models if API call fails
 		return staticModels, err
 	}
 
 	models := make([]provider.ModelInfo, 0)
 	for _, m := range page.Data {
 		id := m.ID
-		info := provider.ModelInfo{
-			ID:          id,
-			Name:        id,
-			DisplayName: id,
-		}
+		info := provider.ModelInfo{ID: id, Name: id, DisplayName: id}
 		// Extract context_length from raw JSON (Moonshot extension field)
 		if raw := m.RawJSON(); raw != "" {
 			var extra struct {
@@ -287,10 +164,7 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 		return staticModels, nil
 	}
 
-	sort.Slice(models, func(i, j int) bool {
-		return models[i].ID < models[j].ID
-	})
-
+	slices.SortFunc(models, func(a, b provider.ModelInfo) int { return cmp.Compare(a.ID, b.ID) })
 	return models, nil
 }
 

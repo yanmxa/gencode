@@ -25,8 +25,8 @@ func (t *TaskStopTool) Icon() string        { return IconTaskStop }
 func (t *TaskStopTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
-	taskID, ok := params["task_id"].(string)
-	if !ok || taskID == "" {
+	taskID := getString(params, "task_id")
+	if taskID == "" {
 		return ui.ToolResult{
 			Success: false,
 			Error:   "task_id is required",

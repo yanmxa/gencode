@@ -39,7 +39,6 @@ type SelectedMsg struct {
 	Level string
 }
 
-
 // New creates a new memory selector Model.
 func New() Model {
 	return Model{

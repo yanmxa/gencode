@@ -202,11 +202,11 @@ func handleClearCommand(ctx context.Context, m *model, args string) (string, tea
 	cron.DefaultStore.Reset()
 	m.cronQueue = nil
 	if tty, err := os.OpenFile("/dev/tty", os.O_WRONLY, 0); err == nil {
-		tty.WriteString("\033[2J\033[3J\033[H")
-		tty.Close()
+		_, _ = tty.WriteString("\033[2J\033[3J\033[H")
+		_ = tty.Close()
 	}
 	if os.Getenv("TMUX") != "" {
-		exec.Command("tmux", "clear-history").Run()
+		_ = exec.Command("tmux", "clear-history").Run()
 	}
 	return "", tea.ClearScreen, nil
 }

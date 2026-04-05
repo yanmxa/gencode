@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -171,10 +172,8 @@ func (s *Store) GetConnections() map[string]ConnectionInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := make(map[string]ConnectionInfo)
-	for k, v := range s.data.Connections {
-		result[k] = v
-	}
+	result := make(map[string]ConnectionInfo, len(s.data.Connections))
+	maps.Copy(result, s.data.Connections)
 	return result
 }
 
@@ -299,15 +298,30 @@ func (s *Store) SetTokenLimit(modelID string, inputLimit, outputLimit int) error
 		OutputTokenLimit: outputLimit,
 	}
 
-	// Update the model cache entry so model listings show the limits
+	// Update the model cache entry so model listings show the limits.
+	// We copy the slice before modifying to avoid mutating arrays shared with
+	// callers that received a slice from GetCachedModels.
 	for key, cache := range s.data.Models {
-		for i, m := range cache.Models {
+		modified := false
+		for _, m := range cache.Models {
 			if m.ID == modelID {
-				cache.Models[i].InputTokenLimit = inputLimit
-				cache.Models[i].OutputTokenLimit = outputLimit
-				s.data.Models[key] = cache
+				modified = true
+				break
 			}
 		}
+		if !modified {
+			continue
+		}
+		newModels := make([]ModelInfo, len(cache.Models))
+		copy(newModels, cache.Models)
+		for i := range newModels {
+			if newModels[i].ID == modelID {
+				newModels[i].InputTokenLimit = inputLimit
+				newModels[i].OutputTokenLimit = outputLimit
+			}
+		}
+		cache.Models = newModels
+		s.data.Models[key] = cache
 	}
 
 	return s.save()

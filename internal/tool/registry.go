@@ -21,8 +21,12 @@ func NewRegistry() *Registry {
 	}
 }
 
-// Register adds a tool to the registry
+// Register adds a tool to the registry.
+// Panics if the tool returns an empty name, which indicates a programming error.
 func (r *Registry) Register(tool Tool) {
+	if tool.Name() == "" {
+		panic("tool: Register called with empty tool name")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.tools[strings.ToLower(tool.Name())] = tool

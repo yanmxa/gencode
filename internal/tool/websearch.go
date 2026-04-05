@@ -21,17 +21,12 @@ func (t *WebSearchTool) Icon() string        { return ui.IconWeb }
 func (t *WebSearchTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
 	start := time.Now()
 
-	// Get query parameter (required)
-	query, ok := params["query"].(string)
-	if !ok || query == "" {
-		return ui.NewErrorResult(t.Name(), "query is required")
+	query, err := requireString(params, "query")
+	if err != nil {
+		return ui.NewErrorResult(t.Name(), err.Error())
 	}
 
-	// Get optional num_results parameter
-	numResults := 10
-	if n, ok := params["num_results"].(float64); ok && n > 0 {
-		numResults = int(n)
-	}
+	numResults := getInt(params, "num_results", 10)
 
 	// Get optional domain filters
 	var allowedDomains, blockedDomains []string

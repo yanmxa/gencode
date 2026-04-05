@@ -248,7 +248,7 @@ func (t *HTTPTransport) SendNotification(ctx context.Context, notif *JSONRPCNoti
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("HTTP error %d: %s", resp.StatusCode, string(body))
 	}
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	return nil
 }

@@ -16,7 +16,7 @@ func (t *CronDeleteTool) Description() string { return "Cancel a scheduled cron 
 func (t *CronDeleteTool) Icon() string        { return "clock" }
 
 func (t *CronDeleteTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
-	id, _ := params["id"].(string)
+	id := getString(params, "id")
 	if id == "" {
 		return ui.NewErrorResult(t.Name(), "job id is required")
 	}

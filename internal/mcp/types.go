@@ -226,8 +226,8 @@ type ToolsListResult struct {
 
 // ToolsCallParams represents parameters for tools/call
 type ToolsCallParams struct {
-	Name      string                 `json:"name"`
-	Arguments map[string]interface{} `json:"arguments,omitempty"`
+	Name      string         `json:"name"`
+	Arguments map[string]any `json:"arguments,omitempty"`
 }
 
 // ToolsCallResult is an alias for ToolResult (same structure)

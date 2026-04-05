@@ -149,8 +149,8 @@ type HookOutcome struct {
 // The hook writes one JSON line per request; Claude Code / GenCode reads it,
 // collects the answer, and writes a PromptResponse back to the hook's stdin.
 type PromptRequest struct {
-	Prompt  string         `json:"prompt"`           // request ID / discriminator
-	Message string         `json:"message"`          // question text for user
+	Prompt  string         `json:"prompt"`            // request ID / discriminator
+	Message string         `json:"message"`           // question text for user
 	Options []PromptOption `json:"options,omitempty"` // optional choices
 }
 
@@ -164,7 +164,7 @@ type PromptOption struct {
 // PromptResponse is sent back to the hook process via stdin.
 type PromptResponse struct {
 	PromptResponse string `json:"prompt_response"` // matches original Prompt field
-	Selected       string `json:"selected"`         // chosen option key or free text
+	Selected       string `json:"selected"`        // chosen option key or free text
 }
 
 // PromptCallback is called by the engine when a hook requests user input.

@@ -100,7 +100,7 @@ type (
 	// RequestMsg is sent when a tool needs permission
 	RequestMsg struct {
 		Request  *permission.PermissionRequest
-		ToolCall interface{} // The original tool call
+		ToolCall any // The original tool call
 	}
 
 	// ResponseMsg is sent when the user responds to a permission request

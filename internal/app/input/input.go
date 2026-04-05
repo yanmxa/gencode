@@ -1,6 +1,7 @@
 package input
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,21 +16,15 @@ const (
 	maxTextareaHeight = 6
 )
 
-// ImageRefPattern matches @path/to/image.ext references.
-var ImageRefPattern = regexp.MustCompile(`@([^\s]+\.(png|jpg|jpeg|gif|webp))`)
+// ImageRefPattern matches @path/to/image.ext references (case-insensitive extension).
+var ImageRefPattern = regexp.MustCompile(`(?i)@([^\s]+\.(png|jpg|jpeg|gif|webp))`)
 
 // UpdateHeight adjusts textarea height based on content line count.
 func (m *Model) UpdateHeight() {
 	content := m.Textarea.Value()
 	lines := strings.Count(content, "\n") + 1
 
-	newHeight := lines
-	if newHeight < minTextareaHeight {
-		newHeight = minTextareaHeight
-	}
-	if newHeight > maxTextareaHeight {
-		newHeight = maxTextareaHeight
-	}
+	newHeight := max(min(lines, maxTextareaHeight), minTextareaHeight)
 
 	m.Textarea.SetHeight(newHeight)
 }
@@ -92,7 +87,7 @@ func ProcessImageRefs(cwd, input string) (string, []message.ImageData, error) {
 
 		imgInfo, err := image.Load(absPath)
 		if err != nil {
-			return "", nil, err
+			return "", nil, fmt.Errorf("loading image %s: %w", absPath, err)
 		}
 		images = append(images, imgInfo.ToProviderData())
 		loadedRefs = append(loadedRefs, match[0]) // full match including @
