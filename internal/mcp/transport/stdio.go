@@ -70,7 +70,7 @@ func (t *STDIOTransport) Start(ctx context.Context) error {
 
 	t.stdout, err = t.cmd.StdoutPipe()
 	if err != nil {
-		t.stdin.Close()
+		_ = t.stdin.Close()
 		return fmt.Errorf("failed to get stdout pipe: %w", err)
 	}
 

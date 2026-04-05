@@ -45,7 +45,7 @@ func newClipboardImageInfo(data []byte) (*ImageInfo, error) {
 // readClipboardMacOS reads image from macOS clipboard using osascript.
 func readClipboardMacOS() (*ImageInfo, error) {
 	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("clipboard_%d.png", time.Now().UnixNano()))
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	script := fmt.Sprintf(`
 		set theFile to POSIX file "%s"
