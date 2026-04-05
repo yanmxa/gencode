@@ -42,11 +42,12 @@ func RenderHeader(meta ResultMetadata, width int) string {
 		metaParts = append(metaParts, fmt.Sprintf("%d lines", meta.LineCount))
 	}
 	if meta.ItemCount > 0 {
-		if meta.Title == "Glob" {
+		switch meta.Title {
+		case "Glob":
 			metaParts = append(metaParts, fmt.Sprintf("%d files", meta.ItemCount))
-		} else if meta.Title == "Grep" {
+		case "Grep":
 			metaParts = append(metaParts, fmt.Sprintf("%d matches", meta.ItemCount))
-		} else {
+		default:
 			metaParts = append(metaParts, fmt.Sprintf("%d items", meta.ItemCount))
 		}
 	}

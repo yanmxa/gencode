@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -182,15 +181,6 @@ func runHeadlessAgent() error {
 	return nil
 }
 
-// containsIgnoreCase checks if a string slice contains a value (case-insensitive).
-func containsIgnoreCase(slice []string, val string) bool {
-	for _, s := range slice {
-		if strings.EqualFold(s, val) {
-			return true
-		}
-	}
-	return false
-}
 
 // isGitRepoCheck checks if the given directory is a git repository.
 func isGitRepoCheck(dir string) bool {

@@ -145,9 +145,7 @@ func (s *System) buildPrompt() string {
 	}
 
 	// Extra content (agent-identity, skill-invocation, etc.)
-	for _, e := range s.Extra {
-		parts = append(parts, e)
-	}
+	parts = append(parts, s.Extra...)
 
 	result := join(parts)
 
