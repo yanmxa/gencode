@@ -334,7 +334,7 @@ func customizeStyle(s *ansi.StyleConfig, width int) {
 	// Document: set foreground color, no margin (paragraph spacing handled by glamour block prefix/suffix)
 	margin := uint(0)
 	s.Document.Margin = &margin
-	s.Document.StylePrimitive.Color = &text
+	s.Document.Color = &text
 	s.Document.BlockPrefix = ""
 	s.Document.BlockSuffix = ""
 
@@ -356,7 +356,7 @@ func customizeStyle(s *ansi.StyleConfig, width int) {
 	s.H6.Prefix = ""
 
 	// BlockQuote: muted color with standard │ indent token
-	s.BlockQuote.StylePrimitive.Color = &textDim
+	s.BlockQuote.Color = &textDim
 	s.BlockQuote.Indent = uintPtr(1)
 	s.BlockQuote.IndentToken = stringPtr("│ ")
 
@@ -367,10 +367,10 @@ func customizeStyle(s *ansi.StyleConfig, width int) {
 
 	// Inline code: no background, accent color
 	accent := adaptiveColorHex(theme.CurrentTheme.Accent)
-	s.Code.StylePrimitive.BackgroundColor = nil
-	s.Code.StylePrimitive.Prefix = ""
-	s.Code.StylePrimitive.Suffix = ""
-	s.Code.StylePrimitive.Color = &accent
+	s.Code.BackgroundColor = nil
+	s.Code.Prefix = ""
+	s.Code.Suffix = ""
+	s.Code.Color = &accent
 
 	// Code blocks: remove Chroma background color for cleaner look
 	if s.CodeBlock.Chroma != nil {

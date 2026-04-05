@@ -31,9 +31,7 @@ func (s *Model) EnterSelect(width, height int) error {
 	if err := s.marketplaceManager.Load(); err != nil {
 		s.setError(fmt.Sprintf("Failed to load marketplaces: %v", err))
 	}
-	if err := s.installer.LoadMarketplaces(); err != nil {
-		// Non-fatal.
-	}
+	_ = s.installer.LoadMarketplaces() // Non-fatal
 
 	s.refreshCurrentTab()
 	return nil
