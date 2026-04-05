@@ -287,6 +287,8 @@ func (l *Loop) buildResult(reason string, turns, toolUses int, transitions []Tra
 }
 
 // DecideCompletion determines the next action after a completed assistant response.
+// Precedence: tool calls always execute even if stop_reason == "max_tokens" (truncated output
+// with pending tools is valid). Recovery only triggers when there are no tool calls.
 func DecideCompletion(stopReason string, calls []message.ToolCall, recoveryCount, maxRecovery int) CompletionDecision {
 	if stopReason == "max_tokens" && len(calls) == 0 {
 		if recoveryCount < maxRecovery {
@@ -366,9 +368,14 @@ func Collect(ctx context.Context, ch <-chan message.StreamChunk) (*message.Compl
 
 // --- Message management ---
 
-func (l *Loop) Messages() []message.Message        { return l.messages }
+// Messages returns the current conversation history (read-only; do not mutate).
+func (l *Loop) Messages() []message.Message { return l.messages }
+
+// SetMessages replaces the conversation history. Used for session restore and forking.
 func (l *Loop) SetMessages(msgs []message.Message) { l.messages = msgs }
 
+// Tokens returns the cumulative token usage tracked by the underlying client.
+// Returns a zero value if no client is attached.
 func (l *Loop) Tokens() client.TokenUsage {
 	if l.Client == nil {
 		return client.TokenUsage{}
@@ -376,6 +383,7 @@ func (l *Loop) Tokens() client.TokenUsage {
 	return l.Client.Tokens()
 }
 
+// AddUser appends a user message (text + optional images) to the conversation.
 func (l *Loop) AddUser(content string, images []message.ImageData) {
 	l.messages = append(l.messages, message.UserMessage(content, images))
 }
@@ -391,6 +399,7 @@ func (l *Loop) AddResponse(resp *message.CompletionResponse) []message.ToolCall 
 	return resp.ToolCalls
 }
 
+// AddToolResult appends a tool result message to the conversation.
 func (l *Loop) AddToolResult(r message.ToolResult) {
 	l.messages = append(l.messages, message.ToolResultMessage(r))
 }

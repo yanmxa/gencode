@@ -27,7 +27,7 @@ type Engine struct {
 	cwd            string
 	transcriptPath string
 	permissionMode string
-	promptCallback PromptCallback // optional; nil = one-shot stdin mode
+	promptCallback PromptCallback  // optional; nil = one-shot stdin mode
 	executedOnce   map[string]bool // tracks once:true commands that have already fired
 }
 

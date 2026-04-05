@@ -20,7 +20,6 @@ type SelectedMsg struct {
 	SessionID string
 }
 
-
 // Model holds the state for the session selector
 type Model struct {
 	active       bool

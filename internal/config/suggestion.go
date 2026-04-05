@@ -21,14 +21,14 @@ var dangerousPrefixes = map[string]bool{
 	"xargs":  true,
 	"ssh":    true,
 	"python": true, "python3": true, "python2": true,
-	"node":  true,
-	"deno":  true,
-	"ruby":  true,
-	"perl":  true,
-	"php":   true,
-	"lua":   true,
-	"npx":   true,
-	"bunx":  true,
+	"node": true,
+	"deno": true,
+	"ruby": true,
+	"perl": true,
+	"php":  true,
+	"lua":  true,
+	"npx":  true,
+	"bunx": true,
 }
 
 // MaxSuggestedRules is the maximum number of suggested rules for compound commands.

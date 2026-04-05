@@ -23,9 +23,9 @@ const (
 type Job struct {
 	ID         string    `json:"id"`
 	Cron       string    `json:"cron"`      // 5-field cron expression
-	Prompt     string    `json:"prompt"`     // prompt to inject when fired
-	Recurring  bool      `json:"recurring"`  // true = repeats, false = one-shot
-	Durable    bool      `json:"durable"`    // true = persists across sessions
+	Prompt     string    `json:"prompt"`    // prompt to inject when fired
+	Recurring  bool      `json:"recurring"` // true = repeats, false = one-shot
+	Durable    bool      `json:"durable"`   // true = persists across sessions
 	CreatedAt  time.Time `json:"createdAt"`
 	ExpiresAt  time.Time `json:"expiresAt"`  // auto-expiry time (zero = no expiry)
 	NextFire   time.Time `json:"nextFire"`   // next scheduled fire time

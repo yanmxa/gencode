@@ -3,7 +3,8 @@ package openai
 import (
 	"context"
 	"fmt"
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
@@ -389,10 +390,7 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 		})
 	}
 
-	// Sort models by ID for consistent ordering
-	sort.Slice(models, func(i, j int) bool {
-		return models[i].ID < models[j].ID
-	})
+	slices.SortFunc(models, func(a, b provider.ModelInfo) int { return cmp.Compare(a.ID, b.ID) })
 
 	return models, nil
 }

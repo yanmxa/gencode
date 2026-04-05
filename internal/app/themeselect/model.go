@@ -17,7 +17,7 @@ type SelectedMsg struct {
 }
 
 var (
-	selectorTitleStyle = lipgloss.NewStyle().Bold(true).MarginBottom(1)
+	selectorTitleStyle  = lipgloss.NewStyle().Bold(true).MarginBottom(1)
 	selectorActiveStyle = lipgloss.NewStyle().Bold(true).Foreground(theme.CurrentTheme.Primary)
 	selectorItemStyle   = lipgloss.NewStyle().Foreground(theme.CurrentTheme.Text)
 	selectorDescStyle   = lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)

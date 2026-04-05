@@ -48,7 +48,7 @@ type HookCmd struct {
 
 // SessionPermissions tracks runtime permission state for the current session.
 type SessionPermissions struct {
-	Mode            OperationMode   // Active permission mode (Normal, BypassPermissions, DontAsk, etc.)
+	Mode            OperationMode // Active permission mode (Normal, BypassPermissions, DontAsk, etc.)
 	AllowAllEdits   bool
 	AllowAllWrites  bool
 	AllowAllBash    bool
@@ -125,11 +125,11 @@ func (sp *SessionPermissions) AddWorkingDirectory(dir string) {
 type OperationMode int
 
 const (
-	ModeNormal             OperationMode = iota
-	ModeAutoAccept                       // auto-approve edits/writes
-	ModePlan                             // read-only tools only
-	ModeBypassPermissions                // allow all (bypass-immune checks still apply)
-	ModeDontAsk                          // convert ask → deny (never prompt)
+	ModeNormal            OperationMode = iota
+	ModeAutoAccept                      // auto-approve edits/writes
+	ModePlan                            // read-only tools only
+	ModeBypassPermissions               // allow all (bypass-immune checks still apply)
+	ModeDontAsk                         // convert ask → deny (never prompt)
 )
 
 // allModes lists the modes that the user can cycle through with the mode toggle.

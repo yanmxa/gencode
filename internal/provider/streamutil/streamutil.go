@@ -2,7 +2,8 @@ package streamutil
 
 import (
 	"context"
-	"sort"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/yanmxa/gencode/internal/log"
@@ -97,30 +98,14 @@ func (s *State) UpdateCacheUsage(cacheCreation, cacheRead int) {
 
 // AddToolCallsSorted appends tool calls from an indexed accumulator in stable index order.
 func (s *State) AddToolCallsSorted(toolCalls map[int]*message.ToolCall) {
-	if len(toolCalls) == 0 {
-		return
-	}
-	indexes := make([]int, 0, len(toolCalls))
-	for idx := range toolCalls {
-		indexes = append(indexes, idx)
-	}
-	sort.Ints(indexes)
-	for _, idx := range indexes {
+	for _, idx := range slices.Sorted(maps.Keys(toolCalls)) {
 		s.Response.ToolCalls = append(s.Response.ToolCalls, *toolCalls[idx])
 	}
 }
 
 // AddToolCallsByKey appends tool calls from a string-keyed accumulator in stable key order.
 func (s *State) AddToolCallsByKey(toolCalls map[string]*message.ToolCall) {
-	if len(toolCalls) == 0 {
-		return
-	}
-	keys := make([]string, 0, len(toolCalls))
-	for key := range toolCalls {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
+	for _, key := range slices.Sorted(maps.Keys(toolCalls)) {
 		s.Response.ToolCalls = append(s.Response.ToolCalls, *toolCalls[key])
 	}
 }

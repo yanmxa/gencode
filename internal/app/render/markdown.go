@@ -18,9 +18,9 @@ import (
 
 // MDRenderer renders markdown content to styled terminal output using glamour.
 type MDRenderer struct {
-	renderer   *glamour.TermRenderer
-	width      int
-	darkBg     bool // tracks last known terminal background to detect theme changes
+	renderer *glamour.TermRenderer
+	width    int
+	darkBg   bool // tracks last known terminal background to detect theme changes
 }
 
 // NewMDRenderer creates a new markdown renderer with the given terminal width.
@@ -86,7 +86,7 @@ func (r *MDRenderer) Render(content string) (string, error) {
 				parts = append(parts, seg.content)
 			} else {
 				rendered = collapseBlankLines(rendered)
-			parts = append(parts, strings.TrimRight(rendered, "\n"))
+				parts = append(parts, strings.TrimRight(rendered, "\n"))
 			}
 		}
 	}
@@ -379,7 +379,7 @@ func customizeStyle(s *ansi.StyleConfig, width int) {
 	}
 }
 
-func boolPtr(b bool) *bool   { return &b }
+func boolPtr(b bool) *bool { return &b }
 
 func collapseBlankLines(s string) string {
 	for strings.Contains(s, "\n\n\n") {
@@ -387,7 +387,7 @@ func collapseBlankLines(s string) string {
 	}
 	return s
 }
-func uintPtr(u uint) *uint   { return &u }
+func uintPtr(u uint) *uint       { return &u }
 func stringPtr(s string) *string { return &s }
 
 // normalizeLineBreaks joins single-newline breaks within plain paragraphs so
