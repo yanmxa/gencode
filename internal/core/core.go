@@ -222,6 +222,7 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 			if l.Hooks != nil && l.Hooks.HasHooks(hooks.Stop) {
 				stopInput := hooks.HookInput{
 					LastAssistantMessage: l.lastAssistantContent(),
+					StopHookActive:       l.Hooks.StopHookActive(),
 				}
 				outcome := l.Hooks.Execute(ctx, hooks.Stop, stopInput)
 				if outcome.ShouldBlock {
@@ -340,17 +341,36 @@ func (l *Loop) AddToolResult(r message.ToolResult) {
 
 // --- Tool dispatch ---
 
-// FilterToolCalls runs PreToolUse hooks, returning allowed tool calls, blocked results,
-// a set of tool call IDs that hooks explicitly allowed (can skip permission prompts),
-// and any additional context injected by hooks.
+// FilterToolCallsResult holds the results from PreToolUse hook filtering.
+type FilterToolCallsResult struct {
+	Allowed           []message.ToolCall
+	Blocked           []message.ToolResult
+	HookAllowed       map[string]bool // tool call IDs pre-approved by hooks
+	HookForceAsk      map[string]bool // tool call IDs forced to prompt by hooks ("ask")
+	AdditionalContext string
+}
+
+// FilterToolCalls runs PreToolUse hooks. Convenience wrapper for backward compat.
 func (l *Loop) FilterToolCalls(ctx context.Context, calls []message.ToolCall) (
 	allowed []message.ToolCall, blocked []message.ToolResult, hookAllowed map[string]bool, additionalContext string,
 ) {
-	if l.Hooks == nil {
-		return calls, nil, nil, ""
-	}
+	r := l.FilterToolCallsEx(ctx, calls)
+	return r.Allowed, r.Blocked, r.HookAllowed, r.AdditionalContext
+}
 
-	hookAllowed = make(map[string]bool)
+// FilterToolCallsEx runs PreToolUse hooks, returning full results including ForceAsk.
+//
+// PreToolUse hooks can grant/deny/force-ask permissions, but cannot inject
+// updatedPermissions (setMode, addRules, etc.) — that's PermissionRequest-only (matches CC).
+func (l *Loop) FilterToolCallsEx(ctx context.Context, calls []message.ToolCall) FilterToolCallsResult {
+	r := FilterToolCallsResult{
+		HookAllowed:  make(map[string]bool),
+		HookForceAsk: make(map[string]bool),
+	}
+	if l.Hooks == nil {
+		r.Allowed = calls
+		return r
+	}
 
 	for _, tc := range calls {
 		params, _ := message.ParseToolInput(tc.Input)
@@ -366,7 +386,7 @@ func (l *Loop) FilterToolCalls(ctx context.Context, calls []message.ToolCall) (
 		outcome := l.Hooks.Execute(ctx, hooks.PreToolUse, hookInput)
 
 		if outcome.ShouldBlock {
-			blocked = append(blocked, *message.ErrorResult(tc, "Blocked by hook: "+outcome.BlockReason))
+			r.Blocked = append(r.Blocked, *message.ErrorResult(tc, "Blocked by hook: "+outcome.BlockReason))
 			continue
 		}
 
@@ -377,20 +397,23 @@ func (l *Loop) FilterToolCalls(ctx context.Context, calls []message.ToolCall) (
 		}
 
 		if outcome.AdditionalContext != "" {
-			if additionalContext == "" {
-				additionalContext = outcome.AdditionalContext
+			if r.AdditionalContext == "" {
+				r.AdditionalContext = outcome.AdditionalContext
 			} else {
-				additionalContext += "\n" + outcome.AdditionalContext
+				r.AdditionalContext += "\n" + outcome.AdditionalContext
 			}
 		}
 
 		if outcome.PermissionAllow {
-			hookAllowed[tc.ID] = true
+			r.HookAllowed[tc.ID] = true
+		}
+		if outcome.ForceAsk {
+			r.HookForceAsk[tc.ID] = true
 		}
 
-		allowed = append(allowed, tc)
+		r.Allowed = append(r.Allowed, tc)
 	}
-	return allowed, blocked, hookAllowed, additionalContext
+	return r
 }
 
 // firePostToolHook fires PostToolUse or PostToolUseFailure hooks after tool execution.

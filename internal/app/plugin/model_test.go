@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -155,5 +156,48 @@ func TestToggleSelectedPluginReturnsDisableMsg(t *testing.T) {
 	msg := cmd()
 	if disable, ok := msg.(DisableMsg); !ok || disable.PluginName != "demo" {
 		t.Fatalf("unexpected toggle message: %#v", msg)
+	}
+}
+
+func TestRenderTabListShowsPluginManagerFrame(t *testing.T) {
+	m := New()
+	m.active = true
+	m.width = 100
+	m.height = 30
+	m.activeTab = TabInstalled
+	m.installedFlatList = []PluginItem{{Name: "demo", Description: "demo plugin"}}
+	m.filteredItems = []any{m.installedFlatList[0]}
+
+	rendered := m.Render()
+	for _, want := range []string{"Plugin Manager", "Discover", "Installed", "Marketplaces", "Search"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("Render() missing %q in output:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestRenderInstalledDetailShowsStructuredSections(t *testing.T) {
+	m := New()
+	m.active = true
+	m.width = 100
+	m.height = 30
+	m.level = LevelDetail
+	m.detailPlugin = &PluginItem{
+		Name:        "deploy",
+		FullName:    "deploy@corp",
+		Description: "Deploy safely",
+		Enabled:     true,
+		Scope:       coreplugin.ScopeProject,
+		Skills:      1,
+		Agents:      2,
+		Hooks:       1,
+	}
+	m.actions = []Action{{Label: "Disable plugin", Action: "disable"}, {Label: "Back", Action: "back"}}
+
+	rendered := m.Render()
+	for _, want := range []string{"Plugin Details", "deploy@corp", "Status:", "Scope:", "Components:", "Disable plugin"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("Render() missing %q in output:\n%s", want, rendered)
+		}
 	}
 }

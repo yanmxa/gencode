@@ -1,12 +1,15 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/skill"
 )
 
 func TestPrepareRunConfigRespectsOverrides(t *testing.T) {
@@ -92,5 +95,61 @@ func TestBuildCancelledAgentResultUsesPreparedRunMetadata(t *testing.T) {
 	}
 	if result.Error != "agent cancelled" {
 		t.Fatalf("unexpected error: %q", result.Error)
+	}
+}
+
+func TestBuildSystemPrompt_IncludesAdditionalInstructionsAndPreloadedSkills(t *testing.T) {
+	prev := skill.DefaultRegistry
+	t.Cleanup(func() { skill.DefaultRegistry = prev })
+
+	tmpDir := t.TempDir()
+	skillFile := filepath.Join(tmpDir, "SKILL.md")
+	if err := os.WriteFile(skillFile, []byte(`---
+name: commit
+description: Write commit messages
+---
+Use conventional commits.
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(skill): %v", err)
+	}
+
+	userStore, err := skill.NewStore(filepath.Join(tmpDir, "user-skills.json"))
+	if err != nil {
+		t.Fatalf("NewStore(user): %v", err)
+	}
+	projectStore, err := skill.NewStore(filepath.Join(tmpDir, "project-skills.json"))
+	if err != nil {
+		t.Fatalf("NewStore(project): %v", err)
+	}
+
+	skill.DefaultRegistry = skill.NewRegistryForTest(map[string]*skill.Skill{
+		"git:commit": {
+			Name:      "commit",
+			Namespace: "git",
+			FilePath:  skillFile,
+			SkillDir:  tmpDir,
+			State:     skill.StateActive,
+		},
+	}, userStore, projectStore)
+
+	executor := &Executor{}
+	prompt := executor.buildSystemPrompt(&AgentConfig{
+		Name:         "Reviewer",
+		Description:  "Reviews code changes.",
+		SystemPrompt: "Prefer minimal, surgical fixes.",
+		Skills:       []string{"git:commit"},
+	}, PermissionDontAsk)
+
+	if !strings.Contains(prompt, "## Additional Instructions") {
+		t.Fatal("expected additional instructions section in prompt")
+	}
+	if !strings.Contains(prompt, "Prefer minimal, surgical fixes.") {
+		t.Fatal("expected custom system prompt content")
+	}
+	if !strings.Contains(prompt, `<skill-invocation name="git:commit">`) {
+		t.Fatal("expected preloaded skill invocation prompt")
+	}
+	if !strings.Contains(prompt, "Use conventional commits.") {
+		t.Fatal("expected skill instructions in agent prompt")
 	}
 }

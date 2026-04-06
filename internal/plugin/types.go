@@ -115,14 +115,20 @@ type HookMatcher struct {
 
 // HookCmd represents a single hook command.
 type HookCmd struct {
-	Type          string `json:"type"`
-	Command       string `json:"command,omitempty"`
-	Prompt        string `json:"prompt,omitempty"`
-	Model         string `json:"model,omitempty"`
-	Async         bool   `json:"async,omitempty"`
-	Timeout       int    `json:"timeout,omitempty"`
-	StatusMessage string `json:"statusMessage,omitempty"`
-	Once          bool   `json:"once,omitempty"`
+	Type           string            `json:"type"`
+	Command        string            `json:"command,omitempty"`
+	Prompt         string            `json:"prompt,omitempty"`
+	URL            string            `json:"url,omitempty"`
+	If             string            `json:"if,omitempty"`
+	Shell          string            `json:"shell,omitempty"`
+	Model          string            `json:"model,omitempty"`
+	Async          bool              `json:"async,omitempty"`
+	AsyncRewake    bool              `json:"asyncRewake,omitempty"`
+	Timeout        int               `json:"timeout,omitempty"`
+	StatusMessage  string            `json:"statusMessage,omitempty"`
+	Once           bool              `json:"once,omitempty"`
+	Headers        map[string]string `json:"headers,omitempty"`
+	AllowedEnvVars []string          `json:"allowedEnvVars,omitempty"`
 }
 
 // MCPServerConfig represents an MCP server configuration from a plugin.

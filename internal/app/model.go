@@ -30,7 +30,6 @@ import (
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/options"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -78,10 +77,13 @@ type model struct {
 	showTasks     bool   // Ctrl+T toggles task list visibility
 	isGit         bool   // cached: whether cwd is a git repository
 	initialPrompt string // initial prompt from CLI args
+	hookStatus    string // temporary active hook status shown in status bar
 
 	// Config and Infra
 	settings         *config.Settings
 	hookEngine       *hooks.Engine
+	fileWatcher      *fileWatcher
+	asyncHookQueue   *asyncHookQueue
 	loop             *core.Loop
 	runtime          conversationRuntime
 	promptSuggestion promptSuggestionState
@@ -95,6 +97,20 @@ func newModel(opts options.RunOptions) (model, error) {
 		return model{}, err
 	}
 	m := newBaseModel(cwd, infra)
+	if m.hookEngine != nil && m.asyncHookQueue != nil {
+		queue := m.asyncHookQueue
+		m.hookEngine.SetAsyncHookCallback(func(result hooks.AsyncHookResult) {
+			reason := result.BlockReason
+			if reason == "" {
+				reason = "asynchronous hook requested a rewake"
+			}
+			queue.Push(asyncHookRewake{
+				Notice:             fmt.Sprintf("Async hook blocked: %s", reason),
+				Context:            []string{formatAsyncHookContinuationContext(result, reason)},
+				ContinuationPrompt: "A background policy hook reported a blocking condition. Re-evaluate the plan and choose a safer next step.",
+			})
+		})
+	}
 
 	m.ensureMemoryContextLoaded()
 	m.reconfigureAgentTool()
@@ -118,22 +134,36 @@ func (m *model) fireSessionEnd(reason string) {
 		m.hookEngine.Execute(context.Background(), hooks.SessionEnd, hooks.HookInput{
 			Reason: reason,
 		})
+		if m.fileWatcher != nil {
+			m.fileWatcher.Stop()
+		}
+		m.hookEngine.ClearSessionHooks()
 	}
 }
 
 func (m model) Init() tea.Cmd {
 	if m.hookEngine != nil {
+		m.hookEngine.ExecuteAsync(hooks.Setup, hooks.HookInput{
+			Trigger: "init",
+		})
 		source := "startup"
 		if m.session.CurrentID != "" {
 			source = "resume"
 		}
-		m.hookEngine.ExecuteAsync(hooks.SessionStart, hooks.HookInput{
+		outcome := m.hookEngine.Execute(context.Background(), hooks.SessionStart, hooks.HookInput{
 			Source: source,
 			Model:  m.getModelID(),
 		})
+		m.applyRuntimeHookOutcome(outcome)
+		if outcome.AdditionalContext != "" {
+			m.conv.Append(message.ChatMessage{
+				Role:    message.RoleUser,
+				Content: outcome.AdditionalContext,
+			})
+		}
 	}
 
-	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, appmcp.AutoConnect(), startCronTicker()}
+	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, appmcp.AutoConnect(), startCronTicker(), startAsyncHookTicker()}
 	if m.initialPrompt != "" {
 		prompt := m.initialPrompt
 		m.initialPrompt = ""
@@ -223,7 +253,7 @@ func (m *model) ensureMemoryContextLoaded() {
 	if m.memory.CachedUser != "" || m.memory.CachedProject != "" {
 		return
 	}
-	m.memory.CachedUser, m.memory.CachedProject = system.LoadInstructions(m.cwd)
+	m.refreshMemoryContext("session_start")
 }
 
 // effectiveThinkingLevel returns the higher of the persistent level and the per-turn override.
@@ -271,4 +301,15 @@ func (m model) getModelID() string {
 		return m.provider.CurrentModel.ModelID
 	}
 	return "claude-sonnet-4-20250514"
+}
+
+func formatAsyncHookContinuationContext(result hooks.AsyncHookResult, reason string) string {
+	return fmt.Sprintf(
+		"<background-hook-result>\nstatus: blocked\nevent: %s\nhook_type: %s\nhook_source: %s\nhook_name: %s\nreason: %s\ninstruction: Re-evaluate the plan before any further model or tool action.\n</background-hook-result>",
+		result.Event,
+		result.HookType,
+		result.HookSource,
+		result.HookName,
+		reason,
+	)
 }

@@ -135,6 +135,7 @@ func TestConfig_Theme_AppliedAtStartup(t *testing.T) {
 func TestConfig_EnabledPlugins_ActivatesPlugin(t *testing.T) {
     // enabledPlugins: true must activate the plugin's components
 }
+
 ```
 
 ## Interactive Tests (tmux)
@@ -170,7 +171,7 @@ tmux capture-pane -t t_cfg -p
 # Expected: WebSearch shown as disabled
 
 # Test 3: Local settings override project
-tmux send-keys -t t_cfg 'q' Enter
+tmux send-keys -t t_cfg C-c
 cat > /tmp/cfg_test/.gen/settings.local.json << 'EOF'
 {"env": {"SCOPE": "local"}}
 EOF
@@ -182,7 +183,7 @@ tmux capture-pane -t t_cfg -p
 # Expected: output is "local" (local overrides project)
 
 # Test 4: Allow rule auto-approves
-tmux send-keys -t t_cfg 'q' Enter
+tmux send-keys -t t_cfg C-c
 cat > /tmp/cfg_test/.gen/settings.json << 'EOF'
 {"permissions": {"allow": ["Bash(echo*)"]}}
 EOF
@@ -194,7 +195,7 @@ tmux capture-pane -t t_cfg -p
 # Expected: Bash runs without permission dialog
 
 # Test 5: Deny rule blocks
-tmux send-keys -t t_cfg 'q' Enter
+tmux send-keys -t t_cfg C-c
 cat > /tmp/cfg_test/.gen/settings.json << 'EOF'
 {"permissions": {"deny": ["Bash(rm*)"]}}
 EOF
@@ -206,7 +207,7 @@ tmux capture-pane -t t_cfg -p
 # Expected: Bash blocked by deny rule
 
 # Test 6: Hooks from config
-tmux send-keys -t t_cfg 'q' Enter
+tmux send-keys -t t_cfg C-c
 cat > /tmp/cfg_test/.gen/settings.json << 'EOF'
 {
   "hooks": {
@@ -221,7 +222,7 @@ sleep 3
 cat /tmp/cfg_hook.txt
 # Expected: "cfg-hook"
 
-tmux send-keys -t t_cfg 'q' Enter
+tmux send-keys -t t_cfg C-c
 tmux kill-session -t t_cfg
 mv ~/.gen/settings.json.bak ~/.gen/settings.json 2>/dev/null || true
 rm -rf /tmp/cfg_test /tmp/cfg_hook.txt

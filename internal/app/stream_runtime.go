@@ -14,6 +14,14 @@ func (m *model) buildStreamRequest(extra []string) streamRequest {
 	}
 }
 
+func (m *model) buildInternalContinuationRequest(extra []string, prompt string) streamRequest {
+	req := m.buildStreamRequest(extra)
+	if prompt != "" {
+		req.Messages = append(req.Messages, message.UserMessage(prompt, nil))
+	}
+	return req
+}
+
 func (m *model) startConversationStream(req streamRequest) tea.Cmd {
 	started := m.runtime.StartStream(req)
 	m.conv.Stream.Cancel = started.Cancel

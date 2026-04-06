@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/yanmxa/gencode/internal/provider"
 )
 
 func TestExitPlanMode_ModifyKeepsPlanMode(t *testing.T) {
@@ -107,7 +109,7 @@ func TestPlanMode_BlocksWriteTools(t *testing.T) {
 	set := &Set{PlanMode: true}
 	tools := set.Tools()
 
-	writeBlocked := []string{"Write", "Edit", "Bash"}
+	writeBlocked := []string{"Write", "Edit", "Bash", ToolSkill, ToolEnterPlanMode}
 	for _, name := range writeBlocked {
 		for _, t := range tools {
 			if t.Name == name {
@@ -124,7 +126,7 @@ func TestPlanMode_BlocksWriteTools(t *testing.T) {
 }
 
 func TestPlanMode_AllowsReadTools(t *testing.T) {
-	// In plan mode, Read/Glob/Grep and ExitPlanMode must be available.
+	// In plan mode, read/search/question tools and ExitPlanMode must be available.
 	set := &Set{PlanMode: true}
 	tools := set.Tools()
 
@@ -133,10 +135,49 @@ func TestPlanMode_AllowsReadTools(t *testing.T) {
 		toolIndex[t.Name] = true
 	}
 
-	required := []string{"Read", "Glob", "Grep", ToolExitPlanMode}
+	required := []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch", "AskUserQuestion", ToolExitPlanMode, ToolAgent}
 	for _, name := range required {
 		if !toolIndex[name] {
 			t.Errorf("plan mode should expose %q tool, but it was not found in tool set", name)
 		}
+	}
+}
+
+func TestPlanMode_AgentSchema_IsForegroundAndRestricted(t *testing.T) {
+	set := &Set{PlanMode: true}
+	tools := set.Tools()
+
+	var agent provider.Tool
+	found := false
+	for _, t := range tools {
+		if t.Name == ToolAgent {
+			agent = t
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("plan mode Agent tool not found")
+	}
+
+	params, ok := agent.Parameters.(map[string]any)
+	if !ok {
+		t.Fatalf("Agent parameters missing schema map: %#v", agent.Parameters)
+	}
+	props, ok := params["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("Agent parameters missing properties map: %#v", agent.Parameters)
+	}
+	if _, exists := props["run_in_background"]; exists {
+		t.Error("plan mode Agent should not expose run_in_background")
+	}
+
+	subagentType, ok := props["subagent_type"].(map[string]any)
+	if !ok {
+		t.Fatalf("subagent_type schema missing: %#v", props["subagent_type"])
+	}
+	desc, _ := subagentType["description"].(string)
+	if !strings.Contains(desc, "Explore or Plan") {
+		t.Errorf("unexpected subagent_type description: %q", desc)
 	}
 }

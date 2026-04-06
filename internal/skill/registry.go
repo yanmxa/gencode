@@ -359,6 +359,57 @@ func (r *Registry) GetSkillInvocationPrompt(name string) string {
 	return sb.String()
 }
 
+// AddPluginSkills loads skills from plugin paths and merges them into the registry.
+// This is used when plugins are loaded after initial skill initialization (e.g., --plugin-dir).
+func (r *Registry) AddPluginSkills(paths []struct {
+	Path      string
+	Namespace string
+	IsProject bool
+}) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	loader := NewLoader(r.cwd)
+	for _, p := range paths {
+		loader.AddPluginPath(p.Path, p.Namespace, p.IsProject)
+	}
+
+	// Only walk the additional plugin paths, not all paths
+	for _, sp := range loader.additionalPaths {
+		if _, err := os.Stat(sp.path); os.IsNotExist(err) {
+			continue
+		}
+		_ = filepath.Walk(sp.path, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return nil
+			}
+			if strings.ToLower(info.Name()) != "skill.md" {
+				return nil
+			}
+			skill, err := loader.loadSkillFile(path, sp.scope, sp.namespace)
+			if err != nil {
+				return nil
+			}
+			fullName := skill.FullName()
+			if existing, ok := r.skills[fullName]; ok {
+				if skill.Scope > existing.Scope {
+					r.skills[fullName] = skill
+				}
+			} else {
+				r.skills[fullName] = skill
+			}
+			// Apply persisted states
+			if state, ok := r.userStore.GetState(fullName); ok {
+				r.skills[fullName].State = state
+			}
+			if state, ok := r.projectStore.GetState(fullName); ok {
+				r.skills[fullName].State = state
+			}
+			return nil
+		})
+	}
+}
+
 // Count returns the total number of loaded skills.
 func (r *Registry) Count() int {
 	r.mu.RLock()

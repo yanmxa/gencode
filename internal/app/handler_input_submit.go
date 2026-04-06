@@ -105,9 +105,14 @@ func (m *model) handleCommandSubmit(input string) (tea.Cmd, bool) {
 
 	m.resetInputField()
 
-	// For skill commands, the user message is appended inside handleSkillInvocation
-	// before startLLMStream, so skip it here. For regular commands, append now.
-	if cmd == nil {
+	// Skill slash commands: the user message is appended inside handleSkillInvocation
+	// before startLLMStream, so skip it here.
+	// Selector commands (/skills, /tools, /agents, /provider, /model, /resume):
+	// return empty result and nil cmd — don't append user message since they only
+	// open an overlay.
+	// Info commands (/help, /fork, /init, etc.): return a non-empty result —
+	// append user message so it pairs with the notice.
+	if cmd == nil && result != "" {
 		m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: input})
 	}
 	if result != "" {

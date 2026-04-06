@@ -147,16 +147,16 @@ sleep 2
 tmux send-keys -t t_mcp 'list files in /tmp using the filesystem MCP tool' Enter
 sleep 12
 tmux capture-pane -t t_mcp -p
-# Expected: /tmp listing via MCP server; MCP tool in permission dialog
+# Expected: /tmp listing via MCP server; MCP tool appears in the conversation flow
 
 # Test 5: /mcp command — management panel
 tmux send-keys -t t_mcp '/mcp' Enter
 sleep 2
 tmux capture-pane -t t_mcp -p
-# Expected: MCP management UI with connected servers and their tools
+# Expected: MCP selector titled "MCP Servers" with the configured server listed
 
 # Test 6: Connection error handling
-tmux send-keys -t t_mcp 'q' Enter
+tmux send-keys -t t_mcp C-c
 tmux send-keys -t t_mcp 'gen mcp add broken -- nonexistent-command-xyz' Enter
 sleep 3
 tmux send-keys -t t_mcp 'gen' Enter
@@ -165,7 +165,7 @@ tmux capture-pane -t t_mcp -p
 # Expected: connection error shown inline at startup
 
 # Cleanup
-tmux send-keys -t t_mcp 'q' Enter
+tmux send-keys -t t_mcp C-c
 tmux send-keys -t t_mcp 'gen mcp remove filesystem' Enter
 sleep 2
 tmux send-keys -t t_mcp 'gen mcp remove broken' Enter

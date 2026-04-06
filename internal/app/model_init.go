@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/yanmxa/gencode/internal/agent"
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appcommand "github.com/yanmxa/gencode/internal/app/command"
@@ -30,6 +31,7 @@ import (
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/session"
+	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/ui/progress"
 	"github.com/yanmxa/gencode/internal/ui/suggest"
@@ -58,6 +60,13 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 		transcriptPath = earlySessionStore.SessionPath(sessionID)
 	}
 	hookEngine := hooks.NewEngine(settings, sessionID, cwd, transcriptPath)
+	modelID := ""
+	if currentModel != nil {
+		modelID = currentModel.ModelID
+	}
+	hookEngine.SetLLMProvider(llmProvider, modelID)
+	hookEngine.SetAgentRunner(newHookAgentRunner(llmProvider, settings, cwd, isGitRepo(cwd), mcpRegistry))
+	installHookBridges(hookEngine)
 
 	return modelInfra{
 		store:             store,
@@ -93,10 +102,12 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		showTasks: true,
 		isGit:     isGitRepo(cwd),
 
-		settings:   infra.settings,
-		hookEngine: infra.hookEngine,
-		loop:       &core.Loop{},
-		runtime:    newConversationRuntime(),
+		settings:       infra.settings,
+		hookEngine:     infra.hookEngine,
+		fileWatcher:    newFileWatcher(infra.hookEngine, nil),
+		asyncHookQueue: newAsyncHookQueue(),
+		loop:           &core.Loop{},
+		runtime:        newConversationRuntime(),
 	}
 }
 
@@ -168,6 +179,9 @@ func (m *model) applyRunOptions(opts options.RunOptions) error {
 		if err := plugin.DefaultRegistry.LoadFromPath(ctx, opts.PluginDir); err != nil {
 			return fmt.Errorf("failed to load plugins from %s: %w", opts.PluginDir, err)
 		}
+		if err := m.reloadPluginBackedState(); err != nil {
+			return err
+		}
 	}
 
 	if opts.Prompt != "" && !opts.PlanMode {
@@ -191,6 +205,29 @@ func (m *model) applyRunOptions(opts options.RunOptions) error {
 			return err
 		}
 	}
+
+	return nil
+}
+
+func (m *model) reloadPluginBackedState() error {
+	if err := skill.Initialize(m.cwd); err != nil {
+		return fmt.Errorf("failed to reload skill registry after loading plugins: %w", err)
+	}
+
+	agent.Init(m.cwd)
+
+	if err := mcp.Initialize(m.cwd); err != nil {
+		return fmt.Errorf("failed to reload MCP registry after loading plugins: %w", err)
+	}
+	m.mcp.Registry = mcp.DefaultRegistry
+
+	settings := loadSettings()
+	m.settings = settings
+	if m.hookEngine != nil {
+		m.hookEngine.SetSettings(settings)
+		m.hookEngine.SetAgentRunner(newHookAgentRunner(m.provider.LLM, settings, m.cwd, m.isGit, m.mcp.Registry))
+	}
+	m.reconfigureAgentTool()
 
 	return nil
 }

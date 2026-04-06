@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/message"
@@ -14,9 +15,12 @@ type mockProvider struct {
 	responses []message.CompletionResponse
 	callIdx   int
 	models    []provider.ModelInfo
+	listErr   error
+	lastOpts  provider.CompletionOptions
 }
 
 func (m *mockProvider) Stream(_ context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
+	m.lastOpts = opts
 	ch := make(chan message.StreamChunk, 1)
 	go func() {
 		defer close(ch)
@@ -35,7 +39,7 @@ func (m *mockProvider) Stream(_ context.Context, opts provider.CompletionOptions
 }
 
 func (m *mockProvider) ListModels(_ context.Context) ([]provider.ModelInfo, error) {
-	return m.models, nil
+	return m.models, m.listErr
 }
 
 func (m *mockProvider) Name() string { return "mock" }
@@ -154,6 +158,38 @@ func TestOptsDefaultMaxTokens(t *testing.T) {
 	opts := c.opts(nil, nil, "")
 	if opts.MaxTokens != defaultMaxTokens {
 		t.Errorf("expected default %d, got %d", defaultMaxTokens, opts.MaxTokens)
+	}
+}
+
+func TestOptsIncludesThinkingLevel(t *testing.T) {
+	c := &Client{
+		Provider:      &mockProvider{},
+		Model:         "m",
+		ThinkingLevel: provider.ThinkingHigh,
+	}
+	opts := c.opts(nil, nil, "system")
+	if opts.ThinkingLevel != provider.ThinkingHigh {
+		t.Fatalf("expected thinking level %v, got %v", provider.ThinkingHigh, opts.ThinkingLevel)
+	}
+	if opts.SystemPrompt != "system" {
+		t.Fatalf("expected system prompt to be preserved, got %q", opts.SystemPrompt)
+	}
+}
+
+func TestProviderOutputLimitNilProvider(t *testing.T) {
+	c := &Client{Model: "m"}
+	if got := c.providerOutputLimit(context.Background()); got != 0 {
+		t.Fatalf("expected nil provider to return 0, got %d", got)
+	}
+}
+
+func TestProviderOutputLimitListModelsError(t *testing.T) {
+	c := &Client{
+		Provider: &mockProvider{listErr: errors.New("boom")},
+		Model:    "m",
+	}
+	if got := c.providerOutputLimit(context.Background()); got != 0 {
+		t.Fatalf("expected ListModels error to return 0, got %d", got)
 	}
 }
 

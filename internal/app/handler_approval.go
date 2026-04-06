@@ -17,6 +17,15 @@ import (
 	"github.com/yanmxa/gencode/internal/tool/permission"
 )
 
+// hookPermissionResultMsg carries the result of an async PermissionRequest hook execution.
+type hookPermissionResultMsg struct {
+	Request *permission.PermissionRequest
+	Blocked bool
+	Allowed bool
+	Reason  string
+	Outcome hooks.HookOutcome // full outcome for applying permission updates
+}
+
 // updateApproval routes permission request messages.
 // Note: response messages are handled directly in delegateToActiveModal.
 func (m *model) updateApproval(msg tea.Msg) (tea.Cmd, bool) {
@@ -24,18 +33,67 @@ func (m *model) updateApproval(msg tea.Msg) (tea.Cmd, bool) {
 	case appapproval.RequestMsg:
 		c := m.handlePermissionRequest(msg)
 		return c, true
+	case hookPermissionResultMsg:
+		c := m.handleHookPermissionResult(msg)
+		return c, true
 	}
 	return nil, false
 }
 
 func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
-	blocked, allowed, reason := m.checkPermissionHook(msg.Request)
-
-	if blocked {
-		return m.abortToolWithError("Blocked by hook: " + reason)
+	// If there's a PermissionRequest hook configured, run it asynchronously
+	// to avoid blocking the Bubble Tea event loop (which freezes the TUI).
+	if m.hookEngine != nil && m.hookEngine.HasHooks(hooks.PermissionRequest) && msg.Request != nil {
+		return m.dispatchPermissionHookAsync(msg.Request)
 	}
 
-	if allowed {
+	// No hook — show approval modal directly
+	return m.showApprovalModal(msg.Request)
+}
+
+// dispatchPermissionHookAsync runs PermissionRequest hooks in a goroutine,
+// keeping the TUI responsive while waiting for external hook responses (e.g. FIFO-based monitors).
+func (m *model) dispatchPermissionHookAsync(req *permission.PermissionRequest) tea.Cmd {
+	hookEngine := m.hookEngine
+	ctx := m.tool.Context()
+
+	hookInput := hooks.HookInput{
+		ToolName:  req.ToolName,
+		ToolInput: m.fullToolInputForHook(req),
+	}
+	hookInput.PermissionSuggestions = m.buildPermissionSuggestions(req)
+
+	return func() tea.Msg {
+		outcome := hookEngine.Execute(ctx, hooks.PermissionRequest, hookInput)
+
+		blocked := outcome.ShouldBlock
+		allowed := outcome.PermissionAllow
+
+		return hookPermissionResultMsg{
+			Request: req,
+			Blocked: blocked,
+			Allowed: allowed,
+			Reason:  outcome.BlockReason,
+			Outcome: outcome,
+		}
+	}
+}
+
+// handleHookPermissionResult processes the async hook result and decides
+// whether to auto-approve or show the approval modal.
+func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd {
+	if msg.Blocked {
+		return m.abortToolWithError("Blocked by hook: "+msg.Reason, false)
+	}
+
+	if msg.Allowed {
+		// Apply structured permission updates from hook
+		m.applyPermissionUpdates(msg.Outcome.UpdatedPermissions)
+		// Propagate updated input back to the pending tool call
+		if msg.Outcome.UpdatedInput != nil {
+			m.applyUpdatedToolInput(msg.Outcome.UpdatedInput)
+		}
+
 		// Hook wants to allow — validate against safety invariant
 		args := m.buildPermissionArgs(msg.Request)
 		if m.settings != nil && m.settings.ResolveHookAllow(msg.Request.ToolName, args, m.mode.SessionPermissions) {
@@ -45,17 +103,23 @@ func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
 		// Safety invariant denied the hook allow — fall through to normal approval modal
 	}
 
+	// Show approval modal
+	return m.showApprovalModal(msg.Request)
+}
+
+// showApprovalModal generates suggestions, shows the approval UI, and fires notification.
+func (m *model) showApprovalModal(req *permission.PermissionRequest) tea.Cmd {
 	// Generate smart allow rule suggestions for the approval UI
-	if msg.Request != nil {
-		msg.Request.SuggestedRules = config.GenerateSuggestions(msg.Request.ToolName, m.buildPermissionArgs(msg.Request), 5)
+	if req != nil {
+		req.SuggestedRules = config.GenerateSuggestions(req.ToolName, m.buildPermissionArgs(req), 5)
 	}
 
-	m.approval.Show(msg.Request, m.width, m.height)
+	m.approval.Show(req, m.width, m.height)
 
 	// Fire Notification hook when permission prompt is shown
 	if m.hookEngine != nil {
 		m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{
-			Message:          "Permission required for " + msg.Request.ToolName,
+			Message:          "Permission required for " + req.ToolName,
 			NotificationType: "permission_prompt",
 		})
 	}
@@ -63,7 +127,7 @@ func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
 	return nil
 }
 
-func (m *model) abortToolWithError(errorMsg string) tea.Cmd {
+func (m *model) abortToolWithError(errorMsg string, retry bool) tea.Cmd {
 	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 	m.conv.Append(message.ChatMessage{
 		Role:     message.RoleUser,
@@ -76,41 +140,11 @@ func (m *model) abortToolWithError(errorMsg string) tea.Cmd {
 	})
 	m.tool.Reset()
 	m.conv.Stream.Active = false
-	return tea.Batch(m.commitMessages()...)
-}
-
-// checkPermissionHook runs PermissionRequest hooks and returns:
-//   - blocked: hook explicitly denied the tool
-//   - allowed: hook explicitly approved the tool (still needs safety invariant check)
-//   - reason: block reason or hook source
-func (m *model) checkPermissionHook(req *permission.PermissionRequest) (blocked, allowed bool, reason string) {
-	if m.hookEngine == nil || req == nil {
-		return false, false, ""
+	commitCmds := m.commitMessages()
+	if retry {
+		commitCmds = append(commitCmds, m.startContinueStream())
 	}
-
-	hookInput := hooks.HookInput{
-		ToolName:  req.ToolName,
-		ToolInput: m.fullToolInputForHook(req),
-	}
-	hookInput.PermissionSuggestions = m.buildPermissionSuggestions(req)
-
-	outcome := m.hookEngine.Execute(m.tool.Context(), hooks.PermissionRequest, hookInput)
-
-	if outcome.ShouldBlock {
-		return true, false, outcome.BlockReason
-	}
-
-	if outcome.PermissionAllow {
-		// Apply structured permission updates from hook
-		m.applyPermissionUpdates(outcome.UpdatedPermissions)
-		// Propagate updated input back to the pending tool call
-		if outcome.UpdatedInput != nil {
-			m.applyUpdatedToolInput(outcome.UpdatedInput)
-		}
-		return false, true, outcome.HookSource
-	}
-
-	return false, false, ""
+	return tea.Batch(commitCmds...)
 }
 
 // buildPermissionSuggestions generates permission suggestions for hook input,
@@ -246,13 +280,16 @@ func buildRuleString(rule hooks.PermissionRule) string {
 
 func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
 	if !msg.Approved {
+		retry := false
 		if m.hookEngine != nil && msg.Request != nil {
-			m.hookEngine.ExecuteAsync(hooks.PermissionDenied, hooks.HookInput{
+			outcome := m.hookEngine.Execute(m.tool.Context(), hooks.PermissionDenied, hooks.HookInput{
 				ToolName:  msg.Request.ToolName,
 				ToolInput: m.buildPermissionArgs(msg.Request),
 			})
+			m.applyRuntimeHookOutcome(outcome)
+			retry = outcome.Retry
 		}
-		return m.abortToolWithError("User denied permission")
+		return m.abortToolWithError("User denied permission", retry)
 	}
 
 	if msg.AllowAll && m.mode.SessionPermissions != nil && msg.Request != nil {

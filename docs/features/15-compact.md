@@ -5,6 +5,7 @@
 Compaction summarises old messages to free up context window space. It can be triggered manually or fires automatically when the token count approaches the model's limit.
 
 - **Manual trigger:** `/compact` slash command
+- **Focus hint:** `/compact <focus>` biases the generated summary
 - **Auto trigger:** when context usage exceeds the threshold
 - **Effect:** old messages are replaced by a summary; recent turns are preserved
 - **Hooks:** `PreCompact` and `PostCompact` fire around each compaction
@@ -67,6 +68,10 @@ func TestCompact_AutoTrigger_ExceedsThreshold(t *testing.T) {
 func TestCompact_MultipleTimes(t *testing.T) {
     // Multiple consecutive compactions must each reduce message count
 }
+
+func TestCompact_SummaryPersistsAcrossResume(t *testing.T) {
+    // Compaction summary must be saved as session memory and restored on resume
+}
 ```
 
 ## Interactive Tests (tmux)
@@ -103,6 +108,15 @@ tmux capture-pane -t t_compact -p
 # Test 5: Notice message visible
 tmux capture-pane -t t_compact -p | grep -i "compact\|summary\|compressed"
 # Expected: notice about compression visible in conversation
+
+# Test 6: Resume after compact keeps summary context
+tmux send-keys -t t_compact C-c
+tmux send-keys -t t_compact 'gen -c' Enter
+sleep 2
+tmux send-keys -t t_compact 'what summary do you have from earlier?' Enter
+sleep 6
+tmux capture-pane -t t_compact -p
+# Expected: resumed session still has the compacted summary context
 
 tmux kill-session -t t_compact
 ```

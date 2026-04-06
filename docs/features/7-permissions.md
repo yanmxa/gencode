@@ -21,6 +21,7 @@ Controls whether tool calls are allowed, denied, or prompted to the user.
 - `ask` list — always prompt for matching calls
 
 Working directory enforcement prevents edits outside the project root.
+Sensitive paths and destructive commands remain bypass-immune even in `BypassPermissions` mode.
 
 ## UI Interactions
 
@@ -95,6 +96,7 @@ func TestPermission_AllowDenyConflict_DenyWins(t *testing.T) {
 func TestPermission_BypassPermissions_BypassImmune_Enforced(t *testing.T) {
     // bypass-immune paths must still be blocked in BypassPermissions mode
 }
+
 ```
 
 ## Interactive Tests (tmux)
@@ -116,7 +118,7 @@ cat /tmp/perm_test/hello.txt
 # Expected: "world"
 
 # Test 2: Allow list — auto-approve (no prompt)
-tmux send-keys -t t_perm 'q' Enter
+tmux send-keys -t t_perm C-c
 cat > /tmp/perm_test/.gen/settings.json << 'EOF'
 {"permissions": {"allow": ["Write(/tmp/perm_test/*)"]}}
 EOF
@@ -128,7 +130,7 @@ tmux capture-pane -t t_perm -p
 # Expected: file created without any dialog
 
 # Test 3: Deny list — blocked
-tmux send-keys -t t_perm 'q' Enter
+tmux send-keys -t t_perm C-c
 cat > /tmp/perm_test/.gen/settings.json << 'EOF'
 {"permissions": {"deny": ["Bash(rm*)"]}}
 EOF
@@ -140,7 +142,7 @@ tmux capture-pane -t t_perm -p
 # Expected: Bash blocked by deny rule; inline error shown
 
 # Test 4: Normal mode — deny with n
-tmux send-keys -t t_perm 'q' Enter
+tmux send-keys -t t_perm C-c
 rm -f /tmp/perm_test/.gen/settings.json
 tmux send-keys -t t_perm 'cd /tmp/perm_test && gen' Enter
 sleep 2

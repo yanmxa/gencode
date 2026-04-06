@@ -638,6 +638,72 @@ func TestLoadInstructions(t *testing.T) {
 	_ = user
 }
 
+func TestLoadMemoryFiles_PrefersGenPathsAndPreservesSectionOrder(t *testing.T) {
+	tmpHome := t.TempDir()
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	userGenDir := filepath.Join(tmpHome, ".gen")
+	userClaudeDir := filepath.Join(tmpHome, ".claude")
+	projectGenDir := filepath.Join(tmpDir, ".gen")
+	projectClaudeDir := filepath.Join(tmpDir, ".claude")
+
+	for _, dir := range []string{userGenDir, userClaudeDir, projectGenDir, projectClaudeDir, filepath.Join(userGenDir, "rules"), filepath.Join(projectGenDir, "rules")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s): %v", dir, err)
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(userGenDir, "GEN.md"), []byte("user gen"), 0o644); err != nil {
+		t.Fatalf("WriteFile(user GEN): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(userClaudeDir, "CLAUDE.md"), []byte("user claude fallback"), 0o644); err != nil {
+		t.Fatalf("WriteFile(user CLAUDE): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(userGenDir, "rules", "01-global.md"), []byte("global rule"), 0o644); err != nil {
+		t.Fatalf("WriteFile(global rule): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectGenDir, "GEN.md"), []byte("project gen"), 0o644); err != nil {
+		t.Fatalf("WriteFile(project GEN): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectClaudeDir, "CLAUDE.md"), []byte("project claude fallback"), 0o644); err != nil {
+		t.Fatalf("WriteFile(project CLAUDE): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectGenDir, "rules", "01-project.md"), []byte("project rule"), 0o644); err != nil {
+		t.Fatalf("WriteFile(project rule): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectGenDir, "GEN.local.md"), []byte("project local"), 0o644); err != nil {
+		t.Fatalf("WriteFile(local GEN): %v", err)
+	}
+
+	files := LoadMemoryFiles(tmpDir)
+	if len(files) != 5 {
+		t.Fatalf("expected 5 memory files, got %d", len(files))
+	}
+
+	if files[0].Level != "global" || !strings.Contains(files[0].Path, filepath.Join(".gen", "GEN.md")) {
+		t.Fatalf("expected global GEN.md first, got level=%q path=%q", files[0].Level, files[0].Path)
+	}
+	if strings.Contains(files[0].Content, "user claude fallback") {
+		t.Fatal("expected user .gen/GEN.md to take precedence over ~/.claude/CLAUDE.md")
+	}
+	if files[1].Level != "global" || files[1].Source != "rules" {
+		t.Fatalf("expected global rules second, got level=%q source=%q", files[1].Level, files[1].Source)
+	}
+	if files[2].Level != "project" || !strings.Contains(files[2].Path, filepath.Join(".gen", "GEN.md")) {
+		t.Fatalf("expected project GEN.md third, got level=%q path=%q", files[2].Level, files[2].Path)
+	}
+	if strings.Contains(files[2].Content, "project claude fallback") {
+		t.Fatal("expected project .gen/GEN.md to take precedence over project CLAUDE.md")
+	}
+	if files[3].Level != "project" || files[3].Source != "rules" {
+		t.Fatalf("expected project rules fourth, got level=%q source=%q", files[3].Level, files[3].Source)
+	}
+	if files[4].Level != "local" || !strings.Contains(files[4].Path, "GEN.local.md") {
+		t.Fatalf("expected local GEN.local.md last, got level=%q path=%q", files[4].Level, files[4].Path)
+	}
+}
+
 // TestMemory_ImportChain verifies that @import A which itself imports B results
 // in both files being loaded and their content present in the final output.
 func TestMemory_ImportChain(t *testing.T) {
@@ -725,4 +791,3 @@ func TestMemory_MissingFile_NoError(t *testing.T) {
 	// and no project-level content from our tmpDir
 	_ = project
 }
-

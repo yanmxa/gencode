@@ -39,6 +39,7 @@ func Create(baseCwd, slug string) (*Result, func(), error) {
 	}
 
 	cleanup := func() { Remove(baseCwd, worktreePath) }
+	notifyWorktreeCreated(slug, worktreePath)
 
 	return &Result{Path: worktreePath}, cleanup, nil
 }
@@ -50,6 +51,7 @@ func Remove(baseCwd, worktreePath string) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git worktree remove failed: %s: %w", strings.TrimSpace(string(out)), err)
 	}
+	notifyWorktreeRemoved(worktreePath)
 	return nil
 }
 
@@ -73,4 +75,19 @@ func HasUnmergedCommits(worktreePath string) bool {
 		return false
 	}
 	return len(strings.TrimSpace(string(out))) > 0
+}
+
+// OriginalPath returns the main repository path for a managed worktree path.
+// The worktree must be under <repo>/.git/agent-worktrees/<slug>.
+func OriginalPath(worktreePath string) (string, bool) {
+	clean := filepath.Clean(worktreePath)
+	parent := filepath.Dir(clean)
+	if filepath.Base(parent) != worktreeDir {
+		return "", false
+	}
+	gitDir := filepath.Dir(parent)
+	if filepath.Base(gitDir) != ".git" {
+		return "", false
+	}
+	return filepath.Dir(gitDir), true
 }

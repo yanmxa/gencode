@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -219,6 +220,294 @@ func TestRegistry(t *testing.T) {
 	registry.Unregister("registry-test")
 	if registry.Count() != 0 {
 		t.Errorf("After Unregister, Count() = %d, want 0", registry.Count())
+	}
+}
+
+func TestRegistry_GetMatchesMarketplacePluginByShortName(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(&Plugin{
+		Manifest: Manifest{Name: "deploy"},
+		Source:   "deploy@corp",
+	})
+
+	got, ok := registry.Get("deploy")
+	if !ok {
+		t.Fatal("expected short-name lookup to resolve marketplace plugin")
+	}
+	if got.FullName() != "deploy@corp" {
+		t.Fatalf("Registry.Get(short) resolved %q, want %q", got.FullName(), "deploy@corp")
+	}
+}
+
+func TestRegistry_EnableDisable_PersistsScopedSettings(t *testing.T) {
+	tmpHome := t.TempDir()
+	tmpCwd := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	tests := []struct {
+		name         string
+		scope        Scope
+		enable       bool
+		settingsPath string
+	}{
+		{
+			name:         "user enable",
+			scope:        ScopeUser,
+			enable:       true,
+			settingsPath: filepath.Join(tmpHome, ".gen", "settings.json"),
+		},
+		{
+			name:         "project disable",
+			scope:        ScopeProject,
+			enable:       false,
+			settingsPath: filepath.Join(tmpCwd, ".gen", "settings.json"),
+		},
+		{
+			name:         "local disable",
+			scope:        ScopeLocal,
+			enable:       false,
+			settingsPath: filepath.Join(tmpCwd, ".gen", "settings.local.json"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := NewRegistry()
+			registry.cwd = tmpCwd
+			registry.Register(&Plugin{
+				Manifest: Manifest{Name: "deploy"},
+				Source:   "deploy@corp",
+				Enabled:  !tt.enable,
+			})
+
+			if err := os.MkdirAll(filepath.Dir(tt.settingsPath), 0o755); err != nil {
+				t.Fatalf("MkdirAll(settings dir): %v", err)
+			}
+			seed := map[string]any{
+				"theme": "night",
+				"enabledPlugins": map[string]any{
+					"other@corp": true,
+				},
+			}
+			data, err := json.Marshal(seed)
+			if err != nil {
+				t.Fatalf("Marshal(seed): %v", err)
+			}
+			if err := os.WriteFile(tt.settingsPath, data, 0o644); err != nil {
+				t.Fatalf("WriteFile(seed settings): %v", err)
+			}
+
+			var opErr error
+			if tt.enable {
+				opErr = registry.Enable("deploy@corp", tt.scope)
+			} else {
+				opErr = registry.Disable("deploy@corp", tt.scope)
+			}
+			if opErr != nil {
+				t.Fatalf("registry toggle failed: %v", opErr)
+			}
+
+			toggled, ok := registry.Get("deploy@corp")
+			if !ok {
+				t.Fatal("expected plugin to remain registered")
+			}
+			if toggled.Enabled != tt.enable {
+				t.Fatalf("plugin enabled state = %v, want %v", toggled.Enabled, tt.enable)
+			}
+
+			saved, err := os.ReadFile(tt.settingsPath)
+			if err != nil {
+				t.Fatalf("ReadFile(saved settings): %v", err)
+			}
+
+			var settings struct {
+				Theme          string         `json:"theme"`
+				EnabledPlugins map[string]any `json:"enabledPlugins"`
+			}
+			if err := json.Unmarshal(saved, &settings); err != nil {
+				t.Fatalf("Unmarshal(saved settings): %v", err)
+			}
+			if settings.Theme != "night" {
+				t.Fatalf("existing settings should be preserved, got theme %q", settings.Theme)
+			}
+			if got := settings.EnabledPlugins["deploy@corp"]; got != tt.enable {
+				t.Fatalf("enabledPlugins[%q] = %v, want %v", "deploy@corp", got, tt.enable)
+			}
+			if got := settings.EnabledPlugins["other@corp"]; got != true {
+				t.Fatalf("existing plugin state lost, got %v", got)
+			}
+		})
+	}
+}
+
+func writeTestPlugin(t *testing.T, root, name, version, description string, extraFiles map[string]string) {
+	t.Helper()
+
+	metaDir := filepath.Join(root, ".gen-plugin")
+	if err := os.MkdirAll(metaDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(plugin meta): %v", err)
+	}
+
+	manifest := Manifest{
+		Name:        name,
+		Version:     version,
+		Description: description,
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("Marshal(manifest): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(metaDir, "plugin.json"), data, 0o644); err != nil {
+		t.Fatalf("WriteFile(manifest): %v", err)
+	}
+
+	for rel, content := range extraFiles {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s): %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s): %v", rel, err)
+		}
+	}
+}
+
+func TestInstaller_InstallAndUninstall_FromMarketplaceDirectory(t *testing.T) {
+	tmpHome := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	marketRoot := filepath.Join(t.TempDir(), "market")
+	pluginRoot := filepath.Join(marketRoot, "deploy")
+	writeTestPlugin(t, pluginRoot, "deploy", "1.2.3", "Deploy plugin", map[string]string{
+		"skills/deploy/SKILL.md": "---\nname: deploy\ndescription: Deploy skill\n---\nship it\n",
+	})
+
+	registry := NewRegistry()
+	installer := NewInstaller(registry, cwd)
+	if err := installer.marketplaceManager.AddDirectory("local-market", marketRoot); err != nil {
+		t.Fatalf("AddDirectory() error: %v", err)
+	}
+	if err := installer.LoadMarketplaces(); err != nil {
+		t.Fatalf("LoadMarketplaces() error: %v", err)
+	}
+
+	if err := installer.Install(context.Background(), "deploy@local-market", ScopeProject); err != nil {
+		t.Fatalf("Install() error: %v", err)
+	}
+
+	installPath := filepath.Join(cwd, ".gen", "plugins", "deploy")
+	if _, err := os.Stat(installPath); err != nil {
+		t.Fatalf("expected installed plugin dir: %v", err)
+	}
+
+	installedFile := GetInstalledPluginsFile(cwd, ScopeProject)
+	data, err := os.ReadFile(installedFile)
+	if err != nil {
+		t.Fatalf("ReadFile(installed_plugins): %v", err)
+	}
+	if !strings.Contains(string(data), "deploy@local-market") {
+		t.Fatalf("installed_plugins.json missing installed plugin entry: %s", string(data))
+	}
+
+	p, ok := registry.Get("deploy@local-market")
+	if !ok {
+		t.Fatal("expected installed plugin registered")
+	}
+	if !p.Enabled {
+		t.Fatal("expected installed plugin enabled")
+	}
+
+	if err := installer.Uninstall("deploy@local-market", ScopeProject); err != nil {
+		t.Fatalf("Uninstall() error: %v", err)
+	}
+	if _, err := os.Stat(installPath); !os.IsNotExist(err) {
+		t.Fatalf("expected plugin dir removed, stat err=%v", err)
+	}
+	if _, ok := registry.Get("deploy@local-market"); ok {
+		t.Fatal("expected plugin to be removed from registry")
+	}
+	if _, err := os.Stat(installedFile); !os.IsNotExist(err) {
+		t.Fatalf("expected installed_plugins.json removed when empty, stat err=%v", err)
+	}
+}
+
+func TestRegistry_LoadScopeMergePrefersLocalOverProjectOverUser(t *testing.T) {
+	tmpHome := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	writeTestPlugin(t, filepath.Join(tmpHome, ".gen", "plugins", "shared"), "shared", "1.0.0", "user plugin", nil)
+	writeTestPlugin(t, filepath.Join(cwd, ".gen", "plugins", "shared"), "shared", "1.0.0", "project plugin", nil)
+	writeTestPlugin(t, filepath.Join(cwd, ".gen", "plugins-local", "shared"), "shared", "1.0.0", "local plugin", nil)
+
+	registry := NewRegistry()
+	if err := registry.Load(context.Background(), cwd); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	p, ok := registry.Get("shared")
+	if !ok {
+		t.Fatal("expected merged plugin to be present")
+	}
+	if p.Scope != ScopeLocal {
+		t.Fatalf("expected local scope to win, got %v", p.Scope)
+	}
+	if p.Manifest.Description != "local plugin" {
+		t.Fatalf("expected local plugin manifest to win, got %q", p.Manifest.Description)
+	}
+}
+
+func TestPlugin_LSPLoading(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeTestPlugin(t, tmpDir, "lsp-plugin", "1.0.0", "LSP plugin", map[string]string{
+		"lsp.json": `{
+  "go": {
+    "command": "gopls",
+    "args": ["serve"],
+    "extensionToLanguage": {
+      ".go": "go"
+    }
+  }
+}`,
+	})
+
+	manifestPath := filepath.Join(tmpDir, ".gen-plugin", "plugin.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile(manifest): %v", err)
+	}
+
+	var manifest map[string]any
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("Unmarshal(manifest): %v", err)
+	}
+	manifest["lspServers"] = "lsp.json"
+	updated, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("Marshal(updated manifest): %v", err)
+	}
+	if err := os.WriteFile(manifestPath, updated, 0o644); err != nil {
+		t.Fatalf("WriteFile(updated manifest): %v", err)
+	}
+
+	p, err := LoadPlugin(tmpDir, ScopeLocal, "lsp-plugin")
+	if err != nil {
+		t.Fatalf("LoadPlugin() error: %v", err)
+	}
+
+	server, ok := p.Components.LSP["go"]
+	if !ok {
+		t.Fatal("expected go LSP server to be loaded")
+	}
+	if server.Command != "gopls" {
+		t.Fatalf("expected gopls command, got %q", server.Command)
+	}
+	if len(server.Args) != 1 || server.Args[0] != "serve" {
+		t.Fatalf("unexpected LSP args: %#v", server.Args)
+	}
+	if server.ExtensionToLanguage[".go"] != "go" {
+		t.Fatalf("expected extension mapping for .go, got %#v", server.ExtensionToLanguage)
 	}
 }
 

@@ -2,6 +2,8 @@
 // Compatible with Claude Code hooks that execute shell commands on events.
 package hooks
 
+import "context"
+
 // EventType represents the type of hook event.
 type EventType string
 
@@ -19,8 +21,17 @@ const (
 	Stop               EventType = "Stop"               // no matcher
 	StopFailure        EventType = "StopFailure"        // no matcher; fires when assistant stops due to an error
 	PermissionDenied   EventType = "PermissionDenied"   // matcher: tool name; fires when tool execution is denied
+	Setup              EventType = "Setup"              // matcher: init, maintenance
+	TaskCreated        EventType = "TaskCreated"        // matcher: task subject
+	TaskCompleted      EventType = "TaskCompleted"      // matcher: task subject
+	ConfigChange       EventType = "ConfigChange"       // matcher: config source
+	InstructionsLoaded EventType = "InstructionsLoaded" // matcher: file path
+	CwdChanged         EventType = "CwdChanged"         // matcher: new cwd
+	FileChanged        EventType = "FileChanged"        // matcher: file path
 	PreCompact         EventType = "PreCompact"         // matcher: manual, auto
 	PostCompact        EventType = "PostCompact"        // matcher: manual, auto; fire-and-forget after compact succeeds
+	WorktreeCreate     EventType = "WorktreeCreate"     // matcher: worktree name/slug
+	WorktreeRemove     EventType = "WorktreeRemove"     // matcher: worktree path
 	SessionEnd         EventType = "SessionEnd"         // matcher: reason
 )
 
@@ -40,6 +51,7 @@ type HookInput struct {
 	ToolResponse any            `json:"tool_response,omitempty"`
 	Error        string         `json:"error,omitempty"`
 	IsInterrupt  bool           `json:"is_interrupt,omitempty"`
+	Event        string         `json:"event,omitempty"`
 
 	// PermissionRequest suggestions
 	PermissionSuggestions []PermissionSuggestion `json:"permission_suggestions,omitempty"`
@@ -57,7 +69,7 @@ type HookInput struct {
 	AgentType           string `json:"agent_type,omitempty"`
 	Description         string `json:"description,omitempty"`
 	AgentTranscriptPath string `json:"agent_transcript_path,omitempty"`
-	StopHookActive      bool   `json:"stop_hook_active,omitempty"`
+	StopHookActive      *bool  `json:"stop_hook_active,omitempty"`
 
 	// Stop event
 	LastAssistantMessage string `json:"last_assistant_message,omitempty"`
@@ -68,6 +80,22 @@ type HookInput struct {
 	Reason             string `json:"reason,omitempty"`
 	Trigger            string `json:"trigger,omitempty"`
 	CustomInstructions string `json:"custom_instructions,omitempty"`
+
+	// Task events
+	TaskID          string `json:"task_id,omitempty"`
+	TaskSubject     string `json:"task_subject,omitempty"`
+	TaskDescription string `json:"task_description,omitempty"`
+
+	// Config/instructions events
+	FilePath   string `json:"file_path,omitempty"`
+	LoadReason string `json:"load_reason,omitempty"`
+	MemoryType string `json:"memory_type,omitempty"`
+	OldCwd     string `json:"old_cwd,omitempty"`
+	NewCwd     string `json:"new_cwd,omitempty"`
+
+	// Worktree events
+	Name         string `json:"name,omitempty"`
+	WorktreePath string `json:"worktree_path,omitempty"`
 }
 
 // HookOutput is the JSON output from hook commands.
@@ -89,6 +117,9 @@ type HookSpecificOutput struct {
 	UpdatedInput              map[string]any             `json:"updatedInput,omitempty"`
 	AdditionalContext         string                     `json:"additionalContext,omitempty"`
 	PermissionRequestDecision *PermissionRequestDecision `json:"decision,omitempty"`
+	WatchPaths                []string                   `json:"watchPaths,omitempty"`
+	InitialUserMessage        string                     `json:"initialUserMessage,omitempty"`
+	Retry                     bool                       `json:"retry,omitempty"`
 }
 
 // PermissionRequestDecision represents permission request hook decision.
@@ -138,9 +169,34 @@ type HookOutcome struct {
 	AdditionalContext  string
 	UpdatedInput       map[string]any
 	PermissionAllow    bool               // Hook explicitly granted permission (allow path)
-	UpdatedPermissions []PermissionUpdate // Structured permission changes from hook
+	ForceAsk           bool               // Hook explicitly requests permission prompt (PreToolUse "ask")
+	UpdatedPermissions []PermissionUpdate // Structured permission changes from hook (PermissionRequest only)
 	HookSource         string             // Which hook made the decision (for logging)
+	WatchPaths         []string
+	InitialUserMessage string
+	Retry              bool
 	Error              error
+}
+
+// FunctionHookCallback executes an in-memory hook without spawning a subprocess.
+// It returns a structured hook output that is normalized through the same
+// response model as command/prompt/agent/http hooks.
+type FunctionHookCallback func(ctx context.Context, input HookInput) (HookOutput, error)
+
+// FunctionHook is an in-memory hook registered at runtime or scoped to a
+// session. It mirrors Claude Code's session function hooks in spirit: the hook
+// is ephemeral, non-persisted, and executes in-process.
+type FunctionHook struct {
+	ID            string
+	Timeout       int
+	Once          bool
+	StatusMessage string
+	Callback      FunctionHookCallback
+}
+
+// AgentRunner executes an agent hook using a multi-turn verifier runtime.
+type AgentRunner interface {
+	RunAgentHook(ctx context.Context, prompt string, model string) (string, error)
 }
 
 // --- Bidirectional prompt protocol types ---
@@ -170,6 +226,16 @@ type PromptResponse struct {
 // PromptCallback is called by the engine when a hook requests user input.
 // Returns the user's response. If cancelled is true, the hook should abort.
 type PromptCallback func(req PromptRequest) (resp PromptResponse, cancelled bool)
+
+type AsyncHookResult struct {
+	Event       EventType
+	HookType    string
+	HookSource  string
+	HookName    string
+	BlockReason string
+}
+
+type AsyncHookCallback func(result AsyncHookResult)
 
 // asyncFirstLine is used to detect async hooks via their first stdout line.
 type asyncFirstLine struct {

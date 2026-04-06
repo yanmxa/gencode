@@ -85,14 +85,20 @@ func GetPluginHooks() map[string][]config.Hook {
 				}
 				for i, h := range matcher.Hooks {
 					hook.Hooks[i] = config.HookCmd{
-						Type:          h.Type,
-						Command:       h.Command,
-						Prompt:        h.Prompt,
-						Model:         h.Model,
-						Async:         h.Async,
-						Timeout:       h.Timeout,
-						StatusMessage: h.StatusMessage,
-						Once:          h.Once,
+						Type:           h.Type,
+						Command:        h.Command,
+						Prompt:         h.Prompt,
+						URL:            h.URL,
+						If:             h.If,
+						Shell:          h.Shell,
+						Model:          h.Model,
+						Async:          h.Async,
+						AsyncRewake:    h.AsyncRewake,
+						Timeout:        h.Timeout,
+						StatusMessage:  h.StatusMessage,
+						Once:           h.Once,
+						Headers:        h.Headers,
+						AllowedEnvVars: h.AllowedEnvVars,
 					}
 				}
 				result[event] = append(result[event], hook)

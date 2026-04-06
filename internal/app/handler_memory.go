@@ -68,6 +68,9 @@ func (m *model) handleEditorFinished(msg appmemory.EditorFinishedMsg) tea.Cmd {
 	content := fmt.Sprintf("Saved: %s", filePath)
 	if msg.Err != nil {
 		content = fmt.Sprintf("Editor error: %v", msg.Err)
+	} else {
+		m.refreshMemoryContext("memory_edit")
+		m.fireFileChanged(filePath, "memory_editor")
 	}
 
 	m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: content})

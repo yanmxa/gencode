@@ -17,6 +17,7 @@ func (m *model) featureUpdaters() []messageUpdater {
 		(*model).updateSession,
 		(*model).updateMemory,
 		(*model).updateCron,
+		(*model).updateAsyncHooks,
 	}
 }
 

@@ -19,7 +19,7 @@ The terminal UI is built with Bubble Tea. It handles keyboard input, real-time s
 | Key | Action |
 |-----|--------|
 | `Enter` | Submit message |
-| `Shift+Enter` | Insert newline |
+| `Alt+Enter` | Insert newline |
 | `↑` / `↓` | Navigate input history |
 | `Ctrl+T` | Toggle task panel |
 | `Esc` | Cancel active stream |
@@ -105,8 +105,8 @@ func TestInput_HistoryNavigation_UpDown(t *testing.T) {
     // Up/Down arrow must navigate through input history
 }
 
-func TestInput_MultilineEntry_ShiftEnter(t *testing.T) {
-    // Shift+Enter must insert newline without submitting
+func TestInput_MultilineEntry_AltEnter(t *testing.T) {
+    // Alt+Enter must insert newline without submitting
 }
 
 func TestStream_ChunkRendering(t *testing.T) {
@@ -139,8 +139,8 @@ sleep 8
 tmux capture-pane -t t_tui -p
 # Expected: ```python block with syntax highlighting
 
-# Multi-line input via Shift+Enter
-tmux send-keys -t t_tui 'first line' S-Enter
+# Multi-line input via Alt+Enter
+tmux send-keys -t t_tui 'first line' M-Enter
 sleep 0.3
 tmux send-keys -t t_tui 'second line' Enter
 sleep 6
@@ -157,7 +157,7 @@ tmux capture-pane -t t_tui -p
 tmux send-keys -t t_tui C-t
 sleep 0.3
 tmux capture-pane -t t_tui -p
-# Expected: task panel shown at bottom; Ctrl+T again hides it
+# Expected: task panel shown; Ctrl+T again hides it
 
 # Interrupt streaming
 tmux send-keys -t t_tui 'write a 1000-word essay about mountains' Enter

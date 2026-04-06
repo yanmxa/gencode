@@ -96,7 +96,7 @@ func (m *model) handleQuestionRequest(msg appmode.QuestionRequestMsg) tea.Cmd {
 func (m *model) handleQuestionResponse(msg appmode.QuestionResponseMsg) tea.Cmd {
 	if msg.Cancelled {
 		m.mode.PendingQuestion = nil
-		return m.abortToolWithError("User cancelled the question prompt")
+		return m.abortToolWithError("User cancelled the question prompt", false)
 	}
 
 	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
@@ -123,7 +123,7 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 	if !msg.Approved {
 		m.mode.Enabled = false
 		m.mode.Operation = appmode.Normal
-		return m.abortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.")
+		return m.abortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.", false)
 	}
 
 	tc := m.tool.PendingCalls[m.tool.CurrentIdx]

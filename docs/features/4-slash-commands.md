@@ -10,6 +10,7 @@ Slash commands are typed directly in the TUI input box. They trigger local UI ac
 | `/model` | List and select a model |
 | `/clear` | Clear chat history |
 | `/fork` | Fork the current session |
+| `/resume` | Resume a previous session |
 | `/help` | Show available commands |
 | `/glob` | Search files by glob pattern |
 | `/tools` | Enable / disable tools |
@@ -81,6 +82,18 @@ func TestSlashTokenlimit_ShowsUsage(t *testing.T) {
     // /tokenlimit must show current usage and context limit
 }
 
+func TestSlashResume_OpensSessionSelector(t *testing.T) {
+    // /resume must open the session selector overlay
+}
+
+func TestSlashTools_OpensToolSelector(t *testing.T) {
+    // /tools must open the tool enable/disable overlay
+}
+
+func TestSlashPlan_EntersPlanMode(t *testing.T) {
+    // /plan must switch the app into plan mode
+}
+
 func TestSlashSkills_TogglesState(t *testing.T) {
     // /skills must toggle skill state between disable/enable/active
 }
@@ -117,7 +130,7 @@ tmux capture-pane -t t_cmds -p
 tmux send-keys -t t_cmds '/provider' Enter
 sleep 1
 tmux capture-pane -t t_cmds -p
-# Expected: provider selection UI
+# Expected: provider selector titled "Select Provider"
 
 # Test 5: /model
 tmux send-keys -t t_cmds '/model' Enter
@@ -138,7 +151,7 @@ tmux capture-pane -t t_cmds -p
 # Expected: .go files in cwd listed
 
 # Test 8: /init — test in a fresh directory
-tmux send-keys -t t_cmds 'q' Enter
+tmux send-keys -t t_cmds C-c
 tmux send-keys -t t_cmds 'mkdir -p /tmp/init_test && cd /tmp/init_test && gen' Enter
 sleep 2
 tmux send-keys -t t_cmds '/init' Enter
@@ -147,7 +160,7 @@ ls /tmp/init_test/.gen/
 # Expected: GEN.md created under .gen/
 
 # Test 9: Command suggestion dropdown
-tmux send-keys -t t_cmds 'q' Enter
+tmux send-keys -t t_cmds C-c
 tmux send-keys -t t_cmds 'gen' Enter
 sleep 2
 tmux send-keys -t t_cmds '/pro'
@@ -175,31 +188,43 @@ tmux capture-pane -t t_cmds -p
 tmux send-keys -t t_cmds '/skills' Enter
 sleep 1
 tmux capture-pane -t t_cmds -p
-# Expected: skill list with state toggles
+# Expected: skill selector titled "Manage Skills"
 
 # Test 13: /agents
 tmux send-keys -t t_cmds '/agents' Enter
 sleep 1
 tmux capture-pane -t t_cmds -p
-# Expected: agent list with enable/disable toggles
+# Expected: agent selector titled "Manage Agents"
 
 # Test 14: /mcp
 tmux send-keys -t t_cmds '/mcp' Enter
 sleep 1
 tmux capture-pane -t t_cmds -p
-# Expected: MCP management panel
+# Expected: MCP selector titled "MCP Servers"
 
 # Test 15: /plugin
 tmux send-keys -t t_cmds '/plugin' Enter
 sleep 1
 tmux capture-pane -t t_cmds -p
-# Expected: plugin management panel
+# Expected: plugin management panel titled "Plugin Manager"
 
 # Test 16: /memory
 tmux send-keys -t t_cmds '/memory' Enter
 sleep 1
 tmux capture-pane -t t_cmds -p
 # Expected: loaded memory files displayed
+
+# Test 17: /resume
+tmux send-keys -t t_cmds '/resume' Enter
+sleep 1
+tmux capture-pane -t t_cmds -p
+# Expected: session picker overlay is shown
+
+# Test 18: /tools
+tmux send-keys -t t_cmds '/tools' Enter
+sleep 1
+tmux capture-pane -t t_cmds -p
+# Expected: tool selector titled "Manage Tools"
 
 tmux kill-session -t t_cmds
 rm -rf /tmp/init_test

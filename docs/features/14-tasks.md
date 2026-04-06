@@ -105,6 +105,10 @@ func TestTaskUpdate_ChangesDescription(t *testing.T) {
 func TestTaskOutput_StreamsWhileRunning(t *testing.T) {
     // TaskOutput must stream output incrementally while task runs
 }
+
+func TestTaskGet_ReturnsTaskDetails(t *testing.T) {
+    // TaskGet must return task metadata including status, timing, and output summary
+}
 ```
 
 ## Interactive Tests (tmux)
@@ -164,6 +168,12 @@ tmux send-keys -t t_task C-t
 sleep 1
 tmux capture-pane -t t_task -p
 # Expected: completed tasks show "Completed" badge
+
+# Test 8: Update task description
+tmux send-keys -t t_task 'rename the latest background task to nightly-check' Enter
+sleep 3
+tmux capture-pane -t t_task -p
+# Expected: TaskUpdate changes the task description
 
 tmux kill-session -t t_task
 ```

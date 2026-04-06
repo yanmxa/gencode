@@ -8,6 +8,7 @@ Token usage is tracked per turn and accumulated across the session. Cost is calc
 - **Session total:** cumulative across all turns
 - **Display:** status bar shows running totals
 - **Pricing:** model-aware; updates when the model changes
+- **Token limits:** `/tokenlimit <input> <output>` can persist a manual override
 
 ## UI Interactions
 
@@ -62,6 +63,10 @@ func TestCost_AutoCompactWarning_At80Percent(t *testing.T) {
 func TestCost_StatusBarFormat(t *testing.T) {
     // Status bar must show "in: N / out: N / $X.XX" format
 }
+
+func TestCost_TokenLimitManualOverride_Persists(t *testing.T) {
+    // Manual /tokenlimit overrides must be saved and used for future displays
+}
 ```
 
 ## Interactive Tests (tmux)
@@ -75,7 +80,7 @@ sleep 2
 tmux send-keys -t t_cost 'what is 2+2?' Enter
 sleep 6
 tmux capture-pane -t t_cost -p
-# Expected: status bar updates with input/output token counts
+# Expected: footer/status area updates with token usage after the turn
 
 # Test 2: View token limit
 tmux send-keys -t t_cost '/tokenlimit' Enter
@@ -89,7 +94,7 @@ for i in {1..3}; do
   sleep 6
 done
 tmux capture-pane -t t_cost -p
-# Expected: token count in status bar increases after each turn
+# Expected: token usage in the footer/status area increases after each turn
 
 # Test 4: Status bar format verification
 tmux capture-pane -t t_cost -p | tail -3
@@ -104,6 +109,12 @@ tmux send-keys -t t_cost 'say hello' Enter
 sleep 6
 tmux capture-pane -t t_cost -p | tail -3
 # Expected: cost updates reflect new model pricing
+
+# Test 6: Manual token limit override
+tmux send-keys -t t_cost '/tokenlimit 123456 4096' Enter
+sleep 2
+tmux capture-pane -t t_cost -p
+# Expected: token limit display shows the custom override values
 
 tmux kill-session -t t_cost
 ```

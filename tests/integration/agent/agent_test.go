@@ -296,3 +296,53 @@ func TestAgent_BackgroundExecution(t *testing.T) {
 		t.Errorf("expected type 'agent', got %q", string(info.Type))
 	}
 }
+
+func TestAgent_OnProgressReceivesToolUpdates(t *testing.T) {
+	tmpDir := t.TempDir()
+	readme := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(readme, []byte("hello from agent"), 0o644); err != nil {
+		t.Fatalf("WriteFile(README): %v", err)
+	}
+
+	mp := &testutil.MockProvider{
+		Responses: []message.CompletionResponse{
+			{
+				StopReason: "tool_use",
+				ToolCalls: []message.ToolCall{
+					{
+						ID:    "tc1",
+						Name:  "Read",
+						Input: `{"file_path":"README.md"}`,
+					},
+				},
+			},
+			{
+				Content:    "Read complete",
+				StopReason: "end_turn",
+			},
+		},
+	}
+
+	executor := agent.NewExecutor(mp, tmpDir, "fake-model", nil)
+	var progress []string
+	result, err := executor.Run(context.Background(), agent.AgentRequest{
+		Agent:  "Explore",
+		Prompt: "inspect the readme",
+		OnProgress: func(msg string) {
+			progress = append(progress, msg)
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.Error)
+	}
+	if len(progress) != 1 || progress[0] != "Read(README.md)" {
+		t.Fatalf("unexpected progress callback values: %#v", progress)
+	}
+	if len(result.Progress) != 1 || result.Progress[0] != "Read(README.md)" {
+		t.Fatalf("unexpected result progress values: %#v", result.Progress)
+	}
+}

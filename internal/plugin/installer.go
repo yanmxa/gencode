@@ -21,6 +21,9 @@ type Installer struct {
 
 // NewInstaller creates a new plugin installer.
 func NewInstaller(registry *Registry, cwd string) *Installer {
+	if registry != nil {
+		registry.cwd = cwd
+	}
 	return &Installer{
 		registry:           registry,
 		cwd:                cwd,

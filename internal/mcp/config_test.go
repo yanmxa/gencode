@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/yanmxa/gencode/internal/plugin"
 )
 
 func TestConfigLoader_SaveAndLoad(t *testing.T) {
@@ -243,5 +245,109 @@ func TestMCP_ResourceListing(t *testing.T) {
 	}
 	if cached[0].Name != "test.txt" {
 		t.Errorf("expected Name 'test.txt', got %q", cached[0].Name)
+	}
+}
+
+func TestConfigLoader_SaveServer_StripsMetadataFieldsFromDisk(t *testing.T) {
+	tmpDir := t.TempDir()
+	loader := NewConfigLoaderForTest(tmpDir)
+
+	err := loader.SaveServer("test-srv", ServerConfig{
+		Name:    "should-not-persist",
+		Scope:   ScopeProject,
+		Type:    TransportHTTP,
+		URL:     "https://example.com/mcp",
+		Headers: map[string]string{"Authorization": "Bearer token"},
+	}, ScopeProject)
+	if err != nil {
+		t.Fatalf("SaveServer() error = %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(loader.projectDir, "mcp.json"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	servers := raw["mcpServers"].(map[string]any)
+	saved := servers["test-srv"].(map[string]any)
+	if _, ok := saved["name"]; ok {
+		t.Fatal("server metadata field 'name' should not be persisted")
+	}
+	if _, ok := saved["scope"]; ok {
+		t.Fatal("server metadata field 'scope' should not be persisted")
+	}
+	if saved["url"] != "https://example.com/mcp" {
+		t.Fatalf("expected URL to persist, got %v", saved["url"])
+	}
+}
+
+func TestConfigLoader_RemoveServerFromAll_RemovesEveryScope(t *testing.T) {
+	tmpDir := t.TempDir()
+	loader := NewConfigLoaderForTest(tmpDir)
+
+	for _, scope := range []Scope{ScopeUser, ScopeProject, ScopeLocal} {
+		err := loader.SaveServer("shared", ServerConfig{
+			Type:    TransportSTDIO,
+			Command: "echo",
+		}, scope)
+		if err != nil {
+			t.Fatalf("SaveServer(%s) error = %v", scope, err)
+		}
+	}
+
+	if err := loader.RemoveServerFromAll("shared"); err != nil {
+		t.Fatalf("RemoveServerFromAll() error = %v", err)
+	}
+
+	for _, file := range []string{
+		filepath.Join(loader.userDir, "mcp.json"),
+		filepath.Join(loader.projectDir, "mcp.json"),
+		filepath.Join(loader.projectDir, "mcp.local.json"),
+	} {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("ReadFile(%s) error = %v", file, err)
+		}
+		var cfg MCPConfig
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			t.Fatalf("Unmarshal(%s) error = %v", file, err)
+		}
+		if _, ok := cfg.MCPServers["shared"]; ok {
+			t.Fatalf("expected shared to be removed from %s", file)
+		}
+	}
+}
+
+func TestNewRegistry_IncludesPluginServers(t *testing.T) {
+	prevRegistry := plugin.DefaultRegistry
+	plugin.DefaultRegistry = plugin.NewRegistry()
+	t.Cleanup(func() { plugin.DefaultRegistry = prevRegistry })
+
+	plugin.DefaultRegistry.Register(&plugin.Plugin{
+		Manifest: plugin.Manifest{Name: "demo"},
+		Enabled:  true,
+		Components: plugin.Components{
+			MCP: map[string]plugin.MCPServerConfig{
+				"db": {Command: "echo"},
+			},
+		},
+	})
+
+	reg, err := NewRegistry(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+
+	cfg, ok := reg.GetConfig("demo:db")
+	if !ok {
+		t.Fatal("expected plugin MCP server to be present in registry")
+	}
+	if cfg.Command != "echo" {
+		t.Fatalf("unexpected plugin MCP command: %q", cfg.Command)
 	}
 }

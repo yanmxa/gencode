@@ -79,8 +79,6 @@ func (t *BashTask) GetOutput() string {
 // Complete marks the task as completed
 func (t *BashTask) Complete(exitCode int, err error) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	t.EndTime = time.Now()
 	t.ExitCode = exitCode
 
@@ -92,6 +90,8 @@ func (t *BashTask) Complete(exitCode int, err error) {
 	} else {
 		t.Status = StatusCompleted
 	}
+	t.mu.Unlock()
+	notifyTaskCompleted(t.GetStatus())
 }
 
 // MarkKilled marks the task as killed (internal use)

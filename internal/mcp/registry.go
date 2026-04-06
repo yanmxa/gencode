@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -64,6 +66,7 @@ func NewRegistry(cwd string) (*Registry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load MCP configs: %w", err)
 	}
+	configs = mergePluginMCPConfigs(configs)
 
 	reg := &Registry{
 		clients:    make(map[string]*Client),
@@ -84,11 +87,41 @@ func (r *Registry) Reload() error {
 	if err != nil {
 		return err
 	}
+	configs = mergePluginMCPConfigs(configs)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.configs = configs
 	return nil
+}
+
+func mergePluginMCPConfigs(configs map[string]ServerConfig) map[string]ServerConfig {
+	merged := make(map[string]ServerConfig, len(configs))
+	maps.Copy(merged, configs)
+	for _, srv := range plugin.GetPluginMCPServers() {
+		merged[srv.Name] = ServerConfig{
+			Name:    srv.Name,
+			Type:    TransportType(srv.Config.Type),
+			Command: srv.Config.Command,
+			Args:    append([]string(nil), srv.Config.Args...),
+			Env:     maps.Clone(srv.Config.Env),
+			URL:     srv.Config.URL,
+			Headers: maps.Clone(srv.Config.Headers),
+			Scope:   pluginScopeToMCPScope(srv.Scope),
+		}
+	}
+	return merged
+}
+
+func pluginScopeToMCPScope(scope plugin.Scope) Scope {
+	switch scope {
+	case plugin.ScopeProject:
+		return ScopeProject
+	case plugin.ScopeLocal:
+		return ScopeLocal
+	default:
+		return ScopeUser
+	}
 }
 
 // AddServer adds a new server configuration

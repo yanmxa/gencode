@@ -4,7 +4,7 @@
 
 Plan mode restricts the LLM to read-only exploration. Write operations are blocked until the user explicitly approves exiting the mode.
 
-**Allowed tools in plan mode:** Read, Glob, Grep, WebFetch, WebSearch
+**Allowed tools in plan mode:** Read, Glob, Grep, WebFetch, WebSearch, AskUserQuestion, plan-mode `Agent`, ExitPlanMode
 
 **Blocked in plan mode:** Write, Edit, Bash (write-capable), Skills
 
@@ -71,6 +71,14 @@ func TestPlanMode_SkillsBlocked(t *testing.T) {
 func TestPlanMode_EntryViaSlashCommand(t *testing.T) {
     // /plan command must switch to plan mode
 }
+
+func TestPlanMode_AskUserQuestionAllowed(t *testing.T) {
+    // AskUserQuestion must remain available for requirement clarification in plan mode
+}
+
+func TestPlanMode_AgentRestrictedToReadOnlyTypes(t *testing.T) {
+    // Agent tool in plan mode must use the plan-mode schema without background execution
+}
 ```
 
 ## Interactive Tests (tmux)
@@ -96,8 +104,14 @@ sleep 5
 tmux capture-pane -t t_plan -p
 # Expected: hostname content shown
 
+# AskUserQuestion — must succeed
+tmux send-keys -t t_plan 'ask me whether to focus on backend or frontend first' Enter
+sleep 4
+tmux capture-pane -t t_plan -p
+# Expected: a question prompt appears even while plan mode is active
+
 # Enter via /plan command
-tmux send-keys -t t_plan 'q' Enter
+tmux send-keys -t t_plan C-c
 tmux send-keys -t t_plan 'gen' Enter
 sleep 2
 tmux send-keys -t t_plan '/plan' Enter

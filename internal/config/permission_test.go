@@ -569,6 +569,27 @@ func TestCheckPermissionWithReason(t *testing.T) {
 	}
 }
 
+func TestCheckPermissionWithReason_WorkingDirectoryConstraint(t *testing.T) {
+	settings := &Settings{}
+	session := &SessionPermissions{
+		AllowAllEdits:      true,
+		WorkingDirectories: []string{"/home/user/project"},
+		AllowedTools:       make(map[string]bool),
+		AllowedPatterns:    make(map[string]bool),
+	}
+
+	d := settings.HasPermissionToUseTool("Edit", map[string]any{
+		"file_path": "/etc/passwd",
+	}, session)
+
+	if d.Behavior != Ask {
+		t.Fatalf("behavior = %v, want %v", d.Behavior, Ask)
+	}
+	if d.Reason != "outside working directory" {
+		t.Fatalf("reason = %q, want %q", d.Reason, "outside working directory")
+	}
+}
+
 func TestDenialTracking(t *testing.T) {
 	d := &DenialTracking{}
 

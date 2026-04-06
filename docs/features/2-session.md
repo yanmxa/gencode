@@ -11,6 +11,7 @@ Sessions persist conversations to disk as JSONL files. Each session has metadata
 | Message types | User, Assistant, ToolUse, ToolResult, Notice, Thinking |
 | Resume | `-c` (latest), `-r <id>` (specific) |
 | Fork | Branch from any session without modifying the original |
+| Session memory | Compaction summary persisted and reloaded with the session |
 
 ## UI Interactions
 
@@ -53,12 +54,12 @@ func TestSession_MetadataUpdatesOnNewMessage(t *testing.T) {
     // UpdatedAt and message count must update when new messages are appended
 }
 
-func TestSession_LargeConversation_Performance(t *testing.T) {
-    // Save/load must handle 1000+ message sessions without excessive delay
+func TestSession_Location_ProjectOrUserPath(t *testing.T) {
+    // Sessions must be stored under the project-specific or user-level session directory
 }
 
-func TestSession_SpecialCharacters_RoundTrip(t *testing.T) {
-    // Messages with unicode, emoji, and control chars must survive save/load
+func TestSession_MessageTypes_PersistRoundTrip(t *testing.T) {
+    // User, Assistant, ToolUse, ToolResult, Notice, and Thinking entries must survive save/load
 }
 ```
 
@@ -76,7 +77,7 @@ tmux capture-pane -t t_sess -p
 # Expected: streaming assistant reply visible
 
 # Test 2: Exit and resume with -c
-tmux send-keys -t t_sess 'q' Enter
+tmux send-keys -t t_sess C-c
 sleep 1
 tmux send-keys -t t_sess 'gen -c' Enter
 sleep 2
@@ -90,14 +91,14 @@ tmux capture-pane -t t_sess -p
 # Expected: assistant mentions 42
 
 # Test 4: Fork session
-tmux send-keys -t t_sess 'q' Enter
+tmux send-keys -t t_sess C-c
 tmux send-keys -t t_sess 'gen -c --fork' Enter
 sleep 2
 tmux capture-pane -t t_sess -p
 # Expected: new session with original history; original session unchanged
 
 # Test 5: Session list picker
-tmux send-keys -t t_sess 'q' Enter
+tmux send-keys -t t_sess C-c
 tmux send-keys -t t_sess 'gen -r' Enter
 sleep 2
 tmux capture-pane -t t_sess -p
@@ -112,6 +113,30 @@ tmux capture-pane -t t_sess -p
 # Test 7: Status bar shows session info
 tmux capture-pane -t t_sess -p | tail -3
 # Expected: session ID and message count in status bar
+
+# Test 8: Raw JSONL remains valid after interactive usage
+SESSION_FILE=$(find ~/.gen -name '*.jsonl' | head -1)
+export SESSION_FILE
+python - <<'PY'
+import json, pathlib, os
+path = pathlib.Path(os.environ["SESSION_FILE"])
+for line in path.read_text().splitlines():
+    if line.strip():
+        json.loads(line)
+print("jsonl ok")
+PY
+# Expected: script prints "jsonl ok"
+
+# Test 9: Session memory is restored on resume after compact
+tmux send-keys -t t_sess '/compact remember the 42 example' Enter
+sleep 6
+tmux send-keys -t t_sess C-c
+tmux send-keys -t t_sess 'gen -c' Enter
+sleep 2
+tmux send-keys -t t_sess 'what did we compact?' Enter
+sleep 6
+tmux capture-pane -t t_sess -p
+# Expected: compacted session summary is still available after resume
 
 tmux kill-session -t t_sess
 ```

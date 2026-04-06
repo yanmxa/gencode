@@ -100,7 +100,7 @@ func TestSkill_EnabledState_AvailableAsCommand(t *testing.T) {
 ```bash
 mkdir -p /tmp/skill_test/.gen/skills/greet
 
-cat > /tmp/skill_test/.gen/skills/greet/skill.md << 'EOF'
+cat > /tmp/skill_test/.gen/skills/greet/SKILL.md << 'EOF'
 ---
 name: greet
 description: Greet the user warmly
@@ -118,7 +118,7 @@ sleep 2
 tmux send-keys -t t_skills '/skills' Enter
 sleep 1
 tmux capture-pane -t t_skills -p
-# Expected: "greet" listed with state toggle
+# Expected: selector titled "Manage Skills" with "greet" listed
 
 # Test 2: Invoke the skill
 tmux send-keys -t t_skills Escape
@@ -129,7 +129,7 @@ tmux capture-pane -t t_skills -p
 
 # Test 3: Namespaced skill invocation
 mkdir -p /tmp/skill_test/.gen/skills/git-review
-cat > /tmp/skill_test/.gen/skills/git-review/skill.md << 'EOF'
+cat > /tmp/skill_test/.gen/skills/git-review/SKILL.md << 'EOF'
 ---
 name: review
 namespace: git
@@ -156,7 +156,7 @@ tmux capture-pane -t t_skills -p
 
 # Test 5: Argument hint display
 mkdir -p /tmp/skill_test/.gen/skills/search
-cat > /tmp/skill_test/.gen/skills/search/skill.md << 'EOF'
+cat > /tmp/skill_test/.gen/skills/search/SKILL.md << 'EOF'
 ---
 name: search
 description: Search files

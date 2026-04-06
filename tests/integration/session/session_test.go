@@ -303,6 +303,49 @@ func TestSession_AppendBehavior(t *testing.T) {
 	}
 }
 
+func TestSession_MetadataUpdatesOnNewMessage(t *testing.T) {
+	store := newTestStore(t)
+
+	sess := &session.Session{
+		Metadata: session.SessionMetadata{
+			ID:    "metadata-update-test",
+			Title: "Metadata Update Test",
+		},
+		Entries: []session.Entry{
+			makeUserEntry("u1", "hello"),
+		},
+	}
+	if err := store.Save(sess); err != nil {
+		t.Fatalf("first Save() error: %v", err)
+	}
+
+	first, err := store.Load("metadata-update-test")
+	if err != nil {
+		t.Fatalf("first Load() error: %v", err)
+	}
+	if first.Metadata.MessageCount != 1 {
+		t.Fatalf("first message count = %d, want 1", first.Metadata.MessageCount)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+
+	sess.Entries = append(sess.Entries, makeAssistantEntry("a1", "hi there"))
+	if err := store.Save(sess); err != nil {
+		t.Fatalf("second Save() error: %v", err)
+	}
+
+	second, err := store.Load("metadata-update-test")
+	if err != nil {
+		t.Fatalf("second Load() error: %v", err)
+	}
+	if second.Metadata.MessageCount != 2 {
+		t.Errorf("second message count = %d, want 2", second.Metadata.MessageCount)
+	}
+	if !second.Metadata.UpdatedAt.After(first.Metadata.UpdatedAt) {
+		t.Errorf("UpdatedAt did not advance: first=%v second=%v", first.Metadata.UpdatedAt, second.Metadata.UpdatedAt)
+	}
+}
+
 func TestSession_EntryRoundtrip(t *testing.T) {
 	// Test that MessagesToEntries → EntriesToMessages roundtrips correctly.
 	msgs := []message.Message{
@@ -351,6 +394,87 @@ func TestSession_EntryRoundtrip(t *testing.T) {
 	// Tool name should be resolved from the tool_use block
 	if restored[2].ToolResult.ToolName != "Read" {
 		t.Errorf("msg[2].ToolResult.ToolName: want 'Read', got %q", restored[2].ToolResult.ToolName)
+	}
+}
+
+func TestSession_MessageTypes_PersistRoundTrip(t *testing.T) {
+	store := newTestStore(t)
+
+	toolInput := json.RawMessage(`{"file_path":"/tmp/test.txt"}`)
+	sess := &session.Session{
+		Metadata: session.SessionMetadata{
+			ID:       "message-types-roundtrip",
+			Title:    "Message Types Roundtrip",
+			Provider: "fake",
+			Model:    "fake-model",
+			Cwd:      "/tmp/project",
+		},
+		Entries: []session.Entry{
+			makeUserEntry("u1", "read this file"),
+			{
+				Type: session.EntryAssistant,
+				UUID: "a1",
+				Message: &session.EntryMessage{
+					Role: "assistant",
+					Content: []session.ContentBlock{
+						{Type: "thinking", Thinking: "need to inspect the file", Signature: "sig-1"},
+						{Type: "text", Text: "I'll inspect it."},
+						{Type: "tool_use", ID: "tc-1", Name: "Read", Input: toolInput},
+					},
+				},
+			},
+			{
+				Type: session.EntryUser,
+				UUID: "u2",
+				Message: &session.EntryMessage{
+					Role: "user",
+					Content: []session.ContentBlock{
+						{
+							Type:      "tool_result",
+							ToolUseID: "tc-1",
+							IsError:   false,
+							Content:   []session.ContentBlock{{Type: "text", Text: "file contents"}},
+						},
+					},
+				},
+			},
+			makeAssistantEntry("a2", "done"),
+		},
+	}
+
+	if err := store.Save(sess); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+
+	loaded, err := store.Load("message-types-roundtrip")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(loaded.Entries) != 4 {
+		t.Fatalf("expected 4 entries, got %d", len(loaded.Entries))
+	}
+
+	assistant := loaded.Entries[1]
+	if assistant.Message == nil || len(assistant.Message.Content) != 3 {
+		t.Fatalf("assistant content blocks = %v, want 3 blocks", assistant.Message)
+	}
+	if assistant.Message.Content[0].Type != "thinking" || assistant.Message.Content[0].Thinking != "need to inspect the file" {
+		t.Errorf("thinking block did not round-trip correctly: %+v", assistant.Message.Content[0])
+	}
+	if assistant.Message.Content[2].Type != "tool_use" || assistant.Message.Content[2].Name != "Read" {
+		t.Errorf("tool_use block did not round-trip correctly: %+v", assistant.Message.Content[2])
+	}
+
+	userResult := loaded.Entries[2]
+	if userResult.Message == nil || len(userResult.Message.Content) != 1 {
+		t.Fatalf("tool result entry = %+v, want one block", userResult.Message)
+	}
+	resultBlock := userResult.Message.Content[0]
+	if resultBlock.Type != "tool_result" || resultBlock.ToolUseID != "tc-1" {
+		t.Errorf("tool_result block did not round-trip correctly: %+v", resultBlock)
+	}
+	if len(resultBlock.Content) != 1 || resultBlock.Content[0].Text != "file contents" {
+		t.Errorf("tool_result nested content mismatch: %+v", resultBlock.Content)
 	}
 }
 

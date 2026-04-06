@@ -59,6 +59,9 @@ func (m *model) handleModelSelected(msg appprovider.ModelSelectedMsg) tea.Cmd {
 		Provider:   provider.Provider(msg.ProviderName),
 		AuthMethod: msg.AuthMethod,
 	}
+	if m.hookEngine != nil {
+		m.hookEngine.SetLLMProvider(m.provider.LLM, msg.ModelID)
+	}
 	ctx := context.Background()
 	m.refreshProviderConnection(ctx, provider.Provider(msg.ProviderName), msg.AuthMethod)
 
@@ -73,5 +76,8 @@ func (m *model) refreshProviderConnection(ctx context.Context, providerName prov
 		return
 	}
 	m.provider.LLM = p
+	if m.hookEngine != nil {
+		m.hookEngine.SetLLMProvider(p, m.getModelID())
+	}
 	m.reconfigureAgentTool()
 }

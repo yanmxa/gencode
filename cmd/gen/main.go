@@ -167,6 +167,7 @@ Session:
   gen -r <session-id>        Resume a specific session by ID
   gen -c --fork              Fork the most recent session into a new one
   gen -r --fork              Select a session and fork it
+  gen --plugin-dir <path>    Load plugins from a specific directory
 
 Commands:
   version      Print the version number

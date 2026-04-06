@@ -1,11 +1,13 @@
 package provider
 
 import (
+	"context"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider/search"
 	"github.com/yanmxa/gencode/internal/ui/shared"
 )
 
@@ -162,5 +164,155 @@ func TestSelectModelReturnsSelectionMessage(t *testing.T) {
 	}
 	if m.active {
 		t.Fatal("model selection should close selector")
+	}
+}
+
+func newTestStore(t *testing.T) *coreprovider.Store {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	store, err := coreprovider.NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	return store
+}
+
+func TestEnterModelSelect_UsesCachedModelsAndPutsCurrentFirst(t *testing.T) {
+	store := newTestStore(t)
+	if err := store.CacheModels(coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey, []coreprovider.ModelInfo{
+		{ID: "gpt-5-mini", DisplayName: "GPT-5 mini", InputTokenLimit: 128000, OutputTokenLimit: 16000},
+		{ID: "gpt-5", DisplayName: "GPT-5", InputTokenLimit: 256000, OutputTokenLimit: 32000},
+	}); err != nil {
+		t.Fatalf("CacheModels() error = %v", err)
+	}
+	if err := store.SetCurrentModel("gpt-5", coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey); err != nil {
+		t.Fatalf("SetCurrentModel() error = %v", err)
+	}
+
+	m := New()
+	if err := m.EnterModelSelect(context.Background(), 80, 24); err != nil {
+		t.Fatalf("EnterModelSelect() error = %v", err)
+	}
+
+	if !m.active || m.selectorType != SelectorTypeModel {
+		t.Fatalf("expected active model selector, got active=%v type=%v", m.active, m.selectorType)
+	}
+	if len(m.models) != 2 || len(m.filteredModels) != 2 {
+		t.Fatalf("expected 2 models, got models=%d filtered=%d", len(m.models), len(m.filteredModels))
+	}
+	if m.models[0].ID != "gpt-5" || !m.models[0].IsCurrent {
+		t.Fatalf("expected current model first, got %#v", m.models[0])
+	}
+	if m.models[0].InputTokenLimit != 256000 || m.models[0].OutputTokenLimit != 32000 {
+		t.Fatalf("expected token limits copied to model item, got %#v", m.models[0])
+	}
+}
+
+func TestUpdateFilterMatchesModelIDDisplayNameAndProvider(t *testing.T) {
+	m := New()
+	m.selectorType = SelectorTypeModel
+	m.models = []ModelItem{
+		{ID: "gpt-5", DisplayName: "GPT-5", ProviderName: "openai"},
+		{ID: "claude-sonnet", DisplayName: "Claude Sonnet", ProviderName: "anthropic"},
+	}
+
+	m.searchQuery = "g5"
+	m.updateFilter()
+	if len(m.filteredModels) != 1 || m.filteredModels[0].ID != "gpt-5" {
+		t.Fatalf("expected ID fuzzy match to find gpt-5, got %#v", m.filteredModels)
+	}
+
+	m.searchQuery = "clsn"
+	m.updateFilter()
+	if len(m.filteredModels) != 1 || m.filteredModels[0].ID != "claude-sonnet" {
+		t.Fatalf("expected display-name fuzzy match to find claude-sonnet, got %#v", m.filteredModels)
+	}
+
+	m.searchQuery = "oa"
+	m.updateFilter()
+	if len(m.filteredModels) != 1 || m.filteredModels[0].ProviderName != "openai" {
+		t.Fatalf("expected provider-name fuzzy match to find openai model, got %#v", m.filteredModels)
+	}
+}
+
+func TestLoadSearchProviders_DefaultsToExaAndPersistsSelection(t *testing.T) {
+	store := newTestStore(t)
+	m := New()
+	m.store = store
+
+	m.loadSearchProviders()
+	if len(m.searchProviders) != 3 {
+		t.Fatalf("expected 3 search providers, got %d", len(m.searchProviders))
+	}
+	if m.searchProviders[0].Name != search.ProviderExa || m.searchProviders[0].Status != "current" {
+		t.Fatalf("expected Exa current by default, got %#v", m.searchProviders[0])
+	}
+
+	t.Setenv("BRAVE_API_KEY", "test-key")
+	m.loadSearchProviders()
+	m.selectedIdx = 2 // Brave
+	cmd := m.selectSearchProvider()
+	if cmd == nil {
+		t.Fatal("expected selection command for available search provider")
+	}
+	msg := cmd()
+	selected, ok := msg.(SearchProviderSelectedMsg)
+	if !ok {
+		t.Fatalf("selection returned %T, want SearchProviderSelectedMsg", msg)
+	}
+	if selected.Provider != search.ProviderBrave {
+		t.Fatalf("selected provider = %q, want %q", selected.Provider, search.ProviderBrave)
+	}
+	if m.searchProviders[2].Status != "current" || m.searchProviders[0].Status != "available" {
+		t.Fatalf("expected status transition from exa->brave, got %#v", m.searchProviders)
+	}
+	if got := store.GetSearchProvider(); got != string(search.ProviderBrave) {
+		t.Fatalf("stored search provider = %q, want %q", got, search.ProviderBrave)
+	}
+	if m.lastConnectResult != "\u2713 Selected" || !m.lastConnectSuccess {
+		t.Fatalf("unexpected selection status: result=%q success=%v", m.lastConnectResult, m.lastConnectSuccess)
+	}
+}
+
+func TestSelectSearchProvider_ShowsMissingEnvForUnavailableProvider(t *testing.T) {
+	store := newTestStore(t)
+	t.Setenv("SERPER_API_KEY", "")
+
+	m := New()
+	m.store = store
+	m.loadSearchProviders()
+	m.selectedIdx = 1 // Serper
+
+	cmd := m.selectSearchProvider()
+	if cmd != nil {
+		t.Fatal("expected no command when provider is unavailable")
+	}
+	if m.lastConnectSuccess {
+		t.Fatal("expected missing-key selection to be marked unsuccessful")
+	}
+	if m.lastConnectResult != "Missing: SERPER_API_KEY" {
+		t.Fatalf("unexpected missing-key message: %q", m.lastConnectResult)
+	}
+	if got := store.GetSearchProvider(); got != "" {
+		t.Fatalf("expected store unchanged after failed selection, got %q", got)
+	}
+}
+
+func TestSetModelPersistsSelection(t *testing.T) {
+	store := newTestStore(t)
+	m := New()
+	m.store = store
+
+	result, err := m.SetModel("gpt-5", "openai", coreprovider.AuthAPIKey)
+	if err != nil {
+		t.Fatalf("SetModel() error = %v", err)
+	}
+	if result != "Model set to: gpt-5 (openai)" {
+		t.Fatalf("unexpected result: %q", result)
+	}
+
+	current := store.GetCurrentModel()
+	if current == nil || current.ModelID != "gpt-5" || current.Provider != coreprovider.ProviderOpenAI || current.AuthMethod != coreprovider.AuthAPIKey {
+		t.Fatalf("unexpected current model after SetModel: %#v", current)
 	}
 }

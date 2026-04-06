@@ -10,7 +10,8 @@ gencode injects project and user instructions from Markdown files into the LLM's
 |------|-------|
 | `~/.gen/GEN.md` | User-level instructions |
 | `./.gen/GEN.md` | Project-level instructions |
-| `./.gen/local/GEN.md` | Local instructions (git-ignored) |
+| `./.gen/GEN.local.md` | Local instructions (git-ignored) |
+| `./.gen/rules/*.md` | Project rule files loaded alongside memory |
 
 **Import syntax:** `@import other.md` — inline another file's content.
 
@@ -81,6 +82,10 @@ func TestMemory_ThreeScopeMerge(t *testing.T) {
 func TestMemory_EditorLink_OpensFile(t *testing.T) {
     // Edit link in /memory must open file path with $EDITOR
 }
+
+func TestMemory_LocalFilePath_Resolved(t *testing.T) {
+    // Local instructions must be loaded from .gen/GEN.local.md
+}
 ```
 
 ## Interactive Tests (tmux)
@@ -121,7 +126,7 @@ cat > /tmp/mem_test/.gen/GEN.md << 'EOF'
 
 - Always respond in exactly one sentence.
 EOF
-tmux send-keys -t t_mem 'q' Enter
+tmux send-keys -t t_mem C-c
 tmux send-keys -t t_mem 'cd /tmp/mem_test && gen' Enter
 sleep 2
 tmux send-keys -t t_mem '/memory' Enter
@@ -130,18 +135,27 @@ tmux capture-pane -t t_mem -p
 # Expected: both GEN.md and imported rules.md content visible
 
 # Test 4: Local GEN.md overrides project
-mkdir -p /tmp/mem_test/.gen/local
-cat > /tmp/mem_test/.gen/local/GEN.md << 'EOF'
+cat > /tmp/mem_test/.gen/GEN.local.md << 'EOF'
 # Local Override
 - Always start your response with "LOCAL:"
 EOF
-tmux send-keys -t t_mem 'q' Enter
+tmux send-keys -t t_mem C-c
 tmux send-keys -t t_mem 'cd /tmp/mem_test && gen' Enter
 sleep 2
 tmux send-keys -t t_mem 'hello' Enter
 sleep 6
 tmux capture-pane -t t_mem -p
 # Expected: response starts with "LOCAL:" (local overrides project)
+
+# Test 5: Rules directory appears in /memory
+mkdir -p /tmp/mem_test/.gen/rules
+cat > /tmp/mem_test/.gen/rules/style.md << 'EOF'
+- Prefer short paragraphs.
+EOF
+tmux send-keys -t t_mem '/memory' Enter
+sleep 2
+tmux capture-pane -t t_mem -p
+# Expected: rules/style.md is listed in the memory viewer
 
 tmux kill-session -t t_mem
 rm -rf /tmp/mem_test

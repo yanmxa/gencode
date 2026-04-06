@@ -24,9 +24,11 @@ type EnterWorktreeResponse struct {
 // for safe experimentation. The user must approve.
 type EnterWorktreeTool struct{}
 
-func (t *EnterWorktreeTool) Name() string        { return "EnterWorktree" }
-func (t *EnterWorktreeTool) Description() string { return "Switch into a git worktree for safe experimentation" }
-func (t *EnterWorktreeTool) Icon() string        { return "T" }
+func (t *EnterWorktreeTool) Name() string { return "EnterWorktree" }
+func (t *EnterWorktreeTool) Description() string {
+	return "Switch into a git worktree for safe experimentation"
+}
+func (t *EnterWorktreeTool) Icon() string { return "T" }
 
 // RequiresInteraction returns true — needs user confirmation.
 func (t *EnterWorktreeTool) RequiresInteraction() bool { return true }
@@ -41,8 +43,8 @@ func (t *EnterWorktreeTool) ExecuteWithResponse(_ context.Context, params map[st
 	resp, ok := response.(*EnterWorktreeResponse)
 	if !ok || !resp.Approved {
 		return ui.ToolResult{
-			Success: true,
-			Output:  "User declined entering worktree. Continue working in the current directory.",
+			Success:  true,
+			Output:   "User declined entering worktree. Continue working in the current directory.",
 			Metadata: ui.ResultMetadata{Title: t.Name(), Icon: t.Icon()},
 		}
 	}
@@ -53,6 +55,10 @@ func (t *EnterWorktreeTool) ExecuteWithResponse(_ context.Context, params map[st
 			"All file operations now target this isolated copy.\n"+
 			"Use ExitWorktree when done to return to the original directory.",
 			resp.WorktreePath),
+		HookResponse: map[string]any{
+			"worktreePath": resp.WorktreePath,
+			"action":       "enter",
+		},
 		Metadata: ui.ResultMetadata{
 			Title:    t.Name(),
 			Icon:     t.Icon(),
@@ -72,6 +78,10 @@ func (t *EnterWorktreeTool) Execute(_ context.Context, params map[string]any, cw
 	return ui.ToolResult{
 		Success: true,
 		Output:  fmt.Sprintf("Created worktree at %s", result.Path),
+		HookResponse: map[string]any{
+			"worktreePath": result.Path,
+			"action":       "enter",
+		},
 		Metadata: ui.ResultMetadata{Title: t.Name(), Icon: t.Icon(), Subtitle: result.Path},
 	}
 }

@@ -101,6 +101,42 @@ func TestHandleInitCommand(t *testing.T) {
 			t.Errorf("Expected example.md to exist: %s", examplePath)
 		}
 	})
+
+	t.Run("init --claude creates claude memory file", func(t *testing.T) {
+		tmpDir2, _ := os.MkdirTemp("", "gencode-init-claude-test")
+		defer os.RemoveAll(tmpDir2)
+
+		result, err := HandleInitCommand(tmpDir2, "--claude")
+		if err != nil {
+			t.Fatalf("HandleInitCommand --claude failed: %v", err)
+		}
+
+		expectedPath := filepath.Join(tmpDir2, ".claude", "CLAUDE.md")
+		if !strings.Contains(result, "Created") {
+			t.Errorf("Expected 'Created' in result, got: %s", result)
+		}
+		if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+			t.Errorf("Expected file to exist: %s", expectedPath)
+		}
+	})
+
+	t.Run("init rules --claude creates claude rules directory", func(t *testing.T) {
+		tmpDir2, _ := os.MkdirTemp("", "gencode-init-claude-rules-test")
+		defer os.RemoveAll(tmpDir2)
+
+		result, err := HandleInitCommand(tmpDir2, "rules --claude")
+		if err != nil {
+			t.Fatalf("HandleInitCommand rules --claude failed: %v", err)
+		}
+
+		expectedDir := filepath.Join(tmpDir2, ".claude", "rules")
+		if !strings.Contains(result, "Created") {
+			t.Errorf("Expected 'Created' in result, got: %s", result)
+		}
+		if info, err := os.Stat(expectedDir); os.IsNotExist(err) || !info.IsDir() {
+			t.Errorf("Expected claude rules dir to exist: %s", expectedDir)
+		}
+	})
 }
 
 func TestHandleMemoryList(t *testing.T) {

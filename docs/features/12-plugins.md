@@ -122,10 +122,10 @@ func TestPlugin_LSPLoading(t *testing.T) {
 ## Interactive Tests (tmux)
 
 ```bash
+mkdir -p /tmp/my-plugin/.gen-plugin
 mkdir -p /tmp/my-plugin/skills/hello
-mkdir -p /tmp/my-plugin/agents
 
-cat > /tmp/my-plugin/plugin.json << 'EOF'
+cat > /tmp/my-plugin/.gen-plugin/plugin.json << 'EOF'
 {
   "name": "my-plugin",
   "version": "1.0.0",
@@ -133,7 +133,7 @@ cat > /tmp/my-plugin/plugin.json << 'EOF'
 }
 EOF
 
-cat > /tmp/my-plugin/skills/hello/skill.md << 'EOF'
+cat > /tmp/my-plugin/skills/hello/SKILL.md << 'EOF'
 ---
 name: hello
 description: Greet from plugin
@@ -148,22 +148,27 @@ tmux new-session -d -s t_plugin -x 220 -y 60
 tmux send-keys -t t_plugin 'gen plugin validate /tmp/my-plugin' Enter
 sleep 2
 tmux capture-pane -t t_plugin -p
-# Expected: validation passes with no errors
+# Expected: "Plugin validation passed!"
 
-# Test 2: Load via --plugin-dir and invoke skill
+# Test 2: Load via --plugin-dir
 tmux send-keys -t t_plugin 'gen --plugin-dir /tmp/my-plugin' Enter
 sleep 2
+tmux capture-pane -t t_plugin -p
+# Expected: Gen TUI header appears; plugin is loaded into the session
+
+# Optional if a provider is configured: invoke the plugin skill
+# Optional if a provider is configured:
 tmux send-keys -t t_plugin '/hello' Enter
 sleep 5
 tmux capture-pane -t t_plugin -p
 # Expected: "Hello from my-plugin!"
 
 # Test 3: List plugins
-tmux send-keys -t t_plugin 'q' Enter
-tmux send-keys -t t_plugin 'gen plugin list' Enter
+tmux send-keys -t t_plugin C-c
+tmux send-keys -t t_plugin 'gen --plugin-dir /tmp/my-plugin plugin list' Enter
 sleep 2
 tmux capture-pane -t t_plugin -p
-# Expected: "my-plugin" listed with version 1.0.0
+# Expected: "my-plugin" listed with description "Test plugin"
 
 # Test 4: /plugin command in TUI
 tmux send-keys -t t_plugin 'gen --plugin-dir /tmp/my-plugin' Enter
@@ -171,7 +176,7 @@ sleep 2
 tmux send-keys -t t_plugin '/plugin' Enter
 sleep 2
 tmux capture-pane -t t_plugin -p
-# Expected: plugin management UI with "my-plugin" listed
+# Expected: plugin management UI with "Plugin Manager" and "my-plugin" listed
 
 # Test 5: Plugin skill appears in /skills
 tmux send-keys -t t_plugin Escape
@@ -181,11 +186,11 @@ tmux capture-pane -t t_plugin -p
 # Expected: "hello" skill listed (from plugin)
 
 # Test 6: Plugin info
-tmux send-keys -t t_plugin 'q' Enter
-tmux send-keys -t t_plugin 'gen plugin info my-plugin' Enter
+tmux send-keys -t t_plugin C-c
+tmux send-keys -t t_plugin 'gen --plugin-dir /tmp/my-plugin plugin info my-plugin' Enter
 sleep 2
 tmux capture-pane -t t_plugin -p
-# Expected: manifest details, components, and status shown
+# Expected: manifest details, components, and "Skills: 1" shown
 
 tmux kill-session -t t_plugin
 rm -rf /tmp/my-plugin

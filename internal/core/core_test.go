@@ -270,6 +270,18 @@ func TestShouldCompactPromptTooLong(t *testing.T) {
 	}
 }
 
+func TestIsPromptTooLong(t *testing.T) {
+	if !IsPromptTooLong(errors.New("prompt is too long for this model")) {
+		t.Fatal("expected natural language prompt-too-long error to match")
+	}
+	if !IsPromptTooLong(errors.New("provider returned prompt_too_long")) {
+		t.Fatal("expected provider prompt_too_long error to match")
+	}
+	if IsPromptTooLong(errors.New("rate limit exceeded")) {
+		t.Fatal("expected unrelated error not to match")
+	}
+}
+
 func TestDecisionConstants(t *testing.T) {
 	if permission.Permit != 0 {
 		t.Error("Permit should be 0")

@@ -27,10 +27,26 @@ func GetMatchValue(event EventType, input HookInput) string {
 		return input.Reason
 	case Notification:
 		return input.NotificationType
+	case Setup:
+		return input.Trigger
 	case SubagentStart, SubagentStop:
 		return input.AgentType
+	case TaskCreated, TaskCompleted:
+		return input.TaskSubject
+	case ConfigChange:
+		return input.Source
+	case InstructionsLoaded:
+		return input.FilePath
+	case CwdChanged:
+		return input.NewCwd
+	case FileChanged:
+		return input.FilePath
 	case PreCompact, PostCompact:
 		return input.Trigger
+	case WorktreeCreate:
+		return input.Name
+	case WorktreeRemove:
+		return input.WorktreePath
 	default:
 		return ""
 	}

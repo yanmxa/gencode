@@ -35,6 +35,7 @@ func (m *Manager) CreateBashTask(cmd *exec.Cmd, command, description string, ctx
 	task := NewBashTask(id, command, description, cmd, ctx, cancel)
 
 	m.tasks[id] = task
+	notifyTaskCreated(task.GetStatus())
 
 	return task
 }
@@ -50,6 +51,7 @@ func (m *Manager) RegisterTask(task BackgroundTask) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.tasks[task.GetID()] = task
+	notifyTaskCreated(task.GetStatus())
 }
 
 // generateID creates a short random ID

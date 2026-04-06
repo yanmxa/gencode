@@ -16,6 +16,8 @@ tools:
   - Read
   - Glob
   - Grep
+skills: []
+system-prompt: ""
 max-turns: 50
 mcp-servers: []
 ---
@@ -37,6 +39,8 @@ mcp-servers: []
 ```bash
 gen agent run --type AgentName --prompt "task"
 ```
+
+**Invocation options:** `model` override and `max-turns` override for headless runs; the in-TUI `Agent` tool also supports background execution
 
 ## UI Interactions
 
@@ -99,6 +103,7 @@ func TestAgent_DontAskMode_DeniesPrompts(t *testing.T) {
 func TestAgent_AutoMode_Autonomous(t *testing.T) {
     // Agent with auto mode must execute without prompts
 }
+
 ```
 
 ## Interactive Tests (tmux)
@@ -142,7 +147,7 @@ tmux capture-pane -t t_agent -p
 tmux send-keys -t t_agent '/agents' Enter
 sleep 1
 tmux capture-pane -t t_agent -p
-# Expected: "FileReader" listed with enable/disable toggle
+# Expected: agent selector titled "Manage Agents" with "FileReader" listed
 
 # Test 4: Background agent tracked in task panel
 tmux send-keys -t t_agent Escape

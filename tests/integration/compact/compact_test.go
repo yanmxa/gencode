@@ -114,6 +114,43 @@ func TestCompact_WithSessionMemory(t *testing.T) {
 	}
 }
 
+func TestCompact_WithoutOptionalSections_LeavesPromptPlain(t *testing.T) {
+	c, fake := newFakeClient(
+		message.CompletionResponse{Content: "Plain summary", StopReason: "end_turn"},
+	)
+
+	msgs := []message.Message{
+		message.UserMessage("inspect session state", nil),
+		message.AssistantMessage("checking now", "", nil),
+	}
+
+	_, _, err := core.Compact(context.Background(), c, msgs, "", "")
+	if err != nil {
+		t.Fatalf("Compact() error: %v", err)
+	}
+
+	if len(fake.Calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(fake.Calls))
+	}
+
+	sent := fake.Calls[0].Messages[0].Content
+	if strings.Contains(sent, "Previous session context:") {
+		t.Fatal("did not expect session memory header without prior summary")
+	}
+	if strings.Contains(sent, "Recent conversation:") {
+		t.Fatal("did not expect recent conversation header without prior summary")
+	}
+	if strings.Contains(sent, "**Important**: Focus the summary on:") {
+		t.Fatal("did not expect focus directive without focus override")
+	}
+	if !strings.Contains(sent, "User: inspect session state") {
+		t.Fatal("expected user conversation content in compact prompt")
+	}
+	if !strings.Contains(sent, "Assistant: checking now") {
+		t.Fatal("expected raw conversation content in compact prompt")
+	}
+}
+
 func TestNeedsCompaction(t *testing.T) {
 	tests := []struct {
 		name   string

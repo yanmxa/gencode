@@ -116,11 +116,19 @@ func TestEnterWorktree_CreatesWorktree(t *testing.T) {
 }
 
 func TestExitWorktree_RemovesWorktree(t *testing.T) {
-    // ExitWorktree keep=false must delete the worktree
+    // ExitWorktree action=remove must delete the worktree
 }
 
 func TestCronCreate_SchedulesJob(t *testing.T) {
     // CronCreate must persist job and return job_id
+}
+
+func TestTaskCreateAndStop_Lifecycle(t *testing.T) {
+    // TaskCreate, TaskOutput, and TaskStop must cover background-task lifecycle
+}
+
+func TestMCPResourceTools_ListAndRead(t *testing.T) {
+    // MCP resource tools must list and read resources from a connected server
 }
 
 func TestAskUserQuestion_ReturnsAnswer(t *testing.T) {
@@ -161,11 +169,11 @@ sleep 2
 tmux send-keys -t t_tools '/tools' Enter
 sleep 2
 tmux capture-pane -t t_tools -p
-# Expected: full tool list with enable/disable toggles
+# Expected: tool selector titled "Manage Tools" with the available tools listed
 
 # Test 5: Edit tool — modify existing file
 echo "old content" > /tmp/gentest_edit.txt
-tmux send-keys -t t_tools 'q' Enter
+tmux send-keys -t t_tools C-c
 tmux send-keys -t t_tools 'gen -p "edit /tmp/gentest_edit.txt: replace old with new"' Enter
 sleep 8
 cat /tmp/gentest_edit.txt
@@ -194,6 +202,28 @@ tmux send-keys -t t_tools 'run: rm -f /tmp/gentest.txt' Enter
 sleep 5
 tmux capture-pane -t t_tools -p
 # Expected: Bash tool blocked by deny rule
+
+# Test 9: Background task lifecycle
+tmux send-keys -t t_tools 'gen' Enter
+sleep 2
+tmux send-keys -t t_tools 'run sleep 5 and echo done in the background' Enter
+sleep 3
+tmux send-keys -t t_tools 'show task output' Enter
+sleep 3
+tmux capture-pane -t t_tools -p
+# Expected: TaskCreate and TaskOutput used for the background command
+
+# Test 10: AskUserQuestion interaction
+tmux send-keys -t t_tools 'ask me whether to use option A or B before continuing' Enter
+sleep 3
+tmux capture-pane -t t_tools -p
+# Expected: AskUserQuestion prompt appears in the TUI
+
+# Test 11: ToolSearch discovery
+tmux send-keys -t t_tools 'find the right tool for listing scheduled jobs' Enter
+sleep 4
+tmux capture-pane -t t_tools -p
+# Expected: ToolSearch suggests CronList or related tools
 
 tmux kill-session -t t_tools
 rm -f /tmp/gentest.txt /tmp/gentest_edit.txt

@@ -72,8 +72,9 @@ func (s *Model) renderTabs() string {
 func (s *Model) renderTabList() string {
 	var sb strings.Builder
 
-	tabBar := s.renderTabs()
-	sb.WriteString(tabBar)
+	sb.WriteString(shared.SelectorTitleStyle.Render("Plugin Manager"))
+	sb.WriteString("\n")
+	sb.WriteString(shared.SelectorBreadcrumbStyle.Render(s.renderTabs()))
 	sb.WriteString("\n\n")
 
 	s.renderSearchBox(&sb)
@@ -318,6 +319,11 @@ func (s *Model) renderInstalledDetail() string {
 	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
 	brightStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
 
+	sb.WriteString(shared.SelectorTitleStyle.Render("Plugin Details"))
+	sb.WriteString("\n")
+	sb.WriteString(shared.SelectorBreadcrumbStyle.Render(p.FullName))
+	sb.WriteString("\n\n")
+
 	sb.WriteString(brightStyle.Render(p.FullName))
 	sb.WriteString("\n\n")
 
@@ -388,6 +394,11 @@ func (s *Model) renderDiscoverDetail() string {
 	brightStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
 	warnStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Warning)
 
+	sb.WriteString(shared.SelectorTitleStyle.Render("Install Plugin"))
+	sb.WriteString("\n")
+	sb.WriteString(shared.SelectorBreadcrumbStyle.Render(p.Name + "@" + p.Marketplace))
+	sb.WriteString("\n\n")
+
 	sb.WriteString(brightStyle.Render(p.Name))
 	sb.WriteString("\n")
 	sb.WriteString(dimStyle.Render("from " + p.Marketplace))
@@ -424,6 +435,11 @@ func (s *Model) renderMarketplaceDetail() string {
 	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
 	brightStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
 
+	sb.WriteString(shared.SelectorTitleStyle.Render("Marketplace Details"))
+	sb.WriteString("\n")
+	sb.WriteString(shared.SelectorBreadcrumbStyle.Render(m.ID))
+	sb.WriteString("\n\n")
+
 	sb.WriteString(brightStyle.Render(m.ID))
 	sb.WriteString("\n")
 	sb.WriteString(dimStyle.Render(m.Source))
@@ -456,7 +472,7 @@ func (s *Model) renderAddMarketplaceDialog() string {
 	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
 	brightStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
 
-	sb.WriteString(brightStyle.Render("Add Marketplace"))
+	sb.WriteString(shared.SelectorTitleStyle.Render("Add Marketplace"))
 	sb.WriteString("\n\n")
 
 	sb.WriteString(dimStyle.Render("Enter marketplace source:"))
@@ -485,6 +501,11 @@ func (s *Model) renderBrowsePlugins() string {
 	var sb strings.Builder
 	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
 	brightStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
+
+	sb.WriteString(shared.SelectorTitleStyle.Render("Browse Marketplace"))
+	sb.WriteString("\n")
+	sb.WriteString(shared.SelectorBreadcrumbStyle.Render(s.browseMarketplaceID))
+	sb.WriteString("\n\n")
 
 	sb.WriteString(brightStyle.Render(s.browseMarketplaceID))
 	sb.WriteString("\n")
@@ -529,11 +550,12 @@ func (s *Model) renderBrowsePlugins() string {
 func (s *Model) renderActions(sb *strings.Builder) {
 	sb.WriteString("\n")
 	for i, action := range s.actions {
-		cursor := "  "
 		if i == s.actionIdx {
-			cursor = "> "
+			sb.WriteString(shared.SelectorSelectedStyle.Render("› " + action.Label))
+		} else {
+			sb.WriteString(shared.SelectorItemStyle.Render("  " + action.Label))
 		}
-		sb.WriteString(cursor + action.Label + "\n")
+		sb.WriteString("\n")
 	}
 }
 
@@ -562,10 +584,8 @@ func (s *Model) renderHints(hint string) string {
 }
 
 func (s *Model) renderBox(content string) string {
-	style := lipgloss.NewStyle().
-		Padding(1, 2).
-		Width(s.width - 4)
-	return style.Render(content)
+	box := shared.SelectorBorderStyle.Width(shared.CalculateBoxWidth(s.width)).Render(content)
+	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)
 }
 
 func pluginStatusIconAndStyle(enabled bool) (string, lipgloss.Style) {

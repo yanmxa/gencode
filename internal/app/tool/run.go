@@ -75,7 +75,8 @@ func newResultFromOutput(tc message.ToolCall, index int, output ui.ToolResult) E
 
 // ExecuteParallel dispatches tool calls in parallel when possible, sequentially otherwise.
 // hookAllowed contains tool call IDs that were pre-approved by hooks (may be nil).
-func ExecuteParallel(ctx context.Context, hub *progress.Hub, toolCalls []message.ToolCall, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool) tea.Cmd {
+// hookForceAsk contains tool call IDs forced to prompt by PreToolUse "ask" decision (may be nil).
+func ExecuteParallel(ctx context.Context, hub *progress.Hub, toolCalls []message.ToolCall, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool, hookForceAsk map[string]bool) tea.Cmd {
 	if len(toolCalls) == 0 {
 		return func() tea.Msg {
 			return ExecDoneMsg{}
@@ -83,14 +84,14 @@ func ExecuteParallel(ctx context.Context, hub *progress.Hub, toolCalls []message
 	}
 
 	if len(toolCalls) == 1 {
-		if !RequiresUserInteraction(toolCalls[0], settings, sessionPerms, planMode, hookAllowed) {
+		if !RequiresUserInteraction(toolCalls[0], settings, sessionPerms, planMode, hookAllowed, hookForceAsk) {
 			return executeToolAsync(ctx, hub, toolCalls[0], 0, cwd, settings, sessionPerms)
 		}
 		return ProcessNext(ctx, hub, toolCalls, 0, cwd, settings, sessionPerms)
 	}
 
 	for _, tc := range toolCalls {
-		if RequiresUserInteraction(tc, settings, sessionPerms, planMode, hookAllowed) {
+		if RequiresUserInteraction(tc, settings, sessionPerms, planMode, hookAllowed, hookForceAsk) {
 			return ProcessNext(ctx, hub, toolCalls, 0, cwd, settings, sessionPerms)
 		}
 	}
@@ -298,7 +299,13 @@ func ExecuteInteractive[T any](ctx context.Context, tc message.ToolCall, respons
 
 // RequiresUserInteraction checks if a tool call needs user approval.
 // hookAllowed contains tool call IDs that were pre-approved by hooks (may be nil).
-func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool) bool {
+// hookForceAsk contains tool call IDs forced to prompt by PreToolUse "ask" decision (may be nil).
+func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool, hookForceAsk map[string]bool) bool {
+	// Hook "ask" decision forces user interaction regardless of other settings
+	if hookForceAsk[tc.ID] {
+		return true
+	}
+
 	if planMode && tc.Name == coretool.ToolAgent {
 		return false
 	}

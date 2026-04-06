@@ -100,7 +100,41 @@ func (m *model) applyToolResultSideEffects(msg apptool.ExecResultMsg) {
 	if isTaskTool(msg.ToolName) {
 		m.conv.TurnsSinceLastTaskTool = 0
 	}
+	m.applyEnvironmentSideEffects(msg)
 	m.firePostToolUseHook(msg)
+}
+
+func (m *model) applyEnvironmentSideEffects(msg apptool.ExecResultMsg) {
+	if msg.Result.IsError {
+		return
+	}
+
+	resp, ok := msg.Result.HookResponse.(map[string]any)
+	if !ok {
+		return
+	}
+
+	switch msg.ToolName {
+	case tool.ToolEnterWorktree:
+		if worktreePath := getHookResponseString(resp, "worktreePath"); worktreePath != "" {
+			m.changeCwd(worktreePath)
+		}
+	case tool.ToolExitWorktree:
+		if restoredPath := getHookResponseString(resp, "restoredPath"); restoredPath != "" {
+			m.changeCwd(restoredPath)
+		}
+	case "Write", "Edit":
+		if filePath := getHookResponseString(resp, "filePath"); filePath != "" {
+			m.fireFileChanged(filePath, msg.ToolName)
+		}
+	}
+}
+
+func getHookResponseString(resp map[string]any, key string) string {
+	if value, ok := resp[key].(string); ok {
+		return value
+	}
+	return ""
 }
 
 func (m *model) appendToolResultMessage(toolName string, result *message.ToolResult) {
@@ -136,13 +170,13 @@ func (m *model) handleStartToolExecution(toolCalls []message.ToolCall) tea.Cmd {
 		m.tool.ParallelCount = 0
 	}
 
-	return apptool.ExecuteParallel(execCtx, m.output.ProgressHub, m.tool.PendingCalls, m.cwd, m.settings, m.mode.SessionPermissions, m.mode.Enabled, m.tool.HookAllowed)
+	return apptool.ExecuteParallel(execCtx, m.output.ProgressHub, m.tool.PendingCalls, m.cwd, m.settings, m.mode.SessionPermissions, m.mode.Enabled, m.tool.HookAllowed, m.tool.HookForceAsk)
 }
 
 // canRunToolsInParallel checks if all tools can run without user interaction
 func (m *model) canRunToolsInParallel(toolCalls []message.ToolCall) bool {
 	for _, tc := range toolCalls {
-		if apptool.RequiresUserInteraction(tc, m.settings, m.mode.SessionPermissions, m.mode.Enabled, m.tool.HookAllowed) {
+		if apptool.RequiresUserInteraction(tc, m.settings, m.mode.SessionPermissions, m.mode.Enabled, m.tool.HookAllowed, m.tool.HookForceAsk) {
 			return false
 		}
 	}
@@ -156,19 +190,20 @@ func (m *model) handleAllToolsCompleted() tea.Cmd {
 
 // filterToolCallsWithHooks runs PreToolUse hooks and filters blocked tools.
 func (m *model) filterToolCallsWithHooks(ctx context.Context, toolCalls []message.ToolCall) []message.ToolCall {
-	allowed, blocked, hookAllowed, hookContext := m.loop.FilterToolCalls(ctx, toolCalls)
-	m.tool.HookAllowed = hookAllowed
+	result := m.loop.FilterToolCallsEx(ctx, toolCalls)
+	m.tool.HookAllowed = result.HookAllowed
+	m.tool.HookForceAsk = result.HookForceAsk
 
 	// Inject additional context from hooks into conversation
-	if hookContext != "" {
+	if result.AdditionalContext != "" {
 		m.conv.Append(message.ChatMessage{
 			Role:    message.RoleUser,
-			Content: hookContext,
+			Content: result.AdditionalContext,
 		})
 	}
 
 	// Add blocked results as chat messages
-	for _, br := range blocked {
+	for _, br := range result.Blocked {
 		m.conv.Append(message.ChatMessage{
 			Role:     message.RoleUser,
 			ToolName: br.ToolName,
@@ -180,7 +215,7 @@ func (m *model) filterToolCallsWithHooks(ctx context.Context, toolCalls []messag
 		})
 	}
 
-	return allowed
+	return result.Allowed
 }
 
 // firePostToolUseHook fires the PostToolUse or PostToolUseFailure hook for a tool result.

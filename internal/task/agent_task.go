@@ -147,6 +147,7 @@ func (t *AgentTask) Complete(err error) {
 		t.closeSubscribers()
 		t.mu.Unlock()
 	}
+	notifyTaskCompleted(t.GetStatus())
 }
 
 // MarkKilled marks the task as killed (internal use)

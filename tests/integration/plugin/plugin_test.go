@@ -123,6 +123,59 @@ func TestRegistryWithPlugin(t *testing.T) {
 	}
 }
 
+func TestRegistryLoad_AppliesEnabledStateFromSettings(t *testing.T) {
+	tmpHome := t.TempDir()
+	tmpCwd := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	pluginDir := filepath.Join(tmpHome, ".gen", "plugins", "test-plugin")
+	manifestDir := filepath.Join(pluginDir, ".gen-plugin")
+	if err := os.MkdirAll(manifestDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(plugin manifest): %v", err)
+	}
+	manifest := map[string]any{
+		"name":    "test-plugin",
+		"version": "1.0.0",
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("Marshal(manifest): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(manifestDir, "plugin.json"), data, 0o644); err != nil {
+		t.Fatalf("WriteFile(manifest): %v", err)
+	}
+
+	settingsPath := filepath.Join(tmpHome, ".gen", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(settings): %v", err)
+	}
+	settings := map[string]any{
+		"enabledPlugins": map[string]bool{
+			"test-plugin": false,
+		},
+	}
+	settingsData, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatalf("Marshal(settings): %v", err)
+	}
+	if err := os.WriteFile(settingsPath, settingsData, 0o644); err != nil {
+		t.Fatalf("WriteFile(settings): %v", err)
+	}
+
+	registry := plugin.NewRegistry()
+	if err := registry.Load(context.Background(), tmpCwd); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	p, ok := registry.Get("test-plugin")
+	if !ok {
+		t.Fatal("expected plugin loaded from user plugin dir")
+	}
+	if p.Enabled {
+		t.Fatal("expected settings.json to disable the plugin")
+	}
+}
+
 func TestClaudeCodeCompatibility(t *testing.T) {
 	if testPluginDir == "" {
 		t.Skip("Test plugin directory not found")

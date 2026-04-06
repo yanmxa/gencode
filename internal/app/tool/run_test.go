@@ -33,7 +33,7 @@ func TestExecuteParallelPropagatesContextCancellation(t *testing.T) {
 		ID:    "tc1",
 		Name:  "AppToolCancellationTestTool",
 		Input: `{}`,
-	}}, "", nil, nil, false, nil)
+	}}, "", nil, nil, false, nil, nil)
 
 	msg := cmd()
 	result, ok := msg.(ExecResultMsg)

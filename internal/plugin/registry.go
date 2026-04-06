@@ -40,8 +40,11 @@ func (r *Registry) Load(ctx context.Context, cwd string) error {
 		enabledPlugins = make(map[string]bool)
 	}
 
-	// Load plugins from each scope
-	for scope, dirs := range GetPluginDirs(cwd) {
+	// Load plugins from each scope in deterministic precedence order.
+	// Later scopes override earlier ones when the same plugin key exists.
+	dirsByScope := GetPluginDirs(cwd)
+	for _, scope := range []Scope{ScopeUser, ScopeProject, ScopeLocal} {
+		dirs := dirsByScope[scope]
 		for _, dir := range dirs {
 			plugins, err := LoadPluginsFromDir(dir, scope, "")
 			if err != nil {
@@ -248,7 +251,22 @@ func (r *Registry) saveEnabledState(name string, enabled bool, scope Scope) erro
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(settingsPath, data, 0o644)
+	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
+		return err
+	}
+	notifyConfigChanged(scopeConfigSource(scope), settingsPath)
+	return nil
+}
+
+func scopeConfigSource(scope Scope) string {
+	switch scope {
+	case ScopeProject:
+		return "project_settings"
+	case ScopeLocal:
+		return "local_settings"
+	default:
+		return "user_settings"
+	}
 }
 
 // Register adds a plugin to the registry.

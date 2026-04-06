@@ -125,11 +125,15 @@ func (m model) renderWelcome() string {
 }
 
 func (m model) renderModeStatus() string {
+	modelName := m.provider.StatusMessage
+	if m.hookStatus != "" {
+		modelName = m.hookStatus
+	}
 	return render.RenderModeStatus(render.OperationModeParams{
 		Mode:          int(m.mode.Operation),
 		InputTokens:   m.provider.InputTokens,
 		InputLimit:    m.getEffectiveInputLimit(),
-		ModelName:     m.provider.StatusMessage,
+		ModelName:     modelName,
 		Width:         m.width,
 		ThinkingLevel: m.effectiveThinkingLevel(),
 	})

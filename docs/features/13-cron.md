@@ -12,6 +12,8 @@ The cron system lets the LLM schedule recurring or one-time prompts using standa
 
 **Auto-expiry:** recurring jobs expire after 7 days of inactivity.
 
+**Idle behavior:** scheduled prompts fire only while the REPL is idle.
+
 **Tool interface:**
 
 | Tool | Parameters |
@@ -70,6 +72,10 @@ func TestCron_PromptInjection_Fires(t *testing.T) {
 func TestCron_NextFireTime_InListResult(t *testing.T) {
     // CronList must show next-fire time for each job
 }
+
+func TestCron_IdleOnly_FiresWhenNoActiveStream(t *testing.T) {
+    // Cron jobs must wait until the session is idle before injecting prompts
+}
 ```
 
 ## Interactive Tests (tmux)
@@ -121,6 +127,10 @@ tmux send-keys -t t_cron 'schedule a job with cron expression "invalid bad" that
 sleep 5
 tmux capture-pane -t t_cron -p
 # Expected: error message about invalid cron expression
+
+# Test 7: Persistence file written
+ls /tmp/.gen/scheduled_tasks.json .gen/scheduled_tasks.json 2>/dev/null
+# Expected: scheduled_tasks.json exists in the project state directory
 
 tmux kill-session -t t_cron
 ```

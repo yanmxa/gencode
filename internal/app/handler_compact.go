@@ -64,13 +64,14 @@ func setTokenLimits(m *model, modelID, args string) (string, tea.Cmd, error) {
 }
 
 func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
+	if m.provider.Store != nil {
+		if customInput, customOutput, ok := m.provider.Store.GetTokenLimit(modelID); ok {
+			return appcompact.FormatTokenLimitDisplay(modelID, customInput, customOutput, true, m.provider.InputTokens), nil, nil
+		}
+	}
+
 	inputLimit, outputLimit := appcompact.GetModelTokenLimits(m.provider.Store, m.provider.CurrentModel)
 	if inputLimit > 0 || outputLimit > 0 {
-		if m.provider.Store != nil {
-			if customInput, customOutput, ok := m.provider.Store.GetTokenLimit(modelID); ok {
-				return appcompact.FormatTokenLimitDisplay(modelID, customInput, customOutput, true, m.provider.InputTokens), nil, nil
-			}
-		}
 		return appcompact.FormatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m.provider.InputTokens), nil, nil
 	}
 
@@ -81,6 +82,9 @@ func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
 func handleCompactCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
 	if m.provider.LLM == nil {
 		return "No provider connected. Use /provider to connect.", nil, nil
+	}
+	if m.loop.Client == nil {
+		return "No active LLM session. Send a message first to initialize the client.", nil, nil
 	}
 	if !core.CanCompactMessages(len(m.conv.Messages)) {
 		return "Not enough conversation history to compact.", nil, nil

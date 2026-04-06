@@ -4,6 +4,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -169,9 +170,59 @@ func initializeRegistries(cwd string) *mcp.Registry {
 func loadSettings() *config.Settings {
 	settings, _ := config.Load()
 	if settings == nil {
+		settings = config.Default()
+	}
+	cloned := cloneSettings(settings)
+	plugin.MergePluginHooksIntoSettings(cloned)
+	return cloned
+}
+
+func cloneSettings(src *config.Settings) *config.Settings {
+	if src == nil {
 		return config.Default()
 	}
-	return settings
+	dst := config.NewSettings()
+	dst.Permissions.Allow = append([]string(nil), src.Permissions.Allow...)
+	dst.Permissions.Deny = append([]string(nil), src.Permissions.Deny...)
+	dst.Permissions.Ask = append([]string(nil), src.Permissions.Ask...)
+	dst.Model = src.Model
+	dst.Theme = src.Theme
+	for k, v := range src.Env {
+		dst.Env[k] = v
+	}
+	for k, v := range src.EnabledPlugins {
+		dst.EnabledPlugins[k] = v
+	}
+	for k, v := range src.DisabledTools {
+		dst.DisabledTools[k] = v
+	}
+	for event, hooks := range src.Hooks {
+		clonedHooks := make([]config.Hook, len(hooks))
+		for i, hook := range hooks {
+			clonedHooks[i].Matcher = hook.Matcher
+			clonedHooks[i].Hooks = make([]config.HookCmd, len(hook.Hooks))
+			for j, cmd := range hook.Hooks {
+				clonedHooks[i].Hooks[j] = config.HookCmd{
+					Type:           cmd.Type,
+					Command:        cmd.Command,
+					Prompt:         cmd.Prompt,
+					URL:            cmd.URL,
+					If:             cmd.If,
+					Shell:          cmd.Shell,
+					Model:          cmd.Model,
+					Async:          cmd.Async,
+					AsyncRewake:    cmd.AsyncRewake,
+					Timeout:        cmd.Timeout,
+					StatusMessage:  cmd.StatusMessage,
+					Once:           cmd.Once,
+					Headers:        maps.Clone(cmd.Headers),
+					AllowedEnvVars: append([]string(nil), cmd.AllowedEnvVars...),
+				}
+			}
+		}
+		dst.Hooks[event] = clonedHooks
+	}
+	return dst
 }
 
 // printExitMessage prints resume command after the TUI exits.

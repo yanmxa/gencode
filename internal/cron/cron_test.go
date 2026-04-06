@@ -1,6 +1,8 @@
 package cron
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 	"time"
 )
@@ -224,5 +226,67 @@ func TestStoreDurable(t *testing.T) {
 	}
 	if !jobs[0].Durable {
 		t.Error("loaded job should be durable")
+	}
+}
+
+func TestStoreTick_RecurringJobReschedulesAndTracksFireCount(t *testing.T) {
+	store := NewStore()
+	job, err := store.Create("* * * * *", "repeat me", true, false)
+	if err != nil {
+		t.Fatalf("Create recurring job failed: %v", err)
+	}
+
+	store.mu.Lock()
+	store.jobs[job.ID].NextFire = time.Now().Add(-time.Minute)
+	store.mu.Unlock()
+
+	fired := store.Tick()
+	if len(fired) != 1 {
+		t.Fatalf("expected 1 fired job, got %d", len(fired))
+	}
+
+	jobs := store.List()
+	if len(jobs) != 1 {
+		t.Fatalf("expected recurring job to remain scheduled, got %d jobs", len(jobs))
+	}
+	if jobs[0].FiredCount != 1 {
+		t.Fatalf("expected FiredCount=1, got %d", jobs[0].FiredCount)
+	}
+	if jobs[0].LastFired.IsZero() {
+		t.Fatal("expected LastFired to be set")
+	}
+	if !jobs[0].NextFire.After(time.Now()) {
+		t.Fatalf("expected NextFire to move forward, got %v", jobs[0].NextFire)
+	}
+	if !jobs[0].NextFire.After(jobs[0].LastFired) {
+		t.Fatalf("expected NextFire to be after LastFired, last=%v next=%v", jobs[0].LastFired, jobs[0].NextFire)
+	}
+}
+
+func TestStoreDelete_DurableRemovesPersistedJob(t *testing.T) {
+	tmpFile := t.TempDir() + "/scheduled_tasks.json"
+
+	store := NewStore()
+	store.SetStoragePath(tmpFile)
+	job, err := store.Create("*/10 * * * *", "durable prompt", true, true)
+	if err != nil {
+		t.Fatalf("Create durable failed: %v", err)
+	}
+
+	if err := store.Delete(job.ID); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("ReadFile(durable store): %v", err)
+	}
+
+	var jobs []*Job
+	if err := json.Unmarshal(data, &jobs); err != nil {
+		t.Fatalf("Unmarshal(durable store): %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("expected durable store file to be empty after delete, got %d jobs", len(jobs))
 	}
 }

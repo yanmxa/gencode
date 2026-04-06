@@ -84,7 +84,7 @@ func TestHelpCommand(t *testing.T) {
 	}
 
 	output := string(out)
-	for _, expected := range []string{"-p", "--continue", "--resume", "version"} {
+	for _, expected := range []string{"-p", "--continue", "--resume", "gen -r <session-id>", "--plugin-dir", "version"} {
 		if !strings.Contains(output, expected) {
 			t.Errorf("help output missing %q\nfull output:\n%s", expected, output)
 		}

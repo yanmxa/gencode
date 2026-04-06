@@ -289,11 +289,23 @@ func parseHooksMap(m map[string]any, pluginPath string) *HooksConfig {
 					if p, ok := hookMap["prompt"].(string); ok {
 						cmd.Prompt = p
 					}
+					if u, ok := hookMap["url"].(string); ok {
+						cmd.URL = u
+					}
+					if cond, ok := hookMap["if"].(string); ok {
+						cmd.If = cond
+					}
+					if sh, ok := hookMap["shell"].(string); ok {
+						cmd.Shell = sh
+					}
 					if m, ok := hookMap["model"].(string); ok {
 						cmd.Model = m
 					}
 					if a, ok := hookMap["async"].(bool); ok {
 						cmd.Async = a
+					}
+					if a, ok := hookMap["asyncRewake"].(bool); ok {
+						cmd.AsyncRewake = a
 					}
 					if t, ok := hookMap["timeout"].(float64); ok {
 						cmd.Timeout = int(t)
@@ -303,6 +315,21 @@ func parseHooksMap(m map[string]any, pluginPath string) *HooksConfig {
 					}
 					if o, ok := hookMap["once"].(bool); ok {
 						cmd.Once = o
+					}
+					if headers, ok := hookMap["headers"].(map[string]any); ok {
+						cmd.Headers = make(map[string]string, len(headers))
+						for k, v := range headers {
+							if s, ok := v.(string); ok {
+								cmd.Headers[k] = s
+							}
+						}
+					}
+					if envs, ok := hookMap["allowedEnvVars"].([]any); ok {
+						for _, env := range envs {
+							if s, ok := env.(string); ok {
+								cmd.AllowedEnvVars = append(cmd.AllowedEnvVars, s)
+							}
+						}
 					}
 					matcher.Hooks = append(matcher.Hooks, cmd)
 				}

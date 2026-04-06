@@ -133,7 +133,7 @@ sleep 2
 tmux send-keys -t t_prov '/provider' Enter
 sleep 1
 tmux capture-pane -t t_prov -p
-# Expected: provider list; select one with arrow keys + Enter
+# Expected: provider selector titled "Select Provider"
 
 # Test 2: Switch model
 tmux send-keys -t t_prov '/model' Enter
@@ -146,7 +146,7 @@ tmux send-keys -t t_prov '/think' Enter
 sleep 1
 # Select "normal"
 tmux capture-pane -t t_prov -p
-# Expected: status bar shows thinking is on
+# Expected: thinking level cycles away from off for subsequent turns
 
 # Test 4: Thinking block visible
 tmux send-keys -t t_prov 'what is the sum of the first 100 prime numbers?' Enter
@@ -156,7 +156,7 @@ tmux capture-pane -t t_prov -p
 
 # Test 5: Status bar shows provider and model
 tmux capture-pane -t t_prov -p | tail -3
-# Expected: provider name and model visible in status bar
+# Expected: current provider and model are visible in the footer/status area
 
 # Test 6: Streaming tokens appear in real time
 tmux send-keys -t t_prov 'write a short poem about the ocean' Enter
@@ -171,7 +171,7 @@ sleep 1
 tmux send-keys -t t_prov Enter
 sleep 1
 tmux capture-pane -t t_prov -p | tail -3
-# Expected: status bar updates to show new model name
+# Expected: footer/status area updates to show the new model name
 
 tmux kill-session -t t_prov
 ```

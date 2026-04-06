@@ -20,6 +20,7 @@ type ExecState struct {
 	ParallelResults map[int]message.ToolResult
 	ParallelCount   int
 	HookAllowed     map[string]bool // Tool call IDs pre-approved by hooks
+	HookForceAsk    map[string]bool // Tool call IDs forced to prompt by hooks (PreToolUse "ask")
 	Ctx             context.Context
 	Cancel          context.CancelFunc
 }
@@ -52,6 +53,7 @@ func (t *ExecState) Reset() {
 	t.ParallelResults = nil
 	t.ParallelCount = 0
 	t.HookAllowed = nil
+	t.HookForceAsk = nil
 	t.Ctx = nil
 	t.Cancel = nil
 }

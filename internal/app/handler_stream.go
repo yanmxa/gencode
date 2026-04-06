@@ -118,6 +118,7 @@ func (m *model) fireIdleHooks() {
 	}
 	m.hookEngine.ExecuteAsync(hooks.Stop, hooks.HookInput{
 		LastAssistantMessage: m.lastAssistantContent(),
+		StopHookActive:       m.hookEngine.StopHookActive(),
 	})
 	m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{
 		Message:          "Claude is waiting for your input",
@@ -143,6 +144,7 @@ func (m *model) handleStreamError(err error) tea.Cmd {
 		m.hookEngine.ExecuteAsync(hooks.StopFailure, hooks.HookInput{
 			LastAssistantMessage: m.lastAssistantContent(),
 			Error:                err.Error(),
+			StopHookActive:       m.hookEngine.StopHookActive(),
 		})
 	}
 

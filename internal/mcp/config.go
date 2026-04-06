@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ConfigLoader handles loading MCP configuration from multiple sources
@@ -124,7 +125,11 @@ func (l *ConfigLoader) SaveServer(name string, config ServerConfig, scope Scope)
 		return err
 	}
 
-	return os.WriteFile(filePath, data, 0o644)
+	if err := os.WriteFile(filePath, data, 0o644); err != nil {
+		return err
+	}
+	notifyConfigChanged(scopeConfigSource(scope), filePath)
+	return nil
 }
 
 // RemoveServer removes a server configuration from the specified scope
@@ -153,7 +158,11 @@ func (l *ConfigLoader) RemoveServer(name string, scope Scope) error {
 		return err
 	}
 
-	return os.WriteFile(filePath, data, 0o644)
+	if err := os.WriteFile(filePath, data, 0o644); err != nil {
+		return err
+	}
+	notifyConfigChanged(scopeConfigSource(scope), filePath)
+	return nil
 }
 
 // RemoveServerFromAll removes a server from all config files where it exists
@@ -186,7 +195,32 @@ func (l *ConfigLoader) removeServerFromFile(filePath, name string) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(filePath, data, 0o644)
+	if err := os.WriteFile(filePath, data, 0o644); err == nil {
+		notifyConfigChanged(configSourceFromFilePath(filePath), filePath)
+	}
+}
+
+func configSourceFromFilePath(filePath string) string {
+	cleanPath := filepath.Clean(filePath)
+	base := filepath.Base(cleanPath)
+	switch base {
+	case "mcp.local.json":
+		return "local_settings"
+	case "mcp.json":
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			userPath := filepath.Join(homeDir, ".gen", "mcp.json")
+			if cleanPath == filepath.Clean(userPath) {
+				return "user_settings"
+			}
+		}
+		if strings.Contains(cleanPath, string(filepath.Separator)+".gen"+string(filepath.Separator)) {
+			return "project_settings"
+		}
+		return "user_settings"
+	default:
+		return "user_settings"
+	}
 }
 
 // GetUserDir returns the user config directory
