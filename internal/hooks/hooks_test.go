@@ -1398,8 +1398,14 @@ echo "async_done" > `+markerFile+`
 		t.Error("async detach should not set PermissionAllow")
 	}
 
-	// Wait briefly for background goroutine to write the marker
-	time.Sleep(200 * time.Millisecond)
+	// Poll for the marker file with a generous timeout for CI
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(markerFile); err == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	if _, err := os.Stat(markerFile); os.IsNotExist(err) {
 		t.Error("expected async hook to have run in background")
 	}
