@@ -49,24 +49,49 @@ go test ./tests/integration/skill/... -v
 Covered:
 
 ```
-TestSkill_LoadFromDirectory
-TestSkill_FrontmatterParsing
-TestSkill_NamespaceResolution      — "git:review" → namespace=git name=review
-TestSkill_StateToggle
-TestSkill_LazyLoading              — loaded on demand
-TestSkill_Integration_Invoke
-TestSkill_Integration_AllowedTools — tools outside allowed-tools are blocked
+# Internal skill tests
+TestSkillDiskReading                        — reading skills from disk
+TestSkillStateNextState                     — state transition logic
+TestSkillStateIcon                          — state icon rendering
+TestSkillFullName                           — full name with namespace
+TestLoadSkillFile                           — single skill file loading
+TestLoadAllSkills                           — loading all skills from directory
+TestLoadSkillWithNamespace                  — skill with namespace loaded
+TestSkillRegistry                           — skill registry operations
+TestLoadPluginSkills                        — skills loaded from plugins
+TestPluginSkillExplicitNamespaceOverride    — plugin skill namespace override
+
+# Integration tests
+TestSkill_StateTransitions                  — state cycle: disable → enable → active
+TestSkill_StateIcons                        — icon for each state
+TestSkill_BooleanHelpers                    — IsEnabled, IsActive helpers
+TestSkill_RegistryLookup                    — lookup by name and namespace
+TestSkill_AvailablePrompt                   — available prompt generation
+TestSkill_InvocationPrompt                  — invocation prompt generation
+TestSkill_ScopePriority                     — scope priority order
+TestSkill_Persistence                       — state persistence across restarts
+TestSkill_FullName                          — namespace:name formatting
+TestSkill_ScopePriority_ProjectOverridesUser — project skill shadows user skill
+TestSkill_Active_AppearsInSystemPrompt       — active skill content in system prompt
 ```
 
 Cases to add:
 
 ```go
-func TestSkill_ScopePriority_ProjectOverridesUser(t *testing.T) {
-    // Project-level skill must shadow user-level skill with the same name
+func TestSkill_ArgumentHint_DisplayedInInput(t *testing.T) {
+    // argument-hint must be shown in the input box after the command
 }
 
-func TestSkill_Active_AppearsInSystemPrompt(t *testing.T) {
-    // An Active skill's content must appear in the system prompt
+func TestSkill_AllowedTools_EnforcedDuringInvocation(t *testing.T) {
+    // Tools outside allowed-tools must be blocked during skill execution
+}
+
+func TestSkill_DisabledState_HiddenFromModel(t *testing.T) {
+    // Disabled skills must not appear in system prompt or slash commands
+}
+
+func TestSkill_EnabledState_AvailableAsCommand(t *testing.T) {
+    // Enabled skills must be invocable as /command but not in system prompt
 }
 ```
 
@@ -89,19 +114,20 @@ tmux new-session -d -s t_skills -x 220 -y 60
 tmux send-keys -t t_skills 'cd /tmp/skill_test && gen' Enter
 sleep 2
 
-# View skills
+# Test 1: View skills — /skills picker
 tmux send-keys -t t_skills '/skills' Enter
 sleep 1
 tmux capture-pane -t t_skills -p
-# Expected: "greet" listed
+# Expected: "greet" listed with state toggle
 
-# Invoke the skill
+# Test 2: Invoke the skill
+tmux send-keys -t t_skills Escape
 tmux send-keys -t t_skills '/greet' Enter
 sleep 5
 tmux capture-pane -t t_skills -p
 # Expected: "Hello! Hope you're having a great day!"
 
-# Namespaced skill
+# Test 3: Namespaced skill invocation
 mkdir -p /tmp/skill_test/.gen/skills/git-review
 cat > /tmp/skill_test/.gen/skills/git-review/skill.md << 'EOF'
 ---
@@ -118,6 +144,39 @@ tmux send-keys -t t_skills '/git:review' Enter
 sleep 8
 tmux capture-pane -t t_skills -p
 # Expected: Bash runs git log; commit summary shown
+
+# Test 4: Skill state toggle via /skills
+tmux send-keys -t t_skills '/skills' Enter
+sleep 1
+# Navigate to "greet" and toggle state
+tmux send-keys -t t_skills Enter
+sleep 1
+tmux capture-pane -t t_skills -p
+# Expected: "greet" state changed (enable ↔ active ↔ disable)
+
+# Test 5: Argument hint display
+mkdir -p /tmp/skill_test/.gen/skills/search
+cat > /tmp/skill_test/.gen/skills/search/skill.md << 'EOF'
+---
+name: search
+description: Search files
+allowed-tools: [Glob, Grep]
+argument-hint: <pattern>
+---
+
+Search for the given pattern in the project files.
+EOF
+tmux send-keys -t t_skills Escape
+tmux send-keys -t t_skills '/search'
+sleep 1
+tmux capture-pane -t t_skills -p
+# Expected: argument hint "<pattern>" shown after /search
+
+# Test 6: Allowed-tools enforcement
+tmux send-keys -t t_skills ' *.go' Enter
+sleep 5
+tmux capture-pane -t t_skills -p
+# Expected: only Glob and Grep tools used (no Write, Edit, Bash)
 
 tmux kill-session -t t_skills
 rm -rf /tmp/skill_test

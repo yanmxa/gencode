@@ -30,24 +30,46 @@ go test ./internal/plan/... -v
 Covered:
 
 ```
-TestExitPlanMode_RequiresApproval
-TestExitPlanMode_ApprovalGranted
-TestExitPlanMode_ApprovalDenied_StaysInPlanMode
+# ExitPlanMode tool
+TestExitPlanMode_ModifyKeepsPlanMode        — modify mode keeps plan mode active
+TestExitPlanMode_ApprovalModes              — clear-auto, auto, manual modes work
+TestExitPlanMode_Rejected                   — rejected plans handled
+
+# Plan mode approval flow (app update)
+TestPlanResponse_ModifyStaysInPlanMode      — modify keeps plan mode
+TestPlanResponse_ManualExitsPlanMode        — manual approval exits
+TestPlanResponse_AutoExitsPlanMode          — auto approval exits
+TestPlanResponse_RejectedExitsPlanMode      — rejected plan exits
+
+# Tool filtering in plan mode
+TestPlanMode_BlocksWriteTools               — Write, Edit, Bash blocked in plan mode
+TestPlanMode_AllowsReadTools                — Read, Glob, Grep, ExitPlanMode available
+
+# Agent plan mode
+TestAgent_PlanPermissionMode_BlocksWrites   — agent with plan mode blocks writes
 ```
 
 Cases to add:
 
 ```go
-func TestPlanMode_BlocksWriteTools(t *testing.T) {
-    // Write and Edit must error when plan mode is active
-}
-
-func TestPlanMode_AllowsReadTools(t *testing.T) {
-    // Read, Glob, Grep must execute normally in plan mode
-}
-
 func TestPlanMode_StatusBar_ReflectsMode(t *testing.T) {
-    // The UI mode field must equal Plan when active
+    // The UI mode field must equal Plan when plan mode is active
+}
+
+func TestPlanMode_WebFetchAllowed(t *testing.T) {
+    // WebFetch must be allowed in plan mode
+}
+
+func TestPlanMode_WebSearchAllowed(t *testing.T) {
+    // WebSearch must be allowed in plan mode
+}
+
+func TestPlanMode_SkillsBlocked(t *testing.T) {
+    // Skill invocation must be blocked in plan mode
+}
+
+func TestPlanMode_EntryViaSlashCommand(t *testing.T) {
+    // /plan command must switch to plan mode
 }
 ```
 

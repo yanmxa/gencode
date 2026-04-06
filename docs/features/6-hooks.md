@@ -53,32 +53,72 @@ go test ./internal/hooks/... -v
 Covered:
 
 ```
+# Integration tests
 TestHooks_BlockToolCall         — PreToolUse exit 2 blocks the tool
 TestHooks_ModifyToolInput       — PreToolUse returns updatedInput
-TestHooks_PostToolUse           — fires after success
-TestHooks_AsyncExecution        — does not block the main loop
-TestHooks_SessionStart          — fires on startup
-TestHooks_UserPromptSubmit      — fires on user message
-TestHooks_PermissionRequest     — influences permission decision
+TestHooks_NoHooks_PassThrough   — no hooks configured passes through
+TestHooks_NilSettings           — nil settings handled gracefully
+TestHooks_HasHooks              — hook presence detection
+
+# Engine tests
+TestEngineNoHooks               — engine with no hooks
+TestEngineNilSettings            — engine with nil settings
+TestEngineHasHooks               — engine has hooks detection
+TestEngineMatcherFiltering       — matcher filters events correctly
+TestEngineBlockingHook           — blocking hook via exit code
+TestEngineJSONBlockingOutput     — JSON block output parsing
+TestEngineUpdatedInput           — input modification via stdout
+TestEngineEnvironmentVariables   — env vars passed to hooks
+TestEnginePermissionMode         — permission mode in hook context
+
+# Hook options
+TestHooks_Timeout_TerminatesHook     — hook exceeding timeout is killed; main loop continues
+TestHooks_Once_ExecutesExactlyOnce   — once:true hook fires only once per session
+TestHooks_InputContains_SessionContext — hook stdin includes session_id and cwd
+
+# Matcher
+TestMatchesEvent                — event type matching
+TestGetMatchValue               — match value extraction
+TestEventSupportsMatcher        — events that support matchers
 ```
 
 Cases to add:
 
 ```go
-func TestHooks_Timeout_TerminatesHook(t *testing.T) {
-    // A hook exceeding its timeout must be killed; main loop continues
-}
-
-func TestHooks_Once_ExecutesExactlyOnce(t *testing.T) {
-    // once:true hook must not fire on subsequent triggers
-}
-
 func TestHooks_Matcher_ToolNameWildcard(t *testing.T) {
     // Matcher "Bash" must not match "BashTask"
 }
 
-func TestHooks_InputContains_SessionContext(t *testing.T) {
-    // Hook stdin must include session_id and cwd
+func TestHooks_PostToolUseFailure_Fires(t *testing.T) {
+    // PostToolUseFailure must fire when tool execution errors
+}
+
+func TestHooks_SubagentStart_Fires(t *testing.T) {
+    // SubagentStart must fire when a subagent is spawned
+}
+
+func TestHooks_SubagentStop_Fires(t *testing.T) {
+    // SubagentStop must fire when a subagent completes
+}
+
+func TestHooks_PreCompact_Fires(t *testing.T) {
+    // PreCompact must fire before compaction runs
+}
+
+func TestHooks_PostCompact_Fires(t *testing.T) {
+    // PostCompact must fire after compaction completes
+}
+
+func TestHooks_SessionEnd_Fires(t *testing.T) {
+    // SessionEnd must fire when the session terminates
+}
+
+func TestHooks_Stop_Fires(t *testing.T) {
+    // Stop event must fire when session stops
+}
+
+func TestHooks_AsyncExecution_DoesNotBlock(t *testing.T) {
+    // Async hooks must not block the main loop
 }
 ```
 
@@ -87,7 +127,7 @@ func TestHooks_InputContains_SessionContext(t *testing.T) {
 ```bash
 mkdir -p /tmp/hook_test/.gen
 
-# Logging hook config
+# Test 1: Logging hook — SessionStart and PreToolUse
 cat > /tmp/hook_test/.gen/settings.json << 'EOF'
 {
   "hooks": {
@@ -113,9 +153,10 @@ cat /tmp/hook_log.txt
 tmux send-keys -t t_hooks 'run ls /tmp using bash' Enter
 sleep 6
 cat /tmp/hook_log.txt
-# Expected: "[hook] bash pre-use"
+# Expected: "[hook] bash pre-use" appended
 
-# Blocking hook
+# Test 2: Blocking hook — PreToolUse exit 2
+tmux send-keys -t t_hooks 'q' Enter
 cat > /tmp/hook_test/.gen/settings.json << 'EOF'
 {
   "hooks": {
@@ -127,11 +168,76 @@ cat > /tmp/hook_test/.gen/settings.json << 'EOF'
   }
 }
 EOF
-
+tmux send-keys -t t_hooks 'cd /tmp/hook_test && gen' Enter
+sleep 2
 tmux send-keys -t t_hooks 'run ls /tmp using bash' Enter
 sleep 5
 tmux capture-pane -t t_hooks -p
 # Expected: tool blocked; "blocked by policy" shown to user
+
+# Test 3: Input modification hook — updatedInput
+tmux send-keys -t t_hooks 'q' Enter
+cat > /tmp/hook_test/.gen/settings.json << 'EOF'
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [{"type": "command",
+        "command": "echo '{\"decision\":\"updatedInput\",\"updatedInput\":{\"command\":\"echo modified\"}}'"}]
+    }]
+  }
+}
+EOF
+tmux send-keys -t t_hooks 'cd /tmp/hook_test && gen' Enter
+sleep 2
+tmux send-keys -t t_hooks 'run echo original using bash' Enter
+sleep 5
+tmux capture-pane -t t_hooks -p
+# Expected: "modified" output instead of "original"
+
+# Test 4: PostToolUse hook fires after success
+tmux send-keys -t t_hooks 'q' Enter
+rm -f /tmp/hook_log.txt
+cat > /tmp/hook_test/.gen/settings.json << 'EOF'
+{
+  "hooks": {
+    "PostToolUse": [{
+      "hooks": [{"type": "command",
+        "command": "echo '[hook] post-tool-use' >> /tmp/hook_log.txt"}]
+    }]
+  }
+}
+EOF
+tmux send-keys -t t_hooks 'cd /tmp/hook_test && gen' Enter
+sleep 2
+tmux send-keys -t t_hooks 'run echo hello using bash' Enter
+sleep 5
+cat /tmp/hook_log.txt
+# Expected: "[hook] post-tool-use"
+
+# Test 5: Once hook fires only once
+tmux send-keys -t t_hooks 'q' Enter
+rm -f /tmp/hook_log.txt
+cat > /tmp/hook_test/.gen/settings.json << 'EOF'
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [{"type": "command",
+        "command": "echo '[hook] once' >> /tmp/hook_log.txt",
+        "once": true}]
+    }]
+  }
+}
+EOF
+tmux send-keys -t t_hooks 'cd /tmp/hook_test && gen' Enter
+sleep 2
+tmux send-keys -t t_hooks 'run echo first using bash' Enter
+sleep 5
+tmux send-keys -t t_hooks 'run echo second using bash' Enter
+sleep 5
+wc -l /tmp/hook_log.txt
+# Expected: exactly 1 line (hook fired only once)
 
 tmux kill-session -t t_hooks
 rm -rf /tmp/hook_test /tmp/hook_log.txt

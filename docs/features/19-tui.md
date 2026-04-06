@@ -39,17 +39,91 @@ The terminal UI is built with Bubble Tea. It handles keyboard input, real-time s
 ```bash
 go test ./internal/app/render/... -v
 go test ./internal/app/input/... -v
+go test ./internal/app/... -v
 ```
 
 Covered:
 
 ```
-TestRender_Markdown_CodeBlock
-TestRender_Markdown_BoldItalic
-TestRender_Markdown_List
-TestMarkdown_SyntaxHighlight
-TestInput_MultilineEntry
-TestInput_HistoryNavigation
+# Markdown rendering
+TestMDRenderer_Heading                  — heading levels rendered
+TestMDRenderer_Emphasis                 — bold/italic rendering
+TestMDRenderer_CodeSpan                 — inline code rendering
+TestMDRenderer_FencedCodeBlock          — fenced code block with language
+TestMDRenderer_UnorderedList            — bullet list rendering
+TestMDRenderer_OrderedList              — numbered list rendering
+TestMDRenderer_Link                     — link rendering
+TestMDRenderer_ThematicBreak            — horizontal rule
+TestMDRenderer_Blockquote               — blockquote rendering
+TestMDRenderer_Paragraph                — paragraph text
+TestMDRenderer_WordWrap                 — text wrapping at terminal width
+TestMDRenderer_MixedContent             — mixed markdown types
+TestMDRenderer_Table                    — table rendering
+TestMDRenderer_TableWithLinks           — tables with embedded links
+TestMDRenderer_NoLeadingBlankLine       — no leading blank line in output
+TestMDRenderer_NoConsecutiveBlankLines  — no consecutive blank lines
+TestRenderMarkdownContent               — full content rendering
+TestRenderInlineMarkdown_Link           — inline link rendering
+TestRender_Markdown_NestedList          — nested list rendering
+TestRender_EmptyMessage_NoOutput        — empty input produces no output
+
+# Line normalization
+TestNormalizeLineBreaks                 — 9 sub-tests for line normalization
+
+# Image handling
+TestImageRefPattern                     — image reference pattern matching
+
+# Input
+TestReadSubmitRequest                   — submit request parsing
+TestIsExitRequest                       — exit request detection
+
+# App UI
+TestOverlaySelectorsOrder               — overlay selector ordering
+TestStartPromptSuggestionUsesRuntimeInterface — prompt suggestion
+TestStartLLMStreamUsesRuntimeInterface  — LLM stream startup
+TestBuildStreamRequestExcludesAssistantPlaceholder — stream request building
+TestRenderActiveModalPriority           — modal priority rendering
+TestCancelClearsTransientState          — cancel clears state
+TestHandleKeypressEscClearsModelSearchBeforeDismiss — Esc clears search
+TestHandleKeypressEscDismissesAfterSearchCleared    — Esc dismisses overlay
+
+# Provider/plugin selectors
+TestGoBackResetsInlineConnectState      — go back resets state
+TestHandleKeypressTabSwitchClearsInlineResult — tab switch clears
+TestSelectModelReturnsSelectionMessage  — model selection message
+TestCancelClearsTransientPluginSelectorState — plugin selector cancel
+TestHandleListEscClearsSearchBeforeDismiss   — plugin list Esc
+TestHandleListEscDismissesSelector           — plugin list dismiss
+TestSwitchTabResetsDetailStateAndSearch      — tab switch resets
+TestToggleSelectedPluginReturnsDisableMsg    — plugin toggle
+```
+
+Cases to add:
+
+```go
+func TestInput_HistoryNavigation_UpDown(t *testing.T) {
+    // Up/Down arrow must navigate through input history
+}
+
+func TestInput_MultilineEntry_ShiftEnter(t *testing.T) {
+    // Shift+Enter must insert newline without submitting
+}
+
+func TestStream_ChunkRendering(t *testing.T) {
+    // ChunkMsg must trigger View re-render with new tokens
+}
+
+func TestStream_EscCancels_PreservesPartial(t *testing.T) {
+    // Esc during streaming must cancel and preserve partial response
+}
+
+func TestStatusBar_TokenCounts(t *testing.T) {
+    // Status bar must display provider, model, and token counts
+}
+
+func TestTaskPanel_Toggle(t *testing.T) {
+    // Ctrl+T must toggle task panel visibility
+}
 ```
 
 ## Interactive Tests (tmux)

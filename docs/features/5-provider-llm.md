@@ -42,9 +42,52 @@ go test ./internal/client/... -v
 Covered:
 
 ```
-internal/provider/anthropic/client_test.go  — streaming response parsing
-internal/core/core_test.go                  — LLM loop: request → tool call → continue
-internal/client/client_test.go              — client wrapper behavior
+# Streaming & response parsing
+TestStateEmitsAndAccumulatesChunks         — stream chunk emission and accumulation
+TestStateAddsToolCallsInStableOrder        — tool calls in stable order
+TestStateEnsureToolUseStopReason           — stop reason for tool use
+TestStateFailAndFinishEmitTerminalChunks   — terminal chunk emission
+TestLoop_StreamChunks                      — stream chunk delivery in loop
+
+# Tool ID sanitization (Anthropic)
+TestToolIDSanitizer_ValidIDPassthrough     — valid IDs pass through
+TestToolIDSanitizer_InvalidIDReplaced      — invalid IDs replaced
+TestToolIDSanitizer_StableMapping          — same ID maps consistently
+TestToolIDSanitizer_UniqueReplacements     — different IDs get unique replacements
+TestToolIDSanitizer_ConsistentAcrossToolUseAndResult — tool_use and tool_result IDs match
+TestToolIDSanitizer_NoAllocationForValidIDs — no wasteful allocation
+
+# Message merging
+TestMergeConsecutiveMessages_ToolResults   — multiple tool results merged
+TestMergeConsecutiveMessages_NoConsecutive — non-consecutive pass through
+TestMergeConsecutiveMessages_Empty         — empty input handled
+TestMergeConsecutiveMessages_Single        — single message handled
+
+# Moonshot
+TestMoonshotAssistantMessagesIncludeReasoningContent — reasoning content included
+
+# Client wrapper
+TestClientSend                             — send request
+TestClientStream                           — stream request
+TestClientComplete                         — completion request
+TestClientNameAndModelID                   — name and model ID
+TestResolveMaxTokens_CustomOverride        — custom max token override
+TestResolveMaxTokens_FromProvider          — max tokens from provider
+TestResolveMaxTokens_Fallback              — fallback max tokens
+
+# LLM loop
+TestLoopInit                               — loop initialization
+TestAddUser                                — add user message
+TestAddResponse                            — add response
+TestAddToolResult                          — add tool result
+TestRunTransitions                         — loop state transitions
+TestRunEndTurn                             — end turn handling
+TestRunMaxTurns                            — max turns enforcement
+TestRunCancelled                           — cancellation handling
+TestLoop_TokenAccumulation                 — token counts accumulate across turns
+
+# Thinking keyword detection
+TestDetectThinkingKeywords                 — think/think+/ultrathink detection
 ```
 
 Cases to add:
@@ -55,11 +98,27 @@ func TestProvider_ModelListing(t *testing.T) {
 }
 
 func TestProvider_ThinkingBudget_SetCorrectly(t *testing.T) {
-    // budget_tokens in the request must match the selected thinking level
+    // budget_tokens in the request must match the selected thinking level (5K/32K/128K)
 }
 
 func TestProvider_StreamChunk_OrderPreserved(t *testing.T) {
-    // Chunks must arrive in order
+    // Chunks must arrive in order during streaming
+}
+
+func TestProvider_SwitchMidConversation(t *testing.T) {
+    // Switching provider mid-conversation must use new provider for next turn
+}
+
+func TestProvider_ModelSwitch_TakesEffectImmediately(t *testing.T) {
+    // Model switch must apply to the next LLM call
+}
+
+func TestProvider_ThinkingLevel_Persistence(t *testing.T) {
+    // Thinking level must persist across turns within a session
+}
+
+func TestProvider_NonAnthropicThinking_Fallback(t *testing.T) {
+    // Non-Anthropic providers must ignore thinking level gracefully
 }
 ```
 
@@ -70,29 +129,49 @@ tmux new-session -d -s t_prov -x 220 -y 60
 tmux send-keys -t t_prov 'gen' Enter
 sleep 2
 
-# Switch provider
+# Test 1: Switch provider
 tmux send-keys -t t_prov '/provider' Enter
 sleep 1
 tmux capture-pane -t t_prov -p
 # Expected: provider list; select one with arrow keys + Enter
 
-# Switch model
+# Test 2: Switch model
 tmux send-keys -t t_prov '/model' Enter
 sleep 1
 tmux capture-pane -t t_prov -p
 # Expected: model list for current provider
 
-# Enable thinking
+# Test 3: Enable thinking
 tmux send-keys -t t_prov '/think' Enter
 sleep 1
 # Select "normal"
 tmux capture-pane -t t_prov -p
 # Expected: status bar shows thinking is on
 
+# Test 4: Thinking block visible
 tmux send-keys -t t_prov 'what is the sum of the first 100 prime numbers?' Enter
 sleep 20
 tmux capture-pane -t t_prov -p
 # Expected: <thinking> block visible before the answer
+
+# Test 5: Status bar shows provider and model
+tmux capture-pane -t t_prov -p | tail -3
+# Expected: provider name and model visible in status bar
+
+# Test 6: Streaming tokens appear in real time
+tmux send-keys -t t_prov 'write a short poem about the ocean' Enter
+sleep 3
+tmux capture-pane -t t_prov -p
+# Expected: tokens streaming progressively; spinner visible during streaming
+
+# Test 7: Model switch takes effect
+tmux send-keys -t t_prov '/model' Enter
+sleep 1
+# Select a different model
+tmux send-keys -t t_prov Enter
+sleep 1
+tmux capture-pane -t t_prov -p | tail -3
+# Expected: status bar updates to show new model name
 
 tmux kill-session -t t_prov
 ```

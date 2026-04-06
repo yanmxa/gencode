@@ -18,7 +18,8 @@ gen_*
 .DS_Store
 
 # Local config
-.gen/
+.gen/*
+!.gen/skills/
 .claude/
 .mcp.json
 CLAUDE.md

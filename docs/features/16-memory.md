@@ -33,10 +33,38 @@ go test ./internal/system/... -v
 Covered:
 
 ```
-TestMemory_LoadGENmd
-TestMemory_ImportSyntax
-TestMemory_ScopeMerge
-TestMemory_Caching
+# Import resolution
+TestResolveImports                    — basic @import resolution
+TestResolveImportsCycle               — circular import detection
+TestResolveImportsNotFound            — missing import file handled
+TestResolveImportsMaxDepth            — max import depth enforced
+TestResolveImportsNested              — nested imports resolved
+TestResolveImportsRelativePath        — relative path imports
+
+# Import chain (Cases to add → now covered)
+TestMemory_ImportChain                — @import A, A imports B — both loaded
+TestMemory_MissingFile_NoError        — missing GEN.md does not crash startup
+
+# Memory file loading
+TestLoadMemoryFilesWithImports        — memory files with imports loaded
+TestFindMemoryFile                    — find memory file by path
+TestGetAllMemoryPaths                 — all memory file paths collected
+TestFormatFileSize                    — file size formatting
+TestLoadRulesDirectory                — rules directory loading
+TestLoadInstructions                  — instruction loading pipeline
+
+# System prompt integration
+TestPromptCaching                     — prompt caching works
+TestPromptContainsInstructions        — instructions in system prompt
+TestPromptDirectFields                — direct fields in prompt
+TestPromptExtra                       — extra content in prompt
+TestPromptNarrativeOrder              — narrative ordering
+TestPromptPlanMode                    — plan mode prompt
+TestPromptEmptyFieldsExcluded         — empty fields excluded
+TestPromptInitCachedFiles             — cached files initialization
+
+# Memory command
+TestHandleMemoryList                  — /memory list formats output with sections
 ```
 
 Cases to add:
@@ -46,12 +74,12 @@ func TestMemory_ProjectOverridesUser_SameName(t *testing.T) {
     // Project GEN.md must take precedence over user GEN.md
 }
 
-func TestMemory_ImportChain(t *testing.T) {
-    // @import A, A imports B — both must be loaded into system prompt
+func TestMemory_ThreeScopeMerge(t *testing.T) {
+    // User + Project + Local GEN.md must merge with correct priority
 }
 
-func TestMemory_MissingFile_NoError(t *testing.T) {
-    // Missing GEN.md must not crash startup
+func TestMemory_EditorLink_OpensFile(t *testing.T) {
+    // Edit link in /memory must open file path with $EDITOR
 }
 ```
 
@@ -59,6 +87,8 @@ func TestMemory_MissingFile_NoError(t *testing.T) {
 
 ```bash
 mkdir -p /tmp/mem_test/.gen
+
+# Test 1: Instructions affect LLM behavior
 cat > /tmp/mem_test/.gen/GEN.md << 'EOF'
 # Project Instructions
 
@@ -74,11 +104,44 @@ sleep 6
 tmux capture-pane -t t_mem -p
 # Expected: response is one sentence ending with "(end)"
 
-# /memory command
+# Test 2: /memory command shows loaded content
 tmux send-keys -t t_mem '/memory' Enter
 sleep 2
 tmux capture-pane -t t_mem -p
 # Expected: GEN.md content displayed
+
+# Test 3: @import syntax
+cat > /tmp/mem_test/.gen/rules.md << 'EOF'
+- Never use exclamation marks.
+EOF
+cat > /tmp/mem_test/.gen/GEN.md << 'EOF'
+# Project Instructions
+
+@import rules.md
+
+- Always respond in exactly one sentence.
+EOF
+tmux send-keys -t t_mem 'q' Enter
+tmux send-keys -t t_mem 'cd /tmp/mem_test && gen' Enter
+sleep 2
+tmux send-keys -t t_mem '/memory' Enter
+sleep 2
+tmux capture-pane -t t_mem -p
+# Expected: both GEN.md and imported rules.md content visible
+
+# Test 4: Local GEN.md overrides project
+mkdir -p /tmp/mem_test/.gen/local
+cat > /tmp/mem_test/.gen/local/GEN.md << 'EOF'
+# Local Override
+- Always start your response with "LOCAL:"
+EOF
+tmux send-keys -t t_mem 'q' Enter
+tmux send-keys -t t_mem 'cd /tmp/mem_test && gen' Enter
+sleep 2
+tmux send-keys -t t_mem 'hello' Enter
+sleep 6
+tmux capture-pane -t t_mem -p
+# Expected: response starts with "LOCAL:" (local overrides project)
 
 tmux kill-session -t t_mem
 rm -rf /tmp/mem_test

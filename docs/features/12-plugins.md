@@ -60,18 +60,70 @@ go test ./tests/integration/plugin/... -v
 Covered:
 
 ```
-TestPlugin_ManifestParsing
-TestPlugin_Validation
-TestPlugin_ScopeLoading
-TestPlugin_Integration_Enable
-TestPlugin_Integration_Disable
-TestPlugin_Integration_SkillFromPlugin
+# Internal plugin tests
+TestExpandPluginRoot                — plugin root path expansion
+TestParsePluginRef                  — plugin reference parsing
+TestScope                           — plugin scope detection
+TestLoadPlugin                      — load plugin from directory
+TestRegistry                        — plugin registry operations
+TestValidatePlugin                  — plugin validation logic
+TestPlugin_Validate_InvalidManifest — invalid manifest detection
+TestLoadFromPath                    — load from specific path
+TestHooksConfigParsing              — hooks.json parsing
+TestMCPConfigParsing                — mcp.json parsing
+
+# Integration tests
+TestPluginLoading                   — end-to-end plugin loading
+TestPluginComponents                — skill/agent/hooks/mcp components
+TestPluginValidation                — validation integration
+TestRegistryWithPlugin              — registry with loaded plugin
+TestClaudeCodeCompatibility         — Claude Code plugin compat
+TestInstalledPluginsV2Format        — v2 format support
+TestMarketplaceManager              — marketplace operations
+TestPluginAgentPaths                — agent path resolution
+```
+
+Cases to add:
+
+```go
+func TestPlugin_Install_FromMarketplace(t *testing.T) {
+    // gen plugin install must download and install from marketplace
+}
+
+func TestPlugin_Uninstall_RemovesPlugin(t *testing.T) {
+    // gen plugin uninstall must remove plugin directory
+}
+
+func TestPlugin_Enable_ActivatesComponents(t *testing.T) {
+    // gen plugin enable must activate skills, hooks, and MCP servers
+}
+
+func TestPlugin_Disable_DeactivatesComponents(t *testing.T) {
+    // gen plugin disable must deactivate all plugin components
+}
+
+func TestPlugin_Info_ShowsDetails(t *testing.T) {
+    // gen plugin info must show manifest, components, and status
+}
+
+func TestPlugin_ScopeMerge_UserProjectLocal(t *testing.T) {
+    // Plugins from user, project, and local scopes must merge correctly
+}
+
+func TestPlugin_ConflictResolution_SameSkillName(t *testing.T) {
+    // Same skill name in multiple plugins must follow scope priority
+}
+
+func TestPlugin_LSPLoading(t *testing.T) {
+    // lsp.json in plugin must configure LSP servers
+}
 ```
 
 ## Interactive Tests (tmux)
 
 ```bash
 mkdir -p /tmp/my-plugin/skills/hello
+mkdir -p /tmp/my-plugin/agents
 
 cat > /tmp/my-plugin/plugin.json << 'EOF'
 {
@@ -91,12 +143,14 @@ allowed-tools: []
 Say "Hello from my-plugin!" and nothing else.
 EOF
 
-# Validate
-gen plugin validate /tmp/my-plugin
+# Test 1: Validate
+tmux new-session -d -s t_plugin -x 220 -y 60
+tmux send-keys -t t_plugin 'gen plugin validate /tmp/my-plugin' Enter
+sleep 2
+tmux capture-pane -t t_plugin -p
 # Expected: validation passes with no errors
 
-# Load via --plugin-dir
-tmux new-session -d -s t_plugin -x 220 -y 60
+# Test 2: Load via --plugin-dir and invoke skill
 tmux send-keys -t t_plugin 'gen --plugin-dir /tmp/my-plugin' Enter
 sleep 2
 tmux send-keys -t t_plugin '/hello' Enter
@@ -104,19 +158,34 @@ sleep 5
 tmux capture-pane -t t_plugin -p
 # Expected: "Hello from my-plugin!"
 
-# List plugins
+# Test 3: List plugins
 tmux send-keys -t t_plugin 'q' Enter
 tmux send-keys -t t_plugin 'gen plugin list' Enter
 sleep 2
 tmux capture-pane -t t_plugin -p
+# Expected: "my-plugin" listed with version 1.0.0
 
-# /plugin command in TUI
+# Test 4: /plugin command in TUI
 tmux send-keys -t t_plugin 'gen --plugin-dir /tmp/my-plugin' Enter
 sleep 2
 tmux send-keys -t t_plugin '/plugin' Enter
 sleep 2
 tmux capture-pane -t t_plugin -p
-# Expected: plugin management UI
+# Expected: plugin management UI with "my-plugin" listed
+
+# Test 5: Plugin skill appears in /skills
+tmux send-keys -t t_plugin Escape
+tmux send-keys -t t_plugin '/skills' Enter
+sleep 1
+tmux capture-pane -t t_plugin -p
+# Expected: "hello" skill listed (from plugin)
+
+# Test 6: Plugin info
+tmux send-keys -t t_plugin 'q' Enter
+tmux send-keys -t t_plugin 'gen plugin info my-plugin' Enter
+sleep 2
+tmux capture-pane -t t_plugin -p
+# Expected: manifest details, components, and status shown
 
 tmux kill-session -t t_plugin
 rm -rf /tmp/my-plugin

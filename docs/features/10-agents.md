@@ -55,26 +55,49 @@ go test ./tests/integration/agent/... -v
 Covered:
 
 ```
-TestAgent_LazyLoading
-TestAgent_Integration_Headless
-TestAgent_Integration_MaxTurns_Respected
-TestAgent_Integration_ToolRestriction
-TestAgent_Integration_ModelOverride
+# Internal tests
+TestAgentLazyLoading                        — agents loaded on demand
+
+# Integration tests
+TestAgent_ExploreAgent                      — built-in Explore agent execution
+TestAgent_UnknownAgent                      — unknown agent returns error
+TestAgent_MaxTurnsRespected                 — max-turns limit enforced
+TestAgent_ModelResolution                   — model inheritance and override
+TestAgent_PlanPermissionMode_BlocksWrites   — plan mode blocks writes in agent
+TestAgent_SubagentHooks_Fire                — SubagentStart and SubagentStop hooks fire
+TestAgent_BackgroundExecution               — background agent tracked in task system
+
+# Executor tests
+TestPrepareRunConfigRespectsOverrides              — run config overrides work
+TestPrepareRunConfigUsesResolvedPlanModePrompt      — plan mode prompt resolved
+TestBuildCancelledAgentResultUsesPreparedRunMetadata — cancelled agent metadata
 ```
 
 Cases to add:
 
 ```go
-func TestAgent_PlanPermissionMode_BlocksWrites(t *testing.T) {
-    // Agent with permission-mode: plan must not write files
-}
-
 func TestAgent_ProgressCallback_Fires(t *testing.T) {
     // Progress callback must fire for each turn
 }
 
-func TestAgent_SubagentHooks_Fire(t *testing.T) {
-    // SubagentStart and SubagentStop hooks must fire
+func TestAgent_ToolRestriction_Enforced(t *testing.T) {
+    // Agent with tools: [Read, Glob] must not have access to Write or Bash
+}
+
+func TestAgent_ModelOverride_Request(t *testing.T) {
+    // Agent with model: sonnet must use sonnet for all LLM calls
+}
+
+func TestAgent_IndependentSystemPrompt(t *testing.T) {
+    // Agent must use its own AGENT.md content as system prompt
+}
+
+func TestAgent_DontAskMode_DeniesPrompts(t *testing.T) {
+    // Agent with dontAsk mode must deny all permission prompts
+}
+
+func TestAgent_AutoMode_Autonomous(t *testing.T) {
+    // Agent with auto mode must execute without prompts
 }
 ```
 
@@ -99,18 +122,58 @@ max-turns: 10
 You are a file reading agent. Read the requested file and provide a concise summary.
 EOF
 
-# Headless execution
-gen agent run --type FileReader --prompt "read /tmp/agent_test/sample.txt and summarize" 2>&1
+tmux new-session -d -s t_agent -x 220 -y 60
+
+# Test 1: Headless execution
+tmux send-keys -t t_agent 'cd /tmp/agent_test && gen agent run --type FileReader --prompt "read sample.txt and summarize"' Enter
+sleep 15
+tmux capture-pane -t t_agent -p
 # Expected: agent reads file, outputs summary, exits cleanly
 
-# Agent invoked from TUI
-tmux new-session -d -s t_agent -x 220 -y 60
+# Test 2: Agent invoked from TUI
 tmux send-keys -t t_agent 'cd /tmp/agent_test && gen' Enter
 sleep 2
 tmux send-keys -t t_agent 'use the FileReader agent to read sample.txt' Enter
 sleep 15
 tmux capture-pane -t t_agent -p
 # Expected: SubagentStart shown; agent output in conversation; SubagentStop fires
+
+# Test 3: /agents picker
+tmux send-keys -t t_agent '/agents' Enter
+sleep 1
+tmux capture-pane -t t_agent -p
+# Expected: "FileReader" listed with enable/disable toggle
+
+# Test 4: Background agent tracked in task panel
+tmux send-keys -t t_agent Escape
+tmux send-keys -t t_agent 'run the FileReader agent in background to read sample.txt' Enter
+sleep 5
+tmux send-keys -t t_agent C-t
+sleep 1
+tmux capture-pane -t t_agent -p
+# Expected: task panel shows agent task with "Running" or "Completed" status
+
+# Test 5: Agent with plan permission mode (read-only)
+cat > /tmp/agent_test/.gen/agents/ReadOnly.md << 'EOF'
+---
+name: ReadOnly
+description: Read-only agent
+model: inherit
+permission-mode: plan
+tools:
+  - Read
+  - Glob
+  - Write
+max-turns: 5
+---
+
+You are a read-only agent. Try to read and write files.
+EOF
+tmux send-keys -t t_agent C-t
+tmux send-keys -t t_agent 'use the ReadOnly agent to create a file test.txt' Enter
+sleep 10
+tmux capture-pane -t t_agent -p
+# Expected: agent cannot write — Write tool blocked by plan mode
 
 tmux kill-session -t t_agent
 rm -rf /tmp/agent_test

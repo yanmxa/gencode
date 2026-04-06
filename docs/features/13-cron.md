@@ -35,13 +35,21 @@ go test ./internal/cron/... -v
 Covered:
 
 ```
-TestCron_ParseExpression
-TestCron_NamedMonths
-TestCron_NamedWeekdays
-TestCron_StepValues
-TestCron_RangeValues
-TestCron_NextFireTime
-TestCron_Persistence
+# Parsing
+TestParse                               — cron expression parsing (8 cases)
+TestNextAfter                           — next fire time calculation
+TestDescribe                            — human-readable description
+
+# Store operations
+TestStoreCreateAndList                  — create and list jobs
+TestStoreDelete                         — delete a job
+TestStoreTick                           — tick fires due jobs
+TestStoreMaxJobs                        — max job limit enforced
+TestStoreDurable                        — persistence to disk
+
+# Edge cases
+TestCron_InvalidExpression_ReturnsError — malformed cron returns descriptive error
+TestCron_Once_RemovedAfterFiring        — once=true job deleted after firing
 ```
 
 Cases to add:
@@ -51,12 +59,16 @@ func TestCron_Expiry_After7Days(t *testing.T) {
     // A recurring job older than 7 days must be automatically removed
 }
 
-func TestCron_Once_RemovedAfterFiring(t *testing.T) {
-    // A once=true job must be deleted after it fires
+func TestCron_RangeValidation(t *testing.T) {
+    // Minutes 0-59, hours 0-23, day 1-31, month 1-12, dow 0-6 enforced
 }
 
-func TestCron_InvalidExpression_ReturnsError(t *testing.T) {
-    // Malformed cron strings must return a descriptive parse error
+func TestCron_PromptInjection_Fires(t *testing.T) {
+    // When a job fires, its prompt must be injected into the conversation
+}
+
+func TestCron_NextFireTime_InListResult(t *testing.T) {
+    // CronList must show next-fire time for each job
 }
 ```
 
@@ -67,28 +79,48 @@ tmux new-session -d -s t_cron -x 220 -y 60
 tmux send-keys -t t_cron 'gen' Enter
 sleep 2
 
-# Create a recurring job
+# Test 1: Create a recurring job
 tmux send-keys -t t_cron 'schedule a job every minute that says "tick"' Enter
 sleep 5
 tmux capture-pane -t t_cron -p
 # Expected: CronCreate tool called; job ID returned
 
-# List jobs
+# Test 2: List jobs
 tmux send-keys -t t_cron 'list all cron jobs' Enter
 sleep 3
 tmux capture-pane -t t_cron -p
 # Expected: job shown with next-fire time
 
-# Wait for it to fire (~1 minute)
+# Test 3: Wait for it to fire (~1 minute)
 sleep 65
 tmux capture-pane -t t_cron -p
 # Expected: "tick" prompt was fired by the scheduler
 
-# Delete all jobs
+# Test 4: Delete all jobs
 tmux send-keys -t t_cron 'delete all cron jobs' Enter
 sleep 3
 tmux capture-pane -t t_cron -p
 # Expected: CronDelete called; no remaining jobs
+
+# Test 5: One-time job (once=true)
+tmux send-keys -t t_cron 'schedule a one-time job in 1 minute that says "once-fired"' Enter
+sleep 5
+tmux capture-pane -t t_cron -p
+# Expected: CronCreate called with once=true
+tmux send-keys -t t_cron 'list all cron jobs' Enter
+sleep 3
+# Expected: one-time job listed
+sleep 65
+tmux send-keys -t t_cron 'list all cron jobs' Enter
+sleep 3
+tmux capture-pane -t t_cron -p
+# Expected: one-time job removed after firing
+
+# Test 6: Invalid expression
+tmux send-keys -t t_cron 'schedule a job with cron expression "invalid bad" that says test' Enter
+sleep 5
+tmux capture-pane -t t_cron -p
+# Expected: error message about invalid cron expression
 
 tmux kill-session -t t_cron
 ```

@@ -39,34 +39,96 @@ Tools run in parallel when the LLM returns multiple calls at once (TUI layer). W
 go test ./internal/tool/... -v
 go test ./internal/app/tool/... -v
 go test ./internal/config/... -v -run TestBashAST
+go test ./internal/task/... -v
 ```
 
 Covered:
 
 ```
-internal/tool/execute_test.go       — tool execution framework
-internal/tool/exitplanmode_test.go  — ExitPlanMode approval flow
-internal/tool/taskoutput_test.go    — TaskOutput streaming
-internal/config/bash_ast_test.go    — dangerous Bash command detection
+# Tool execution framework
+TestExecutePreparedToolUsesExecuteApprovedWhenRequested — ExecuteApproved path works
+TestExecutePreparedToolUsesExecuteByDefault             — Execute path works
+TestExecutePreparedToolRoutesMCPTools                   — MCP tools routed correctly
+TestExecutePreparedToolReturnsUnknownToolError           — unknown tool error handling
+TestPrepareToolCallParsesAndResolvesBuiltInTool          — built-in tool resolution
+TestPrepareToolCallResolvesMCPTool                       — MCP tool resolution
+TestExecuteParallelPropagatesContextCancellation         — parallel tool context cancel
+
+# Individual tool tests
+TestRead_LineLimit_LargeFile           — Read respects line limit on large files
+TestEdit_Fails_WhenOldStringNotUnique  — Edit errors when old_string matches >1 time
+TestGlob_PatternMatching               — ** and ? wildcard behavior verified
+
+# ExitPlanMode
+TestExitPlanMode_ModifyKeepsPlanMode   — modify mode keeps plan mode active
+TestExitPlanMode_ApprovalModes         — clear-auto, auto, manual modes work
+TestExitPlanMode_Rejected              — rejected plans handled
+
+# Plan mode tool filtering
+TestPlanMode_BlocksWriteTools          — Write, Edit, Bash blocked in plan mode
+TestPlanMode_AllowsReadTools           — Read, Glob, Grep, ExitPlanMode available
+
+# TaskOutput
+TestTaskOutputTool_StillRunning        — reports running tasks
+TestTaskOutputTool_Completed           — reports completed tasks
+TestTaskOutputTool_NotFound            — handles missing tasks
+TestTaskOutputTool_NonBlocking         — non-blocking mode returns immediately
+
+# BashTask
+TestBashTask_Complete                  — task completes successfully
+TestBashTask_Failed                    — failed task state
+TestBashTask_MarkKilled                — killed task state
+TestBashTask_AppendAndGetOutput        — output streaming
+TestBashTask_IsRunning                 — running state check
+TestBashTask_WaitForCompletion         — wait for completion
+TestBashTask_ConcurrentAccess          — concurrent safety
+
+# Task manager
+TestManager_CreateAndGet               — create and retrieve tasks
+TestManager_List                       — list all tasks
+TestManager_ListRunning                — list running tasks only
+TestManager_Remove                     — remove task
+TestManager_Cleanup                    — cleanup old tasks
+
+# Bash AST security
+TestParseBashAST                       — Bash command parsing
+TestCheckASTSecurity                   — dangerous command detection
+TestCheckASTSecurity_ExcessiveCommands — excessive command blocking
 ```
 
 Cases to add:
 
 ```go
-func TestRead_LineLimit_LargeFile(t *testing.T) {
-    // Read must respect the line limit on large files
-}
-
-func TestEdit_Fails_WhenOldStringNotUnique(t *testing.T) {
-    // Edit must error when old_string matches more than once
-}
-
-func TestGlob_PatternMatching(t *testing.T) {
-    // Verify ** and ? wildcard behavior
-}
-
 func TestBash_DeniedByPermission(t *testing.T) {
     // Bash blocked when a deny rule matches the command
+}
+
+func TestWebFetch_ReturnsContent(t *testing.T) {
+    // WebFetch must return page content for a valid URL
+}
+
+func TestWebSearch_ReturnsResults(t *testing.T) {
+    // WebSearch must return search results
+}
+
+func TestEnterWorktree_CreatesWorktree(t *testing.T) {
+    // EnterWorktree must create a valid git worktree
+}
+
+func TestExitWorktree_RemovesWorktree(t *testing.T) {
+    // ExitWorktree keep=false must delete the worktree
+}
+
+func TestCronCreate_SchedulesJob(t *testing.T) {
+    // CronCreate must persist job and return job_id
+}
+
+func TestAskUserQuestion_ReturnsAnswer(t *testing.T) {
+    // AskUserQuestion must inject question and capture response
+}
+
+func TestToolSearch_FindsTools(t *testing.T) {
+    // ToolSearch must return matching tools for a query
 }
 ```
 
@@ -75,25 +137,25 @@ func TestBash_DeniedByPermission(t *testing.T) {
 ```bash
 tmux new-session -d -s t_tools -x 220 -y 60
 
-# Test: Bash tool with permission prompt
+# Test 1: Bash tool with permission prompt
 tmux send-keys -t t_tools 'gen -p "run: echo hello world"' Enter
 sleep 5
 tmux capture-pane -t t_tools -p
 # Expected: permission dialog (or auto-execute); output "hello world"
 
-# Test: Read tool
+# Test 2: Read tool
 tmux send-keys -t t_tools 'gen -p "read /etc/hostname"' Enter
 sleep 5
 tmux capture-pane -t t_tools -p
 # Expected: hostname content shown
 
-# Test: Write tool
+# Test 3: Write tool
 tmux send-keys -t t_tools 'gen -p "create /tmp/gentest.txt with content hello"' Enter
 sleep 8
 cat /tmp/gentest.txt
 # Expected: file contains "hello"
 
-# Test: /tools toggle panel
+# Test 4: /tools toggle panel
 tmux send-keys -t t_tools 'gen' Enter
 sleep 2
 tmux send-keys -t t_tools '/tools' Enter
@@ -101,6 +163,39 @@ sleep 2
 tmux capture-pane -t t_tools -p
 # Expected: full tool list with enable/disable toggles
 
+# Test 5: Edit tool — modify existing file
+echo "old content" > /tmp/gentest_edit.txt
+tmux send-keys -t t_tools 'q' Enter
+tmux send-keys -t t_tools 'gen -p "edit /tmp/gentest_edit.txt: replace old with new"' Enter
+sleep 8
+cat /tmp/gentest_edit.txt
+# Expected: file contains "new content"
+
+# Test 6: Glob tool — search files
+tmux send-keys -t t_tools 'gen -p "find all .go files in the current directory using glob"' Enter
+sleep 5
+tmux capture-pane -t t_tools -p
+# Expected: list of .go files
+
+# Test 7: Grep tool — search file contents
+tmux send-keys -t t_tools 'gen -p "search for func main in .go files"' Enter
+sleep 5
+tmux capture-pane -t t_tools -p
+# Expected: matching lines with file paths
+
+# Test 8: Permission denied — deny rule blocks Bash
+mkdir -p /tmp/tools_deny_test/.gen
+cat > /tmp/tools_deny_test/.gen/settings.json << 'EOF'
+{"permissions": {"deny": ["Bash(rm*)"]}}
+EOF
+tmux send-keys -t t_tools 'cd /tmp/tools_deny_test && gen' Enter
+sleep 2
+tmux send-keys -t t_tools 'run: rm -f /tmp/gentest.txt' Enter
+sleep 5
+tmux capture-pane -t t_tools -p
+# Expected: Bash tool blocked by deny rule
+
 tmux kill-session -t t_tools
-rm -f /tmp/gentest.txt
+rm -f /tmp/gentest.txt /tmp/gentest_edit.txt
+rm -rf /tmp/tools_deny_test
 ```
