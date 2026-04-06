@@ -169,7 +169,7 @@ func TestRenderTabListShowsPluginManagerFrame(t *testing.T) {
 	m.filteredItems = []any{m.installedFlatList[0]}
 
 	rendered := m.Render()
-	for _, want := range []string{"Plugin Manager", "Discover", "Installed", "Marketplaces", "Search"} {
+	for _, want := range []string{"Plugin Manager", "Discover", "Installed", "Marketplaces", "filter"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("Render() missing %q in output:\n%s", want, rendered)
 		}
@@ -195,7 +195,7 @@ func TestRenderInstalledDetailShowsStructuredSections(t *testing.T) {
 	m.actions = []Action{{Label: "Disable plugin", Action: "disable"}, {Label: "Back", Action: "back"}}
 
 	rendered := m.Render()
-	for _, want := range []string{"Plugin Details", "deploy@corp", "Status:", "Scope:", "Components:", "Disable plugin"} {
+	for _, want := range []string{"Plugin Details", "deploy@corp", "Status:", "Scope:", "Components", "Disable plugin"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("Render() missing %q in output:\n%s", want, rendered)
 		}

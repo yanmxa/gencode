@@ -10,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	coresession "github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/ui/shared"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
@@ -23,15 +22,15 @@ type SelectedMsg struct {
 // Model holds the state for the session selector
 type Model struct {
 	active       bool
-	sessions     []*coresession.SessionMetadata
-	filtered     []*coresession.SessionMetadata
+	sessions     []*SessionMetadata
+	filtered     []*SessionMetadata
 	selectedIdx  int
 	searchQuery  string
 	scrollOffset int
 	maxVisible   int
 	width        int
 	height       int
-	store        *coresession.Store
+	store        *Store
 	cwd          string
 	messageCache map[string]string // Cache for last user messages
 }
@@ -74,7 +73,7 @@ func calculateMessagePreviewLength(width int) int {
 }
 
 // EnterSelect enters session selection mode
-func (s *Model) EnterSelect(width, height int, store *coresession.Store, cwd string) error {
+func (s *Model) EnterSelect(width, height int, store *Store, cwd string) error {
 	if store == nil {
 		return fmt.Errorf("session store is required")
 	}
@@ -145,7 +144,7 @@ func (s *Model) ensureVisible() {
 // The store is already project-scoped, so no CWD filtering is needed.
 func (s *Model) updateFilter() {
 	query := strings.ToLower(s.searchQuery)
-	s.filtered = make([]*coresession.SessionMetadata, 0, len(s.sessions))
+	s.filtered = make([]*SessionMetadata, 0, len(s.sessions))
 
 	for _, sess := range s.sessions {
 		if query != "" && !shared.FuzzyMatch(strings.ToLower(sess.Title), query) &&
@@ -211,7 +210,7 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 }
 
 // formatCompactMetadata formats message count and time inline
-func formatCompactMetadata(sess *coresession.SessionMetadata) string {
+func formatCompactMetadata(sess *SessionMetadata) string {
 	return fmt.Sprintf("%d msgs · %s", sess.MessageCount, formatRelativeTime(sess.UpdatedAt))
 }
 
@@ -229,10 +228,17 @@ func truncateToFirstLine(content string, maxLen int) string {
 
 // getLastMessage retrieves the last message (user or assistant) from a session
 // for preview. It skips tool_result and tool_use entries.
-func (s *Model) getLastMessage(sess *coresession.SessionMetadata) string {
+func (s *Model) getLastMessage(sess *SessionMetadata) string {
 	cacheKey := sess.ID + ":last"
 	if cached, ok := s.messageCache[cacheKey]; ok {
 		return cached
+	}
+
+	if sess.LastPrompt != "" {
+		maxLen := calculateMessagePreviewLength(s.width)
+		content := truncateToFirstLine(sess.LastPrompt, maxLen)
+		s.messageCache[cacheKey] = content
+		return content
 	}
 
 	if s.store == nil {
@@ -249,7 +255,7 @@ func (s *Model) getLastMessage(sess *coresession.SessionMetadata) string {
 		if entry.Message == nil {
 			continue
 		}
-		if entry.Type != coresession.EntryUser && entry.Type != coresession.EntryAssistant {
+		if entry.Type != EntryUser && entry.Type != EntryAssistant {
 			continue
 		}
 		// Skip tool_result and tool_use entries.
@@ -278,7 +284,7 @@ func (s *Model) getLastMessage(sess *coresession.SessionMetadata) string {
 
 // getFirstSubstantiveMessage finds the first user message with >5 characters
 // from a session. Used as a display title when the stored title is too short.
-func (s *Model) getFirstSubstantiveMessage(sess *coresession.SessionMetadata) string {
+func (s *Model) getFirstSubstantiveMessage(sess *SessionMetadata) string {
 	cacheKey := sess.ID + ":subst"
 	if cached, ok := s.messageCache[cacheKey]; ok {
 		return cached
@@ -294,7 +300,7 @@ func (s *Model) getFirstSubstantiveMessage(sess *coresession.SessionMetadata) st
 	}
 
 	for _, entry := range fullSession.Entries {
-		if entry.Type != coresession.EntryUser || entry.Message == nil {
+		if entry.Type != EntryUser || entry.Message == nil {
 			continue
 		}
 		// Skip tool_result entries.
@@ -309,7 +315,7 @@ func (s *Model) getFirstSubstantiveMessage(sess *coresession.SessionMetadata) st
 			continue
 		}
 		for _, block := range entry.Message.Content {
-			if block.Type == "text" && len([]rune(block.Text)) >= coresession.MinSubstantiveLength {
+			if block.Type == "text" && len([]rune(block.Text)) >= MinSubstantiveLength {
 				maxLen := calculateMessagePreviewLength(s.width)
 				content := truncateToFirstLine(block.Text, maxLen)
 				s.messageCache[cacheKey] = content
@@ -329,7 +335,7 @@ func (s *Model) getFirstSubstantiveMessage(sess *coresession.SessionMetadata) st
 //
 // Subtitle line: the last message in the conversation (any role) is shown as
 // a muted preview.
-func (s *Model) renderSession(sess *coresession.SessionMetadata, isSelected bool, sb *strings.Builder, boxWidth int) {
+func (s *Model) renderSession(sess *SessionMetadata, isSelected bool, sb *strings.Builder, boxWidth int) {
 	titleStyle, indent := shared.SelectorItemStyle, "  "
 	if isSelected {
 		titleStyle, indent = shared.SelectorSelectedStyle, "> "
@@ -337,7 +343,7 @@ func (s *Model) renderSession(sess *coresession.SessionMetadata, isSelected bool
 
 	// Determine display title — prefer substantive message over short titles.
 	displayTitle := sess.Title
-	if len([]rune(displayTitle)) < coresession.MinSubstantiveLength {
+	if len([]rune(displayTitle)) < MinSubstantiveLength {
 		if subst := s.getFirstSubstantiveMessage(sess); subst != "" {
 			displayTitle = subst
 		}

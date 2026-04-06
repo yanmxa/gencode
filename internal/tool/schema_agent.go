@@ -204,8 +204,8 @@ var PlanModeAgentSchema = provider.Tool{
 	Description: `Launch a subagent to research the codebase.
 
 Available agent types in plan mode:
-- Explore: Fast codebase exploration. Use to find files, search code, and answer questions. (Tools: Read, Glob, Grep, Bash, WebFetch, WebSearch)
-- Plan: Software architect for designing implementation plans. (Tools: Read, Glob, Grep, Bash, WebFetch, WebSearch)
+- Explore: Fast codebase exploration. Use to find files, search code, and answer questions. (Tools: Read, Glob, Grep, WebFetch, WebSearch)
+- Plan: Software architect for designing implementation plans. (Tools: Read, Glob, Grep, WebFetch, WebSearch)
 
 Usage notes:
 - Launch multiple agents by making multiple Agent calls in a single message

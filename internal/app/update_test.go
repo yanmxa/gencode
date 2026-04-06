@@ -11,6 +11,7 @@ import (
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
+	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	appprovider "github.com/yanmxa/gencode/internal/app/provider"
 	appsession "github.com/yanmxa/gencode/internal/app/session"
 	appskill "github.com/yanmxa/gencode/internal/app/skill"
@@ -24,6 +25,7 @@ import (
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/permission"
+	"github.com/yanmxa/gencode/internal/ui/progress"
 )
 
 type fakeConversationRuntime struct {
@@ -32,6 +34,34 @@ type fakeConversationRuntime struct {
 	lastStreamReq streamRequest
 	streamResult  streamStartResult
 }
+
+type scriptedLLMProvider struct {
+	responses []message.CompletionResponse
+	callIdx   int
+}
+
+func (p *scriptedLLMProvider) Stream(_ context.Context, _ provider.CompletionOptions) <-chan message.StreamChunk {
+	ch := make(chan message.StreamChunk, 1)
+	go func() {
+		defer close(ch)
+		resp := message.CompletionResponse{
+			Content:    "no scripted response",
+			StopReason: "end_turn",
+		}
+		if p.callIdx < len(p.responses) {
+			resp = p.responses[p.callIdx]
+			p.callIdx++
+		}
+		ch <- message.StreamChunk{Type: message.ChunkTypeDone, Response: &resp}
+	}()
+	return ch
+}
+
+func (p *scriptedLLMProvider) ListModels(_ context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
+
+func (p *scriptedLLMProvider) Name() string { return "scripted" }
 
 func (f *fakeConversationRuntime) SuggestPromptCmd(req promptSuggestionRequest) tea.Cmd {
 	f.suggestCalled = true
@@ -511,6 +541,158 @@ func TestBuildPromptSuggestionRequest(t *testing.T) {
 	}
 }
 
+func TestHandleCompletionToolCalls_StopsStreamPhaseBeforeToolExecution(t *testing.T) {
+	m := &model{
+		conv: appconv.Model{
+			Messages: []message.ChatMessage{
+				{Role: message.RoleUser, Content: "check deploy"},
+				{Role: message.RoleAssistant, Content: ""},
+			},
+			CommittedCount: 1,
+			Stream: appconv.StreamState{
+				Active:       true,
+				BuildingTool: "AskUserQuestion",
+				Cancel:       func() {},
+			},
+		},
+		provider: appprovider.State{
+			ThinkingOverride: provider.ThinkingHigh,
+		},
+		output: appoutput.New(80, progress.NewHub(16)),
+		loop:   &core.Loop{},
+	}
+
+	cmd := m.handleCompletionToolCalls([]message.ToolCall{
+		{ID: "tc-1", Name: "AskUserQuestion", Input: `{"question":"Continue?"}`},
+	})
+	if cmd == nil {
+		t.Fatal("expected tool execution command")
+	}
+	if m.conv.Stream.Active {
+		t.Fatal("expected stream to stop before tool execution")
+	}
+	if m.conv.Stream.BuildingTool != "" || m.conv.Stream.Ch != nil || m.conv.Stream.Cancel != nil {
+		t.Fatalf("expected stream state to be fully cleared, got %#v", m.conv.Stream)
+	}
+	if m.provider.ThinkingOverride != provider.ThinkingOff {
+		t.Fatalf("expected thinking override reset, got %v", m.provider.ThinkingOverride)
+	}
+	if len(m.conv.Messages) != 2 || len(m.conv.Messages[1].ToolCalls) != 1 {
+		t.Fatalf("expected assistant message to retain tool calls, got %#v", m.conv.Messages)
+	}
+}
+
+func TestHandleQuestionResponse_CancelledStopsStreamState(t *testing.T) {
+	m := &model{
+		conv: appconv.Model{
+			Messages: []message.ChatMessage{
+				{Role: message.RoleAssistant, Content: "", ToolCalls: []message.ToolCall{{ID: "ask-1", Name: "AskUserQuestion"}}},
+			},
+			Stream: appconv.StreamState{
+				Active:       true,
+				BuildingTool: "AskUserQuestion",
+				Cancel:       func() {},
+			},
+		},
+		mode: appmode.State{
+			Question:        appmode.NewQuestionPrompt(),
+			PendingQuestion: &tool.QuestionRequest{ID: "ask-1"},
+		},
+		tool: apptool.State{
+			ExecState: apptool.ExecState{
+				PendingCalls: []message.ToolCall{{ID: "ask-1", Name: "AskUserQuestion"}},
+				CurrentIdx:   0,
+			},
+		},
+	}
+
+	cmd := m.handleQuestionResponse(appmode.QuestionResponseMsg{
+		Request:   &tool.QuestionRequest{ID: "ask-1"},
+		Cancelled: true,
+	})
+	if cmd == nil {
+		t.Fatal("expected cancellation command")
+	}
+	if m.conv.Stream.Active {
+		t.Fatal("expected cancelled question to stop stream")
+	}
+	if m.conv.Stream.BuildingTool != "" || m.conv.Stream.Ch != nil || m.conv.Stream.Cancel != nil {
+		t.Fatalf("expected stream state to be fully cleared, got %#v", m.conv.Stream)
+	}
+	if m.tool.PendingCalls != nil {
+		t.Fatalf("expected pending tool calls to reset, got %#v", m.tool.PendingCalls)
+	}
+	last := m.conv.Messages[len(m.conv.Messages)-1]
+	if last.ToolResult == nil || !last.ToolResult.IsError || last.ToolResult.Content != "User cancelled the question prompt" {
+		t.Fatalf("expected cancellation tool result, got %#v", last)
+	}
+}
+
+func TestExecuteSubmitRequest_CancelsPendingToolsBeforeNewTurn(t *testing.T) {
+	rt := &fakeConversationRuntime{}
+	cancelled := false
+	base := newBaseModel(t.TempDir(), modelInfra{})
+	m := &base
+	m.runtime = rt
+	m.loop = &core.Loop{}
+	m.output = appoutput.New(80, progress.NewHub(16))
+	m.conv = appconv.Model{
+		Messages: []message.ChatMessage{
+			{Role: message.RoleUser, Content: "previous request"},
+			{
+				Role:    message.RoleAssistant,
+				Content: "",
+				ToolCalls: []message.ToolCall{
+					{ID: "tc-1", Name: "TaskOutput", Input: `{"task_id":"993103b8"}`},
+				},
+			},
+		},
+	}
+	m.tool = apptool.State{
+		ExecState: apptool.ExecState{
+			PendingCalls: []message.ToolCall{
+				{ID: "tc-1", Name: "TaskOutput", Input: `{"task_id":"993103b8"}`},
+			},
+			CurrentIdx: 0,
+			Cancel:     func() { cancelled = true },
+		},
+	}
+	m.provider = appprovider.State{
+		LLM: testLLMProvider{},
+	}
+
+	cmd := m.executeSubmitRequest(submitRequest{Input: "请修复这个 bug"})
+	if cmd == nil {
+		t.Fatal("expected submit command")
+	}
+	if !cancelled {
+		t.Fatal("expected pending tool execution to be cancelled")
+	}
+	if m.tool.PendingCalls != nil {
+		t.Fatalf("expected pending tool calls to be cleared, got %#v", m.tool.PendingCalls)
+	}
+	if !rt.startCalled {
+		t.Fatal("expected a new provider turn to start")
+	}
+
+	if got := len(rt.lastStreamReq.Messages); got != 4 {
+		t.Fatalf("expected 4 provider messages, got %d", got)
+	}
+	cancelMsg := rt.lastStreamReq.Messages[2]
+	if cancelMsg.ToolResult == nil {
+		t.Fatalf("expected synthetic tool_result before new turn, got %#v", cancelMsg)
+	}
+	if cancelMsg.ToolResult.ToolCallID != "tc-1" || !cancelMsg.ToolResult.IsError {
+		t.Fatalf("unexpected synthetic tool_result: %#v", cancelMsg.ToolResult)
+	}
+	if cancelMsg.ToolResult.Content != "Stopped waiting for background task output because the user sent a new message. The background task may still be running." {
+		t.Fatalf("unexpected synthetic tool_result content: %#v", cancelMsg.ToolResult)
+	}
+	if rt.lastStreamReq.Messages[3].Role != message.RoleUser || rt.lastStreamReq.Messages[3].Content != "请修复这个 bug" {
+		t.Fatalf("unexpected final user message: %#v", rt.lastStreamReq.Messages[3])
+	}
+}
+
 func TestBuildCompactRequest(t *testing.T) {
 	m := &model{
 		loop: &core.Loop{},
@@ -632,6 +814,96 @@ func TestConfigureLoopBuildsLoopComponents(t *testing.T) {
 	}
 	if len(m.loop.System.Extra) != 1 || m.loop.System.Extra[0] != "explicit-extra" {
 		t.Fatalf("unexpected system extra: %#v", m.loop.System.Extra)
+	}
+}
+
+func TestPlanModeAgentExecutionStartsContinuationWithoutHanging(t *testing.T) {
+	rt := &fakeConversationRuntime{}
+	provider := &scriptedLLMProvider{
+		responses: []message.CompletionResponse{
+			{
+				Content:    "Exploration complete",
+				StopReason: "end_turn",
+				Usage:      message.Usage{InputTokens: 10, OutputTokens: 5},
+			},
+		},
+	}
+
+	tc := message.ToolCall{
+		ID:    "agent-1",
+		Name:  tool.ToolAgent,
+		Input: `{"subagent_type":"Explore","prompt":"Inspect the codebase","description":"Inspect code"}`,
+	}
+
+	m := &model{
+		cwd:     t.TempDir(),
+		runtime: rt,
+		loop:    &core.Loop{},
+		output:  appoutput.New(80, progress.NewHub(16)),
+		conv: appconv.Model{
+			Messages: []message.ChatMessage{
+				{Role: message.RoleUser, Content: "Investigate the codebase"},
+				{Role: message.RoleAssistant, Content: "", ToolCalls: []message.ToolCall{tc}},
+			},
+		},
+		mode: appmode.State{
+			Enabled:            true,
+			Operation:          appmode.Plan,
+			SessionPermissions: config.NewSessionPermissions(),
+		},
+		provider: appprovider.State{
+			LLM: provider,
+		},
+	}
+	m.reconfigureAgentTool()
+
+	startCmd := m.handleStartToolExecution([]message.ToolCall{tc})
+	if startCmd == nil {
+		t.Fatal("expected tool execution command")
+	}
+
+	startMsg := startCmd()
+	resultMsg, ok := startMsg.(apptool.ExecResultMsg)
+	if !ok {
+		t.Fatalf("expected ExecResultMsg, got %T", startMsg)
+	}
+	if resultMsg.Result.IsError {
+		t.Fatalf("expected successful agent execution, got error %q", resultMsg.Result.Content)
+	}
+	if !strings.Contains(resultMsg.Result.Content, "Agent: Explore") {
+		t.Fatalf("expected rendered agent metadata, got %q", resultMsg.Result.Content)
+	}
+	if !strings.Contains(resultMsg.Result.Content, "Exploration complete") {
+		t.Fatalf("expected subagent output, got %q", resultMsg.Result.Content)
+	}
+
+	_ = m.handleToolResult(resultMsg)
+	if len(m.conv.Messages) != 3 {
+		t.Fatalf("expected tool result appended to conversation, got %d messages", len(m.conv.Messages))
+	}
+	last := m.conv.Messages[len(m.conv.Messages)-1]
+	if last.ToolResult == nil || last.ToolName != tool.ToolAgent {
+		t.Fatalf("expected final message to be Agent tool result, got %#v", last)
+	}
+
+	continueCmd := m.handleAllToolsCompleted()
+	if continueCmd == nil {
+		t.Fatal("expected continuation command after tool completion")
+	}
+	if !rt.startCalled {
+		t.Fatal("expected continuation stream to start")
+	}
+	if m.tool.PendingCalls != nil {
+		t.Fatalf("expected pending tool calls to be cleared, got %#v", m.tool.PendingCalls)
+	}
+	if !m.conv.Stream.Active {
+		t.Fatal("expected follow-up stream to be active")
+	}
+	if len(m.conv.Messages) != 4 {
+		t.Fatalf("expected assistant placeholder for continuation, got %d messages", len(m.conv.Messages))
+	}
+	if len(rt.lastStreamReq.Messages) != 3 {
+		t.Fatalf("expected continuation request to include tool result context, got %d messages", len(rt.lastStreamReq.Messages))
 	}
 }
 

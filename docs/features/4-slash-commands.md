@@ -1,4 +1,4 @@
-# Feature 4: Slash Commands (18 Commands)
+# Feature 4: Slash Commands (19 Commands)
 
 ## Overview
 
@@ -24,6 +24,7 @@ Slash commands are typed directly in the TUI input box. They trigger local UI ac
 | `/mcp` | Manage MCP servers |
 | `/plugin` | Manage plugins |
 | `/think` | Cycle thinking level (off / normal / high / ultra) |
+| `/loop` | Schedule recurring or one-shot prompts and manage loop jobs |
 
 ## UI Interactions
 
@@ -31,6 +32,7 @@ Slash commands are typed directly in the TUI input box. They trigger local UI ac
 - Selector commands (`/provider`, `/model`, `/skills`, etc.) open a scrollable picker overlay.
 - `/clear` immediately resets the visible conversation.
 - `/think` cycles through levels and updates the status bar indicator.
+- `/loop` has a dedicated feature document: see [Feature 21](./21-loop.md).
 
 ## Automated Tests
 
@@ -42,13 +44,15 @@ go test ./internal/app/memory/... -v
 Covered:
 
 ```
-TestHandlerRegistryMatchesBuiltinCommands — all 18 commands registered
+TestHandlerRegistryMatchesBuiltinCommands — all 19 commands registered
 TestExecuteCommandExit                    — /exit returns quit command
 TestExecuteCommandUnknown                 — unknown commands show error message
 TestHandleInitCommand                     — /init creates .gen/GEN.md file
 TestHandleInitCommand (local)             — /init local creates .gen/GEN.local.md
 TestHandleInitCommand (rules)             — /init rules creates .gen/rules directory
 TestHandleMemoryList                      — /memory list formats output with sections
+TestExecuteCommandLoopSchedulesRecurringPrompt
+                                         — /loop recurring path is registered and handled
 ```
 
 Cases to add:
@@ -110,7 +114,7 @@ sleep 2
 tmux send-keys -t t_cmds '/help' Enter
 sleep 2
 tmux capture-pane -t t_cmds -p
-# Expected: all 18 commands listed
+# Expected: all 19 commands listed
 
 # Test 2: /clear
 tmux send-keys -t t_cmds 'hello' Enter

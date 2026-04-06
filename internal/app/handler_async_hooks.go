@@ -33,7 +33,7 @@ func (m *model) handleAsyncHookTick() tea.Cmd {
 	} else {
 		m.hookStatus = ""
 	}
-	if m.conv.Stream.Active {
+	if m.conv.Stream.Active || m.hasPendingToolExecution() {
 		return tea.Batch(cmds...)
 	}
 

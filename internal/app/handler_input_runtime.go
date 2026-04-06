@@ -44,10 +44,19 @@ func (m *model) cancelPendingToolCalls() {
 			ToolName: tc.Name,
 			ToolResult: &message.ToolResult{
 				ToolCallID: tc.ID,
-				Content:    "Tool execution cancelled by user",
+				Content:    pendingToolCancellationContent(tc),
 				IsError:    true,
 			},
 		})
+	}
+}
+
+func pendingToolCancellationContent(tc message.ToolCall) string {
+	switch tc.Name {
+	case "TaskOutput":
+		return "Stopped waiting for background task output because the user sent a new message. The background task may still be running."
+	default:
+		return "Tool execution interrupted because the user sent a new message."
 	}
 }
 

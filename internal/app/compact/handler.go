@@ -37,7 +37,7 @@ func GetMaxTokens(store *provider.Store, currentModel *provider.CurrentModelInfo
 }
 
 // CompactConversation compacts the message history into a summary.
-// sessionMemory is the previous compaction summary (from session-memory/summary.md);
+// sessionMemory is the previous compaction summary loaded from persisted transcript state;
 // if non-empty it is prepended as prior context so the new summary preserves it.
 func CompactConversation(ctx context.Context, c *client.Client, msgs []message.Message, sessionMemory, focus string) (summary string, count int, err error) {
 	return core.Compact(ctx, c, msgs, sessionMemory, focus)

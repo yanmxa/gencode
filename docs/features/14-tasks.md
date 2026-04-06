@@ -26,13 +26,13 @@ The task system runs shell commands or agents in the background while the user c
 | `TaskList` | List all tasks |
 | `TaskUpdate` | Update task description |
 | `TaskStop` | Kill a running task |
-| `TaskOutput` | Stream output from a task |
+| `TaskOutput` | Check current output or fetch the final result of a task |
 
 ## UI Interactions
 
 - **Task panel** (`Ctrl+T`): shows all tasks with status badges (Running / Completed / Failed / Killed).
 - **Task creation**: LLM calls `TaskCreate`; the task ID is shown in the response.
-- **Live output**: `TaskOutput` streams output into the conversation in real time.
+- **Status-first output**: `TaskOutput` is non-blocking by default so background work stays asynchronous. Set `block=true` only when you intentionally want to wait in the current turn.
 - **Stop**: `TaskStop` sends SIGKILL; status updates to Killed.
 
 ## Automated Tests

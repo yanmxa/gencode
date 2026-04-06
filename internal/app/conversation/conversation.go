@@ -10,7 +10,7 @@ func (m *Model) Append(msg message.ChatMessage) {
 }
 
 // Clear resets the conversation to empty.
-// Also used after compaction since the summary now lives in session-memory.
+// Also used after compaction since the summary now lives in transcript state.
 func (m *Model) Clear() {
 	m.Messages = []message.ChatMessage{}
 	m.CommittedCount = 0
@@ -106,16 +106,36 @@ func (m *Model) HasAllToolResults(idx int) bool {
 	if len(toolCalls) == 0 {
 		return true
 	}
-	endIdx := idx + 1 + len(toolCalls)
-	if endIdx > len(m.Messages) {
-		return false
+
+	expected := make(map[string]bool, len(toolCalls))
+	for _, tc := range toolCalls {
+		expected[tc.ID] = false
 	}
-	for j := idx + 1; j < endIdx; j++ {
-		if m.Messages[j].ToolResult == nil {
-			return false
+
+	for j := idx + 1; j < len(m.Messages); j++ {
+		msg := m.Messages[j]
+		if msg.Role == message.RoleNotice {
+			continue
+		}
+		if msg.ToolResult == nil {
+			break
+		}
+		if _, ok := expected[msg.ToolResult.ToolCallID]; ok {
+			expected[msg.ToolResult.ToolCallID] = true
+		}
+		allFound := true
+		for _, found := range expected {
+			if !found {
+				allFound = false
+				break
+			}
+		}
+		if allFound {
+			return true
 		}
 	}
-	return true
+
+	return false
 }
 
 // ConvertToProvider converts chat messages to provider format, skipping notices.

@@ -290,3 +290,122 @@ func TestStoreDelete_DurableRemovesPersistedJob(t *testing.T) {
 		t.Fatalf("expected durable store file to be empty after delete, got %d jobs", len(jobs))
 	}
 }
+
+func TestStoreTick_DurableRecurringPersistsUpdatedState(t *testing.T) {
+	tmpFile := t.TempDir() + "/scheduled_tasks.json"
+
+	store := NewStore()
+	store.SetStoragePath(tmpFile)
+	job, err := store.Create("* * * * *", "durable repeat", true, true)
+	if err != nil {
+		t.Fatalf("Create durable recurring failed: %v", err)
+	}
+
+	store.mu.Lock()
+	store.jobs[job.ID].NextFire = time.Now().Add(-time.Minute)
+	store.mu.Unlock()
+
+	fired := store.Tick()
+	if len(fired) != 1 {
+		t.Fatalf("expected 1 fired job, got %d", len(fired))
+	}
+
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("ReadFile(durable store): %v", err)
+	}
+
+	var jobs []*Job
+	if err := json.Unmarshal(data, &jobs); err != nil {
+		t.Fatalf("Unmarshal(durable store): %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 persisted durable job, got %d", len(jobs))
+	}
+	if jobs[0].FiredCount != 1 {
+		t.Fatalf("expected persisted FiredCount=1, got %d", jobs[0].FiredCount)
+	}
+	if jobs[0].LastFired.IsZero() {
+		t.Fatal("expected persisted LastFired to be set")
+	}
+}
+
+func TestComputeNextFire_RecurringAddsDeterministicBoundedJitter(t *testing.T) {
+	expr, err := Parse("0 * * * *")
+	if err != nil {
+		t.Fatalf("Parse() failed: %v", err)
+	}
+
+	from := time.Date(2026, 4, 6, 10, 7, 0, 0, time.Local)
+	base := expr.NextAfter(from)
+	if base.Minute() != 0 || base.Hour() != 11 {
+		t.Fatalf("unexpected base time %v", base)
+	}
+
+	got1 := computeNextFire(expr, from, "job-123", true)
+	got2 := computeNextFire(expr, from, "job-123", true)
+	if !got1.Equal(got2) {
+		t.Fatalf("expected deterministic jitter, got %v and %v", got1, got2)
+	}
+	if got1.Before(base) {
+		t.Fatalf("expected jittered fire time >= base, got base=%v jittered=%v", base, got1)
+	}
+	if !got1.Before(base.Add(6 * time.Minute)) {
+		t.Fatalf("expected hourly jitter to stay under 10%% period, got base=%v jittered=%v", base, got1)
+	}
+}
+
+func TestComputeNextFire_OneShotDoesNotAddJitter(t *testing.T) {
+	expr, err := Parse("0 * * * *")
+	if err != nil {
+		t.Fatalf("Parse() failed: %v", err)
+	}
+
+	from := time.Date(2026, 4, 6, 10, 7, 0, 0, time.Local)
+	base := expr.NextAfter(from)
+	got := computeNextFire(expr, from, "job-123", false)
+	if !got.Equal(base) {
+		t.Fatalf("expected one-shot next fire to equal base, got base=%v next=%v", base, got)
+	}
+}
+
+func TestLoadDurable_OneShotPastDueFiresOnNextTick(t *testing.T) {
+	tmpFile := t.TempDir() + "/scheduled_tasks.json"
+
+	store := NewStore()
+	store.SetStoragePath(tmpFile)
+	job, err := store.Create("30 9 28 2 *", "missed once", false, true)
+	if err != nil {
+		t.Fatalf("Create durable one-shot failed: %v", err)
+	}
+
+	store.mu.Lock()
+	store.jobs[job.ID].NextFire = time.Now().Add(-2 * time.Hour)
+	store.saveDurableLocked()
+	store.mu.Unlock()
+
+	store2 := NewStore()
+	store2.SetStoragePath(tmpFile)
+	if err := store2.LoadDurable(); err != nil {
+		t.Fatalf("LoadDurable failed: %v", err)
+	}
+
+	jobs := store2.List()
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 loaded durable job, got %d", len(jobs))
+	}
+	if jobs[0].Recurring {
+		t.Fatal("expected one-shot durable job")
+	}
+	if jobs[0].NextFire.After(time.Now().Add(2 * time.Second)) {
+		t.Fatalf("expected one-shot catch-up to be immediate, got %v", jobs[0].NextFire)
+	}
+
+	fired := store2.Tick()
+	if len(fired) != 1 {
+		t.Fatalf("expected catch-up tick to fire 1 job, got %d", len(fired))
+	}
+	if fired[0].Prompt != "missed once" {
+		t.Fatalf("unexpected fired prompt %q", fired[0].Prompt)
+	}
+}

@@ -6,8 +6,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	appcommand "github.com/yanmxa/gencode/internal/app/command"
 	appinput "github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/ui/history"
 )
 
@@ -23,6 +25,7 @@ func (m *model) resetInputField() {
 func (m *model) handleSubmit() tea.Cmd {
 	m.promptSuggestion.Clear()
 	m.maxOutputRecoveryCount = 0
+	m.conv.Compact.ClearResult()
 
 	req, ok := m.readSubmitRequest()
 	if !ok {
@@ -55,6 +58,13 @@ func (m *model) executeSubmitRequest(req submitRequest) tea.Cmd {
 
 	if blocked, reason := m.checkPromptHook(req.Input); blocked {
 		return m.blockPromptSubmission(reason)
+	}
+
+	// If the user submits a new turn while tools are still running, cancel the
+	// unfinished tool calls first and append synthetic tool_result messages so
+	// the next provider request does not contain orphaned tool_use blocks.
+	if m.hasPendingToolExecution() {
+		m.cancelPendingToolCalls()
 	}
 
 	m.recordSubmittedInput(req.Input)
@@ -98,22 +108,30 @@ func (m *model) recordSubmittedInput(input string) {
 }
 
 func (m *model) handleCommandSubmit(input string) (tea.Cmd, bool) {
+	preserve := shouldPreserveCommandInConversation(input, "", nil)
+	preAppended := false
+	if preserve && shouldPreserveBeforeCommandExecution(input) {
+		m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: input})
+		preAppended = true
+	}
+
+	insertAt := len(m.conv.Messages)
 	result, cmd, isCmd := ExecuteCommand(context.Background(), m, input)
 	if !isCmd {
+		if preAppended && len(m.conv.Messages) > 0 {
+			m.conv.Messages = m.conv.Messages[:len(m.conv.Messages)-1]
+		}
 		return nil, false
 	}
 
 	m.resetInputField()
 
-	// Skill slash commands: the user message is appended inside handleSkillInvocation
-	// before startLLMStream, so skip it here.
-	// Selector commands (/skills, /tools, /agents, /provider, /model, /resume):
-	// return empty result and nil cmd — don't append user message since they only
-	// open an overlay.
-	// Info commands (/help, /fork, /init, etc.): return a non-empty result —
-	// append user message so it pairs with the notice.
-	if cmd == nil && result != "" {
-		m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: input})
+	// Slash commands should remain visible in the conversation so the transcript
+	// reflects the user's literal input and arguments. Skill commands are the
+	// exception here because handleSkillInvocation appends the full slash
+	// invocation itself before starting the provider turn.
+	if preserve && !preAppended {
+		m.insertConversationMessage(insertAt, message.ChatMessage{Role: message.RoleUser, Content: input})
 	}
 	if result != "" {
 		m.conv.AddNotice(result)
@@ -124,6 +142,47 @@ func (m *model) handleCommandSubmit(input string) (tea.Cmd, bool) {
 		cmds = append(cmds, cmd)
 	}
 	return tea.Batch(cmds...), true
+}
+
+func shouldPreserveBeforeCommandExecution(input string) bool {
+	name, _, isCmd := appcommand.ParseCommand(input)
+	if !isCmd {
+		return false
+	}
+	return name == "loop"
+}
+
+func (m *model) insertConversationMessage(idx int, msg message.ChatMessage) {
+	if idx < 0 || idx >= len(m.conv.Messages) {
+		m.conv.Append(msg)
+		return
+	}
+
+	m.conv.Messages = append(m.conv.Messages, message.ChatMessage{})
+	copy(m.conv.Messages[idx+1:], m.conv.Messages[idx:])
+	m.conv.Messages[idx] = msg
+	if idx < m.conv.CommittedCount {
+		m.conv.CommittedCount++
+	}
+}
+
+func shouldPreserveCommandInConversation(input, result string, cmd tea.Cmd) bool {
+	name, _, isCmd := appcommand.ParseCommand(input)
+	if !isCmd {
+		return false
+	}
+	switch name {
+	case "clear", "exit":
+		return false
+	}
+
+	if skill.DefaultRegistry != nil {
+		if sk, ok := skill.DefaultRegistry.Get(name); ok && sk.IsEnabled() {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (m *model) prepareSubmittedUserMessage(input string) (message.ChatMessage, tea.Cmd, bool) {

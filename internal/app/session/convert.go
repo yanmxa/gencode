@@ -2,12 +2,11 @@ package session
 
 import (
 	"github.com/yanmxa/gencode/internal/message"
-	coresession "github.com/yanmxa/gencode/internal/session"
 )
 
 // ConvertToEntries converts ChatMessages to Entries for session persistence.
-func ConvertToEntries(messages []message.ChatMessage) []coresession.Entry {
-	entries := make([]coresession.Entry, 0, len(messages))
+func ConvertToEntries(messages []message.ChatMessage) []Entry {
+	entries := make([]Entry, 0, len(messages))
 	var prevUUID string
 
 	for _, msg := range messages {
@@ -15,7 +14,7 @@ func ConvertToEntries(messages []message.ChatMessage) []coresession.Entry {
 			continue
 		}
 
-		uuid := coresession.GenerateShortID()
+		uuid := GenerateShortID()
 
 		var parentUuid *string
 		if prevUUID != "" {
@@ -23,40 +22,40 @@ func ConvertToEntries(messages []message.ChatMessage) []coresession.Entry {
 			parentUuid = &s
 		}
 
-		entry := coresession.Entry{
+		entry := Entry{
 			UUID:       uuid,
 			ParentUuid: parentUuid,
-			Version:    coresession.AppVersion,
+			Version:    AppVersion,
 		}
 
 		switch msg.Role {
 		case message.RoleUser:
-			entry.Type = coresession.EntryUser
+			entry.Type = EntryUser
 			if msg.ToolResult != nil {
-				entry.Message = &coresession.EntryMessage{
+				entry.Message = &EntryMessage{
 					Role:    "user",
-					Content: coresession.ToolResultToBlocks(msg.ToolResult),
+					Content: ToolResultToBlocks(msg.ToolResult),
 				}
 			} else {
-				entry.Message = &coresession.EntryMessage{
+				entry.Message = &EntryMessage{
 					Role:    "user",
-					Content: coresession.UserContentToBlocks(msg.Content, msg.Images),
+					Content: UserContentToBlocks(msg.Content, msg.Images),
 				}
 			}
 
 		case message.RoleAssistant:
-			entry.Type = coresession.EntryAssistant
-			entry.Message = &coresession.EntryMessage{
+			entry.Type = EntryAssistant
+			entry.Message = &EntryMessage{
 				Role:    "assistant",
-				Content: coresession.AssistantContentToBlocks(msg.Content, msg.Thinking, msg.ThinkingSignature, msg.ToolCalls),
+				Content: AssistantContentToBlocks(msg.Content, msg.Thinking, msg.ThinkingSignature, msg.ToolCalls),
 			}
 
 		case message.RoleToolResult:
-			entry.Type = coresession.EntryUser
+			entry.Type = EntryUser
 			if msg.ToolResult != nil {
-				entry.Message = &coresession.EntryMessage{
+				entry.Message = &EntryMessage{
 					Role:    "user",
-					Content: coresession.ToolResultToBlocks(msg.ToolResult),
+					Content: ToolResultToBlocks(msg.ToolResult),
 				}
 			}
 
@@ -72,9 +71,8 @@ func ConvertToEntries(messages []message.ChatMessage) []coresession.Entry {
 }
 
 // ConvertFromEntries converts Entries back to ChatMessages after loading.
-// It reuses EntriesToMessages from the core session package and converts the result.
-func ConvertFromEntries(entries []coresession.Entry) []message.ChatMessage {
-	coreMsgs := coresession.EntriesToMessages(entries)
+func ConvertFromEntries(entries []Entry) []message.ChatMessage {
+	coreMsgs := EntriesToMessages(entries)
 	messages := make([]message.ChatMessage, 0, len(coreMsgs))
 
 	for _, m := range coreMsgs {

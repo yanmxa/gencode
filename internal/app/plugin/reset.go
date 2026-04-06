@@ -13,6 +13,7 @@ func (s *Model) resetDetailState() {
 	s.detailMarketplace = nil
 	s.actions = nil
 	s.actionIdx = 0
+	s.detailScroll = 0
 }
 
 func (s *Model) resetBrowseState() {

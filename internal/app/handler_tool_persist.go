@@ -24,5 +24,5 @@ func (m *model) persistToolResultOverflow(result *message.ToolResult) {
 	}
 
 	preview := result.Content[:toolResultPreviewSize]
-	result.Content = fmt.Sprintf("%s\n\n[Full output persisted to tool-results/%s]", preview, result.ToolCallID)
+	result.Content = fmt.Sprintf("%s\n\n[Full output persisted to blobs/tool-result/%s/%s]", preview, m.session.CurrentID, result.ToolCallID)
 }

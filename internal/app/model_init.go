@@ -24,13 +24,13 @@ import (
 	apptool "github.com/yanmxa/gencode/internal/app/tool"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/options"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/ui/progress"
@@ -44,10 +44,16 @@ type modelInfra struct {
 	mcpRegistry       *mcp.Registry
 	settings          *config.Settings
 	hookEngine        *hooks.Engine
-	earlySessionStore *session.Store
+	earlySessionStore *appsession.Store
 }
 
 func initializeModelInfra(cwd string) (modelInfra, error) {
+	cron.DefaultStore = cron.NewStore()
+	cron.DefaultStore.SetStoragePath(filepath.Join(cwd, ".gen", "scheduled_tasks.json"))
+	if err := cron.DefaultStore.LoadDurable(); err != nil {
+		return modelInfra{}, fmt.Errorf("failed to load scheduled tasks: %w", err)
+	}
+
 	store, llmProvider, currentModel := initializeProvider()
 	mcpRegistry := initializeRegistries(cwd)
 	settings := loadSettings()
@@ -55,7 +61,7 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
 
 	var transcriptPath string
-	earlySessionStore, _ := session.NewStore(cwd)
+	earlySessionStore, _ := appsession.NewStore(cwd)
 	if earlySessionStore != nil {
 		transcriptPath = earlySessionStore.SessionPath(sessionID)
 	}
@@ -246,7 +252,7 @@ func (m *model) enablePlanMode(prompt string) error {
 }
 
 func (m *model) applyContinueOption(fork bool) error {
-	sessionStore, err := session.NewStore(m.cwd)
+	sessionStore, err := appsession.NewStore(m.cwd)
 	if err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
@@ -258,7 +264,7 @@ func (m *model) applyContinueOption(fork bool) error {
 	}
 
 	if fork {
-		forked, err := sessionStore.Fork(sess.Metadata.ID, sess)
+		forked, err := sessionStore.Fork(sess.Metadata.ID)
 		if err != nil {
 			return fmt.Errorf("failed to fork session: %w", err)
 		}
@@ -270,7 +276,7 @@ func (m *model) applyContinueOption(fork bool) error {
 }
 
 func (m *model) applyResumeOption(resumeID string, fork bool) error {
-	sessionStore, err := session.NewStore(m.cwd)
+	sessionStore, err := appsession.NewStore(m.cwd)
 	if err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
@@ -282,7 +288,7 @@ func (m *model) applyResumeOption(resumeID string, fork bool) error {
 			return fmt.Errorf("failed to load session %s: %w", resumeID, err)
 		}
 		if fork {
-			forked, err := sessionStore.Fork(sess.Metadata.ID, sess)
+			forked, err := sessionStore.Fork(sess.Metadata.ID)
 			if err != nil {
 				return fmt.Errorf("failed to fork session: %w", err)
 			}

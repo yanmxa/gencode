@@ -18,7 +18,9 @@ const (
 type TaskOutputTool struct{}
 
 func (t *TaskOutputTool) Name() string        { return "TaskOutput" }
-func (t *TaskOutputTool) Description() string { return "Retrieve output from a background task" }
+func (t *TaskOutputTool) Description() string {
+	return "Retrieve current output or final result from a background task without blocking by default"
+}
 func (t *TaskOutputTool) Icon() string        { return IconTaskOutput }
 
 // Execute retrieves task output
@@ -37,8 +39,8 @@ func (t *TaskOutputTool) Execute(ctx context.Context, params map[string]any, cwd
 		}
 	}
 
-	// Get block parameter (default true — absent means block)
-	block := true
+	// Default to a non-blocking status check so background tasks remain useful.
+	block := false
 	if b, ok := params["block"].(bool); ok {
 		block = b
 	}
@@ -65,8 +67,9 @@ func (t *TaskOutputTool) Execute(ctx context.Context, params map[string]any, cwd
 			info := bgTask.GetStatus()
 			output := formatTaskOutput(info, "still running")
 			output += fmt.Sprintf("\nOptions:\n"+
-				"  - Wait longer: TaskOutput(task_id=\"%s\", timeout=60000)\n"+
-				"  - Check status: TaskOutput(task_id=\"%s\", block=false)\n"+
+				"  - Keep working; the background task may still complete on its own\n"+
+				"  - Wait longer now: TaskOutput(task_id=\"%s\", block=true, timeout=60000)\n"+
+				"  - Check status later: TaskOutput(task_id=\"%s\")\n"+
 				"  - Stop: TaskStop(task_id=\"%s\")\n", taskID, taskID, taskID)
 
 			if info.Output != "" {
@@ -90,6 +93,10 @@ func (t *TaskOutputTool) Execute(ctx context.Context, params map[string]any, cwd
 	info := bgTask.GetStatus()
 	statusStr := formatStatusString(info)
 	output := formatTaskOutput(info, statusStr)
+	if !block && bgTask.IsRunning() {
+		output += "Background task is still running.\n"
+		output += fmt.Sprintf("Use TaskOutput(task_id=\"%s\", block=true) only when you want to wait here.\n", taskID)
+	}
 
 	if !info.EndTime.IsZero() {
 		output += fmt.Sprintf("Duration: %v\n", info.EndTime.Sub(info.StartTime))

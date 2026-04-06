@@ -13,7 +13,6 @@ import (
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/task"
@@ -28,13 +27,18 @@ type Executor struct {
 	cwd                 string
 	parentModelID       string // Parent conversation's model ID (used when inheriting)
 	hooks               *hooks.Engine
-	sessionStore        *session.Store         // Optional: when set, subagent sessions are persisted
+	sessionStore        SubagentSessionStore   // Optional: when set, subagent sessions are persisted
 	parentSessionID     string                 // Parent session ID for linking subagent sessions
 	userInstructions    string                 // ~/.gen/GEN.md + rules
 	projectInstructions string                 // .gen/GEN.md + rules + local
 	isGit               bool                   // whether cwd is a git repository
 	mcpGetter           func() []provider.Tool // MCP tool schemas from parent
 	mcpRegistry         *mcp.Registry          // MCP registry for tool execution
+}
+
+type SubagentSessionStore interface {
+	SaveSubagentConversation(parentSessionID, title, modelID, cwd string, messages []message.Message) (string, string, error)
+	LoadSubagentMessages(agentID string) ([]message.Message, error)
 }
 
 type runConfig struct {
@@ -75,7 +79,7 @@ func (e *Executor) SetMCP(getter func() []provider.Tool, registry *mcp.Registry)
 
 // SetSessionStore configures session persistence for subagent conversations.
 // When set, completed subagent conversations are saved under the parent session.
-func (e *Executor) SetSessionStore(store *session.Store, parentSessionID string) {
+func (e *Executor) SetSessionStore(store SubagentSessionStore, parentSessionID string) {
 	e.sessionStore = store
 	e.parentSessionID = parentSessionID
 }
@@ -430,36 +434,19 @@ func (e *Executor) persistSubagentSession(agentName, modelID, description string
 		return "", ""
 	}
 
-	entries := session.MessagesToEntries(messages)
-	if len(entries) == 0 {
-		return "", ""
-	}
-
 	title := description
 	if title == "" {
 		title = agentName
 	}
-
-	sess := &session.Session{
-		Metadata: session.SessionMetadata{
-			Title:           title,
-			Model:           modelID,
-			Cwd:             e.cwd,
-			ParentSessionID: e.parentSessionID,
-		},
-		Entries: entries,
-	}
-
-	if err := e.sessionStore.SaveSubagent(e.parentSessionID, sess); err != nil {
+	sessionID, transcriptPath, err := e.sessionStore.SaveSubagentConversation(e.parentSessionID, title, modelID, e.cwd, messages)
+	if err != nil {
 		log.Logger().Warn("Failed to persist subagent session",
 			zap.String("agent", agentName),
 			zap.Error(err),
 		)
 		return "", ""
 	}
-
-	transcriptPath := e.sessionStore.SubagentPath(e.parentSessionID, sess.Metadata.ID)
-	return sess.Metadata.ID, transcriptPath
+	return sessionID, transcriptPath
 }
 
 // --- Resume & Isolation ---
@@ -471,15 +458,9 @@ func (e *Executor) resumeFromSession(loop *core.Loop, agentID, newPrompt string)
 		return fmt.Errorf("session store not configured, cannot resume")
 	}
 
-	sess, err := e.sessionStore.LoadSubagent(agentID)
+	prevMessages, err := e.sessionStore.LoadSubagentMessages(agentID)
 	if err != nil {
 		return err
-	}
-
-	// Convert persisted entries back to messages
-	prevMessages := session.EntriesToMessages(sess.Entries)
-	if len(prevMessages) == 0 {
-		return fmt.Errorf("no messages found in session %s", agentID)
 	}
 
 	// Restore previous conversation and append continuation prompt

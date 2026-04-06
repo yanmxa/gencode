@@ -2,6 +2,8 @@
 
 The Subagent system allows GenCode to spawn specialized AI agents for complex tasks. Each agent runs in an isolated context with filtered tool access and returns only the final result to the main conversation.
 
+Background subagents are intentionally asynchronous: you can start a single background subagent, get a task ID back immediately, and continue using the main thread without waiting for the task to finish.
+
 ## Overview
 
 ```
@@ -20,7 +22,7 @@ The Subagent system allows GenCode to spawn specialized AI agents for complex ta
 │     └────────┬────────┘             └────────┬────────┘         │
 │              │                               │                   │
 │              ▼                               ▼                   │
-│     Return final result            AgentOutput / AgentStop         │
+│     Return final result            TaskOutput / TaskStop           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -100,24 +102,28 @@ The `Agent` tool spawns a subagent to handle complex tasks.
 
 ```
 # Foreground (blocking)
-Task(subagent_type="Explore", prompt="Find all database-related files")
+Agent(subagent_type="Explore", prompt="Find all database-related files", description="Find db files")
 
-# Background (non-blocking)
-Task(subagent_type="Explore", prompt="Analyze codebase", run_in_background=true)
+# Background (non-blocking, single subagent launch)
+Agent(subagent_type="Explore", prompt="Analyze codebase", description="Analyze codebase", run_in_background=true)
 ```
+
+After this call returns, the main conversation should remain usable. Check progress with `TaskOutput(task_id="...")` only when needed; otherwise let the background agent run and finish on its own.
 
 ---
 
-## AgentOutput Tool
+## TaskOutput Tool
 
 Retrieves output from a background task.
+
+`AgentOutput` remains a deprecated alias; `TaskOutput` is the canonical name.
 
 ### Schema
 
 ```json
 {
-  "name": "AgentOutput",
-  "description": "Retrieve output from a background task",
+  "name": "TaskOutput",
+  "description": "Retrieve current output or final result from a background task",
   "parameters": {
     "task_id": {
       "type": "string",
@@ -126,12 +132,12 @@ Retrieves output from a background task.
     },
     "block": {
       "type": "boolean",
-      "description": "Wait for task completion",
-      "default": true
+      "description": "If true, wait for task completion. If false, return current status/output immediately.",
+      "default": false
     },
     "timeout": {
       "type": "number",
-      "description": "Max wait time in milliseconds (max 600000)",
+      "description": "Max wait time in milliseconds when block=true (max 600000)",
       "default": 30000
     }
   }
@@ -140,16 +146,26 @@ Retrieves output from a background task.
 
 ### Behavior
 
-| Scenario | block=true | block=false |
-|----------|-----------|-------------|
-| Task running | Wait up to timeout | Return current status |
+| Scenario | `TaskOutput(task_id="...")` | `TaskOutput(task_id="...", block=true)` |
+|----------|-----------------------------|-----------------------------------------|
+| Task running | Return current status/output immediately | Wait up to timeout |
 | Task completed | Return result | Return result |
 | Task failed | Return error + output | Return error + output |
-| Timeout reached | Return "still running" + options | N/A |
+| Timeout reached | N/A | Return "still running" + options |
 
 ### Output Format
 
-**For running tasks:**
+**For running tasks (default non-blocking):**
+```
+Agent: Explore
+Status: running
+Turns: 5
+Tokens: 1000
+Background task is still running.
+Use TaskOutput(task_id="xxx", block=true) only when you want to wait here.
+```
+
+**For running tasks with `block=true` timeout:**
 ```
 Agent: Explore
 Status: still running
@@ -157,9 +173,10 @@ Turns: 5
 Tokens: 1000
 
 Options:
-  - Wait longer: AgentOutput(task_id="xxx", timeout=60000)
-  - Check status: AgentOutput(task_id="xxx", block=false)
-  - Stop: AgentStop(task_id="xxx")
+  - Keep working; the background task may still complete on its own
+  - Wait longer now: TaskOutput(task_id="xxx", block=true, timeout=60000)
+  - Check status later: TaskOutput(task_id="xxx")
+  - Stop: TaskStop(task_id="xxx")
 ```
 
 **For completed tasks:**
@@ -172,6 +189,42 @@ Duration: 45s
 
 Output:
 [Agent's final response]
+```
+
+### Functional Test
+
+Use this as the minimal manual check for the background-subagent protocol:
+
+```bash
+tmux new-session -d -s t_subagent -x 220 -y 60
+tmux send-keys -t t_subagent 'gen' Enter
+sleep 2
+
+# 1. Start exactly one background subagent
+tmux send-keys -t t_subagent 'analyze this repo with one Explore subagent running in background' Enter
+sleep 5
+tmux capture-pane -t t_subagent -p
+# Expected: Agent returns immediately with "background (Task ID: ...)"
+
+# 2. Main thread must still accept new prompts immediately
+tmux send-keys -t t_subagent 'while that runs, summarize the README briefly' Enter
+sleep 5
+tmux capture-pane -t t_subagent -p
+# Expected: main thread continues; no forced wait on the background task
+
+# 3. Optional status check (non-blocking default)
+tmux send-keys -t t_subagent 'check the background task status' Enter
+sleep 5
+tmux capture-pane -t t_subagent -p
+# Expected: TaskOutput returns current status immediately
+
+# 4. Optional explicit wait
+tmux send-keys -t t_subagent 'wait for the background task result now' Enter
+sleep 10
+tmux capture-pane -t t_subagent -p
+# Expected: only this explicit wait path should block for completion
+
+tmux kill-session -t t_subagent
 ```
 
 ---
@@ -259,7 +312,7 @@ Fast codebase exploration and understanding.
 | Property | Value |
 |----------|-------|
 | Permission Mode | `plan` (read-only) |
-| Tools | Read, Glob, Grep, Bash, WebFetch, WebSearch |
+| Tools | Read, Glob, Grep, WebFetch, WebSearch |
 | Max Turns | 100 |
 | Model | inherit (from parent) |
 
@@ -267,7 +320,7 @@ Fast codebase exploration and understanding.
 - Find files by pattern
 - Search code for keywords
 - Answer questions about the codebase
-- Run investigative commands (git log, wc, find, etc.)
+- Trace behavior across code, config, tests, and docs
 
 ### Plan
 
@@ -276,7 +329,7 @@ Software architect agent for designing implementation plans.
 | Property | Value |
 |----------|-------|
 | Permission Mode | `plan` (read-only) |
-| Tools | Read, Glob, Grep, Bash, WebFetch, WebSearch |
+| Tools | Read, Glob, Grep, WebFetch, WebSearch |
 | Max Turns | 100 |
 | Model | inherit |
 
@@ -470,8 +523,8 @@ messages = [                         messages = [
 | File | Purpose |
 |------|---------|
 | `internal/tool/task.go` | Task tool implementation |
-| `internal/tool/taskoutput.go` | AgentOutput tool |
-| `internal/tool/taskstop.go` | AgentStop tool |
+| `internal/tool/taskoutput.go` | TaskOutput tool (`AgentOutput` alias) |
+| `internal/tool/taskstop.go` | TaskStop tool (`AgentStop` alias) |
 | `internal/agent/types.go` | Core type definitions |
 | `internal/agent/registry.go` | Built-in agent configs |
 | `internal/agent/loader.go` | Custom agent loading |

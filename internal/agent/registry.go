@@ -66,13 +66,13 @@ func (r *Registry) ListConfigs() []*AgentConfig {
 
 // registerBuiltins registers the built-in agent types
 func (r *Registry) registerBuiltins() {
-	// Explore agent - fast codebase exploration (read-only + Bash)
+	// Explore agent - fast codebase exploration (read-only)
 	r.agents["explore"] = &AgentConfig{
 		Name:           "Explore",
 		Description:    "Fast codebase exploration and understanding. Use for questions that require reading and cross-referencing multiple files. NOT for questions answerable with a single direct tool call (one Bash command, one Grep, one Read) — use those tools directly instead.",
 		Model:          "inherit",
 		PermissionMode: PermissionPlan,
-		Tools:          ToolList{"Read", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"},
+		Tools:          ToolList{"Read", "Glob", "Grep", "WebFetch", "WebSearch"},
 		MaxTurns:       100,
 		Source:         "built-in",
 	}
@@ -83,7 +83,7 @@ func (r *Registry) registerBuiltins() {
 		Description:    "Software architect agent for designing implementation plans. Use when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.",
 		Model:          "inherit",
 		PermissionMode: PermissionPlan,
-		Tools:          ToolList{"Read", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"},
+		Tools:          ToolList{"Read", "Glob", "Grep", "WebFetch", "WebSearch"},
 		MaxTurns:       100,
 		Source:         "built-in",
 	}

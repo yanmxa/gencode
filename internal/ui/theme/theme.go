@@ -29,25 +29,25 @@ type Theme struct {
 }
 
 var CurrentTheme = Theme{
-	Muted:     lipgloss.AdaptiveColor{Dark: "#6B7280", Light: "#4B5563"},
-	Accent:    lipgloss.AdaptiveColor{Dark: "#F59E0B", Light: "#D97706"},
-	Primary:   lipgloss.AdaptiveColor{Dark: "#60A5FA", Light: "#2563EB"},
-	AI:        lipgloss.AdaptiveColor{Dark: "#A78BFA", Light: "#6D28D9"},
-	Separator: lipgloss.AdaptiveColor{Dark: "#4B5563", Light: "#9CA3AF"},
+	Muted:     lipgloss.AdaptiveColor{Dark: "#6B7280", Light: "#6B7280"},
+	Accent:    lipgloss.AdaptiveColor{Dark: "#94A3B8", Light: "#64748B"},
+	Primary:   lipgloss.AdaptiveColor{Dark: "#CBD5E1", Light: "#475569"},
+	AI:        lipgloss.AdaptiveColor{Dark: "#A8B3C7", Light: "#64748B"},
+	Separator: lipgloss.AdaptiveColor{Dark: "#475569", Light: "#CBD5E1"},
 
-	Text:         lipgloss.AdaptiveColor{Dark: "#D1D5DB", Light: "#111827"},
-	TextDim:      lipgloss.AdaptiveColor{Dark: "#9CA3AF", Light: "#4B5563"},
-	TextBright:   lipgloss.AdaptiveColor{Dark: "#FFFFFF", Light: "#030712"},
-	TextDisabled: lipgloss.AdaptiveColor{Dark: "#4B5563", Light: "#6B7280"},
+	Text:         lipgloss.AdaptiveColor{Dark: "#D4D4D8", Light: "#18181B"},
+	TextDim:      lipgloss.AdaptiveColor{Dark: "#A1A1AA", Light: "#71717A"},
+	TextBright:   lipgloss.AdaptiveColor{Dark: "#FAFAFA", Light: "#09090B"},
+	TextDisabled: lipgloss.AdaptiveColor{Dark: "#52525B", Light: "#A1A1AA"},
 
-	Success:   lipgloss.AdaptiveColor{Dark: "#10B981", Light: "#059669"},
-	Error:     lipgloss.AdaptiveColor{Dark: "#EF4444", Light: "#DC2626"},
-	Warning:   lipgloss.AdaptiveColor{Dark: "#FBBF24", Light: "#B45309"},
-	SuccessBg: lipgloss.AdaptiveColor{Dark: "#1a3a1a", Light: "#c8f5d0"},
-	ErrorBg:   lipgloss.AdaptiveColor{Dark: "#3a1a1a", Light: "#fdd8d5"},
+	Success:   lipgloss.AdaptiveColor{Dark: "#86EFAC", Light: "#15803D"},
+	Error:     lipgloss.AdaptiveColor{Dark: "#FCA5A5", Light: "#B91C1C"},
+	Warning:   lipgloss.AdaptiveColor{Dark: "#FCD34D", Light: "#B45309"},
+	SuccessBg: lipgloss.AdaptiveColor{Dark: "#16281d", Light: "#DCFCE7"},
+	ErrorBg:   lipgloss.AdaptiveColor{Dark: "#2b1818", Light: "#FEE2E2"},
 
-	Border:     lipgloss.AdaptiveColor{Dark: "#374151", Light: "#D1D5DB"},
-	Background: lipgloss.AdaptiveColor{Dark: "#1F2937", Light: "#F3F4F6"},
+	Border:     lipgloss.AdaptiveColor{Dark: "#52525B", Light: "#D4D4D8"},
+	Background: lipgloss.AdaptiveColor{Dark: "#18181B", Light: "#FAFAFA"},
 }
 
 var (

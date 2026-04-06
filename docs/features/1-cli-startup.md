@@ -28,8 +28,7 @@
 ## Automated Tests
 
 ```bash
-go test ./tests/integration/cli/... -v
-go test ./tests/integration/session/... -v
+GOCACHE=/tmp/gocache go test ./tests/integration/cli/... ./tests/integration/session/...
 ```
 
 Covered:
@@ -44,31 +43,9 @@ TestPlanMode_BlocksWriteTools     — --plan flag: write tools are blocked
 TestPlanMode_AllowsReadTools      — --plan flag: read tools work normally
 ```
 
-Cases to add:
-
-```go
-func TestPluginDirFlag_LoadsPlugins(t *testing.T) {
-    // --plugin-dir PATH must load plugin skills and agents from the directory
-}
-
-func TestSessionResume_PickerShowsList(t *testing.T) {
-    // -r must show a session list sorted by update time
-}
-
-func TestContinueLatestSession(t *testing.T) {
-    // -c must load the latest session without opening the picker
-}
-
-func TestSessionResume_SpecificID(t *testing.T) {
-    // -r <id> must load the specified session directly
-}
-
-func TestForkSpecificSession(t *testing.T) {
-    // -r <id> --fork must fork the specified session, not the latest
-}
-```
-
 ## Interactive Tests (tmux)
+
+For transcript-specific startup validation, including `-c`, `-r`, `--fork`, and project transcript layout, see `docs/transcriptstore.md`.
 
 ```bash
 tmux new-session -d -s t_cli -x 200 -y 50
@@ -108,7 +85,8 @@ tmux capture-pane -t t_cli -p
 tmux send-keys -t t_cli C-c
 
 # Test 6: Resume specific session by ID
-SESSION_ID=$(find ~/.gen -name '*.jsonl' | head -1 | xargs basename | sed 's/\.jsonl$//')
+PROJECT_DIR=~/.gen/projects/$(pwd | sed 's#/#-#g')
+SESSION_ID=$(find "${PROJECT_DIR}/transcripts" -name '*.jsonl' | head -1 | xargs basename | sed 's/\.jsonl$//')
 tmux send-keys -t t_cli "gen -r ${SESSION_ID}" Enter
 sleep 2
 tmux capture-pane -t t_cli -p

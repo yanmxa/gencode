@@ -77,7 +77,7 @@ func (t *EnterPlanModeTool) ExecuteWithResponse(ctx context.Context, params map[
 
 	return ui.ToolResult{
 		Success: true,
-		Output:  "User approved entering plan mode. You are now in plan mode. You have access to read-only tools (Read, Glob, Grep, WebFetch, WebSearch), the Task tool for spawning Explore and Plan subagents, and ExitPlanMode to submit your final plan. Follow the plan mode workflow in your instructions.",
+		Output:  "User approved entering plan mode. You are now in plan mode. You have access to read-only tools (Read, Glob, Grep, WebFetch, WebSearch), the Agent tool for spawning Explore and Plan subagents, and ExitPlanMode to submit your final plan. Follow the plan mode workflow in your instructions.",
 		Metadata: ui.ResultMetadata{
 			Title:    "EnterPlanMode",
 			Icon:     "📋",

@@ -2,14 +2,22 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	appcommand "github.com/yanmxa/gencode/internal/app/command"
+	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appsession "github.com/yanmxa/gencode/internal/app/session"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/session"
+	"github.com/yanmxa/gencode/internal/cron"
+	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/skill"
 )
 
 func TestHandlerRegistryMatchesBuiltinCommands(t *testing.T) {
@@ -129,21 +137,21 @@ func TestExecuteCommandOpenSelectors(t *testing.T) {
 		tmpDir := t.TempDir()
 		t.Setenv("HOME", tmpHome)
 
-		store, err := session.NewStore(tmpDir)
+		store, err := appsession.NewStore(tmpDir)
 		if err != nil {
 			t.Fatalf("NewStore(): %v", err)
 		}
-		err = store.Save(&session.Session{
-			Metadata: session.SessionMetadata{
+		err = store.Save(&appsession.Snapshot{
+			Metadata: appsession.SessionMetadata{
 				Title: "Resume me",
 				Cwd:   tmpDir,
 			},
-			Entries: []session.Entry{
+			Entries: []appsession.Entry{
 				{
-					Type: session.EntryUser,
-					Message: &session.EntryMessage{
+					Type: appsession.EntryUser,
+					Message: &appsession.EntryMessage{
 						Role: "user",
-						Content: []session.ContentBlock{
+						Content: []appsession.ContentBlock{
 							{Type: "text", Text: "hello"},
 						},
 					},
@@ -172,4 +180,421 @@ func TestExecuteCommandOpenSelectors(t *testing.T) {
 			t.Fatal("expected session selector to become active")
 		}
 	})
+}
+
+func TestExecuteCommandLoopSchedulesRecurringPrompt(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".gen"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.gen): %v", err)
+	}
+
+	prevStore := cron.DefaultStore
+	cron.DefaultStore = cron.NewStore()
+	cron.DefaultStore.SetStoragePath(filepath.Join(tmpDir, ".gen", "scheduled_tasks.json"))
+	t.Cleanup(func() { cron.DefaultStore = prevStore })
+
+	m := &model{
+		cwd:  tmpDir,
+		conv: appconv.New(),
+	}
+
+	result, cmd, handled := ExecuteCommand(context.Background(), m, "/loop 5m check the deploy")
+	if !handled {
+		t.Fatal("expected /loop to be handled")
+	}
+	if result != "" {
+		t.Fatalf("expected empty result, got %q", result)
+	}
+	if cmd == nil {
+		t.Fatal("expected follow-up command to execute prompt immediately")
+	}
+
+	jobs := cron.DefaultStore.List()
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 scheduled job, got %d", len(jobs))
+	}
+	if jobs[0].Cron != "*/5 * * * *" {
+		t.Fatalf("unexpected cron expression %q", jobs[0].Cron)
+	}
+	if jobs[0].Prompt != "check the deploy" {
+		t.Fatalf("unexpected scheduled prompt %q", jobs[0].Prompt)
+	}
+
+	foundImmediatePrompt := false
+	for _, msg := range m.conv.Messages {
+		if msg.Content == "check the deploy" {
+			foundImmediatePrompt = true
+			break
+		}
+	}
+	if !foundImmediatePrompt {
+		t.Fatal("expected immediate prompt to be appended to conversation")
+	}
+}
+
+func TestExecuteCommandLoopParsesTrailingEveryClause(t *testing.T) {
+	prevStore := cron.DefaultStore
+	cron.DefaultStore = cron.NewStore()
+	t.Cleanup(func() { cron.DefaultStore = prevStore })
+
+	m := &model{conv: appconv.New()}
+
+	result, cmd, handled := ExecuteCommand(context.Background(), m, "/loop check the deploy every 20m")
+	if !handled {
+		t.Fatal("expected /loop to be handled")
+	}
+	if result != "" {
+		t.Fatalf("expected empty result, got %q", result)
+	}
+	if cmd == nil {
+		t.Fatal("expected follow-up command")
+	}
+
+	jobs := cron.DefaultStore.List()
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 scheduled job, got %d", len(jobs))
+	}
+	if jobs[0].Cron != "*/20 * * * *" {
+		t.Fatalf("unexpected cron expression %q", jobs[0].Cron)
+	}
+	if jobs[0].Prompt != "check the deploy" {
+		t.Fatalf("unexpected scheduled prompt %q", jobs[0].Prompt)
+	}
+}
+
+func TestExecuteCommandLoopOnceSchedulesOneShot(t *testing.T) {
+	prevStore := cron.DefaultStore
+	cron.DefaultStore = cron.NewStore()
+	t.Cleanup(func() { cron.DefaultStore = prevStore })
+
+	m := &model{conv: appconv.New()}
+
+	result, cmd, handled := ExecuteCommand(context.Background(), m, "/loop once 20m check the deploy")
+	if !handled {
+		t.Fatal("expected /loop once to be handled")
+	}
+	if result != "" {
+		t.Fatalf("expected empty result, got %q", result)
+	}
+	if cmd != nil {
+		t.Fatal("did not expect immediate follow-up command for one-shot schedule")
+	}
+
+	jobs := cron.DefaultStore.List()
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 scheduled job, got %d", len(jobs))
+	}
+	if jobs[0].Recurring {
+		t.Fatal("expected one-shot task")
+	}
+	if jobs[0].Prompt != "check the deploy" {
+		t.Fatalf("unexpected scheduled prompt %q", jobs[0].Prompt)
+	}
+}
+
+func TestParseLoopCommand_RoundsNonCleanIntervals(t *testing.T) {
+	now := time.Date(2026, 4, 6, 14, 30, 0, 0, time.Local)
+
+	parsed, err := parseLoopCommand("90m check the deploy", now)
+	if err != nil {
+		t.Fatalf("parseLoopCommand failed: %v", err)
+	}
+	if parsed.Cron != "37 */2 * * *" {
+		t.Fatalf("unexpected cron expression %q", parsed.Cron)
+	}
+	if !strings.Contains(parsed.Note, "Rounded `90m` to `every 2 hour(s)`") {
+		t.Fatalf("expected rounding note, got %q", parsed.Note)
+	}
+}
+
+func TestParseLoopCommand_AvoidsTopOfHourScheduling(t *testing.T) {
+	now := time.Date(2026, 4, 6, 10, 0, 0, 0, time.Local)
+
+	parsed, err := parseLoopCommand("1h check deploy", now)
+	if err != nil {
+		t.Fatalf("parseLoopCommand failed: %v", err)
+	}
+	if parsed.Cron != "7 * * * *" {
+		t.Fatalf("unexpected cron expression %q", parsed.Cron)
+	}
+}
+
+func TestParseLoopOnceCommand_SupportsTrailingInClause(t *testing.T) {
+	now := time.Date(2026, 4, 6, 10, 5, 0, 0, time.Local)
+
+	parsed, err := parseLoopOnceCommand("check deploy in 20m", now)
+	if err != nil {
+		t.Fatalf("parseLoopOnceCommand failed: %v", err)
+	}
+	if parsed.Prompt != "check deploy" {
+		t.Fatalf("unexpected prompt %q", parsed.Prompt)
+	}
+	if parsed.Cron != "25 10 6 4 *" {
+		t.Fatalf("unexpected cron expression %q", parsed.Cron)
+	}
+	if !strings.Contains(parsed.Human, "once at 2026-04-06 10:25") {
+		t.Fatalf("unexpected human schedule %q", parsed.Human)
+	}
+}
+
+func TestExecuteCommandLoopListAndDelete(t *testing.T) {
+	prevStore := cron.DefaultStore
+	cron.DefaultStore = cron.NewStore()
+	t.Cleanup(func() { cron.DefaultStore = prevStore })
+
+	job, err := cron.DefaultStore.Create("*/5 * * * *", "check deploy", true, false)
+	if err != nil {
+		t.Fatalf("Create() failed: %v", err)
+	}
+
+	m := &model{conv: appconv.New()}
+
+	result, cmd, handled := ExecuteCommand(context.Background(), m, "/loop list")
+	if !handled {
+		t.Fatal("expected /loop list to be handled")
+	}
+	if cmd != nil {
+		t.Fatal("did not expect follow-up command for /loop list")
+	}
+	if !strings.Contains(result, job.ID) || !strings.Contains(result, "check deploy") {
+		t.Fatalf("unexpected list output %q", result)
+	}
+
+	result, cmd, handled = ExecuteCommand(context.Background(), m, "/loop delete "+job.ID)
+	if !handled {
+		t.Fatal("expected /loop delete to be handled")
+	}
+	if cmd != nil {
+		t.Fatal("did not expect follow-up command for /loop delete")
+	}
+	if !strings.Contains(result, job.ID) {
+		t.Fatalf("unexpected delete output %q", result)
+	}
+	if len(cron.DefaultStore.List()) != 0 {
+		t.Fatal("expected scheduled task to be deleted")
+	}
+}
+
+func TestExecuteCommandLoopDeleteAll(t *testing.T) {
+	prevStore := cron.DefaultStore
+	cron.DefaultStore = cron.NewStore()
+	t.Cleanup(func() { cron.DefaultStore = prevStore })
+
+	if _, err := cron.DefaultStore.Create("*/5 * * * *", "check deploy", true, false); err != nil {
+		t.Fatalf("Create() failed: %v", err)
+	}
+	if _, err := cron.DefaultStore.Create("*/10 * * * *", "check logs", true, false); err != nil {
+		t.Fatalf("Create() failed: %v", err)
+	}
+
+	m := &model{conv: appconv.New()}
+
+	result, cmd, handled := ExecuteCommand(context.Background(), m, "/loop delete all")
+	if !handled {
+		t.Fatal("expected /loop delete all to be handled")
+	}
+	if cmd != nil {
+		t.Fatal("did not expect follow-up command")
+	}
+	if !strings.Contains(result, "Cancelled 2 scheduled task(s).") {
+		t.Fatalf("unexpected result %q", result)
+	}
+	if len(cron.DefaultStore.List()) != 0 {
+		t.Fatal("expected all scheduled tasks to be deleted")
+	}
+}
+
+func TestHandleClearCommand_PreservesScheduledTasks(t *testing.T) {
+	prevStore := cron.DefaultStore
+	cron.DefaultStore = cron.NewStore()
+	t.Cleanup(func() { cron.DefaultStore = prevStore })
+
+	if _, err := cron.DefaultStore.Create("*/5 * * * *", "check deploy", true, false); err != nil {
+		t.Fatalf("Create() failed: %v", err)
+	}
+
+	m := &model{conv: appconv.New()}
+	_, _, err := handleClearCommand(context.Background(), m, "")
+	if err != nil {
+		t.Fatalf("handleClearCommand() failed: %v", err)
+	}
+
+	if len(cron.DefaultStore.List()) != 1 {
+		t.Fatal("expected scheduled tasks to survive /clear")
+	}
+}
+
+func TestTriggerCronTickNow_ReturnsCronTickMsg(t *testing.T) {
+	cmd := triggerCronTickNow()
+	if cmd == nil {
+		t.Fatal("expected triggerCronTickNow to return a command")
+	}
+	msg := cmd()
+	if _, ok := msg.(cronTickMsg); !ok {
+		t.Fatalf("expected cronTickMsg, got %T", msg)
+	}
+}
+
+func TestShouldPreserveCommandInConversation_PreservesLoopKeyword(t *testing.T) {
+	if !shouldPreserveCommandInConversation("/loop 5m check deploy", "", func() tea.Msg { return nil }) {
+		t.Fatal("expected /loop command to be preserved in conversation")
+	}
+	if !shouldPreserveCommandInConversation("/loop once 20m check deploy", "", nil) {
+		t.Fatal("expected /loop once command to be preserved in conversation")
+	}
+	if !shouldPreserveCommandInConversation("/tools", "", nil) {
+		t.Fatal("expected selector slash command to be preserved")
+	}
+	if !shouldPreserveCommandInConversation("/plan audit coverage", "", nil) {
+		t.Fatal("expected slash command arguments to be preserved")
+	}
+	if shouldPreserveCommandInConversation("/clear", "", nil) {
+		t.Fatal("did not expect /clear to be preserved")
+	}
+}
+
+func TestHandleCommandSubmit_LoopDeleteAllPreservesLiteralInputAndDeletesJobs(t *testing.T) {
+	prevStore := cron.DefaultStore
+	cron.DefaultStore = cron.NewStore()
+	t.Cleanup(func() { cron.DefaultStore = prevStore })
+
+	if _, err := cron.DefaultStore.Create("*/5 * * * *", "check deploy", true, false); err != nil {
+		t.Fatalf("Create() failed: %v", err)
+	}
+	if _, err := cron.DefaultStore.Create("*/10 * * * *", "check logs", true, false); err != nil {
+		t.Fatalf("Create() failed: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	base := newBaseModel(tmpDir, modelInfra{})
+	m := &model{
+		cwd:   tmpDir,
+		input: base.input,
+		conv:  appconv.New(),
+	}
+
+	cmd, handled := m.handleCommandSubmit("/loop delete all")
+	if !handled {
+		t.Fatal("expected /loop delete all to be handled")
+	}
+	if cmd == nil {
+		t.Fatal("expected commit command for handled slash command")
+	}
+	if len(cron.DefaultStore.List()) != 0 {
+		t.Fatal("expected all scheduled jobs to be deleted")
+	}
+	if len(m.conv.Messages) != 2 {
+		t.Fatalf("expected preserved user command and notice, got %d messages", len(m.conv.Messages))
+	}
+	if m.conv.Messages[0].Role != message.RoleUser || m.conv.Messages[0].Content != "/loop delete all" {
+		t.Fatalf("expected preserved literal slash command, got %#v", m.conv.Messages[0])
+	}
+	if m.conv.Messages[1].Role != message.RoleNotice || !strings.Contains(m.conv.Messages[1].Content, "Cancelled 2 scheduled task(s).") {
+		t.Fatalf("expected delete-all notice, got %#v", m.conv.Messages[1])
+	}
+}
+
+func TestHandleCommandSubmit_ToolsPreservesLiteralInput(t *testing.T) {
+	tmpDir := t.TempDir()
+	base := newBaseModel(tmpDir, modelInfra{})
+	m := &model{
+		cwd:    tmpDir,
+		input:  base.input,
+		conv:   appconv.New(),
+		width:  80,
+		height: 24,
+	}
+
+	cmd, handled := m.handleCommandSubmit("/tools")
+	if !handled {
+		t.Fatal("expected /tools to be handled")
+	}
+	if cmd == nil {
+		t.Fatal("expected commit command for handled slash command")
+	}
+	if !m.tool.Selector.IsActive() {
+		t.Fatal("expected tool selector to open")
+	}
+	if len(m.conv.Messages) != 1 {
+		t.Fatalf("expected preserved user command only, got %d messages", len(m.conv.Messages))
+	}
+	if m.conv.Messages[0].Role != message.RoleUser || m.conv.Messages[0].Content != "/tools" {
+		t.Fatalf("expected preserved /tools command, got %#v", m.conv.Messages[0])
+	}
+}
+
+func TestHandleCommandSubmit_LoopOncePlacesCommandBeforeNotice(t *testing.T) {
+	prevStore := cron.DefaultStore
+	cron.DefaultStore = cron.NewStore()
+	t.Cleanup(func() { cron.DefaultStore = prevStore })
+
+	tmpDir := t.TempDir()
+	base := newBaseModel(tmpDir, modelInfra{})
+	m := &model{
+		cwd:   tmpDir,
+		input: base.input,
+		conv:  appconv.New(),
+	}
+
+	cmd, handled := m.handleCommandSubmit("/loop once 20m check the deploy")
+	if !handled {
+		t.Fatal("expected /loop once to be handled")
+	}
+	if cmd == nil {
+		t.Fatal("expected commit command")
+	}
+	if len(m.conv.Messages) != 2 {
+		t.Fatalf("expected command and notice, got %d messages", len(m.conv.Messages))
+	}
+	if m.conv.Messages[0].Role != message.RoleUser || m.conv.Messages[0].Content != "/loop once 20m check the deploy" {
+		t.Fatalf("expected literal slash command first, got %#v", m.conv.Messages[0])
+	}
+	if m.conv.Messages[1].Role != message.RoleNotice || !strings.Contains(m.conv.Messages[1].Content, "Scheduled one-shot task") {
+		t.Fatalf("expected one-shot notice second, got %#v", m.conv.Messages[1])
+	}
+}
+
+func TestHandleCommandSubmit_LoopRecurringPlacesCommandBeforeNoticeAndPrompt(t *testing.T) {
+	prevStore := cron.DefaultStore
+	cron.DefaultStore = cron.NewStore()
+	t.Cleanup(func() { cron.DefaultStore = prevStore })
+
+	tmpDir := t.TempDir()
+	base := newBaseModel(tmpDir, modelInfra{})
+	m := &model{
+		cwd:   tmpDir,
+		input: base.input,
+		conv:  appconv.New(),
+	}
+
+	cmd, handled := m.handleCommandSubmit("/loop 5m check the deploy")
+	if !handled {
+		t.Fatal("expected /loop to be handled")
+	}
+	if cmd == nil {
+		t.Fatal("expected commit command")
+	}
+	if len(m.conv.Messages) < 3 {
+		t.Fatalf("expected at least command, notice, and parsed prompt, got %d messages", len(m.conv.Messages))
+	}
+	if m.conv.Messages[0].Role != message.RoleUser || m.conv.Messages[0].Content != "/loop 5m check the deploy" {
+		t.Fatalf("expected literal slash command first, got %#v", m.conv.Messages[0])
+	}
+	if m.conv.Messages[1].Role != message.RoleNotice || !strings.Contains(m.conv.Messages[1].Content, "Scheduled recurring task") {
+		t.Fatalf("expected recurring notice second, got %#v", m.conv.Messages[1])
+	}
+	if m.conv.Messages[2].Role != message.RoleUser || m.conv.Messages[2].Content != "check the deploy" {
+		t.Fatalf("expected parsed prompt third, got %#v", m.conv.Messages[2])
+	}
+}
+
+func TestExecuteSkillCommand_PreservesFullSlashInvocation(t *testing.T) {
+	m := &model{}
+	sk := &skill.Skill{Name: "commit", Namespace: "git"}
+
+	executeSkillCommand(m, sk, "fix release notes")
+
+	if got := m.skill.PendingArgs; got != "/git:commit fix release notes" {
+		t.Fatalf("expected full slash invocation, got %q", got)
+	}
 }

@@ -1,10 +1,8 @@
 package session
 
-import "github.com/yanmxa/gencode/internal/session"
-
 // State holds all session-related state for the TUI model.
 type State struct {
-	Store           *session.Store
+	Store           *Store
 	CurrentID       string
 	Selector        Model
 	PendingSelector bool

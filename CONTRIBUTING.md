@@ -34,8 +34,16 @@ internal/
 ### Run Tests
 
 ```bash
-go test ./...
+GOCACHE=/tmp/gocache go test ./...
 ```
+
+Transcript/session focused suites:
+
+```bash
+GOCACHE=/tmp/gocache go test ./internal/transcriptstore ./internal/app/session ./tests/integration/session/... ./tests/integration/cli/...
+```
+
+Manual transcript persistence checks, including interactive `tmux` flows for `--continue`, `--resume`, `--fork`, compact restore, and tool-result hydration, are documented in `docs/transcriptstore.md`.
 
 ### Debug Mode
 

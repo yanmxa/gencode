@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +13,32 @@ import (
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/skill"
 )
+
+type stubSubagentSessionStore struct {
+	saveParentID string
+	saveTitle    string
+	saveModelID  string
+	saveCwd      string
+	saveMessages []message.Message
+	loadMessages []message.Message
+	loadErr      error
+}
+
+func (s *stubSubagentSessionStore) SaveSubagentConversation(parentSessionID, title, modelID, cwd string, messages []message.Message) (string, string, error) {
+	s.saveParentID = parentSessionID
+	s.saveTitle = title
+	s.saveModelID = modelID
+	s.saveCwd = cwd
+	s.saveMessages = append([]message.Message(nil), messages...)
+	return "agent-1", "/tmp/transcripts/agent-1.jsonl", nil
+}
+
+func (s *stubSubagentSessionStore) LoadSubagentMessages(agentID string) ([]message.Message, error) {
+	if s.loadErr != nil {
+		return nil, s.loadErr
+	}
+	return append([]message.Message(nil), s.loadMessages...), nil
+}
 
 func TestPrepareRunConfigRespectsOverrides(t *testing.T) {
 	executor := &Executor{parentModelID: "parent-model"}
@@ -151,5 +179,97 @@ Use conventional commits.
 	}
 	if !strings.Contains(prompt, "Use conventional commits.") {
 		t.Fatal("expected skill instructions in agent prompt")
+	}
+}
+
+func TestPlanAgentsExposeOnlyReadOnlyTools(t *testing.T) {
+	tests := []string{"Explore", "Plan"}
+
+	for _, agentName := range tests {
+		t.Run(agentName, func(t *testing.T) {
+			cfg, ok := DefaultRegistry.Get(agentName)
+			if !ok {
+				t.Fatalf("agent %q not found", agentName)
+			}
+
+			if cfg.PermissionMode != PermissionPlan {
+				t.Fatalf("expected %q to use plan permissions, got %q", agentName, cfg.PermissionMode)
+			}
+			if slices.Contains([]string(cfg.Tools), "Bash") {
+				t.Fatalf("plan-mode agent %q must not expose Bash", agentName)
+			}
+
+			want := []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"}
+			if !slices.Equal([]string(cfg.Tools), want) {
+				t.Fatalf("unexpected tool list for %q: got %v want %v", agentName, cfg.Tools, want)
+			}
+		})
+	}
+}
+
+func TestPersistSubagentSessionUsesSessionStore(t *testing.T) {
+	store := &stubSubagentSessionStore{}
+	executor := &Executor{
+		cwd:             "/tmp/project",
+		sessionStore:    store,
+		parentSessionID: "parent-1",
+	}
+
+	sessionID, transcriptPath := executor.persistSubagentSession("Explore", "test-model", "Inspect code", []message.Message{
+		{Role: message.RoleUser, Content: "hello"},
+	})
+
+	if sessionID != "agent-1" {
+		t.Fatalf("sessionID = %q, want %q", sessionID, "agent-1")
+	}
+	if transcriptPath != "/tmp/transcripts/agent-1.jsonl" {
+		t.Fatalf("transcriptPath = %q", transcriptPath)
+	}
+	if store.saveParentID != "parent-1" || store.saveTitle != "Inspect code" || store.saveModelID != "test-model" || store.saveCwd != "/tmp/project" {
+		t.Fatalf("unexpected save args: %+v", store)
+	}
+	if len(store.saveMessages) != 1 || store.saveMessages[0].Content != "hello" {
+		t.Fatalf("unexpected saved messages: %+v", store.saveMessages)
+	}
+}
+
+func TestResumeFromSessionUsesSessionStore(t *testing.T) {
+	store := &stubSubagentSessionStore{
+		loadMessages: []message.Message{
+			{Role: message.RoleUser, Content: "previous"},
+			{Role: message.RoleAssistant, Content: "response"},
+		},
+	}
+	executor := &Executor{sessionStore: store}
+	loop := &core.Loop{}
+
+	if err := executor.resumeFromSession(loop, "agent-1", "continue"); err != nil {
+		t.Fatalf("resumeFromSession(): %v", err)
+	}
+
+	msgs := loop.Messages()
+	if len(msgs) != 3 {
+		t.Fatalf("len(messages) = %d, want 3", len(msgs))
+	}
+	if msgs[2].Role != message.RoleUser || msgs[2].Content != "continue" {
+		t.Fatalf("unexpected continuation message: %+v", msgs[2])
+	}
+}
+
+func TestResumeFromSessionRequiresSessionStore(t *testing.T) {
+	executor := &Executor{}
+	err := executor.resumeFromSession(&core.Loop{}, "agent-1", "continue")
+	if err == nil || !strings.Contains(err.Error(), "session store not configured") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResumeFromSessionPropagatesLoadError(t *testing.T) {
+	executor := &Executor{
+		sessionStore: &stubSubagentSessionStore{loadErr: errors.New("boom")},
+	}
+	err := executor.resumeFromSession(&core.Loop{}, "agent-1", "continue")
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

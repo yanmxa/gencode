@@ -4,6 +4,8 @@
 
 Agents are defined in AGENT.md files. They run their own `core.Loop` with an independent system prompt, tool set, and permission mode. They can be invoked headlessly or spawned from within the TUI via the `Agent` tool.
 
+For the built-in `Explore` agent contract, see [Feature 22](./22-explore-agent.md).
+
 **AGENT.md frontmatter:**
 
 ```yaml
@@ -40,7 +42,7 @@ mcp-servers: []
 gen agent run --type AgentName --prompt "task"
 ```
 
-**Invocation options:** `model` override and `max-turns` override for headless runs; the in-TUI `Agent` tool also supports background execution
+**Invocation options:** `model` override and `max-turns` override for headless runs; the in-TUI `Agent` tool also supports launching a single background subagent with `run_in_background=true`
 
 ## UI Interactions
 
@@ -48,6 +50,7 @@ gen agent run --type AgentName --prompt "task"
 - **Agent tool call**: TUI shows `SubagentStart` notification; progress indicator runs while the agent is active.
 - **Agent output**: streamed back to the parent conversation as a tool result.
 - **Background agents**: tracked in the task panel (Ctrl+T).
+- **Single background subagent**: one agent can be launched independently, return a task ID immediately, and continue running while the main thread handles new prompts.
 
 ## Automated Tests
 
@@ -70,6 +73,7 @@ TestAgent_ModelResolution                   — model inheritance and override
 TestAgent_PlanPermissionMode_BlocksWrites   — plan mode blocks writes in agent
 TestAgent_SubagentHooks_Fire                — SubagentStart and SubagentStop hooks fire
 TestAgent_BackgroundExecution               — background agent tracked in task system
+TestExecuteSubmitRequest_CancelsPendingToolsBeforeNewTurn — a new user turn closes pending tool_use blocks before continuing
 
 # Executor tests
 TestPrepareRunConfigRespectsOverrides              — run config overrides work
@@ -149,16 +153,33 @@ sleep 1
 tmux capture-pane -t t_agent -p
 # Expected: agent selector titled "Manage Agents" with "FileReader" listed
 
-# Test 4: Background agent tracked in task panel
+# Test 4: Start a single background subagent
 tmux send-keys -t t_agent Escape
 tmux send-keys -t t_agent 'run the FileReader agent in background to read sample.txt' Enter
 sleep 5
+tmux capture-pane -t t_agent -p
+# Expected: tool result shows "background (Task ID: ...)" and the main thread is idle again
+
+# Test 5: Background agent tracked in task panel
 tmux send-keys -t t_agent C-t
 sleep 1
 tmux capture-pane -t t_agent -p
 # Expected: task panel shows agent task with "Running" or "Completed" status
 
-# Test 5: Agent with plan permission mode (read-only)
+# Test 6: Check background status without blocking the main thread
+tmux send-keys -t t_agent C-t
+tmux send-keys -t t_agent 'check the background subagent status' Enter
+sleep 5
+tmux capture-pane -t t_agent -p
+# Expected: TaskOutput reports current status immediately; it should not wait by default
+
+# Test 7: Explicitly wait for completion only when needed
+tmux send-keys -t t_agent 'wait for the background subagent result now' Enter
+sleep 10
+tmux capture-pane -t t_agent -p
+# Expected: TaskOutput with block=true may wait; final output is shown when the task completes
+
+# Test 8: Agent with plan permission mode (read-only)
 cat > /tmp/agent_test/.gen/agents/ReadOnly.md << 'EOF'
 ---
 name: ReadOnly

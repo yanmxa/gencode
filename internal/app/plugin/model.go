@@ -96,8 +96,9 @@ type Model struct {
 	marketplaces      []MarketplaceItem
 
 	level        Level
-	selectedIdx  int
-	scrollOffset int
+	selectedIdx   int
+	scrollOffset  int
+	detailScroll  int
 
 	searchQuery   string
 	filteredItems []any

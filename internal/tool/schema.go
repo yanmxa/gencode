@@ -86,8 +86,8 @@ func GetToolSchemasFiltered(disabled map[string]bool) []provider.Tool {
 	return filtered
 }
 
-// GetPlanModeToolSchemas returns only the tools available in plan mode
-// Plan mode restricts to read-only tools, the plan-specific Task tool, plus ExitPlanMode
+// GetPlanModeToolSchemas returns only the tools available in plan mode.
+// Plan mode restricts to read-only tools, the plan-mode Agent tool, plus ExitPlanMode.
 func GetPlanModeToolSchemas() []provider.Tool {
 	// Read-only tools allowed in plan mode
 	allowedTools := map[string]bool{

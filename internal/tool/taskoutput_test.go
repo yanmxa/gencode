@@ -142,4 +142,38 @@ func TestTaskOutputTool_NonBlocking(t *testing.T) {
 	if !strings.Contains(result.Output, "running") {
 		t.Errorf("Expected 'running' in output, got: %s", result.Output)
 	}
+
+	if !strings.Contains(result.Output, "Background task is still running.") {
+		t.Errorf("Expected running-background hint in output, got: %s", result.Output)
+	}
+}
+
+func TestTaskOutputTool_DefaultsToNonBlocking(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	agentTask := task.NewAgentTask("test-agent-default", "Explore", "Test task", ctx, cancel)
+	agentTask.UpdateProgress(2, 300)
+
+	task.DefaultManager.RegisterTask(agentTask)
+	defer task.DefaultManager.Remove("test-agent-default")
+
+	tool := &TaskOutputTool{}
+	start := time.Now()
+	result := tool.Execute(context.Background(), map[string]any{
+		"task_id": "test-agent-default",
+	}, ".")
+	elapsed := time.Since(start)
+
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("Default TaskOutput call should be non-blocking, took %v", elapsed)
+	}
+
+	if !result.Success {
+		t.Errorf("Expected Success=true, got false. Error: %s", result.Error)
+	}
+
+	if !strings.Contains(result.Output, "running") {
+		t.Errorf("Expected 'running' in output, got: %s", result.Output)
+	}
 }

@@ -7,8 +7,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	appcompact "github.com/yanmxa/gencode/internal/app/compact"
+	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	appprovider "github.com/yanmxa/gencode/internal/app/provider"
+	"github.com/yanmxa/gencode/internal/message"
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -173,5 +176,59 @@ func providerStateForTest(store *coreprovider.Store, modelID string, p coreprovi
 			Provider:   p,
 			AuthMethod: auth,
 		},
+	}
+}
+
+func TestHandleCompactResultStoresVisibleSuccessState(t *testing.T) {
+	m := &model{
+		conv: appconv.Model{
+			Messages: []message.ChatMessage{
+				{Role: message.RoleUser, Content: "one"},
+				{Role: message.RoleAssistant, Content: "two"},
+			},
+			Compact: appcompact.State{
+				Active: true,
+			},
+		},
+	}
+
+	cmd := m.handleCompactResult(appcompact.CompactResultMsg{
+		Summary:       "summary",
+		OriginalCount: 2,
+		Trigger:       "manual",
+	})
+	if cmd == nil {
+		t.Fatal("expected compact result command")
+	}
+	if m.conv.Compact.Active {
+		t.Fatal("expected compact active state to clear")
+	}
+	if m.conv.Compact.LastError {
+		t.Fatal("expected success compact state")
+	}
+	if !strings.Contains(m.conv.Compact.LastResult, "Condensed 2 earlier messages.") {
+		t.Fatalf("unexpected compact result text: %q", m.conv.Compact.LastResult)
+	}
+	if len(m.conv.Messages) != 0 {
+		t.Fatalf("expected messages cleared after compact, got %#v", m.conv.Messages)
+	}
+}
+
+func TestHandleCompactResultStoresVisibleErrorState(t *testing.T) {
+	m := &model{
+		conv: appconv.Model{
+			Compact: appcompact.State{Active: true},
+		},
+	}
+
+	cmd := m.handleCompactResult(appcompact.CompactResultMsg{
+		Error: context.DeadlineExceeded,
+	})
+	_ = cmd
+	if !m.conv.Compact.LastError {
+		t.Fatal("expected error compact state")
+	}
+	if !strings.Contains(m.conv.Compact.LastResult, "Compaction could not be completed") {
+		t.Fatalf("unexpected compact error text: %q", m.conv.Compact.LastResult)
 	}
 }

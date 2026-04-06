@@ -11,26 +11,26 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/yanmxa/gencode/internal/app"
+	appsession "github.com/yanmxa/gencode/internal/app/session"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/options"
-	"github.com/yanmxa/gencode/internal/session"
 
 	// Import providers for registration
+	_ "github.com/yanmxa/gencode/internal/provider/alibaba"
 	_ "github.com/yanmxa/gencode/internal/provider/anthropic"
 	_ "github.com/yanmxa/gencode/internal/provider/google"
 	_ "github.com/yanmxa/gencode/internal/provider/moonshot"
 	_ "github.com/yanmxa/gencode/internal/provider/openai"
-	_ "github.com/yanmxa/gencode/internal/provider/alibaba"
 )
 
-var version = "1.11.1"
+var version = "1.11.2"
 
 // cliOpts holds all CLI flag values in one place.
 var cliOpts struct {
-	print     string // -p/--print: non-interactive print mode
-	plan      bool
-	cont      bool   // --continue
-	resume    bool // --resume
+	print  string // -p/--print: non-interactive print mode
+	plan   bool
+	cont   bool // --continue
+	resume bool // --resume
 
 	fork      bool // --fork: fork from continued/resumed session
 	pluginDir string
@@ -44,7 +44,7 @@ func init() {
 	_ = log.Init()
 
 	// Set app version for session entries.
-	session.AppVersion = version
+	appsession.AppVersion = version
 
 	// Register flags
 	rootCmd.Flags().StringVarP(&cliOpts.print, "print", "p", "", "Non-interactive print mode with prompt")

@@ -5,7 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -17,6 +19,9 @@ const (
 
 	// MaxJobs is the maximum number of concurrent cron jobs.
 	MaxJobs = 50
+
+	// MaxRecurringJitter bounds recurring schedule spread.
+	MaxRecurringJitter = 15 * time.Minute
 )
 
 // Job represents a scheduled cron job.
@@ -62,10 +67,6 @@ func (s *Store) Create(cronExpr, prompt string, recurring, durable bool) (*Job, 
 	}
 
 	now := time.Now()
-	nextFire := expr.NextAfter(now)
-	if nextFire.IsZero() {
-		return nil, fmt.Errorf("cron: no valid fire time found for %q", cronExpr)
-	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -87,8 +88,11 @@ func (s *Store) Create(cronExpr, prompt string, recurring, durable bool) (*Job, 
 		Durable:   durable,
 		CreatedAt: now,
 		ExpiresAt: expiresAt,
-		NextFire:  nextFire,
 		expr:      expr,
+	}
+	job.NextFire = computeNextFire(expr, now, job.ID, recurring)
+	if job.NextFire.IsZero() {
+		return nil, fmt.Errorf("cron: no valid fire time found for %q", cronExpr)
 	}
 
 	s.jobs[job.ID] = job
@@ -150,11 +154,15 @@ func (s *Store) Tick() []FiredJob {
 	now := time.Now()
 	var fired []FiredJob
 	var toDelete []string
+	changed := false
 
 	for _, job := range s.jobs {
 		// Check expiry
 		if !job.ExpiresAt.IsZero() && now.After(job.ExpiresAt) {
 			toDelete = append(toDelete, job.ID)
+			if job.Durable {
+				changed = true
+			}
 			continue
 		}
 
@@ -170,6 +178,9 @@ func (s *Store) Tick() []FiredJob {
 
 		job.LastFired = now
 		job.FiredCount++
+		if job.Durable {
+			changed = true
+		}
 
 		if !job.Recurring {
 			toDelete = append(toDelete, job.ID)
@@ -180,13 +191,16 @@ func (s *Store) Tick() []FiredJob {
 				}
 			}
 			if job.expr != nil {
-				job.NextFire = job.expr.NextAfter(now)
+				job.NextFire = computeNextFire(job.expr, now, job.ID, true)
 			}
 		}
 	}
 
 	for _, id := range toDelete {
 		delete(s.jobs, id)
+	}
+	if changed {
+		s.saveDurableLocked()
 	}
 
 	return fired
@@ -203,6 +217,7 @@ func (s *Store) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.jobs = make(map[string]*Job)
+	s.saveDurableLocked()
 }
 
 // SetStoragePath sets the file path for durable job persistence.
@@ -247,16 +262,73 @@ func (s *Store) LoadDurable() error {
 			continue
 		}
 		job.expr = expr
-		// Recalculate next fire time
-		job.NextFire = expr.NextAfter(now)
-		if job.NextFire.IsZero() {
-			continue
+		if job.Recurring {
+			// Recalculate recurring jobs from "now" so long-lived schedules
+			// continue cleanly after restart without replaying missed intervals.
+			job.NextFire = computeNextFire(expr, now, job.ID, true)
+			if job.NextFire.IsZero() {
+				continue
+			}
+		} else {
+			// One-shot durable jobs should catch up after restart instead of
+			// being pushed to the cron expression's next future match.
+			if job.NextFire.IsZero() {
+				job.NextFire = now
+			} else if !job.NextFire.After(now) {
+				job.NextFire = now
+			}
 		}
 		job.Durable = true
 		s.jobs[job.ID] = job
 	}
 
 	return nil
+}
+
+func computeNextFire(expr *Expression, from time.Time, jobID string, recurring bool) time.Time {
+	base := expr.NextAfter(from)
+	if base.IsZero() {
+		return time.Time{}
+	}
+	if !recurring {
+		return base
+	}
+
+	jitter := computeRecurringJitter(expr, base, jobID)
+	return base.Add(jitter)
+}
+
+func computeRecurringJitter(expr *Expression, base time.Time, jobID string) time.Duration {
+	period := estimateRecurringPeriod(expr, base)
+	if period <= 0 {
+		return 0
+	}
+
+	maxJitter := period / 10
+	if maxJitter > MaxRecurringJitter {
+		maxJitter = MaxRecurringJitter
+	}
+	if maxJitter <= 0 {
+		return 0
+	}
+
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(jobID))
+	_, _ = h.Write([]byte("|"))
+	_, _ = h.Write([]byte(expr.Raw))
+	_, _ = h.Write([]byte("|"))
+	_, _ = h.Write([]byte(base.Format("2006-01-02T15:04")))
+
+	return time.Duration(h.Sum64() % uint64(maxJitter))
+}
+
+func estimateRecurringPeriod(expr *Expression, base time.Time) time.Duration {
+	// Ask for the next matching base time after the current base minute.
+	next := expr.NextAfter(base)
+	if next.IsZero() {
+		return 0
+	}
+	return next.Sub(base)
 }
 
 // saveDurableLocked writes all durable jobs to the storage file.
@@ -275,6 +347,9 @@ func (s *Store) saveDurableLocked() {
 
 	data, err := json.MarshalIndent(durable, "", "  ")
 	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(s.storagePath), 0o755); err != nil {
 		return
 	}
 	_ = os.WriteFile(s.storagePath, data, 0o644)

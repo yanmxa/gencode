@@ -76,6 +76,8 @@ func (s *Model) MoveUp() {
 	case LevelDetail, LevelInstallOptions:
 		if s.actionIdx > 0 {
 			s.actionIdx--
+		} else if s.detailScroll > 0 {
+			s.detailScroll--
 		}
 	default:
 		if s.selectedIdx > 0 {
@@ -91,6 +93,8 @@ func (s *Model) MoveDown() {
 	case LevelDetail, LevelInstallOptions:
 		if s.actionIdx < len(s.actions)-1 {
 			s.actionIdx++
+		} else {
+			s.detailScroll++
 		}
 	default:
 		maxIdx := s.getMaxIndex()
@@ -116,11 +120,25 @@ func (s *Model) getMaxIndex() int {
 }
 
 func (s *Model) ensureVisible() {
+	visible := s.maxVisible
+	switch s.level {
+	case LevelBrowsePlugins:
+		visible = max(4, s.height-14)
+	default:
+		switch s.activeTab {
+		case TabDiscover:
+			visible = max(3, (s.height-14)/3)
+		case TabMarketplaces:
+			visible = max(4, (s.height-14)/2)
+		default:
+			visible = max(4, s.height-14)
+		}
+	}
 	if s.selectedIdx < s.scrollOffset {
 		s.scrollOffset = s.selectedIdx
 	}
-	if s.selectedIdx >= s.scrollOffset+s.maxVisible {
-		s.scrollOffset = s.selectedIdx - s.maxVisible + 1
+	if s.selectedIdx >= s.scrollOffset+visible {
+		s.scrollOffset = s.selectedIdx - visible + 1
 	}
 }
 

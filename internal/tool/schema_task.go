@@ -171,7 +171,7 @@ Jobs only fire while the REPL is idle. Returns a job ID for CronDelete.`,
 				},
 				"durable": map[string]any{
 					"type":        "boolean",
-					"description": "If true, job persists across sessions (saved to ~/.gen/scheduled_tasks.json). Default: false (session-only).",
+					"description": "If true, job persists across sessions for this project (saved to .gen/scheduled_tasks.json). Default: false (session-only).",
 				},
 			},
 			"required": []string{"cron", "prompt"},

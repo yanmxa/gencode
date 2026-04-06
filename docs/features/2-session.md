@@ -2,16 +2,18 @@
 
 ## Overview
 
-Sessions persist conversations to disk as JSONL files. Each session has metadata (title, provider, model, timestamps) and can be resumed, forked, or listed.
+Sessions persist conversations to disk as transcript event logs under the project store. Each session keeps message events plus projected state (title, last prompt, provider/model, timestamps, tasks, compaction summary) so it can be resumed, forked, or listed without replaying the TUI runtime manually.
+
+Detailed persistence, recovery, and transcript-specific test coverage now live in `docs/transcriptstore.md`.
 
 | Concept | Detail |
 |---------|--------|
-| Storage format | JSONL — one JSON object per line |
-| Location | `~/.gen/sessions/` or `./.gen/sessions/` |
+| Storage format | Transcript JSONL event log + projected index |
+| Location | `~/.gen/projects/<encoded-cwd>/transcripts/`, `transcripts-index.json`, `blobs/` |
 | Message types | User, Assistant, ToolUse, ToolResult, Notice, Thinking |
 | Resume | `-c` (latest), `-r <id>` (specific) |
 | Fork | Branch from any session without modifying the original |
-| Session memory | Compaction summary persisted and reloaded with the session |
+| Session memory | Compaction summary persisted into transcript state and reloaded with the session |
 
 ## UI Interactions
 
@@ -23,8 +25,7 @@ Sessions persist conversations to disk as JSONL files. Each session has metadata
 ## Automated Tests
 
 ```bash
-go test ./tests/integration/session/... -v
-go test ./internal/session/... -v
+GOCACHE=/tmp/gocache go test ./internal/transcriptstore ./internal/app/session ./tests/integration/session/... ./tests/integration/cli/...
 ```
 
 Covered:
@@ -34,11 +35,13 @@ TestSession_SaveAndLoad               — sessions save and load correctly
 TestSession_List                      — sessions list sorted by update time, newest first
 TestSession_GetLatest                 — GetLatest returns most recent session
 TestSession_Delete                    — session deletion works
-TestSession_Cleanup                   — old sessions (>180 days) cleaned up
+TestSession_Cleanup                   — old sessions (>30 days) cleaned up
 TestSession_AppendBehavior            — multiple saves append entries correctly
+TestSession_MetadataUpdatesOnNewMessage — timestamps and message count update
 TestSession_JSONL_Integrity           — every line in JSONL is valid JSON
 TestSession_ContinueRestoresMessages  — load restores all messages in correct order
 TestSession_EntryRoundtrip            — Messages ↔ Entries conversion maintains fidelity
+TestSession_MessageTypes_PersistRoundTrip — tool use/result payloads survive save/load
 TestSession_PersistToolResult         — large tool results persisted separately
 TestSession_SaveAndLoadSessionMemory  — session memory saved/loaded
 TestSession_LoadSessionMemory_NotFound — missing memory returns empty
@@ -47,23 +50,9 @@ TestSession_MemoryEndToEnd            — full save → memory save → load →
 TestSessionFork_IsIndependent         — fork creates independent session with ParentSessionID
 ```
 
-Cases to add:
-
-```go
-func TestSession_MetadataUpdatesOnNewMessage(t *testing.T) {
-    // UpdatedAt and message count must update when new messages are appended
-}
-
-func TestSession_Location_ProjectOrUserPath(t *testing.T) {
-    // Sessions must be stored under the project-specific or user-level session directory
-}
-
-func TestSession_MessageTypes_PersistRoundTrip(t *testing.T) {
-    // User, Assistant, ToolUse, ToolResult, Notice, and Thinking entries must survive save/load
-}
-```
-
 ## Interactive Tests (tmux)
+
+For the full transcript persistence checklist, including `--continue`, `--resume`, `--fork`, compact restore, JSONL validation, and tool-result hydration, use `docs/transcriptstore.md`.
 
 ```bash
 tmux new-session -d -s t_sess -x 220 -y 60
@@ -114,8 +103,9 @@ tmux capture-pane -t t_sess -p
 tmux capture-pane -t t_sess -p | tail -3
 # Expected: session ID and message count in status bar
 
-# Test 8: Raw JSONL remains valid after interactive usage
-SESSION_FILE=$(find ~/.gen -name '*.jsonl' | head -1)
+# Test 8: Raw transcript JSONL remains valid after interactive usage
+PROJECT_DIR=~/.gen/projects/$(pwd | sed 's#/#-#g')
+SESSION_FILE=$(find "${PROJECT_DIR}/transcripts" -name '*.jsonl' | head -1)
 export SESSION_FILE
 python - <<'PY'
 import json, pathlib, os

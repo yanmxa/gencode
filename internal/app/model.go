@@ -163,7 +163,7 @@ func (m model) Init() tea.Cmd {
 		}
 	}
 
-	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, appmcp.AutoConnect(), startCronTicker(), startAsyncHookTicker()}
+	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, appmcp.AutoConnect(), triggerCronTickNow(), startCronTicker(), startAsyncHookTicker()}
 	if m.initialPrompt != "" {
 		prompt := m.initialPrompt
 		m.initialPrompt = ""

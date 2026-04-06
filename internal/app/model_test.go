@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,6 +80,106 @@ func TestInitFiresSetupHook(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for setup hook")
+	}
+}
+
+func TestHasAllToolResultsAllowsInterleavedNotices(t *testing.T) {
+	m := appconv.Model{
+		Messages: []message.ChatMessage{
+			{
+				Role: message.RoleAssistant,
+				ToolCalls: []message.ToolCall{
+					{ID: "tc-1", Name: "Agent"},
+				},
+			},
+			{Role: message.RoleNotice, Content: "background policy update"},
+			{
+				Role:       message.RoleUser,
+				ToolResult: &message.ToolResult{ToolCallID: "tc-1", Content: "done"},
+			},
+		},
+	}
+
+	if !m.HasAllToolResults(0) {
+		t.Fatal("expected notice between tool call and tool result to still count as complete")
+	}
+}
+
+func TestViewRendersCompactStatusCard(t *testing.T) {
+	m := newBaseModel(t.TempDir(), modelInfra{})
+	m.ready = true
+	m.width = 100
+	m.conv.Compact.Active = true
+	m.conv.Compact.Focus = "deployment regressions"
+
+	view := m.View()
+	if !strings.Contains(view, "Compacting conversation") {
+		t.Fatalf("expected active compact card, got:\n%s", view)
+	}
+	if !strings.Contains(view, "SESSION SUMMARY") || !strings.Contains(view, "Focus: deployment regressions") {
+		t.Fatalf("expected compact focus details, got:\n%s", view)
+	}
+
+	m.conv.Compact.Active = false
+	m.conv.Compact.Focus = ""
+	m.conv.Compact.LastResult = "Condensed 73 earlier messages."
+	view = m.View()
+	if !strings.Contains(view, "Conversation compacted") {
+		t.Fatalf("expected compact success title, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Condensed 73 earlier messages.") {
+		t.Fatalf("expected compact success detail, got:\n%s", view)
+	}
+}
+
+func TestAsyncHookTickDoesNotInjectWhileToolExecutionPending(t *testing.T) {
+	m := &model{
+		asyncHookQueue: &asyncHookQueue{},
+		tool: apptool.State{
+			ExecState: apptool.ExecState{
+				PendingCalls: []message.ToolCall{{ID: "tc-1", Name: "Agent"}},
+				CurrentIdx:   0,
+			},
+		},
+		conv: appconv.New(),
+	}
+
+	m.asyncHookQueue.Push(asyncHookRewake{
+		Notice:             "Async hook blocked: test",
+		Context:            []string{"extra context"},
+		ContinuationPrompt: "continue",
+	})
+
+	cmd := m.handleAsyncHookTick()
+	if cmd == nil {
+		t.Fatal("expected ticker command")
+	}
+	if len(m.conv.Messages) != 0 {
+		t.Fatalf("expected no async hook notice while tool execution is pending, got %#v", m.conv.Messages)
+	}
+}
+
+func TestCronTickDoesNotDrainQueueWhileToolExecutionPending(t *testing.T) {
+	m := &model{
+		cronQueue: []string{"check background task"},
+		tool: apptool.State{
+			ExecState: apptool.ExecState{
+				PendingCalls: []message.ToolCall{{ID: "tc-1", Name: "Agent"}},
+				CurrentIdx:   0,
+			},
+		},
+		conv: appconv.New(),
+	}
+
+	cmd := m.handleCronTick()
+	if cmd == nil {
+		t.Fatal("expected cron tick command")
+	}
+	if len(m.cronQueue) != 1 {
+		t.Fatalf("expected queued cron prompt to remain queued while tool execution is pending, got %d", len(m.cronQueue))
+	}
+	if len(m.conv.Messages) != 0 {
+		t.Fatalf("expected cron not to inject messages while tool execution is pending, got %#v", m.conv.Messages)
 	}
 }
 

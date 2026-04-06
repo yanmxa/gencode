@@ -27,6 +27,7 @@ The cron system lets the LLM schedule recurring or one-time prompts using standa
 - `CronCreate` is called by the LLM when the user asks to schedule something.
 - When a job fires, its prompt is injected into the conversation as if the user had typed it.
 - Job IDs are shown in the tool result and visible via `CronList`.
+- The user-facing slash-command wrapper is `/loop`; see [Feature 21](./21-loop.md).
 
 ## Automated Tests
 
@@ -133,4 +134,10 @@ ls /tmp/.gen/scheduled_tasks.json .gen/scheduled_tasks.json 2>/dev/null
 # Expected: scheduled_tasks.json exists in the project state directory
 
 tmux kill-session -t t_cron
+```
+
+## Non-Interactive Regression Notes
+
+```bash
+GOCACHE=/tmp/gocache go test ./internal/cron -run 'TestStoreDurable|TestLoadDurable_OneShotPastDueFiresOnNextTick' -v
 ```

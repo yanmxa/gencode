@@ -350,7 +350,7 @@ func customizeStyle(s *ansi.StyleConfig, width int) {
 	s.H3.Prefix = ""
 	s.H3.Color = &blue
 	s.H3.Bold = boolPtr(true)
-	s.Heading.BlockSuffix = ""
+	s.Heading.BlockSuffix = "\n"
 	s.H4.Prefix = ""
 	s.H5.Prefix = ""
 	s.H6.Prefix = ""

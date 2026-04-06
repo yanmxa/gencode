@@ -25,8 +25,7 @@ func (s *Model) EnterSelect(width, height int) error {
 	s.resetLoadingState()
 	s.clearMessage()
 
-	availableLines := height - 13
-	s.maxVisible = max(3, availableLines/3)
+	s.maxVisible = max(4, height-14)
 
 	if err := s.marketplaceManager.Load(); err != nil {
 		s.setError(fmt.Sprintf("Failed to load marketplaces: %v", err))

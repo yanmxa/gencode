@@ -1,6 +1,7 @@
 package session_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,8 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yanmxa/gencode/internal/app/session"
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/session"
+	"github.com/yanmxa/gencode/internal/transcriptstore"
 )
 
 // newTestStore creates a Store using a temp directory instead of ~/.gen/projects/.
@@ -21,44 +23,6 @@ func newTestStore(t *testing.T) *session.Store {
 		t.Fatalf("mkdir: %v", err)
 	}
 	return session.NewStoreWithDir(dir)
-}
-
-// writeSessionJSONL writes a session JSONL file directly to disk,
-// bypassing Save() which overrides UpdatedAt.
-func writeSessionJSONL(t *testing.T, dir string, sess *session.Session) {
-	t.Helper()
-	filePath := filepath.Join(dir, sess.Metadata.ID+".jsonl")
-	f, err := os.Create(filePath)
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	defer f.Close()
-
-	enc := json.NewEncoder(f)
-	enc.SetEscapeHTML(false)
-
-	for i := range sess.Entries {
-		if err := enc.Encode(sess.Entries[i]); err != nil {
-			t.Fatalf("encode entry: %v", err)
-		}
-	}
-
-	metaEntry := map[string]interface{}{
-		"type":      "metadata",
-		"sessionId": sess.Metadata.ID,
-		"metadata": map[string]interface{}{
-			"title":        sess.Metadata.Title,
-			"provider":     sess.Metadata.Provider,
-			"model":        sess.Metadata.Model,
-			"cwd":          sess.Metadata.Cwd,
-			"createdAt":    sess.Metadata.CreatedAt,
-			"updatedAt":    sess.Metadata.UpdatedAt,
-			"messageCount": len(sess.Entries),
-		},
-	}
-	if err := enc.Encode(metaEntry); err != nil {
-		t.Fatalf("encode metadata: %v", err)
-	}
 }
 
 // makeUserEntry creates a user text entry for testing.
@@ -229,15 +193,25 @@ func TestSession_Cleanup(t *testing.T) {
 
 	// Write old session file directly (bypass Save which overrides UpdatedAt)
 	oldTime := time.Now().AddDate(0, 0, -(session.SessionRetentionDays + 1))
-	oldSess := &session.Session{
-		Metadata: session.SessionMetadata{
-			ID:        "old-session",
-			Title:     "Old",
-			CreatedAt: oldTime,
-			UpdatedAt: oldTime,
-		},
+	txStore, err := transcriptstore.NewFileStore(dir, strings.ReplaceAll(strings.TrimRight(dir, "/"), "/", "-"))
+	if err != nil {
+		t.Fatalf("NewFileStore(): %v", err)
 	}
-	writeSessionJSONL(t, dir, oldSess)
+	if err := txStore.Start(context.Background(), transcriptstore.StartCommand{
+		TranscriptID: "old-session",
+		ProjectID:    strings.ReplaceAll(strings.TrimRight(dir, "/"), "/", "-"),
+		Cwd:          dir,
+		Time:         oldTime,
+	}); err != nil {
+		t.Fatalf("Start(old): %v", err)
+	}
+	if err := txStore.PatchState(context.Background(), transcriptstore.PatchStateCommand{
+		TranscriptID: "old-session",
+		Time:         oldTime.Add(time.Second),
+		Ops:          []transcriptstore.PatchOp{transcriptstore.PatchTitle("Old")},
+	}); err != nil {
+		t.Fatalf("PatchState(old): %v", err)
+	}
 
 	// Save a recent session normally
 	newSess := &session.Session{
@@ -252,7 +226,7 @@ func TestSession_Cleanup(t *testing.T) {
 	}
 
 	// Old should be gone
-	_, err := store.Load("old-session")
+	_, err = store.Load("old-session")
 	if err == nil {
 		t.Error("expected old session to be cleaned up")
 	}
@@ -494,13 +468,49 @@ func TestSession_PersistToolResult(t *testing.T) {
 	}
 
 	// Verify the file was created with correct content
-	resultPath := filepath.Join(dir, sessionID, "tool-results", toolCallID)
+	resultPath := filepath.Join(dir, "blobs", "tool-result", sessionID, toolCallID)
 	data, err := os.ReadFile(resultPath)
 	if err != nil {
 		t.Fatalf("failed to read persisted tool result: %v", err)
 	}
 	if len(data) != 200_000 {
 		t.Errorf("persisted content size = %d, want 200000", len(data))
+	}
+
+	sess := &session.Session{
+		Metadata: session.SessionMetadata{
+			ID:    sessionID,
+			Title: "Overflow",
+		},
+		Entries: []session.Entry{
+			{
+				Type: session.EntryUser,
+				UUID: "u1",
+				Message: &session.EntryMessage{
+					Role: "user",
+					Content: []session.ContentBlock{{
+						Type:      "tool_result",
+						ToolUseID: toolCallID,
+						Content: []session.ContentBlock{{
+							Type: "text",
+							Text: "preview\n\n[Full output persisted to blobs/tool-result/" + sessionID + "/" + toolCallID + "]",
+						}},
+					}},
+				},
+			},
+		},
+	}
+	if err := store.Save(sess); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+
+	loaded, err := store.Load(sessionID)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	got := loaded.Entries[0].Message.Content[0].Content[0].Text
+	if got != content {
+		t.Fatalf("hydrated tool result len = %d, want %d", len(got), len(content))
 	}
 }
 
@@ -617,9 +627,7 @@ func TestSession_MemoryEndToEnd(t *testing.T) {
 		t.Error("session-memory tag should contain the summary")
 	}
 
-	// 5. Verify the memory file exists on disk at the expected path
-	dir := filepath.Join(t.TempDir(), "sessions") // matches newTestStore
-	_ = dir // path used by store internally
+	// 5. The summary is transcript state, not a legacy sidecar file.
 }
 
 // TestSession_JSONL_Integrity verifies that every line written to a JSONL
@@ -650,7 +658,7 @@ func TestSession_JSONL_Integrity(t *testing.T) {
 	}
 
 	// Read the raw JSONL file and verify every non-empty line is valid JSON.
-	filePath := filepath.Join(dir, sess.Metadata.ID+".jsonl")
+	filePath := store.SessionPath(sess.Metadata.ID)
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		t.Fatalf("ReadFile() error: %v", err)

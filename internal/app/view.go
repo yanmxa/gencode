@@ -71,9 +71,15 @@ func (m model) View() string {
 		parts = append(parts, spinnerView)
 	}
 
-	if m.conv.Compact.Active {
-		spinnerView := render.ThinkingStyle.Render(m.output.Spinner.View() + " Compacting conversation...")
-		parts = append(parts, spinnerView)
+	if compactView := render.RenderCompactStatus(
+		m.width,
+		m.output.Spinner.View(),
+		m.conv.Compact.Active,
+		m.conv.Compact.Focus,
+		m.conv.Compact.LastResult,
+		m.conv.Compact.LastError,
+	); compactView != "" {
+		parts = append(parts, compactView)
 	}
 
 	chatSection := strings.Join(parts, "\n")
@@ -149,7 +155,13 @@ func (m model) buildSkipIndices(startIdx int) map[int]bool {
 			continue
 		}
 		// Mark subsequent tool result messages that match these tool calls
-		for j := i + 1; j < len(m.conv.Messages) && m.conv.Messages[j].ToolResult != nil; j++ {
+		for j := i + 1; j < len(m.conv.Messages); j++ {
+			if m.conv.Messages[j].Role == message.RoleNotice {
+				continue
+			}
+			if m.conv.Messages[j].ToolResult == nil {
+				break
+			}
 			for _, tc := range msg.ToolCalls {
 				if tc.ID == m.conv.Messages[j].ToolResult.ToolCallID {
 					skipIndices[j] = true
@@ -207,6 +219,9 @@ func (m model) isToolResultInlined(idx int) bool {
 	// Look backwards for the assistant message that has the matching tool call
 	for j := idx - 1; j >= 0; j-- {
 		prev := m.conv.Messages[j]
+		if prev.Role == message.RoleNotice {
+			continue
+		}
 		if prev.Role == message.RoleAssistant && len(prev.ToolCalls) > 0 {
 			for _, tc := range prev.ToolCalls {
 				if tc.ID == toolCallID {
@@ -312,6 +327,9 @@ func (m model) renderAssistantMessage(msg message.ChatMessage, idx int, isLast b
 	resultMap := make(map[string]render.ToolResultData)
 	for j := idx + 1; j < len(m.conv.Messages); j++ {
 		nextMsg := m.conv.Messages[j]
+		if nextMsg.Role == message.RoleNotice {
+			continue
+		}
 		if nextMsg.ToolResult == nil {
 			break
 		}
@@ -371,6 +389,10 @@ func (m model) renderPendingToolSpinner() string {
 	})
 }
 
+func (m model) hasPendingToolExecution() bool {
+	return m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls)
+}
+
 // getExecutingToolName returns the name of the tool currently being executed, or "".
 func (m model) getExecutingToolName() string {
 	if m.conv.Stream.BuildingTool != "" {
@@ -382,7 +404,7 @@ func (m model) getExecutingToolName() string {
 	return ""
 }
 
-// hasParallelTaskTools returns true if any pending tool call is a Task tool.
+// hasParallelTaskTools returns true if any pending tool call is an Agent tool.
 func (m model) hasParallelTaskTools() bool {
 	for _, tc := range m.tool.PendingCalls {
 		if tc.Name == tool.ToolAgent {

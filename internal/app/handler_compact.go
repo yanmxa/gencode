@@ -125,14 +125,15 @@ func (m *model) triggerAutoCompact() tea.Cmd {
 // handleCompactResult processes the result of a compaction operation.
 func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 	shouldContinue := m.conv.Compact.AutoContinue
-	m.conv.Compact.Reset()
 
 	if msg.Error != nil {
-		m.conv.AddNotice(fmt.Sprintf("Compact failed: %v", msg.Error))
+		m.conv.Compact.Complete(fmt.Sprintf("Compaction could not be completed: %v", msg.Error), true)
 		return tea.Batch(m.commitMessages()...)
 	}
 
-	// Clear messages — the summary lives in session-memory, not in the message list.
+	m.conv.Compact.Complete(fmt.Sprintf("Condensed %d earlier messages.", msg.OriginalCount), false)
+
+	// Clear messages — the summary lives in transcript state, not in the message list.
 	m.resetAfterCompact()
 
 	// Persist the compaction summary as session memory
@@ -150,13 +151,13 @@ func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 
 	cmds := []tea.Cmd{tea.ClearScreen}
 	if shouldContinue {
+		m.conv.Compact.ClearResult()
 		m.conv.Append(message.ChatMessage{
 			Role:    message.RoleUser,
 			Content: core.AutoCompactResumePrompt,
 		})
 		cmds = append(cmds, m.startLLMStream(nil))
 	} else {
-		m.conv.AddNotice(fmt.Sprintf("Compacted %d messages into session memory.", msg.OriginalCount))
 		cmds = append(cmds, m.commitMessages()...)
 	}
 	return tea.Batch(cmds...)

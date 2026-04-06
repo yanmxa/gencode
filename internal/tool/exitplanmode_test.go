@@ -180,4 +180,8 @@ func TestPlanMode_AgentSchema_IsForegroundAndRestricted(t *testing.T) {
 	if !strings.Contains(desc, "Explore or Plan") {
 		t.Errorf("unexpected subagent_type description: %q", desc)
 	}
+
+	if strings.Contains(agent.Description, "Bash") {
+		t.Fatalf("plan mode Agent description must not advertise Bash: %q", agent.Description)
+	}
 }

@@ -9,7 +9,7 @@ Read-only tools:
 - Read, Glob, Grep, WebFetch, WebSearch
 
 Subagent tools:
-- Task: Spawn Explore or Plan subagents
+- Agent: Spawn Explore or Plan subagents
 
 Plan submission:
 - ExitPlanMode: Submit final plan for user approval
@@ -22,7 +22,7 @@ IMPORTANT: Edit, Write, Bash are DISABLED in plan mode.
 Goal: Comprehensive understanding of the codebase and user's request.
 Use ONLY Explore subagent type in this phase.
 
-- Launch up to 3 Explore agents by making multiple Task tool calls in a
+- Launch up to 3 Explore agents by making multiple Agent tool calls in a
   single message to explore efficiently
 - Use 1 agent when task is isolated to known files
 - Use 2-3 agents when scope is uncertain or multiple areas are involved

@@ -294,7 +294,7 @@ You can use the run_in_background parameter to run the command in the background
 
 var taskOutputToolSchema = provider.Tool{
 	Name:        ToolTaskOutput,
-	Description: "Retrieve output from a running or completed background task. Use this to check on background agents started with Agent run_in_background=true.",
+	Description: "Retrieve current output or final result from a running/completed background task. By default this is non-blocking so the main conversation stays responsive.",
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -304,12 +304,12 @@ var taskOutputToolSchema = provider.Tool{
 			},
 			"block": map[string]any{
 				"type":        "boolean",
-				"description": "If true (default), wait for task completion. If false, return current output immediately.",
-				"default":     true,
+				"description": "If true, wait for task completion. If false (default), return current status/output immediately.",
+				"default":     false,
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "Maximum time to wait in milliseconds when block=true (default: 30000, max: 600000)",
+				"description": "Maximum time to wait in milliseconds when block=true (default: 30000, max: 600000). Ignored for the default non-blocking mode.",
 				"default":     30000,
 			},
 		},

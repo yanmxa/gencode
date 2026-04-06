@@ -76,6 +76,7 @@ func (m *model) recoverMaxOutputStream() tea.Cmd {
 }
 
 func (m *model) handleCompletionToolCalls(toolCalls []message.ToolCall) tea.Cmd {
+	m.stopCompletedStreamPhase()
 	m.conv.SetLastToolCalls(toolCalls)
 	commitCmds := m.commitMessages()
 	if m.shouldAutoCompact() {
@@ -88,8 +89,7 @@ func (m *model) handleCompletionToolCalls(toolCalls []message.ToolCall) tea.Cmd 
 }
 
 func (m *model) finalizeCompletedTurn() tea.Cmd {
-	m.conv.Stream.Stop()
-	m.provider.ThinkingOverride = provider.ThinkingOff
+	m.stopCompletedStreamPhase()
 
 	commitCmds := m.commitMessages()
 	m.fireIdleHooks()
@@ -110,6 +110,11 @@ func (m *model) finalizeCompletedTurn() tea.Cmd {
 	}
 
 	return tea.Batch(commitCmds...)
+}
+
+func (m *model) stopCompletedStreamPhase() {
+	m.conv.Stream.Stop()
+	m.provider.ThinkingOverride = provider.ThinkingOff
 }
 
 func (m *model) fireIdleHooks() {
@@ -164,6 +169,7 @@ func (m *model) handleSpinnerTick(msg tea.Msg) tea.Cmd {
 // startLLMStream sets up and starts an LLM streaming request with optional extra prompt content.
 // It appends an empty assistant message, sets up cancellation, and starts streaming.
 func (m *model) startLLMStream(extra []string) tea.Cmd {
+	m.conv.Compact.ClearResult()
 	return m.startConversationStream(m.buildStreamRequest(extra))
 }
 

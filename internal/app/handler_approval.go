@@ -159,7 +159,7 @@ func (m *model) abortToolWithError(errorMsg string, retry bool) tea.Cmd {
 		},
 	})
 	m.tool.Reset()
-	m.conv.Stream.Active = false
+	m.conv.Stream.Stop()
 	commitCmds := m.commitMessages()
 	if retry {
 		commitCmds = append(commitCmds, m.startContinueStream())

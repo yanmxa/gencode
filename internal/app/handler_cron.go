@@ -15,6 +15,11 @@ const cronTickInterval = 30 * time.Second
 // cronTickMsg is sent periodically to check for due cron jobs.
 type cronTickMsg struct{}
 
+// triggerCronTickNow returns a command that immediately checks cron jobs once.
+func triggerCronTickNow() tea.Cmd {
+	return func() tea.Msg { return cronTickMsg{} }
+}
+
 // startCronTicker returns a command that sends the first cronTickMsg.
 func startCronTicker() tea.Cmd {
 	return tea.Tick(cronTickInterval, func(time.Time) tea.Msg {
@@ -40,9 +45,10 @@ func (m *model) handleCronTick() tea.Cmd {
 	fired := cron.DefaultStore.Tick()
 
 	cmds := []tea.Cmd{startCronTicker()}
+	idle := !m.conv.Stream.Active && !m.hasPendingToolExecution()
 
 	for _, f := range fired {
-		if m.conv.Stream.Active {
+		if !idle {
 			m.cronQueue = append(m.cronQueue, f.Prompt)
 		} else {
 			cmds = append(cmds, m.injectCronPrompt(f.Prompt))
@@ -50,7 +56,7 @@ func (m *model) handleCronTick() tea.Cmd {
 	}
 
 	// Drain one queued prompt if idle
-	if !m.conv.Stream.Active {
+	if idle {
 		if cmd := m.drainCronQueue(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}

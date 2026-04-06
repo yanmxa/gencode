@@ -2,16 +2,16 @@ package provider
 
 import (
 	"github.com/yanmxa/gencode/internal/agent"
+	appsession "github.com/yanmxa/gencode/internal/app/session"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/mcp"
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
 // ConfigureAgentTool sets up the Agent tool with a subagent executor
 // backed by the given LLM provider.
-func ConfigureAgentTool(llmProvider coreprovider.LLMProvider, cwd string, modelID string, hookEngine *hooks.Engine, sessionStore *session.Store, parentSessionID string, opts ...AgentToolOption) {
+func ConfigureAgentTool(llmProvider coreprovider.LLMProvider, cwd string, modelID string, hookEngine *hooks.Engine, sessionStore *appsession.Store, parentSessionID string, opts ...AgentToolOption) {
 	if t, ok := tool.Get(tool.ToolAgent); ok {
 		if agentTool, ok := t.(*tool.AgentTool); ok {
 			executor := agent.NewExecutor(llmProvider, cwd, modelID, hookEngine)

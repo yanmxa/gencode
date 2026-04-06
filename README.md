@@ -87,6 +87,18 @@ gen --resume          # Select from list
 3. Use `/model` to select a model
 4. Start chatting!
 
+### Scheduling
+
+In the interactive TUI you can schedule recurring or one-shot prompts:
+
+```bash
+/loop 5m check the deploy
+/loop once 20m check the deploy
+/loop list
+```
+
+`/loop` is currently an interactive-TUI workflow. The literal `/loop ...` command is preserved in the visible transcript.
+
 
 ## 🔧 Configuration
 
@@ -97,10 +109,20 @@ GenCode stores configuration in `~/.gen/`:
 ├── providers.json    # Provider connections and current model
 ├── settings.json     # User settings
 ├── skills.json       # Skill states
-├── sessions/         # Saved conversation sessions
+├── projects/         # Project-scoped session transcripts + indexes
 ├── skills/           # Custom skills
 └── agents/           # Custom agents
 ```
+
+## 🧪 Testing
+
+Fast transcript/session verification:
+
+```bash
+GOCACHE=/tmp/gocache go test ./internal/transcriptstore ./internal/app/session ./tests/integration/session/... ./tests/integration/cli/...
+```
+
+For the complete transcript persistence, resume/fork, and interactive vs non-interactive verification checklist, see `docs/transcriptstore.md`.
 
 
 ## 🔗 Related Projects

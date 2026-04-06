@@ -6,21 +6,20 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appsession "github.com/yanmxa/gencode/internal/app/session"
-	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
 // ensureSessionStore initializes the session store if not already initialized
 func (m *model) ensureSessionStore() error {
-	if m.session.Store != nil {
-		return nil
+	if m.session.Store == nil {
+		store, err := appsession.NewStore(m.cwd)
+		if err != nil {
+			return err
+		}
+		m.session.Store = store
 	}
-	store, err := session.NewStore(m.cwd)
-	if err != nil {
-		return err
-	}
-	m.session.Store = store
 	return nil
 }
 
@@ -47,12 +46,15 @@ func (m *model) saveSession() error {
 	}
 
 	// Build or update session
-	sess := &session.Session{
-		Metadata: session.SessionMetadata{
-			ID:       m.session.CurrentID,
-			Provider: providerName,
-			Model:    modelID,
-			Cwd:      m.cwd,
+	sess := &appsession.Snapshot{
+		Metadata: appsession.SessionMetadata{
+			ID:         m.session.CurrentID,
+			Provider:   providerName,
+			Model:      modelID,
+			Cwd:        m.cwd,
+			LastPrompt: appsession.ExtractLastUserText(entries),
+			Summary:    m.session.Summary,
+			Mode:       m.currentSessionMode(),
 		},
 		Entries: entries,
 		Tasks:   tool.DefaultTodoStore.Export(),
@@ -60,7 +62,7 @@ func (m *model) saveSession() error {
 
 	// Generate title from first user message if new session
 	if sess.Metadata.Title == "" || sess.Metadata.ID == "" {
-		sess.Metadata.Title = session.GenerateTitle(sess.Entries)
+		sess.Metadata.Title = appsession.GenerateTitle(sess.Entries)
 	}
 
 	if err := m.session.Store.Save(sess); err != nil {
@@ -113,12 +115,14 @@ func (m *model) loadSession(id string) error {
 
 // restoreSessionData restores conversation state from a loaded session.
 // Used by both loadSession (runtime) and newModel (initialization).
-func (m *model) restoreSessionData(sess *session.Session) {
+func (m *model) restoreSessionData(sess *appsession.Snapshot) {
 	m.conv.Messages = appsession.ConvertFromEntries(sess.Entries)
 	m.session.CurrentID = sess.Metadata.ID
 
 	// Load session memory (persisted compaction summary)
-	if m.session.Store != nil {
+	if sess.Metadata.Summary != "" {
+		m.session.Summary = sess.Metadata.Summary
+	} else if m.session.Store != nil {
 		if mem, err := m.session.Store.LoadSessionMemory(sess.Metadata.ID); err == nil && mem != "" {
 			m.session.Summary = mem
 		}
@@ -160,6 +164,18 @@ func (m *model) initTaskStorage() {
 	}
 	dir := filepath.Join(homeDir, ".gen", "tasks", m.session.CurrentID)
 	tool.DefaultTodoStore.SetStorageDir(dir)
+}
+
+func (m *model) currentSessionMode() string {
+	if m.mode.Enabled {
+		return "plan"
+	}
+	switch m.mode.Operation {
+	case appmode.AutoAccept:
+		return "auto-accept"
+	default:
+		return "normal"
+	}
 }
 
 // updateSession routes session selection messages.

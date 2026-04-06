@@ -11,7 +11,7 @@ type PermissionRequest struct {
 	DiffMeta       *DiffMetadata  // Diff metadata (for Edit/Write tools)
 	BashMeta       *BashMetadata  // Bash metadata (for Bash tool)
 	SkillMeta      *SkillMetadata // Skill metadata (for Skill tool)
-	AgentMeta      *AgentMetadata // Agent metadata (for Task tool)
+	AgentMeta      *AgentMetadata // Agent metadata (for Agent tool)
 }
 
 // DiffMetadata contains diff information for file modifications
