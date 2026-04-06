@@ -49,25 +49,26 @@ type AgentExecRequest struct {
 	Background  bool
 	Model       string // Explicit model override (highest priority)
 	MaxTurns    int
-	Mode        string // Per-invocation permission mode override
-	ResumeID    string // Agent ID to resume from
-	Isolation   string // Isolation mode (e.g., "worktree")
-	TeamName    string // Team name for spawning
+	Mode        string       // Per-invocation permission mode override
+	ResumeID    string       // Agent ID to resume from
+	Isolation   string       // Isolation mode (e.g., "worktree")
+	TeamName    string       // Team name for spawning
 	OnProgress  ProgressFunc // Called when agent makes progress
+	OnQuestion  AskQuestionFunc
 }
 
 // AgentExecResult contains the result of agent execution
 type AgentExecResult struct {
-	AgentID     string        // Session ID for resume
+	AgentID     string // Session ID for resume
 	AgentName   string
-	Model       string        // Model ID used for execution
+	Model       string // Model ID used for execution
 	Success     bool
 	Content     string
 	TurnCount   int
 	ToolUses    int
 	TotalTokens int
 	Duration    time.Duration
-	Progress    []string      // Intermediate progress messages (tool calls)
+	Progress    []string // Intermediate progress messages (tool calls)
 	Error       string
 }
 
@@ -223,6 +224,10 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 	if cb, ok := params["_onProgress"].(ProgressFunc); ok {
 		onProgress = cb
 	}
+	var onQuestion AskQuestionFunc
+	if cb, ok := params["_onQuestion"].(AskQuestionFunc); ok {
+		onQuestion = cb
+	}
 
 	maxTurns := getInt(params, "max_turns", 0)
 
@@ -245,6 +250,7 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 		Isolation:   isolation,
 		TeamName:    teamName,
 		OnProgress:  onProgress,
+		OnQuestion:  onQuestion,
 	}
 
 	// Handle background execution

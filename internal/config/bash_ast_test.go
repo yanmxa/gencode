@@ -118,6 +118,9 @@ func TestCheckASTSecurity(t *testing.T) {
 		{"npm install", "npm install lodash", true},
 		{"pipe", "cat file | grep pattern", true},
 		{"chained safe", "cd /tmp && ls", true},
+		{"cd git status", "cd /tmp/repo && git status", true},
+		{"cd git describe", "cd /tmp/repo && git describe --tags --abbrev=0", true},
+		{"cd git tag list", "cd /tmp/repo && git tag --sort=-v:refname", true},
 
 		// Dangerous: builtins
 		{"eval", "eval 'rm -rf /'", false},
@@ -127,6 +130,9 @@ func TestCheckASTSecurity(t *testing.T) {
 		// Dangerous: cd + git
 		{"cd git compound", "cd /tmp/repo && git pull", false},
 		{"cd git separated", "cd /tmp; git clone url", false},
+		{"cd git tag create", "cd /tmp/repo && git tag v1.2.3", false},
+		{"cd git branch create", "cd /tmp/repo && git branch release", false},
+		{"cd git remote add", "cd /tmp/repo && git remote add origin git@github.com:yanmxa/gencode.git", false},
 
 		// Dangerous: redirect to sensitive path
 		{"redirect to etc", "echo bad > /etc/passwd", false},

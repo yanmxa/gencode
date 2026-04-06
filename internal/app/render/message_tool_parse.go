@@ -132,9 +132,6 @@ func ExtractToolArgs(input string) string {
 		return fp
 	}
 	if c, ok := params["command"].(string); ok {
-		if len(c) > 60 {
-			return c[:60] + "..."
-		}
 		return c
 	}
 	if p, ok := params["pattern"].(string); ok {
@@ -215,7 +212,30 @@ func formatLineCount(content string) string {
 }
 
 // renderToolLine renders a tool call line with a bullet icon.
-func renderToolLine(label string) string {
+func renderToolLine(label string, width int) string {
 	icon := ToolCallStyle.Render("● ")
-	return lipgloss.JoinHorizontal(lipgloss.Top, icon, ToolCallStyle.Render(label))
+	return lipgloss.JoinHorizontal(lipgloss.Top, icon, ToolCallStyle.Render(truncateToolLabel(label, width)))
+}
+
+func truncateToolLabel(label string, width int) string {
+	maxWidth := maxToolLabelWidth(width)
+	if lipgloss.Width(label) <= maxWidth {
+		return label
+	}
+	return TruncateText(label, maxWidth)
+}
+
+func maxToolLabelWidth(width int) int {
+	if width <= 0 {
+		return 80
+	}
+	maxWidth := width * 80 / 100
+	if maxWidth < 50 {
+		maxWidth = 50
+	}
+	labelWidth := maxWidth - lipgloss.Width("● ")
+	if labelWidth < 20 {
+		return 20
+	}
+	return labelWidth
 }

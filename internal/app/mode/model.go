@@ -32,8 +32,8 @@ type EnterPlanResponseMsg struct {
 
 // QuestionRequestMsg is sent when AskUserQuestion tool is called
 type QuestionRequestMsg struct {
-	Request  *tool.QuestionRequest
-	ToolCall any // Original tool call
+	Request *tool.QuestionRequest
+	Reply   chan *tool.QuestionResponse
 }
 
 // QuestionResponseMsg is sent when user answers or cancels

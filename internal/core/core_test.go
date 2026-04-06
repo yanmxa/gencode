@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/client"
@@ -197,6 +198,34 @@ func TestExecToolPreservesHookResponse(t *testing.T) {
 	}
 	if response["status"] != "structured" {
 		t.Fatalf("unexpected hook response: %#v", response)
+	}
+}
+
+func TestExecToolRoutesAskUserQuestionThroughQuestionHandler(t *testing.T) {
+	loop := newTestLoop(&mockProvider{})
+	loop.QuestionHandler = func(ctx context.Context, req *tool.QuestionRequest) (*tool.QuestionResponse, error) {
+		return &tool.QuestionResponse{
+			RequestID: req.ID,
+			Answers: map[int][]string{
+				0: {"Patch"},
+			},
+		}, nil
+	}
+
+	result := loop.ExecTool(context.Background(), message.ToolCall{
+		ID:    "tc-question",
+		Name:  "AskUserQuestion",
+		Input: `{"questions":[{"header":"Release","question":"What type of version bump would you like?","options":[{"label":"Patch"},{"label":"Minor"},{"label":"Major"}]}]}`,
+	})
+
+	if result == nil {
+		t.Fatal("expected tool result")
+	}
+	if result.IsError {
+		t.Fatalf("expected successful tool result, got error: %s", result.Content)
+	}
+	if !strings.Contains(result.Content, "Release: Patch") {
+		t.Fatalf("expected question response in result, got %q", result.Content)
 	}
 }
 

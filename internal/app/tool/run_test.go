@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	appmode "github.com/yanmxa/gencode/internal/app/mode"
+	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/message"
 	coretool "github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/ui"
@@ -45,5 +47,36 @@ func TestExecuteParallelPropagatesContextCancellation(t *testing.T) {
 	}
 	if result.Result.Content != "Error: cancelled" {
 		t.Fatalf("expected cancellation content, got %q", result.Result.Content)
+	}
+}
+
+func TestRequiresUserInteraction_AskUserQuestionEvenWhenSafeToolAllowed(t *testing.T) {
+	settings := config.Default()
+	tc := message.ToolCall{
+		ID:    "tc-question",
+		Name:  "AskUserQuestion",
+		Input: `{"questions":[{"question":"Choose","header":"Pick","options":[{"label":"A"},{"label":"B"}]}]}`,
+	}
+
+	if !RequiresUserInteraction(tc, settings, nil, false, nil, nil) {
+		t.Fatal("expected AskUserQuestion to require interaction even when it is a safe tool")
+	}
+}
+
+func TestProcessNext_RoutesAskUserQuestionToQuestionRequest(t *testing.T) {
+	settings := config.Default()
+	tc := message.ToolCall{
+		ID:    "tc-question",
+		Name:  "AskUserQuestion",
+		Input: `{"questions":[{"question":"Choose","header":"Pick","options":[{"label":"A"},{"label":"B"}]}]}`,
+	}
+
+	msg := ProcessNext(context.Background(), nil, []message.ToolCall{tc}, 0, "", settings, nil)()
+	reqMsg, ok := msg.(appmode.QuestionRequestMsg)
+	if !ok {
+		t.Fatalf("expected QuestionRequestMsg, got %T", msg)
+	}
+	if reqMsg.Request == nil || len(reqMsg.Request.Questions) != 1 {
+		t.Fatalf("unexpected question request: %#v", reqMsg.Request)
 	}
 }

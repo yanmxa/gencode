@@ -122,12 +122,13 @@ type MCPCaller interface {
 //	Synchronous: loop.Run(ctx, opts) — drives the full turn loop
 //	Incremental: loop.Stream()/Collect()/AddResponse()/FilterToolCalls()/ExecTool() — for event-driven callers
 type Loop struct {
-	System     *system.System
-	Client     *client.Client
-	Tool       *tool.Set
-	Permission permission.Checker
-	Hooks      *hooks.Engine
-	MCP        MCPCaller // optional: routes mcp__*__* tool calls
+	System          *system.System
+	Client          *client.Client
+	Tool            *tool.Set
+	Permission      permission.Checker
+	Hooks           *hooks.Engine
+	MCP             MCPCaller // optional: routes mcp__*__* tool calls
+	QuestionHandler tool.AskQuestionFunc
 
 	// Agent context: when set, tool hook events include agent_id/agent_type (subagent mode)
 	AgentID   string
@@ -475,6 +476,38 @@ func (l *Loop) runTool(ctx context.Context, prepared *tool.PreparedToolCall) *me
 	cwd := ""
 	if l.System != nil {
 		cwd = l.System.Cwd
+	}
+
+	if it, ok := prepared.Tool.(tool.InteractiveTool); ok && it.RequiresInteraction() {
+		req, err := it.PrepareInteraction(ctx, prepared.Params, cwd)
+		if err != nil {
+			return message.ErrorResult(prepared.Call, fmt.Sprintf("Error preparing interactive tool: %v", err))
+		}
+
+		questionReq, ok := req.(*tool.QuestionRequest)
+		if !ok {
+			return message.ErrorResult(prepared.Call, fmt.Sprintf("interactive tool %s is not supported in this runtime", prepared.Call.Name))
+		}
+		if l.QuestionHandler == nil {
+			return message.ErrorResult(prepared.Call, fmt.Sprintf("interactive tool %s requires a question handler in this runtime", prepared.Call.Name))
+		}
+
+		resp, err := l.QuestionHandler(ctx, questionReq)
+		if err != nil {
+			return message.ErrorResult(prepared.Call, fmt.Sprintf("Question prompt failed: %v", err))
+		}
+		if resp == nil {
+			return message.ErrorResult(prepared.Call, "Question prompt failed: no response received")
+		}
+
+		toolResult := it.ExecuteWithResponse(ctx, prepared.Params, resp, cwd)
+		return &message.ToolResult{
+			ToolCallID:   prepared.Call.ID,
+			ToolName:     prepared.Call.Name,
+			Content:      toolResult.FormatForLLM(),
+			IsError:      !toolResult.Success,
+			HookResponse: toolResult.HookResponse,
+		}
 	}
 
 	toolResult, err := prepared.Execute(ctx, cwd, true, mcpAdapter{caller: l.MCP})

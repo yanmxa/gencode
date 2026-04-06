@@ -131,6 +131,13 @@ func TestCheckPermission(t *testing.T) {
 			PermissionAllow,
 		},
 		{
+			"git subcommand allowed after cd",
+			"Bash",
+			map[string]any{"command": "cd /path/to/repo && git status"},
+			nil,
+			PermissionAllow,
+		},
+		{
 			"npm command allowed",
 			"Bash",
 			map[string]any{"command": "npm install"},
@@ -545,6 +552,11 @@ func TestCheckPermissionWithReason(t *testing.T) {
 			PermissionAllow, "allow rule: Bash(git:*)",
 		},
 		{
+			"allow rule includes chained bash subcommand pattern",
+			"Bash", map[string]any{"command": "cd /repo && git describe --tags --abbrev=0"},
+			PermissionAllow, "allow rule: Bash(git:*)",
+		},
+		{
 			"sensitive path has reason",
 			"Edit", map[string]any{"file_path": "/repo/.git/hooks/pre-commit"},
 			PermissionAsk, "bypass-immune: .git/ directory",
@@ -856,6 +868,12 @@ func TestResolveHookAllow(t *testing.T) {
 			"normal bash allowed",
 			"Bash",
 			map[string]any{"command": "echo hello"},
+			true,
+		},
+		{
+			"allow rule honors chained git subcommand",
+			"Bash",
+			map[string]any{"command": "cd /repo && git status"},
 			true,
 		},
 

@@ -157,27 +157,15 @@ func (s *Settings) HasPermissionToUseTool(toolName string, args map[string]any, 
 			return decide(Allow, "session: allow all "+toolName)
 		}
 		for pattern := range session.AllowedPatterns {
-			if MatchRule(rule, pattern) {
+			if matchesToolPattern(toolName, args, rule, pattern) {
 				return decide(Allow, "session pattern: "+pattern)
-			}
-		}
-		if toolName == "Bash" {
-			if cmd, ok := args["command"].(string); ok {
-				for _, subCmd := range extractBashCommands(cmd) {
-					subRule := "Bash(" + normalizeBashCommand(subCmd) + ")"
-					for pattern := range session.AllowedPatterns {
-						if MatchRule(subRule, pattern) {
-							return decide(Allow, "session pattern: "+pattern)
-						}
-					}
-				}
 			}
 		}
 	}
 
 	// ── Step 5: Allow rules ──
 	for _, pattern := range s.Permissions.Allow {
-		if MatchRule(rule, pattern) {
+		if matchesToolPattern(toolName, args, rule, pattern) {
 			return decide(Allow, "allow rule: "+pattern)
 		}
 	}
@@ -205,7 +193,7 @@ func (s *Settings) HasPermissionToUseTool(toolName string, args map[string]any, 
 func (s *Settings) checkHardBlocks(toolName string, args map[string]any, rule string, session *SessionPermissions) string {
 	// Deny rules
 	for _, pattern := range s.Permissions.Deny {
-		if MatchRule(rule, pattern) {
+		if matchesToolPattern(toolName, args, rule, pattern) {
 			return "deny rule: " + pattern
 		}
 	}
@@ -244,7 +232,7 @@ func (s *Settings) checkHardBlocks(toolName string, args map[string]any, rule st
 
 	// Ask rules
 	for _, pattern := range s.Permissions.Ask {
-		if MatchRule(rule, pattern) {
+		if matchesToolPattern(toolName, args, rule, pattern) {
 			return "ask rule: " + pattern
 		}
 	}
@@ -385,6 +373,30 @@ func extractBashCommands(cmd string) []string {
 	}
 
 	return commands
+}
+
+func matchesToolPattern(toolName string, args map[string]any, rule, pattern string) bool {
+	if MatchRule(rule, pattern) {
+		return true
+	}
+
+	if toolName != "Bash" {
+		return false
+	}
+
+	cmd, ok := args["command"].(string)
+	if !ok || cmd == "" {
+		return false
+	}
+
+	for _, subCmd := range extractBashCommands(cmd) {
+		subRule := "Bash(" + normalizeBashCommand(subCmd) + ")"
+		if MatchRule(subRule, pattern) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // MatchRule checks if a rule matches a pattern.

@@ -17,6 +17,7 @@ import (
 // Model manages the permission request UI with Claude Code style.
 type Model struct {
 	active       bool
+	waiting      bool
 	request      *permission.PermissionRequest
 	diffPreview  *DiffPreview
 	bashPreview  *BashPreview
@@ -33,8 +34,7 @@ func New() *Model {
 	}
 }
 
-// Show displays the permission prompt with the given request
-func (p *Model) Show(req *permission.PermissionRequest, width, height int) {
+func (p *Model) setRequest(req *permission.PermissionRequest, width int) {
 	p.active = true
 	p.request = req
 	p.width = width
@@ -65,9 +65,22 @@ func (p *Model) Show(req *permission.PermissionRequest, width, height int) {
 	}
 }
 
+// Show displays the permission prompt with the given request.
+func (p *Model) Show(req *permission.PermissionRequest, width, height int) {
+	p.waiting = false
+	p.setRequest(req, width)
+}
+
+// ShowPending displays a non-interactive permission prompt while waiting for an external hook.
+func (p *Model) ShowPending(req *permission.PermissionRequest, width, height int) {
+	p.waiting = true
+	p.setRequest(req, width)
+}
+
 // Hide hides the permission prompt
 func (p *Model) Hide() {
 	p.active = false
+	p.waiting = false
 	p.request = nil
 	p.diffPreview = nil
 	p.bashPreview = nil
@@ -116,6 +129,9 @@ type (
 // Returns (cmd, response): cmd for UI updates, response when user makes a decision.
 func (p *Model) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *ResponseMsg) {
 	if !p.active {
+		return nil, nil
+	}
+	if p.waiting {
 		return nil, nil
 	}
 
@@ -248,6 +264,21 @@ func (p *Model) RenderInline() string {
 		sb.WriteString(p.agentPreview.Render(contentWidth))
 	}
 	sb.WriteString("\n")
+
+	// Question
+	if p.waiting {
+		sb.WriteString(" ")
+		sb.WriteString(getQuestionStyle().Render("Waiting for permission hook..."))
+		sb.WriteString("\n\n")
+
+		footer := " Waiting for external approval logic"
+		sb.WriteString(getFooterStyle().Render(footer))
+		sb.WriteString("\n")
+
+		solidSep := strings.Repeat("─", contentWidth)
+		sb.WriteString(getSeparatorStyle().Render(solidSep))
+		return sb.String()
+	}
 
 	// Question
 	sb.WriteString(" ")

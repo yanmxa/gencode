@@ -18,6 +18,7 @@ import (
 	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
@@ -244,6 +245,47 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 	}
 	if !found {
 		t.Error("rejection should add a tool result message with IsError=true")
+	}
+}
+
+func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
+	reply := make(chan *tool.QuestionResponse, 1)
+	m := &model{
+		mode: appmode.State{
+			Question:             appmode.NewQuestionPrompt(),
+			PendingQuestion:      &tool.QuestionRequest{ID: "ask-1"},
+			PendingQuestionReply: reply,
+		},
+	}
+
+	resp := &tool.QuestionResponse{
+		RequestID: "ask-1",
+		Answers: map[int][]string{
+			0: {"Patch"},
+		},
+	}
+	cmd := m.handleQuestionResponse(appmode.QuestionResponseMsg{
+		Request:  &tool.QuestionRequest{ID: "ask-1"},
+		Response: resp,
+	})
+
+	if cmd != nil {
+		t.Fatal("expected no follow-up command for agent question response")
+	}
+	if m.mode.PendingQuestion != nil {
+		t.Fatal("expected pending question to be cleared")
+	}
+	if m.mode.PendingQuestionReply != nil {
+		t.Fatal("expected pending question reply channel to be cleared")
+	}
+
+	select {
+	case got := <-reply:
+		if got != resp {
+			t.Fatalf("unexpected response pointer: %#v", got)
+		}
+	default:
+		t.Fatal("expected response to be forwarded to reply channel")
 	}
 }
 
@@ -632,5 +674,39 @@ func TestRenderActiveModalPriority(t *testing.T) {
 	}
 	if strings.Contains(view, "Do you want to proceed?") {
 		t.Fatalf("expected approval modal to be hidden, got %q", view)
+	}
+}
+
+func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
+	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine.AddSessionFunctionHook(hooks.PermissionRequest, "", hooks.FunctionHook{
+		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
+			return hooks.HookOutput{}, nil
+		},
+	})
+
+	m := &model{
+		approval:   appapproval.New(),
+		width:      80,
+		height:     24,
+		hookEngine: engine,
+	}
+
+	cmd := m.handlePermissionRequest(appapproval.RequestMsg{
+		Request: &permission.PermissionRequest{ToolName: "Edit", FilePath: "/tmp/test.txt"},
+	})
+
+	if cmd == nil {
+		t.Fatal("expected async hook command")
+	}
+	if !m.approval.IsActive() {
+		t.Fatal("expected approval modal to be active while hook runs")
+	}
+	view := m.approval.Render()
+	if !strings.Contains(view, "Waiting for permission hook") {
+		t.Fatalf("expected pending approval modal, got %q", view)
+	}
+	if strings.Contains(view, "Do you want to proceed?") {
+		t.Fatalf("expected interactive approval prompt to stay hidden while hook is pending, got %q", view)
 	}
 }

@@ -36,6 +36,9 @@ type QuestionResponse struct {
 	Cancelled bool             // True if user cancelled
 }
 
+// AskQuestionFunc requests a question response from an interactive caller.
+type AskQuestionFunc func(ctx context.Context, req *QuestionRequest) (*QuestionResponse, error)
+
 // AskUserQuestionTool prompts the user for input
 type AskUserQuestionTool struct {
 	requestCounter int

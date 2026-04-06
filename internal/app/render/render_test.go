@@ -1,6 +1,11 @@
 package render
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/yanmxa/gencode/internal/message"
+)
 
 func TestExtractIntField(t *testing.T) {
 	tests := []struct {
@@ -72,5 +77,33 @@ func TestExtractIntField(t *testing.T) {
 				t.Errorf("ExtractIntField(%q, %q) = %d, want %d", tt.content, tt.prefix, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestExtractToolArgsPreservesFullCommand(t *testing.T) {
+	input := `{"command":"cd /Users/myan/Workspace/ideas/gencode && git describe --tags --abbrev=0 2>/dev/null"}`
+	got := ExtractToolArgs(input)
+	if !strings.Contains(got, "git describe --tags --abbrev=0") {
+		t.Fatalf("ExtractToolArgs() = %q, want full command", got)
+	}
+}
+
+func TestRenderToolCallsUsesEightyPercentWidth(t *testing.T) {
+	params := ToolCallsParams{
+		ToolCalls: []message.ToolCall{{
+			ID:    "tc-1",
+			Name:  "Bash",
+			Input: `{"command":"cd /Users/myan/Workspace/ideas/gencode && git describe --tags --abbrev=0 2>/dev/null"}`,
+		}},
+		ResultMap: map[string]ToolResultData{},
+		Width:     100,
+	}
+
+	rendered := RenderToolCalls(params)
+	if !strings.Contains(rendered, "git describe --tags --abbrev") {
+		t.Fatalf("RenderToolCalls() = %q, want wider command preview", rendered)
+	}
+	if !strings.Contains(rendered, "...") {
+		t.Fatalf("RenderToolCalls() = %q, want truncation at 80%% width", rendered)
 	}
 }

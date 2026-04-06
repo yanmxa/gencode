@@ -10,6 +10,7 @@ import (
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plan"
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 func (m *model) cycleOperationMode() {
@@ -89,11 +90,28 @@ func (m *model) updateMode(msg tea.Msg) (tea.Cmd, bool) {
 
 func (m *model) handleQuestionRequest(msg appmode.QuestionRequestMsg) tea.Cmd {
 	m.mode.PendingQuestion = msg.Request
+	m.mode.PendingQuestionReply = msg.Reply
 	m.mode.Question.Show(msg.Request, m.width)
 	return tea.Batch(m.commitMessages()...)
 }
 
 func (m *model) handleQuestionResponse(msg appmode.QuestionResponseMsg) tea.Cmd {
+	reply := m.mode.PendingQuestionReply
+	m.mode.PendingQuestionReply = nil
+
+	if reply != nil {
+		defer func() { m.mode.PendingQuestion = nil }()
+		if msg.Cancelled {
+			reply <- &tool.QuestionResponse{
+				RequestID: msg.Request.ID,
+				Cancelled: true,
+			}
+			return nil
+		}
+		reply <- msg.Response
+		return nil
+	}
+
 	if msg.Cancelled {
 		m.mode.PendingQuestion = nil
 		return m.abortToolWithError("User cancelled the question prompt", false)

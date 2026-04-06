@@ -9,6 +9,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/tool"
 	"gopkg.in/yaml.v3"
 )
 
@@ -184,6 +185,9 @@ type AgentRequest struct {
 
 	// OnProgress is called when the agent makes progress (tool execution, etc.)
 	OnProgress ProgressCallback
+
+	// OnQuestion is called when the agent needs an interactive question answered.
+	OnQuestion tool.AskQuestionFunc
 }
 
 // AgentResult contains the result of an agent execution

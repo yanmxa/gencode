@@ -115,11 +115,10 @@ func executeToolAsync(ctx context.Context, hub *progress.Hub, tc message.ToolCal
 			return newResult(tc, index, formatPrepareError(err), true)
 		}
 
-		if tc.Name == coretool.ToolAgent {
-			idx := index
-			prepared.Params["_onProgress"] = coretool.ProgressFunc(func(msg string) {
-				sendAgentProgress(hub, idx, msg)
-			})
+		attachAgentCallbacks(ctx, hub, index, prepared)
+
+		if msg := checkInteractiveTool(ctx, prepared, index, cwd); msg != nil {
+			return msg
 		}
 
 		if msg := checkPermission(prepared, index, settings, sessionPerms); msg != nil {
@@ -173,14 +172,6 @@ func ProcessNext(ctx context.Context, hub *progress.Hub, toolCalls []message.Too
 
 		if settings != nil {
 			switch settings.CheckPermission(prepared.Call.Name, prepared.Params, sessionPerms) {
-			case config.Allow:
-				return executeAndLog(prepared, idx, func() ui.ToolResult {
-					result, err := prepared.Execute(ctx, cwd, false, defaultMCPExecutor{})
-					if err != nil {
-						return ui.NewErrorResult(prepared.Call.Name, err.Error())
-					}
-					return result
-				})
 			case config.Deny:
 				return newResult(prepared.Call, idx, "Permission denied by settings", true)
 			}
@@ -193,6 +184,8 @@ func ProcessNext(ctx context.Context, hub *progress.Hub, toolCalls []message.Too
 		if msg := checkPermissionTool(ctx, prepared, idx, cwd); msg != nil {
 			return msg
 		}
+
+		attachAgentCallbacks(ctx, hub, idx, prepared)
 
 		return executeAndLog(prepared, idx, func() ui.ToolResult {
 			result, err := prepared.Execute(ctx, cwd, false, defaultMCPExecutor{})
@@ -255,12 +248,7 @@ func ExecuteApproved(ctx context.Context, hub *progress.Hub, toolCalls []message
 			return newResult(tc, idx, formatPrepareError(err), true)
 		}
 
-		if tc.Name == coretool.ToolAgent {
-			agentIdx := idx
-			prepared.Params["_onProgress"] = coretool.ProgressFunc(func(msg string) {
-				sendAgentProgress(hub, agentIdx, msg)
-			})
-		}
+		attachAgentCallbacks(ctx, hub, idx, prepared)
 
 		start := time.Now()
 		result, err := prepared.Execute(ctx, cwd, true, defaultMCPExecutor{})
@@ -273,6 +261,29 @@ func ExecuteApproved(ctx context.Context, hub *progress.Hub, toolCalls []message
 		log.LogTool(tc.Name, tc.ID, time.Since(start).Milliseconds(), result.Success)
 		return newResultFromOutput(tc, idx, result)
 	}
+}
+
+func attachAgentCallbacks(ctx context.Context, hub *progress.Hub, idx int, prepared *coretool.PreparedToolCall) {
+	if prepared.Call.Name != coretool.ToolAgent {
+		return
+	}
+
+	prepared.Params["_onProgress"] = coretool.ProgressFunc(func(msg string) {
+		sendAgentProgress(hub, idx, msg)
+	})
+	prepared.Params["_onQuestion"] = coretool.AskQuestionFunc(func(qctx context.Context, req *coretool.QuestionRequest) (*coretool.QuestionResponse, error) {
+		if qctx == nil {
+			qctx = ctx
+		}
+		return askAgentQuestion(qctx, hub, idx, req)
+	})
+}
+
+func askAgentQuestion(ctx context.Context, hub *progress.Hub, idx int, req *coretool.QuestionRequest) (*coretool.QuestionResponse, error) {
+	if hub == nil {
+		return nil, context.Canceled
+	}
+	return hub.Ask(ctx, idx, req)
 }
 
 // ExecuteInteractive executes a tool with an interactive response.
@@ -335,6 +346,10 @@ func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, ses
 				return false // denied — ProcessNext will handle denial
 			}
 		}
+		return true
+	}
+
+	if it, ok := t.(coretool.InteractiveTool); ok && it.RequiresInteraction() {
 		return true
 	}
 

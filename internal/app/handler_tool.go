@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	apptool "github.com/yanmxa/gencode/internal/app/tool"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
@@ -23,6 +24,12 @@ func (m *model) updateTool(msg tea.Msg) (tea.Cmd, bool) {
 		return c, true
 	case progress.UpdateMsg:
 		c := m.handleTaskProgress(msg)
+		return c, true
+	case progress.QuestionMsg:
+		c := m.handleQuestionRequest(appmode.QuestionRequestMsg{
+			Request: msg.Request,
+			Reply:   msg.Reply,
+		})
 		return c, true
 	case progress.CheckTickMsg:
 		c := m.handleTaskProgressTick()

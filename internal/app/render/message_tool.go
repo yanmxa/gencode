@@ -21,6 +21,7 @@ type ToolCallsParams struct {
 	SpinnerView       string
 	TaskOwnerMap      map[string]string
 	MDRenderer        *MDRenderer
+	Width             int
 }
 
 // ToolResultData holds the data needed to render a tool result inline.
@@ -45,9 +46,9 @@ func RenderToolCalls(params ToolCallsParams) string {
 			label := FormatAgentLabel(tc.Input)
 			_, hasResult := params.ResultMap[tc.ID]
 			if hasResult {
-				sb.WriteString(renderToolLine(label) + "\n")
+				sb.WriteString(renderToolLine(label, params.Width) + "\n")
 			} else {
-				sb.WriteString(ToolCallStyle.Render(fmt.Sprintf("%s %s", params.SpinnerView, label)))
+				sb.WriteString(ToolCallStyle.Render(fmt.Sprintf("%s %s", params.SpinnerView, truncateToolLabel(label, params.Width))))
 				if !params.ToolCallsExpanded {
 					sb.WriteString(ThinkingStyle.Render("  (ctrl+o to expand)"))
 				}
@@ -57,7 +58,7 @@ func RenderToolCalls(params ToolCallsParams) string {
 				sb.WriteString(formatAgentDefinition(tc.Input))
 			}
 		} else if params.ToolCallsExpanded {
-			toolLine := renderToolLine(tc.Name)
+			toolLine := renderToolLine(tc.Name, params.Width)
 			sb.WriteString(toolLine + "\n")
 			var p map[string]any
 			if err := json.Unmarshal([]byte(tc.Input), &p); err == nil {
@@ -75,10 +76,10 @@ func RenderToolCalls(params ToolCallsParams) string {
 		} else {
 			if tc.Name == tool.ToolTaskGet && params.TaskOwnerMap != nil {
 				args := extractTaskGetDisplay(tc.Input, params.TaskOwnerMap)
-				sb.WriteString(renderToolLine(fmt.Sprintf("%s(%s)", tc.Name, args)) + "\n")
+				sb.WriteString(renderToolLine(fmt.Sprintf("%s(%s)", tc.Name, args), params.Width) + "\n")
 			} else {
 				args := ExtractToolArgs(tc.Input)
-				sb.WriteString(renderToolLine(fmt.Sprintf("%s(%s)", tc.Name, args)) + "\n")
+				sb.WriteString(renderToolLine(fmt.Sprintf("%s(%s)", tc.Name, args), params.Width) + "\n")
 			}
 		}
 

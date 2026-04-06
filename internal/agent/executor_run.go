@@ -79,6 +79,7 @@ func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*c
 	if err := e.loadConversation(loop, run.req); err != nil {
 		return nil, err
 	}
+	loop.QuestionHandler = run.req.OnQuestion
 
 	onToolStart := e.buildOnToolStart(run.req, &run.progress)
 	return loop.Run(ctx, core.RunOptions{

@@ -28,11 +28,12 @@ type State struct {
 	DisabledTools      map[string]bool
 
 	// Plan
-	Enabled         bool
-	Task            string
-	Store           *plan.Store
-	PlanApproval    *PlanPrompt
-	PlanEntry       *EnterPlanPrompt
-	Question        *QuestionPrompt
-	PendingQuestion *tool.QuestionRequest
+	Enabled              bool
+	Task                 string
+	Store                *plan.Store
+	PlanApproval         *PlanPrompt
+	PlanEntry            *EnterPlanPrompt
+	Question             *QuestionPrompt
+	PendingQuestion      *tool.QuestionRequest
+	PendingQuestionReply chan *tool.QuestionResponse
 }

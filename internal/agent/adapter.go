@@ -33,6 +33,7 @@ func (a *ExecutorAdapter) Run(ctx context.Context, req tool.AgentExecRequest) (*
 		ResumeID:    req.ResumeID,
 		Isolation:   req.Isolation,
 		TeamName:    req.TeamName,
+		OnQuestion:  req.OnQuestion,
 	}
 
 	if req.OnProgress != nil {

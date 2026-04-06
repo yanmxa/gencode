@@ -340,6 +340,7 @@ func (m model) renderAssistantMessage(msg message.ChatMessage, idx int, isLast b
 		SpinnerView:       m.output.Spinner.View(),
 		TaskOwnerMap:      m.buildTaskOwnerMap(),
 		MDRenderer:        m.output.MDRenderer,
+		Width:             m.width,
 	}))
 
 	return sb.String()

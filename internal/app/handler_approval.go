@@ -44,6 +44,7 @@ func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
 	// If there's a PermissionRequest hook configured, run it asynchronously
 	// to avoid blocking the Bubble Tea event loop (which freezes the TUI).
 	if m.hookEngine != nil && m.hookEngine.HasHooks(hooks.PermissionRequest) && msg.Request != nil {
+		m.approval.ShowPending(msg.Request, m.width, m.height)
 		return m.dispatchPermissionHookAsync(msg.Request)
 	}
 
@@ -83,6 +84,7 @@ func (m *model) dispatchPermissionHookAsync(req *permission.PermissionRequest) t
 // whether to auto-approve or show the approval modal.
 func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd {
 	if msg.Blocked {
+		m.approval.Hide()
 		return m.abortToolWithError("Blocked by hook: "+msg.Reason, false)
 	}
 
@@ -98,6 +100,7 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 		args := m.buildPermissionArgs(msg.Request)
 		if m.settings != nil && m.settings.ResolveHookAllow(msg.Request.ToolName, args, m.mode.SessionPermissions) {
 			// Hook allow is valid, skip permission prompt
+			m.approval.Hide()
 			return apptool.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
 		}
 		// Safety invariant denied the hook allow — fall through to normal approval modal

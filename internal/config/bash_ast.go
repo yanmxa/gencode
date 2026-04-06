@@ -290,6 +290,25 @@ var dangerousBuiltins = map[string]bool{
 	".":      true,
 }
 
+var readOnlyGitSubcommands = map[string]bool{
+	"blame":        true,
+	"cat-file":     true,
+	"describe":     true,
+	"diff":         true,
+	"grep":         true,
+	"log":          true,
+	"ls-files":     true,
+	"ls-tree":      true,
+	"merge-base":   true,
+	"reflog":       true,
+	"rev-parse":    true,
+	"shortlog":     true,
+	"show":         true,
+	"show-ref":     true,
+	"status":       true,
+	"symbolic-ref": true,
+}
+
 // CheckASTSecurity performs security checks on the parsed AST.
 // Returns a reason string if dangerous, empty string if safe.
 func CheckASTSecurity(file *syntax.File) string {
@@ -307,19 +326,16 @@ func CheckASTSecurity(file *syntax.File) string {
 		}
 	}
 
-	// Check 3: cd + git compound (bare repo RCE vector)
-	hasCd := false
-	hasGit := false
+	// Check 3: cd + mutating git compound (bare repo RCE vector)
+	cdIntoLiteralPath := false
 	for _, cmd := range commands {
 		if cmd.Name == "cd" {
-			hasCd = true
+			cdIntoLiteralPath = isLiteralCdCommand(cmd)
+			continue
 		}
-		if cmd.Name == "git" {
-			hasGit = true
+		if cmd.Name == "git" && cdIntoLiteralPath && !isReadOnlyGitCommand(cmd) {
+			return "cd + git compound command (potential bare repo RCE)"
 		}
-	}
-	if hasCd && hasGit {
-		return "cd + git compound command (potential bare repo RCE)"
 	}
 
 	// Check 4: Redirect targets to sensitive paths
@@ -340,6 +356,123 @@ func CheckASTSecurity(file *syntax.File) string {
 	}
 
 	return ""
+}
+
+func isLiteralCdCommand(cmd ParsedCommand) bool {
+	if len(cmd.Args) != 1 {
+		return false
+	}
+
+	target := strings.TrimSpace(cmd.Args[0])
+	if target == "" || strings.HasPrefix(target, "-") {
+		return false
+	}
+
+	return !strings.ContainsAny(target, "$`;&|<>(){}")
+}
+
+func isReadOnlyGitCommand(cmd ParsedCommand) bool {
+	subcommand, rest := gitSubcommandAndArgs(cmd.Args)
+	if readOnlyGitSubcommands[subcommand] {
+		return true
+	}
+
+	switch subcommand {
+	case "tag":
+		return isReadOnlyGitTag(rest)
+	case "branch":
+		return isReadOnlyGitBranch(rest)
+	case "remote":
+		return isReadOnlyGitRemote(rest)
+	default:
+		return false
+	}
+}
+
+func gitSubcommand(args []string) string {
+	subcommand, _ := gitSubcommandAndArgs(args)
+	return subcommand
+}
+
+func gitSubcommandAndArgs(args []string) (string, []string) {
+	for _, arg := range args {
+		_ = arg
+	}
+	idx := gitSubcommandIndex(args)
+	if idx == -1 {
+		return "", nil
+	}
+	return args[idx], args[idx+1:]
+}
+
+func gitSubcommandIndex(args []string) int {
+	for i, arg := range args {
+		if arg == "" {
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		return i
+	}
+	return -1
+}
+
+func isReadOnlyGitTag(args []string) bool {
+	listMode := len(args) == 0
+	for _, arg := range args {
+		switch {
+		case arg == "" || arg == "-v":
+			continue
+		case arg == "-l" || arg == "--list":
+			listMode = true
+		case arg == "-n" || strings.HasPrefix(arg, "-n") || strings.HasPrefix(arg, "--sort=") || strings.HasPrefix(arg, "--contains=") || strings.HasPrefix(arg, "--no-contains=") || strings.HasPrefix(arg, "--merged=") || strings.HasPrefix(arg, "--no-merged=") || strings.HasPrefix(arg, "--points-at=") || arg == "--column" || strings.HasPrefix(arg, "--column="):
+			continue
+		case strings.HasPrefix(arg, "-"):
+			return false
+		default:
+			if !listMode {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isReadOnlyGitBranch(args []string) bool {
+	if len(args) == 0 {
+		return true
+	}
+
+	listMode := false
+	for _, arg := range args {
+		switch {
+		case arg == "" || arg == "-a" || arg == "-r" || arg == "-vv" || arg == "-v" || arg == "--show-current":
+			continue
+		case arg == "--list" || strings.HasPrefix(arg, "--format=") || strings.HasPrefix(arg, "--sort=") || arg == "--column" || strings.HasPrefix(arg, "--column="):
+			listMode = true
+		case strings.HasPrefix(arg, "-"):
+			return false
+		default:
+			if !listMode {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isReadOnlyGitRemote(args []string) bool {
+	if len(args) == 0 {
+		return true
+	}
+
+	switch args[0] {
+	case "-v", "show", "get-url":
+		return true
+	default:
+		return false
+	}
 }
 
 // checkNestedSubstitution walks the AST looking for nested $() patterns.
