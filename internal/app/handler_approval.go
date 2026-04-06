@@ -44,8 +44,10 @@ func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
 	// If there's a PermissionRequest hook configured, run it asynchronously
 	// to avoid blocking the Bubble Tea event loop (which freezes the TUI).
 	if m.hookEngine != nil && m.hookEngine.HasHooks(hooks.PermissionRequest) && msg.Request != nil {
-		m.approval.ShowPending(msg.Request, m.width, m.height)
-		return m.dispatchPermissionHookAsync(msg.Request)
+		return tea.Batch(
+			m.showApprovalModal(msg.Request),
+			m.dispatchPermissionHookAsync(msg.Request),
+		)
 	}
 
 	// No hook — show approval modal directly
@@ -83,6 +85,10 @@ func (m *model) dispatchPermissionHookAsync(req *permission.PermissionRequest) t
 // handleHookPermissionResult processes the async hook result and decides
 // whether to auto-approve or show the approval modal.
 func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd {
+	if !m.isCurrentPermissionRequest(msg.Request) {
+		return nil
+	}
+
 	if msg.Blocked {
 		m.approval.Hide()
 		return m.abortToolWithError("Blocked by hook: "+msg.Reason, false)
@@ -108,6 +114,17 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 
 	// Show approval modal
 	return m.showApprovalModal(msg.Request)
+}
+
+func (m *model) isCurrentPermissionRequest(req *permission.PermissionRequest) bool {
+	if req == nil || m.approval == nil || !m.approval.IsActive() {
+		return false
+	}
+	current := m.approval.GetRequest()
+	if current == nil {
+		return false
+	}
+	return current.ID != "" && current.ID == req.ID
 }
 
 // showApprovalModal generates suggestions, shows the approval UI, and fires notification.

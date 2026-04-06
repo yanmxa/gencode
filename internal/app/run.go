@@ -231,7 +231,7 @@ func printExitMessage(m model) {
 		dim := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
 		fmt.Println()
 		fmt.Println(dim.Render("Resume this session with:"))
-		fmt.Println(dim.Render("  gen -r " + m.session.CurrentID))
+		fmt.Println(dim.Render("gen -r " + m.session.CurrentID))
 		fmt.Println()
 	}
 }

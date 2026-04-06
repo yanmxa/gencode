@@ -703,10 +703,31 @@ func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
 		t.Fatal("expected approval modal to be active while hook runs")
 	}
 	view := m.approval.Render()
-	if !strings.Contains(view, "Waiting for permission hook") {
-		t.Fatalf("expected pending approval modal, got %q", view)
+	if !strings.Contains(view, "Do you want to proceed?") {
+		t.Fatalf("expected normal approval modal while hook runs, got %q", view)
 	}
-	if strings.Contains(view, "Do you want to proceed?") {
-		t.Fatalf("expected interactive approval prompt to stay hidden while hook is pending, got %q", view)
+	if strings.Contains(view, "Waiting for permission hook") {
+		t.Fatalf("expected hook wait text to stay out of the foreground modal, got %q", view)
+	}
+}
+
+func TestLatePermissionHookResultIsIgnoredAfterApprovalModalCloses(t *testing.T) {
+	m := &model{
+		approval: appapproval.New(),
+	}
+	req := &permission.PermissionRequest{
+		ID:       "perm-1",
+		ToolName: "Edit",
+		FilePath: "/tmp/test.txt",
+	}
+	m.approval.Show(req, 80, 24)
+	m.approval.Hide()
+
+	cmd := m.handleHookPermissionResult(hookPermissionResultMsg{
+		Request: req,
+		Allowed: true,
+	})
+	if cmd != nil {
+		t.Fatal("expected stale hook result to be ignored")
 	}
 }
