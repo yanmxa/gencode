@@ -10,14 +10,22 @@ import (
 type OperationMode int
 
 const (
-	Normal     OperationMode = iota
-	AutoAccept               // auto-accept file edits
-	Plan                     // plan-only mode (no edits)
+	Normal            OperationMode = iota
+	AutoAccept                      // auto-accept file edits
+	Plan                            // plan-only mode (no edits)
+	BypassPermissions               // bypass all permissions (entered via hooks, not cycling)
 )
+
+var cycleModes = []OperationMode{Normal, AutoAccept, Plan}
 
 // Next cycles to the next operation mode.
 func (m OperationMode) Next() OperationMode {
-	return (m + 1) % 3
+	for i, mode := range cycleModes {
+		if mode == m {
+			return cycleModes[(i+1)%len(cycleModes)]
+		}
+	}
+	return Normal
 }
 
 // State holds all operation mode and plan state for the TUI model.

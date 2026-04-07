@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
+	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	apptool "github.com/yanmxa/gencode/internal/app/tool"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/hooks"
@@ -241,14 +242,18 @@ func (m *model) applyPermissionUpdates(updates []hooks.PermissionUpdate) {
 				switch pu.Mode {
 				case "bypassPermissions":
 					m.mode.SessionPermissions.Mode = config.ModeBypassPermissions
+					m.mode.Operation = appmode.BypassPermissions
 				case "acceptEdits":
 					m.mode.SessionPermissions.Mode = config.ModeAutoAccept
+					m.mode.Operation = appmode.AutoAccept
 				case "dontAsk":
 					m.mode.SessionPermissions.Mode = config.ModeDontAsk
 				case "plan":
 					m.mode.SessionPermissions.Mode = config.ModePlan
+					m.mode.Operation = appmode.Plan
 				case "normal":
 					m.mode.SessionPermissions.Mode = config.ModeNormal
+					m.mode.Operation = appmode.Normal
 				}
 			}
 

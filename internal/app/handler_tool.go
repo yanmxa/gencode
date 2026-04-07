@@ -93,6 +93,7 @@ func (m *model) completeParallelExecution() tea.Cmd {
 		}
 	}
 
+	m.injectDeferredHookContext()
 	m.output.TaskProgress = nil // clear all agent progress
 	m.tool.Reset()
 	commitCmds := m.commitMessages()
@@ -167,6 +168,7 @@ func (m *model) handleStartToolExecution(toolCalls []message.ToolCall) tea.Cmd {
 	m.tool.CurrentIdx = 0
 
 	if len(m.tool.PendingCalls) == 0 {
+		m.injectDeferredHookContext()
 		m.tool.Reset()
 		return m.startContinueStream()
 	}
@@ -191,6 +193,7 @@ func (m *model) canRunToolsInParallel(toolCalls []message.ToolCall) bool {
 }
 
 func (m *model) handleAllToolsCompleted() tea.Cmd {
+	m.injectDeferredHookContext()
 	m.tool.Reset()
 	return m.startContinueStream()
 }
@@ -201,12 +204,9 @@ func (m *model) filterToolCallsWithHooks(ctx context.Context, toolCalls []messag
 	m.tool.HookAllowed = result.HookAllowed
 	m.tool.HookForceAsk = result.HookForceAsk
 
-	// Inject additional context from hooks into conversation
+	// Defer additional context injection until after all tool results
 	if result.AdditionalContext != "" {
-		m.conv.Append(message.ChatMessage{
-			Role:    message.RoleUser,
-			Content: result.AdditionalContext,
-		})
+		m.tool.HookContext = result.AdditionalContext
 	}
 
 	// Add blocked results as chat messages
@@ -223,6 +223,17 @@ func (m *model) filterToolCallsWithHooks(ctx context.Context, toolCalls []messag
 	}
 
 	return result.Allowed
+}
+
+// injectDeferredHookContext appends any deferred AdditionalContext from
+// PreToolUse hooks as a user message, after all tool results have been added.
+func (m *model) injectDeferredHookContext() {
+	if m.tool.HookContext != "" {
+		m.conv.Append(message.ChatMessage{
+			Role:    message.RoleUser,
+			Content: m.tool.HookContext,
+		})
+	}
 }
 
 // firePostToolUseHook fires the PostToolUse or PostToolUseFailure hook for a tool result.

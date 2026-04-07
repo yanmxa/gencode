@@ -460,68 +460,89 @@ sleep 5
 tmux capture-pane -t t_hooks -p
 # Expected: tool blocked; "audit: bash disabled" shown
 
-# ── Test 7: PermissionRequest — external FIFO approval ──
-# This test uses two tmux windows: one for gencode, one for a monitor script.
+# ── Tests 7–8: PermissionRequest — multi-pane FIFO monitor ──
+#
+# These tests use a split-pane layout so you can watch the full hook event
+# details in a monitor pane while gen runs in a separate pane.
+#
+# Layout (3 panes in one tmux window):
+#   ┌──────────────┬──────────────────────┐
+#   │              │  Monitor (top-right) │
+#   │  (your       │  shows hook events   │
+#   │   terminal)  ├──────────────────────┤
+#   │              │  Gen TUI (bot-right) │
+#   │              │  runs gencode        │
+#   └──────────────┴──────────────────────┘
+
 tmux send-keys -t t_hooks C-c
-rm -f /tmp/hook_pr_fifo /tmp/hook_pr_result
+sleep 1
+rm -f /tmp/hook_pr_fifo /tmp/hook_pr_event.json
 mkfifo /tmp/hook_pr_fifo
 
-# Hook script: writes to FIFO, reads response, returns allow/deny
-cat > /tmp/hook_test/pr_hook.sh << 'HOOK'
+# Hook script: captures full event JSON for the monitor to display,
+# then waits for the monitor's allow/deny/bypass decision via FIFO.
+cat > /tmp/hook_test/pr_hook.sh << 'HOOKEOF'
 #!/bin/bash
 INPUT=$(cat)
-TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null)
-# Signal to monitor
-echo "$TOOL" > /tmp/hook_pr_fifo
-# Wait for response
+echo "$INPUT" > /tmp/hook_pr_event.json
+echo "EVENT_READY" > /tmp/hook_pr_fifo
 RESP=$(cat /tmp/hook_pr_fifo)
 if [ "$RESP" = "allow" ]; then
   echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
+elif [ "$RESP" = "bypass" ]; then
+  echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedPermissions":[{"type":"setMode","mode":"bypassPermissions","destination":"session"}]}}}'
 else
-  echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"monitor rejected"}}}'
+  echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"'"$RESP"'"}}}'
 fi
-HOOK
+HOOKEOF
 chmod +x /tmp/hook_test/pr_hook.sh
 
-cat > /tmp/hook_test/.gen/settings.json << 'EOF'
-{
-  "hooks": {
-    "PermissionRequest": [{
-      "matcher": "*",
-      "hooks": [{"type": "command",
-        "command": "/tmp/hook_test/pr_hook.sh", "timeout": 30}]
-    }]
-  }
-}
-EOF
-
-tmux send-keys -t t_hooks 'cd /tmp/hook_test && gen' Enter
-sleep 2
-tmux send-keys -t t_hooks 'write hello to /tmp/hook_pr_test.txt' Enter
-sleep 3
-
-# In another terminal/script, approve the request:
-TOOL=$(cat /tmp/hook_pr_fifo)  # reads "Write"
-echo "allow" > /tmp/hook_pr_fifo
-sleep 3
-
-cat /tmp/hook_pr_test.txt
-# Expected: file created with "hello" content
-# Verify TUI remained responsive during the wait
-
-# ── Test 8: PermissionRequest — bypass mode activation ──
-tmux send-keys -t t_hooks C-c
-rm -f /tmp/hook_pr_fifo
-mkfifo /tmp/hook_pr_fifo
-
-cat > /tmp/hook_test/pr_bypass_hook.sh << 'HOOK'
+# Monitor script: loops waiting for hook events, displays event details,
+# and prompts for a decision (allow / deny <reason> / bypass).
+cat > /tmp/hook_test/monitor.sh << 'MONEOF'
 #!/bin/bash
-INPUT=$(cat)
-echo "waiting" > /tmp/hook_pr_fifo
-RESP=$(cat /tmp/hook_pr_fifo)
-echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedPermissions":[{"type":"setMode","mode":"bypassPermissions","destination":"session"}]}}}'
-HOOK
-chmod +x /tmp/hook_test/pr_bypass_hook.sh
+echo "╔══════════════════════════════════════════════╗"
+echo "║   Permission Request Monitor                ║"
+echo "║   Waiting for hook events on FIFO...         ║"
+echo "╚══════════════════════════════════════════════╝"
+echo ""
+while true; do
+  SIGNAL=$(cat /tmp/hook_pr_fifo 2>/dev/null)
+  [ -z "$SIGNAL" ] && { echo "[monitor] FIFO closed."; break; }
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "PermissionRequest event received!"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  if [ -f /tmp/hook_pr_event.json ]; then
+    echo ""
+    echo "-- Event Fields --"
+    python3 -c "
+import json
+with open('/tmp/hook_pr_event.json') as f:
+    data = json.load(f)
+for key, label in [('hook_event_name','Event'),('tool_name','Tool'),('session_id','Session'),('cwd','CWD'),('permission_mode','Perm Mode')]:
+    if key in data: print(f'  {label:20s}: {data[key]}')
+if 'tool_input' in data:
+    print(f'  {\"Tool Input\":20s}:')
+    ti = data['tool_input']
+    if isinstance(ti, dict):
+        for k, v in ti.items():
+            val = str(v)[:60]
+            print(f'    {k:18s}: {val}')
+if 'permission_suggestions' in data and data['permission_suggestions']:
+    print(f'  {\"Suggestions\":20s}:')
+    for s in data['permission_suggestions']:
+        print(f'    - {s}')
+" 2>/dev/null
+    echo ""
+  fi
+  echo "Enter decision (allow / deny <reason> / bypass):"
+  read -r DECISION
+  echo ">>> Sending: $DECISION"
+  echo "$DECISION" > /tmp/hook_pr_fifo
+  echo ""
+done
+MONEOF
+chmod +x /tmp/hook_test/monitor.sh
 
 cat > /tmp/hook_test/.gen/settings.json << 'EOF'
 {
@@ -529,25 +550,83 @@ cat > /tmp/hook_test/.gen/settings.json << 'EOF'
     "PermissionRequest": [{
       "matcher": "*",
       "hooks": [{"type": "command",
-        "command": "/tmp/hook_test/pr_bypass_hook.sh", "timeout": 30}]
+        "command": "/tmp/hook_test/pr_hook.sh", "timeout": 60}]
     }]
   }
 }
 EOF
 
-tmux send-keys -t t_hooks 'cd /tmp/hook_test && gen' Enter
-sleep 2
-tmux send-keys -t t_hooks 'write test1 to /tmp/bp_test1.txt then write test2 to /tmp/bp_test2.txt' Enter
-sleep 2
+# Create the split-pane layout:
+#   Split t_hooks horizontally, then split the right half vertically.
+tmux split-window -h -t t_hooks -l '55%'
+sleep 0.3
+tmux split-window -v -t t_hooks.right -l '50%'
+sleep 0.3
+# After splitting:  pane 0 = left,  pane 1 = top-right,  pane 2 = bottom-right
 
-# Approve first request (this activates bypass)
-cat /tmp/hook_pr_fifo >/dev/null  # read "waiting"
-echo "go" > /tmp/hook_pr_fifo
+# Start monitor in top-right pane
+tmux send-keys -t t_hooks.1 '/tmp/hook_test/monitor.sh' Enter
+sleep 1
+
+# Start gen in bottom-right pane
+tmux send-keys -t t_hooks.2 'cd /tmp/hook_test && gen' Enter
+sleep 3
+
+# ── Test 7a: FIFO allow ──
+tmux send-keys -t t_hooks.2 'write hello to /tmp/hook_pr_test.txt' Enter
+sleep 10
+# Expected in monitor pane:
+#   Event: PermissionRequest, Tool: Write,
+#   Tool Input: content=hello, file_path=/tmp/hook_pr_test.txt
+# Expected in gen pane: permission modal with diff preview
+# Type "allow" in monitor pane:
+tmux send-keys -t t_hooks.1 'allow' Enter
 sleep 5
+cat /tmp/hook_pr_test.txt
+# Expected: "hello"
 
-# Second write should NOT trigger hook (bypass mode active)
-cat /tmp/bp_test1.txt /tmp/bp_test2.txt
-# Expected: both files created; only ONE hook interaction needed
+# ── Test 7b: FIFO deny ──
+tmux send-keys -t t_hooks.2 'write secret to /tmp/hook_deny_test.txt' Enter
+sleep 10
+# Monitor shows new event with content=secret
+# Type deny with reason:
+tmux send-keys -t t_hooks.1 'deny sensitive content blocked' Enter
+sleep 5
+tmux capture-pane -t t_hooks.2 -p
+# Expected in gen pane: "Blocked by hook: deny sensitive content blocked"
+# Expected: /tmp/hook_deny_test.txt does NOT exist
+
+# ── Test 8: FIFO bypass mode activation + verification ──
+tmux send-keys -t t_hooks.2 'write bp1 to /tmp/bp1.txt' Enter
+sleep 10
+# Monitor shows event with content=bp1
+# Type "bypass" to activate bypassPermissions mode:
+tmux send-keys -t t_hooks.1 'bypass' Enter
+sleep 5
+tmux capture-pane -t t_hooks.2 -p
+# Expected in gen pane:
+#   - File written successfully
+#   - Bottom indicator shows: ⏩ bypass permissions on
+
+# Now verify bypass is active — subsequent writes must NOT trigger hook:
+tmux send-keys -t t_hooks.2 'write bp2 to /tmp/bp2.txt' Enter
+sleep 8
+tmux send-keys -t t_hooks.2 'write bp3 to /tmp/bp3.txt' Enter
+sleep 8
+cat /tmp/bp1.txt /tmp/bp2.txt /tmp/bp3.txt
+# Expected: all three files created with correct content
+tmux capture-pane -t t_hooks.1 -p | grep -c 'PermissionRequest event received'
+# Expected: exactly 1 (only bp1 triggered the hook; bp2 and bp3 bypassed)
+tmux capture-pane -t t_hooks.2 -p
+# Expected: ⏩ bypass permissions on — still visible, no permission modals appeared
+
+# Close the extra panes before continuing to test 9
+tmux send-keys -t t_hooks.2 C-c
+sleep 1
+tmux kill-pane -t t_hooks.2
+tmux kill-pane -t t_hooks.1
+sleep 1
+rm -f /tmp/hook_pr_fifo /tmp/hook_pr_event.json /tmp/hook_pr_test.txt /tmp/hook_deny_test.txt /tmp/bp*.txt
 
 # ── Test 9: PostToolUse hook fires ──
 tmux send-keys -t t_hooks C-c
@@ -616,5 +695,6 @@ cat /tmp/hook_log.txt
 # Expected: "[hook] permission denied"
 
 tmux kill-session -t t_hooks
-rm -rf /tmp/hook_test /tmp/hook_log.txt /tmp/hook_pr_fifo /tmp/hook_pr_test.txt /tmp/bp_test*.txt
+rm -rf /tmp/hook_test /tmp/hook_log.txt /tmp/hook_pr_fifo /tmp/hook_pr_event.json \
+       /tmp/hook_pr_test.txt /tmp/hook_deny_test.txt /tmp/bp*.txt
 ```

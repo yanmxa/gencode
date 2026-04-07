@@ -91,6 +91,10 @@ func RenderOperationModeIndicator(mode int) string {
 		icon = "⏸"
 		label = " plan mode on"
 		color = theme.CurrentTheme.Warning
+	case appmode.BypassPermissions:
+		icon = "⏩"
+		label = " bypass permissions on"
+		color = theme.CurrentTheme.Error
 	default:
 		return ""
 	}
