@@ -21,15 +21,24 @@ go build -o gen ./cmd/gen
 ### Project Structure
 
 ```
-cmd/gen/           # CLI entry point
+cmd/               # Binary entrypoints
+docs/              # Architecture and feature docs
 internal/
-├── provider/      # LLM providers (anthropic, openai, google)
-├── tool/          # Built-in tools (read, write, edit, bash, etc.)
-├── tui/           # Terminal UI (Bubble Tea)
+├── app/           # Interactive app shell and feature-oriented UI orchestration
+├── core/          # Reusable agent loop/runtime
+├── provider/      # LLM provider implementations and registry
+├── tool/          # Built-in tools and execution registry
+├── plugin/        # Plugin loading and integration
+├── skill/         # Skill loading and registry
 ├── mcp/           # MCP protocol support
 ├── config/        # Settings and permissions
-└── system/        # System prompt generation
+├── ui/            # Shared presentational UI components/styles
+└── ...            # Other focused subsystems
+tests/
+└── integration/   # Cross-package behavioral tests
 ```
+
+See `docs/architecture.md` for package responsibilities, dependency direction, and placement rules for new code.
 
 ### Run Tests
 

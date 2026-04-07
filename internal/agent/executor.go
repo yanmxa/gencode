@@ -405,10 +405,18 @@ var toolProgressParams = map[string]string{
 	"WebFetch":  "url",
 	"WebSearch": "query",
 	"Bash":      "command",
+	"TaskOutput": "task_id",
 }
 
 // formatToolProgress creates a progress message for a tool call in ToolName(args) format.
 func formatToolProgress(toolName string, params map[string]any) string {
+	if toolName == "Agent" {
+		if label := formatAgentProgress(params); label != "" {
+			return label
+		}
+		return toolName
+	}
+
 	paramKey, ok := toolProgressParams[toolName]
 	if !ok {
 		return fmt.Sprintf("%s()", toolName)
@@ -425,6 +433,28 @@ func formatToolProgress(toolName string, params map[string]any) string {
 	}
 
 	return fmt.Sprintf("%s(%s)", toolName, value)
+}
+
+func formatAgentProgress(params map[string]any) string {
+	agentType, _ := params["subagent_type"].(string)
+	desc, _ := params["description"].(string)
+	if desc == "" {
+		desc, _ = params["prompt"].(string)
+		if len(desc) > 40 {
+			desc = desc[:37] + "..."
+		}
+	}
+
+	if agentType == "" {
+		if desc == "" {
+			return "Agent"
+		}
+		return fmt.Sprintf("Agent: %s", desc)
+	}
+	if desc == "" {
+		return fmt.Sprintf("Agent: %s", agentType)
+	}
+	return fmt.Sprintf("Agent: %s %s", agentType, desc)
 }
 
 // persistSubagentSession saves the subagent conversation to disk if a session store is configured.

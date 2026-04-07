@@ -105,21 +105,21 @@ func toolCallIcon(tc message.ToolCall, pendingCalls []message.ToolCall, currentI
 		}
 	}
 	if idx == -1 {
-		return "● "
+		return "●"
 	}
 
 	if parallelMode {
 		if _, done := parallelResults[idx]; !done {
-			return spinnerView + " "
+			return spinnerView
 		}
-		return "● "
+		return "●"
 	}
 
 	if idx == currentIdx {
-		return spinnerView + " "
+		return spinnerView
 	}
 
-	return "● "
+	return "●"
 }
 
 // stripMarkdownHeading removes leading `#` markers from markdown headings.

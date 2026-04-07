@@ -135,6 +135,30 @@ func TestRenderToolCallsShowsRunningStateForPendingBash(t *testing.T) {
 	}
 }
 
+func TestRenderToolCallsShowsGapForPendingAgent(t *testing.T) {
+	params := ToolCallsParams{
+		ToolCalls: []message.ToolCall{{
+			ID:    "tc-1",
+			Name:  "Agent",
+			Input: `{"subagent_type":"Explore","description":"HA code structure","prompt":"Inspect the codebase"}`,
+		}},
+		ResultMap: map[string]ToolResultData{},
+		PendingCalls: []message.ToolCall{{
+			ID:    "tc-1",
+			Name:  "Agent",
+			Input: `{"subagent_type":"Explore","description":"HA code structure","prompt":"Inspect the codebase"}`,
+		}},
+		CurrentIdx:  0,
+		SpinnerView: "◓",
+		Width:       100,
+	}
+
+	rendered := RenderToolCalls(params)
+	if !strings.Contains(rendered, "◓ Agent: Explore HA code structure") {
+		t.Fatalf("RenderToolCalls() = %q, want a single visible gap before explicit agent label", rendered)
+	}
+}
+
 func TestFormatToolResultSizeUsesNoOutputForEmptyContent(t *testing.T) {
 	if got := FormatToolResultSize("Bash", ""); got != "no output" {
 		t.Fatalf("FormatToolResultSize() = %q, want %q", got, "no output")

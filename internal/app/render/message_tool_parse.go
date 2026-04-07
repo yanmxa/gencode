@@ -80,14 +80,14 @@ func ExtractIntField(content, prefix string) int {
 	return n
 }
 
-// FormatAgentLabel formats an Agent tool call as "AgentType: description".
+// FormatAgentLabel formats an Agent tool call as "Agent: AgentType description".
 func FormatAgentLabel(input string) string {
 	var params map[string]any
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
 		return "Agent"
 	}
 
-	agentType := "Agent"
+	agentType := ""
 	if a, ok := params["subagent_type"].(string); ok && a != "" {
 		agentType = a
 	}
@@ -102,10 +102,16 @@ func FormatAgentLabel(input string) string {
 		}
 	}
 
-	if desc != "" {
-		return fmt.Sprintf("%s: %s", agentType, desc)
+	if agentType == "" {
+		if desc != "" {
+			return fmt.Sprintf("Agent: %s", desc)
+		}
+		return "Agent"
 	}
-	return agentType
+	if desc != "" {
+		return fmt.Sprintf("Agent: %s %s", agentType, desc)
+	}
+	return fmt.Sprintf("Agent: %s", agentType)
 }
 
 // extractTaskGetDisplay returns owner name for a TaskGet call if available.
@@ -213,11 +219,11 @@ func formatLineCount(content string) string {
 
 // renderToolLine renders a tool call line with a bullet icon.
 func renderToolLine(label string, width int) string {
-	return renderToolLineWithIcon(label, width, "● ")
+	return renderToolLineWithIcon(label, width, "●")
 }
 
 func renderToolLineWithIcon(label string, width int, iconText string) string {
-	icon := ToolCallStyle.Render(iconText)
+	icon := ToolCallStyle.Width(2).Render(iconText)
 	return lipgloss.JoinHorizontal(lipgloss.Top, icon, ToolCallStyle.Render(truncateToolLabel(label, width)))
 }
 

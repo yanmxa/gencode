@@ -126,6 +126,28 @@ func TestBuildCancelledAgentResultUsesPreparedRunMetadata(t *testing.T) {
 	}
 }
 
+func TestFormatToolProgressUsesReadableAgentLabel(t *testing.T) {
+	got := formatToolProgress("Agent", map[string]any{
+		"subagent_type": "Explore",
+		"description":   "HA code structure",
+		"prompt":        "Inspect the codebase",
+	})
+
+	if got != "Agent: Explore HA code structure" {
+		t.Fatalf("formatToolProgress() = %q, want %q", got, "Agent: Explore HA code structure")
+	}
+}
+
+func TestFormatToolProgressFallsBackToTaskOutputID(t *testing.T) {
+	got := formatToolProgress("TaskOutput", map[string]any{
+		"task_id": "task-123",
+	})
+
+	if got != "TaskOutput(task-123)" {
+		t.Fatalf("formatToolProgress() = %q, want %q", got, "TaskOutput(task-123)")
+	}
+}
+
 func TestBuildSystemPrompt_IncludesAdditionalInstructionsAndPreloadedSkills(t *testing.T) {
 	prev := skill.DefaultRegistry
 	t.Cleanup(func() { skill.DefaultRegistry = prev })
