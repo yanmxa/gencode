@@ -205,7 +205,7 @@ func extractParenContent(s, fallback string) string {
 func formatLineCount(content string) string {
 	trimmed := strings.TrimSuffix(content, "\n")
 	if trimmed == "" {
-		return "0 lines"
+		return "no output"
 	}
 	lineCount := strings.Count(trimmed, "\n") + 1
 	return fmt.Sprintf("%d lines", lineCount)
@@ -213,7 +213,11 @@ func formatLineCount(content string) string {
 
 // renderToolLine renders a tool call line with a bullet icon.
 func renderToolLine(label string, width int) string {
-	icon := ToolCallStyle.Render("● ")
+	return renderToolLineWithIcon(label, width, "● ")
+}
+
+func renderToolLineWithIcon(label string, width int, iconText string) string {
+	icon := ToolCallStyle.Render(iconText)
 	return lipgloss.JoinHorizontal(lipgloss.Top, icon, ToolCallStyle.Render(truncateToolLabel(label, width)))
 }
 

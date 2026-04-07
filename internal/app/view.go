@@ -352,6 +352,7 @@ func (m model) renderAssistantMessage(msg message.ChatMessage, idx int, isLast b
 		ParallelResults:   parallelDone,
 		TaskProgress:      m.output.TaskProgress,
 		PendingCalls:      m.tool.PendingCalls,
+		CurrentIdx:        m.tool.CurrentIdx,
 		SpinnerView:       m.output.Spinner.View(),
 		TaskOwnerMap:      m.buildTaskOwnerMap(),
 		MDRenderer:        m.output.MDRenderer,

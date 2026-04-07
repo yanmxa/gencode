@@ -163,7 +163,7 @@ func (m *model) startContinueStream() tea.Cmd {
 
 func (m *model) handleSpinnerTick(msg tea.Msg) tea.Cmd {
 	interactiveActive := m.mode.Question.IsActive() || (m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive())
-	return m.output.HandleTick(msg, m.conv.Stream.Active, m.provider.FetchingLimits, m.conv.Compact.Active, interactiveActive, m.hasRunningTaskTools())
+	return m.output.HandleTick(msg, m.conv.Stream.Active, m.provider.FetchingLimits, m.conv.Compact.Active, interactiveActive, m.hasRunningToolExecution())
 }
 
 // startLLMStream sets up and starts an LLM streaming request with optional extra prompt content.

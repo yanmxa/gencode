@@ -18,6 +18,7 @@ type ToolCallsParams struct {
 	ParallelResults   map[int]bool
 	TaskProgress      map[int][]string
 	PendingCalls      []message.ToolCall
+	CurrentIdx        int
 	SpinnerView       string
 	TaskOwnerMap      map[string]string
 	MDRenderer        *MDRenderer
@@ -48,7 +49,7 @@ func RenderToolCalls(params ToolCallsParams) string {
 			if hasResult {
 				sb.WriteString(renderToolLine(label, params.Width) + "\n")
 			} else {
-				sb.WriteString(ToolCallStyle.Render(fmt.Sprintf("%s %s", params.SpinnerView, truncateToolLabel(label, params.Width))))
+				sb.WriteString(renderToolLineWithIcon(label, params.Width, params.SpinnerView))
 				if !params.ToolCallsExpanded {
 					sb.WriteString(ThinkingStyle.Render("  (ctrl+o to expand)"))
 				}
@@ -74,12 +75,13 @@ func RenderToolCalls(params ToolCallsParams) string {
 				}
 			}
 		} else {
+			icon := toolCallIcon(tc, params.PendingCalls, params.CurrentIdx, params.ParallelMode, params.ParallelResults, params.SpinnerView)
 			if tc.Name == tool.ToolTaskGet && params.TaskOwnerMap != nil {
 				args := extractTaskGetDisplay(tc.Input, params.TaskOwnerMap)
-				sb.WriteString(renderToolLine(fmt.Sprintf("%s(%s)", tc.Name, args), params.Width) + "\n")
+				sb.WriteString(renderToolLineWithIcon(fmt.Sprintf("%s(%s)", tc.Name, args), params.Width, icon) + "\n")
 			} else {
 				args := ExtractToolArgs(tc.Input)
-				sb.WriteString(renderToolLine(fmt.Sprintf("%s(%s)", tc.Name, args), params.Width) + "\n")
+				sb.WriteString(renderToolLineWithIcon(fmt.Sprintf("%s(%s)", tc.Name, args), params.Width, icon) + "\n")
 			}
 		}
 
@@ -92,6 +94,32 @@ func RenderToolCalls(params ToolCallsParams) string {
 	}
 
 	return sb.String()
+}
+
+func toolCallIcon(tc message.ToolCall, pendingCalls []message.ToolCall, currentIdx int, parallelMode bool, parallelResults map[int]bool, spinnerView string) string {
+	idx := -1
+	for i, pending := range pendingCalls {
+		if pending.ID == tc.ID {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return "● "
+	}
+
+	if parallelMode {
+		if _, done := parallelResults[idx]; !done {
+			return spinnerView + " "
+		}
+		return "● "
+	}
+
+	if idx == currentIdx {
+		return spinnerView + " "
+	}
+
+	return "● "
 }
 
 // stripMarkdownHeading removes leading `#` markers from markdown headings.

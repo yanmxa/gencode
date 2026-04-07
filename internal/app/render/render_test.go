@@ -108,6 +108,39 @@ func TestRenderToolCallsUsesEightyPercentWidth(t *testing.T) {
 	}
 }
 
+func TestRenderToolCallsShowsRunningStateForPendingBash(t *testing.T) {
+	params := ToolCallsParams{
+		ToolCalls: []message.ToolCall{{
+			ID:    "tc-1",
+			Name:  "Bash",
+			Input: `{"command":"find /Users/myan -name test"}`,
+		}},
+		ResultMap: map[string]ToolResultData{},
+		PendingCalls: []message.ToolCall{{
+			ID:    "tc-1",
+			Name:  "Bash",
+			Input: `{"command":"find /Users/myan -name test"}`,
+		}},
+		CurrentIdx:  0,
+		SpinnerView: "⋯",
+		Width:       100,
+	}
+
+	rendered := RenderToolCalls(params)
+	if !strings.Contains(rendered, "⋯ Bash(find /Users/myan -name test)") {
+		t.Fatalf("RenderToolCalls() = %q, want spinner on the main tool line", rendered)
+	}
+	if strings.Contains(rendered, "running...") {
+		t.Fatalf("RenderToolCalls() = %q, should not add extra running text", rendered)
+	}
+}
+
+func TestFormatToolResultSizeUsesNoOutputForEmptyContent(t *testing.T) {
+	if got := FormatToolResultSize("Bash", ""); got != "no output" {
+		t.Fatalf("FormatToolResultSize() = %q, want %q", got, "no output")
+	}
+}
+
 func TestRenderPlanForScrollbackDoesNotInjectTitle(t *testing.T) {
 	plan := "# Context\nBody"
 	rendered := RenderPlanForScrollback(plan, nil)

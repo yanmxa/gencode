@@ -278,6 +278,44 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 	}
 }
 
+func TestHasRunningToolExecutionSequentialBash(t *testing.T) {
+	m := &model{
+		tool: apptool.State{
+			ExecState: apptool.ExecState{
+				PendingCalls: []message.ToolCall{
+					{ID: "tc-1", Name: "Bash"},
+				},
+				CurrentIdx: 0,
+			},
+		},
+	}
+
+	if !m.hasRunningToolExecution() {
+		t.Fatal("expected sequential bash execution to keep spinner active")
+	}
+}
+
+func TestHasRunningToolExecutionParallelPendingResult(t *testing.T) {
+	m := &model{
+		tool: apptool.State{
+			ExecState: apptool.ExecState{
+				PendingCalls: []message.ToolCall{
+					{ID: "tc-1", Name: "Bash"},
+					{ID: "tc-2", Name: "WebFetch"},
+				},
+				Parallel: true,
+				ParallelResults: map[int]message.ToolResult{
+					0: {ToolCallID: "tc-1", Content: "done"},
+				},
+			},
+		},
+	}
+
+	if !m.hasRunningToolExecution() {
+		t.Fatal("expected unfinished parallel tool execution to keep spinner active")
+	}
+}
+
 func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 	reply := make(chan *tool.QuestionResponse, 1)
 	m := &model{

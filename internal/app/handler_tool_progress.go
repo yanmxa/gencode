@@ -15,6 +15,23 @@ func (m *model) handleTaskProgressTick() tea.Cmd {
 	return m.output.HandleProgressTick(m.hasRunningTaskTools())
 }
 
+func (m *model) hasRunningToolExecution() bool {
+	if m.tool.PendingCalls == nil {
+		return false
+	}
+
+	if m.tool.Parallel {
+		for i := range m.tool.PendingCalls {
+			if _, done := m.tool.ParallelResults[i]; !done {
+				return true
+			}
+		}
+		return false
+	}
+
+	return m.tool.CurrentIdx >= 0 && m.tool.CurrentIdx < len(m.tool.PendingCalls)
+}
+
 func (m *model) hasRunningTaskTools() bool {
 	if m.tool.Parallel {
 		return m.hasRunningParallelTaskTools()
