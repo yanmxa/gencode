@@ -17,6 +17,7 @@ import (
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/skill"
 )
 
@@ -180,6 +181,29 @@ func TestExecuteCommandOpenSelectors(t *testing.T) {
 			t.Fatal("expected session selector to become active")
 		}
 	})
+}
+
+func TestExecuteCommandReloadPlugins(t *testing.T) {
+	prev := plugin.DefaultRegistry
+	plugin.DefaultRegistry = plugin.NewRegistry()
+	t.Cleanup(func() { plugin.DefaultRegistry = prev })
+
+	tmpHome := t.TempDir()
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	m := &model{cwd: tmpDir}
+
+	result, cmd, handled := ExecuteCommand(context.Background(), m, "/reload-plugins")
+	if !handled {
+		t.Fatal("expected /reload-plugins to be handled")
+	}
+	if cmd != nil {
+		t.Fatal("did not expect follow-up command")
+	}
+	if !strings.Contains(result, "Reloaded plugins") {
+		t.Fatalf("unexpected result: %q", result)
+	}
 }
 
 func TestExecuteCommandLoopSchedulesRecurringPrompt(t *testing.T) {

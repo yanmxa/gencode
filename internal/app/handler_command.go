@@ -23,6 +23,7 @@ import (
 	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plan"
+	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -32,25 +33,26 @@ import (
 type CommandHandler func(ctx context.Context, m *model, args string) (string, tea.Cmd, error)
 
 var builtinCommandHandlers = map[string]CommandHandler{
-	"provider":   handleProviderCommand,
-	"model":      handleModelCommand,
-	"clear":      handleClearCommand,
-	"fork":       handleForkCommand,
-	"resume":     handleResumeCommand,
-	"help":       handleHelpCommand,
-	"glob":       handleGlobCommand,
-	"tools":      handleToolCommand,
-	"plan":       handlePlanCommand,
-	"skills":     handleSkillCommand,
-	"agents":     handleAgentCommand,
-	"tokenlimit": handleTokenLimitCommand,
-	"compact":    handleCompactCommand,
-	"init":       handleInitCommand,
-	"memory":     handleMemoryCommand,
-	"mcp":        handleMCPCommand,
-	"plugin":     handlePluginCommand,
-	"think":      handleThinkCommand,
-	"loop":       handleLoopCommand,
+	"provider":       handleProviderCommand,
+	"model":          handleModelCommand,
+	"clear":          handleClearCommand,
+	"fork":           handleForkCommand,
+	"resume":         handleResumeCommand,
+	"help":           handleHelpCommand,
+	"glob":           handleGlobCommand,
+	"tools":          handleToolCommand,
+	"plan":           handlePlanCommand,
+	"skills":         handleSkillCommand,
+	"agents":         handleAgentCommand,
+	"tokenlimit":     handleTokenLimitCommand,
+	"compact":        handleCompactCommand,
+	"init":           handleInitCommand,
+	"memory":         handleMemoryCommand,
+	"mcp":            handleMCPCommand,
+	"plugin":         handlePluginCommand,
+	"reload-plugins": handleReloadPluginsCommand,
+	"think":          handleThinkCommand,
+	"loop":           handleLoopCommand,
 }
 
 // handlerRegistry maps command names to their handler functions.
@@ -162,6 +164,23 @@ func handleMCPCommand(ctx context.Context, m *model, args string) (string, tea.C
 func handlePluginCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
 	result, err := appplugin.HandleCommand(ctx, &m.plugin.Selector, m.cwd, m.width, m.height, args)
 	return result, nil, err
+}
+
+func handleReloadPluginsCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
+	if strings.TrimSpace(args) != "" {
+		return "Usage: /reload-plugins", nil, nil
+	}
+
+	if err := plugin.DefaultRegistry.Load(ctx, m.cwd); err != nil {
+		return "", nil, fmt.Errorf("failed to reload plugin registry: %w", err)
+	}
+	_ = plugin.DefaultRegistry.LoadClaudePlugins(ctx)
+
+	if err := m.reloadPluginBackedState(); err != nil {
+		return "", nil, err
+	}
+
+	return "Reloaded plugins and refreshed plugin-backed skills, agents, MCP servers, and hooks.", nil, nil
 }
 
 func handleProviderCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {

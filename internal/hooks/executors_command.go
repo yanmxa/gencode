@@ -75,7 +75,12 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd config
 		timeout = hookCmd.Timeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
+	detached := false
+	defer func() {
+		if !detached {
+			cancel()
+		}
+	}()
 
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
@@ -131,7 +136,11 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd config
 			var async asyncFirstLine
 			if json.Unmarshal([]byte(line), &async) == nil && async.Async {
 				_ = stdinPipe.Close()
-				go func() { _ = cmd.Wait() }()
+				detached = true
+				go func() {
+					defer cancel()
+					_ = cmd.Wait()
+				}()
 				return outcome
 			}
 		}
