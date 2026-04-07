@@ -125,12 +125,9 @@ var EnterPlanModeSchema = provider.Tool{
 	Description: `Request to enter plan mode for tasks that need exploration before implementation. The user must approve entering plan mode.
 
 When to use:
-- Adding meaningful new features (e.g., new endpoints, form validation, auth flows)
-- Multiple valid approaches exist and you need to explore first
-- Changes affect existing behavior or code structure
-- Architectural decisions are required
-- Tasks will modify more than 2-3 files
-- Requirements are unclear and need exploration
+- The relevant architecture is still unknown after direct reading/search
+- Direct implementation would be risky because the change could affect existing behavior, data flow, or system structure in ways you cannot yet bound
+- You need focused exploration first to identify the correct implementation boundary before editing
 
 When NOT to use:
 - User already gave clear, specific instructions (use TaskCreate to track steps instead)
@@ -138,6 +135,8 @@ When NOT to use:
 - Pure research or exploration (use Agent with Explore instead)
 - Simple fixes like typos, obvious bugs, or single functions with clear requirements
 - Straightforward multi-file changes where the approach is obvious
+- Tasks that are large only because they touch several files
+- Cases where you can safely proceed by reading the relevant files and executing step by step
 - Answering questions about the codebase`,
 	Parameters: map[string]any{
 		"type": "object",

@@ -19,6 +19,7 @@ type Settings struct {
 	EnabledPlugins map[string]bool    `json:"enabledPlugins,omitempty"`
 	DisabledTools  map[string]bool    `json:"disabledTools,omitempty"`
 	Theme          string             `json:"theme,omitempty"`
+	AllowBypass    *bool              `json:"allowBypass,omitempty"`
 }
 
 // PermissionSettings defines permission rules for tool execution.

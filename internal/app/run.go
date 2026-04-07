@@ -187,6 +187,10 @@ func cloneSettings(src *config.Settings) *config.Settings {
 	dst.Permissions.Ask = append([]string(nil), src.Permissions.Ask...)
 	dst.Model = src.Model
 	dst.Theme = src.Theme
+	if src.AllowBypass != nil {
+		v := *src.AllowBypass
+		dst.AllowBypass = &v
+	}
 	for k, v := range src.Env {
 		dst.Env[k] = v
 	}

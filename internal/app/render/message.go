@@ -175,17 +175,11 @@ func TokenUsageColorAndHint(percent float64) (lipgloss.TerminalColor, string) {
 	return theme.CurrentTheme.Muted, ""
 }
 
-// RenderPlanForScrollback renders the plan title + markdown content as a styled string.
+// RenderPlanForScrollback renders the plan markdown content for scrollback.
 func RenderPlanForScrollback(plan string, mdRenderer *MDRenderer) string {
 	if plan == "" {
 		return ""
 	}
-
-	var sb strings.Builder
-	titleStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
-	sb.WriteString("\n ")
-	sb.WriteString(titleStyle.Render("📋 Implementation Plan"))
-	sb.WriteString("\n")
 
 	content := plan
 	if mdRenderer != nil {
@@ -193,8 +187,7 @@ func RenderPlanForScrollback(plan string, mdRenderer *MDRenderer) string {
 			content = strings.TrimSpace(rendered)
 		}
 	}
-	sb.WriteString(content)
-	return sb.String()
+	return content
 }
 
 // FormatTokenCount formats a token count for display.

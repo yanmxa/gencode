@@ -20,6 +20,7 @@ func MergeSettings(base, overlay *Settings) *Settings {
 	result.Env = mergeMaps(base.Env, overlay.Env)
 	result.EnabledPlugins = mergeMaps(base.EnabledPlugins, overlay.EnabledPlugins)
 	result.DisabledTools = mergeMaps(base.DisabledTools, overlay.DisabledTools)
+	result.AllowBypass = coalesceBool(overlay.AllowBypass, base.AllowBypass)
 
 	return result
 }
@@ -59,6 +60,13 @@ func mergeHooks(base, overlay map[string][]Hook) map[string][]Hook {
 // coalesce returns the first non-empty string.
 func coalesce(a, b string) string {
 	if a != "" {
+		return a
+	}
+	return b
+}
+
+func coalesceBool(a, b *bool) *bool {
+	if a != nil {
 		return a
 	}
 	return b

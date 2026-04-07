@@ -14,7 +14,7 @@ import (
 )
 
 func (m *model) cycleOperationMode() {
-	m.mode.Operation = m.mode.Operation.Next()
+	m.mode.Operation = m.mode.Operation.NextWithBypass(m.settings != nil && m.settings.AllowBypass != nil && *m.settings.AllowBypass)
 	m.applyOperationModePermissions()
 	m.mode.Enabled = m.mode.Operation == appmode.Plan
 
@@ -35,6 +35,7 @@ func (m *model) applyOperationModePermissions() {
 	m.mode.SessionPermissions.AllowAllWrites = false
 	m.mode.SessionPermissions.AllowAllBash = false
 	m.mode.SessionPermissions.AllowAllSkills = false
+	m.mode.SessionPermissions.Mode = config.ModeNormal
 
 	// Enable auto-accept permissions
 	if m.mode.Operation == appmode.AutoAccept {
@@ -45,6 +46,10 @@ func (m *model) applyOperationModePermissions() {
 			m.mode.SessionPermissions.AllowPattern(pattern)
 		}
 	}
+
+	if m.mode.Operation == appmode.BypassPermissions {
+		m.mode.SessionPermissions.Mode = config.ModeBypassPermissions
+	}
 }
 
 // operationModeName returns the string name of the current operation mode.
@@ -54,6 +59,8 @@ func (m *model) operationModeName() string {
 		return "auto"
 	case appmode.Plan:
 		return "plan"
+	case appmode.BypassPermissions:
+		return "bypassPermissions"
 	default:
 		return "default"
 	}

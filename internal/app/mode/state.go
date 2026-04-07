@@ -17,12 +17,28 @@ const (
 )
 
 var cycleModes = []OperationMode{Normal, AutoAccept, Plan}
+var cycleModesWithBypass = []OperationMode{Normal, AutoAccept, Plan, BypassPermissions}
 
 // Next cycles to the next operation mode.
 func (m OperationMode) Next() OperationMode {
 	for i, mode := range cycleModes {
 		if mode == m {
 			return cycleModes[(i+1)%len(cycleModes)]
+		}
+	}
+	return Normal
+}
+
+// NextWithBypass cycles to the next operation mode.
+// When enabled is true, BypassPermissions is included in the cycle.
+func (m OperationMode) NextWithBypass(enabled bool) OperationMode {
+	modes := cycleModes
+	if enabled {
+		modes = cycleModesWithBypass
+	}
+	for i, mode := range modes {
+		if mode == m {
+			return modes[(i+1)%len(modes)]
 		}
 	}
 	return Normal
