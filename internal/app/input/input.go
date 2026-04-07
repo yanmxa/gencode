@@ -12,19 +12,33 @@ import (
 )
 
 const (
-	minTextareaHeight = 1
-	maxTextareaHeight = 6
+	minTextareaHeight    = 1
+	defaultMaxHeight     = 6
+	fixedChromeLines     = 5 // separators(2) + status(1) + prompt overhead(2)
+	maxHeightScreenRatio = 2 // use up to 1/2 of terminal height
 )
 
 // ImageRefPattern matches @path/to/image.ext references (case-insensitive extension).
 var ImageRefPattern = regexp.MustCompile(`(?i)@([^\s]+\.(png|jpg|jpeg|gif|webp))`)
+
+// maxTextareaHeight returns the dynamic max height based on terminal size.
+func (m *Model) maxTextareaHeight() int {
+	if m.TerminalHeight <= 0 {
+		return defaultMaxHeight
+	}
+	dynMax := m.TerminalHeight/maxHeightScreenRatio - fixedChromeLines
+	if dynMax < defaultMaxHeight {
+		return defaultMaxHeight
+	}
+	return dynMax
+}
 
 // UpdateHeight adjusts textarea height based on content line count.
 func (m *Model) UpdateHeight() {
 	content := m.Textarea.Value()
 	lines := strings.Count(content, "\n") + 1
 
-	newHeight := max(min(lines, maxTextareaHeight), minTextareaHeight)
+	newHeight := max(min(lines, m.maxTextareaHeight()), minTextareaHeight)
 
 	m.Textarea.SetHeight(newHeight)
 }
@@ -101,6 +115,26 @@ func ProcessImageRefs(cwd, input string) (string, []message.ImageData, error) {
 	content = strings.TrimSpace(content)
 
 	return content, images, nil
+}
+
+// PastePlaceholder returns the placeholder text displayed in the textarea for a pasted chunk.
+func PastePlaceholder(index, lineCount int) string {
+	return fmt.Sprintf("[Pasted text #%d +%d lines]", index, lineCount)
+}
+
+// FullValue returns the textarea value with paste placeholders expanded to the original pasted text.
+func (m *Model) FullValue() string {
+	val := m.Textarea.Value()
+	for i, chunk := range m.PastedChunks {
+		placeholder := PastePlaceholder(i+1, chunk.LineCount)
+		val = strings.Replace(val, placeholder, chunk.Text, 1)
+	}
+	return val
+}
+
+// ClearPaste resets the pasted chunks state.
+func (m *Model) ClearPaste() {
+	m.PastedChunks = nil
 }
 
 // MinTextareaHeight returns the minimum textarea height constant.

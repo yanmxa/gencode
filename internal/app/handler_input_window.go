@@ -6,6 +6,7 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 	oldWidth := m.width
 	m.width = msg.Width
 	m.height = msg.Height
+	m.input.TerminalHeight = msg.Height
 
 	m.output.ResizeMDRenderer(msg.Width)
 

@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
+	appinput "github.com/yanmxa/gencode/internal/app/input"
 	appskill "github.com/yanmxa/gencode/internal/app/skill"
 	apptool "github.com/yanmxa/gencode/internal/app/tool"
 	"github.com/yanmxa/gencode/internal/skill"
@@ -69,10 +70,25 @@ func (m *model) updateTextarea(msg tea.Msg) tea.Cmd {
 	cmds = append(cmds, cmd)
 
 	if isPaste {
-		trimmed := strings.TrimSpace(m.input.Textarea.Value())
-		if trimmed != m.input.Textarea.Value() {
-			m.input.Textarea.SetValue(trimmed)
+		newValue := m.input.Textarea.Value()
+		pastedText := extractPastedText(prevValue, newValue)
+		lines := strings.Split(pastedText, "\n")
+		if len(lines) > 1 {
+			chunk := appinput.PastedChunk{
+				Text:      pastedText,
+				LineCount: len(lines),
+			}
+			m.input.PastedChunks = append(m.input.PastedChunks, chunk)
+			placeholder := appinput.PastePlaceholder(len(m.input.PastedChunks), chunk.LineCount)
+			m.input.Textarea.SetValue(prevValue)
 			m.input.Textarea.CursorEnd()
+			m.input.Textarea.InsertString(placeholder)
+		} else {
+			trimmed := strings.TrimSpace(newValue)
+			if trimmed != newValue {
+				m.input.Textarea.SetValue(trimmed)
+				m.input.Textarea.CursorEnd()
+			}
 		}
 	}
 
@@ -88,4 +104,13 @@ func (m *model) updateTextarea(msg tea.Msg) tea.Cmd {
 	}
 
 	return tea.Batch(cmds...)
+}
+
+// extractPastedText derives the pasted content by comparing the textarea
+// value before and after the paste event.
+func extractPastedText(prevValue, newValue string) string {
+	if strings.HasPrefix(newValue, prevValue) {
+		return strings.TrimSpace(newValue[len(prevValue):])
+	}
+	return strings.TrimSpace(newValue)
 }

@@ -20,6 +20,7 @@ type submitRequest struct {
 func (m *model) resetInputField() {
 	m.input.Textarea.Reset()
 	m.input.Textarea.SetHeight(appinput.MinTextareaHeight())
+	m.input.ClearPaste()
 }
 
 func (m *model) handleSubmit() tea.Cmd {
@@ -40,7 +41,7 @@ func (m *model) readSubmitRequest() (submitRequest, bool) {
 		return submitRequest{}, false
 	}
 
-	input := strings.TrimSpace(m.input.Textarea.Value())
+	input := strings.TrimSpace(m.input.FullValue())
 	if input == "" && len(m.input.Images.Pending) == 0 {
 		return submitRequest{}, false
 	}

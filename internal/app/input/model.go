@@ -9,15 +9,23 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
 
+// PastedChunk holds a collapsed multi-line paste block.
+type PastedChunk struct {
+	Text      string // the full pasted text
+	LineCount int    // total line count
+}
+
 // Model holds all input-related state: textarea, history, suggestions, and images.
 type Model struct {
-	Textarea    textarea.Model
-	History     []string
-	HistoryIdx  int
-	TempInput   string
-	Suggestions suggest.State
-	LastCtrlO   time.Time
-	Images      ImageState
+	Textarea       textarea.Model
+	History        []string
+	HistoryIdx     int
+	TempInput      string
+	Suggestions    suggest.State
+	LastCtrlO      time.Time
+	Images         ImageState
+	TerminalHeight int
+	PastedChunks   []PastedChunk
 }
 
 // ImageState holds state for pending image attachments.

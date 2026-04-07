@@ -7,7 +7,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appinput "github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
@@ -94,7 +93,7 @@ func (m *model) handleSuggestionKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 // handleInputKey handles general input keys (shortcuts, navigation, submit).
 func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	switch msg.Type {
-	case tea.KeyTab:
+	case tea.KeyTab, tea.KeyRight:
 		// Accept ghost text suggestion
 		if m.promptSuggestion.text != "" && m.input.Textarea.Value() == "" {
 			m.input.Textarea.SetValue(m.promptSuggestion.text)
@@ -138,8 +137,7 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 
 	case tea.KeyCtrlC:
 		if m.input.Textarea.Value() != "" {
-			m.input.Textarea.Reset()
-			m.input.Textarea.SetHeight(appinput.MinTextareaHeight())
+			m.resetInputField()
 			m.input.HistoryIdx = -1
 			return nil, true
 		}

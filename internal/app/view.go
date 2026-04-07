@@ -13,10 +13,7 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
-var (
-	ghostTextStyle = lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
-	ghostHintStyle = lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
-)
+var ghostTextStyle = lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
 
 func (m model) View() string {
 	if !m.ready {
@@ -47,7 +44,7 @@ func (m model) View() string {
 	var inputView string
 	if m.promptSuggestion.text != "" && m.input.Textarea.Value() == "" &&
 		!m.conv.Stream.Active && !m.input.Suggestions.IsVisible() {
-		inputView = prompt + ghostTextStyle.Render(m.promptSuggestion.text) + "  " + ghostHintStyle.Render("Tab")
+		inputView = prompt + ghostTextStyle.Render(m.promptSuggestion.text)
 	} else {
 		inputView = prompt + m.input.Textarea.View()
 	}
