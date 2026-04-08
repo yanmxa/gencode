@@ -399,12 +399,17 @@ func displayNameFor(config *AgentConfig, req AgentRequest) string {
 
 // toolProgressParams maps tool names to the parameter key used for display.
 var toolProgressParams = map[string]string{
-	"Read":      "file_path",
-	"Glob":      "pattern",
-	"Grep":      "pattern",
-	"WebFetch":  "url",
-	"WebSearch": "query",
-	"Bash":      "command",
+	"Read":       "file_path",
+	"Write":      "file_path",
+	"Edit":       "file_path",
+	"Glob":       "pattern",
+	"Grep":       "pattern",
+	"Bash":       "command",
+	"WebFetch":   "url",
+	"WebSearch":  "query",
+	"TaskCreate": "subject",
+	"TaskUpdate": "taskId",
+	"TaskGet":    "taskId",
 	"TaskOutput": "task_id",
 }
 
@@ -417,6 +422,11 @@ func formatToolProgress(toolName string, params map[string]any) string {
 		return toolName
 	}
 
+	// Task tools: show "TaskXxx(#id subject)" by looking up subject from store
+	if label := formatTaskToolProgress(toolName, params); label != "" {
+		return label
+	}
+
 	paramKey, ok := toolProgressParams[toolName]
 	if !ok {
 		return fmt.Sprintf("%s()", toolName)
@@ -427,12 +437,46 @@ func formatToolProgress(toolName string, params map[string]any) string {
 		return fmt.Sprintf("%s()", toolName)
 	}
 
-	// Truncate long strings
 	if len(value) > 60 {
 		value = value[:57] + "..."
 	}
 
 	return fmt.Sprintf("%s(%s)", toolName, value)
+}
+
+// formatTaskToolProgress formats task tool calls with "#id subject" display.
+func formatTaskToolProgress(toolName string, params map[string]any) string {
+	switch toolName {
+	case "TaskCreate":
+		subject, _ := params["subject"].(string)
+		if subject == "" {
+			return ""
+		}
+		if len(subject) > 50 {
+			subject = subject[:47] + "..."
+		}
+		return fmt.Sprintf("TaskCreate(%s)", subject)
+
+	case "TaskUpdate", "TaskGet":
+		taskID, _ := params["taskId"].(string)
+		if taskID == "" {
+			return ""
+		}
+		subject := ""
+		if t, ok := tool.DefaultTodoStore.Get(taskID); ok {
+			subject = t.Subject
+		}
+		if subject != "" {
+			if len(subject) > 40 {
+				subject = subject[:37] + "..."
+			}
+			return fmt.Sprintf("%s(#%s %s)", toolName, taskID, subject)
+		}
+		return fmt.Sprintf("%s(#%s)", toolName, taskID)
+
+	default:
+		return ""
+	}
 }
 
 func formatAgentProgress(params map[string]any) string {

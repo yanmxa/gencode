@@ -38,13 +38,12 @@ import (
 )
 
 type modelInfra struct {
-	store             *provider.Store
-	llmProvider       provider.LLMProvider
-	currentModel      *provider.CurrentModelInfo
-	mcpRegistry       *mcp.Registry
-	settings          *config.Settings
-	hookEngine        *hooks.Engine
-	earlySessionStore *appsession.Store
+	store        *provider.Store
+	llmProvider  provider.LLMProvider
+	currentModel *provider.CurrentModelInfo
+	settings     *config.Settings
+	hookEngine   *hooks.Engine
+	sessionStore *appsession.Store
 }
 
 func initializeModelInfra(cwd string) (modelInfra, error) {
@@ -55,15 +54,15 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 	}
 
 	store, llmProvider, currentModel := initializeProvider()
-	mcpRegistry := initializeRegistries(cwd)
+	initializeRegistries(cwd)
 	settings := loadSettings()
 
 	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
 
 	var transcriptPath string
-	earlySessionStore, _ := appsession.NewStore(cwd)
-	if earlySessionStore != nil {
-		transcriptPath = earlySessionStore.SessionPath(sessionID)
+	sessionStore, _ := appsession.NewStore(cwd)
+	if sessionStore != nil {
+		transcriptPath = sessionStore.SessionPath(sessionID)
 	}
 	hookEngine := hooks.NewEngine(settings, sessionID, cwd, transcriptPath)
 	modelID := ""
@@ -71,17 +70,16 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 		modelID = currentModel.ModelID
 	}
 	hookEngine.SetLLMProvider(llmProvider, modelID)
-	hookEngine.SetAgentRunner(newHookAgentRunner(llmProvider, settings, cwd, isGitRepo(cwd), mcpRegistry))
+	hookEngine.SetAgentRunner(newHookAgentRunner(llmProvider, settings, cwd, isGitRepo(cwd), mcp.DefaultRegistry))
 	installHookBridges(hookEngine)
 
 	return modelInfra{
-		store:             store,
-		llmProvider:       llmProvider,
-		currentModel:      currentModel,
-		mcpRegistry:       mcpRegistry,
-		settings:          settings,
-		hookEngine:        hookEngine,
-		earlySessionStore: earlySessionStore,
+		store:        store,
+		llmProvider:  llmProvider,
+		currentModel: currentModel,
+		settings:     settings,
+		hookEngine:   hookEngine,
+		sessionStore: sessionStore,
 	}, nil
 }
 
@@ -100,7 +98,7 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		memory:   newMemoryState(),
 		mode:     newModeState(),
 		tool:     newToolState(),
-		mcp:      newMCPState(infra),
+		mcp:      newMCPState(),
 		plugin:   newPluginState(),
 		agent:    newAgentState(),
 		approval: appapproval.New(),
@@ -140,7 +138,7 @@ func newProviderState(infra modelInfra) appprovider.State {
 func newSessionState(infra modelInfra) appsession.State {
 	return appsession.State{
 		Selector: appsession.New(),
-		Store:    infra.earlySessionStore,
+		Store:    infra.sessionStore,
 	}
 }
 
@@ -167,8 +165,8 @@ func newToolState() apptool.State {
 	return apptool.State{Selector: apptool.New()}
 }
 
-func newMCPState(infra modelInfra) appmcp.State {
-	return appmcp.State{Selector: appmcp.New(), Registry: infra.mcpRegistry}
+func newMCPState() appmcp.State {
+	return appmcp.State{Selector: appmcp.New(), Registry: mcp.DefaultRegistry}
 }
 
 func newPluginState() appplugin.State {
@@ -217,13 +215,16 @@ func (m *model) applyRunOptions(opts options.RunOptions) error {
 
 func (m *model) reloadPluginBackedState() error {
 	if err := skill.Initialize(m.cwd); err != nil {
-		return fmt.Errorf("failed to reload skill registry after loading plugins: %w", err)
+		return fmt.Errorf("failed to reload skill registry: %w", err)
 	}
-
-	agent.Init(m.cwd)
-
+	if err := appcommand.Initialize(m.cwd); err != nil {
+		return fmt.Errorf("failed to reload custom commands: %w", err)
+	}
+	if err := agent.Initialize(m.cwd); err != nil {
+		return fmt.Errorf("failed to reload agent registry: %w", err)
+	}
 	if err := mcp.Initialize(m.cwd); err != nil {
-		return fmt.Errorf("failed to reload MCP registry after loading plugins: %w", err)
+		return fmt.Errorf("failed to reload MCP registry: %w", err)
 	}
 	m.mcp.Registry = mcp.DefaultRegistry
 

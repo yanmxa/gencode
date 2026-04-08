@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/env"
+	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -96,21 +98,18 @@ func (e *Engine) buildEnv(input HookInput) []string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	env := append(os.Environ(),
-		"GEN_PROJECT_DIR="+e.cwd,
-		"GEN_SESSION_ID="+e.sessionID,
-		"GEN_EVENT_TYPE="+input.HookEventName,
-		"CLAUDE_PROJECT_DIR="+e.cwd,
-		"CLAUDE_SESSION_ID="+e.sessionID,
-		"CLAUDE_EVENT_TYPE="+input.HookEventName,
+	result := append(os.Environ(),
+		env.Pairs(
+			"PROJECT_DIR", e.cwd,
+			"SESSION_ID", e.sessionID,
+			"EVENT_TYPE", input.HookEventName,
+		)...,
 	)
 	if input.ToolName != "" {
-		env = append(env,
-			"GEN_TOOL_NAME="+input.ToolName,
-			"CLAUDE_TOOL_NAME="+input.ToolName,
-		)
+		result = append(result, env.Pair("TOOL_NAME", input.ToolName)...)
 	}
-	return env
+	result = append(result, plugin.PluginEnv()...)
+	return result
 }
 
 func getExitCode(err error) int {

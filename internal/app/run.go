@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/agent"
+	appcommand "github.com/yanmxa/gencode/internal/app/command"
 	appthemeselect "github.com/yanmxa/gencode/internal/app/themeselect"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/log"
@@ -147,24 +148,27 @@ func initializeProvider() (*provider.Store, provider.LLMProvider, *provider.Curr
 	return store, nil, currentModel
 }
 
-func initializeRegistries(cwd string) *mcp.Registry {
+// initializeRegistries loads all component registries in dependency order.
+// Plugins must load first since skills, commands, agents, and MCP servers
+// all read plugin-provided paths.
+func initializeRegistries(cwd string) {
 	ctx := context.Background()
 
 	if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
 		log.Logger().Warn("Failed to load plugins", zap.Error(err))
 	}
-
 	if err := skill.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize skill registry", zap.Error(err))
 	}
-
-	agent.Init(cwd)
-
+	if err := appcommand.Initialize(cwd); err != nil {
+		log.Logger().Warn("Failed to initialize custom commands", zap.Error(err))
+	}
+	if err := agent.Initialize(cwd); err != nil {
+		log.Logger().Warn("Failed to initialize agent registry", zap.Error(err))
+	}
 	if err := mcp.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize MCP registry", zap.Error(err))
-		return nil
 	}
-	return mcp.DefaultRegistry
 }
 
 func loadSettings() *config.Settings {

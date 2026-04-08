@@ -87,18 +87,6 @@ gen --resume          # Select from list
 3. Use `/model` to select a model
 4. Start chatting!
 
-### Scheduling
-
-In the interactive TUI you can schedule recurring or one-shot prompts:
-
-```bash
-/loop 5m check the deploy
-/loop once 20m check the deploy
-/loop list
-```
-
-`/loop` is currently an interactive-TUI workflow. The literal `/loop ...` command is preserved in the visible transcript.
-
 
 ## 🔧 Configuration
 

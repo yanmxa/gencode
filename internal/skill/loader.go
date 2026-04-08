@@ -1,11 +1,12 @@
 package skill
 
 import (
-	"bufio"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/yanmxa/gencode/internal/markdown"
 
 	"gopkg.in/yaml.v3"
 )
@@ -243,7 +244,7 @@ func (l *Loader) LoadAll() (map[string]*Skill, error) {
 // loadSkillFile loads a skill from a file path.
 // Only parses frontmatter for metadata; instructions are lazy-loaded.
 func (l *Loader) loadSkillFile(path string, scope SkillScope, defaultNamespace string) (*Skill, error) {
-	fm, _, err := parseFrontmatterFile(path)
+	fm, _, err := markdown.ParseFrontmatterFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -278,57 +279,6 @@ func (l *Loader) loadSkillFile(path string, scope SkillScope, defaultNamespace s
 	return skill, nil
 }
 
-// parseFrontmatterFile reads a markdown file and returns (frontmatter, body).
-func parseFrontmatterFile(path string) (frontmatter, body string, err error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", "", err
-	}
-	defer file.Close()
-
-	var fmBuilder strings.Builder
-	var bodyBuilder strings.Builder
-	inFrontmatter := false
-	frontmatterDone := false
-
-	scanner := bufio.NewScanner(file)
-	lineNum := 0
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		lineNum++
-
-		if lineNum == 1 {
-			if strings.TrimSpace(line) == "---" {
-				inFrontmatter = true
-				continue
-			}
-			bodyBuilder.WriteString(line)
-			bodyBuilder.WriteString("\n")
-			continue
-		}
-
-		if inFrontmatter && !frontmatterDone {
-			if strings.TrimSpace(line) == "---" {
-				inFrontmatter = false
-				frontmatterDone = true
-				continue
-			}
-			fmBuilder.WriteString(line)
-			fmBuilder.WriteString("\n")
-		} else {
-			bodyBuilder.WriteString(line)
-			bodyBuilder.WriteString("\n")
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return "", "", err
-	}
-
-	return fmBuilder.String(), strings.TrimSpace(bodyBuilder.String()), nil
-}
-
 // scanResourceDir scans a directory and returns file names.
 func scanResourceDir(dir string) []string {
 	entries, err := os.ReadDir(dir)
@@ -347,7 +297,7 @@ func scanResourceDir(dir string) []string {
 
 // loadInstructions loads the full instructions from a skill file.
 func loadInstructions(path string) (string, error) {
-	_, body, err := parseFrontmatterFile(path)
+	_, body, err := markdown.ParseFrontmatterFile(path)
 	if err != nil {
 		return "", err
 	}

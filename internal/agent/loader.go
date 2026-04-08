@@ -1,11 +1,13 @@
 package agent
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/markdown"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -99,15 +101,7 @@ func loadAgentsFromDirWithNamespace(path string, namespace string) {
 
 // loadAgentFromFileWithNamespace loads an agent with optional namespace.
 func loadAgentFromFileWithNamespace(filePath string, namespace string) {
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		log.Logger().Debug("Failed to read agent file",
-			zap.String("path", filePath),
-			zap.Error(err))
-		return
-	}
-
-	config, err := parseAgentFile(string(content), filePath)
+	config, err := parseAgentFile(filePath)
 	if err != nil {
 		log.Logger().Debug("Failed to parse agent file",
 			zap.String("path", filePath),
@@ -116,13 +110,11 @@ func loadAgentFromFileWithNamespace(filePath string, namespace string) {
 	}
 
 	if config != nil {
-		// Apply namespace if provided (from plugin)
 		if namespace != "" && !strings.Contains(config.Name, ":") {
 			config.Name = namespace + ":" + config.Name
 			config.Source = "plugin"
 		}
 
-		// Register with the default registry
 		DefaultRegistry.Register(config)
 		log.Logger().Info("Loaded custom agent",
 			zap.String("name", config.Name),
@@ -130,47 +122,37 @@ func loadAgentFromFileWithNamespace(filePath string, namespace string) {
 	}
 }
 
-// parseAgentFile parses an AGENT.md file with YAML frontmatter
-func parseAgentFile(content, filePath string) (*AgentConfig, error) {
-	// Extract YAML frontmatter
-	frontmatter, body := extractFrontmatter(content)
+// parseAgentFile parses an AGENT.md file with YAML frontmatter.
+func parseAgentFile(filePath string) (*AgentConfig, error) {
+	frontmatter, _, err := markdown.ParseFrontmatterFile(filePath)
+	if err != nil {
+		return nil, err
+	}
 	if frontmatter == "" {
-		return nil, nil // No frontmatter, skip
+		return nil, nil
 	}
 
-	// Parse YAML frontmatter
 	var config AgentConfig
 	if err := yaml.Unmarshal([]byte(frontmatter), &config); err != nil {
 		return nil, err
 	}
 
-	// Set defaults
 	if config.Name == "" {
-		// Derive name from filename
-		base := filepath.Base(filePath)
-		config.Name = strings.TrimSuffix(base, ".md")
+		config.Name = strings.TrimSuffix(filepath.Base(filePath), ".md")
 	}
-
 	if config.Model == "" {
 		config.Model = "inherit"
 	}
-
 	if config.MaxTurns <= 0 {
 		config.MaxTurns = DefaultMaxTurns
 	}
-
 	if config.PermissionMode == "" {
 		config.PermissionMode = PermissionDefault
 	}
 
-	// Don't load the full system prompt at startup - it will be lazily loaded
-	// when the agent is actually executed. Only store the SourceFile path.
-	// The body content is intentionally not loaded here for progressive loading.
-	_ = body // Body will be loaded lazily via GetSystemPrompt()
-
+	// Body is lazily loaded via GetSystemPrompt()
 	config.SourceFile = filePath
 
-	// Auto-detect source from file path
 	if config.Source == "" {
 		homeDir, _ := os.UserHomeDir()
 		switch {
@@ -178,7 +160,6 @@ func parseAgentFile(content, filePath string) (*AgentConfig, error) {
 			strings.HasPrefix(filePath, filepath.Join(homeDir, ".claude", "agents")):
 			config.Source = "user"
 		default:
-			// Project-level paths (cwd-relative .gen/agents/ or .claude/agents/)
 			config.Source = "project"
 		}
 	}
@@ -186,60 +167,30 @@ func parseAgentFile(content, filePath string) (*AgentConfig, error) {
 	return &config, nil
 }
 
-// extractFrontmatter extracts YAML frontmatter from markdown content
-// Frontmatter is content between --- markers at the start of the file
-func extractFrontmatter(content string) (frontmatter, body string) {
-	content = strings.TrimSpace(content)
-
-	// Check for YAML frontmatter delimiters
-	if !strings.HasPrefix(content, "---") {
-		return "", content
-	}
-
-	// Find the ending delimiter
-	rest := content[3:] // Skip initial ---
-	endIndex := strings.Index(rest, "\n---")
-	if endIndex == -1 {
-		return "", content
-	}
-
-	frontmatter = strings.TrimSpace(rest[:endIndex])
-	body = strings.TrimSpace(rest[endIndex+4:]) // Skip \n---
-
-	return frontmatter, body
-}
-
 // LoadAgentSystemPrompt loads just the system prompt (body) from an agent file.
-// This is used for lazy loading - the full prompt is only loaded when the agent is executed.
 func LoadAgentSystemPrompt(filePath string) string {
-	content, err := os.ReadFile(filePath)
+	_, body, err := markdown.ParseFrontmatterFile(filePath)
 	if err != nil {
 		log.Logger().Debug("Failed to read agent file for system prompt",
 			zap.String("path", filePath),
 			zap.Error(err))
 		return ""
 	}
-
-	_, body := extractFrontmatter(string(content))
-	return strings.TrimSpace(body)
+	return body
 }
 
-// Init is called to initialize the agent system
-// This should be called during application startup
-// It loads custom agents and initializes the enabled/disabled state stores
-func Init(cwd string) {
-	// Clear previous plugin agent paths
+// Initialize loads custom agents from all sources and initializes state stores.
+func Initialize(cwd string) error {
 	ClearPluginAgentPaths()
 
-	// Add agent paths from enabled plugins
 	for _, pp := range plugin.GetPluginAgentPaths() {
 		AddPluginAgentPath(pp.Path, pp.Namespace)
 	}
 
 	LoadCustomAgents(cwd)
 
-	// Initialize stores for enabled/disabled state persistence
 	if err := DefaultRegistry.InitStores(cwd); err != nil {
-		log.Logger().Warn("Failed to initialize agent stores", zap.Error(err))
+		return fmt.Errorf("failed to initialize agent stores: %w", err)
 	}
+	return nil
 }

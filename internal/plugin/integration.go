@@ -5,8 +5,11 @@ package plugin
 import (
 	"context"
 	"os"
+	"strings"
+	"sync"
 
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/env"
 )
 
 // InitPlugins initializes the plugin system and loads all enabled plugins.
@@ -170,4 +173,94 @@ func GetPluginLSPServers() []PluginLSPServer {
 func GetPluginNamespace(source string) string {
 	name, _ := ParsePluginRef(source)
 	return name
+}
+
+// activeRoot tracks the plugin root for the currently executing skill or command.
+// Protected by activeRootMu for concurrent safety.
+var (
+	activeRootMu sync.RWMutex
+	activeRoot   string
+)
+
+// SetActivePluginRoot sets the root path for the currently executing plugin.
+// Called when a plugin skill or custom command is invoked.
+func SetActivePluginRoot(path string) {
+	activeRootMu.Lock()
+	activeRoot = path
+	activeRootMu.Unlock()
+}
+
+// ClearActivePluginRoot clears the active plugin root.
+// Called when the user submits a new regular message.
+func ClearActivePluginRoot() {
+	activeRootMu.Lock()
+	activeRoot = ""
+	activeRootMu.Unlock()
+}
+
+// getActivePluginRoot returns the current active plugin root.
+func getActivePluginRoot() string {
+	activeRootMu.RLock()
+	defer activeRootMu.RUnlock()
+	return activeRoot
+}
+
+// FindPluginRootForPath returns the plugin root that contains the given path,
+// or "" if no enabled plugin matches.
+func FindPluginRootForPath(path string) string {
+	if DefaultRegistry == nil || path == "" {
+		return ""
+	}
+	for _, p := range DefaultRegistry.GetEnabled() {
+		if strings.HasPrefix(path, p.Path+"/") || path == p.Path {
+			return p.Path
+		}
+	}
+	return ""
+}
+
+// PluginEnv returns environment variables for all enabled plugins.
+// Callers should append the result to os.Environ() when spawning child
+// processes so that plugin scripts can locate their resources via
+// GEN_PLUGIN_ROOT / CLAUDE_PLUGIN_ROOT.
+//
+// Per plugin:
+//
+//	GEN_PLUGIN_ROOT_<UPPER_NAME>=<path>   CLAUDE_PLUGIN_ROOT_<UPPER_NAME>=<path>
+//
+// Unqualified alias — points to the active plugin root if set, otherwise
+// falls back to the sole enabled plugin (if exactly one):
+//
+//	GEN_PLUGIN_ROOT=<path>   CLAUDE_PLUGIN_ROOT=<path>
+func PluginEnv() []string {
+	if DefaultRegistry == nil {
+		return nil
+	}
+	enabled := DefaultRegistry.GetEnabled()
+	if len(enabled) == 0 {
+		return nil
+	}
+
+	var out []string
+	for _, p := range enabled {
+		out = append(out, env.PairF("PLUGIN_ROOT_%s", envSafeName(p.Name()), p.Path)...)
+	}
+
+	root := getActivePluginRoot()
+	if root == "" && len(enabled) == 1 {
+		root = enabled[0].Path
+	}
+	if root != "" {
+		out = append(out, env.Pair("PLUGIN_ROOT", root)...)
+	}
+	return out
+}
+
+// envSafeName converts a plugin name to an environment-variable-safe
+// upper-case identifier: lowercase, hyphens/dots → underscores.
+func envSafeName(name string) string {
+	s := strings.ToUpper(name)
+	s = strings.ReplaceAll(s, "-", "_")
+	s = strings.ReplaceAll(s, ".", "_")
+	return s
 }

@@ -3,7 +3,6 @@ package app
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/agent"
 	appplugin "github.com/yanmxa/gencode/internal/app/plugin"
 )
 
@@ -28,7 +27,7 @@ func (m *model) updatePlugin(msg tea.Msg) (tea.Cmd, bool) {
 	case appplugin.InstallResultMsg:
 		m.plugin.Selector.HandleInstallResult(msg)
 		if msg.Success {
-			agent.Init(m.cwd)
+			_ = m.reloadPluginBackedState()
 		}
 		return nil, true
 

@@ -79,6 +79,10 @@ func ExecuteCommand(ctx context.Context, m *model, input string) (string, tea.Cm
 		return executeSkillSlashCommand(m, sk, args), m.handleSkillInvocation(), true
 	}
 
+	if pc, ok := command.IsCustomCommand(cmd); ok {
+		return executeCustomCommand(m, pc, args), m.handleSkillInvocation(), true
+	}
+
 	return unknownCommandResult(cmd), nil, true
 }
 
@@ -86,6 +90,8 @@ func executeSkillCommand(m *model, sk *skill.Skill, args string) {
 	if skill.DefaultRegistry != nil {
 		m.skill.PendingInstructions = skill.DefaultRegistry.GetSkillInvocationPrompt(sk.FullName())
 	}
+
+	plugin.SetActivePluginRoot(plugin.FindPluginRootForPath(sk.SkillDir))
 
 	if args != "" {
 		m.skill.PendingArgs = fmt.Sprintf("/%s %s", sk.FullName(), args)
@@ -120,6 +126,22 @@ func executeBuiltinCommand(ctx context.Context, m *model, cmd, args string) (str
 
 func executeSkillSlashCommand(m *model, sk *skill.Skill, args string) string {
 	executeSkillCommand(m, sk, args)
+	return ""
+}
+
+func executeCustomCommand(m *model, pc *command.CustomCommand, args string) string {
+	instructions := pc.GetInstructions()
+	if instructions != "" {
+		m.skill.PendingInstructions = fmt.Sprintf("<custom-command name=%q>\n%s\n</custom-command>", pc.FullName(), instructions)
+	}
+
+	plugin.SetActivePluginRoot(plugin.FindPluginRootForPath(pc.FilePath))
+
+	if args != "" {
+		m.skill.PendingArgs = fmt.Sprintf("/%s %s", pc.FullName(), args)
+	} else {
+		m.skill.PendingArgs = fmt.Sprintf("/%s", pc.FullName())
+	}
 	return ""
 }
 
@@ -212,6 +234,18 @@ func handleHelpCommand(ctx context.Context, m *model, args string) (string, tea.
 	for _, name := range names {
 		info := builtins[name]
 		fmt.Fprintf(&sb, "  /%s - %s\n", info.Name, info.Description)
+	}
+
+	pluginCmds := command.GetCustomCommands()
+	if len(pluginCmds) > 0 {
+		sb.WriteString("\nCustom Commands:\n\n")
+		for _, cmd := range pluginCmds {
+			desc := cmd.Description
+			if desc == "" {
+				desc = "(no description)"
+			}
+			fmt.Fprintf(&sb, "  /%s - %s\n", cmd.Name, desc)
+		}
 	}
 
 	return sb.String(), nil, nil

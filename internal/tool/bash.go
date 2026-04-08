@@ -5,11 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool/permission"
 	"github.com/yanmxa/gencode/internal/tool/ui"
@@ -80,6 +82,7 @@ func (t *BashTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 	// Execute command
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	cmd.Dir = cwd
+	cmd.Env = bashEnv()
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -209,6 +212,7 @@ func (t *BashTool) executeBackground(ctx context.Context, command, description, 
 	// Create command
 	cmd := exec.CommandContext(taskCtx, "bash", "-c", command)
 	cmd.Dir = cwd
+	cmd.Env = bashEnv()
 
 	// Set process group so we can kill all child processes
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -306,6 +310,12 @@ func (t *BashTool) executeBackground(ctx context.Context, command, description, 
 			Subtitle: fmt.Sprintf("[background] %s", bgTask.ID),
 		},
 	}
+}
+
+// bashEnv returns the environment for bash child processes:
+// the current process env plus plugin root variables.
+func bashEnv() []string {
+	return append(os.Environ(), plugin.PluginEnv()...)
 }
 
 func init() {

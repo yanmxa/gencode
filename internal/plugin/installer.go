@@ -83,6 +83,21 @@ func (i *Installer) LoadMarketplaces() error {
 	return nil
 }
 
+// resolveMarketplaceByName searches for a marketplace whose marketplace.json
+// "name" field matches the given name. Returns the marketplace ID if found.
+func (i *Installer) resolveMarketplaceByName(name string) string {
+	for _, id := range i.marketplaceManager.List() {
+		meta, err := i.marketplaceManager.GetMarketplaceMetadata(id)
+		if err != nil {
+			continue
+		}
+		if meta.Name == name {
+			return id
+		}
+	}
+	return ""
+}
+
 // ParsePluginRef parses a plugin reference like "git@my-marketplace" or "git".
 func ParsePluginRef(ref string) (name, marketplace string) {
 	parts := strings.SplitN(ref, "@", 2)
@@ -101,7 +116,14 @@ func (i *Installer) Install(ctx context.Context, ref string, scope Scope) error 
 	// Find marketplace source
 	source, ok := i.marketplaces[marketplace]
 	if !ok && marketplace != "" {
-		return fmt.Errorf("unknown marketplace: %s", marketplace)
+		// Fallback: try matching by marketplace.json "name" field
+		if resolved := i.resolveMarketplaceByName(marketplace); resolved != "" {
+			source, ok = i.marketplaces[resolved]
+			marketplace = resolved
+		}
+		if !ok {
+			return fmt.Errorf("unknown marketplace: %s", marketplace)
+		}
 	}
 
 	// Determine install path

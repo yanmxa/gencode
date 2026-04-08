@@ -29,7 +29,7 @@ It contains detailed instructions for the agent.
 	}
 
 	// Parse the agent file (simulating startup)
-	config, err := parseAgentFile(agentContent, agentFile)
+	config, err := parseAgentFile(agentFile)
 	if err != nil {
 		t.Fatalf("Failed to parse agent file: %v", err)
 	}

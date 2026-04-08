@@ -9,6 +9,7 @@ import (
 	appcommand "github.com/yanmxa/gencode/internal/app/command"
 	appinput "github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/ui/history"
 )
@@ -75,6 +76,7 @@ func (m *model) executeSubmitRequest(req submitRequest) tea.Cmd {
 	}
 
 	m.skill.ActiveInvocation = ""
+	plugin.ClearActivePluginRoot()
 
 	userMsg, cmd, handled := m.prepareSubmittedUserMessage(req.Input)
 	if handled {
@@ -181,6 +183,10 @@ func shouldPreserveCommandInConversation(input, result string, cmd tea.Cmd) bool
 		if sk, ok := skill.DefaultRegistry.Get(name); ok && sk.IsEnabled() {
 			return false
 		}
+	}
+
+	if _, ok := appcommand.IsCustomCommand(name); ok {
+		return false
 	}
 
 	return true
