@@ -18,6 +18,7 @@ func (m *model) featureUpdaters() []messageUpdater {
 		(*model).updateMemory,
 		(*model).updateCron,
 		(*model).updateAsyncHooks,
+		(*model).updateTaskNotifications,
 	}
 }
 
@@ -65,14 +66,14 @@ type modalRenderer struct {
 	render   func() string
 }
 
-func (m *model) modalRenderers(separator, todoPrefix string) []modalRenderer {
+func (m *model) modalRenderers(separator, trackerPrefix string) []modalRenderer {
 	return []modalRenderer{
 		{
 			isActive: func() bool {
 				return m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive()
 			},
 			render: func() string {
-				return separatorWrapped(todoPrefix, separator, m.mode.PlanApproval.RenderMenu())
+				return separatorWrapped(trackerPrefix, separator, m.mode.PlanApproval.RenderMenu())
 			},
 		},
 		{
@@ -80,7 +81,7 @@ func (m *model) modalRenderers(separator, todoPrefix string) []modalRenderer {
 				return m.approval != nil && m.approval.IsActive()
 			},
 			render: func() string {
-				return separatorWrapped(todoPrefix, separator, m.approval.Render())
+				return separatorWrapped(trackerPrefix, separator, m.approval.Render())
 			},
 		},
 		{
@@ -88,7 +89,7 @@ func (m *model) modalRenderers(separator, todoPrefix string) []modalRenderer {
 				return m.mode.Question.IsActive()
 			},
 			render: func() string {
-				return separatorWrapped(todoPrefix, separator, m.mode.Question.Render())
+				return separatorWrapped(trackerPrefix, separator, m.mode.Question.Render())
 			},
 		},
 		{
@@ -96,14 +97,14 @@ func (m *model) modalRenderers(separator, todoPrefix string) []modalRenderer {
 				return m.mode.PlanEntry.IsActive()
 			},
 			render: func() string {
-				return separatorWrapped(todoPrefix, separator, m.mode.PlanEntry.Render())
+				return separatorWrapped(trackerPrefix, separator, m.mode.PlanEntry.Render())
 			},
 		},
 	}
 }
 
-func (m *model) renderActiveModal(separator, todoPrefix string) string {
-	for _, modal := range m.modalRenderers(separator, todoPrefix) {
+func (m *model) renderActiveModal(separator, trackerPrefix string) string {
+	for _, modal := range m.modalRenderers(separator, trackerPrefix) {
 		if modal.isActive() {
 			return modal.render()
 		}
@@ -111,6 +112,6 @@ func (m *model) renderActiveModal(separator, todoPrefix string) string {
 	return ""
 }
 
-func separatorWrapped(todoPrefix, separator, content string) string {
-	return todoPrefix + separator + "\n" + content
+func separatorWrapped(trackerPrefix, separator, content string) string {
+	return trackerPrefix + separator + "\n" + content
 }

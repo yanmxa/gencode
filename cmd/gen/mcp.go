@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	appmcp "github.com/yanmxa/gencode/internal/app/mcp"
+	"github.com/yanmxa/gencode/internal/app/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
 	"github.com/yanmxa/gencode/internal/mcp"
 )
@@ -166,7 +166,7 @@ var mcpEditCmd = &cobra.Command{
 			return fmt.Errorf("failed to load MCP configs: %w", err)
 		}
 
-		info, err := appmcp.PrepareServerEdit(name)
+		info, err := mcpui.PrepareServerEdit(name)
 		if err != nil {
 			return err
 		}
@@ -182,7 +182,7 @@ var mcpEditCmd = &cobra.Command{
 			return fmt.Errorf("editor failed: %w", err)
 		}
 
-		if err := appmcp.ApplyServerEdit(info); err != nil {
+		if err := mcpui.ApplyServerEdit(info); err != nil {
 			return err
 		}
 

@@ -17,6 +17,7 @@ import (
 type Loader struct {
 	userDir      string
 	projectDir   string
+	projectRoot  string
 	claudeCompat bool
 }
 
@@ -26,6 +27,7 @@ func NewLoader() *Loader {
 	return &Loader{
 		userDir:      filepath.Join(homeDir, ".gen"),
 		projectDir:   ".gen",
+		projectRoot:  ".",
 		claudeCompat: true,
 	}
 }
@@ -35,7 +37,19 @@ func NewLoaderWithOptions(userDir, projectDir string, claudeCompat bool) *Loader
 	return &Loader{
 		userDir:      userDir,
 		projectDir:   projectDir,
+		projectRoot:  filepath.Dir(projectDir),
 		claudeCompat: claudeCompat,
+	}
+}
+
+// NewLoaderForCwd creates a loader rooted at the provided working directory.
+func NewLoaderForCwd(cwd string) *Loader {
+	homeDir, _ := os.UserHomeDir()
+	return &Loader{
+		userDir:      filepath.Join(homeDir, ".gen"),
+		projectDir:   filepath.Join(cwd, ".gen"),
+		projectRoot:  cwd,
+		claudeCompat: true,
 	}
 }
 
@@ -65,11 +79,11 @@ func (l *Loader) Load() (*Settings, error) {
 	}
 	sources = append(sources, source{filepath.Join(l.userDir, "settings.json"), false})
 	if l.claudeCompat {
-		sources = append(sources, source{filepath.Join(".claude", "settings.json"), true})
+		sources = append(sources, source{filepath.Join(l.projectRoot, ".claude", "settings.json"), true})
 	}
 	sources = append(sources, source{filepath.Join(l.projectDir, "settings.json"), false})
 	if l.claudeCompat {
-		sources = append(sources, source{filepath.Join(".claude", "settings.local.json"), true})
+		sources = append(sources, source{filepath.Join(l.projectRoot, ".claude", "settings.local.json"), true})
 	}
 	sources = append(sources, source{filepath.Join(l.projectDir, "settings.local.json"), false})
 
@@ -204,6 +218,12 @@ func Reload() (*Settings, error) {
 	return Load()
 }
 
+// LoadForCwd loads settings for the provided working directory without using
+// the process-global cache. This is used when the session cwd changes.
+func LoadForCwd(cwd string) (*Settings, error) {
+	return NewLoaderForCwd(cwd).Load()
+}
+
 // Default returns default settings without loading from disk.
 func Default() *Settings {
 	return NewSettings()
@@ -267,15 +287,30 @@ func AddAllowRule(toolName string, args map[string]any) error {
 	return AddAllowRuleDirectly(BuildRule(toolName, args))
 }
 
+// AddAllowRuleAt appends a permission allow rule to project settings rooted at
+// the provided cwd.
+func AddAllowRuleAt(toolName string, args map[string]any, cwd string) error {
+	return AddAllowRuleDirectlyAt(BuildRule(toolName, args), cwd)
+}
+
 // AddAllowRuleDirectly appends a pre-built permission allow rule string
 // to project-level settings. Unlike AddAllowRule, it does not build the rule
 // from tool name + args — the caller provides the final rule string.
 func AddAllowRuleDirectly(rule string) error {
+	return AddAllowRuleDirectlyAt(rule, "")
+}
+
+// AddAllowRuleDirectlyAt appends a pre-built allow rule string to the project
+// settings associated with cwd. When cwd is empty, it uses the process cwd.
+func AddAllowRuleDirectlyAt(rule, cwd string) error {
 	if rule == "" {
 		return nil
 	}
 
 	loader := NewLoader()
+	if cwd != "" {
+		loader = NewLoaderForCwd(cwd)
+	}
 	path := filepath.Join(loader.projectDir, "settings.json")
 
 	// Load existing to check for duplicates

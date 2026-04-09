@@ -4,6 +4,9 @@ The Subagent system allows GenCode to spawn specialized AI agents for complex ta
 
 Background subagents are intentionally asynchronous: you can start a single background subagent, get a task ID back immediately, and continue using the main thread without waiting for the task to finish.
 
+For the design principles behind evolving this subsystem into a coordinator-led
+multi-agent collaboration model, see [Coordinator Design Principles](coordinator-design-principles.md).
+
 ## Overview
 
 ```

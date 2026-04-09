@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/skill"
 )
@@ -102,12 +102,12 @@ func TestBuildCancelledAgentResultUsesPreparedRunMetadata(t *testing.T) {
 		progress:  []string{"Read(main.go)"},
 	}
 
-	result := executor.buildCancelledAgentResult(run, &core.Result{
+	result := executor.buildCancelledAgentResult(run, &runtime.Result{
 		Content:    "partial",
 		Messages:   []message.Message{{Role: message.RoleAssistant, Content: "partial"}},
 		Turns:      2,
 		ToolUses:   1,
-		StopReason: core.StopCancelled,
+		StopReason: runtime.StopCancelled,
 	})
 	if result == nil {
 		t.Fatal("expected cancelled result")
@@ -263,7 +263,7 @@ func TestResumeFromSessionUsesSessionStore(t *testing.T) {
 		},
 	}
 	executor := &Executor{sessionStore: store}
-	loop := &core.Loop{}
+	loop := &runtime.Loop{}
 
 	if err := executor.resumeFromSession(loop, "agent-1", "continue"); err != nil {
 		t.Fatalf("resumeFromSession(): %v", err)
@@ -280,7 +280,7 @@ func TestResumeFromSessionUsesSessionStore(t *testing.T) {
 
 func TestResumeFromSessionRequiresSessionStore(t *testing.T) {
 	executor := &Executor{}
-	err := executor.resumeFromSession(&core.Loop{}, "agent-1", "continue")
+	err := executor.resumeFromSession(&runtime.Loop{}, "agent-1", "continue")
 	if err == nil || !strings.Contains(err.Error(), "session store not configured") {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestResumeFromSessionPropagatesLoadError(t *testing.T) {
 	executor := &Executor{
 		sessionStore: &stubSubagentSessionStore{loadErr: errors.New("boom")},
 	}
-	err := executor.resumeFromSession(&core.Loop{}, "agent-1", "continue")
+	err := executor.resumeFromSession(&runtime.Loop{}, "agent-1", "continue")
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("unexpected error: %v", err)
 	}

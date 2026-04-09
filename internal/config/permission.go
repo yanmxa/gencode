@@ -157,7 +157,7 @@ func (s *Settings) HasPermissionToUseTool(toolName string, args map[string]any, 
 			return decide(Allow, "session: allow all "+toolName)
 		}
 		for pattern := range session.AllowedPatterns {
-			if matchesToolPattern(toolName, args, rule, pattern) {
+			if MatchesToolPattern(toolName, args, rule, pattern) {
 				return decide(Allow, "session pattern: "+pattern)
 			}
 		}
@@ -165,7 +165,7 @@ func (s *Settings) HasPermissionToUseTool(toolName string, args map[string]any, 
 
 	// ── Step 5: Allow rules ──
 	for _, pattern := range s.Permissions.Allow {
-		if matchesToolPattern(toolName, args, rule, pattern) {
+		if MatchesToolPattern(toolName, args, rule, pattern) {
 			return decide(Allow, "allow rule: "+pattern)
 		}
 	}
@@ -193,7 +193,7 @@ func (s *Settings) HasPermissionToUseTool(toolName string, args map[string]any, 
 func (s *Settings) checkHardBlocks(toolName string, args map[string]any, rule string, session *SessionPermissions) string {
 	// Deny rules
 	for _, pattern := range s.Permissions.Deny {
-		if matchesToolPattern(toolName, args, rule, pattern) {
+		if MatchesToolPattern(toolName, args, rule, pattern) {
 			return "deny rule: " + pattern
 		}
 	}
@@ -232,7 +232,7 @@ func (s *Settings) checkHardBlocks(toolName string, args map[string]any, rule st
 
 	// Ask rules
 	for _, pattern := range s.Permissions.Ask {
-		if matchesToolPattern(toolName, args, rule, pattern) {
+		if MatchesToolPattern(toolName, args, rule, pattern) {
 			return "ask rule: " + pattern
 		}
 	}
@@ -279,9 +279,13 @@ func BuildRule(toolName string, args map[string]any) string {
 	case "Bash":
 		// For Bash, use the command with prefix matching support
 		if cmd, ok := args["command"].(string); ok {
-			// Extract command prefix (e.g., "npm install" -> "npm:install")
-			// This allows patterns like "Bash(npm:*)"
-			argStr = normalizeBashCommand(cmd)
+			// Prefer the first meaningful subcommand so compound commands like
+			// "cd repo && git status" build reusable rules.
+			if normalized := meaningfulBashCommands(cmd); len(normalized) > 0 {
+				argStr = normalized[0]
+			} else {
+				argStr = normalizeBashCommand(cmd)
+			}
 		}
 
 	case "Read", "Edit", "Write":
@@ -357,6 +361,59 @@ func normalizeBashCommand(cmd string) string {
 	return baseCmd + ":" + parts[1]
 }
 
+func normalizeParsedCommand(cmd ParsedCommand) string {
+	if cmd.Name == "" {
+		return ""
+	}
+	if len(cmd.Args) == 0 {
+		return cmd.Name
+	}
+	return cmd.Name + ":" + strings.Join(cmd.Args, " ")
+}
+
+func normalizedBashCommands(cmd string) []string {
+	if file := ParseBashAST(cmd); file != nil {
+		parsed := ExtractCommandsAST(file)
+		normalized := make([]string, 0, len(parsed))
+		for _, subCmd := range parsed {
+			if n := normalizeParsedCommand(subCmd); n != "" {
+				normalized = append(normalized, n)
+			}
+		}
+		if len(normalized) > 0 {
+			return normalized
+		}
+	}
+
+	rawCommands := extractBashCommands(cmd)
+	normalized := make([]string, 0, len(rawCommands))
+	for _, subCmd := range rawCommands {
+		if n := normalizeBashCommand(subCmd); n != "" {
+			normalized = append(normalized, n)
+		}
+	}
+	return normalized
+}
+
+func meaningfulBashCommands(cmd string) []string {
+	normalized := normalizedBashCommands(cmd)
+	if len(normalized) <= 1 {
+		return normalized
+	}
+
+	filtered := make([]string, 0, len(normalized))
+	for _, subCmd := range normalized {
+		if subCmd == "cd" || strings.HasPrefix(subCmd, "cd:") {
+			continue
+		}
+		filtered = append(filtered, subCmd)
+	}
+	if len(filtered) > 0 {
+		return filtered
+	}
+	return normalized
+}
+
 // extractBashCommands extracts individual commands from a chained bash command.
 // It splits on && and ; to get each command separately.
 func extractBashCommands(cmd string) []string {
@@ -375,7 +432,9 @@ func extractBashCommands(cmd string) []string {
 	return commands
 }
 
-func matchesToolPattern(toolName string, args map[string]any, rule, pattern string) bool {
+// MatchesToolPattern reports whether a tool invocation matches a permission
+// pattern. Bash commands match if any extracted subcommand matches.
+func MatchesToolPattern(toolName string, args map[string]any, rule, pattern string) bool {
 	if MatchRule(rule, pattern) {
 		return true
 	}
@@ -389,8 +448,8 @@ func matchesToolPattern(toolName string, args map[string]any, rule, pattern stri
 		return false
 	}
 
-	for _, subCmd := range extractBashCommands(cmd) {
-		subRule := "Bash(" + normalizeBashCommand(subCmd) + ")"
+	for _, subCmd := range normalizedBashCommands(cmd) {
+		subRule := "Bash(" + subCmd + ")"
 		if MatchRule(subRule, pattern) {
 			return true
 		}

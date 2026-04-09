@@ -14,8 +14,8 @@ import (
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/provider/openai_compat"
-	"github.com/yanmxa/gencode/internal/provider/streamutil"
+	"github.com/yanmxa/gencode/internal/provider/openaicompat"
+	streamutil "github.com/yanmxa/gencode/internal/provider/stream"
 )
 
 // Client implements the LLMProvider interface for Qwen using the OpenAI SDK.
@@ -42,10 +42,10 @@ func isThinkingModel(model string) bool {
 // For thinking models, reasoning_content is injected only when present.
 func makeAssistantConverter(thinking bool) func(message.Message) openai.ChatCompletionMessageParamUnion {
 	if !thinking {
-		return openai_compat.DefaultAssistantMessage
+		return openaicompat.DefaultAssistantMessage
 	}
 	return func(msg message.Message) openai.ChatCompletionMessageParamUnion {
-		return openai_compat.AssistantMessageWithReasoning(msg, msg.Thinking)
+		return openaicompat.AssistantMessageWithReasoning(msg, msg.Thinking)
 	}
 }
 
@@ -58,7 +58,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 		thinking := isThinkingModel(opts.Model)
 
-		messages := openai_compat.ConvertMessages(opts.Messages, opts.SystemPrompt, makeAssistantConverter(thinking))
+		messages := openaicompat.ConvertMessages(opts.Messages, opts.SystemPrompt, makeAssistantConverter(thinking))
 
 		params := openai.ChatCompletionNewParams{
 			Model:    opts.Model,
@@ -80,7 +80,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 			params.Temperature = openai.Float(opts.Temperature)
 		}
 		if len(opts.Tools) > 0 {
-			params.Tools = openai_compat.ConvertTools(opts.Tools)
+			params.Tools = openaicompat.ConvertTools(opts.Tools)
 		}
 
 		log.LogRequestCtx(ctx, c.name, opts.Model, opts)
@@ -96,7 +96,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 			for _, choice := range chunk.Choices {
 				// Extract reasoning_content for thinking models
 				if thinking {
-					if content := openai_compat.ExtractReasoningContent(choice.Delta.RawJSON()); content != "" {
+					if content := openaicompat.ExtractReasoningContent(choice.Delta.RawJSON()); content != "" {
 						state.EmitThinking(ch, content)
 					}
 				}
@@ -118,7 +118,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				}
 
 				if choice.FinishReason != "" {
-					state.Response.StopReason = openai_compat.MapFinishReason(choice.FinishReason)
+					state.Response.StopReason = openaicompat.MapFinishReason(choice.FinishReason)
 				}
 			}
 

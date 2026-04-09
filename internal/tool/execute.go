@@ -5,13 +5,13 @@ import (
 	"fmt"
 
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/tool/ui"
+	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
 // MCPExecutor executes MCP tool calls for the shared tool runtime.
 type MCPExecutor interface {
 	IsMCPTool(name string) bool
-	ExecuteMCP(ctx context.Context, name string, params map[string]any) (ui.ToolResult, error)
+	ExecuteMCP(ctx context.Context, name string, params map[string]any) (toolresult.ToolResult, error)
 }
 
 // ExecutePreparedTool executes a parsed tool call against either the MCP executor
@@ -27,7 +27,7 @@ func ExecutePreparedTool(
 	cwd string,
 	approved bool,
 	mcpExec MCPExecutor,
-) (ui.ToolResult, error) {
+) (toolresult.ToolResult, error) {
 	prepared := &PreparedToolCall{
 		Call:   tc,
 		Params: params,
@@ -38,7 +38,7 @@ func ExecutePreparedTool(
 	} else if mcpExec != nil && mcpExec.IsMCPTool(tc.Name) {
 		prepared.IsMCP = true
 	} else {
-		return ui.ToolResult{}, fmt.Errorf("unknown tool: %s", tc.Name)
+		return toolresult.ToolResult{}, fmt.Errorf("unknown tool: %s", tc.Name)
 	}
 
 	return prepared.Execute(ctx, cwd, approved, mcpExec)

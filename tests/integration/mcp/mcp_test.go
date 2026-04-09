@@ -1131,7 +1131,7 @@ func TestRealMCP_Registry_EndToEnd(t *testing.T) {
 	defer registry.DisconnectAll()
 
 	// Tool schemas — wait for async tool list to populate
-	var schemas []provider.Tool
+	var schemas []provider.ToolSchema
 	for range 20 {
 		schemas = registry.GetToolSchemas()
 		if len(schemas) > 0 {

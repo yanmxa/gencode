@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/yanmxa/gencode/internal/system"
-	"github.com/yanmxa/gencode/internal/ui/shared"
+	"github.com/yanmxa/gencode/internal/ui/selector"
 )
 
 // HandleInitCommand handles the /init command.
@@ -257,7 +257,7 @@ func shortenPathForDisplay(path, cwd string, isProject bool) string {
 			return rel
 		}
 	}
-	return shared.ShortenPath(path)
+	return selector.ShortenPath(path)
 }
 
 func truncatePathKeepFilename(path string, maxLen int) string {
@@ -459,5 +459,5 @@ func FormatMemoryDisplayPath(filePath, level, cwd string) string {
 			return rel
 		}
 	}
-	return shared.ShortenPath(filePath)
+	return selector.ShortenPath(filePath)
 }

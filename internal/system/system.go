@@ -168,7 +168,7 @@ func (s *System) formatEnv(model string) string {
 		gitStatus = "Yes"
 	}
 	today := time.Now().Format("2006-01-02")
-	return fmt.Sprintf("# currentDate\nToday's date is %s.\n\n<env>\nWorking directory: %s\nIs git repo: %s\nPlatform: %s\nModel: %s\n</env>",
+	return fmt.Sprintf("# currentDate\nToday's date is %s.\n\n<env>\nSession working directory: %s\nIs git repo: %s\nPlatform: %s\nModel: %s\n</env>",
 		today, s.Cwd, gitStatus, runtime.GOOS, model)
 }
 

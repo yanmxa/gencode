@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/yanmxa/gencode/internal/config"
 )
 
 const (
@@ -254,7 +256,7 @@ func parseHooksMap(m map[string]any, pluginPath string) *HooksConfig {
 		return nil
 	}
 
-	config := &HooksConfig{
+	hooksConfig := &HooksConfig{
 		Hooks: make(map[string][]HookMatcher),
 	}
 
@@ -279,7 +281,7 @@ func parseHooksMap(m map[string]any, pluginPath string) *HooksConfig {
 					if !ok {
 						continue
 					}
-					cmd := HookCmd{}
+					cmd := config.HookCmd{}
 					if t, ok := hookMap["type"].(string); ok {
 						cmd.Type = t
 					}
@@ -336,9 +338,9 @@ func parseHooksMap(m map[string]any, pluginPath string) *HooksConfig {
 			}
 			matchers = append(matchers, matcher)
 		}
-		config.Hooks[eventName] = matchers
+		hooksConfig.Hooks[eventName] = matchers
 	}
-	return config
+	return hooksConfig
 }
 
 // loadMCPFile loads MCP server configurations from a JSON file.

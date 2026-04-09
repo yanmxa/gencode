@@ -3,15 +3,16 @@ package tool
 import "github.com/yanmxa/gencode/internal/provider"
 
 // AgentToolSchema returns the schema for the Agent tool
-var AgentToolSchema = provider.Tool{
+var AgentToolSchema = provider.ToolSchema{
 	Name: "Agent",
-	Description: `Launch a subagent to handle complex, multi-step tasks autonomously.
+	Description: `Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to it.
 
-Check <available-agents> for available agent types. Use agent name as subagent_type. If omitted, the general-purpose agent is used.
+Check <available-agents> for available agent types and their when-to-use guidance. Use agent name as subagent_type. If omitted, the general-purpose agent is used.
 
 When NOT to use Agent (use direct tools instead):
 - If you want to read a specific file path, use the Read tool or the Glob tool instead
 - If searching for code within a specific file or set of 2-3 files, use Read directly
+- For simple, directed codebase searches (e.g. for a specific file/class/function) use Glob or Grep directly
 - Other tasks that are simple enough for 1-2 direct tool calls
 
 Usage notes:
@@ -20,8 +21,10 @@ Usage notes:
 - Each agent runs in isolated context — the result returned by the agent is not visible to the user. To show the user the result, you should send a text message back with a concise summary.
 - Foreground (default): blocks until agent completes, use when you need results before proceeding
 - Background (run_in_background=true): returns task_id, you will be automatically notified on completion — do NOT sleep, poll, or proactively check progress
-- Provide clear, detailed prompts so the agent can work autonomously and return exactly the information you need
-- Clearly tell the agent whether you expect it to write code or just to do research`,
+- After launching background workers, stop and wait for task-notification re-entry instead of polling immediately
+- Provide clear, detailed prompts — brief the agent like a smart colleague who just walked into the room. It hasn't seen this conversation, doesn't know what you've tried.
+- Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent
+- Never delegate understanding. Don't write "based on your findings, fix the bug." Include file paths, line numbers, what specifically to change.`,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -68,6 +71,10 @@ Usage notes:
 				"description": "Isolation mode for the agent.",
 				"enum":        []string{"worktree"},
 			},
+			"fork": map[string]any{
+				"type":        "boolean",
+				"description": "If true, the agent inherits the parent conversation context. Use when the agent needs to understand what has been discussed so far. Cannot be combined with resume.",
+			},
 			"team_name": map[string]any{
 				"type":        "string",
 				"description": "Team name for spawning. Uses current team context if omitted.",
@@ -77,8 +84,155 @@ Usage notes:
 	},
 }
 
+var ContinueAgentToolSchema = provider.ToolSchema{
+	Name: "ContinueAgent",
+	Description: `Continue a previously spawned subagent using its saved conversation state.
+
+Use this when a completed or background worker should keep going with follow-up instructions instead of spawning a fresh worker.
+
+Usage notes:
+- Prefer task_id when continuing a background worker that was started earlier in this conversation
+- Use agent_id only when you already have a resumable agent/session ID
+- When using agent_id directly, also provide subagent_type so the runtime can restore the correct agent configuration
+- run_in_background=true starts a new background continuation and returns immediately
+- Background continuations notify the main coordinator on completion; do not immediately poll them unless the user asked or the worker appears stuck
+- Foreground continuations block until the worker finishes the new instruction`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": map[string]any{
+				"type":        "string",
+				"description": "Background task ID for the worker you want to continue. Preferred when available.",
+			},
+			"agent_id": map[string]any{
+				"type":        "string",
+				"description": "Resumable agent/session ID to continue directly.",
+			},
+			"subagent_type": map[string]any{
+				"type":        "string",
+				"description": "Agent type to use for the continuation. Required when using agent_id directly.",
+			},
+			"prompt": map[string]any{
+				"type":        "string",
+				"description": "The follow-up instruction for the existing worker.",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "A short (3-5 word) description of the continuation task.",
+			},
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Optional display name override for the continued agent.",
+			},
+			"run_in_background": map[string]any{
+				"type":        "boolean",
+				"description": "Set to true to continue the worker in the background. You will be notified when it completes.",
+			},
+			"model": map[string]any{
+				"type":        "string",
+				"description": "Optional model override. If omitted, inherits from parent conversation.",
+				"enum":        []string{"sonnet", "opus", "haiku"},
+			},
+			"max_turns": map[string]any{
+				"type":        "number",
+				"description": "Maximum number of conversation turns for the continuation.",
+			},
+			"mode": map[string]any{
+				"type":        "string",
+				"description": "Permission mode for the continued agent.",
+				"enum":        []string{"acceptEdits", "bypassPermissions", "default", "dontAsk", "plan", "auto"},
+			},
+			"isolation": map[string]any{
+				"type":        "string",
+				"description": "Isolation mode for the continued agent.",
+				"enum":        []string{"worktree"},
+			},
+		},
+		"required": []string{"prompt"},
+		"anyOf": []map[string]any{
+			{"required": []string{"task_id"}},
+			{"required": []string{"agent_id", "subagent_type"}},
+		},
+	},
+}
+
+var SendMessageToolSchema = provider.ToolSchema{
+	Name: "SendMessage",
+	Description: `Send a follow-up message to an existing subagent worker.
+
+Use this when you want to keep steering the same worker instead of spawning a fresh one.
+
+Current runtime behavior:
+- Completed or resumable workers: supported
+- Currently running workers: supported; the message is queued and delivered at the worker's next safe turn boundary without interrupting the active turn
+
+Usage notes:
+- Prefer task_id when you have a background worker from this conversation
+- Use agent_id when you already know the resumable session/agent ID
+- When using agent_id directly, also provide subagent_type so the correct agent configuration can be restored
+- run_in_background=true resumes the worker asynchronously and returns immediately
+- Do not immediately poll a background follow-up unless the user asked for ad-hoc inspection or the worker appears stuck`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": map[string]any{
+				"type":        "string",
+				"description": "Background task ID for the worker you want to message. Preferred when available.",
+			},
+			"agent_id": map[string]any{
+				"type":        "string",
+				"description": "Resumable agent/session ID to continue directly.",
+			},
+			"subagent_type": map[string]any{
+				"type":        "string",
+				"description": "Agent type to use when resuming by agent_id directly.",
+			},
+			"message": map[string]any{
+				"type":        "string",
+				"description": "The follow-up message to send to the worker.",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "A short (3-5 word) description of what this follow-up asks the worker to do.",
+			},
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Optional display name override for the continued worker.",
+			},
+			"run_in_background": map[string]any{
+				"type":        "boolean",
+				"description": "Set to true to continue the worker in the background. You will be notified when it completes.",
+			},
+			"model": map[string]any{
+				"type":        "string",
+				"description": "Optional model override. If omitted, inherits from parent conversation.",
+				"enum":        []string{"sonnet", "opus", "haiku"},
+			},
+			"max_turns": map[string]any{
+				"type":        "number",
+				"description": "Maximum number of conversation turns for the resumed run.",
+			},
+			"mode": map[string]any{
+				"type":        "string",
+				"description": "Permission mode for the resumed worker.",
+				"enum":        []string{"acceptEdits", "bypassPermissions", "default", "dontAsk", "plan", "auto"},
+			},
+			"isolation": map[string]any{
+				"type":        "string",
+				"description": "Isolation mode for the resumed worker.",
+				"enum":        []string{"worktree"},
+			},
+		},
+		"required": []string{"message"},
+		"anyOf": []map[string]any{
+			{"required": []string{"task_id"}},
+			{"required": []string{"agent_id", "subagent_type"}},
+		},
+	},
+}
+
 // SkillToolSchema returns the schema for the Skill tool
-var SkillToolSchema = provider.Tool{
+var SkillToolSchema = provider.ToolSchema{
 	Name: "Skill",
 	Description: `Execute a skill within the main conversation.
 
@@ -120,7 +274,7 @@ Important:
 }
 
 // EnterPlanModeSchema returns the schema for EnterPlanMode tool
-var EnterPlanModeSchema = provider.Tool{
+var EnterPlanModeSchema = provider.ToolSchema{
 	Name: "EnterPlanMode",
 	Description: `Request to enter plan mode for tasks that need exploration before implementation. The user must approve entering plan mode.
 
@@ -151,7 +305,7 @@ When NOT to use:
 }
 
 // ExitPlanModeSchema returns the schema for ExitPlanMode tool
-var ExitPlanModeSchema = provider.Tool{
+var ExitPlanModeSchema = provider.ToolSchema{
 	Name:        "ExitPlanMode",
 	Description: "Exit plan mode and submit your implementation plan for user approval. Call this when you have finished exploring the codebase and created a complete implementation plan.",
 	Parameters: map[string]any{
@@ -167,7 +321,7 @@ var ExitPlanModeSchema = provider.Tool{
 }
 
 // ToolSearchSchema defines the schema for the ToolSearch tool.
-var ToolSearchSchema = provider.Tool{
+var ToolSearchSchema = provider.ToolSchema{
 	Name: "ToolSearch",
 	Description: `Fetches full schema definitions for deferred tools so they can be called.
 
@@ -198,7 +352,7 @@ Query forms:
 
 // PlanModeAgentSchema is an Agent tool schema for plan mode.
 // It omits run_in_background (foreground-only) and restricts to read-only agents.
-var PlanModeAgentSchema = provider.Tool{
+var PlanModeAgentSchema = provider.ToolSchema{
 	Name: "Agent",
 	Description: `Launch a subagent to research the codebase.
 

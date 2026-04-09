@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
+	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/ui/suggest"
@@ -63,7 +64,7 @@ func (m *model) changeCwd(newCwd string) {
 
 	oldCwd := m.cwd
 	m.cwd = newCwd
-	m.isGit = isGitRepo(newCwd)
+	m.isGit = config.IsGitRepo(newCwd)
 	m.input.Suggestions.SetCwd(newCwd)
 	if m.input.Suggestions.GetSuggestionType() == suggest.TypeFile {
 		m.input.Suggestions.Hide()
@@ -72,6 +73,7 @@ func (m *model) changeCwd(newCwd string) {
 	m.memory.CachedUser = ""
 	m.memory.CachedProject = ""
 	m.refreshMemoryContext("cwd_changed")
+	m.reloadProjectContext(newCwd)
 	m.reconfigureAgentTool()
 
 	if m.hookEngine != nil {
@@ -82,6 +84,26 @@ func (m *model) changeCwd(newCwd string) {
 			NewCwd: newCwd,
 		})
 		m.applyRuntimeHookOutcome(outcome)
+	}
+}
+
+func (m *model) reloadProjectContext(cwd string) {
+	initializeRegistries(cwd)
+
+	settings := loadSettingsForCwd(cwd)
+	m.settings = settings
+	if m.mode.DisabledTools == nil {
+		m.mode.DisabledTools = make(map[string]bool)
+	} else {
+		for k := range m.mode.DisabledTools {
+			delete(m.mode.DisabledTools, k)
+		}
+	}
+	for k, v := range settings.DisabledTools {
+		m.mode.DisabledTools[k] = v
+	}
+	if m.hookEngine != nil {
+		m.hookEngine.SetSettings(settings)
 	}
 }
 

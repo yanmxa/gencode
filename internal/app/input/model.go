@@ -28,11 +28,24 @@ type Model struct {
 	PastedChunks   []PastedChunk
 }
 
-// ImageState holds state for pending image attachments.
+// PendingImage holds an inline image token and its provider payload.
+type PendingImage struct {
+	ID   int
+	Data message.ImageData
+}
+
+// ImageSelection tracks the currently selected inline image token.
+type ImageSelection struct {
+	Active       bool
+	PendingIdx   int
+	CursorAbsPos int
+}
+
+// ImageState holds state for pending inline image tokens.
 type ImageState struct {
-	Pending     []message.ImageData
-	SelectMode  bool
-	SelectedIdx int
+	Pending   []PendingImage
+	NextID    int
+	Selection ImageSelection
 }
 
 // RemoveAt removes the image at the given index and adjusts selection state.
@@ -41,10 +54,15 @@ func (img *ImageState) RemoveAt(idx int) {
 		return
 	}
 	img.Pending = append(img.Pending[:idx], img.Pending[idx+1:]...)
-	if img.SelectedIdx >= len(img.Pending) && img.SelectedIdx > 0 {
-		img.SelectedIdx--
-	}
 	if len(img.Pending) == 0 {
-		img.SelectMode = false
+		img.Selection = ImageSelection{}
+		return
+	}
+	if img.Selection.PendingIdx == idx {
+		img.Selection = ImageSelection{}
+		return
+	}
+	if img.Selection.PendingIdx > idx {
+		img.Selection.PendingIdx--
 	}
 }

@@ -29,6 +29,7 @@ type ToolCallsParams struct {
 type ToolResultData struct {
 	ToolName  string
 	Content   string
+	Error     string
 	IsError   bool
 	Expanded  bool
 	ToolInput string
@@ -43,7 +44,7 @@ func RenderToolCalls(params ToolCallsParams) string {
 		case tool.ToolTaskList, tool.ToolTaskCreate, tool.ToolTaskUpdate:
 			continue
 		}
-		if tc.Name == tool.ToolAgent {
+		if tool.IsAgentToolName(tc.Name) {
 			label := FormatAgentLabel(tc.Input)
 			_, hasResult := params.ResultMap[tc.ID]
 			if hasResult {
@@ -88,7 +89,7 @@ func RenderToolCalls(params ToolCallsParams) string {
 		if resultData, ok := params.ResultMap[tc.ID]; ok {
 			resultData.ToolInput = tc.Input
 			sb.WriteString(RenderToolResultInline(resultData, params.MDRenderer))
-		} else if params.ParallelMode && tc.Name == tool.ToolAgent {
+		} else if params.ParallelMode && tool.IsAgentToolName(tc.Name) {
 			sb.WriteString(RenderTaskProgressInline(tc, params.PendingCalls, params.ParallelResults, params.TaskProgress))
 		}
 	}

@@ -1,12 +1,16 @@
 package compact
 
+const PhaseSummarizing = "Summarizing conversation history"
+
 // State holds all compact-related state for the TUI model.
 type State struct {
-	Active       bool
-	Focus        string
-	AutoContinue bool
-	LastResult   string
-	LastError    bool
+	Active          bool
+	Focus           string
+	AutoContinue    bool
+	LastResult      string
+	LastError       bool
+	Phase           string
+	WarningSuppressed bool
 }
 
 // Reset clears all compact state.
@@ -16,6 +20,8 @@ func (c *State) Reset() {
 	c.AutoContinue = false
 	c.LastResult = ""
 	c.LastError = false
+	c.Phase = ""
+	c.WarningSuppressed = false
 }
 
 // ClearResult dismisses the last visible compact status.
@@ -31,4 +37,8 @@ func (c *State) Complete(result string, isError bool) {
 	c.AutoContinue = false
 	c.LastResult = result
 	c.LastError = isError
+	c.Phase = ""
+	if !isError {
+		c.WarningSuppressed = true
+	}
 }

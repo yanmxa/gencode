@@ -6,22 +6,22 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tool/ui"
+	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
 // ---------------------------------------------------------------------------
 // Loop construction helpers
 // ---------------------------------------------------------------------------
 
-// NewTestLoop creates a core.Loop with a FakeClient, PermitAll permission,
+// NewTestLoop creates a runtime.Loop with a FakeClient, PermitAll permission,
 // and a temp cwd. Responses are queued in order.
-func NewTestLoop(t *testing.T, responses ...message.CompletionResponse) (*core.Loop, *client.FakeClient) {
+func NewTestLoop(t *testing.T, responses ...message.CompletionResponse) (*runtime.Loop, *client.FakeClient) {
 	t.Helper()
 	return NewTestLoopWithPermission(t, permission.PermitAll(), responses...)
 }
@@ -29,11 +29,11 @@ func NewTestLoop(t *testing.T, responses ...message.CompletionResponse) (*core.L
 // NewTestLoopWithPermission creates a Loop with a custom permission checker.
 func NewTestLoopWithPermission(t *testing.T, checker permission.Checker,
 	responses ...message.CompletionResponse,
-) (*core.Loop, *client.FakeClient) {
+) (*runtime.Loop, *client.FakeClient) {
 	t.Helper()
 
 	fake := &client.FakeClient{Responses: responses}
-	loop := &core.Loop{
+	loop := &runtime.Loop{
 		System:     &system.System{Cwd: t.TempDir(), UserInstructions: "test"},
 		Client:     NewTestClient(fake),
 		Tool:       &tool.Set{},
@@ -112,11 +112,11 @@ type fakeTool struct {
 func (f *fakeTool) Name() string        { return f.name }
 func (f *fakeTool) Description() string { return "fake tool for testing" }
 func (f *fakeTool) Icon() string        { return "T" }
-func (f *fakeTool) Execute(_ context.Context, _ map[string]any, _ string) ui.ToolResult {
-	return ui.ToolResult{
+func (f *fakeTool) Execute(_ context.Context, _ map[string]any, _ string) toolresult.ToolResult {
+	return toolresult.ToolResult{
 		Success:  true,
 		Output:   f.result,
-		Metadata: ui.ResultMetadata{Title: f.name},
+		Metadata: toolresult.ResultMetadata{Title: f.name},
 	}
 }
 

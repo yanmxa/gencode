@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/ui/shared"
+	"github.com/yanmxa/gencode/internal/ui/selector"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
@@ -305,7 +305,7 @@ func (p *PlanPrompt) RenderMenu() string {
 	// Footer: simple hint + plan path
 	footer := " Esc to reject"
 	if p.planPath != "" {
-		footer += " · " + shared.ShortenPath(p.planPath)
+		footer += " · " + selector.ShortenPath(p.planPath)
 	}
 	sb.WriteString(getPlanFooterStyle().Render(footer))
 

@@ -5,7 +5,7 @@ import (
 	"context"
 
 	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
@@ -40,5 +40,5 @@ func GetMaxTokens(store *provider.Store, currentModel *provider.CurrentModelInfo
 // sessionMemory is the previous compaction summary loaded from persisted transcript state;
 // if non-empty it is prepended as prior context so the new summary preserves it.
 func CompactConversation(ctx context.Context, c *client.Client, msgs []message.Message, sessionMemory, focus string) (summary string, count int, err error) {
-	return core.Compact(ctx, c, msgs, sessionMemory, focus)
+	return runtime.Compact(ctx, c, msgs, sessionMemory, focus)
 }

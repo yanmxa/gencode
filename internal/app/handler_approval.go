@@ -8,19 +8,18 @@ import (
 	"go.uber.org/zap"
 
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
-	appmode "github.com/yanmxa/gencode/internal/app/mode"
-	apptool "github.com/yanmxa/gencode/internal/app/tool"
+	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tool/permission"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 )
 
 // hookPermissionResultMsg carries the result of an async PermissionRequest hook execution.
 type hookPermissionResultMsg struct {
-	Request *permission.PermissionRequest
+	Request *perm.PermissionRequest
 	Blocked bool
 	Allowed bool
 	Reason  string
@@ -57,7 +56,7 @@ func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
 
 // dispatchPermissionHookAsync runs PermissionRequest hooks in a goroutine,
 // keeping the TUI responsive while waiting for external hook responses (e.g. FIFO-based monitors).
-func (m *model) dispatchPermissionHookAsync(req *permission.PermissionRequest) tea.Cmd {
+func (m *model) dispatchPermissionHookAsync(req *perm.PermissionRequest) tea.Cmd {
 	hookEngine := m.hookEngine
 	ctx := m.tool.Context()
 
@@ -108,7 +107,7 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 		if m.settings != nil && m.settings.ResolveHookAllow(msg.Request.ToolName, args, m.mode.SessionPermissions) {
 			// Hook allow is valid, skip permission prompt
 			m.approval.Hide()
-			return apptool.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
+			return toolui.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
 		}
 		// Safety invariant denied the hook allow — fall through to normal approval modal
 	}
@@ -117,7 +116,7 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 	return m.showApprovalModal(msg.Request)
 }
 
-func (m *model) isCurrentPermissionRequest(req *permission.PermissionRequest) bool {
+func (m *model) isCurrentPermissionRequest(req *perm.PermissionRequest) bool {
 	if req == nil || m.approval == nil || !m.approval.IsActive() {
 		return false
 	}
@@ -129,7 +128,7 @@ func (m *model) isCurrentPermissionRequest(req *permission.PermissionRequest) bo
 }
 
 // showApprovalModal generates suggestions, shows the approval UI, and fires notification.
-func (m *model) showApprovalModal(req *permission.PermissionRequest) tea.Cmd {
+func (m *model) showApprovalModal(req *perm.PermissionRequest) tea.Cmd {
 	// Generate smart allow rule suggestions for the approval UI
 	if req != nil {
 		req.SuggestedRules = config.GenerateSuggestions(req.ToolName, m.buildPermissionArgs(req), 5)
@@ -170,7 +169,7 @@ func (m *model) abortToolWithError(errorMsg string, retry bool) tea.Cmd {
 
 // buildPermissionSuggestions generates permission suggestions for hook input,
 // matching Claude Code's permission_suggestions field format.
-func (m *model) buildPermissionSuggestions(req *permission.PermissionRequest) []hooks.PermissionSuggestion {
+func (m *model) buildPermissionSuggestions(req *perm.PermissionRequest) []hooks.PermissionSuggestion {
 	var suggestions []hooks.PermissionSuggestion
 
 	// Suggest addDirectories if the file is in a recognizable directory
@@ -199,7 +198,7 @@ func (m *model) buildPermissionSuggestions(req *permission.PermissionRequest) []
 }
 
 // buildPermissionArgs constructs a tool args map from a permission request.
-func (m *model) buildPermissionArgs(req *permission.PermissionRequest) map[string]any {
+func (m *model) buildPermissionArgs(req *perm.PermissionRequest) map[string]any {
 	args := make(map[string]any)
 	if req == nil {
 		return args
@@ -219,7 +218,7 @@ func (m *model) buildPermissionArgs(req *permission.PermissionRequest) map[strin
 // fullToolInputForHook returns the full tool input params from the pending tool call
 // for use in hook events (matching CC's behavior of sending all params).
 // Falls back to buildPermissionArgs if the pending call can't be parsed.
-func (m *model) fullToolInputForHook(req *permission.PermissionRequest) map[string]any {
+func (m *model) fullToolInputForHook(req *perm.PermissionRequest) map[string]any {
 	if m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls) {
 		tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 		if tc.Name == req.ToolName {
@@ -242,18 +241,18 @@ func (m *model) applyPermissionUpdates(updates []hooks.PermissionUpdate) {
 				switch pu.Mode {
 				case "bypassPermissions":
 					m.mode.SessionPermissions.Mode = config.ModeBypassPermissions
-					m.mode.Operation = appmode.BypassPermissions
+					m.mode.Operation = config.ModeBypassPermissions
 				case "acceptEdits":
 					m.mode.SessionPermissions.Mode = config.ModeAutoAccept
-					m.mode.Operation = appmode.AutoAccept
+					m.mode.Operation = config.ModeAutoAccept
 				case "dontAsk":
 					m.mode.SessionPermissions.Mode = config.ModeDontAsk
 				case "plan":
 					m.mode.SessionPermissions.Mode = config.ModePlan
-					m.mode.Operation = appmode.Plan
+					m.mode.Operation = config.ModePlan
 				case "normal":
 					m.mode.SessionPermissions.Mode = config.ModeNormal
-					m.mode.Operation = appmode.Normal
+					m.mode.Operation = config.ModeNormal
 				}
 			}
 
@@ -264,7 +263,7 @@ func (m *model) applyPermissionUpdates(updates []hooks.PermissionUpdate) {
 					continue
 				}
 				if pu.Destination == "persistent" {
-					if err := config.AddAllowRuleDirectly(ruleStr); err != nil {
+					if err := config.AddAllowRuleDirectlyAt(ruleStr, m.cwd); err != nil {
 						log.Logger().Warn("failed to persist hook rule", zap.Error(err))
 					}
 					needReload = true
@@ -283,7 +282,7 @@ func (m *model) applyPermissionUpdates(updates []hooks.PermissionUpdate) {
 		}
 	}
 	if needReload {
-		_, _ = config.Reload()
+		m.reloadProjectContext(m.cwd)
 	}
 }
 
@@ -325,15 +324,15 @@ func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
 		m.persistAllowRule(msg.Request)
 	}
 
-	if msg.Request != nil && msg.Request.ToolName == tool.ToolAgent {
+	if msg.Request != nil && tool.IsAgentToolName(msg.Request.ToolName) {
 		m.output.TaskProgress = nil
 		return tea.Batch(
-			apptool.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd),
+			toolui.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd),
 			m.output.HandleProgressTick(true),
 		)
 	}
 
-	return apptool.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
+	return toolui.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
 }
 
 func (m *model) applyAllowAllPermission(toolName string) {
@@ -346,7 +345,7 @@ func (m *model) applyAllowAllPermission(toolName string) {
 		m.mode.SessionPermissions.AllowAllBash = true
 	case tool.ToolSkill:
 		m.mode.SessionPermissions.AllowAllSkills = true
-	case tool.ToolAgent:
+	case tool.ToolAgent, tool.ToolContinueAgent, tool.ToolSendMessage:
 		m.mode.SessionPermissions.AllowAllTasks = true
 	default:
 		m.mode.SessionPermissions.AllowTool(toolName)
@@ -355,20 +354,20 @@ func (m *model) applyAllowAllPermission(toolName string) {
 
 // persistAllowRule writes a permission allow rule to project settings.
 // Uses smart suggested rules (prefix-based) when available instead of exact rules.
-func (m *model) persistAllowRule(req *permission.PermissionRequest) {
+func (m *model) persistAllowRule(req *perm.PermissionRequest) {
 	if len(req.SuggestedRules) > 0 {
 		// Use the best suggestion (prefix-based, reusable)
-		if err := config.AddAllowRuleDirectly(req.SuggestedRules[0]); err != nil {
+		if err := config.AddAllowRuleDirectlyAt(req.SuggestedRules[0], m.cwd); err != nil {
 			log.Logger().Warn("failed to persist allow rule", zap.Error(err))
 		}
 	} else {
 		// Fallback to exact rule
-		if err := config.AddAllowRule(req.ToolName, m.buildPermissionArgs(req)); err != nil {
+		if err := config.AddAllowRuleAt(req.ToolName, m.buildPermissionArgs(req), m.cwd); err != nil {
 			log.Logger().Warn("failed to persist allow rule", zap.Error(err))
 		}
 	}
 	// Reload settings so the rule takes effect immediately
-	_, _ = config.Reload()
+	m.reloadProjectContext(m.cwd)
 }
 
 // applyUpdatedToolInput marshals the hook-provided input and updates the current

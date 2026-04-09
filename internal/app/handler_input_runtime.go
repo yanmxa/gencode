@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	appinput "github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
@@ -17,7 +18,15 @@ func (m *model) handleStreamCancel() tea.Cmd {
 	m.conv.Stream.Stop()
 	m.cancelPendingToolCalls()
 	m.conv.MarkLastInterrupted()
-	return tea.Batch(m.commitMessages()...)
+
+	cmds := m.commitMessages()
+
+	// Drain queued user inputs after cancellation
+	if cmd := m.drainInputQueue(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
+	return tea.Batch(cmds...)
 }
 
 // cancelPendingToolCalls adds cancellation messages for pending tool calls.
@@ -117,7 +126,10 @@ func (m *model) pasteImageFromClipboard() (tea.Cmd, bool) {
 	if imgData == nil {
 		return nil, false
 	}
-	m.input.Images.Pending = append(m.input.Images.Pending, *imgData)
+	label := m.input.AddPendingImage(*imgData)
+	m.input.Images.Selection = appinput.ImageSelection{}
+	m.input.Textarea.InsertString(label)
+	m.input.UpdateHeight()
 	return nil, true
 }
 

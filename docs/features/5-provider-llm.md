@@ -34,7 +34,7 @@ Supports multiple LLM providers. The active provider and model are shown in the 
 ```bash
 go test ./internal/provider/anthropic/... -v
 go test ./internal/provider/moonshot/... -v
-go test ./internal/provider/streamutil/... -v
+go test ./internal/provider/stream/... -v
 go test ./internal/core/... -v
 go test ./internal/client/... -v
 ```

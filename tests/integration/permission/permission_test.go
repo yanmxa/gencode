@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
@@ -19,7 +19,7 @@ func TestPermission_PermitAll_AllowsWrite(t *testing.T) {
 	)
 	loop.AddUser("write a file", nil)
 
-	result, err := loop.Run(context.Background(), core.RunOptions{})
+	result, err := loop.Run(context.Background(), runtime.RunOptions{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestPermission_ReadOnly_BlocksWrite(t *testing.T) {
 	)
 	loop.AddUser("write", nil)
 
-	result, err := loop.Run(context.Background(), core.RunOptions{})
+	result, err := loop.Run(context.Background(), runtime.RunOptions{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestPermission_ReadOnly_AllowsRead(t *testing.T) {
 	)
 	loop.AddUser("read", nil)
 
-	result, err := loop.Run(context.Background(), core.RunOptions{})
+	result, err := loop.Run(context.Background(), runtime.RunOptions{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestPermission_DenyAll_BlocksEverything(t *testing.T) {
 	)
 	loop.AddUser("read", nil)
 
-	result, err := loop.Run(context.Background(), core.RunOptions{})
+	result, err := loop.Run(context.Background(), runtime.RunOptions{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}

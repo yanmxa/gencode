@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/env"
 )
 
 // InitPlugins initializes the plugin system and loads all enabled plugins.
@@ -84,25 +83,7 @@ func GetPluginHooks() map[string][]config.Hook {
 			for _, matcher := range matchers {
 				hook := config.Hook{
 					Matcher: matcher.Matcher,
-					Hooks:   make([]config.HookCmd, len(matcher.Hooks)),
-				}
-				for i, h := range matcher.Hooks {
-					hook.Hooks[i] = config.HookCmd{
-						Type:           h.Type,
-						Command:        h.Command,
-						Prompt:         h.Prompt,
-						URL:            h.URL,
-						If:             h.If,
-						Shell:          h.Shell,
-						Model:          h.Model,
-						Async:          h.Async,
-						AsyncRewake:    h.AsyncRewake,
-						Timeout:        h.Timeout,
-						StatusMessage:  h.StatusMessage,
-						Once:           h.Once,
-						Headers:        h.Headers,
-						AllowedEnvVars: h.AllowedEnvVars,
-					}
+					Hooks:   matcher.Hooks,
 				}
 				result[event] = append(result[event], hook)
 			}
@@ -243,7 +224,7 @@ func PluginEnv() []string {
 
 	var out []string
 	for _, p := range enabled {
-		out = append(out, env.PairF("PLUGIN_ROOT_%s", envSafeName(p.Name()), p.Path)...)
+		out = append(out, config.EnvPairF("PLUGIN_ROOT_%s", envSafeName(p.Name()), p.Path)...)
 	}
 
 	root := getActivePluginRoot()
@@ -251,7 +232,7 @@ func PluginEnv() []string {
 		root = enabled[0].Path
 	}
 	if root != "" {
-		out = append(out, env.Pair("PLUGIN_ROOT", root)...)
+		out = append(out, config.EnvPair("PLUGIN_ROOT", root)...)
 	}
 	return out
 }

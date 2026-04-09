@@ -7,7 +7,7 @@ import (
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
 	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
@@ -49,7 +49,7 @@ type compactRequest struct {
 }
 
 type streamRequest struct {
-	Loop     *core.Loop
+	Loop     *runtime.Loop
 	Messages []message.Message
 }
 

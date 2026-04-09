@@ -20,6 +20,7 @@ type BashTask struct {
 	StartTime   time.Time          // When the task started
 	EndTime     time.Time          // When the task ended (if completed)
 	ExitCode    int                // Exit code (if completed)
+	OutputFile  string             // Stable output file path when available
 	Error       string             // Error message (if failed)
 	Cmd         *exec.Cmd          // The running command
 	Ctx         context.Context    // Task context
@@ -34,17 +35,28 @@ var _ BackgroundTask = (*BashTask)(nil)
 
 // NewBashTask creates a new bash task
 func NewBashTask(id, command, description string, cmd *exec.Cmd, ctx context.Context, cancel context.CancelFunc) *BashTask {
-	return &BashTask{
+	task := &BashTask{
 		ID:          id,
 		Command:     command,
 		Description: description,
 		Status:      StatusRunning,
 		PID:         cmd.Process.Pid,
 		StartTime:   time.Now(),
+		OutputFile:  initOutputFile(id),
 		Cmd:         cmd,
 		Ctx:         ctx,
 		Cancel:      cancel,
 	}
+	appendOutputFile(task.OutputFile, outputRecord{
+		Event:       "task.started",
+		TaskType:    string(TaskTypeBash),
+		Description: description,
+		Metadata: map[string]any{
+			"command": command,
+			"pid":     task.PID,
+		},
+	})
+	return task
 }
 
 // GetID returns the unique task identifier
@@ -67,6 +79,10 @@ func (t *BashTask) AppendOutput(data []byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.output.Write(data)
+	appendOutputFile(t.OutputFile, outputRecord{
+		Event:   "task.output",
+		Content: string(data),
+	})
 }
 
 // GetOutput returns the current output
@@ -90,6 +106,14 @@ func (t *BashTask) Complete(exitCode int, err error) {
 	} else {
 		t.Status = StatusCompleted
 	}
+	appendOutputFile(t.OutputFile, outputRecord{
+		Event:  "task.completed",
+		Status: string(t.Status),
+		Metadata: map[string]any{
+			"exit_code": t.ExitCode,
+			"error":     t.Error,
+		},
+	})
 	t.mu.Unlock()
 	notifyTaskCompleted(t.GetStatus())
 }
@@ -101,6 +125,10 @@ func (t *BashTask) MarkKilled() {
 
 	t.Status = StatusKilled
 	t.EndTime = time.Now()
+	appendOutputFile(t.OutputFile, outputRecord{
+		Event:  "task.completed",
+		Status: string(StatusKilled),
+	})
 }
 
 // IsRunning returns true if the task is still running
@@ -189,6 +217,7 @@ func (t *BashTask) GetStatus() TaskInfo {
 		StartTime:   t.StartTime,
 		EndTime:     t.EndTime,
 		ExitCode:    t.ExitCode,
+		OutputFile:  t.OutputFile,
 		Error:       t.Error,
 		Output:      t.output.String(),
 	}

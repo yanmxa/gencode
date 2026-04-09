@@ -1,0 +1,172 @@
+package fs
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/perm"
+	"github.com/yanmxa/gencode/internal/tool/toolresult"
+)
+
+const (
+	IconEdit = "✏️"
+)
+
+// EditTool performs string replacement edits on files
+type EditTool struct{}
+
+func (t *EditTool) Name() string        { return "Edit" }
+func (t *EditTool) Description() string { return "Edit file contents using string replacement" }
+func (t *EditTool) Icon() string        { return IconEdit }
+
+// RequiresPermission returns true - Edit always requires permission
+func (t *EditTool) RequiresPermission() bool {
+	return true
+}
+
+// PreparePermission prepares a permission request with diff information
+func (t *EditTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*perm.PermissionRequest, error) {
+	// Get parameters
+	filePath, err := tool.RequireString(params, "file_path")
+	if err != nil {
+		return nil, err
+	}
+
+	// old_string may be empty (inserting at start), so we only check presence not value
+	oldString, ok := params["old_string"].(string)
+	if !ok {
+		return nil, &tool.ToolError{Message: "old_string is required"}
+	}
+
+	newString, ok := params["new_string"].(string)
+	if !ok {
+		return nil, &tool.ToolError{Message: "new_string is required"}
+	}
+
+	// Resolve relative path
+	if !filepath.IsAbs(filePath) {
+		filePath = filepath.Join(cwd, filePath)
+	}
+
+	// Read current file content
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, &tool.ToolError{Message: "file not found: " + filePath}
+		}
+		return nil, &tool.ToolError{Message: "failed to read file: " + err.Error()}
+	}
+
+	oldContent := string(content)
+
+	// Check if old_string exists in the file
+	count := strings.Count(oldContent, oldString)
+	if count == 0 {
+		return nil, &tool.ToolError{Message: "old_string not found in file"}
+	}
+
+	replaceAll := tool.GetBool(params, "replace_all")
+
+	// If not replace_all, check uniqueness
+	if !replaceAll && count > 1 {
+		return nil, &tool.ToolError{Message: "old_string is not unique in file (found " + strconv.Itoa(count) + " occurrences). Use replace_all=true to replace all."}
+	}
+
+	// Calculate new content
+	var newContent string
+	if replaceAll {
+		newContent = strings.ReplaceAll(oldContent, oldString, newString)
+	} else {
+		newContent = strings.Replace(oldContent, oldString, newString, 1)
+	}
+
+	// Generate diff
+	diffMeta := perm.GenerateDiff(filePath, oldContent, newContent)
+
+	return &perm.PermissionRequest{
+		ID:          tool.GenerateRequestID(),
+		ToolName:    t.Name(),
+		FilePath:    filePath,
+		Description: "Replace text in file",
+		DiffMeta:    diffMeta,
+	}, nil
+}
+
+// ExecuteApproved performs the file edit after user approval
+func (t *EditTool) ExecuteApproved(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
+	start := time.Now()
+
+	// Get parameters
+	filePath := tool.GetString(params, "file_path")
+	oldString, _ := params["old_string"].(string)
+	newString, _ := params["new_string"].(string)
+
+	// Resolve relative path
+	if !filepath.IsAbs(filePath) {
+		filePath = filepath.Join(cwd, filePath)
+	}
+
+	// Read current content
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return toolresult.NewErrorResult(t.Name(), "failed to read file: "+err.Error())
+	}
+
+	oldContent := string(content)
+
+	replaceAll := tool.GetBool(params, "replace_all")
+
+	// Perform replacement
+	var newContent string
+	var replaceCount int
+	if replaceAll {
+		replaceCount = strings.Count(oldContent, oldString)
+		newContent = strings.ReplaceAll(oldContent, oldString, newString)
+	} else {
+		replaceCount = 1
+		newContent = strings.Replace(oldContent, oldString, newString, 1)
+	}
+
+	// Write back to file
+	if err := os.WriteFile(filePath, []byte(newContent), 0o644); err != nil {
+		return toolresult.NewErrorResult(t.Name(), "failed to write file: "+err.Error())
+	}
+
+	duration := time.Since(start)
+
+	return toolresult.ToolResult{
+		Success: true,
+		Output:  "Successfully edited " + filePath + " (" + strconv.Itoa(replaceCount) + " replacement(s))",
+		HookResponse: map[string]any{
+			"filePath":        filePath,
+			"oldString":       oldString,
+			"newString":       newString,
+			"originalFile":    oldContent,
+			"structuredPatch": []any{},
+			"userModified":    false,
+			"replaceAll":      replaceAll,
+		},
+		Metadata: toolresult.ResultMetadata{
+			Title:    t.Name(),
+			Icon:     t.Icon(),
+			Subtitle: filePath,
+			Duration: duration,
+		},
+	}
+}
+
+// Execute implements the Tool interface (for permission-unaware execution)
+func (t *EditTool) Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
+	// This will be called if permission flow is bypassed
+	// For safety, we still perform the edit but without permission check
+	return t.ExecuteApproved(ctx, params, cwd)
+}
+
+func init() {
+	tool.Register(&EditTool{})
+}

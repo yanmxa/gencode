@@ -46,7 +46,7 @@ type FakeClient struct {
 
 // Send returns the next response synchronously.
 func (f *FakeClient) Send(_ context.Context, msgs []message.Message,
-	tools []provider.Tool, sysPrompt string,
+	tools []provider.ToolSchema, sysPrompt string,
 ) (message.CompletionResponse, error) {
 	f.recordCall(msgs, tools, sysPrompt)
 	if f.shouldInjectError() {
@@ -57,7 +57,7 @@ func (f *FakeClient) Send(_ context.Context, msgs []message.Message,
 
 // Stream returns the next response as a single-chunk stream.
 func (f *FakeClient) Stream(_ context.Context, msgs []message.Message,
-	tools []provider.Tool, sysPrompt string,
+	tools []provider.ToolSchema, sysPrompt string,
 ) <-chan message.StreamChunk {
 	f.recordCall(msgs, tools, sysPrompt)
 	ch := make(chan message.StreamChunk, 1)
@@ -138,7 +138,7 @@ func (f *FakeClient) modelID() string {
 	return "fake-model"
 }
 
-func (f *FakeClient) recordCall(msgs []message.Message, tools []provider.Tool, sysPrompt string) {
+func (f *FakeClient) recordCall(msgs []message.Message, tools []provider.ToolSchema, sysPrompt string) {
 	f.Calls = append(f.Calls, provider.CompletionOptions{
 		Model:        f.modelID(),
 		Messages:     msgs,

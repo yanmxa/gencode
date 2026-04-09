@@ -189,6 +189,20 @@ func TestEngineHasHooks(t *testing.T) {
 	}
 }
 
+func TestMatchesIfConditionMatchesBashSubcommands(t *testing.T) {
+	engine := NewEngine(config.NewSettings(), "test-session", "/tmp/repo", "")
+	cmd := config.HookCmd{If: "Bash(git:*)"}
+	input := HookInput{
+		HookEventName: string(PreToolUse),
+		ToolName:      "Bash",
+		ToolInput:     map[string]any{"command": "cd /tmp/repo && git status"},
+	}
+
+	if !engine.matchesIfCondition(cmd, input) {
+		t.Fatal("expected hook If condition to match bash subcommand after leading cd")
+	}
+}
+
 func TestEngineRuntimeAndSessionHooks(t *testing.T) {
 	engine := NewEngine(config.NewSettings(), "test-session", "/tmp", "")
 	engine.AddRuntimeHook(PreToolUse, "Bash", config.HookCmd{Type: "command", Command: "echo runtime"})

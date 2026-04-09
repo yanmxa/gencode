@@ -2,13 +2,14 @@ package tool
 
 import "github.com/yanmxa/gencode/internal/provider"
 
-var readToolSchema = provider.Tool{
+var readToolSchema = provider.ToolSchema{
 	Name: "Read",
 	Description: `Reads a file from the local filesystem. You can access any file directly by using this tool.
 Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
 
 Usage:
-- The file_path parameter must be an absolute path, not a relative path
+- The file_path parameter may be absolute or relative to the current session working directory
+- Prefer relative paths for files inside the current session working directory; use absolute paths for files outside it
 - By default, it reads up to 2000 lines starting from the beginning of the file
 - You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters
 - Results are returned with line numbers starting at 1
@@ -20,7 +21,7 @@ Usage:
 		"properties": map[string]any{
 			"file_path": map[string]any{
 				"type":        "string",
-				"description": "The absolute path to the file to read",
+				"description": "Path to the file to read. Relative paths are resolved from the current session working directory.",
 			},
 			"offset": map[string]any{
 				"type":        "integer",
@@ -35,7 +36,7 @@ Usage:
 	},
 }
 
-var globToolSchema = provider.Tool{
+var globToolSchema = provider.ToolSchema{
 	Name: "Glob",
 	Description: `Fast file pattern matching tool that works with any codebase size.
 - Supports glob patterns like "**/*.go" or "src/**/*.ts"
@@ -51,14 +52,14 @@ var globToolSchema = provider.Tool{
 			},
 			"path": map[string]any{
 				"type":        "string",
-				"description": "The directory to search in. Defaults to current working directory.",
+				"description": "The directory to search in. Defaults to the current session working directory. Prefer relative paths when searching inside it.",
 			},
 		},
 		"required": []string{"pattern"},
 	},
 }
 
-var grepToolSchema = provider.Tool{
+var grepToolSchema = provider.ToolSchema{
 	Name: "Grep",
 	Description: `A powerful search tool built on ripgrep
 
@@ -79,7 +80,7 @@ var grepToolSchema = provider.Tool{
 			},
 			"path": map[string]any{
 				"type":        "string",
-				"description": "File or directory to search in (rg PATH). Defaults to current working directory.",
+				"description": "File or directory to search in (rg PATH). Defaults to the current session working directory. Prefer relative paths when searching inside it.",
 			},
 			"glob": map[string]any{
 				"type":        "string",
@@ -135,7 +136,7 @@ var grepToolSchema = provider.Tool{
 	},
 }
 
-var webFetchToolSchema = provider.Tool{
+var webFetchToolSchema = provider.ToolSchema{
 	Name: "WebFetch",
 	Description: `Fetches content from a specified URL and converts HTML to Markdown for readability.
 
@@ -161,7 +162,7 @@ Usage notes:
 	},
 }
 
-var webSearchToolSchema = provider.Tool{
+var webSearchToolSchema = provider.ToolSchema{
 	Name: "WebSearch",
 	Description: `Search the web for up-to-date information. Returns a list of relevant results with titles, URLs, and snippets.
 When searching for current information, always use the present year rather than previous years.`,
@@ -191,7 +192,7 @@ When searching for current information, always use the present year rather than 
 	},
 }
 
-var editToolSchema = provider.Tool{
+var editToolSchema = provider.ToolSchema{
 	Name: "Edit",
 	Description: `Performs exact string replacements in files.
 
@@ -207,7 +208,7 @@ Usage:
 		"properties": map[string]any{
 			"file_path": map[string]any{
 				"type":        "string",
-				"description": "The absolute path to the file to modify",
+				"description": "Path to the file to modify. Relative paths are resolved from the current session working directory.",
 			},
 			"old_string": map[string]any{
 				"type":        "string",
@@ -227,7 +228,7 @@ Usage:
 	},
 }
 
-var writeToolSchema = provider.Tool{
+var writeToolSchema = provider.ToolSchema{
 	Name: "Write",
 	Description: `Writes a file to the local filesystem.
 
@@ -242,7 +243,7 @@ Usage:
 		"properties": map[string]any{
 			"file_path": map[string]any{
 				"type":        "string",
-				"description": "The absolute path to the file to write (must be absolute, not relative)",
+				"description": "Path to the file to write. Relative paths are resolved from the current session working directory.",
 			},
 			"content": map[string]any{
 				"type":        "string",
@@ -253,11 +254,16 @@ Usage:
 	},
 }
 
-var bashToolSchema = provider.Tool{
+var bashToolSchema = provider.ToolSchema{
 	Name: "Bash",
 	Description: `Executes a given bash command and returns its output.
 
-The working directory persists between commands, but shell state does not.
+CRITICAL — Working directory:
+Commands already execute in the session working directory. NEVER prefix with
+"cd <session-working-directory> &&". Use relative paths for files inside the
+session working directory; reserve absolute paths for targets outside it.
+A successful "cd" updates the session working directory for subsequent commands.
+Shell state (variables, aliases) does not persist between calls.
 
 IMPORTANT: Avoid using this tool to run grep, find, cat, head, tail, sed, awk, or echo commands. Instead, use the appropriate dedicated tool:
 - File search: Use Glob (NOT find or ls)
@@ -292,9 +298,9 @@ You can use the run_in_background parameter to run the command in the background
 	},
 }
 
-var taskOutputToolSchema = provider.Tool{
+var taskOutputToolSchema = provider.ToolSchema{
 	Name:        ToolTaskOutput,
-	Description: "Retrieve current output or final result from a running/completed background task. By default this is non-blocking so the main conversation stays responsive.",
+	Description: "[Deprecated] Inspect current output or final result from a running/completed background task. Use this only as a fallback for ad-hoc inspection after the worker has been running for a while or when the user explicitly asks. Background workers normally notify the main coordinator on completion, so do not poll immediately after launch.",
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -317,7 +323,7 @@ var taskOutputToolSchema = provider.Tool{
 	},
 }
 
-var taskStopToolSchema = provider.Tool{
+var taskStopToolSchema = provider.ToolSchema{
 	Name:        ToolTaskStop,
 	Description: "Stops a running background task by its ID. Returns a success or failure status. Use this tool when you need to terminate a long-running background agent or command.",
 	Parameters: map[string]any{
@@ -332,7 +338,7 @@ var taskStopToolSchema = provider.Tool{
 	},
 }
 
-var askUserQuestionToolSchema = provider.Tool{
+var askUserQuestionToolSchema = provider.ToolSchema{
 	Name: "AskUserQuestion",
 	Description: `Ask the user questions to gather preferences, clarify requirements, or get decisions on implementation choices. Use when you need user input to proceed.
 
@@ -391,8 +397,8 @@ Plan mode note: In plan mode, use this tool to clarify requirements or choose be
 	},
 }
 
-func baseToolSchemas() []provider.Tool {
-	return []provider.Tool{
+func baseToolSchemas() []provider.ToolSchema {
+	return []provider.ToolSchema{
 		readToolSchema,
 		globToolSchema,
 		grepToolSchema,
@@ -401,7 +407,6 @@ func baseToolSchemas() []provider.Tool {
 		editToolSchema,
 		writeToolSchema,
 		bashToolSchema,
-		taskOutputToolSchema,
 		taskStopToolSchema,
 		askUserQuestionToolSchema,
 	}

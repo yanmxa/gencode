@@ -4,8 +4,8 @@ import (
 	"context"
 
 	coreperm "github.com/yanmxa/gencode/internal/permission"
-	"github.com/yanmxa/gencode/internal/tool/permission"
-	"github.com/yanmxa/gencode/internal/tool/ui"
+	"github.com/yanmxa/gencode/internal/tool/perm"
+	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
 // Tool represents a read-only tool that can be executed
@@ -20,7 +20,7 @@ type Tool interface {
 	Icon() string
 
 	// Execute runs the tool with the given parameters
-	Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult
+	Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult
 }
 
 // PermissionAwareTool is a tool that requires user permission before execution
@@ -31,10 +31,10 @@ type PermissionAwareTool interface {
 	RequiresPermission() bool
 
 	// PreparePermission prepares a permission request (e.g., computes diff)
-	PreparePermission(ctx context.Context, params map[string]any, cwd string) (*permission.PermissionRequest, error)
+	PreparePermission(ctx context.Context, params map[string]any, cwd string) (*perm.PermissionRequest, error)
 
 	// ExecuteApproved executes the tool after user approval
-	ExecuteApproved(ctx context.Context, params map[string]any, cwd string) ui.ToolResult
+	ExecuteApproved(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult
 }
 
 // ToolPermissionChecker is an optional interface that tools can implement
@@ -76,7 +76,7 @@ type InteractiveTool interface {
 	PrepareInteraction(ctx context.Context, params map[string]any, cwd string) (any, error)
 
 	// ExecuteWithResponse executes the tool with the user's response
-	ExecuteWithResponse(ctx context.Context, params map[string]any, response any, cwd string) ui.ToolResult
+	ExecuteWithResponse(ctx context.Context, params map[string]any, response any, cwd string) toolresult.ToolResult
 }
 
 // ToolInput represents parsed tool input

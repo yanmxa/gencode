@@ -32,7 +32,7 @@ func newSpinner() spinner.Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Spinner{
 		Frames: []string{"◐", "◓", "◑", "◒"},
-		FPS:    120 * time.Millisecond,
+		FPS:    80 * time.Millisecond,
 	}
 	sp.Style = lipgloss.NewStyle()
 	return sp

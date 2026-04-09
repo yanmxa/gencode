@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -10,24 +11,47 @@ import (
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
+var inlineImageTokenPattern = regexp.MustCompile(`\[Image #\d+\]`)
+
 // RenderUserMessage renders a user message with prompt and optional images.
-func RenderUserMessage(content string, images []message.ImageData, mdRenderer *MDRenderer, width int) string {
+func RenderUserMessage(content, displayContent string, images []message.ImageData, mdRenderer *MDRenderer, width int) string {
 	var sb strings.Builder
 	prompt := InputPromptStyle.Render("❯ ")
-
-	if len(images) > 0 {
-		var parts []string
-		for i := range images {
-			parts = append(parts, PendingImageStyle.Render(fmt.Sprintf("[Image #%d]", i+1)))
-		}
-		sb.WriteString(prompt + strings.Join(parts, " ") + "\n")
+	if displayContent == "" {
+		displayContent = content
 	}
 
-	if content != "" {
+	if len(images) > 0 && inlineImageTokenPattern.MatchString(displayContent) {
+		sb.WriteString(lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			prompt,
+			UserMsgStyle.Render(styleInlineImageTokens(displayContent)),
+		) + "\n")
+		return sb.String()
+	}
+
+	if len(images) > 0 {
+		var imgParts []string
+		for i := range images {
+			imgParts = append(imgParts, PendingImageStyle.Render(fmt.Sprintf("[Image #%d]", i+1)))
+		}
+		imageLabel := strings.Join(imgParts, " ")
+		if content != "" {
+			sb.WriteString(prompt + imageLabel + " " + UserMsgStyle.Render(content) + "\n")
+		} else {
+			sb.WriteString(prompt + imageLabel + "\n")
+		}
+	} else if content != "" {
 		sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, prompt, UserMsgStyle.Render(content)) + "\n")
 	}
 
 	return sb.String()
+}
+
+func styleInlineImageTokens(content string) string {
+	return inlineImageTokenPattern.ReplaceAllStringFunc(content, func(token string) string {
+		return PendingImageStyle.Render(token)
+	})
 }
 
 // PendingImagesParams holds the parameters for rendering pending images.
@@ -53,14 +77,7 @@ func RenderPendingImages(params PendingImagesParams) string {
 		}
 	}
 
-	var hint string
-	if params.SelectMode {
-		hint = PendingImageHintStyle.Render(" ← prev · → next · Del remove · Esc cancel")
-	} else {
-		hint = PendingImageHintStyle.Render(" (↑ to select)")
-	}
-
-	return "  " + strings.Join(parts, " ") + hint + "\n"
+	return strings.Join(parts, " ")
 }
 
 // AssistantParams holds the parameters for rendering an assistant message.

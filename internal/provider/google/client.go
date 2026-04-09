@@ -16,7 +16,7 @@ import (
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/provider/streamutil"
+	streamutil "github.com/yanmxa/gencode/internal/provider/stream"
 )
 
 // Client implements the LLMProvider interface using the Google GenAI SDK
@@ -99,20 +99,38 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					parts = append(parts, p)
 				}
 			} else if len(msg.Images) > 0 {
-				// Multimodal message with images
-				for _, img := range msg.Images {
-					decoded, err := base64.StdEncoding.DecodeString(img.Data)
-					if err == nil {
-						parts = append(parts, &genai.Part{
-							InlineData: &genai.Blob{
-								MIMEType: img.MediaType,
-								Data:     decoded,
-							},
-						})
+				if contentParts := message.InterleavedContentParts(msg); contentParts != nil {
+					for _, cp := range contentParts {
+						switch cp.Type {
+						case message.ContentPartText:
+							parts = append(parts, &genai.Part{Text: cp.Text})
+						case message.ContentPartImage:
+							decoded, err := base64.StdEncoding.DecodeString(cp.Image.Data)
+							if err == nil {
+								parts = append(parts, &genai.Part{
+									InlineData: &genai.Blob{
+										MIMEType: cp.Image.MediaType,
+										Data:     decoded,
+									},
+								})
+							}
+						}
 					}
-				}
-				if msg.Content != "" {
-					parts = append(parts, &genai.Part{Text: msg.Content})
+				} else {
+					for _, img := range msg.Images {
+						decoded, err := base64.StdEncoding.DecodeString(img.Data)
+						if err == nil {
+							parts = append(parts, &genai.Part{
+								InlineData: &genai.Blob{
+									MIMEType: img.MediaType,
+									Data:     decoded,
+								},
+							})
+						}
+					}
+					if msg.Content != "" {
+						parts = append(parts, &genai.Part{Text: msg.Content})
+					}
 				}
 			} else {
 				parts = append(parts, &genai.Part{Text: msg.Content})

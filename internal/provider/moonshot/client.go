@@ -13,8 +13,8 @@ import (
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/provider/openai_compat"
-	"github.com/yanmxa/gencode/internal/provider/streamutil"
+	"github.com/yanmxa/gencode/internal/provider/openaicompat"
+	streamutil "github.com/yanmxa/gencode/internal/provider/stream"
 )
 
 // Client implements the LLMProvider interface for Moonshot AI using the OpenAI SDK.
@@ -40,7 +40,7 @@ func (c *Client) Name() string {
 // Moonshot requires reasoning_content on all assistant messages when thinking
 // is enabled — we always include the field (empty string if no thinking content).
 func convertAssistant(msg message.Message) openai.ChatCompletionMessageParamUnion {
-	return openai_compat.AssistantMessageWithReasoning(msg, msg.Thinking)
+	return openaicompat.AssistantMessageWithReasoning(msg, msg.Thinking)
 }
 
 // Stream sends a completion request and returns a channel of streaming chunks.
@@ -50,7 +50,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 	go func() {
 		defer close(ch)
 
-		messages := openai_compat.ConvertMessages(opts.Messages, opts.SystemPrompt, convertAssistant)
+		messages := openaicompat.ConvertMessages(opts.Messages, opts.SystemPrompt, convertAssistant)
 
 		params := openai.ChatCompletionNewParams{
 			Model:    opts.Model,
@@ -73,7 +73,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 			params.Temperature = openai.Float(opts.Temperature)
 		}
 		if len(opts.Tools) > 0 {
-			params.Tools = openai_compat.ConvertTools(opts.Tools)
+			params.Tools = openaicompat.ConvertTools(opts.Tools)
 		}
 
 		log.LogRequestCtx(ctx, c.name, opts.Model, opts)
@@ -88,7 +88,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 			for _, choice := range chunk.Choices {
 				// Extract reasoning_content for Kimi thinking models
-				if content := openai_compat.ExtractReasoningContent(choice.Delta.RawJSON()); content != "" {
+				if content := openaicompat.ExtractReasoningContent(choice.Delta.RawJSON()); content != "" {
 					state.EmitThinking(ch, content)
 				}
 
@@ -109,7 +109,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				}
 
 				if choice.FinishReason != "" {
-					state.Response.StopReason = openai_compat.MapFinishReason(choice.FinishReason)
+					state.Response.StopReason = openaicompat.MapFinishReason(choice.FinishReason)
 				}
 			}
 

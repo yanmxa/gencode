@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
@@ -15,7 +15,7 @@ func TestLoop_SingleTurn_EndTurn(t *testing.T) {
 	)
 	loop.AddUser("hi", nil)
 
-	result, err := loop.Run(context.Background(), core.RunOptions{})
+	result, err := loop.Run(context.Background(), runtime.RunOptions{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestLoop_MultiTurn_ToolUse(t *testing.T) {
 	loop.AddUser("use tool", nil)
 
 	var toolExecuted bool
-	result, err := loop.Run(context.Background(), core.RunOptions{
+	result, err := loop.Run(context.Background(), runtime.RunOptions{
 		OnToolDone: func(tc message.ToolCall, r message.ToolResult) {
 			toolExecuted = true
 			if tc.Name != "MyTool" {
@@ -98,7 +98,7 @@ func TestLoop_MaxTurns(t *testing.T) {
 	loop, _ := testutil.NewTestLoop(t, responses...)
 	loop.AddUser("go", nil)
 
-	result, err := loop.Run(context.Background(), core.RunOptions{MaxTurns: 3})
+	result, err := loop.Run(context.Background(), runtime.RunOptions{MaxTurns: 3})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestLoop_ContextCancellation(t *testing.T) {
 	)
 	loop.AddUser("hello", nil)
 
-	result, err := loop.Run(ctx, core.RunOptions{})
+	result, err := loop.Run(ctx, runtime.RunOptions{})
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}
@@ -134,7 +134,7 @@ func TestLoop_UnknownTool(t *testing.T) {
 	)
 	loop.AddUser("call unknown", nil)
 
-	result, err := loop.Run(context.Background(), core.RunOptions{})
+	result, err := loop.Run(context.Background(), runtime.RunOptions{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestLoop_MultipleToolCalls(t *testing.T) {
 	loop.AddUser("use both", nil)
 
 	var toolsDone int
-	result, err := loop.Run(context.Background(), core.RunOptions{
+	result, err := loop.Run(context.Background(), runtime.RunOptions{
 		OnToolDone: func(tc message.ToolCall, r message.ToolResult) {
 			toolsDone++
 		},
@@ -205,7 +205,7 @@ func TestLoop_TokenAccumulation(t *testing.T) {
 	)
 	loop.AddUser("go", nil)
 
-	result, err := loop.Run(context.Background(), core.RunOptions{})
+	result, err := loop.Run(context.Background(), runtime.RunOptions{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestLoop_StreamChunks(t *testing.T) {
 	loop.AddUser("hello", nil)
 
 	ch := loop.Stream(context.Background())
-	resp, err := core.Collect(context.Background(), ch)
+	resp, err := runtime.Collect(context.Background(), ch)
 	if err != nil {
 		t.Fatalf("Collect() error: %v", err)
 	}

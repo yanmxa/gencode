@@ -6,15 +6,18 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appmode "github.com/yanmxa/gencode/internal/app/mode"
-	appsession "github.com/yanmxa/gencode/internal/app/session"
+	"github.com/yanmxa/gencode/internal/app/sessionui"
+	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/session"
+	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tracker"
 )
 
 // ensureSessionStore initializes the session store if not already initialized
 func (m *model) ensureSessionStore() error {
 	if m.session.Store == nil {
-		store, err := appsession.NewStore(m.cwd)
+		store, err := session.NewStore(m.cwd)
 		if err != nil {
 			return err
 		}
@@ -35,7 +38,7 @@ func (m *model) saveSession() error {
 	}
 
 	// Convert messages to entry format
-	entries := appsession.ConvertToEntries(m.conv.Messages)
+	entries := session.ConvertToEntries(m.conv.Messages)
 
 	// Get provider and model info
 	providerName := ""
@@ -46,23 +49,23 @@ func (m *model) saveSession() error {
 	}
 
 	// Build or update session
-	sess := &appsession.Snapshot{
-		Metadata: appsession.SessionMetadata{
+	sess := &session.Snapshot{
+		Metadata: session.SessionMetadata{
 			ID:         m.session.CurrentID,
 			Provider:   providerName,
 			Model:      modelID,
 			Cwd:        m.cwd,
-			LastPrompt: appsession.ExtractLastUserText(entries),
+			LastPrompt: session.ExtractLastUserText(entries),
 			Summary:    m.session.Summary,
 			Mode:       m.currentSessionMode(),
 		},
 		Entries: entries,
-		Tasks:   tool.DefaultTodoStore.Export(),
+		Tasks:   tracker.DefaultStore.Export(),
 	}
 
 	// Generate title from first user message if new session
 	if sess.Metadata.Title == "" || sess.Metadata.ID == "" {
-		sess.Metadata.Title = appsession.GenerateTitle(sess.Entries)
+		sess.Metadata.Title = session.GenerateTitle(sess.Entries)
 	}
 
 	if err := m.session.Store.Save(sess); err != nil {
@@ -98,7 +101,7 @@ func (m *model) loadSession(id string) error {
 
 	// Reset tasks if none in session (switching sessions at runtime).
 	if len(sess.Tasks) == 0 {
-		tool.DefaultTodoStore.Reset()
+		tracker.DefaultStore.Reset()
 	}
 	// Reset deferred tool state for new session context
 	tool.ResetFetched()
@@ -115,8 +118,8 @@ func (m *model) loadSession(id string) error {
 
 // restoreSessionData restores conversation state from a loaded session.
 // Used by both loadSession (runtime) and newModel (initialization).
-func (m *model) restoreSessionData(sess *appsession.Snapshot) {
-	m.conv.Messages = appsession.ConvertFromEntries(sess.Entries)
+func (m *model) restoreSessionData(sess *session.Snapshot) {
+	m.conv.Messages = session.ConvertFromEntries(sess.Entries)
 	m.session.CurrentID = sess.Metadata.ID
 
 	// Load session memory (persisted compaction summary)
@@ -133,7 +136,7 @@ func (m *model) restoreSessionData(sess *appsession.Snapshot) {
 
 	// Restore tasks
 	if len(sess.Tasks) > 0 {
-		tool.DefaultTodoStore.Import(sess.Tasks)
+		tracker.DefaultStore.Import(sess.Tasks)
 	}
 }
 
@@ -142,7 +145,7 @@ func (m *model) restoreSessionData(sess *appsession.Snapshot) {
 // the session ID, enabling cross-session task sharing.
 func (m *model) initTaskStorage() {
 	// Already initialized for this session
-	if tool.DefaultTodoStore.GetStorageDir() != "" {
+	if tracker.DefaultStore.GetStorageDir() != "" {
 		return
 	}
 
@@ -155,7 +158,8 @@ func (m *model) initTaskStorage() {
 	taskListID := os.Getenv("GEN_TASK_LIST_ID")
 	if taskListID != "" {
 		dir := filepath.Join(homeDir, ".gen", "tasks", taskListID)
-		tool.DefaultTodoStore.SetStorageDir(dir)
+		tracker.DefaultStore.SetStorageDir(dir)
+		_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
 		return
 	}
 
@@ -163,7 +167,8 @@ func (m *model) initTaskStorage() {
 		return
 	}
 	dir := filepath.Join(homeDir, ".gen", "tasks", m.session.CurrentID)
-	tool.DefaultTodoStore.SetStorageDir(dir)
+	tracker.DefaultStore.SetStorageDir(dir)
+	_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
 }
 
 func (m *model) currentSessionMode() string {
@@ -171,7 +176,7 @@ func (m *model) currentSessionMode() string {
 		return "plan"
 	}
 	switch m.mode.Operation {
-	case appmode.AutoAccept:
+	case config.ModeAutoAccept:
 		return "auto-accept"
 	default:
 		return "normal"
@@ -181,7 +186,7 @@ func (m *model) currentSessionMode() string {
 // updateSession routes session selection messages.
 func (m *model) updateSession(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case appsession.SelectedMsg:
+	case sessionui.SelectedMsg:
 		c := m.handleSessionSelected(msg)
 		return c, true
 	}
@@ -189,7 +194,7 @@ func (m *model) updateSession(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 // handleSessionSelected handles when a session is selected from the selector
-func (m *model) handleSessionSelected(msg appsession.SelectedMsg) tea.Cmd {
+func (m *model) handleSessionSelected(msg sessionui.SelectedMsg) tea.Cmd {
 	sessionID := msg.SessionID
 
 	// If fork is pending, fork the selected session instead of resuming it directly.

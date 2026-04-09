@@ -5,11 +5,11 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/ui/shared"
+	"github.com/yanmxa/gencode/internal/ui/selector"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
-func RenderCompactStatus(width int, spinnerView string, active bool, focus, result string, isError bool) string {
+func RenderCompactStatus(width int, spinnerView string, active bool, focus, phase, result string, isError bool) string {
 	if !active && result == "" {
 		return ""
 	}
@@ -22,7 +22,11 @@ func RenderCompactStatus(width int, spinnerView string, active bool, focus, resu
 	icon := "✓"
 
 	if active {
-		title = spinnerView + " Compacting conversation"
+		if phase != "" {
+			title = spinnerView + " " + phase
+		} else {
+			title = spinnerView + " Compacting conversation"
+		}
 		subtitle = "Summarizing recent history into a shorter reusable summary."
 		if strings.TrimSpace(focus) != "" {
 			detail = "Focus: " + focus
@@ -43,7 +47,7 @@ func RenderCompactStatus(width int, spinnerView string, active bool, focus, resu
 		title = icon + " " + title
 	}
 
-	boxWidth := shared.CalculateBoxWidth(width)
+	boxWidth := selector.CalculateBoxWidth(width)
 
 	labelStyle := lipgloss.NewStyle().
 		Foreground(theme.CurrentTheme.TextDim).

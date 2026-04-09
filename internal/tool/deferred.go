@@ -14,7 +14,7 @@ import (
 // The LLM calls ToolSearch to fetch their full schemas on demand.
 //
 // Only defer tools that are genuinely rare. Do NOT defer tools that are:
-// - Needed reactively (TaskOutput/TaskStop — triggered by background completions)
+// - Needed reactively (TaskStop — triggered by background completions)
 // - Commonly used (EnterPlanMode — triggered by task complexity)
 var DeferredToolNames = map[string]bool{
 	ToolCronCreate:    true,
@@ -76,8 +76,8 @@ func FormatDeferredToolsPrompt() string {
 
 // SearchDeferredTools matches a query against deferred tool schemas.
 // Supports "select:Name1,Name2" for exact match or keyword search.
-// Returns matched schemas as provider.Tool slices.
-func SearchDeferredTools(query string, maxResults int) []provider.Tool {
+// Returns matched schemas as provider.ToolSchema slices.
+func SearchDeferredTools(query string, maxResults int) []provider.ToolSchema {
 	if maxResults <= 0 {
 		maxResults = 5
 	}
@@ -92,7 +92,7 @@ func SearchDeferredTools(query string, maxResults int) []provider.Tool {
 		for _, n := range names {
 			nameSet[strings.TrimSpace(n)] = true
 		}
-		var matched []provider.Tool
+		var matched []provider.ToolSchema
 		for _, s := range allSchemas {
 			if nameSet[s.Name] {
 				matched = append(matched, s)
@@ -106,7 +106,7 @@ func SearchDeferredTools(query string, maxResults int) []provider.Tool {
 	keywords := strings.Fields(queryLower)
 
 	type scored struct {
-		tool  provider.Tool
+		tool  provider.ToolSchema
 		score int
 	}
 	var results []scored
@@ -133,7 +133,7 @@ func SearchDeferredTools(query string, maxResults int) []provider.Tool {
 		return results[i].score > results[j].score
 	})
 
-	matched := make([]provider.Tool, 0, maxResults)
+	matched := make([]provider.ToolSchema, 0, maxResults)
 	for i, r := range results {
 		if i >= maxResults {
 			break
@@ -144,7 +144,7 @@ func SearchDeferredTools(query string, maxResults int) []provider.Tool {
 }
 
 // FormatToolSchemas formats tool schemas as a <functions> block (matching CC's format).
-func FormatToolSchemas(tools []provider.Tool) string {
+func FormatToolSchemas(tools []provider.ToolSchema) string {
 	if len(tools) == 0 {
 		return "No matching tools found."
 	}
@@ -167,9 +167,9 @@ func FormatToolSchemas(tools []provider.Tool) string {
 }
 
 // allDeferredSchemas returns the full schemas for all deferred tools.
-func allDeferredSchemas() []provider.Tool {
+func allDeferredSchemas() []provider.ToolSchema {
 	// Collect from known schema slices that contain deferred tools
-	var all []provider.Tool
+	var all []provider.ToolSchema
 	for _, s := range CronToolSchemas {
 		if DeferredToolNames[s.Name] {
 			all = append(all, s)

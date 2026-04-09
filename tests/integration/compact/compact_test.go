@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
@@ -29,7 +29,7 @@ func TestCompact_SummarizesConversation(t *testing.T) {
 		message.AssistantMessage("you're welcome", "", nil),
 	}
 
-	summary, count, err := core.Compact(context.Background(), c, msgs, "", "")
+	summary, count, err := runtime.Compact(context.Background(), c, msgs, "", "")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestCompact_WithFocus(t *testing.T) {
 		message.AssistantMessage("ok", "", nil),
 	}
 
-	_, _, err := core.Compact(context.Background(), c, msgs, "", "testing")
+	_, _, err := runtime.Compact(context.Background(), c, msgs, "", "testing")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestCompact_EmptyConversation(t *testing.T) {
 		message.CompletionResponse{Content: "Empty summary", StopReason: "end_turn"},
 	)
 
-	summary, count, err := core.Compact(context.Background(), c, nil, "", "")
+	summary, count, err := runtime.Compact(context.Background(), c, nil, "", "")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestCompact_WithSessionMemory(t *testing.T) {
 	}
 
 	sessionMemory := "Previous context: refactored session store."
-	_, _, err := core.Compact(context.Background(), c, msgs, sessionMemory, "")
+	_, _, err := runtime.Compact(context.Background(), c, msgs, sessionMemory, "")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestCompact_WithoutOptionalSections_LeavesPromptPlain(t *testing.T) {
 		message.AssistantMessage("checking now", "", nil),
 	}
 
-	_, _, err := core.Compact(context.Background(), c, msgs, "", "")
+	_, _, err := runtime.Compact(context.Background(), c, msgs, "", "")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}

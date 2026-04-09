@@ -12,19 +12,20 @@ import (
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	appprovider "github.com/yanmxa/gencode/internal/app/provider"
-	appsession "github.com/yanmxa/gencode/internal/app/session"
-	appskill "github.com/yanmxa/gencode/internal/app/skill"
-	apptool "github.com/yanmxa/gencode/internal/app/tool"
+	"github.com/yanmxa/gencode/internal/app/providerui"
+	"github.com/yanmxa/gencode/internal/app/sessionui"
+	"github.com/yanmxa/gencode/internal/app/skillui"
+	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tool/permission"
+	"github.com/yanmxa/gencode/internal/tool/perm"
+	"github.com/yanmxa/gencode/internal/tracker"
 	"github.com/yanmxa/gencode/internal/ui/progress"
 )
 
@@ -95,15 +96,15 @@ func (f *fakeConversationRuntime) StartStream(req streamRequest) streamStartResu
 func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 	m := &model{
 		mode: appmode.State{
-			Operation:          appmode.Plan,
+			Operation:          config.ModePlan,
 			SessionPermissions: config.NewSessionPermissions(),
 			Enabled:            true,
 			Task:               "test task",
 			PlanApproval:       appmode.NewPlanPrompt(),
 			Question:           appmode.NewQuestionPrompt(),
 		},
-		tool: apptool.State{
-			ExecState: apptool.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []message.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
@@ -132,8 +133,8 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 	if !m.mode.Enabled {
 		t.Error("plan.enabled should remain true after modify feedback")
 	}
-	if m.mode.Operation != appmode.Plan {
-		t.Errorf("operationMode should be appmode.Plan, got %d", m.mode.Operation)
+	if m.mode.Operation != config.ModePlan {
+		t.Errorf("operationMode should be config.ModePlan, got %d", m.mode.Operation)
 	}
 }
 
@@ -141,15 +142,15 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 	m := &model{
 		mode: appmode.State{
-			Operation:          appmode.Plan,
+			Operation:          config.ModePlan,
 			SessionPermissions: config.NewSessionPermissions(),
 			Enabled:            true,
 			Task:               "test task",
 			PlanApproval:       appmode.NewPlanPrompt(),
 			Question:           appmode.NewQuestionPrompt(),
 		},
-		tool: apptool.State{
-			ExecState: apptool.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []message.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
@@ -175,8 +176,8 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 	if m.mode.Enabled {
 		t.Error("plan.enabled should be false after manual approval")
 	}
-	if m.mode.Operation != appmode.Normal {
-		t.Errorf("operationMode should be appmode.Normal, got %d", m.mode.Operation)
+	if m.mode.Operation != config.ModeNormal {
+		t.Errorf("operationMode should be config.ModeNormal, got %d", m.mode.Operation)
 	}
 }
 
@@ -184,15 +185,15 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 	m := &model{
 		mode: appmode.State{
-			Operation:          appmode.Plan,
+			Operation:          config.ModePlan,
 			SessionPermissions: config.NewSessionPermissions(),
 			Enabled:            true,
 			Task:               "test task",
 			PlanApproval:       appmode.NewPlanPrompt(),
 			Question:           appmode.NewQuestionPrompt(),
 		},
-		tool: apptool.State{
-			ExecState: apptool.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []message.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
@@ -218,8 +219,8 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 	if m.mode.Enabled {
 		t.Error("plan.enabled should be false after auto approval")
 	}
-	if m.mode.Operation != appmode.AutoAccept {
-		t.Errorf("operationMode should be appmode.AutoAccept, got %d", m.mode.Operation)
+	if m.mode.Operation != config.ModeAutoAccept {
+		t.Errorf("operationMode should be config.ModeAutoAccept, got %d", m.mode.Operation)
 	}
 	if !m.mode.SessionPermissions.AllowAllEdits {
 		t.Error("auto mode should enable AllowAllEdits")
@@ -230,15 +231,15 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 	m := &model{
 		mode: appmode.State{
-			Operation:          appmode.Plan,
+			Operation:          config.ModePlan,
 			SessionPermissions: config.NewSessionPermissions(),
 			Enabled:            true,
 			Task:               "test task",
 			PlanApproval:       appmode.NewPlanPrompt(),
 			Question:           appmode.NewQuestionPrompt(),
 		},
-		tool: apptool.State{
-			ExecState: apptool.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []message.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
@@ -262,8 +263,8 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 	if m.mode.Enabled {
 		t.Error("plan.enabled should be false after rejection")
 	}
-	if m.mode.Operation != appmode.Normal {
-		t.Errorf("operationMode should be appmode.Normal after rejection, got %d", m.mode.Operation)
+	if m.mode.Operation != config.ModeNormal {
+		t.Errorf("operationMode should be config.ModeNormal after rejection, got %d", m.mode.Operation)
 	}
 	// Should have added a rejection tool result message
 	found := false
@@ -280,8 +281,8 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 
 func TestHasRunningToolExecutionSequentialBash(t *testing.T) {
 	m := &model{
-		tool: apptool.State{
-			ExecState: apptool.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []message.ToolCall{
 					{ID: "tc-1", Name: "Bash"},
 				},
@@ -297,8 +298,8 @@ func TestHasRunningToolExecutionSequentialBash(t *testing.T) {
 
 func TestHasRunningToolExecutionParallelPendingResult(t *testing.T) {
 	m := &model{
-		tool: apptool.State{
-			ExecState: apptool.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []message.ToolCall{
 					{ID: "tc-1", Name: "Bash"},
 					{ID: "tc-2", Name: "WebFetch"},
@@ -393,35 +394,6 @@ func TestSessionSummary_EmptyNotIncluded(t *testing.T) {
 	}
 }
 
-func TestReadSubmitRequest(t *testing.T) {
-	t.Run("ignores submit while stream active", func(t *testing.T) {
-		m := &model{conv: appconv.Model{Stream: appconv.StreamState{Active: true}}}
-		if _, ok := m.readSubmitRequest(); ok {
-			t.Fatal("expected no submit request while streaming")
-		}
-	})
-
-	t.Run("ignores empty input without images", func(t *testing.T) {
-		m := &model{input: newBaseModel("/tmp", modelInfra{}).input}
-		m.input.Textarea.SetValue("   ")
-		if _, ok := m.readSubmitRequest(); ok {
-			t.Fatal("expected empty input to be ignored")
-		}
-	})
-
-	t.Run("accepts image-only submit", func(t *testing.T) {
-		m := &model{input: newBaseModel("/tmp", modelInfra{}).input}
-		m.input.Images.Pending = []message.ImageData{{FileName: "a.png"}}
-		req, ok := m.readSubmitRequest()
-		if !ok {
-			t.Fatal("expected image-only submit to be accepted")
-		}
-		if req.Input != "" {
-			t.Fatalf("expected empty text input, got %q", req.Input)
-		}
-	})
-}
-
 func TestIsExitRequest(t *testing.T) {
 	if !isExitRequest("exit") {
 		t.Fatal("expected lowercase exit to match")
@@ -442,13 +414,13 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 	}
 
 	want := []string{
-		"*provider.Model",
-		"*tool.Model",
-		"*skill.Model",
-		"*agent.Model",
-		"*mcp.Model",
-		"*plugin.Model",
-		"*session.Model",
+		"*providerui.Model",
+		"*toolui.Model",
+		"*skillui.Model",
+		"*agentui.Model",
+		"*mcpui.Model",
+		"*pluginui.Model",
+		"*sessionui.Model",
 		"*memory.Model",
 	}
 
@@ -461,7 +433,7 @@ func TestStartPromptSuggestionUsesRuntimeInterface(t *testing.T) {
 	rt := &fakeConversationRuntime{}
 	m := &model{
 		runtime: rt,
-		loop:    &core.Loop{Client: &client.Client{}},
+		loop:    &runtime.Loop{Client: &client.Client{}},
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
 				{Role: message.RoleAssistant, Content: "first"},
@@ -483,13 +455,13 @@ func TestStartLLMStreamUsesRuntimeInterface(t *testing.T) {
 	rt := &fakeConversationRuntime{}
 	m := &model{
 		runtime: rt,
-		loop:    &core.Loop{},
+		loop:    &runtime.Loop{},
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
 				{Role: message.RoleUser, Content: "hello"},
 			},
 		},
-		provider: appprovider.State{
+		provider: providerui.State{
 			ThinkingOverride: provider.ThinkingOff,
 		},
 	}
@@ -532,7 +504,7 @@ func TestBuildStreamRequestExcludesAssistantPlaceholder(t *testing.T) {
 	rt.streamResult.Ch = ch
 	m := &model{
 		runtime: rt,
-		loop:    &core.Loop{},
+		loop:    &runtime.Loop{},
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
 				{Role: message.RoleUser, Content: "user"},
@@ -553,7 +525,7 @@ func TestBuildStreamRequestExcludesAssistantPlaceholder(t *testing.T) {
 
 func TestBuildPromptSuggestionRequest(t *testing.T) {
 	m := &model{
-		loop: &core.Loop{Client: &client.Client{}},
+		loop: &runtime.Loop{Client: &client.Client{}},
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
 				{Role: message.RoleUser, Content: "u1"},
@@ -593,11 +565,11 @@ func TestHandleCompletionToolCalls_StopsStreamPhaseBeforeToolExecution(t *testin
 				Cancel:       func() {},
 			},
 		},
-		provider: appprovider.State{
+		provider: providerui.State{
 			ThinkingOverride: provider.ThinkingHigh,
 		},
 		output: appoutput.New(80, progress.NewHub(16)),
-		loop:   &core.Loop{},
+		loop:   &runtime.Loop{},
 	}
 
 	cmd := m.handleCompletionToolCalls([]message.ToolCall{
@@ -636,8 +608,8 @@ func TestHandleQuestionResponse_CancelledStopsStreamState(t *testing.T) {
 			Question:        appmode.NewQuestionPrompt(),
 			PendingQuestion: &tool.QuestionRequest{ID: "ask-1"},
 		},
-		tool: apptool.State{
-			ExecState: apptool.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []message.ToolCall{{ID: "ask-1", Name: "AskUserQuestion"}},
 				CurrentIdx:   0,
 			},
@@ -672,7 +644,7 @@ func TestExecuteSubmitRequest_CancelsPendingToolsBeforeNewTurn(t *testing.T) {
 	base := newBaseModel(t.TempDir(), modelInfra{})
 	m := &base
 	m.runtime = rt
-	m.loop = &core.Loop{}
+	m.loop = &runtime.Loop{}
 	m.output = appoutput.New(80, progress.NewHub(16))
 	m.conv = appconv.Model{
 		Messages: []message.ChatMessage{
@@ -686,8 +658,8 @@ func TestExecuteSubmitRequest_CancelsPendingToolsBeforeNewTurn(t *testing.T) {
 			},
 		},
 	}
-	m.tool = apptool.State{
-		ExecState: apptool.ExecState{
+	m.tool = toolui.State{
+		ExecState: toolui.ExecState{
 			PendingCalls: []message.ToolCall{
 				{ID: "tc-1", Name: "TaskOutput", Input: `{"task_id":"993103b8"}`},
 			},
@@ -695,7 +667,7 @@ func TestExecuteSubmitRequest_CancelsPendingToolsBeforeNewTurn(t *testing.T) {
 			Cancel:     func() { cancelled = true },
 		},
 	}
-	m.provider = appprovider.State{
+	m.provider = providerui.State{
 		LLM: testLLMProvider{},
 	}
 
@@ -731,10 +703,71 @@ func TestExecuteSubmitRequest_CancelsPendingToolsBeforeNewTurn(t *testing.T) {
 	}
 }
 
+func TestHandleToolResultReplansAfterCwdChange(t *testing.T) {
+	rt := &fakeConversationRuntime{}
+	base := newBaseModel(t.TempDir(), modelInfra{})
+	m := &base
+	m.runtime = rt
+	m.loop = &runtime.Loop{}
+	m.output = appoutput.New(80, progress.NewHub(16))
+	m.conv = appconv.Model{
+		Messages: []message.ChatMessage{
+			{
+				Role: message.RoleAssistant,
+				ToolCalls: []message.ToolCall{
+					{ID: "tc-1", Name: "Bash", Input: `{"command":"cd /tmp/other && pwd"}`},
+					{ID: "tc-2", Name: "Bash", Input: `{"command":"git status"}`},
+				},
+			},
+		},
+	}
+	m.tool = toolui.State{
+		ExecState: toolui.ExecState{
+			PendingCalls: []message.ToolCall{
+				{ID: "tc-1", Name: "Bash", Input: `{"command":"cd /tmp/other && pwd"}`},
+				{ID: "tc-2", Name: "Bash", Input: `{"command":"git status"}`},
+			},
+			CurrentIdx: 0,
+		},
+	}
+	m.cwd = "/tmp/original"
+	m.provider = providerui.State{
+		LLM: testLLMProvider{},
+	}
+
+	cmd := m.handleToolResult(toolui.ExecResultMsg{
+		Index:    0,
+		ToolName: "Bash",
+		Result: message.ToolResult{
+			ToolCallID: "tc-1",
+			Content:    "/tmp/other",
+			HookResponse: map[string]any{
+				"cwd": "/tmp/other",
+			},
+		},
+	})
+	if cmd == nil {
+		t.Fatal("expected follow-up command")
+	}
+	if m.cwd != "/tmp/other" {
+		t.Fatalf("expected cwd to update, got %q", m.cwd)
+	}
+	if m.tool.PendingCalls != nil {
+		t.Fatalf("expected pending tool calls to be cleared for replanning, got %#v", m.tool.PendingCalls)
+	}
+	_ = cmd()
+	if !rt.startCalled {
+		t.Fatal("expected continuation stream to start after cwd change")
+	}
+	if len(m.conv.Messages) < 2 || m.conv.Messages[1].ToolResult == nil || m.conv.Messages[1].ToolName != "Bash" {
+		t.Fatalf("expected bash tool result to remain in conversation, got %#v", m.conv.Messages)
+	}
+}
+
 func TestBuildCompactRequest(t *testing.T) {
 	m := &model{
-		loop: &core.Loop{},
-		session: appsession.State{
+		loop: &runtime.Loop{},
+		session: sessionui.State{
 			Summary: "existing summary",
 		},
 		conv: appconv.Model{
@@ -760,12 +793,12 @@ func TestBuildCompactRequest(t *testing.T) {
 }
 
 func TestBuildLoopExtraIncludesSkillInvocationAndTaskReminder(t *testing.T) {
-	tool.DefaultTodoStore.Reset()
-	t.Cleanup(tool.DefaultTodoStore.Reset)
-	tool.DefaultTodoStore.Create("Write tests", "Cover loop builder", "Writing tests", nil)
+	tracker.DefaultStore.Reset()
+	t.Cleanup(tracker.DefaultStore.Reset)
+	tracker.DefaultStore.Create("Write tests", "Cover loop builder", "Writing tests", nil)
 
 	m := &model{
-		skill: appskill.State{
+		skill: skillui.State{
 			ActiveInvocation: "<skill>Use the active skill</skill>",
 		},
 		conv: appconv.Model{
@@ -774,21 +807,27 @@ func TestBuildLoopExtraIncludesSkillInvocationAndTaskReminder(t *testing.T) {
 	}
 
 	extra := m.buildLoopExtra([]string{"base"})
-	if len(extra) != 3 {
-		t.Fatalf("expected 3 extra entries, got %d: %#v", len(extra), extra)
+	if len(extra) != 4 {
+		t.Fatalf("expected 4 extra entries, got %d: %#v", len(extra), extra)
 	}
-	if extra[0] != "base" || extra[1] != "<skill>Use the active skill</skill>" {
+	if extra[0] != "base" {
+		t.Fatalf("unexpected first extra entry: %#v", extra)
+	}
+	if !strings.Contains(extra[1], "<coordinator-guidance>") {
+		t.Fatalf("expected coordinator guidance entry, got %#v", extra[1])
+	}
+	if extra[2] != "<skill>Use the active skill</skill>" {
 		t.Fatalf("unexpected extra ordering: %#v", extra)
 	}
-	if !strings.Contains(extra[2], "<task-reminder>") || !strings.Contains(extra[2], "Write tests") {
-		t.Fatalf("expected task reminder entry, got %#v", extra[2])
+	if !strings.Contains(extra[3], "<task-reminder>") || !strings.Contains(extra[3], "Write tests") {
+		t.Fatalf("expected task reminder entry, got %#v", extra[3])
 	}
 }
 
 func TestBuildLoopSystemIncludesSessionSummary(t *testing.T) {
 	m := &model{
 		cwd: "/tmp/project",
-		session: appsession.State{
+		session: sessionui.State{
 			Summary: "condensed summary",
 		},
 		memory: appmemory.State{
@@ -804,8 +843,11 @@ func TestBuildLoopSystemIncludesSessionSummary(t *testing.T) {
 	if sys.SessionSummary != "<session-summary>\ncondensed summary\n</session-summary>" {
 		t.Fatalf("unexpected session summary block: %q", sys.SessionSummary)
 	}
-	if len(sys.Extra) != 1 || sys.Extra[0] != "extra" {
+	if len(sys.Extra) != 2 || sys.Extra[0] != "extra" {
 		t.Fatalf("unexpected extra: %#v", sys.Extra)
+	}
+	if !strings.Contains(sys.Extra[1], "<coordinator-guidance>") {
+		t.Fatalf("expected coordinator guidance in extra, got %#v", sys.Extra)
 	}
 	if sys.UserInstructions != "user memory" || sys.ProjectInstructions != "project memory" {
 		t.Fatalf("unexpected memory context: user=%q project=%q", sys.UserInstructions, sys.ProjectInstructions)
@@ -815,8 +857,8 @@ func TestBuildLoopSystemIncludesSessionSummary(t *testing.T) {
 func TestConfigureLoopBuildsLoopComponents(t *testing.T) {
 	m := &model{
 		cwd:  "/tmp/project",
-		loop: &core.Loop{},
-		provider: appprovider.State{
+		loop: &runtime.Loop{},
+		provider: providerui.State{
 			ThinkingLevel:    provider.ThinkingNormal,
 			ThinkingOverride: provider.ThinkingHigh,
 		},
@@ -828,7 +870,7 @@ func TestConfigureLoopBuildsLoopComponents(t *testing.T) {
 			CachedUser:    "user memory",
 			CachedProject: "project memory",
 		},
-		session: appsession.State{
+		session: sessionui.State{
 			Summary: "session summary",
 		},
 	}
@@ -850,8 +892,27 @@ func TestConfigureLoopBuildsLoopComponents(t *testing.T) {
 	if m.loop.System.SessionSummary != "<session-summary>\nsession summary\n</session-summary>" {
 		t.Fatalf("unexpected session summary: %q", m.loop.System.SessionSummary)
 	}
-	if len(m.loop.System.Extra) != 1 || m.loop.System.Extra[0] != "explicit-extra" {
+	if len(m.loop.System.Extra) != 2 || m.loop.System.Extra[0] != "explicit-extra" {
 		t.Fatalf("unexpected system extra: %#v", m.loop.System.Extra)
+	}
+	if !strings.Contains(m.loop.System.Extra[1], "<coordinator-guidance>") {
+		t.Fatalf("expected coordinator guidance in system extra: %#v", m.loop.System.Extra)
+	}
+}
+
+func TestBuildCoordinatorGuidanceEncouragesParallelAuditFanout(t *testing.T) {
+	guidance := buildCoordinatorGuidance()
+	for _, want := range []string{
+		"<coordinator-guidance>",
+		"broad audit, review, architecture analysis, refactor plan",
+		"Default to launching 3-5 background workers",
+		"Avoid broad labels like \"deep codebase audit\"",
+		"After launching workers, briefly tell the user what you launched and stop.",
+		"Do not poll background workers immediately after launch.",
+	} {
+		if !strings.Contains(guidance, want) {
+			t.Fatalf("coordinator guidance missing %q:\n%s", want, guidance)
+		}
 	}
 }
 
@@ -876,7 +937,7 @@ func TestPlanModeAgentExecutionStartsContinuationWithoutHanging(t *testing.T) {
 	m := &model{
 		cwd:     t.TempDir(),
 		runtime: rt,
-		loop:    &core.Loop{},
+		loop:    &runtime.Loop{},
 		output:  appoutput.New(80, progress.NewHub(16)),
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
@@ -886,10 +947,10 @@ func TestPlanModeAgentExecutionStartsContinuationWithoutHanging(t *testing.T) {
 		},
 		mode: appmode.State{
 			Enabled:            true,
-			Operation:          appmode.Plan,
+			Operation:          config.ModePlan,
 			SessionPermissions: config.NewSessionPermissions(),
 		},
-		provider: appprovider.State{
+		provider: providerui.State{
 			LLM: provider,
 		},
 	}
@@ -901,7 +962,7 @@ func TestPlanModeAgentExecutionStartsContinuationWithoutHanging(t *testing.T) {
 	}
 
 	startMsg := startCmd()
-	resultMsg, ok := startMsg.(apptool.ExecResultMsg)
+	resultMsg, ok := startMsg.(toolui.ExecResultMsg)
 	if !ok {
 		t.Fatalf("expected ExecResultMsg, got %T", startMsg)
 	}
@@ -974,7 +1035,7 @@ func TestRenderActiveModalPriority(t *testing.T) {
 	}
 
 	m.mode.PlanApproval.Show(&tool.PlanRequest{Plan: "plan"}, "", 80, 24)
-	m.approval.Show(&permission.PermissionRequest{ToolName: "Bash", Description: "run"}, 80, 24)
+	m.approval.Show(&perm.PermissionRequest{ToolName: "Bash", Description: "run"}, 80, 24)
 	m.mode.Question.Show(&tool.QuestionRequest{}, 80)
 	m.mode.PlanEntry.Show(&tool.EnterPlanRequest{}, 80)
 
@@ -1003,7 +1064,7 @@ func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
 	}
 
 	cmd := m.handlePermissionRequest(appapproval.RequestMsg{
-		Request: &permission.PermissionRequest{ToolName: "Edit", FilePath: "/tmp/test.txt"},
+		Request: &perm.PermissionRequest{ToolName: "Edit", FilePath: "/tmp/test.txt"},
 	})
 
 	if cmd == nil {
@@ -1025,7 +1086,7 @@ func TestLatePermissionHookResultIsIgnoredAfterApprovalModalCloses(t *testing.T)
 	m := &model{
 		approval: appapproval.New(),
 	}
-	req := &permission.PermissionRequest{
+	req := &perm.PermissionRequest{
 		ID:       "perm-1",
 		ToolName: "Edit",
 		FilePath: "/tmp/test.txt",

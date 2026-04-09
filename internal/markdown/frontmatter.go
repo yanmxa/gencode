@@ -19,7 +19,6 @@ func ParseFrontmatterFile(path string) (frontmatter, body string, err error) {
 	var fmBuilder strings.Builder
 	var bodyBuilder strings.Builder
 	inFrontmatter := false
-	frontmatterDone := false
 
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
@@ -38,10 +37,9 @@ func ParseFrontmatterFile(path string) (frontmatter, body string, err error) {
 			continue
 		}
 
-		if inFrontmatter && !frontmatterDone {
+		if inFrontmatter {
 			if strings.TrimSpace(line) == "---" {
 				inFrontmatter = false
-				frontmatterDone = true
 				continue
 			}
 			fmBuilder.WriteString(line)

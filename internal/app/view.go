@@ -10,6 +10,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/render"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tracker"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
@@ -26,27 +27,27 @@ func (m model) View() string {
 	}
 
 	separator := render.SeparatorStyle.Render(strings.Repeat("─", m.width))
-	todoView := m.renderTodoList()
-	todoPrefix := ""
-	if todoView != "" {
-		todoPrefix = "\n" + strings.TrimSuffix(todoView, "\n") + "\n"
+	trackerView := m.renderTrackerList()
+	trackerPrefix := ""
+	if trackerView != "" {
+		trackerPrefix = "\n" + strings.TrimSuffix(trackerView, "\n") + "\n"
 	}
 
-	if modalView := m.renderActiveModal(separator, todoPrefix); modalView != "" {
+	if modalView := m.renderActiveModal(separator, trackerPrefix); modalView != "" {
 		return modalView
 	}
 
 	activeContent := m.renderActiveContent()
 
 	prompt := render.InputPromptStyle.Render("❯ ")
-	pendingImagesView := m.input.RenderPendingImages()
+	textareaView := m.input.RenderTextarea()
 
 	var inputView string
 	if m.promptSuggestion.text != "" && m.input.Textarea.Value() == "" &&
 		!m.conv.Stream.Active && !m.input.Suggestions.IsVisible() {
 		inputView = prompt + ghostTextStyle.Render(m.promptSuggestion.text)
 	} else {
-		inputView = prompt + m.input.Textarea.View()
+		inputView = prompt + textareaView
 	}
 
 	var parts []string
@@ -55,12 +56,8 @@ func (m model) View() string {
 		parts = append(parts, activeContent)
 	}
 
-	if todoView != "" {
-		parts = append(parts, strings.TrimSuffix(todoView, "\n"))
-	}
-
-	if pendingImagesView != "" {
-		parts = append(parts, strings.TrimSuffix(pendingImagesView, "\n"))
+	if trackerView != "" {
+		parts = append(parts, strings.TrimSuffix(trackerView, "\n"))
 	}
 
 	if m.provider.FetchingLimits {
@@ -73,6 +70,7 @@ func (m model) View() string {
 		m.output.Spinner.View(),
 		m.conv.Compact.Active,
 		m.conv.Compact.Focus,
+		m.conv.Compact.Phase,
 		m.conv.Compact.LastResult,
 		m.conv.Compact.LastError,
 	); compactView != "" {
@@ -86,12 +84,25 @@ func (m model) View() string {
 
 	topSeparator := separator
 
+	tokenWarning := render.RenderTokenWarning(m.provider.InputTokens, m.getEffectiveInputLimit(), m.conv.Compact.WarningSuppressed)
+
+	// Render queued inputs preview
+	queuePreview := m.renderQueuePreview()
+
 	var view strings.Builder
 	if chatSection != "" {
 		view.WriteString(chatSection)
 	}
+	if tokenWarning != "" {
+		view.WriteString("\n")
+		view.WriteString(tokenWarning)
+	}
 	view.WriteString("\n")
 	view.WriteString(topSeparator)
+	if queuePreview != "" {
+		view.WriteString("\n")
+		view.WriteString(queuePreview)
+	}
 	view.WriteString("\n")
 	view.WriteString(inputView)
 	if suggestions != "" {
@@ -110,13 +121,13 @@ func (m model) View() string {
 	return view.String()
 }
 
-// renderTodoList renders a compact task list above the input area.
+// renderTrackerList renders a compact task list above the input area.
 // Returns empty string when task display is toggled off via Ctrl+T.
-func (m model) renderTodoList() string {
+func (m model) renderTrackerList() string {
 	if !m.showTasks {
 		return ""
 	}
-	return render.RenderTodoList(render.TodoListParams{
+	return render.RenderTrackerList(render.TrackerListParams{
 		StreamActive: m.conv.Stream.Active,
 		Width:        m.width,
 		SpinnerView:  m.output.Spinner.View(),
@@ -139,7 +150,16 @@ func (m model) renderModeStatus() string {
 		ModelName:     modelName,
 		Width:         m.width,
 		ThinkingLevel: m.effectiveThinkingLevel(),
+		QueueCount:    m.inputQueue.Len(),
 	})
+}
+
+func (m model) renderQueuePreview() string {
+	items := m.inputQueue.Items()
+	if len(items) == 0 {
+		return ""
+	}
+	return strings.TrimSuffix(render.RenderQueuePreview(items, m.queueSelectIdx, m.width), "\n")
 }
 
 // buildSkipIndices returns a set of message indices that should be skipped during rendering.
@@ -200,7 +220,7 @@ func (m model) renderSingleMessage(idx int) string {
 // streaming assistant message, and pending tool spinner.
 func (m model) renderActiveContent() string {
 	if m.conv.CommittedCount >= len(m.conv.Messages) {
-		return m.renderPendingToolSpinner()
+		return m.renderPendingToolSpinner(false)
 	}
 	return m.renderMessageRange(m.conv.CommittedCount, len(m.conv.Messages), true)
 }
@@ -280,14 +300,14 @@ func (m model) renderMessageRange(startIdx, endIdx int, includeSpinner bool) str
 	}
 
 	if includeSpinner {
-		sb.WriteString(m.renderPendingToolSpinner())
+		sb.WriteString(m.renderPendingToolSpinner(startIdx < endIdx))
 	}
 
 	return sb.String()
 }
 
 func (m model) renderUserMessage(msg message.ChatMessage) string {
-	return render.RenderUserMessage(msg.Content, msg.Images, m.output.MDRenderer, m.width)
+	return render.RenderUserMessage(msg.Content, msg.DisplayContent, msg.Images, m.output.MDRenderer, m.width)
 }
 
 func (m model) renderToolResult(msg message.ChatMessage) string {
@@ -333,6 +353,7 @@ func (m model) renderAssistantMessage(msg message.ChatMessage, idx int, isLast b
 		resultMap[nextMsg.ToolResult.ToolCallID] = render.ToolResultData{
 			ToolName: nextMsg.ToolName,
 			Content:  nextMsg.ToolResult.Content,
+			Error:    nextMsg.ToolResult.Content,
 			IsError:  nextMsg.ToolResult.IsError,
 			Expanded: nextMsg.Expanded,
 		}
@@ -367,12 +388,13 @@ func (m model) renderToolResultInline(msg message.ChatMessage) string {
 	return render.RenderToolResultInline(render.ToolResultData{
 		ToolName: msg.ToolName,
 		Content:  msg.ToolResult.Content,
+		Error:    msg.ToolResult.Content,
 		IsError:  msg.ToolResult.IsError,
 		Expanded: msg.Expanded,
 	}, m.output.MDRenderer)
 }
 
-func (m model) renderPendingToolSpinner() string {
+func (m model) renderPendingToolSpinner(suppressAgentLabel bool) string {
 	interactivePromptActive := m.mode.Question.IsActive() || (m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive())
 
 	return render.RenderPendingToolSpinner(render.PendingToolSpinnerParams{
@@ -384,6 +406,8 @@ func (m model) renderPendingToolSpinner() string {
 		CurrentIdx:              m.tool.CurrentIdx,
 		TaskProgress:            m.output.TaskProgress,
 		SpinnerView:             m.output.Spinner.View(),
+		Width:                   m.width,
+		SuppressAgentLabel:      suppressAgentLabel,
 	})
 }
 
@@ -405,7 +429,7 @@ func (m model) getExecutingToolName() string {
 // hasParallelTaskTools returns true if any pending tool call is an Agent tool.
 func (m model) hasParallelTaskTools() bool {
 	for _, tc := range m.tool.PendingCalls {
-		if tc.Name == tool.ToolAgent {
+		if tool.IsAgentToolName(tc.Name) {
 			return true
 		}
 	}
@@ -414,7 +438,7 @@ func (m model) hasParallelTaskTools() bool {
 
 // buildTaskOwnerMap builds a map of task ID → owner name for TaskGet display.
 func (m model) buildTaskOwnerMap() map[string]string {
-	tasks := tool.DefaultTodoStore.List()
+	tasks := tracker.DefaultStore.List()
 	if len(tasks) == 0 {
 		return nil
 	}

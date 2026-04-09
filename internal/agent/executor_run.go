@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/orchestration"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"go.uber.org/zap"
 )
 
@@ -66,7 +67,7 @@ func (e *Executor) logRunStart(run *preparedRun) {
 	)
 }
 
-func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*core.Result, error) {
+func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*runtime.Result, error) {
 	loop, cleanupLoop, err := e.buildLoop(ctx, run.cfg, run.cwd)
 	if err != nil {
 		return nil, err
@@ -82,13 +83,23 @@ func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*c
 	loop.QuestionHandler = run.req.OnQuestion
 
 	onToolStart := e.buildOnToolStart(run.req, &run.progress)
-	return loop.Run(ctx, core.RunOptions{
-		MaxTurns:    run.cfg.maxTurns,
-		OnToolStart: onToolStart,
+	return loop.Run(ctx, runtime.RunOptions{
+		MaxTurns:            run.cfg.maxTurns,
+		OnToolStart:         onToolStart,
+		DrainInjectedInputs: e.buildDrainInjectedInputs(run.req),
 	})
 }
 
-func (e *Executor) logRunCompletion(run *preparedRun, result *core.Result, success bool) {
+func (e *Executor) buildDrainInjectedInputs(req AgentRequest) func() []string {
+	if req.LiveTaskID == "" && req.ResumeID == "" {
+		return nil
+	}
+	return func() []string {
+		return orchestration.DefaultStore.DrainPendingMessages(req.LiveTaskID, req.ResumeID)
+	}
+}
+
+func (e *Executor) logRunCompletion(run *preparedRun, result *runtime.Result, success bool) {
 	logFields := []zap.Field{
 		zap.String("agent", run.cfg.displayName),
 		zap.String("stopReason", result.StopReason),
@@ -103,7 +114,7 @@ func (e *Executor) logRunCompletion(run *preparedRun, result *core.Result, succe
 	log.Logger().Warn("Agent completed", logFields...)
 }
 
-func (e *Executor) buildAgentResult(run *preparedRun, result *core.Result) *AgentResult {
+func (e *Executor) buildAgentResult(run *preparedRun, result *runtime.Result) *AgentResult {
 	success, errMsg := interpretStopReason(result, run.cfg.maxTurns)
 	e.logRunCompletion(run, result, success)
 
@@ -118,6 +129,7 @@ func (e *Executor) buildAgentResult(run *preparedRun, result *core.Result) *Agen
 	return &AgentResult{
 		AgentID:    agentSessionID,
 		AgentName:  run.cfg.displayName,
+		TranscriptPath: agentTranscriptPath,
 		Model:      run.cfg.modelID,
 		Success:    success,
 		Content:    result.Content,
@@ -131,8 +143,8 @@ func (e *Executor) buildAgentResult(run *preparedRun, result *core.Result) *Agen
 	}
 }
 
-func (e *Executor) buildCancelledAgentResult(run *preparedRun, result *core.Result) *AgentResult {
-	if result == nil || result.StopReason != core.StopCancelled {
+func (e *Executor) buildCancelledAgentResult(run *preparedRun, result *runtime.Result) *AgentResult {
+	if result == nil || result.StopReason != runtime.StopCancelled {
 		return nil
 	}
 

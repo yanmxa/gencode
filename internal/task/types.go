@@ -68,6 +68,7 @@ type TaskInfo struct {
 	StartTime   time.Time
 	EndTime     time.Time
 	Output      string
+	OutputFile  string
 	Error       string
 
 	// Bash-specific fields
@@ -76,7 +77,9 @@ type TaskInfo struct {
 	ExitCode int
 
 	// Agent-specific fields
-	AgentName  string
-	TurnCount  int
-	TokenUsage int
+	AgentType      string
+	AgentName      string
+	AgentSessionID string
+	TurnCount      int
+	TokenUsage     int
 }

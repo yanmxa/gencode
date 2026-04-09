@@ -7,12 +7,15 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/runtime"
+	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/options"
+	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
 // updateCompact routes compaction and token limit messages.
@@ -86,7 +89,7 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	if m.loop.Client == nil {
 		return "No active LLM session. Send a message first to initialize the client.", nil, nil
 	}
-	if !core.CanCompactMessages(len(m.conv.Messages)) {
+	if !runtime.CanCompactMessages(len(m.conv.Messages)) {
 		return "Not enough conversation history to compact.", nil, nil
 	}
 	if m.conv.Stream.Active {
@@ -94,6 +97,7 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	}
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = strings.TrimSpace(args)
+	m.conv.Compact.Phase = appcompact.PhaseSummarizing
 	return "", tea.Batch(m.output.Spinner.Tick, m.runtime.CompactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
 }
 
@@ -102,7 +106,7 @@ func (m *model) getEffectiveInputLimit() int {
 }
 
 func (m *model) getMaxTokens() int {
-	return appcompact.GetMaxTokens(m.provider.Store, m.provider.CurrentModel, options.DefaultMaxTokens)
+	return appcompact.GetMaxTokens(m.provider.Store, m.provider.CurrentModel, config.DefaultMaxTokens)
 }
 
 func (m *model) getContextUsagePercent() float64 {
@@ -116,6 +120,7 @@ func (m *model) shouldAutoCompact() bool {
 func (m *model) triggerAutoCompact() tea.Cmd {
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = ""
+	m.conv.Compact.Phase = appcompact.PhaseSummarizing
 	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()))
 	commitCmds := m.commitMessages()
 	commitCmds = append(commitCmds, m.output.Spinner.Tick, m.runtime.CompactCmd(m.buildCompactRequest("", "auto")))
@@ -133,8 +138,27 @@ func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 
 	m.conv.Compact.Complete(fmt.Sprintf("Condensed %d earlier messages.", msg.OriginalCount), false)
 
+	// Commit all existing messages to terminal scrollback BEFORE clearing,
+	// so the user can still scroll up to see their conversation history.
+	scrollbackCmds := m.commitAllMessages()
+
+	// Add a visual boundary marker to scrollback
+	boundaryStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	boundary := boundaryStyle.Render(fmt.Sprintf("✻ Conversation compacted — %d messages summarized (scroll up for history)", msg.OriginalCount))
+	scrollbackCmds = append(scrollbackCmds, tea.Println(boundary))
+
 	// Clear messages — the summary lives in transcript state, not in the message list.
 	m.resetAfterCompact()
+
+	// Restore recently accessed files as post-compact context
+	var restoredFiles []filecache.RestoredFile
+	var restoredContext string
+	if m.fileCache != nil {
+		restoredFiles, _ = m.fileCache.RestoreRecent()
+		if len(restoredFiles) > 0 {
+			restoredContext = filecache.FormatRestoredFiles(restoredFiles)
+		}
+	}
 
 	// Persist the compaction summary as session memory
 	if m.session.Store != nil && m.session.CurrentID != "" {
@@ -149,15 +173,24 @@ func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 		})
 	}
 
-	cmds := []tea.Cmd{tea.ClearScreen}
+	cmds := append(scrollbackCmds, tea.ClearScreen)
 	if shouldContinue {
 		m.conv.Compact.ClearResult()
+		var extra []string
+		if restoredContext != "" {
+			extra = append(extra, restoredContext)
+		}
 		m.conv.Append(message.ChatMessage{
 			Role:    message.RoleUser,
-			Content: core.AutoCompactResumePrompt,
+			Content: runtime.AutoCompactResumePrompt,
 		})
-		cmds = append(cmds, m.startLLMStream(nil))
-	} else {
+		cmds = append(cmds, m.startLLMStream(extra))
+	} else if restoredContext != "" {
+		m.conv.Append(message.ChatMessage{
+			Role:    message.RoleUser,
+			Content: restoredContext,
+		})
+		m.conv.AddNotice(fmt.Sprintf("Restored %d recently accessed file(s) for context.", len(restoredFiles)))
 		cmds = append(cmds, m.commitMessages()...)
 	}
 	return tea.Batch(cmds...)

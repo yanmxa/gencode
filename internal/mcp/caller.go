@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Caller wraps a Registry to implement core.MCPCaller without import cycles.
+// Caller wraps a Registry to implement runtime.MCPCaller without import cycles.
 type Caller struct {
 	registry *Registry
 }

@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appprovider "github.com/yanmxa/gencode/internal/app/provider"
+	"github.com/yanmxa/gencode/internal/app/providerui"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
@@ -14,28 +14,28 @@ import (
 // updateProvider routes provider connection and selection messages.
 func (m *model) updateProvider(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case appprovider.ConnectResultMsg:
+	case providerui.ConnectResultMsg:
 		c := m.handleProviderConnectResult(msg)
 		return c, true
-	case appprovider.SelectedMsg:
+	case providerui.SelectedMsg:
 		c := m.handleProviderSelected(msg)
 		return c, true
-	case appprovider.ModelSelectedMsg:
+	case providerui.ModelSelectedMsg:
 		c := m.handleModelSelected(msg)
 		return c, true
-	case appprovider.StatusExpiredMsg:
+	case providerui.StatusExpiredMsg:
 		m.provider.StatusMessage = ""
 		return nil, true
 	}
 	return nil, false
 }
 
-func (m *model) handleProviderConnectResult(msg appprovider.ConnectResultMsg) tea.Cmd {
+func (m *model) handleProviderConnectResult(msg providerui.ConnectResultMsg) tea.Cmd {
 	m.provider.Selector.HandleConnectResult(msg)
 	return nil
 }
 
-func (m *model) handleProviderSelected(msg appprovider.SelectedMsg) tea.Cmd {
+func (m *model) handleProviderSelected(msg providerui.SelectedMsg) tea.Cmd {
 	ctx := context.Background()
 	result, err := m.provider.Selector.ConnectProvider(ctx, msg.Provider, msg.AuthMethod)
 	if err != nil {
@@ -47,7 +47,7 @@ func (m *model) handleProviderSelected(msg appprovider.SelectedMsg) tea.Cmd {
 	return tea.Batch(m.commitMessages()...)
 }
 
-func (m *model) handleModelSelected(msg appprovider.ModelSelectedMsg) tea.Cmd {
+func (m *model) handleModelSelected(msg providerui.ModelSelectedMsg) tea.Cmd {
 	_, err := m.provider.Selector.SetModel(msg.ModelID, msg.ProviderName, msg.AuthMethod)
 	if err != nil {
 		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "Error: " + err.Error()})
@@ -67,7 +67,7 @@ func (m *model) handleModelSelected(msg appprovider.ModelSelectedMsg) tea.Cmd {
 
 	// Show model name in status bar for 5 seconds
 	m.provider.StatusMessage = msg.ModelID
-	return appprovider.StatusTimer(5 * time.Second)
+	return providerui.StatusTimer(5 * time.Second)
 }
 
 func (m *model) refreshProviderConnection(ctx context.Context, providerName provider.Provider, authMethod provider.AuthMethod) {

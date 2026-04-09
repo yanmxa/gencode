@@ -11,7 +11,7 @@ import (
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/provider/streamutil"
+	streamutil "github.com/yanmxa/gencode/internal/provider/stream"
 )
 
 // validToolIDPattern matches the Claude API requirement for tool_use IDs.
@@ -94,18 +94,30 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 						),
 					))
 				} else if len(msg.Images) > 0 {
-					// Multimodal message with images
-					blocks := make([]anthropic.ContentBlockParamUnion, 0, len(msg.Images)+1)
-					for _, img := range msg.Images {
-						blocks = append(blocks, anthropic.NewImageBlockBase64(
-							img.MediaType,
-							img.Data,
-						))
+					if parts := message.InterleavedContentParts(msg); parts != nil {
+						blocks := make([]anthropic.ContentBlockParamUnion, 0, len(parts))
+						for _, p := range parts {
+							switch p.Type {
+							case message.ContentPartText:
+								blocks = append(blocks, anthropic.NewTextBlock(p.Text))
+							case message.ContentPartImage:
+								blocks = append(blocks, anthropic.NewImageBlockBase64(p.Image.MediaType, p.Image.Data))
+							}
+						}
+						anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(blocks...))
+					} else {
+						blocks := make([]anthropic.ContentBlockParamUnion, 0, len(msg.Images)+1)
+						for _, img := range msg.Images {
+							blocks = append(blocks, anthropic.NewImageBlockBase64(
+								img.MediaType,
+								img.Data,
+							))
+						}
+						if msg.Content != "" {
+							blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
+						}
+						anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(blocks...))
 					}
-					if msg.Content != "" {
-						blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
-					}
-					anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(blocks...))
 				} else {
 					anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(
 						anthropic.NewTextBlock(msg.Content),
@@ -359,10 +371,10 @@ func mergeConsecutiveMessages(msgs []anthropic.MessageParam) []anthropic.Message
 	return merged
 }
 
-// convertAnthropicTools converts generic provider.Tool definitions to the Anthropic SDK format.
+// convertAnthropicTools converts generic provider.ToolSchema definitions to the Anthropic SDK format.
 // The JSON Schema "required" field may arrive as []string or []any (from JSON decoding);
 // anyStrings normalises both forms.
-func convertAnthropicTools(tools []provider.Tool) []anthropic.ToolUnionParam {
+func convertAnthropicTools(tools []provider.ToolSchema) []anthropic.ToolUnionParam {
 	result := make([]anthropic.ToolUnionParam, 0, len(tools))
 	for _, t := range tools {
 		schema := anthropic.ToolInputSchemaParam{}

@@ -199,6 +199,24 @@ func TestFormatFileSize(t *testing.T) {
 	}
 }
 
+func TestFormatEnvIncludesSessionWorkingDirectoryFacts(t *testing.T) {
+	sys := &System{
+		Cwd:   "/tmp/project",
+		IsGit: true,
+	}
+
+	env := sys.formatEnv("test-model")
+	if !strings.Contains(env, "Session working directory: /tmp/project") {
+		t.Fatalf("formatEnv() = %q, want session working directory", env)
+	}
+	if !strings.Contains(env, "Is git repo: Yes") {
+		t.Fatalf("formatEnv() = %q, want git status", env)
+	}
+	if strings.Contains(env, "Bash commands start in the session working directory.") {
+		t.Fatalf("formatEnv() = %q, should keep tool guidance out of env", env)
+	}
+}
+
 func TestResolveImportsNested(t *testing.T) {
 	// Create temp directory
 	tmpDir, err := os.MkdirTemp("", "gencode-test-nested")

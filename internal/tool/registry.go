@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yanmxa/gencode/internal/tool/ui"
+	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
 // Registry manages tool registration and execution
@@ -60,10 +60,10 @@ func (r *Registry) List() []string {
 }
 
 // Execute runs a tool by name with the given parameters
-func (r *Registry) Execute(ctx context.Context, name string, params map[string]any, cwd string) ui.ToolResult {
+func (r *Registry) Execute(ctx context.Context, name string, params map[string]any, cwd string) toolresult.ToolResult {
 	tool, ok := r.Get(name)
 	if !ok {
-		return ui.NewErrorResult(name, "unknown tool: "+name)
+		return toolresult.NewErrorResult(name, "unknown tool: "+name)
 	}
 	return tool.Execute(ctx, params, cwd)
 }
@@ -82,6 +82,6 @@ func Get(name string) (Tool, bool) {
 }
 
 // Execute runs a tool from the default registry
-func Execute(ctx context.Context, name string, params map[string]any, cwd string) ui.ToolResult {
+func Execute(ctx context.Context, name string, params map[string]any, cwd string) toolresult.ToolResult {
 	return DefaultRegistry.Execute(ctx, name, params, cwd)
 }

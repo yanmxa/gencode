@@ -81,10 +81,14 @@ func suggestBashRules(cmd string, maxSuggestions int) []string {
 func suggestFromParsedCommands(commands []ParsedCommand, max int) []string {
 	seen := make(map[string]bool)
 	var suggestions []string
+	hasMultiple := len(commands) > 1
 
 	for _, cmd := range commands {
 		if len(suggestions) >= max {
 			break
+		}
+		if hasMultiple && cmd.Name == "cd" {
+			continue
 		}
 
 		if dangerousPrefixes[cmd.Name] {
@@ -115,6 +119,7 @@ func suggestFromStringCommands(cmd string, max int) []string {
 	var suggestions []string
 
 	subCmds := extractBashCommands(cmd)
+	hasMultiple := len(subCmds) > 1
 	for _, sub := range subCmds {
 		if len(suggestions) >= max {
 			break
@@ -132,6 +137,9 @@ func suggestFromStringCommands(cmd string, max int) []string {
 		}
 
 		name := filepath.Base(parts[0])
+		if hasMultiple && name == "cd" {
+			continue
+		}
 		if dangerousPrefixes[name] {
 			continue
 		}

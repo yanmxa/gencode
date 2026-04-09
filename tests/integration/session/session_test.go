@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/app/session"
+	session "github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/transcriptstore"
+	"github.com/yanmxa/gencode/internal/transcript"
 )
 
 // newTestStore creates a Store using a temp directory instead of ~/.gen/projects/.
@@ -193,11 +193,11 @@ func TestSession_Cleanup(t *testing.T) {
 
 	// Write old session file directly (bypass Save which overrides UpdatedAt)
 	oldTime := time.Now().AddDate(0, 0, -(session.SessionRetentionDays + 1))
-	txStore, err := transcriptstore.NewFileStore(dir, strings.ReplaceAll(strings.TrimRight(dir, "/"), "/", "-"))
+	txStore, err := transcript.NewFileStore(dir, strings.ReplaceAll(strings.TrimRight(dir, "/"), "/", "-"))
 	if err != nil {
 		t.Fatalf("NewFileStore(): %v", err)
 	}
-	if err := txStore.Start(context.Background(), transcriptstore.StartCommand{
+	if err := txStore.Start(context.Background(), transcript.StartCommand{
 		TranscriptID: "old-session",
 		ProjectID:    strings.ReplaceAll(strings.TrimRight(dir, "/"), "/", "-"),
 		Cwd:          dir,
@@ -205,10 +205,10 @@ func TestSession_Cleanup(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Start(old): %v", err)
 	}
-	if err := txStore.PatchState(context.Background(), transcriptstore.PatchStateCommand{
+	if err := txStore.PatchState(context.Background(), transcript.PatchStateCommand{
 		TranscriptID: "old-session",
 		Time:         oldTime.Add(time.Second),
-		Ops:          []transcriptstore.PatchOp{transcriptstore.PatchTitle("Old")},
+		Ops:          []transcript.PatchOp{transcript.PatchTitle("Old")},
 	}); err != nil {
 		t.Fatalf("PatchState(old): %v", err)
 	}

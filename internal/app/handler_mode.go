@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
-	apptool "github.com/yanmxa/gencode/internal/app/tool"
+	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plan"
@@ -16,7 +16,7 @@ import (
 func (m *model) cycleOperationMode() {
 	m.mode.Operation = m.mode.Operation.NextWithBypass(m.settings != nil && m.settings.AllowBypass != nil && *m.settings.AllowBypass)
 	m.applyOperationModePermissions()
-	m.mode.Enabled = m.mode.Operation == appmode.Plan
+	m.mode.Enabled = m.mode.Operation == config.ModePlan
 
 	// Ensure plan store is initialized when entering plan mode via shift+tab.
 	if m.mode.Enabled && m.mode.Store == nil {
@@ -38,7 +38,7 @@ func (m *model) applyOperationModePermissions() {
 	m.mode.SessionPermissions.Mode = config.ModeNormal
 
 	// Enable auto-accept permissions
-	if m.mode.Operation == appmode.AutoAccept {
+	if m.mode.Operation == config.ModeAutoAccept {
 		m.mode.SessionPermissions.AllowAllEdits = true
 		m.mode.SessionPermissions.AllowAllWrites = true
 		m.mode.SessionPermissions.AddWorkingDirectory(m.cwd)
@@ -47,7 +47,7 @@ func (m *model) applyOperationModePermissions() {
 		}
 	}
 
-	if m.mode.Operation == appmode.BypassPermissions {
+	if m.mode.Operation == config.ModeBypassPermissions {
 		m.mode.SessionPermissions.Mode = config.ModeBypassPermissions
 	}
 }
@@ -55,11 +55,11 @@ func (m *model) applyOperationModePermissions() {
 // operationModeName returns the string name of the current operation mode.
 func (m *model) operationModeName() string {
 	switch m.mode.Operation {
-	case appmode.AutoAccept:
+	case config.ModeAutoAccept:
 		return "auto"
-	case appmode.Plan:
+	case config.ModePlan:
 		return "plan"
-	case appmode.BypassPermissions:
+	case config.ModeBypassPermissions:
 		return "bypassPermissions"
 	default:
 		return "default"
@@ -74,7 +74,7 @@ func (m *model) enableAutoAcceptMode() {
 	for _, pattern := range config.CommonAllowPatterns {
 		m.mode.SessionPermissions.AllowPattern(pattern)
 	}
-	m.mode.Operation = appmode.AutoAccept
+	m.mode.Operation = config.ModeAutoAccept
 	m.mode.Enabled = false
 }
 
@@ -126,7 +126,7 @@ func (m *model) handleQuestionResponse(msg appmode.QuestionResponseMsg) tea.Cmd 
 
 	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 	m.mode.PendingQuestion = nil
-	return apptool.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
+	return toolui.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
 }
 
 func (m *model) handlePlanRequest(msg appmode.PlanRequestMsg) tea.Cmd {
@@ -147,7 +147,7 @@ func (m *model) handlePlanRequest(msg appmode.PlanRequestMsg) tea.Cmd {
 func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 	if !msg.Approved {
 		m.mode.Enabled = false
-		m.mode.Operation = appmode.Normal
+		m.mode.Operation = config.ModeNormal
 		return m.abortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.", false)
 	}
 
@@ -183,14 +183,14 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 	case "auto":
 		m.enableAutoAcceptMode()
 	case "manual":
-		m.mode.Operation = appmode.Normal
+		m.mode.Operation = config.ModeNormal
 		m.mode.Enabled = false
 	case "modify":
-		m.mode.Operation = appmode.Plan
+		m.mode.Operation = config.ModePlan
 		m.mode.Enabled = true
 	}
 
-	return apptool.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
+	return toolui.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
 }
 
 // handlePlanClearAutoMode handles the "clear-auto" approve mode for plans.
@@ -216,7 +216,7 @@ func (m *model) handleEnterPlanResponse(msg appmode.EnterPlanResponseMsg) tea.Cm
 
 	if msg.Approved {
 		m.mode.Enabled = true
-		m.mode.Operation = appmode.Plan
+		m.mode.Operation = config.ModePlan
 		if msg.Request != nil && msg.Request.Message != "" {
 			m.mode.Task = msg.Request.Message
 		}
@@ -225,5 +225,5 @@ func (m *model) handleEnterPlanResponse(msg appmode.EnterPlanResponseMsg) tea.Cm
 		}
 	}
 
-	return apptool.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
+	return toolui.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
 }

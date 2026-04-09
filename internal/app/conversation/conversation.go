@@ -158,6 +158,7 @@ func (m Model) ConvertToProviderFrom(startIdx int) []message.Message {
 		providerMsg := message.Message{
 			Role:              msg.Role,
 			Content:           msg.Content,
+			DisplayContent:    msg.DisplayContent,
 			Images:            msg.Images,
 			ToolCalls:         msg.ToolCalls,
 			Thinking:          msg.Thinking,

@@ -17,7 +17,7 @@ func RenderToolResultInline(data ToolResultData, mdRenderer *MDRenderer) string 
 	switch toolName {
 	case tool.ToolSkill:
 		return RenderSkillResultInline(data)
-	case tool.ToolAgent:
+	case tool.ToolAgent, tool.ToolContinueAgent, tool.ToolSendMessage:
 		return RenderTaskResultInline(data, mdRenderer)
 	case tool.ToolTaskOutput:
 		return RenderTaskOutputResultInline(data)

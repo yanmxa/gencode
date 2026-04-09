@@ -35,4 +35,6 @@ General rule: direct tool < Explore agent < general-purpose agent. Use the light
 2. **Parallel execution**: Run independent tool calls in parallel. If multiple operations don't depend on each other, execute them simultaneously.
 3. **Search extensively**: When exploring code, search thoroughly. Use multiple Glob/Grep calls in parallel to find all relevant files and patterns.
 4. **Edit for updates, Write for new files only**: Use Edit to modify existing files. Use Write ONLY to create new files.
-5. **No unnecessary files**: Never create docs/README unless asked.
+5. **Working directory discipline**: Bash commands already execute in the session working directory — NEVER prepend `cd <session-working-directory> &&`. Use `cd` only to intentionally change the working directory.
+6. **Path hygiene**: Always use relative paths for files inside the session working directory. Use absolute paths ONLY for targets outside it.
+7. **No unnecessary files**: Never create docs/README unless asked.

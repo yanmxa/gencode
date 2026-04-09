@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 
-	"github.com/yanmxa/gencode/internal/tool/permission"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
@@ -19,14 +19,14 @@ const (
 
 // DiffPreview renders a diff preview with expand/collapse functionality
 type DiffPreview struct {
-	diffMeta   *permission.DiffMetadata
+	diffMeta   *perm.DiffMetadata
 	filePath   string
 	expanded   bool
 	maxVisible int
 }
 
 // NewDiffPreview creates a new DiffPreview instance
-func NewDiffPreview(diffMeta *permission.DiffMetadata, filePath string) *DiffPreview {
+func NewDiffPreview(diffMeta *perm.DiffMetadata, filePath string) *DiffPreview {
 	return &DiffPreview{
 		diffMeta:   diffMeta,
 		filePath:   filePath,
@@ -46,7 +46,7 @@ func (d *DiffPreview) IsExpanded() bool {
 }
 
 // DiffMeta returns the diff metadata
-func (d *DiffPreview) DiffMeta() *permission.DiffMetadata {
+func (d *DiffPreview) DiffMeta() *perm.DiffMetadata {
 	return d.diffMeta
 }
 
@@ -141,7 +141,7 @@ func (d *DiffPreview) renderNewFilePreview(width int) string {
 	for i := 0; i < showCount; i++ {
 		line := lines[i]
 		// Skip hunk headers and metadata for new files
-		if line.Type == permission.DiffLineHunk || line.Type == permission.DiffLineMetadata {
+		if line.Type == perm.DiffLineHunk || line.Type == perm.DiffLineMetadata {
 			continue
 		}
 		lineNo := fmt.Sprintf("%4d", line.NewLineNo)
@@ -197,22 +197,22 @@ func (d *DiffPreview) renderUnifiedDiff(width int) string {
 		line := lines[i]
 
 		switch line.Type {
-		case permission.DiffLineHunk, permission.DiffLineMetadata:
+		case perm.DiffLineHunk, perm.DiffLineMetadata:
 			// Skip hunk headers and metadata entirely
 
-		case permission.DiffLineContext:
+		case perm.DiffLineContext:
 			no := fmt.Sprintf("%4d", line.OldLineNo)
 			content := truncateContent(line.Content, contentWidth)
 			sb.WriteString(contextStyle.Render(no + "   " + content))
 			sb.WriteString("\n")
 
-		case permission.DiffLineRemoved:
+		case perm.DiffLineRemoved:
 			no := fmt.Sprintf("%4d", line.OldLineNo)
 			content := truncateOrPad(truncateContent(line.Content, contentWidth), contentWidth)
 			sb.WriteString(removedBgStyle.Render(truncateOrPad(no+" - "+content, width)))
 			sb.WriteString("\n")
 
-		case permission.DiffLineAdded:
+		case perm.DiffLineAdded:
 			no := fmt.Sprintf("%4d", line.NewLineNo)
 			content := truncateOrPad(truncateContent(line.Content, contentWidth), contentWidth)
 			sb.WriteString(addedBgStyle.Render(truncateOrPad(no+" + "+content, width)))

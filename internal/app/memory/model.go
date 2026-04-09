@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/system"
-	"github.com/yanmxa/gencode/internal/ui/shared"
+	"github.com/yanmxa/gencode/internal/ui/selector"
 )
 
 // Item represents a memory file option in the selector.
@@ -59,7 +59,7 @@ func (m *Model) EnterSelect(cwd string, width, height int) {
 	paths := system.GetAllMemoryPaths(cwd)
 	m.items = []Item{
 		m.buildItem("Global", "global", paths.Global, cwd,
-			fmt.Sprintf("Saved in %s", shared.ShortenPath(paths.Global[0])),
+			fmt.Sprintf("Saved in %s", selector.ShortenPath(paths.Global[0])),
 			"Will be created on edit"),
 
 		m.buildItem("Project", "project", paths.Project, cwd,
@@ -83,7 +83,7 @@ func (m *Model) buildItem(label, level string, searchPaths []string, cwd, defaul
 
 	description := defaultDesc
 	if exists && level == "project" {
-		description = fmt.Sprintf("Checked in at %s", shared.ShortenPathForProject(foundPath, cwd))
+		description = fmt.Sprintf("Checked in at %s", selector.ShortenPathForProject(foundPath, cwd))
 	}
 
 	return Item{
@@ -173,7 +173,7 @@ func (m *Model) selectItem() tea.Cmd {
 func (m *Model) cancelWithMsg() tea.Cmd {
 	m.Cancel()
 	return func() tea.Msg {
-		return shared.DismissedMsg{}
+		return selector.DismissedMsg{}
 	}
 }
 
@@ -185,7 +185,7 @@ func (m *Model) Render() string {
 
 	var sb strings.Builder
 
-	sb.WriteString(shared.SelectorTitleStyle.Render("Select memory to edit:"))
+	sb.WriteString(selector.SelectorTitleStyle.Render("Select memory to edit:"))
 	sb.WriteString("\n\n")
 
 	for i, item := range m.items {
@@ -194,10 +194,10 @@ func (m *Model) Render() string {
 
 		if item.Exists {
 			statusIcon = "●"
-			statusStyle = shared.SelectorStatusConnected
+			statusStyle = selector.SelectorStatusConnected
 		} else {
 			statusIcon = "○"
-			statusStyle = shared.SelectorStatusNone
+			statusStyle = selector.SelectorStatusNone
 		}
 
 		numKey := fmt.Sprintf("%d.", i+1)
@@ -209,27 +209,27 @@ func (m *Model) Render() string {
 		line := fmt.Sprintf("%s %s %s",
 			statusStyle.Render(statusIcon),
 			item.Label,
-			shared.SelectorHintStyle.Render(item.Description+sizeStr),
+			selector.SelectorHintStyle.Render(item.Description+sizeStr),
 		)
 
 		if i == m.selectedIdx {
-			sb.WriteString(shared.SelectorSelectedStyle.Render(fmt.Sprintf("❯ %s %s", numKey, line)))
+			sb.WriteString(selector.SelectorSelectedStyle.Render(fmt.Sprintf("❯ %s %s", numKey, line)))
 		} else {
-			sb.WriteString(shared.SelectorItemStyle.Render(fmt.Sprintf("  %s %s", numKey, line)))
+			sb.WriteString(selector.SelectorItemStyle.Render(fmt.Sprintf("  %s %s", numKey, line)))
 		}
 		sb.WriteString("\n")
 
 		if !item.Exists && i == m.selectedIdx {
-			sb.WriteString(shared.SelectorItemStyle.Render("      " + shared.SelectorHintStyle.Render(item.CreateHint)))
+			sb.WriteString(selector.SelectorItemStyle.Render("      " + selector.SelectorHintStyle.Render(item.CreateHint)))
 			sb.WriteString("\n")
 		}
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(shared.SelectorHintStyle.Render("↑/↓ navigate · Enter edit · 1-3 quick select · Esc cancel"))
+	sb.WriteString(selector.SelectorHintStyle.Render("↑/↓ navigate · Enter edit · 1-3 quick select · Esc cancel"))
 
 	content := sb.String()
-	box := shared.SelectorBorderStyle.Width(shared.CalculateBoxWidth(m.width)).Render(content)
+	box := selector.SelectorBorderStyle.Width(selector.CalculateBoxWidth(m.width)).Render(content)
 
 	return lipgloss.Place(m.width, m.height-4, lipgloss.Center, lipgloss.Center, box)
 }

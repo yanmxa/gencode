@@ -42,7 +42,7 @@ func (m *model) hasRunningTaskTools() bool {
 // hasRunningParallelTaskTools checks for unfinished Task tools in parallel mode.
 func (m *model) hasRunningParallelTaskTools() bool {
 	for i, tc := range m.tool.PendingCalls {
-		if tc.Name == tool.ToolAgent {
+		if tool.IsAgentToolName(tc.Name) {
 			if _, done := m.tool.ParallelResults[i]; !done {
 				return true
 			}
@@ -56,5 +56,5 @@ func (m *model) hasRunningSequentialTaskTool() bool {
 	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
 		return false
 	}
-	return m.tool.PendingCalls[m.tool.CurrentIdx].Name == tool.ToolAgent
+	return tool.IsAgentToolName(m.tool.PendingCalls[m.tool.CurrentIdx].Name)
 }

@@ -98,17 +98,13 @@ type CompletionOptions struct {
 	Messages      []message.Message
 	MaxTokens     int
 	Temperature   float64
-	Tools         []Tool
+	Tools         []ToolSchema
 	SystemPrompt  string
 	ThinkingLevel ThinkingLevel
 }
 
-// Tool represents a tool definition
-type Tool struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	Parameters  any `json:"parameters"` // JSON Schema
-}
+// ToolSchema is a backward-compatible alias for message.ToolSchema.
+type ToolSchema = message.ToolSchema
 
 // LLMProvider is the interface that all providers must implement
 type LLMProvider interface {

@@ -17,11 +17,14 @@ type ProgressUpdate struct {
 // It implements the BackgroundTask interface
 type AgentTask struct {
 	ID          string     // Unique task ID
+	AgentType   string     // Agent type/config name (Explore, Plan, etc.)
 	AgentName   string     // Name of the agent type (Explore, Plan, etc.)
 	Description string     // Brief description of the task
 	Status      TaskStatus // Current status
 	StartTime   time.Time  // When the task started
 	EndTime     time.Time  // When the task ended (if completed)
+	SessionID   string     // Resumable session/agent ID
+	OutputFile  string     // Transcript/output path when available
 	TurnCount   int        // Number of conversation turns
 	TokenUsage  int        // Total tokens consumed
 	Error       string     // Error message (if failed)
@@ -39,14 +42,57 @@ var _ BackgroundTask = (*AgentTask)(nil)
 
 // NewAgentTask creates a new agent task
 func NewAgentTask(id, agentName, description string, ctx context.Context, cancel context.CancelFunc) *AgentTask {
-	return &AgentTask{
+	task := &AgentTask{
 		ID:          id,
 		AgentName:   agentName,
 		Description: description,
 		Status:      StatusRunning,
 		StartTime:   time.Now(),
+		OutputFile:  initOutputFile(id),
 		ctx:         ctx,
 		cancel:      cancel,
+	}
+	appendOutputFile(task.OutputFile, outputRecord{
+		Event:       "task.started",
+		TaskType:    string(TaskTypeAgent),
+		Description: description,
+		Metadata: map[string]any{
+			"agent_name": agentName,
+		},
+	})
+	return task
+}
+
+// SetIdentity stores stable agent identity metadata for continuation.
+func (t *AgentTask) SetIdentity(agentType, sessionID string) {
+	t.mu.Lock()
+	changed := false
+	defer t.mu.Unlock()
+	if agentType != "" {
+		t.AgentType = agentType
+		changed = true
+	}
+	if sessionID != "" {
+		t.SessionID = sessionID
+		changed = true
+	}
+	if changed {
+		appendOutputFile(t.OutputFile, outputRecord{
+			Event: "agent.identity",
+			Metadata: map[string]any{
+				"agent_type": agentType,
+				"agent_id":   sessionID,
+			},
+		})
+	}
+}
+
+// SetOutputFile stores the stable transcript/output path for later inspection.
+func (t *AgentTask) SetOutputFile(path string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if path != "" && t.OutputFile == "" {
+		t.OutputFile = path
 	}
 }
 
@@ -99,8 +145,14 @@ func (t *AgentTask) closeSubscribers() {
 func (t *AgentTask) AppendOutput(data []byte) {
 	t.mu.Lock()
 	t.output.Write(data)
+	outputFile := t.OutputFile
 	subs := t.subscribers
 	t.mu.Unlock()
+
+	appendOutputFile(outputFile, outputRecord{
+		Event:   "task.output",
+		Content: string(data),
+	})
 
 	// Notify outside of lock
 	if len(subs) > 0 && len(data) > 0 {
@@ -111,8 +163,14 @@ func (t *AgentTask) AppendOutput(data []byte) {
 // AppendProgress appends a progress message and notifies subscribers
 func (t *AgentTask) AppendProgress(msg string) {
 	t.mu.Lock()
+	outputFile := t.OutputFile
 	subs := t.subscribers
 	t.mu.Unlock()
+
+	appendOutputFile(outputFile, outputRecord{
+		Event:   "task.progress",
+		Content: msg,
+	})
 
 	if len(subs) > 0 {
 		t.notifySubscribers(msg, false)
@@ -138,7 +196,18 @@ func (t *AgentTask) Complete(err error) {
 		t.Status = StatusCompleted
 	}
 	subs := t.subscribers
+	outputFile := t.OutputFile
+	status := t.Status
+	errorText := t.Error
 	t.mu.Unlock()
+
+	appendOutputFile(outputFile, outputRecord{
+		Event:  "task.completed",
+		Status: string(status),
+		Metadata: map[string]any{
+			"error": errorText,
+		},
+	})
 
 	// Notify completion and close channels
 	if len(subs) > 0 {
@@ -157,6 +226,10 @@ func (t *AgentTask) MarkKilled() {
 
 	t.Status = StatusKilled
 	t.EndTime = time.Now()
+	appendOutputFile(t.OutputFile, outputRecord{
+		Event:  "task.completed",
+		Status: string(StatusKilled),
+	})
 }
 
 // IsRunning returns true if the task is still running
@@ -212,17 +285,20 @@ func (t *AgentTask) GetStatus() TaskInfo {
 	defer t.mu.RUnlock()
 
 	return TaskInfo{
-		ID:          t.ID,
-		Type:        TaskTypeAgent,
-		Description: t.Description,
-		Status:      t.Status,
-		StartTime:   t.StartTime,
-		EndTime:     t.EndTime,
-		Error:       t.Error,
-		Output:      t.output.String(),
-		AgentName:   t.AgentName,
-		TurnCount:   t.TurnCount,
-		TokenUsage:  t.TokenUsage,
+		ID:             t.ID,
+		Type:           TaskTypeAgent,
+		Description:    t.Description,
+		Status:         t.Status,
+		StartTime:      t.StartTime,
+		EndTime:        t.EndTime,
+		Error:          t.Error,
+		Output:         t.output.String(),
+		OutputFile:     t.OutputFile,
+		AgentType:      t.AgentType,
+		AgentName:      t.AgentName,
+		AgentSessionID: t.SessionID,
+		TurnCount:      t.TurnCount,
+		TokenUsage:     t.TokenUsage,
 	}
 }
 

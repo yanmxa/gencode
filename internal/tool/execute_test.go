@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/tool/permission"
-	"github.com/yanmxa/gencode/internal/tool/ui"
+	"github.com/yanmxa/gencode/internal/tool/perm"
+	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
 type testPermissionAwareTool struct{}
@@ -14,15 +14,15 @@ type testPermissionAwareTool struct{}
 func (t *testPermissionAwareTool) Name() string        { return "TestPermissionAwareTool" }
 func (t *testPermissionAwareTool) Description() string { return "test tool" }
 func (t *testPermissionAwareTool) Icon() string        { return "t" }
-func (t *testPermissionAwareTool) Execute(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
-	return ui.ToolResult{Success: true, Output: "execute"}
+func (t *testPermissionAwareTool) Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
+	return toolresult.ToolResult{Success: true, Output: "execute"}
 }
 func (t *testPermissionAwareTool) RequiresPermission() bool { return true }
-func (t *testPermissionAwareTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*permission.PermissionRequest, error) {
+func (t *testPermissionAwareTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*perm.PermissionRequest, error) {
 	return nil, nil
 }
-func (t *testPermissionAwareTool) ExecuteApproved(ctx context.Context, params map[string]any, cwd string) ui.ToolResult {
-	return ui.ToolResult{Success: true, Output: "approved"}
+func (t *testPermissionAwareTool) ExecuteApproved(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
+	return toolresult.ToolResult{Success: true, Output: "approved"}
 }
 
 type testMCPExecutor struct {
@@ -33,9 +33,9 @@ func (e *testMCPExecutor) IsMCPTool(name string) bool {
 	return name == "mcp__test__tool"
 }
 
-func (e *testMCPExecutor) ExecuteMCP(ctx context.Context, name string, params map[string]any) (ui.ToolResult, error) {
+func (e *testMCPExecutor) ExecuteMCP(ctx context.Context, name string, params map[string]any) (toolresult.ToolResult, error) {
 	e.handled = true
-	return ui.ToolResult{Success: true, Output: "mcp"}, nil
+	return toolresult.ToolResult{Success: true, Output: "mcp"}, nil
 }
 
 func TestExecutePreparedToolUsesExecuteApprovedWhenRequested(t *testing.T) {

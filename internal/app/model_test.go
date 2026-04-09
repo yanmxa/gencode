@@ -12,20 +12,23 @@ import (
 	"github.com/yanmxa/gencode/internal/agent"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
-	appmcp "github.com/yanmxa/gencode/internal/app/mcp"
+	"github.com/yanmxa/gencode/internal/app/mcpui"
+	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	appprovider "github.com/yanmxa/gencode/internal/app/provider"
-	apptool "github.com/yanmxa/gencode/internal/app/tool"
+	"github.com/yanmxa/gencode/internal/app/providerui"
+	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/options"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/skill"
-	"github.com/yanmxa/gencode/internal/tool/permission"
+	"github.com/yanmxa/gencode/internal/task"
+	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/perm"
+	"github.com/yanmxa/gencode/internal/tracker"
 	"github.com/yanmxa/gencode/internal/ui/progress"
 )
 
@@ -132,11 +135,52 @@ func TestViewRendersCompactStatusCard(t *testing.T) {
 	}
 }
 
+func TestFreshSessionInitializesTaskStorageAndOutputDir(t *testing.T) {
+	prevHome := os.Getenv("HOME")
+	tmpHome := filepath.Join(t.TempDir(), "home")
+	if err := os.MkdirAll(tmpHome, 0o755); err != nil {
+		t.Fatalf("MkdirAll(home) error = %v", err)
+	}
+	if err := os.Setenv("HOME", tmpHome); err != nil {
+		t.Fatalf("Setenv(HOME) error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", prevHome)
+		tracker.DefaultStore.Reset()
+		_ = tracker.DefaultStore.SetStorageDir("")
+		_ = task.SetOutputDir("")
+	})
+	tracker.DefaultStore.Reset()
+	_ = tracker.DefaultStore.SetStorageDir("")
+	_ = task.SetOutputDir("")
+
+	m := newBaseModel(t.TempDir(), modelInfra{initialSessionID: "session-fresh-123"})
+	if m.session.CurrentID != "session-fresh-123" {
+		t.Fatalf("expected initial session id to propagate, got %q", m.session.CurrentID)
+	}
+
+	m.initTaskStorage()
+
+	wantDir := filepath.Join(tmpHome, ".gen", "tasks", "session-fresh-123")
+	if got := tracker.DefaultStore.GetStorageDir(); got != wantDir {
+		t.Fatalf("expected task storage dir %q, got %q", wantDir, got)
+	}
+
+	outputPath := task.OutputPath("worker-1")
+	wantOutputPath := filepath.Join(wantDir, "outputs", "worker-1.log")
+	if outputPath != wantOutputPath {
+		t.Fatalf("expected output path %q, got %q", wantOutputPath, outputPath)
+	}
+	if _, err := os.Stat(filepath.Dir(outputPath)); err != nil {
+		t.Fatalf("expected outputs directory to exist: %v", err)
+	}
+}
+
 func TestAsyncHookTickDoesNotInjectWhileToolExecutionPending(t *testing.T) {
 	m := &model{
 		asyncHookQueue: &asyncHookQueue{},
-		tool: apptool.State{
-			ExecState: apptool.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []message.ToolCall{{ID: "tc-1", Name: "Agent"}},
 				CurrentIdx:   0,
 			},
@@ -162,8 +206,8 @@ func TestAsyncHookTickDoesNotInjectWhileToolExecutionPending(t *testing.T) {
 func TestCronTickDoesNotDrainQueueWhileToolExecutionPending(t *testing.T) {
 	m := &model{
 		cronQueue: []string{"check background task"},
-		tool: apptool.State{
-			ExecState: apptool.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []message.ToolCall{{ID: "tc-1", Name: "Agent"}},
 				CurrentIdx:   0,
 			},
@@ -180,6 +224,34 @@ func TestCronTickDoesNotDrainQueueWhileToolExecutionPending(t *testing.T) {
 	}
 	if len(m.conv.Messages) != 0 {
 		t.Fatalf("expected cron not to inject messages while tool execution is pending, got %#v", m.conv.Messages)
+	}
+}
+
+func TestRenderActiveContentDoesNotDuplicatePendingAgentTitle(t *testing.T) {
+	m := newBaseModel(t.TempDir(), modelInfra{})
+	m.width = 100
+
+	tc := message.ToolCall{
+		ID:    "tc-1",
+		Name:  tool.ToolAgent,
+		Input: `{"subagent_type":"Deep","description":"analyze project structure","prompt":"inspect files"}`,
+	}
+	m.conv.Messages = []message.ChatMessage{{
+		Role:      message.RoleAssistant,
+		ToolCalls: []message.ToolCall{tc},
+	}}
+	m.tool.PendingCalls = []message.ToolCall{tc}
+	m.tool.CurrentIdx = 0
+	m.output.TaskProgress = map[int][]string{
+		0: {"Agent: Check session and duplicate packages"},
+	}
+
+	rendered := m.renderActiveContent()
+	if strings.Count(rendered, "Agent: Deep analyze project structure") != 1 {
+		t.Fatalf("expected agent title once, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "Agent: Check session and duplicate packages") {
+		t.Fatalf("expected child task progress, got:\n%s", rendered)
 	}
 }
 
@@ -269,10 +341,10 @@ You are a verifier.`), 0o644); err != nil {
 		cwd:        cwd,
 		settings:   settings,
 		hookEngine: hooks.NewEngine(settings, "test-session", cwd, ""),
-		mcp:        appmcp.State{},
+		mcp:        mcpui.State{},
 	}
 
-	if err := m.applyRunOptions(options.RunOptions{PluginDir: pluginDir}); err != nil {
+	if err := m.applyRunOptions(config.RunOptions{PluginDir: pluginDir}); err != nil {
 		t.Fatalf("applyRunOptions() error = %v", err)
 	}
 
@@ -398,7 +470,7 @@ func TestApplyToolResultSideEffectsFiresFileChanged(t *testing.T) {
 		cwd:        cwd,
 		hookEngine: engine,
 	}
-	m.applyToolResultSideEffects(apptool.ExecResultMsg{
+	m.applyToolResultSideEffects(toolui.ExecResultMsg{
 		ToolName: "Write",
 		Result: message.ToolResult{
 			ToolCallID:   "tool-1",
@@ -417,6 +489,104 @@ func TestApplyToolResultSideEffectsFiresFileChanged(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for FileChanged hook")
+	}
+}
+
+func TestApplyToolResultSideEffectsUpdatesCwdFromBash(t *testing.T) {
+	oldCwd := t.TempDir()
+	newCwd := t.TempDir()
+
+	engine := hooks.NewEngine(config.NewSettings(), "test-session", oldCwd, "")
+	triggered := make(chan hooks.HookInput, 1)
+	engine.AddSessionFunctionHook(hooks.CwdChanged, newCwd, hooks.FunctionHook{
+		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
+			triggered <- input
+			return hooks.HookOutput{}, nil
+		},
+	})
+
+	m := &model{
+		cwd:        oldCwd,
+		hookEngine: engine,
+	}
+	m.applyToolResultSideEffects(toolui.ExecResultMsg{
+		ToolName: "Bash",
+		Result: message.ToolResult{
+			ToolCallID:   "tool-1",
+			Content:      "ok",
+			HookResponse: map[string]any{"cwd": newCwd},
+		},
+	})
+
+	if m.cwd != newCwd {
+		t.Fatalf("expected cwd %q, got %q", newCwd, m.cwd)
+	}
+
+	select {
+	case input := <-triggered:
+		if input.OldCwd != oldCwd {
+			t.Fatalf("expected old cwd %q, got %q", oldCwd, input.OldCwd)
+		}
+		if input.NewCwd != newCwd {
+			t.Fatalf("expected new cwd %q, got %q", newCwd, input.NewCwd)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for CwdChanged hook")
+	}
+}
+
+func TestChangeCwdReloadsProjectScopedSettings(t *testing.T) {
+	prevHome := os.Getenv("HOME")
+	tmpHome := filepath.Join(t.TempDir(), "home")
+	if err := os.MkdirAll(tmpHome, 0o755); err != nil {
+		t.Fatalf("MkdirAll(home) error = %v", err)
+	}
+	if err := os.Setenv("HOME", tmpHome); err != nil {
+		t.Fatalf("Setenv(HOME) error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", prevHome)
+		_, _ = config.Reload()
+	})
+	_, _ = config.Reload()
+
+	oldCwd := t.TempDir()
+	newCwd := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(oldCwd, ".gen"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(old .gen) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(newCwd, ".gen"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(new .gen) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(oldCwd, ".gen", "settings.json"), []byte(`{"disabledTools":{"Bash":true}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(old settings) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(newCwd, ".gen", "settings.json"), []byte(`{"disabledTools":{"Grep":true}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(new settings) error = %v", err)
+	}
+
+	m := &model{
+		cwd:      oldCwd,
+		settings: loadSettingsForCwd(oldCwd),
+		mode: appmode.State{
+			SessionPermissions: config.NewSessionPermissions(),
+			DisabledTools:      map[string]bool{"Bash": true},
+		},
+	}
+
+	m.changeCwd(newCwd)
+
+	if !m.settings.DisabledTools["Grep"] {
+		t.Fatalf("expected Grep to be disabled after cwd change, got %#v", m.settings.DisabledTools)
+	}
+	if m.settings.DisabledTools["Bash"] {
+		t.Fatalf("expected Bash disable from old cwd to be cleared, got %#v", m.settings.DisabledTools)
+	}
+	if !m.mode.DisabledTools["Grep"] {
+		t.Fatalf("expected mode disabled tools to reload for new cwd, got %#v", m.mode.DisabledTools)
+	}
+	if m.mode.DisabledTools["Bash"] {
+		t.Fatalf("expected old cwd disabled tools to be replaced, got %#v", m.mode.DisabledTools)
 	}
 }
 
@@ -524,15 +694,15 @@ func TestPermissionDeniedRetryContinuesStream(t *testing.T) {
 		},
 	})
 
-	runtime := &fakeConversationRuntime{}
+	rt := &fakeConversationRuntime{}
 	m := &model{
 		cwd:        cwd,
 		hookEngine: engine,
-		runtime:    runtime,
+		runtime:    rt,
 		conv:       appconv.New(),
-		loop:       &core.Loop{},
-		tool: apptool.State{
-			ExecState: apptool.ExecState{
+		loop:       &runtime.Loop{},
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []message.ToolCall{{ID: "tc-1", Name: "Write"}},
 				CurrentIdx:   0,
 			},
@@ -542,7 +712,7 @@ func TestPermissionDeniedRetryContinuesStream(t *testing.T) {
 
 	cmd := m.handlePermissionResponse(appapproval.ResponseMsg{
 		Approved: false,
-		Request: &permission.PermissionRequest{
+		Request: &perm.PermissionRequest{
 			ToolName: "Write",
 			FilePath: filepath.Join(cwd, "a.txt"),
 		},
@@ -552,7 +722,7 @@ func TestPermissionDeniedRetryContinuesStream(t *testing.T) {
 	}
 	_ = cmd()
 
-	if !runtime.startCalled {
+	if !rt.startCalled {
 		t.Fatal("expected permission denied retry to continue the model stream")
 	}
 	foundDeniedResult := false
@@ -568,14 +738,14 @@ func TestPermissionDeniedRetryContinuesStream(t *testing.T) {
 }
 
 func TestAsyncHookTickRewakesModel(t *testing.T) {
-	runtime := &fakeConversationRuntime{}
+	rt := &fakeConversationRuntime{}
 	m := &model{
 		cwd:            t.TempDir(),
-		runtime:        runtime,
+		runtime:        rt,
 		conv:           appconv.New(),
 		asyncHookQueue: newAsyncHookQueue(),
-		loop:           &core.Loop{},
-		provider:       appprovider.State{LLM: testLLMProvider{}},
+		loop:           &runtime.Loop{},
+		provider:       providerui.State{LLM: testLLMProvider{}},
 		output:         appoutput.New(80, progress.NewHub(10)),
 	}
 	m.asyncHookQueue.Push(asyncHookRewake{
@@ -590,7 +760,7 @@ func TestAsyncHookTickRewakesModel(t *testing.T) {
 	}
 	_ = cmd()
 
-	if !runtime.startCalled {
+	if !rt.startCalled {
 		t.Fatal("expected async hook rewake to start a follow-up stream")
 	}
 	if len(m.conv.Messages) != 2 {
@@ -602,16 +772,16 @@ func TestAsyncHookTickRewakesModel(t *testing.T) {
 	if m.conv.Messages[1].Role != message.RoleAssistant {
 		t.Fatalf("expected second message to be assistant placeholder, got %v", m.conv.Messages[1].Role)
 	}
-	if runtime.lastStreamReq.Loop == nil || runtime.lastStreamReq.Loop.System == nil {
+	if rt.lastStreamReq.Loop == nil || rt.lastStreamReq.Loop.System == nil {
 		t.Fatal("expected async hook rewake to build loop system")
 	}
-	if len(runtime.lastStreamReq.Loop.System.Extra) == 0 {
+	if len(rt.lastStreamReq.Loop.System.Extra) == 0 {
 		t.Fatal("expected async hook rewake to pass internal continuation context")
 	}
-	if runtime.lastStreamReq.Loop.System.Extra[0] != "<background-hook-result>\nstatus: blocked\n</background-hook-result>" {
-		t.Fatalf("unexpected async hook continuation context: %#v", runtime.lastStreamReq.Loop.System.Extra)
+	if rt.lastStreamReq.Loop.System.Extra[0] != "<background-hook-result>\nstatus: blocked\n</background-hook-result>" {
+		t.Fatalf("unexpected async hook continuation context: %#v", rt.lastStreamReq.Loop.System.Extra)
 	}
-	if got := runtime.lastStreamReq.Messages[len(runtime.lastStreamReq.Messages)-1]; got.Role != message.RoleUser || got.Content != "Re-evaluate the plan." {
+	if got := rt.lastStreamReq.Messages[len(rt.lastStreamReq.Messages)-1]; got.Role != message.RoleUser || got.Content != "Re-evaluate the plan." {
 		t.Fatalf("expected provider-only continuation prompt, got %#v", got)
 	}
 }
@@ -661,5 +831,254 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	_ = m.handleAsyncHookTick()
 	if m.hookStatus != "" {
 		t.Fatalf("expected hook status to clear, got %q", m.hookStatus)
+	}
+}
+
+func TestTaskNotificationTickRewakesModel(t *testing.T) {
+	rt := &fakeConversationRuntime{}
+	m := &model{
+		cwd:               t.TempDir(),
+		runtime:           rt,
+		conv:              appconv.New(),
+		taskNotifications: newTaskNotificationQueue(),
+		loop:              &runtime.Loop{},
+		provider:          providerui.State{LLM: testLLMProvider{}},
+		output:            appoutput.New(80, progress.NewHub(10)),
+	}
+	info := task.TaskInfo{
+		ID:          "a123",
+		Type:        task.TaskTypeAgent,
+		Description: "Bubble Tea architecture audit",
+		Status:      task.StatusCompleted,
+		AgentName:   "Bubble Tea architecture audit",
+		TurnCount:   4,
+		TokenUsage:  321,
+		Output:      "Architecture looks consistent.",
+	}
+	item, ok := buildTaskNotification(info)
+	if !ok {
+		t.Fatal("expected buildTaskNotification to produce an item")
+	}
+	m.taskNotifications.Push(item)
+
+	cmd := m.handleTaskNotificationTick()
+	if cmd == nil {
+		t.Fatal("expected task notification tick command")
+	}
+	_ = cmd()
+
+	if !rt.startCalled {
+		t.Fatal("expected task notification to start a follow-up stream")
+	}
+	if len(m.conv.Messages) != 2 {
+		t.Fatalf("expected notice plus assistant placeholder, got %d", len(m.conv.Messages))
+	}
+	if m.conv.Messages[0].Role != message.RoleNotice {
+		t.Fatalf("expected first message to be notice, got %v", m.conv.Messages[0].Role)
+	}
+	if !strings.Contains(m.conv.Messages[0].Content, "Bubble Tea architecture audit completed") {
+		t.Fatalf("unexpected notice content: %q", m.conv.Messages[0].Content)
+	}
+	if got := rt.lastStreamReq.Messages[len(rt.lastStreamReq.Messages)-1]; got.Role != message.RoleUser || !strings.Contains(got.Content, "<task-notification>") {
+		t.Fatalf("expected provider-only task notification prompt, got %#v", got)
+	}
+	prompt := rt.lastStreamReq.Messages[len(rt.lastStreamReq.Messages)-1].Content
+	if !strings.Contains(prompt, "<coordinator-hint>") || !strings.Contains(prompt, "<phase>single_completion</phase>") {
+		t.Fatalf("expected single completion coordinator hint, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "<recommended-action>synthesize_then_decide_followup</recommended-action>") {
+		t.Fatalf("expected single completion recommendation, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "<wait-for-remaining-workers>false</wait-for-remaining-workers>") {
+		t.Fatalf("expected single completion to avoid waiting, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "<should-finalize-summary>true</should-finalize-summary>") {
+		t.Fatalf("expected single completion to allow summary finalization, got %q", prompt)
+	}
+	if rt.lastStreamReq.Loop == nil || rt.lastStreamReq.Loop.System == nil {
+		t.Fatal("expected task notification to build loop system")
+	}
+	if len(rt.lastStreamReq.Loop.System.Extra) == 0 || !strings.Contains(rt.lastStreamReq.Loop.System.Extra[0], "<task-notification>") {
+		t.Fatalf("expected task notification continuation context, got %#v", rt.lastStreamReq.Loop.System.Extra)
+	}
+}
+
+func TestTaskNotificationTickDoesNotInjectWhileToolExecutionPending(t *testing.T) {
+	m := &model{
+		taskNotifications: newTaskNotificationQueue(),
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
+				PendingCalls: []message.ToolCall{{ID: "tc-1", Name: "Agent"}},
+				CurrentIdx:   0,
+			},
+		},
+		conv: appconv.New(),
+	}
+	m.taskNotifications.Push(taskNotification{
+		Notice:             "Background agent completed",
+		Context:            []string{"background task context"},
+		ContinuationPrompt: "<task-notification></task-notification>",
+	})
+
+	cmd := m.handleTaskNotificationTick()
+	if cmd == nil {
+		t.Fatal("expected ticker command")
+	}
+	if len(m.conv.Messages) != 0 {
+		t.Fatalf("expected no task notification while tool execution is pending, got %#v", m.conv.Messages)
+	}
+	if got := m.taskNotifications.Len(); got != 1 {
+		t.Fatalf("expected queued task notification to remain queued, got %d", got)
+	}
+}
+
+func TestTaskNotificationTickBatchesQueuedNotifications(t *testing.T) {
+	rt := &fakeConversationRuntime{}
+	m := &model{
+		cwd:               t.TempDir(),
+		runtime:           rt,
+		conv:              appconv.New(),
+		taskNotifications: newTaskNotificationQueue(),
+		loop:              &runtime.Loop{},
+		provider:          providerui.State{LLM: testLLMProvider{}},
+		output:            appoutput.New(80, progress.NewHub(10)),
+	}
+
+	batch := &backgroundBatchSnapshot{
+		BatchID:   "batch-1",
+		Subject:   "2 background agents launched",
+		Status:    tracker.StatusInProgress,
+		Completed: 1,
+		Total:     2,
+		Failures:  1,
+	}
+
+	m.taskNotifications.Push(taskNotification{
+		Notice:             "dir-audit completed",
+		Context:            []string{"single task context"},
+		ContinuationPrompt: "<task-notification><task-id>bg-1</task-id></task-notification>",
+		Batch:              batch,
+	})
+	m.taskNotifications.Push(taskNotification{
+		Notice:             "naming-audit failed",
+		Context:            []string{"single task context"},
+		ContinuationPrompt: "<task-notification><task-id>bg-2</task-id></task-notification>",
+		Batch:              batch,
+	})
+
+	cmd := m.handleTaskNotificationTick()
+	if cmd == nil {
+		t.Fatal("expected task notification tick command")
+	}
+	_ = cmd()
+
+	if !rt.startCalled {
+		t.Fatal("expected batched task notifications to start a follow-up stream")
+	}
+	if got := m.taskNotifications.Len(); got != 0 {
+		t.Fatalf("expected task notification queue to drain, got %d", got)
+	}
+	if len(m.conv.Messages) != 2 {
+		t.Fatalf("expected notice plus assistant placeholder, got %d", len(m.conv.Messages))
+	}
+	if !strings.Contains(m.conv.Messages[0].Content, "2 background tasks completed") {
+		t.Fatalf("unexpected batched notice: %q", m.conv.Messages[0].Content)
+	}
+	got := rt.lastStreamReq.Messages[len(rt.lastStreamReq.Messages)-1]
+	if got.Role != message.RoleUser || !strings.Contains(got.Content, "<task-notifications count=\"2\">") {
+		t.Fatalf("expected batched task notification wrapper, got %#v", got)
+	}
+	if !strings.Contains(got.Content, "<coordinator-hint>") {
+		t.Fatalf("expected structured coordinator hint, got %q", got.Content)
+	}
+	if !strings.Contains(got.Content, "<phase>partial_batch_with_failures</phase>") {
+		t.Fatalf("expected partial batch phase, got %q", got.Content)
+	}
+	if !strings.Contains(got.Content, "<recommended-action>synthesize_partial_results_and_decide_recovery_or_wait</recommended-action>") {
+		t.Fatalf("expected partial batch recommendation, got %q", got.Content)
+	}
+	if !strings.Contains(got.Content, "<wait-for-remaining-workers>true</wait-for-remaining-workers>") {
+		t.Fatalf("expected partial batch to wait for remaining workers, got %q", got.Content)
+	}
+	if !strings.Contains(got.Content, "<should-continue-failed-worker>true</should-continue-failed-worker>") {
+		t.Fatalf("expected partial batch failure recovery hint, got %q", got.Content)
+	}
+	if !strings.Contains(got.Content, "<batch-summary>") || !strings.Contains(got.Content, "2 background agents launched is 1/2 complete with 1 failures") {
+		t.Fatalf("expected batch summary in provider prompt, got %q", got.Content)
+	}
+	if !strings.Contains(got.Content, "<task-id>bg-1</task-id>") || !strings.Contains(got.Content, "<task-id>bg-2</task-id>") {
+		t.Fatalf("expected both task notifications in provider prompt, got %q", got.Content)
+	}
+	if len(rt.lastStreamReq.Loop.System.Extra) == 0 || !strings.Contains(rt.lastStreamReq.Loop.System.Extra[0], "Multiple background tasks completed") {
+		t.Fatalf("expected batched continuation context, got %#v", rt.lastStreamReq.Loop.System.Extra)
+	}
+	if !strings.Contains(strings.Join(rt.lastStreamReq.Loop.System.Extra, "\n"), "Do not assume the batch is finished") {
+		t.Fatalf("expected partial-batch coordinator policy, got %#v", rt.lastStreamReq.Loop.System.Extra)
+	}
+}
+
+func TestTaskNotificationTickAddsCoordinatorPolicyForCompletedFailedBatch(t *testing.T) {
+	rt := &fakeConversationRuntime{}
+	m := &model{
+		cwd:               t.TempDir(),
+		runtime:           rt,
+		conv:              appconv.New(),
+		taskNotifications: newTaskNotificationQueue(),
+		loop:              &runtime.Loop{},
+		provider:          providerui.State{LLM: testLLMProvider{}},
+		output:            appoutput.New(80, progress.NewHub(10)),
+	}
+
+	m.taskNotifications.Push(taskNotification{
+		Notice:             "naming-audit failed",
+		Context:            []string{"background task context"},
+		ContinuationPrompt: "<task-notification><task-id>bg-2</task-id></task-notification>",
+		Batch: &backgroundBatchSnapshot{
+			BatchID:   "batch-2",
+			Subject:   "2 background agents launched",
+			Status:    tracker.StatusCompleted,
+			Completed: 2,
+			Total:     2,
+			Failures:  1,
+		},
+	})
+
+	cmd := m.handleTaskNotificationTick()
+	if cmd == nil {
+		t.Fatal("expected task notification tick command")
+	}
+	_ = cmd()
+
+	if !rt.startCalled {
+		t.Fatal("expected task notification to start a follow-up stream")
+	}
+	joined := strings.Join(rt.lastStreamReq.Loop.System.Extra, "\n")
+	prompt := rt.lastStreamReq.Messages[len(rt.lastStreamReq.Messages)-1].Content
+	if !strings.Contains(prompt, "<coordinator-hint>") {
+		t.Fatalf("expected structured coordinator hint in prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "<phase>completed_batch_with_failures</phase>") {
+		t.Fatalf("expected completed batch failure phase, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "<recommended-action>synthesize_batch_and_recover_failed_workers</recommended-action>") {
+		t.Fatalf("expected completed batch recovery recommendation, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "<wait-for-remaining-workers>false</wait-for-remaining-workers>") {
+		t.Fatalf("expected completed batch to avoid waiting, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "<should-continue-failed-worker>true</should-continue-failed-worker>") {
+		t.Fatalf("expected completed batch to consider failed-worker continuation, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "<should-spawn-verifier>true</should-spawn-verifier>") {
+		t.Fatalf("expected completed batch to consider verifier, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "<should-finalize-summary>true</should-finalize-summary>") {
+		t.Fatalf("expected completed batch to allow final summary, got %q", prompt)
+	}
+	if !strings.Contains(joined, "background batch completed with failures") {
+		t.Fatalf("expected failed-batch coordinator policy, got %#v", rt.lastStreamReq.Loop.System.Extra)
+	}
+	if !strings.Contains(joined, "continue a failed worker, spawn a verifier, or report a partial result") {
+		t.Fatalf("expected failed-batch follow-up guidance, got %#v", rt.lastStreamReq.Loop.System.Extra)
 	}
 }

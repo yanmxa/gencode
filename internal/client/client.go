@@ -5,11 +5,11 @@ import (
 	"context"
 
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/options"
+	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
-const defaultMaxTokens = options.DefaultMaxTokens
+const defaultMaxTokens = config.DefaultMaxTokens
 
 // TokenUsage tracks token consumption for a conversation.
 type TokenUsage struct {
@@ -41,14 +41,14 @@ func (c *Client) Tokens() TokenUsage {
 
 // Send sends a non-streaming completion request and returns the full response.
 func (c *Client) Send(ctx context.Context, msgs []message.Message,
-	tools []provider.Tool, sysPrompt string,
+	tools []provider.ToolSchema, sysPrompt string,
 ) (message.CompletionResponse, error) {
 	return provider.Complete(ctx, c.Provider, c.opts(msgs, tools, sysPrompt))
 }
 
 // Stream starts a streaming completion request and returns a chunk channel.
 func (c *Client) Stream(ctx context.Context, msgs []message.Message,
-	tools []provider.Tool, sysPrompt string,
+	tools []provider.ToolSchema, sysPrompt string,
 ) <-chan message.StreamChunk {
 	return c.Provider.Stream(ctx, c.opts(msgs, tools, sysPrompt))
 }
@@ -110,7 +110,7 @@ func (c *Client) providerOutputLimit(ctx context.Context) int {
 }
 
 // opts builds CompletionOptions from the client's configuration.
-func (c *Client) opts(msgs []message.Message, tools []provider.Tool, sysPrompt string) provider.CompletionOptions {
+func (c *Client) opts(msgs []message.Message, tools []provider.ToolSchema, sysPrompt string) provider.CompletionOptions {
 	maxTokens := c.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxTokens

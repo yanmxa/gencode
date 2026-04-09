@@ -4,7 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/render"
-	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tracker"
 	"github.com/yanmxa/gencode/internal/ui/progress"
 )
 
@@ -51,7 +51,7 @@ func (m *Model) HandleTick(msg tea.Msg, active, fetching, compacting, interactiv
 
 	if !active && !hasRunningTasks {
 		// Keep spinner alive when tasks are in-progress (e.g., background agents)
-		if !tool.DefaultTodoStore.HasInProgress() {
+		if !tracker.DefaultStore.HasInProgress() {
 			return nil
 		}
 	}

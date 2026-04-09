@@ -8,38 +8,39 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/orchestration"
+	"github.com/yanmxa/gencode/internal/tracker"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
 // MaxVisibleTasks is the maximum number of tasks shown before collapsing.
 const MaxVisibleTasks = 8
 
-// TodoListParams holds the parameters for rendering a todo list.
-type TodoListParams struct {
+// TrackerListParams holds the parameters for rendering a tracker list.
+type TrackerListParams struct {
 	StreamActive bool
 	Width        int
 	SpinnerView  string
 }
 
-// RenderTodoList renders a compact task list above the input area.
+// RenderTrackerList renders a compact task list above the input area.
 // Shows all tasks including completed ones. Resets store when all done and idle.
-func RenderTodoList(params TodoListParams) string {
-	tasks := tool.DefaultTodoStore.List()
+func RenderTrackerList(params TrackerListParams) string {
+	tasks := tracker.DefaultStore.List()
 	if len(tasks) == 0 {
 		return ""
 	}
 
 	completed := 0
 	for _, t := range tasks {
-		if t.Status == tool.TodoStatusCompleted {
+		if t.Status == tracker.StatusCompleted {
 			completed++
 		}
 	}
 
 	// Reset store when all tasks completed and LLM is idle.
 	if completed == len(tasks) && !params.StreamActive {
-		tool.DefaultTodoStore.Reset()
+		tracker.DefaultStore.Reset()
 		return ""
 	}
 
@@ -53,69 +54,203 @@ func RenderTodoList(params TodoListParams) string {
 
 	sb.WriteString("  " + headerStyle.Render("Tasks") + " " + mutedStyle.Render(fmt.Sprintf("(%d/%d)", completed, total)) + "\n")
 
-	sb.WriteString(renderTasksFlat(tasks, params.Width, params.SpinnerView))
+	sb.WriteString(renderTasksHierarchical(tasks, params.Width, params.SpinnerView))
 
 	return sb.String()
 }
 
-// renderTasksFlat renders tasks in a flat list (no grouping).
-func renderTasksFlat(tasks []*tool.TodoTask, width int, spinnerView string) string {
-	var sb strings.Builder
-	shown := 0
+// renderTasksHierarchical renders tracker tasks, grouping background worker batches.
+func renderTasksHierarchical(tasks []*tracker.Task, width int, spinnerView string) string {
+	childrenByParent := make(map[string][]*tracker.Task)
+	childIDs := make(map[string]bool)
 	for _, t := range tasks {
-		if shown >= MaxVisibleTasks {
-			remaining := len(tasks) - shown
-			moreStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
-			sb.WriteString(moreStyle.Render(fmt.Sprintf("    +%d more\n", remaining)))
-			break
+		if parentID := trackerMetadataString(t.Metadata, "background_parent_id"); parentID != "" {
+			childrenByParent[parentID] = append(childrenByParent[parentID], t)
+			childIDs[t.ID] = true
 		}
-		sb.WriteString(RenderTodoTask(t, width, spinnerView))
-		shown++
+	}
+
+	var sb strings.Builder
+	renderedRoots := 0
+	for _, t := range tasks {
+		if childIDs[t.ID] {
+			continue
+		}
+		if renderedRoots >= MaxVisibleTasks && t.Status != tracker.StatusInProgress {
+			continue
+		}
+		if isBackgroundBatchTask(t) {
+			sb.WriteString(renderBackgroundBatchTask(t, childrenByParent[t.ID], width, spinnerView))
+		} else {
+			sb.WriteString(RenderTrackerTask(t, width, spinnerView))
+		}
+		renderedRoots++
 	}
 	return sb.String()
 }
 
-// RenderTodoTask renders a single task line.
-func RenderTodoTask(t *tool.TodoTask, width int, spinnerView string) string {
-	return renderTodoTaskIndented(t, width, spinnerView, "")
+// RenderTrackerTask renders a single task line.
+func RenderTrackerTask(t *tracker.Task, width int, spinnerView string) string {
+	return renderTrackerTaskIndented(t, width, spinnerView, "")
 }
 
-// renderTodoTaskIndented renders a single task line with optional extra indentation.
-func renderTodoTaskIndented(t *tool.TodoTask, width int, spinnerView string, extraIndent string) string {
+// renderTrackerTaskIndented renders a single task line with optional extra indentation.
+func renderTrackerTaskIndented(t *tracker.Task, width int, spinnerView string, extraIndent string) string {
 	indent := extraIndent + "  "
 	idTag := fmt.Sprintf("#%s ", t.ID)
 	maxTextLen := width - len(indent) - len(idTag) - 6 // icon + spaces + margin
 	subject := TruncateText(t.Subject, maxTextLen)
+	worker := backgroundWorkerSnapshot(t)
 
 	mutedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
 	idStr := mutedStyle.Render(idTag)
+	statusDetail := trackerMetadataString(t.Metadata, "background_status_detail")
+	if worker != nil && worker.Worker.Status != "" {
+		statusDetail = worker.Worker.Status
+	}
+	queueSuffix := ""
+	if worker != nil && worker.Worker.PendingMessageCount > 0 {
+		queueSuffix = " " + mutedStyle.Render(fmt.Sprintf("[%d queued]", worker.Worker.PendingMessageCount))
+	}
 
 	switch t.Status {
-	case tool.TodoStatusCompleted:
-		return indent + TodoCompletedStyle.Render("✓") + " " + idStr + TodoCompletedStyle.Render(subject) + "\n"
+	case tracker.StatusCompleted:
+		if statusDetail == "failed" || statusDetail == "killed" {
+			failedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error)
+			return indent + failedStyle.Render("!") + " " + idStr + failedStyle.Render(subject) + queueSuffix + " " + mutedStyle.Render("["+statusDetail+"]") + "\n"
+		}
+		return indent + TrackerCompletedStyle.Render("✓") + " " + idStr + TrackerCompletedStyle.Render(subject) + queueSuffix + "\n"
 
-	case tool.TodoStatusInProgress:
+	case tracker.StatusInProgress:
 		displayText := subject
 		if t.ActiveForm != "" {
 			displayText = TruncateText(t.ActiveForm, maxTextLen)
 		}
-		line := indent + TodoInProgressStyle.Render(spinnerView) + " " + idStr + TodoInProgressStyle.Render(displayText)
+		line := indent + TrackerInProgressStyle.Render(spinnerView) + " " + idStr + TrackerInProgressStyle.Render(displayText) + queueSuffix
 		if elapsed := formatElapsedTime(t.StatusChangedAt); elapsed != "" {
 			line += " " + mutedStyle.Render(elapsed)
 		}
 		return line + "\n"
 
 	default:
-		if blockers := tool.DefaultTodoStore.OpenBlockers(t.ID); len(blockers) > 0 {
+		if blockers := tracker.DefaultStore.OpenBlockers(t.ID); len(blockers) > 0 {
 			blockerRefs := make([]string, len(blockers))
 			for i, b := range blockers {
 				blockerRefs[i] = "#" + b
 			}
 			blockedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error)
 			suffix := " " + blockedStyle.Render("← "+strings.Join(blockerRefs, ", "))
-			return indent + TodoPendingStyle.Render("○") + " " + idStr + TodoPendingStyle.Render(subject) + suffix + "\n"
+			return indent + TrackerPendingStyle.Render("○") + " " + idStr + TrackerPendingStyle.Render(subject) + suffix + "\n"
 		}
-		return indent + TodoPendingStyle.Render("○") + " " + idStr + TodoPendingStyle.Render(subject) + "\n"
+		return indent + TrackerPendingStyle.Render("○") + " " + idStr + TrackerPendingStyle.Render(subject) + "\n"
+	}
+}
+
+func renderBackgroundBatchTask(batch *tracker.Task, children []*tracker.Task, width int, spinnerView string) string {
+	var sb strings.Builder
+	sb.WriteString(renderBatchHeader(batch, children, width, spinnerView))
+	for _, child := range children {
+		sb.WriteString(renderTrackerTaskIndented(child, width, spinnerView, "  "))
+	}
+	return sb.String()
+}
+
+func renderBatchHeader(t *tracker.Task, children []*tracker.Task, width int, spinnerView string) string {
+	indent := "  "
+	idTag := fmt.Sprintf("#%s ", t.ID)
+	mutedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	idStr := mutedStyle.Render(idTag)
+	subject := t.Subject
+	total := trackerMetadataInt(t.Metadata, "background_total")
+	completed := trackerMetadataInt(t.Metadata, "background_completed")
+	failures := trackerMetadataInt(t.Metadata, "background_failures")
+	if snapshot := backgroundBatchSnapshot(children); snapshot != nil {
+		if snapshot.Subject != "" {
+			subject = snapshot.Subject
+		}
+		total = snapshot.Total
+		completed = snapshot.Completed
+		failures = snapshot.Failures
+	}
+
+	countSuffix := ""
+	if total > 0 {
+		countSuffix = mutedStyle.Render(fmt.Sprintf(" (%d/%d)", completed, total))
+		if failures > 0 {
+			countSuffix += " " + lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error).Render(fmt.Sprintf("%d failed", failures))
+		}
+	}
+
+	maxTextLen := width - len(indent) - len(idTag) - 10
+	subject = TruncateText(subject, maxTextLen)
+
+	switch t.Status {
+	case tracker.StatusCompleted:
+		return indent + TrackerCompletedStyle.Render("✓") + " " + idStr + TrackerCompletedStyle.Render(subject) + countSuffix + "\n"
+	case tracker.StatusInProgress:
+		line := indent + TrackerInProgressStyle.Render(spinnerView) + " " + idStr + TrackerInProgressStyle.Render(subject) + countSuffix
+		if elapsed := formatElapsedTime(t.StatusChangedAt); elapsed != "" {
+			line += " " + mutedStyle.Render(elapsed)
+		}
+		return line + "\n"
+	default:
+		return indent + TrackerPendingStyle.Render("○") + " " + idStr + TrackerPendingStyle.Render(subject) + countSuffix + "\n"
+	}
+}
+
+func isBackgroundBatchTask(t *tracker.Task) bool {
+	return trackerMetadataString(t.Metadata, "background_kind") == "batch"
+}
+
+func backgroundWorkerSnapshot(t *tracker.Task) *orchestration.Snapshot {
+	taskID := trackerMetadataString(t.Metadata, "background_task_id")
+	agentID := trackerMetadataString(t.Metadata, "background_agent_id")
+	if taskID == "" && agentID == "" {
+		return nil
+	}
+	snapshot, ok := orchestration.DefaultStore.Snapshot(taskID, agentID, "", 1)
+	if !ok {
+		return nil
+	}
+	return snapshot
+}
+
+func backgroundBatchSnapshot(children []*tracker.Task) *orchestration.BatchSnapshot {
+	for _, child := range children {
+		if snapshot := backgroundWorkerSnapshot(child); snapshot != nil && snapshot.Batch != nil {
+			return snapshot.Batch
+		}
+	}
+	return nil
+}
+
+func trackerMetadataString(metadata map[string]any, key string) string {
+	if metadata == nil {
+		return ""
+	}
+	if value, ok := metadata[key]; ok && value != nil {
+		return fmt.Sprint(value)
+	}
+	return ""
+}
+
+func trackerMetadataInt(metadata map[string]any, key string) int {
+	if metadata == nil {
+		return 0
+	}
+	value, ok := metadata[key]
+	if !ok || value == nil {
+		return 0
+	}
+	switch v := value.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	default:
+		return 0
 	}
 }
 

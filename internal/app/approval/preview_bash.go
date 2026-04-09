@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/tool/permission"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
@@ -17,13 +17,13 @@ const (
 
 // BashPreview renders a bash command preview with expand/collapse functionality
 type BashPreview struct {
-	bashMeta   *permission.BashMetadata
+	bashMeta   *perm.BashMetadata
 	expanded   bool
 	maxVisible int
 }
 
 // NewBashPreview creates a new BashPreview instance
-func NewBashPreview(meta *permission.BashMetadata) *BashPreview {
+func NewBashPreview(meta *perm.BashMetadata) *BashPreview {
 	return &BashPreview{
 		bashMeta:   meta,
 		expanded:   false,

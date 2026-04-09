@@ -40,14 +40,14 @@ var (
 	AgentLabelStyle = lipgloss.NewStyle().
 			Foreground(theme.CurrentTheme.Success)
 
-	TodoPendingStyle = lipgloss.NewStyle().
+	TrackerPendingStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.Muted)
 
-	TodoInProgressStyle = lipgloss.NewStyle().
+	TrackerInProgressStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.Primary).
 				Bold(true)
 
-	TodoCompletedStyle = lipgloss.NewStyle().
+	TrackerCompletedStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.TextDisabled).
 				Strikethrough(true)
 

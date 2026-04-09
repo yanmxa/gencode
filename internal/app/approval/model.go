@@ -7,21 +7,21 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	appskill "github.com/yanmxa/gencode/internal/app/skill"
+	"github.com/yanmxa/gencode/internal/app/agentui"
+	"github.com/yanmxa/gencode/internal/app/skillui"
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tool/permission"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
 // Model manages the permission request UI with Claude Code style.
 type Model struct {
 	active       bool
-	request      *permission.PermissionRequest
+	request      *perm.PermissionRequest
 	diffPreview  *DiffPreview
 	bashPreview  *BashPreview
-	skillPreview *appskill.Preview
-	agentPreview *appagent.Preview
+	skillPreview *skillui.Preview
+	agentPreview *agentui.Preview
 	width        int
 	selectedIdx  int // Current menu selection (0=Yes, 1=Yes all, 2=No)
 }
@@ -33,7 +33,7 @@ func New() *Model {
 	}
 }
 
-func (p *Model) setRequest(req *permission.PermissionRequest, width int) {
+func (p *Model) setRequest(req *perm.PermissionRequest, width int) {
 	p.active = true
 	p.request = req
 	p.width = width
@@ -52,20 +52,20 @@ func (p *Model) setRequest(req *permission.PermissionRequest, width int) {
 	}
 
 	if req.SkillMeta != nil {
-		p.skillPreview = appskill.NewPreview(req.SkillMeta)
+		p.skillPreview = skillui.NewPreview(req.SkillMeta)
 	} else {
 		p.skillPreview = nil
 	}
 
 	if req.AgentMeta != nil {
-		p.agentPreview = appagent.NewPreview(req.AgentMeta)
+		p.agentPreview = agentui.NewPreview(req.AgentMeta)
 	} else {
 		p.agentPreview = nil
 	}
 }
 
 // Show displays the permission prompt with the given request.
-func (p *Model) Show(req *permission.PermissionRequest, width, height int) {
+func (p *Model) Show(req *perm.PermissionRequest, width, height int) {
 	p.setRequest(req, width)
 }
 
@@ -95,7 +95,7 @@ func (p *Model) TogglePreview() {
 }
 
 // GetRequest returns the current permission request
-func (p *Model) GetRequest() *permission.PermissionRequest {
+func (p *Model) GetRequest() *perm.PermissionRequest {
 	return p.request
 }
 
@@ -103,7 +103,7 @@ func (p *Model) GetRequest() *permission.PermissionRequest {
 type (
 	// RequestMsg is sent when a tool needs permission
 	RequestMsg struct {
-		Request  *permission.PermissionRequest
+		Request  *perm.PermissionRequest
 		ToolCall any // The original tool call
 	}
 
@@ -112,7 +112,7 @@ type (
 		Approved bool
 		AllowAll bool // True if user selected "allow all during session"
 		Persist  bool // True if user selected "always allow" (persist to settings)
-		Request  *permission.PermissionRequest
+		Request  *perm.PermissionRequest
 	}
 )
 
@@ -293,7 +293,7 @@ func (p *Model) getTitle() string {
 		title = "Bash command"
 	case tool.ToolSkill:
 		title = "Load skill"
-	case tool.ToolAgent:
+	case tool.ToolAgent, tool.ToolContinueAgent, tool.ToolSendMessage:
 		title = "Spawn agent"
 	default:
 		title = p.request.Description
@@ -316,7 +316,7 @@ func (p *Model) getAllSessionLabel() string {
 		return "Yes, allow all commands during this session"
 	case tool.ToolSkill:
 		return "Yes, allow all skills during this session"
-	case tool.ToolAgent:
+	case tool.ToolAgent, tool.ToolContinueAgent, tool.ToolSendMessage:
 		return "Yes, allow all agents during this session"
 	default:
 		return "Yes, allow all during this session"

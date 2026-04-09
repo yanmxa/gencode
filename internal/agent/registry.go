@@ -68,8 +68,11 @@ func (r *Registry) ListConfigs() []*AgentConfig {
 func (r *Registry) registerBuiltins() {
 	// Explore agent - fast codebase exploration (read-only)
 	r.agents["explore"] = &AgentConfig{
-		Name:           "Explore",
-		Description:    "Fast codebase exploration and understanding. Use for questions that require reading and cross-referencing multiple files. NOT for questions answerable with a single direct tool call (one Bash command, one Grep, one Read) — use those tools directly instead.",
+		Name:        "Explore",
+		Description: "Fast agent specialized for exploring codebases.",
+		WhenToUse: `Use this when you need to quickly find files by patterns (e.g. "src/**/*.tsx"), search code for keywords (e.g. "API endpoints"), or answer questions about the codebase (e.g. "how do API endpoints work?").
+When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.
+NOT for questions answerable with a single direct tool call (one Bash command, one Grep, one Read) — use those tools directly instead.`,
 		Model:          "inherit",
 		PermissionMode: PermissionPlan,
 		Tools:          ToolList{"Read", "Glob", "Grep", "WebFetch", "WebSearch"},
@@ -79,8 +82,11 @@ func (r *Registry) registerBuiltins() {
 
 	// Plan agent - software architect for designing implementation plans
 	r.agents["plan"] = &AgentConfig{
-		Name:           "Plan",
-		Description:    "Software architect agent for designing implementation plans. Use when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.",
+		Name:        "Plan",
+		Description: "Software architect agent for designing implementation plans.",
+		WhenToUse: `Use this when you need to plan the implementation strategy for a task.
+Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.
+For broader codebase exploration and deep research, use the Explore agent instead.`,
 		Model:          "inherit",
 		PermissionMode: PermissionPlan,
 		Tools:          ToolList{"Read", "Glob", "Grep", "WebFetch", "WebSearch"},
@@ -90,12 +96,45 @@ func (r *Registry) registerBuiltins() {
 
 	// General-purpose agent - all tools (including nested Agent)
 	r.agents["general-purpose"] = &AgentConfig{
-		Name:           "general-purpose",
-		Description:    "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.",
+		Name:        "general-purpose",
+		Description: "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.",
+		WhenToUse: `Use this when you are searching for a keyword or file and are not confident that you will find the right match in the first few tries, or when the task requires multiple tools and write access.
+When other agent types are too restrictive for the task at hand, use this agent.`,
 		Model:          "inherit",
 		PermissionMode: PermissionDefault,
 		Tools:          nil, // nil = all tools
 		MaxTurns:       100,
+		Source:         "built-in",
+	}
+
+	// code-simplifier agent - simplifies and refines code
+	r.agents["code-simplifier"] = &AgentConfig{
+		Name:        "code-simplifier",
+		Description: "Simplifies and refines code for clarity, consistency, and maintainability while preserving all functionality.",
+		WhenToUse: `Use this after implementing a feature or making changes to clean up the code.
+Focuses on recently modified code unless instructed otherwise.
+Good for reducing complexity, removing duplication, improving naming, and tightening logic.`,
+		Model:          "inherit",
+		PermissionMode: PermissionAcceptEdits,
+		Tools:          nil, // all tools
+		DisallowedTools: ToolList{"Agent", "ContinueAgent", "SendMessage",
+			"EnterPlanMode", "ExitPlanMode", "EnterWorktree", "ExitWorktree",
+			"CronCreate", "CronDelete", "CronList"},
+		MaxTurns: 50,
+		Source:   "built-in",
+	}
+
+	// code-reviewer agent - reviews code for quality issues (read-only)
+	r.agents["code-reviewer"] = &AgentConfig{
+		Name:        "code-reviewer",
+		Description: "Reviews code changes for bugs, security issues, performance problems, and style violations.",
+		WhenToUse: `Use this when you want an independent review of code changes before committing or merging.
+Good for catching issues you might have missed — security vulnerabilities, edge cases, naming problems, or logic errors.
+Returns a structured review with findings and recommendations.`,
+		Model:          "inherit",
+		PermissionMode: PermissionPlan,
+		Tools:          ToolList{"Read", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"},
+		MaxTurns:       50,
 		Source:         "built-in",
 	}
 }
@@ -211,7 +250,11 @@ func (r *Registry) GetAgentsSection() string {
 		if config.Tools != nil {
 			toolsDesc = strings.Join([]string(config.Tools), ", ")
 		}
-		lines = append(lines, "- "+config.Name+": "+config.Description+" (Tools: "+toolsDesc+")")
+		desc := config.Description
+		if config.WhenToUse != "" {
+			desc += " " + config.WhenToUse
+		}
+		lines = append(lines, "- "+config.Name+": "+desc+" (Tools: "+toolsDesc+")")
 	}
 
 	if len(lines) == 0 {

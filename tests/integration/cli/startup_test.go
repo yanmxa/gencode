@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/app/session"
+	session "github.com/yanmxa/gencode/internal/session"
 )
 
 // buildBinary compiles the gen binary into a temp file and returns its path.

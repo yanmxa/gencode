@@ -46,8 +46,8 @@ Do not include any other text in your final response.`, modelID, providerName, a
 }
 
 // GetTokenLimitAgentTools returns the tool definitions used by the token-limit agent.
-func GetTokenLimitAgentTools() []provider.Tool {
-	return []provider.Tool{
+func GetTokenLimitAgentTools() []provider.ToolSchema {
+	return []provider.ToolSchema{
 		{
 			Name:        "WebSearch",
 			Description: "Search the web for information about model token limits",

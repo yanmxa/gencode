@@ -127,7 +127,8 @@ func (e *Engine) matchesIfCondition(cmd config.HookCmd, input HookInput) bool {
 	}
 	switch input.HookEventName {
 	case string(PreToolUse), string(PostToolUse), string(PostToolUseFailure), string(PermissionRequest), string(PermissionDenied):
-		if config.MatchRule(config.BuildRule(input.ToolName, input.ToolInput), cmd.If) {
+		rule := config.BuildRule(input.ToolName, input.ToolInput)
+		if config.MatchesToolPattern(input.ToolName, input.ToolInput, rule, cmd.If) {
 			return true
 		}
 		if input.ToolName == "Bash" {

@@ -4,7 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
@@ -41,7 +41,7 @@ func (m *model) handleStreamChunk(msg appconv.ChunkMsg) tea.Cmd {
 // handleStreamDone processes a completed stream.
 func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 	m.applyCompletedStreamState(msg)
-	decision := core.DecideCompletion(msg.StopReason, msg.ToolCalls, m.maxOutputRecoveryCount, core.DefaultMaxOutputRecovery)
+	decision := runtime.DecideCompletion(msg.StopReason, msg.ToolCalls, m.maxOutputRecoveryCount, runtime.DefaultMaxOutputRecovery)
 	return m.handleCompletionDecision(decision)
 }
 
@@ -51,15 +51,16 @@ func (m *model) applyCompletedStreamState(msg appconv.ChunkMsg) {
 	if msg.Usage != nil {
 		m.provider.InputTokens = msg.Usage.InputTokens
 		m.provider.OutputTokens = msg.Usage.OutputTokens
+		m.conv.Compact.WarningSuppressed = false
 	}
 	m.conv.SetLastThinkingSignature(msg.ThinkingSignature)
 }
 
-func (m *model) handleCompletionDecision(decision core.CompletionDecision) tea.Cmd {
+func (m *model) handleCompletionDecision(decision runtime.CompletionDecision) tea.Cmd {
 	switch decision.Action {
-	case core.CompletionRecoverMaxTokens:
+	case runtime.CompletionRecoverMaxTokens:
 		return m.recoverMaxOutputStream()
-	case core.CompletionRunTools:
+	case runtime.CompletionRunTools:
 		return m.handleCompletionToolCalls(decision.ToolCalls)
 	default:
 		return m.finalizeCompletedTurn()
@@ -70,7 +71,7 @@ func (m *model) recoverMaxOutputStream() tea.Cmd {
 	m.maxOutputRecoveryCount++
 	m.conv.Append(message.ChatMessage{
 		Role:    message.RoleUser,
-		Content: core.MaxOutputRecoveryPrompt,
+		Content: runtime.MaxOutputRecoveryPrompt,
 	})
 	return m.startContinueStream()
 }
@@ -104,6 +105,12 @@ func (m *model) finalizeCompletedTurn() tea.Cmd {
 		}
 	}
 
+	// Drain queued user inputs first (higher priority than cron)
+	if cmd := m.drainInputQueue(); cmd != nil {
+		commitCmds = append(commitCmds, cmd)
+		return tea.Batch(commitCmds...)
+	}
+
 	// Drain queued cron prompts now that we're idle
 	if cmd := m.drainCronQueue(); cmd != nil {
 		commitCmds = append(commitCmds, cmd)
@@ -134,7 +141,7 @@ func (m *model) fireIdleHooks() {
 // handleStreamError processes a stream error.
 func (m *model) handleStreamError(err error) tea.Cmd {
 	// If "prompt too long", trigger auto-compact and retry
-	if core.ShouldCompactPromptTooLong(err, len(m.conv.Messages)) {
+	if runtime.ShouldCompactPromptTooLong(err, len(m.conv.Messages)) {
 		m.conv.RemoveEmptyLastAssistant()
 		m.conv.Stream.Stop()
 		m.conv.Compact.AutoContinue = true // Auto-continue after compaction

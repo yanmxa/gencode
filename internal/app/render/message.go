@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	appmode "github.com/yanmxa/gencode/internal/app/mode"
+	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
@@ -47,6 +47,7 @@ type OperationModeParams struct {
 	ModelName     string
 	Width         int
 	ThinkingLevel provider.ThinkingLevel
+	QueueCount    int
 }
 
 // RenderModeStatus renders the combined mode status line.
@@ -63,6 +64,10 @@ func RenderModeStatus(params OperationModeParams) string {
 
 	if tokenUsage := RenderTokenUsage(params.InputTokens, params.InputLimit); tokenUsage != "" {
 		parts = append(parts, tokenUsage)
+	}
+
+	if queueBadge := RenderQueueBadge(params.QueueCount); queueBadge != "" {
+		parts = append(parts, queueBadge)
 	}
 
 	left := strings.Join(parts, "  ")
@@ -82,16 +87,16 @@ func RenderOperationModeIndicator(mode int) string {
 	var icon, label string
 	var color lipgloss.TerminalColor
 
-	switch appmode.OperationMode(mode) {
-	case appmode.AutoAccept:
+	switch config.OperationMode(mode) {
+	case config.ModeAutoAccept:
 		icon = "⏵⏵"
 		label = " accept edits on"
 		color = theme.CurrentTheme.Success
-	case appmode.Plan:
+	case config.ModePlan:
 		icon = "⏸"
 		label = " plan mode on"
 		color = theme.CurrentTheme.Warning
-	case appmode.BypassPermissions:
+	case config.ModeBypassPermissions:
 		icon = "⏩"
 		label = " bypass permissions on"
 		color = theme.CurrentTheme.Error
@@ -173,6 +178,32 @@ func TokenUsageColorAndHint(percent float64) (lipgloss.TerminalColor, string) {
 		return theme.CurrentTheme.Accent, ""
 	}
 	return theme.CurrentTheme.Muted, ""
+}
+
+// RenderTokenWarning returns a warning line when context usage is high.
+// Displayed above the input separator to alert the user.
+func RenderTokenWarning(inputTokens, inputLimit int, compactSuppressed bool) string {
+	if inputLimit == 0 || inputTokens == 0 || compactSuppressed {
+		return ""
+	}
+
+	percent := float64(inputTokens) / float64(inputLimit) * 100
+	if percent < 80 {
+		return ""
+	}
+
+	untilCompact := max(int(AutoCompactThreshold-percent), 0)
+
+	if percent >= AutoCompactThreshold {
+		style := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error)
+		return "  " + style.Render(fmt.Sprintf("⚠ Context nearly full (%d%% used) — auto-compact imminent", int(percent)))
+	}
+	if percent >= 85 {
+		style := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Warning)
+		return "  " + style.Render(fmt.Sprintf("⚡ %d%% until auto-compact", untilCompact))
+	}
+	style := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	return "  " + style.Render(fmt.Sprintf("⚡ %d%% until auto-compact", untilCompact))
 }
 
 // RenderPlanForScrollback renders the plan markdown content for scrollback.

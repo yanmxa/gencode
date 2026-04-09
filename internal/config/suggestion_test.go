@@ -28,7 +28,7 @@ func TestGenerateSuggestions_Bash(t *testing.T) {
 		{
 			"compound command",
 			"cd /tmp && git pull",
-			[]string{"Bash(cd:/tmp *)", "Bash(git:pull *)"},
+			[]string{"Bash(git:pull *)"},
 		},
 		{
 			"dangerous prefix filtered",

@@ -46,10 +46,11 @@ var DestructiveCommands = []string{
 // IsDestructiveCommand checks if a bash command matches any destructive pattern.
 // Returns true if the command should always require user confirmation.
 func IsDestructiveCommand(cmd string) bool {
-	normalized := normalizeBashCommand(cmd)
-	for _, pattern := range DestructiveCommands {
-		if strings.Contains(normalized, pattern) {
-			return true
+	for _, normalized := range normalizedBashCommands(cmd) {
+		for _, pattern := range DestructiveCommands {
+			if strings.Contains(normalized, pattern) {
+				return true
+			}
 		}
 	}
 	return false

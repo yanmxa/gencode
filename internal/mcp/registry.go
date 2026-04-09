@@ -295,19 +295,19 @@ var emptySchema = map[string]any{
 	"properties": map[string]any{},
 }
 
-// GetToolSchemas returns provider.Tool schemas for all connected MCP servers
-func (r *Registry) GetToolSchemas() []provider.Tool {
+// GetToolSchemas returns provider.ToolSchema schemas for all connected MCP servers
+func (r *Registry) GetToolSchemas() []provider.ToolSchema {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var tools []provider.Tool
+	var tools []provider.ToolSchema
 	for serverName, client := range r.clients {
 		if !client.IsConnected() {
 			continue
 		}
 
 		for _, mcpTool := range client.GetCachedTools() {
-			tools = append(tools, provider.Tool{
+			tools = append(tools, provider.ToolSchema{
 				Name:        fmt.Sprintf("mcp__%s__%s", serverName, mcpTool.Name),
 				Description: mcpTool.Description,
 				Parameters:  parseInputSchema(mcpTool.InputSchema),

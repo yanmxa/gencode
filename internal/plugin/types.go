@@ -3,6 +3,8 @@
 // installable and shareable units. Compatible with Claude Code plugin format.
 package plugin
 
+import "github.com/yanmxa/gencode/internal/config"
+
 // Scope represents where a plugin is installed.
 type Scope string
 
@@ -109,26 +111,8 @@ type HooksConfig struct {
 
 // HookMatcher represents a hook matcher with associated hook commands.
 type HookMatcher struct {
-	Matcher string    `json:"matcher,omitempty"`
-	Hooks   []HookCmd `json:"hooks"`
-}
-
-// HookCmd represents a single hook command.
-type HookCmd struct {
-	Type           string            `json:"type"`
-	Command        string            `json:"command,omitempty"`
-	Prompt         string            `json:"prompt,omitempty"`
-	URL            string            `json:"url,omitempty"`
-	If             string            `json:"if,omitempty"`
-	Shell          string            `json:"shell,omitempty"`
-	Model          string            `json:"model,omitempty"`
-	Async          bool              `json:"async,omitempty"`
-	AsyncRewake    bool              `json:"asyncRewake,omitempty"`
-	Timeout        int               `json:"timeout,omitempty"`
-	StatusMessage  string            `json:"statusMessage,omitempty"`
-	Once           bool              `json:"once,omitempty"`
-	Headers        map[string]string `json:"headers,omitempty"`
-	AllowedEnvVars []string          `json:"allowedEnvVars,omitempty"`
+	Matcher string       `json:"matcher,omitempty"`
+	Hooks   []config.HookCmd `json:"hooks"`
 }
 
 // MCPServerConfig represents an MCP server configuration from a plugin.

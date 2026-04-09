@@ -11,26 +11,28 @@ import (
 
 	"strings"
 
-	appagent "github.com/yanmxa/gencode/internal/app/agent"
+	"github.com/yanmxa/gencode/internal/app/agentui"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appinput "github.com/yanmxa/gencode/internal/app/input"
-	appmcp "github.com/yanmxa/gencode/internal/app/mcp"
+	"github.com/yanmxa/gencode/internal/app/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	appplugin "github.com/yanmxa/gencode/internal/app/plugin"
-	appprovider "github.com/yanmxa/gencode/internal/app/provider"
-	appsession "github.com/yanmxa/gencode/internal/app/session"
-	appskill "github.com/yanmxa/gencode/internal/app/skill"
-	apptool "github.com/yanmxa/gencode/internal/app/tool"
+	"github.com/yanmxa/gencode/internal/app/pluginui"
+	"github.com/yanmxa/gencode/internal/app/providerui"
+	appqueue "github.com/yanmxa/gencode/internal/app/queue"
+	"github.com/yanmxa/gencode/internal/app/sessionui"
+	"github.com/yanmxa/gencode/internal/app/skillui"
+	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/options"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/runtime"
+	"github.com/yanmxa/gencode/internal/tool/tasktools"
+	"github.com/yanmxa/gencode/internal/tracker"
 )
 
 const (
@@ -56,16 +58,21 @@ type model struct {
 	conv appconv.Model
 
 	// Domain — each feature owns all its state
-	provider appprovider.State
-	session  appsession.State
-	skill    appskill.State
+	provider providerui.State
+	session  sessionui.State
+	skill    skillui.State
 	memory   appmemory.State
 	mode     appmode.State
-	tool     apptool.State
-	mcp      appmcp.State
-	plugin   appplugin.State
-	agent    appagent.State
+	tool     toolui.State
+	mcp      mcpui.State
+	plugin   pluginui.State
+	agent    agentui.State
 	approval *appapproval.Model
+
+	// Input queue — buffers user messages submitted while the LLM is busy
+	inputQueue     appqueue.Queue
+	queueSelectIdx int    // -1 = no selection, 0+ = selected queue item index
+	queueTempInput string // stashed input when navigating into queue
 
 	// Cron scheduler
 	cronQueue []string // queued cron prompts waiting for idle REPL
@@ -80,17 +87,19 @@ type model struct {
 	hookStatus    string // temporary active hook status shown in status bar
 
 	// Config and Infra
-	settings         *config.Settings
-	hookEngine       *hooks.Engine
-	fileWatcher      *fileWatcher
-	asyncHookQueue   *asyncHookQueue
-	loop             *core.Loop
-	runtime          conversationRuntime
-	promptSuggestion promptSuggestionState
+	settings          *config.Settings
+	hookEngine        *hooks.Engine
+	fileWatcher       *fileWatcher
+	asyncHookQueue    *asyncHookQueue
+	taskNotifications *taskNotificationQueue
+	loop              *runtime.Loop
+	runtime           conversationRuntime
+	promptSuggestion  promptSuggestionState
+	fileCache         *filecache.Cache
 }
 
 // --- Constructor and Init ---
-func newModel(opts options.RunOptions) (model, error) {
+func newModel(opts config.RunOptions) (model, error) {
 	cwd, _ := os.Getwd()
 	infra, err := initializeModelInfra(cwd)
 	if err != nil {
@@ -118,6 +127,7 @@ func newModel(opts options.RunOptions) (model, error) {
 		return model{}, err
 	}
 	m.initializeTaskStorageFromEnv()
+	m.initTaskStorage()
 
 	return m, nil
 }
@@ -163,7 +173,7 @@ func (m model) Init() tea.Cmd {
 		}
 	}
 
-	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, appmcp.AutoConnect(), triggerCronTickNow(), startCronTicker(), startAsyncHookTicker()}
+	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, mcpui.AutoConnect(), triggerCronTickNow(), startCronTicker(), startAsyncHookTicker(), startTaskNotificationTicker()}
 	if m.initialPrompt != "" {
 		prompt := m.initialPrompt
 		m.initialPrompt = ""
@@ -215,27 +225,21 @@ func (m *model) commitMessagesWithCheck(checkReady bool) []tea.Cmd {
 
 // --- Message conversion and LLM loop configuration ---
 
-func isGitRepo(dir string) bool {
-	_, err := os.Stat(dir + "/.git")
-	return err == nil
-}
-
 // reconfigureAgentTool updates the agent tool with the current session/provider state.
 func (m *model) reconfigureAgentTool() {
 	if m.provider.LLM != nil {
 		m.ensureMemoryContextLoaded()
-		appprovider.ConfigureAgentTool(m.provider.LLM, m.cwd, m.getModelID(), m.hookEngine, m.session.Store, m.session.CurrentID,
+		configureAgentTool(m.provider.LLM, m.cwd, m.getModelID(), m.hookEngine, m.session.Store, m.session.CurrentID,
 			m.agentToolOpts()...)
 	}
 }
 
-// agentToolOpts returns the common options for ConfigureAgentTool calls.
-func (m *model) agentToolOpts() []appprovider.AgentToolOption {
-	opts := []appprovider.AgentToolOption{
-		appprovider.WithContext(m.memory.CachedUser, m.memory.CachedProject, m.isGit),
+func (m *model) agentToolOpts() []agentToolOption {
+	opts := []agentToolOption{
+		withAgentContext(m.memory.CachedUser, m.memory.CachedProject, m.isGit),
 	}
 	if m.mcp.Registry != nil {
-		opts = append(opts, appprovider.WithMCP(m.mcp.Registry.GetToolSchemas, m.mcp.Registry))
+		opts = append(opts, withAgentMCP(m.mcp.Registry.GetToolSchemas, m.mcp.Registry))
 	}
 	return opts
 }
@@ -267,7 +271,7 @@ func (m *model) buildTaskReminder() string {
 	if m.conv.TurnsSinceLastTaskTool < taskReminderThreshold {
 		return ""
 	}
-	tasks := tool.DefaultTodoStore.List()
+	tasks := tracker.DefaultStore.List()
 	if len(tasks) == 0 {
 		return ""
 	}
@@ -275,7 +279,7 @@ func (m *model) buildTaskReminder() string {
 	// Check if all tasks are completed
 	allDone := true
 	for _, t := range tasks {
-		if t.Status != tool.TodoStatusCompleted {
+		if t.Status != tracker.StatusCompleted {
 			allDone = false
 			break
 		}
@@ -289,7 +293,7 @@ func (m *model) buildTaskReminder() string {
 	sb.WriteString("<task-reminder>\n")
 	sb.WriteString("You have active tasks that haven't been updated recently. Consider updating task status:\n")
 	for _, t := range tasks {
-		sb.WriteString(fmt.Sprintf("  %s #%s: %s [%s]\n", tool.TaskIcon(t), t.ID, t.Subject, t.Status))
+		sb.WriteString(fmt.Sprintf("  %s #%s: %s [%s]\n", tasktools.TaskIcon(t), t.ID, t.Subject, t.Status))
 	}
 	sb.WriteString("Use TaskUpdate to mark tasks as in_progress when starting or completed when done.\n")
 	sb.WriteString("</task-reminder>")

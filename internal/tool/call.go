@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/tool/ui"
+	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
 // PreparedToolCall is a parsed and validated tool call that can be reused
@@ -45,20 +45,20 @@ func PrepareToolCall(tc message.ToolCall, mcpExec MCPExecutor) (*PreparedToolCal
 }
 
 // Execute runs a prepared tool call against its resolved implementation.
-func (p *PreparedToolCall) Execute(ctx context.Context, cwd string, approved bool, mcpExec MCPExecutor) (ui.ToolResult, error) {
+func (p *PreparedToolCall) Execute(ctx context.Context, cwd string, approved bool, mcpExec MCPExecutor) (toolresult.ToolResult, error) {
 	if p == nil {
-		return ui.ToolResult{}, fmt.Errorf("prepared tool call is nil")
+		return toolresult.ToolResult{}, fmt.Errorf("prepared tool call is nil")
 	}
 
 	if p.IsMCP {
 		if mcpExec == nil {
-			return ui.ToolResult{}, fmt.Errorf("mcp executor not configured for tool: %s", p.Call.Name)
+			return toolresult.ToolResult{}, fmt.Errorf("mcp executor not configured for tool: %s", p.Call.Name)
 		}
 		return mcpExec.ExecuteMCP(ctx, p.Call.Name, p.Params)
 	}
 
 	if p.Tool == nil {
-		return ui.ToolResult{}, fmt.Errorf("tool not resolved: %s", p.Call.Name)
+		return toolresult.ToolResult{}, fmt.Errorf("tool not resolved: %s", p.Call.Name)
 	}
 
 	if approved {

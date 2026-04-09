@@ -305,7 +305,7 @@ func TestFakeClientRecordsCalls(t *testing.T) {
 	}
 
 	msgs := []message.Message{{Role: message.RoleUser, Content: "hello"}}
-	tools := []provider.Tool{{Name: "Read", Description: "read files"}}
+	tools := []provider.ToolSchema{{Name: "Read", Description: "read files"}}
 	fake.Send(context.Background(), msgs, tools, "sys prompt")
 
 	if len(fake.Calls) != 1 {

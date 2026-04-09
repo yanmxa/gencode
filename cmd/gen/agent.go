@@ -11,7 +11,8 @@ import (
 
 	"github.com/yanmxa/gencode/internal/agent"
 	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/system"
@@ -121,10 +122,10 @@ func runHeadlessAgent() error {
 	// Set up the loop
 	sys := &system.System{
 		Cwd:   cwd,
-		IsGit: isGitRepoCheck(cwd),
+		IsGit: config.IsGitRepo(cwd),
 	}
 
-	loop := &core.Loop{
+	loop := &runtime.Loop{
 		Client: &client.Client{
 			Provider:  llmProvider,
 			Model:     modelID,
@@ -155,7 +156,7 @@ func runHeadlessAgent() error {
 		}
 
 		// Run one turn
-		result, err := loop.Run(ctx, core.RunOptions{
+		result, err := loop.Run(ctx, runtime.RunOptions{
 			MaxTurns: 1,
 			OnResponse: func(resp *message.CompletionResponse) {
 				if resp.Content != "" {
@@ -184,8 +185,3 @@ func runHeadlessAgent() error {
 }
 
 
-// isGitRepoCheck checks if the given directory is a git repository.
-func isGitRepoCheck(dir string) bool {
-	_, err := os.Stat(dir + "/.git")
-	return err == nil
-}

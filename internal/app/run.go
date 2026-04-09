@@ -12,23 +12,23 @@ import (
 
 	"github.com/yanmxa/gencode/internal/agent"
 	appcommand "github.com/yanmxa/gencode/internal/app/command"
-	appthemeselect "github.com/yanmxa/gencode/internal/app/themeselect"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/options"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
 	_ "github.com/yanmxa/gencode/internal/provider/anthropic"
 	_ "github.com/yanmxa/gencode/internal/provider/google"
 	_ "github.com/yanmxa/gencode/internal/provider/openai"
 	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/tool"
+	_ "github.com/yanmxa/gencode/internal/tool/registry"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
 // RunWithOptions routes to either print mode or interactive TUI.
-func RunWithOptions(opts options.RunOptions) error {
+func RunWithOptions(opts config.RunOptions) error {
 	if opts.Print != "" {
 		return runNonInteractive(opts.Print)
 	}
@@ -37,7 +37,7 @@ func RunWithOptions(opts options.RunOptions) error {
 	settings := loadSettings()
 	themeValue := settings.Theme
 	if themeValue == "" {
-		chosen, err := appthemeselect.Run()
+		chosen, err := theme.RunSelector()
 		if err != nil {
 			return fmt.Errorf("theme selection failed: %w", err)
 		}
@@ -93,7 +93,7 @@ func runNonInteractive(userMessage string) error {
 			p, err := provider.GetProvider(ctx, provider.Provider(providerName), conn.AuthMethod)
 			if err == nil {
 				llmProvider = p
-				modelID = options.DefaultModel(providerName, conn.AuthMethod)
+				modelID = config.DefaultModel(providerName, conn.AuthMethod)
 				break
 			}
 		}
@@ -103,7 +103,13 @@ func runNonInteractive(userMessage string) error {
 		return fmt.Errorf("no provider connected. Run 'gen' and use /provider to connect")
 	}
 
-	completionOpts := options.NewCompletionOptions(modelID, userMessage)
+	completionOpts := provider.CompletionOptions{
+			Model:        modelID,
+			MaxTokens:    config.DefaultMaxTokens,
+			SystemPrompt: config.DefaultSystemPrompt,
+			Messages:     []message.Message{message.UserMessage(userMessage, nil)},
+			Tools:        tool.GetToolSchemas(),
+		}
 
 	streamChan := llmProvider.Stream(ctx, completionOpts)
 	for chunk := range streamChan {
@@ -172,7 +178,20 @@ func initializeRegistries(cwd string) {
 }
 
 func loadSettings() *config.Settings {
-	settings, _ := config.Load()
+	return loadSettingsForCwd("")
+}
+
+func loadSettingsForCwd(cwd string) *config.Settings {
+	var (
+		settings *config.Settings
+		err      error
+	)
+	if cwd != "" {
+		settings, err = config.LoadForCwd(cwd)
+	} else {
+		settings, err = config.Load()
+	}
+	_ = err
 	if settings == nil {
 		settings = config.Default()
 	}

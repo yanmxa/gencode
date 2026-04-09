@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	appinput "github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
@@ -17,11 +18,14 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return cmd, true
 	}
 
-	// Overlay modes: image selection, autocomplete suggestions
+	// Overlay modes: image selection, autocomplete suggestions, queue selection
 	if c, ok := m.handleImageSelectKey(msg); ok {
 		return c, ok
 	}
 	if c, ok := m.handleSuggestionKey(msg); ok {
+		return c, ok
+	}
+	if c, ok := m.handleQueueSelectKey(msg); ok {
 		return c, ok
 	}
 
@@ -29,29 +33,75 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Cmd, bool) {
 	return m.handleInputKey(msg)
 }
 
-// handleImageSelectKey handles keys while in image selection mode.
+// handleImageSelectKey handles inline image token selection and deletion.
 func (m *model) handleImageSelectKey(msg tea.KeyMsg) (tea.Cmd, bool) {
-	if !m.input.Images.SelectMode || len(m.input.Images.Pending) == 0 {
+	if len(m.input.Images.Pending) == 0 {
 		return nil, false
 	}
+
+	if m.input.Images.Selection.Active {
+		match, ok := m.input.SelectedImageMatch()
+		if !ok {
+			m.input.Images.Selection = appinput.ImageSelection{}
+			return nil, false
+		}
+		switch msg.Type {
+		case tea.KeyLeft:
+			if m.input.Images.Selection.CursorAbsPos == match.End {
+				m.input.SetCursorIndex(match.Start)
+			}
+			m.input.Images.Selection = appinput.ImageSelection{}
+			return nil, true
+		case tea.KeyRight:
+			if m.input.Images.Selection.CursorAbsPos == match.Start {
+				m.input.SetCursorIndex(match.End)
+			}
+			m.input.Images.Selection = appinput.ImageSelection{}
+			return nil, true
+		case tea.KeyBackspace, tea.KeyDelete, tea.KeyCtrlX:
+			m.input.RemoveImageToken(match, match.Start)
+			return nil, true
+		case tea.KeyEsc:
+			m.input.Images.Selection = appinput.ImageSelection{}
+			return nil, true
+		}
+
+		m.input.Images.Selection = appinput.ImageSelection{}
+		return nil, false
+	}
+
+	cursor := m.input.CursorIndex()
 	switch msg.Type {
 	case tea.KeyLeft:
-		if m.input.Images.SelectedIdx > 0 {
-			m.input.Images.SelectedIdx--
+		if match, ok := m.input.MatchAdjacentToCursor(cursor, false); ok {
+			m.input.Images.Selection = appinput.ImageSelection{
+				Active:       true,
+				PendingIdx:   match.PendingIdx,
+				CursorAbsPos: cursor,
+			}
+			return nil, true
 		}
-		return nil, true
 	case tea.KeyRight:
-		if m.input.Images.SelectedIdx < len(m.input.Images.Pending)-1 {
-			m.input.Images.SelectedIdx++
+		if match, ok := m.input.MatchAdjacentToCursor(cursor, true); ok {
+			m.input.Images.Selection = appinput.ImageSelection{
+				Active:       true,
+				PendingIdx:   match.PendingIdx,
+				CursorAbsPos: cursor,
+			}
+			return nil, true
 		}
-		return nil, true
-	case tea.KeyDelete, tea.KeyBackspace:
-		m.input.Images.RemoveAt(m.input.Images.SelectedIdx)
-		return nil, true
-	case tea.KeyEsc:
-		m.input.Images.SelectMode = false
-		return nil, true
+	case tea.KeyBackspace, tea.KeyCtrlX:
+		if match, ok := m.input.MatchAdjacentToCursor(cursor, false); ok {
+			m.input.RemoveImageToken(match, match.Start)
+			return nil, true
+		}
+	case tea.KeyDelete:
+		if match, ok := m.input.MatchAdjacentToCursor(cursor, true); ok {
+			m.input.RemoveImageToken(match, match.Start)
+			return nil, true
+		}
 	}
+
 	return nil, false
 }
 
@@ -122,15 +172,16 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return m.expandCollapseAll(), true
 
 	case tea.KeyCtrlX:
-		if len(m.input.Images.Pending) > 0 {
-			if m.input.Images.SelectMode {
-				m.input.Images.RemoveAt(m.input.Images.SelectedIdx)
-			} else {
-				m.input.Images.RemoveAt(len(m.input.Images.Pending) - 1)
-			}
+		return nil, false // let textarea handle it
+
+	case tea.KeyCtrlU:
+		if m.inputQueue.Len() > 0 {
+			m.inputQueue.Clear()
+			m.queueSelectIdx = -1
+			m.queueTempInput = ""
 			return nil, true
 		}
-		return nil, false // let textarea handle it
+		return nil, false // let textarea handle (clear to start of line)
 
 	case tea.KeyCtrlV, tea.KeyCtrlY:
 		return m.pasteImageFromClipboard()
@@ -169,9 +220,9 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 
 	case tea.KeyUp:
 		if m.input.Textarea.Line() == 0 {
-			if len(m.input.Images.Pending) > 0 && !m.input.Images.SelectMode {
-				m.input.Images.SelectMode = true
-				m.input.Images.SelectedIdx = len(m.input.Images.Pending) - 1
+			// Queue items are displayed above the input — Up goes there first
+			if m.inputQueue.Len() > 0 {
+				m.enterQueueSelection()
 				return nil, true
 			}
 			return m.handleHistoryUp(), true

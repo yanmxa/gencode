@@ -41,7 +41,7 @@ func MessagesField(messages []message.Message) zap.Field {
 }
 
 // toolMarshaler wraps a Tool for zap logging
-type toolMarshaler provider.Tool
+type toolMarshaler provider.ToolSchema
 
 func (t toolMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("name", t.Name)
@@ -57,7 +57,7 @@ func (t toolMarshaler) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 }
 
 // toolsMarshaler wraps a slice of Tools for zap logging
-type toolsMarshaler []provider.Tool
+type toolsMarshaler []provider.ToolSchema
 
 func (t toolsMarshaler) MarshalLogArray(enc zapcore.ArrayEncoder) error {
 	for _, tool := range t {
@@ -67,7 +67,7 @@ func (t toolsMarshaler) MarshalLogArray(enc zapcore.ArrayEncoder) error {
 }
 
 // ToolsField creates a zap field for tools
-func ToolsField(tools []provider.Tool) zap.Field {
+func ToolsField(tools []provider.ToolSchema) zap.Field {
 	return zap.Array("tools", toolsMarshaler(tools))
 }
 

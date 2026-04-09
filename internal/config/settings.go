@@ -142,6 +142,7 @@ const (
 // allModes lists the modes that the user can cycle through with the mode toggle.
 // BypassPermissions and DontAsk are entered explicitly, not via cycling.
 var cycleModes = []OperationMode{ModeNormal, ModeAutoAccept, ModePlan}
+var cycleModesWithBypass = []OperationMode{ModeNormal, ModeAutoAccept, ModePlan, ModeBypassPermissions}
 
 func (m OperationMode) String() string {
 	switch m {
@@ -166,6 +167,21 @@ func (m OperationMode) Next() OperationMode {
 	}
 	// If current mode is not in the cycle list (e.g. BypassPermissions),
 	// return to normal.
+	return ModeNormal
+}
+
+// NextWithBypass cycles to the next operation mode.
+// When enabled is true, BypassPermissions is included in the cycle.
+func (m OperationMode) NextWithBypass(enabled bool) OperationMode {
+	modes := cycleModes
+	if enabled {
+		modes = cycleModesWithBypass
+	}
+	for i, mode := range modes {
+		if mode == m {
+			return modes[(i+1)%len(modes)]
+		}
+	}
 	return ModeNormal
 }
 

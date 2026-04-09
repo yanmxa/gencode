@@ -5,6 +5,8 @@ package message
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -12,6 +14,7 @@ import (
 type ChatMessage struct {
 	Role              Role
 	Content           string
+	DisplayContent    string
 	Thinking          string
 	ThinkingSignature string
 	Images            []ImageData
@@ -37,6 +40,7 @@ const (
 type Message struct {
 	Role              Role        `json:"role"`
 	Content           string      `json:"content,omitempty"`
+	DisplayContent    string      `json:"display_content,omitempty"`
 	Images            []ImageData `json:"images,omitempty"`
 	Thinking          string      `json:"thinking,omitempty"`
 	ThinkingSignature string      `json:"thinking_signature,omitempty"`
@@ -72,9 +76,10 @@ type ToolResult struct {
 // UserMessage creates a user message with optional images.
 func UserMessage(text string, images []ImageData) Message {
 	return Message{
-		Role:    RoleUser,
-		Content: text,
-		Images:  images,
+		Role:           RoleUser,
+		Content:        text,
+		DisplayContent: text,
+		Images:         images,
 	}
 }
 
@@ -219,4 +224,72 @@ type StreamChunk struct {
 	ToolName string              // For tool_start chunks
 	Response *CompletionResponse // For done chunks
 	Error    error               // For error chunks
+}
+
+type ContentPartType string
+
+const (
+	ContentPartText  ContentPartType = "text"
+	ContentPartImage ContentPartType = "image"
+)
+
+type ContentPart struct {
+	Type  ContentPartType
+	Text  string
+	Image *ImageData
+}
+
+var inlineImageTokenRe = regexp.MustCompile(`\[Image #(\d+)\]`)
+
+func InterleavedContentParts(msg Message) []ContentPart {
+	if len(msg.Images) == 0 || msg.DisplayContent == "" || !inlineImageTokenRe.MatchString(msg.DisplayContent) {
+		return nil
+	}
+
+	idToIdx := buildImageIDMap(msg.DisplayContent, len(msg.Images))
+
+	var parts []ContentPart
+	last := 0
+	matches := inlineImageTokenRe.FindAllStringSubmatchIndex(msg.DisplayContent, -1)
+	for _, match := range matches {
+		start, end := match[0], match[1]
+		idStart, idEnd := match[2], match[3]
+
+		if text := msg.DisplayContent[last:start]; text != "" {
+			parts = append(parts, ContentPart{Type: ContentPartText, Text: text})
+		}
+
+		id, err := strconv.Atoi(msg.DisplayContent[idStart:idEnd])
+		if err == nil {
+			if idx, ok := idToIdx[id]; ok && idx < len(msg.Images) {
+				img := msg.Images[idx]
+				parts = append(parts, ContentPart{Type: ContentPartImage, Image: &img})
+			}
+		}
+
+		last = end
+	}
+
+	if tail := msg.DisplayContent[last:]; tail != "" {
+		parts = append(parts, ContentPart{Type: ContentPartText, Text: tail})
+	}
+
+	if len(parts) == 0 {
+		return nil
+	}
+	return parts
+}
+
+func buildImageIDMap(displayContent string, imageCount int) map[int]int {
+	m := make(map[int]int)
+	matches := inlineImageTokenRe.FindAllStringSubmatch(displayContent, -1)
+	idx := 0
+	for _, match := range matches {
+		id, err := strconv.Atoi(match[1])
+		if err == nil && idx < imageCount {
+			m[id] = idx
+			idx++
+		}
+	}
+	return m
 }

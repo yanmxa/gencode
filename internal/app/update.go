@@ -7,12 +7,12 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
-	appagent "github.com/yanmxa/gencode/internal/app/agent"
+	"github.com/yanmxa/gencode/internal/app/agentui"
 	appinput "github.com/yanmxa/gencode/internal/app/input"
-	appskill "github.com/yanmxa/gencode/internal/app/skill"
-	apptool "github.com/yanmxa/gencode/internal/app/tool"
+	"github.com/yanmxa/gencode/internal/app/skillui"
+	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/skill"
-	"github.com/yanmxa/gencode/internal/ui/shared"
+	"github.com/yanmxa/gencode/internal/ui/selector"
 )
 
 // initialPromptMsg is sent from Init() to inject an initial CLI prompt.
@@ -32,7 +32,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleWindowResize(msg)
 	case spinner.TickMsg:
 		return m, m.handleSpinnerTick(msg)
-	case appskill.InvokeMsg:
+	case skillui.InvokeMsg:
 		if sk, ok := skill.DefaultRegistry.Get(msg.SkillName); ok {
 			executeSkillCommand(&m, sk, "")
 			return m, m.handleSkillInvocation()
@@ -43,7 +43,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case promptSuggestionMsg:
 		m.handlePromptSuggestion(msg)
 		return m, nil
-	case shared.DismissedMsg, apptool.ToggleMsg, appskill.CycleMsg, appagent.ToggleMsg:
+	case selector.DismissedMsg, toolui.ToggleMsg, skillui.CycleMsg, agentui.ToggleMsg:
 		return m, nil
 	}
 

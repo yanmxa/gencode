@@ -13,11 +13,12 @@ import (
 	appcommand "github.com/yanmxa/gencode/internal/app/command"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
-	appsession "github.com/yanmxa/gencode/internal/app/session"
+	"github.com/yanmxa/gencode/internal/app/sessionui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plugin"
+	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/skill"
 )
 
@@ -99,7 +100,7 @@ func TestExecuteCommandPlanUsageAndState(t *testing.T) {
 		if cmd != nil {
 			t.Fatal("did not expect follow-up command")
 		}
-		if m.mode.Operation != appmode.Plan || !m.mode.Enabled {
+		if m.mode.Operation != config.ModePlan || !m.mode.Enabled {
 			t.Fatalf("expected plan mode enabled, got operation=%v enabled=%v", m.mode.Operation, m.mode.Enabled)
 		}
 		if m.mode.Task != "audit regression coverage" {
@@ -138,21 +139,21 @@ func TestExecuteCommandOpenSelectors(t *testing.T) {
 		tmpDir := t.TempDir()
 		t.Setenv("HOME", tmpHome)
 
-		store, err := appsession.NewStore(tmpDir)
+		store, err := session.NewStore(tmpDir)
 		if err != nil {
 			t.Fatalf("NewStore(): %v", err)
 		}
-		err = store.Save(&appsession.Snapshot{
-			Metadata: appsession.SessionMetadata{
+		err = store.Save(&session.Snapshot{
+			Metadata: session.SessionMetadata{
 				Title: "Resume me",
 				Cwd:   tmpDir,
 			},
-			Entries: []appsession.Entry{
+			Entries: []session.Entry{
 				{
-					Type: appsession.EntryUser,
-					Message: &appsession.EntryMessage{
+					Type: session.EntryUser,
+					Message: &session.EntryMessage{
 						Role: "user",
-						Content: []appsession.ContentBlock{
+						Content: []session.ContentBlock{
 							{Type: "text", Text: "hello"},
 						},
 					},
@@ -167,7 +168,7 @@ func TestExecuteCommandOpenSelectors(t *testing.T) {
 			cwd:     tmpDir,
 			width:   80,
 			height:  24,
-			session: appsession.State{Store: store},
+			session: sessionui.State{Store: store},
 		}
 
 		result, cmd, handled := ExecuteCommand(context.Background(), m, "/resume")

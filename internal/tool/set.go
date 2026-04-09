@@ -19,16 +19,17 @@ var parentOnlyTools = map[string]bool{
 // If Static is non-nil, it is returned directly (for custom agents).
 // Otherwise, tools are resolved dynamically using the config fields.
 type Set struct {
-	Static   []provider.Tool        // fixed tool list (overrides dynamic)
-	Disabled map[string]bool        // excluded tools
-	PlanMode bool                   // plan mode filter
-	MCP      func() []provider.Tool // MCP tools getter
-	Allow    []string               // agent allow list (nil = all tools, non-nil = only these)
-	IsAgent  bool                   // true for subagent tool sets (excludes parent-only tools)
+	Static    []provider.ToolSchema        // fixed tool list (overrides dynamic)
+	Disabled  map[string]bool              // excluded tools
+	PlanMode  bool                         // plan mode filter
+	MCP       func() []provider.ToolSchema // MCP tools getter
+	Allow     []string                     // agent allow list (nil = all tools, non-nil = only these)
+	Disallow  []string                     // agent deny list (excluded after allow filtering)
+	IsAgent   bool                         // true for subagent tool sets (excludes parent-only tools)
 }
 
 // Tools returns the resolved tool set for a turn.
-func (s *Set) Tools() []provider.Tool {
+func (s *Set) Tools() []provider.ToolSchema {
 	// Static tools override everything
 	if s.Static != nil {
 		return s.Static
@@ -49,14 +50,14 @@ func (s *Set) Tools() []provider.Tool {
 }
 
 // defaultTools returns the full tool set filtered by disabled/plan/deferred mode.
-func (s *Set) defaultTools() []provider.Tool {
+func (s *Set) defaultTools() []provider.ToolSchema {
 	if s.PlanMode {
 		return GetPlanModeToolSchemasFiltered(s.Disabled)
 	}
 
 	tools := GetToolSchemasWithMCP(s.MCP)
 
-	filtered := make([]provider.Tool, 0, len(tools))
+	filtered := make([]provider.ToolSchema, 0, len(tools))
 	for _, t := range tools {
 		if s.Disabled[t.Name] {
 			continue
@@ -70,13 +71,13 @@ func (s *Set) defaultTools() []provider.Tool {
 	return filtered
 }
 
-// agentAllTools returns all tools except parent-only tools.
+// agentAllTools returns all tools except parent-only and disallowed tools.
 // Used for agents with nil Allow (= all tools).
-func (s *Set) agentAllTools() []provider.Tool {
+func (s *Set) agentAllTools() []provider.ToolSchema {
 	allTools := GetToolSchemasWithMCP(s.MCP)
-	filtered := make([]provider.Tool, 0, len(allTools))
+	filtered := make([]provider.ToolSchema, 0, len(allTools))
 	for _, t := range allTools {
-		if !parentOnlyTools[t.Name] {
+		if !parentOnlyTools[t.Name] && !s.isDisallowed(t.Name) {
 			filtered = append(filtered, t)
 		}
 	}
@@ -86,7 +87,7 @@ func (s *Set) agentAllTools() []provider.Tool {
 // agentTools returns tools filtered by the allow list.
 // Only tools in the Allow list are included. MCP tools matching
 // the allow list (e.g. "mcp__server__tool") are also included.
-func (s *Set) agentTools() []provider.Tool {
+func (s *Set) agentTools() []provider.ToolSchema {
 	allTools := GetToolSchemas()
 
 	// Build allow set for fast lookup
@@ -95,9 +96,9 @@ func (s *Set) agentTools() []provider.Tool {
 		allowSet[strings.ToLower(name)] = true
 	}
 
-	filtered := make([]provider.Tool, 0, len(s.Allow))
+	filtered := make([]provider.ToolSchema, 0, len(s.Allow))
 	for _, t := range allTools {
-		if allowSet[strings.ToLower(t.Name)] {
+		if allowSet[strings.ToLower(t.Name)] && !s.isDisallowed(t.Name) {
 			filtered = append(filtered, t)
 		}
 	}
@@ -105,11 +106,22 @@ func (s *Set) agentTools() []provider.Tool {
 	// Include MCP tools that match the allow list
 	if s.MCP != nil {
 		for _, t := range s.MCP() {
-			if allowSet[strings.ToLower(t.Name)] {
+			if allowSet[strings.ToLower(t.Name)] && !s.isDisallowed(t.Name) {
 				filtered = append(filtered, t)
 			}
 		}
 	}
 
 	return filtered
+}
+
+// isDisallowed checks if a tool name is in the Disallow list.
+func (s *Set) isDisallowed(name string) bool {
+	lower := strings.ToLower(name)
+	for _, d := range s.Disallow {
+		if strings.ToLower(d) == lower {
+			return true
+		}
+	}
+	return false
 }

@@ -89,6 +89,9 @@ type AgentConfig struct {
 	// Description describes what this agent does (used for LLM decision making)
 	Description string `yaml:"description" json:"description"`
 
+	// WhenToUse provides guidance on when to use this agent (shown in <available-agents>)
+	WhenToUse string `yaml:"when-to-use,omitempty" json:"when_to_use,omitempty"`
+
 	// Model specifies the model to use (inherit, sonnet, opus, haiku)
 	Model string `yaml:"model" json:"model"`
 
@@ -98,6 +101,10 @@ type AgentConfig struct {
 	// Tools lists allowed tools. nil = all tools; non-nil = only listed tools.
 	// Supports CC-compatible formats (comma string, array, map).
 	Tools ToolList `yaml:"tools" json:"tools"`
+
+	// DisallowedTools lists tools to exclude. Applied after allow list filtering.
+	// Supports the same CC-compatible formats as Tools.
+	DisallowedTools ToolList `yaml:"disallowed-tools,omitempty" json:"disallowed_tools,omitempty"`
 
 	// Skills lists skills to preload
 	Skills []string `yaml:"skills,omitempty" json:"skills,omitempty"`
@@ -174,6 +181,10 @@ type AgentRequest struct {
 	// ResumeID is an optional agent ID to resume from a previous invocation
 	ResumeID string
 
+	// LiveTaskID links a running background task to this request so follow-up
+	// messages can be injected at safe loop boundaries while the worker is active.
+	LiveTaskID string
+
 	// Isolation specifies isolation mode (e.g., "worktree" for git worktree)
 	Isolation string
 
@@ -210,6 +221,9 @@ type AgentResult struct {
 	// Summary is a brief summary of what was accomplished
 	Summary string
 
+	// TranscriptPath points at the persisted transcript/output file when available.
+	TranscriptPath string
+
 	// Messages contains the full conversation history
 	Messages []message.Message
 
@@ -235,5 +249,18 @@ type AgentResult struct {
 // DefaultMaxTurns is the default maximum number of conversation turns
 const DefaultMaxTurns = 100
 
-// FallbackModel is used when no parent model is available
-const FallbackModel = "claude-sonnet-4-20250514"
+// modelAliases maps short model aliases to full Vertex AI model IDs.
+var modelAliases = map[string]string{
+	"sonnet": "claude-sonnet-4-20250514",
+	"opus":   "claude-opus-4-20250514",
+	"haiku":  "claude-haiku-4-5-20251001",
+}
+
+// ResolveModelAlias returns the full model ID for a known alias,
+// or the input unchanged if it is not an alias.
+func ResolveModelAlias(model string) string {
+	if full, ok := modelAliases[model]; ok {
+		return full
+	}
+	return model
+}

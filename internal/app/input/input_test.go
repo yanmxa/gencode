@@ -1,6 +1,10 @@
 package input
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/yanmxa/gencode/internal/message"
+)
 
 func TestImageRefPattern(t *testing.T) {
 	tests := []struct {
@@ -52,5 +56,71 @@ func TestImageRefPattern(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPendingImageMatchesAndExtractInlineImages(t *testing.T) {
+	m := New("", 80, nil)
+	first := m.AddPendingImage(message.ImageData{FileName: "a.png"})
+	second := m.AddPendingImage(message.ImageData{FileName: "b.png"})
+
+	m.Textarea.SetValue(second + " alpha " + first + " omega")
+
+	matches := m.PendingImageMatches()
+	if len(matches) != 2 {
+		t.Fatalf("expected 2 inline image matches, got %d", len(matches))
+	}
+	if matches[0].ID != 2 || matches[1].ID != 1 {
+		t.Fatalf("expected matches in text order, got %#v", matches)
+	}
+
+	content, images := m.ExtractInlineImages(m.Textarea.Value())
+	if content != "alpha  omega" {
+		t.Fatalf("unexpected content after extraction: %q", content)
+	}
+	if len(images) != 2 {
+		t.Fatalf("expected 2 images, got %d", len(images))
+	}
+	if images[0].FileName != "b.png" || images[1].FileName != "a.png" {
+		t.Fatalf("unexpected image extraction order: %#v", images)
+	}
+}
+
+func TestExtractInlineImagesUsesSubmittedBufferOffsets(t *testing.T) {
+	m := New("", 80, nil)
+	label := m.AddPendingImage(message.ImageData{FileName: "a.png"})
+
+	raw := "  " + label + " hi"
+	m.Textarea.SetValue(raw)
+
+	content, images := m.ExtractInlineImages("[" + raw[2:])
+	if content != "[ hi" {
+		t.Fatalf("unexpected content after extraction: %q", content)
+	}
+	if len(images) != 1 || images[0].FileName != "a.png" {
+		t.Fatalf("unexpected extracted images: %#v", images)
+	}
+}
+
+func TestRemoveImageToken(t *testing.T) {
+	m := New("", 80, nil)
+	label := m.AddPendingImage(message.ImageData{FileName: "clip.png"})
+	m.Textarea.SetValue("hello " + label + " world")
+
+	match, ok := m.MatchAdjacentToCursor(len([]rune("hello "+label)), false)
+	if !ok {
+		t.Fatal("expected image token match at cursor")
+	}
+
+	m.RemoveImageToken(match, len([]rune("hello ")))
+
+	if got := m.Textarea.Value(); got != "hello  world" {
+		t.Fatalf("unexpected textarea value after token removal: %q", got)
+	}
+	if len(m.Images.Pending) != 0 {
+		t.Fatalf("expected pending images to be cleared, got %d", len(m.Images.Pending))
+	}
+	if m.CursorIndex() != len([]rune("hello ")) {
+		t.Fatalf("unexpected cursor position after removal: %d", m.CursorIndex())
 	}
 }

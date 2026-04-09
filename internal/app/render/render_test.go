@@ -175,3 +175,18 @@ func TestRenderPlanForScrollbackDoesNotInjectTitle(t *testing.T) {
 		t.Fatalf("RenderPlanForScrollback() = %q, should not inject a title", rendered)
 	}
 }
+
+func TestRenderTaskOutputResultInlineShowsErrorText(t *testing.T) {
+	rendered := RenderTaskOutputResultInline(ToolResultData{
+		ToolName: "TaskOutput",
+		IsError:  true,
+		Error:    "task not found: 10f7b381",
+	})
+
+	if !strings.Contains(rendered, "TaskOutput → Error") {
+		t.Fatalf("expected TaskOutput error header, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "task not found: 10f7b381") {
+		t.Fatalf("expected TaskOutput error text, got %q", rendered)
+	}
+}

@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appmcp "github.com/yanmxa/gencode/internal/app/mcp"
+	"github.com/yanmxa/gencode/internal/app/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/message"
@@ -15,14 +15,14 @@ import (
 // updateMCP routes MCP server management messages.
 func (m *model) updateMCP(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case appmcp.ConnectMsg:
+	case mcpui.ConnectMsg:
 		if mcp.DefaultRegistry != nil {
 			mcp.DefaultRegistry.SetDisabled(msg.ServerName, false)
 			mcp.DefaultRegistry.SetConnecting(msg.ServerName, true)
 		}
-		return appmcp.StartConnect(msg.ServerName), true
+		return mcpui.StartConnect(msg.ServerName), true
 
-	case appmcp.ConnectResultMsg:
+	case mcpui.ConnectResultMsg:
 		if mcp.DefaultRegistry != nil {
 			mcp.DefaultRegistry.SetConnecting(msg.ServerName, false)
 			if !msg.Success && msg.Error != nil {
@@ -39,27 +39,27 @@ func (m *model) updateMCP(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		return nil, true
 
-	case appmcp.DisconnectMsg:
+	case mcpui.DisconnectMsg:
 		m.mcp.Selector.HandleDisconnect(msg.ServerName)
 		return nil, true
 
-	case appmcp.ReconnectMsg:
+	case mcpui.ReconnectMsg:
 		m.mcp.Selector.HandleReconnect(msg.ServerName)
 		if mcp.DefaultRegistry != nil {
 			mcp.DefaultRegistry.SetConnecting(msg.ServerName, true)
 		}
-		return appmcp.StartConnect(msg.ServerName), true
+		return mcpui.StartConnect(msg.ServerName), true
 
-	case appmcp.RemoveMsg:
+	case mcpui.RemoveMsg:
 		m.mcp.Selector.HandleRemove(msg.ServerName)
 		return nil, true
 
-	case appmcp.AddServerMsg:
+	case mcpui.AddServerMsg:
 		m.input.Textarea.SetValue("/mcp add ")
 		return nil, true
 
-	case appmcp.EditServerMsg:
-		info, err := appmcp.PrepareServerEdit(msg.ServerName)
+	case mcpui.EditServerMsg:
+		info, err := mcpui.PrepareServerEdit(msg.ServerName)
 		if err != nil {
 			m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: fmt.Sprintf("Error: %v", err)})
 			return tea.Batch(m.commitMessages()...), true
@@ -69,8 +69,8 @@ func (m *model) updateMCP(msg tea.Msg) (tea.Cmd, bool) {
 		m.mcp.EditingScope = info.Scope
 		return startMCPEditor(info.TempFile), true
 
-	case appmcp.EditorFinishedMsg:
-		info := &appmcp.EditInfo{
+	case mcpui.EditorFinishedMsg:
+		info := &mcpui.EditInfo{
 			TempFile:   m.mcp.EditingFile,
 			ServerName: m.mcp.EditingServer,
 			Scope:      m.mcp.EditingScope,
@@ -83,7 +83,7 @@ func (m *model) updateMCP(msg tea.Msg) (tea.Cmd, bool) {
 			return tea.Batch(m.commitMessages()...), true
 		}
 
-		if err := appmcp.ApplyServerEdit(info); err != nil {
+		if err := mcpui.ApplyServerEdit(info); err != nil {
 			m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: fmt.Sprintf("Failed to apply edit: %v", err)})
 			return tea.Batch(m.commitMessages()...), true
 		}
@@ -97,6 +97,6 @@ func (m *model) updateMCP(msg tea.Msg) (tea.Cmd, bool) {
 // startMCPEditor launches the external editor for an MCP config file.
 func startMCPEditor(filePath string) tea.Cmd {
 	return appmemory.StartExternalEditor(filePath, func(err error) tea.Msg {
-		return appmcp.EditorFinishedMsg{Err: err}
+		return mcpui.EditorFinishedMsg{Err: err}
 	})
 }

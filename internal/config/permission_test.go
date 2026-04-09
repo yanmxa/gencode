@@ -68,6 +68,12 @@ func TestBuildRule(t *testing.T) {
 			"Bash(git:status)",
 		},
 		{
+			"bash compound command uses meaningful subcommand",
+			"Bash",
+			map[string]any{"command": "cd /path/to/repo && git status"},
+			"Bash(git:status)",
+		},
+		{
 			"read file",
 			"Read",
 			map[string]any{"file_path": "/path/to/file.txt"},

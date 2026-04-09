@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/env"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
 )
@@ -99,14 +98,14 @@ func (e *Engine) buildEnv(input HookInput) []string {
 	defer e.mu.RUnlock()
 
 	result := append(os.Environ(),
-		env.Pairs(
+		config.EnvPairs(
 			"PROJECT_DIR", e.cwd,
 			"SESSION_ID", e.sessionID,
 			"EVENT_TYPE", input.HookEventName,
 		)...,
 	)
 	if input.ToolName != "" {
-		result = append(result, env.Pair("TOOL_NAME", input.ToolName)...)
+		result = append(result, config.EnvPair("TOOL_NAME", input.ToolName)...)
 	}
 	result = append(result, plugin.PluginEnv()...)
 	return result

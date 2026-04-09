@@ -7,7 +7,7 @@ import (
 	agentruntime "github.com/yanmxa/gencode/internal/agent"
 	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/permission"
@@ -50,7 +50,7 @@ func (r *hookAgentRunner) RunAgentHook(ctx context.Context, prompt string, model
 		ThinkingLevel: provider.ThinkingHigh,
 	}
 
-	loop := &core.Loop{
+	loop := &runtime.Loop{
 		System: &system.System{
 			Client:              loopClient,
 			Cwd:                 r.cwd,
@@ -70,7 +70,7 @@ func (r *hookAgentRunner) RunAgentHook(ctx context.Context, prompt string, model
 	}
 	loop.AddUser(prompt, nil)
 
-	result, err := loop.Run(ctx, core.RunOptions{MaxTurns: 16})
+	result, err := loop.Run(ctx, runtime.RunOptions{MaxTurns: 16})
 	if err != nil {
 		return "", err
 	}
@@ -94,14 +94,14 @@ func (r *hookAgentRunner) disabledTools() map[string]bool {
 	return dup
 }
 
-func (r *hookAgentRunner) mcpToolsGetter() func() []provider.Tool {
+func (r *hookAgentRunner) mcpToolsGetter() func() []provider.ToolSchema {
 	if r.mcpRegistry == nil {
 		return nil
 	}
 	return r.mcpRegistry.GetToolSchemas
 }
 
-func (r *hookAgentRunner) mcpCaller() core.MCPCaller {
+func (r *hookAgentRunner) mcpCaller() runtime.MCPCaller {
 	if r.mcpRegistry == nil {
 		return nil
 	}

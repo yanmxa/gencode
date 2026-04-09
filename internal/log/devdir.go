@@ -19,7 +19,7 @@ type DevRequest struct {
 	MaxTokens    int               `json:"max_tokens"`
 	Temperature  float64           `json:"temperature"`
 	SystemPrompt string            `json:"system_prompt,omitempty"`
-	Tools        []provider.Tool   `json:"tools,omitempty"`
+	Tools        []provider.ToolSchema   `json:"tools,omitempty"`
 	Messages     []message.Message `json:"messages"`
 }
 

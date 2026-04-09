@@ -10,7 +10,7 @@ import (
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	appprovider "github.com/yanmxa/gencode/internal/app/provider"
+	"github.com/yanmxa/gencode/internal/app/providerui"
 	"github.com/yanmxa/gencode/internal/message"
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
 )
@@ -168,8 +168,8 @@ func TestHandleTokenLimitCommand_ValidationAndModelFallbacks(t *testing.T) {
 	}
 }
 
-func providerStateForTest(store *coreprovider.Store, modelID string, p coreprovider.Provider, auth coreprovider.AuthMethod) appprovider.State {
-	return appprovider.State{
+func providerStateForTest(store *coreprovider.Store, modelID string, p coreprovider.Provider, auth coreprovider.AuthMethod) providerui.State {
+	return providerui.State{
 		Store: store,
 		CurrentModel: &coreprovider.CurrentModelInfo{
 			ModelID:    modelID,

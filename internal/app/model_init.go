@@ -5,49 +5,54 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/yanmxa/gencode/internal/agent"
-	appagent "github.com/yanmxa/gencode/internal/app/agent"
+	"github.com/yanmxa/gencode/internal/app/agentui"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appcommand "github.com/yanmxa/gencode/internal/app/command"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appinput "github.com/yanmxa/gencode/internal/app/input"
-	appmcp "github.com/yanmxa/gencode/internal/app/mcp"
+	"github.com/yanmxa/gencode/internal/app/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	appplugin "github.com/yanmxa/gencode/internal/app/plugin"
-	appprovider "github.com/yanmxa/gencode/internal/app/provider"
-	appsession "github.com/yanmxa/gencode/internal/app/session"
-	appskill "github.com/yanmxa/gencode/internal/app/skill"
-	apptool "github.com/yanmxa/gencode/internal/app/tool"
+	"github.com/yanmxa/gencode/internal/app/pluginui"
+	"github.com/yanmxa/gencode/internal/app/providerui"
+	"github.com/yanmxa/gencode/internal/app/sessionui"
+	"github.com/yanmxa/gencode/internal/app/skillui"
+	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/cron"
+	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/mcp"
-	"github.com/yanmxa/gencode/internal/options"
+	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/runtime"
+	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/skill"
-	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/task"
+	"github.com/yanmxa/gencode/internal/tracker"
 	"github.com/yanmxa/gencode/internal/ui/progress"
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
 
 type modelInfra struct {
-	store        *provider.Store
-	llmProvider  provider.LLMProvider
-	currentModel *provider.CurrentModelInfo
-	settings     *config.Settings
-	hookEngine   *hooks.Engine
-	sessionStore *appsession.Store
+	store             *provider.Store
+	llmProvider       provider.LLMProvider
+	currentModel      *provider.CurrentModelInfo
+	settings          *config.Settings
+	hookEngine        *hooks.Engine
+	sessionStore      *session.Store
+	taskNotifications *taskNotificationQueue
+	initialSessionID  string
 }
 
 func initializeModelInfra(cwd string) (modelInfra, error) {
 	cron.DefaultStore = cron.NewStore()
+	orchestration.DefaultStore.Reset()
 	cron.DefaultStore.SetStoragePath(filepath.Join(cwd, ".gen", "scheduled_tasks.json"))
 	if err := cron.DefaultStore.LoadDurable(); err != nil {
 		return modelInfra{}, fmt.Errorf("failed to load scheduled tasks: %w", err)
@@ -55,31 +60,34 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 
 	store, llmProvider, currentModel := initializeProvider()
 	initializeRegistries(cwd)
-	settings := loadSettings()
+	settings := loadSettingsForCwd(cwd)
 
-	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
+	sessionID := session.NewSessionID()
 
 	var transcriptPath string
-	sessionStore, _ := appsession.NewStore(cwd)
+	sessionStore, _ := session.NewStore(cwd)
 	if sessionStore != nil {
 		transcriptPath = sessionStore.SessionPath(sessionID)
 	}
+	taskNotifications := newTaskNotificationQueue()
 	hookEngine := hooks.NewEngine(settings, sessionID, cwd, transcriptPath)
 	modelID := ""
 	if currentModel != nil {
 		modelID = currentModel.ModelID
 	}
 	hookEngine.SetLLMProvider(llmProvider, modelID)
-	hookEngine.SetAgentRunner(newHookAgentRunner(llmProvider, settings, cwd, isGitRepo(cwd), mcp.DefaultRegistry))
-	installHookBridges(hookEngine)
+	hookEngine.SetAgentRunner(newHookAgentRunner(llmProvider, settings, cwd, config.IsGitRepo(cwd), mcp.DefaultRegistry))
+	installHookBridges(hookEngine, taskNotifications)
 
 	return modelInfra{
-		store:        store,
-		llmProvider:  llmProvider,
-		currentModel: currentModel,
-		settings:     settings,
-		hookEngine:   hookEngine,
-		sessionStore: sessionStore,
+		store:             store,
+		llmProvider:       llmProvider,
+		currentModel:      currentModel,
+		settings:          settings,
+		hookEngine:        hookEngine,
+		sessionStore:      sessionStore,
+		taskNotifications: taskNotifications,
+		initialSessionID:  sessionID,
 	}, nil
 }
 
@@ -103,15 +111,19 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		agent:    newAgentState(),
 		approval: appapproval.New(),
 
-		showTasks: true,
-		isGit:     isGitRepo(cwd),
+		queueSelectIdx: -1,
 
-		settings:       infra.settings,
-		hookEngine:     infra.hookEngine,
-		fileWatcher:    newFileWatcher(infra.hookEngine, nil),
-		asyncHookQueue: newAsyncHookQueue(),
-		loop:           &core.Loop{},
-		runtime:        newConversationRuntime(),
+		showTasks: true,
+		isGit:     config.IsGitRepo(cwd),
+
+		settings:          infra.settings,
+		hookEngine:        infra.hookEngine,
+		fileWatcher:       newFileWatcher(infra.hookEngine, nil),
+		asyncHookQueue:    newAsyncHookQueue(),
+		taskNotifications: infra.taskNotifications,
+		loop:              &runtime.Loop{},
+		runtime:           newConversationRuntime(),
+		fileCache:         filecache.New(),
 	}
 }
 
@@ -126,24 +138,25 @@ func commandSuggestionMatcher() func(string) []suggest.Suggestion {
 	}
 }
 
-func newProviderState(infra modelInfra) appprovider.State {
-	return appprovider.State{
+func newProviderState(infra modelInfra) providerui.State {
+	return providerui.State{
 		LLM:          infra.llmProvider,
 		Store:        infra.store,
 		CurrentModel: infra.currentModel,
-		Selector:     appprovider.New(),
+		Selector:     providerui.New(),
 	}
 }
 
-func newSessionState(infra modelInfra) appsession.State {
-	return appsession.State{
-		Selector: appsession.New(),
-		Store:    infra.sessionStore,
+func newSessionState(infra modelInfra) sessionui.State {
+	return sessionui.State{
+		Selector:  sessionui.New(),
+		Store:     infra.sessionStore,
+		CurrentID: infra.initialSessionID,
 	}
 }
 
-func newSkillState() appskill.State {
-	return appskill.State{Selector: appskill.New()}
+func newSkillState() skillui.State {
+	return skillui.State{Selector: skillui.New()}
 }
 
 func newMemoryState() appmemory.State {
@@ -152,7 +165,7 @@ func newMemoryState() appmemory.State {
 
 func newModeState() appmode.State {
 	return appmode.State{
-		Operation:          appmode.Normal,
+		Operation:          config.ModeNormal,
 		SessionPermissions: config.NewSessionPermissions(),
 		DisabledTools:      config.GetDisabledTools(),
 		PlanApproval:       appmode.NewPlanPrompt(),
@@ -161,23 +174,23 @@ func newModeState() appmode.State {
 	}
 }
 
-func newToolState() apptool.State {
-	return apptool.State{Selector: apptool.New()}
+func newToolState() toolui.State {
+	return toolui.State{Selector: toolui.New()}
 }
 
-func newMCPState() appmcp.State {
-	return appmcp.State{Selector: appmcp.New(), Registry: mcp.DefaultRegistry}
+func newMCPState() mcpui.State {
+	return mcpui.State{Selector: mcpui.New(), Registry: mcp.DefaultRegistry}
 }
 
-func newPluginState() appplugin.State {
-	return appplugin.State{Selector: appplugin.New()}
+func newPluginState() pluginui.State {
+	return pluginui.State{Selector: pluginui.New()}
 }
 
-func newAgentState() appagent.State {
-	return appagent.State{Selector: appagent.New()}
+func newAgentState() agentui.State {
+	return agentui.State{Selector: agentui.New()}
 }
 
-func (m *model) applyRunOptions(opts options.RunOptions) error {
+func (m *model) applyRunOptions(opts config.RunOptions) error {
 	if opts.PluginDir != "" {
 		ctx := context.Background()
 		if err := plugin.DefaultRegistry.LoadFromPath(ctx, opts.PluginDir); err != nil {
@@ -242,7 +255,7 @@ func (m *model) reloadPluginBackedState() error {
 func (m *model) enablePlanMode(prompt string) error {
 	m.mode.Enabled = true
 	m.mode.Task = prompt
-	m.mode.Operation = appmode.Plan
+	m.mode.Operation = config.ModePlan
 
 	planStore, err := plan.NewStore()
 	if err != nil {
@@ -253,7 +266,7 @@ func (m *model) enablePlanMode(prompt string) error {
 }
 
 func (m *model) applyContinueOption(fork bool) error {
-	sessionStore, err := appsession.NewStore(m.cwd)
+	sessionStore, err := session.NewStore(m.cwd)
 	if err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
@@ -277,7 +290,7 @@ func (m *model) applyContinueOption(fork bool) error {
 }
 
 func (m *model) applyResumeOption(resumeID string, fork bool) error {
-	sessionStore, err := appsession.NewStore(m.cwd)
+	sessionStore, err := session.NewStore(m.cwd)
 	if err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
@@ -308,7 +321,9 @@ func (m *model) initializeTaskStorageFromEnv() {
 	if taskListID := os.Getenv("GEN_TASK_LIST_ID"); taskListID != "" {
 		homeDir, _ := os.UserHomeDir()
 		if homeDir != "" {
-			tool.DefaultTodoStore.SetStorageDir(filepath.Join(homeDir, ".gen", "tasks", taskListID))
+			dir := filepath.Join(homeDir, ".gen", "tasks", taskListID)
+			tracker.DefaultStore.SetStorageDir(dir)
+			_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
 		}
 	}
 }

@@ -22,34 +22,77 @@ func (m *model) resetInputField() {
 	m.input.Textarea.Reset()
 	m.input.Textarea.SetHeight(appinput.MinTextareaHeight())
 	m.input.ClearPaste()
+	m.input.ClearImages()
+	m.queueSelectIdx = -1
+	m.queueTempInput = ""
 }
 
 func (m *model) handleSubmit() tea.Cmd {
 	m.promptSuggestion.Clear()
+
+	input := strings.TrimSpace(m.input.FullValue())
+	if input == "" && len(m.input.Images.Pending) == 0 {
+		return nil
+	}
+
+	// If the LLM is busy (streaming or tools running), enqueue instead of blocking
+	if m.isTurnActive() {
+		m.enqueueCurrentInput(input)
+		return nil
+	}
+
 	m.maxOutputRecoveryCount = 0
 	m.conv.Compact.ClearResult()
 
-	req, ok := m.readSubmitRequest()
+	return m.executeSubmitRequest(submitRequest{Input: input})
+}
+
+// isTurnActive returns true when the LLM is streaming or tools are executing.
+func (m *model) isTurnActive() bool {
+	return m.conv.Stream.Active || m.hasPendingToolExecution()
+}
+
+// enqueueCurrentInput captures the current input field content into the queue.
+func (m *model) enqueueCurrentInput(input string) {
+	var images []message.ImageData
+	for _, p := range m.input.Images.Pending {
+		images = append(images, p.Data)
+	}
+	m.inputQueue.Enqueue(input, images)
+	m.resetInputField()
+}
+
+// drainInputQueue dequeues the next pending input and starts a new turn.
+// Returns nil if the queue is empty.
+func (m *model) drainInputQueue() tea.Cmd {
+	item, ok := m.inputQueue.Dequeue()
 	if !ok {
 		return nil
 	}
 
+	m.maxOutputRecoveryCount = 0
+	m.conv.Compact.ClearResult()
+
+	m.input.Textarea.SetValue(item.Content)
+	m.input.Textarea.CursorEnd()
+	m.input.UpdateHeight()
+	m.input.Images.Pending = nil
+	m.input.Images.Selection = appinput.ImageSelection{}
+
+	req := submitRequest{Input: item.Content}
+	// Restore images into the input model so prepareSubmittedUserMessage can process them
+	maxID := 0
+	for i, img := range item.Images {
+		id := i + 1
+		m.input.Images.Pending = append(m.input.Images.Pending, appinput.PendingImage{
+			ID:   id,
+			Data: img,
+		})
+		maxID = id
+	}
+	m.input.Images.NextID = maxID
+
 	return m.executeSubmitRequest(req)
-}
-
-func (m *model) readSubmitRequest() (submitRequest, bool) {
-	if m.conv.Stream.Active {
-		return submitRequest{}, false
-	}
-
-	input := strings.TrimSpace(m.input.FullValue())
-	if input == "" && len(m.input.Images.Pending) == 0 {
-		return submitRequest{}, false
-	}
-
-	return submitRequest{
-		Input: input,
-	}, true
 }
 
 func (m *model) executeSubmitRequest(req submitRequest) tea.Cmd {
@@ -199,13 +242,15 @@ func (m *model) prepareSubmittedUserMessage(input string) (message.ChatMessage, 
 		return message.ChatMessage{}, tea.Batch(m.commitMessages()...), true
 	}
 
-	allImages := append(m.input.Images.Pending, fileImages...)
-	m.input.Images.Pending = nil
+	displayContent := content
+	content, inlineImages := m.input.ExtractInlineImages(content)
+	allImages := append(inlineImages, fileImages...)
 
 	return message.ChatMessage{
-		Role:    message.RoleUser,
-		Content: content,
-		Images:  allImages,
+		Role:           message.RoleUser,
+		Content:        content,
+		DisplayContent: displayContent,
+		Images:         allImages,
 	}, nil, false
 }
 

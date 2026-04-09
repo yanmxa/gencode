@@ -14,8 +14,8 @@ import (
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/provider/openai_compat"
-	"github.com/yanmxa/gencode/internal/provider/streamutil"
+	"github.com/yanmxa/gencode/internal/provider/openaicompat"
+	streamutil "github.com/yanmxa/gencode/internal/provider/stream"
 )
 
 // Client implements the LLMProvider interface using the OpenAI SDK
@@ -263,7 +263,7 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 	go func() {
 		defer close(ch)
 
-		messages := openai_compat.ConvertMessages(opts.Messages, opts.SystemPrompt, openai_compat.DefaultAssistantMessage)
+		messages := openaicompat.ConvertMessages(opts.Messages, opts.SystemPrompt, openaicompat.DefaultAssistantMessage)
 
 		params := openai.ChatCompletionNewParams{
 			Model:    opts.Model,
@@ -285,7 +285,7 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 
 		// Add tools if provided
 		if len(opts.Tools) > 0 {
-			params.Tools = openai_compat.ConvertTools(opts.Tools)
+			params.Tools = openaicompat.ConvertTools(opts.Tools)
 		}
 
 		// Log request
@@ -332,7 +332,7 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 
 				// Handle finish reason
 				if choice.FinishReason != "" {
-					state.Response.StopReason = openai_compat.MapFinishReason(choice.FinishReason)
+					state.Response.StopReason = openaicompat.MapFinishReason(choice.FinishReason)
 				}
 			}
 
