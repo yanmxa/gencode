@@ -102,17 +102,6 @@ GenCode stores configuration in `~/.gen/`:
 └── agents/           # Custom agents
 ```
 
-## 🧪 Testing
-
-Fast transcript/session verification:
-
-```bash
-GOCACHE=/tmp/gocache go test ./internal/transcriptstore ./internal/app/session ./tests/integration/session/... ./tests/integration/cli/...
-```
-
-For the complete transcript persistence, resume/fork, and interactive vs non-interactive verification checklist, see `docs/transcriptstore.md`.
-
-
 ## 📊 Benchmark: GenCode vs Claude Code
 
 Compared with [Claude Code](https://claude.ai/code) v2.1.96 on Apple Silicon, same model (`claude-sonnet-4-20250514`):
@@ -126,7 +115,7 @@ Compared with [Claude Code](https://claude.ai/code) v2.1.96 on Apple Silicon, sa
 | Simple task | ~5.2s / 39 MB | ~11.9s / 282 MB | **2.3x faster, 7.2x less memory** |
 | Tool-use task | ~3.6s / 40 MB | ~14.6s / 281 MB | **4.1x faster, 7.1x less memory** |
 
-Go's native compilation produces a single static binary with minimal runtime overhead, while Node.js carries V8/JIT/GC baseline costs. Claude Code also performs more startup work (hooks, LSP, plugin sync, memory, etc.).
+Both tools have comparable features (hooks, skills, plugins, session, MCP, etc.). The performance gap comes from Go's native compilation vs Node.js V8/JIT/GC runtime overhead.
 
 See full details: [docs/benchmark-gencode-vs-claudecode.md](docs/benchmark-gencode-vs-claudecode.md)
 

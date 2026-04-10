@@ -121,14 +121,14 @@ Requires Glob/Bash tool call + counting + response.
 
 ### Why the difference?
 
+Both tools have comparable feature sets (hooks, skills, plugins, session management, MCP, subagents, etc.). The performance gap comes from the underlying technology:
+
 - **Language runtime**: Go compiles to native code with a lightweight runtime (~10 MB baseline). Node.js has a heavier runtime with JIT compilation, garbage collector, and V8 engine overhead (~185 MB baseline).
-- **Startup path**: GenCode initializes a Bubble Tea TUI model. Claude Code loads hooks, LSP, plugin sync, CLAUDE.md discovery, OAuth/keychain, memory system, and more.
-- **Architecture**: GenCode is a single static binary. Claude Code is a bundled TypeScript application running on Node.js with npm dependencies.
-- **Feature scope**: Claude Code has significantly more features (IDE integration, OAuth, Chrome integration, Teams, prompt caching, auto-memory, etc.) which add overhead. GenCode is leaner but covers core CLI agentic coding functionality.
+- **Architecture**: GenCode is a single static binary with zero dependencies. Claude Code is a bundled TypeScript application running on Node.js with npm dependencies.
+- **Feature differences**: Claude Code has some additional features (IDE integration, OAuth, Chrome integration, Teams, prompt caching) that add incremental overhead.
 
 ### Caveats
 
 - LLM inference time is identical (same API, same model) — the difference is purely client-side overhead.
-- Claude Code's additional startup work (hooks, LSP, etc.) provides features GenCode doesn't have yet.
 - Network latency variance affects individual runs; averages across 3-5 runs are more reliable.
 - Memory is measured as peak RSS; actual working set may differ.
