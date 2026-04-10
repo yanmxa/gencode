@@ -119,7 +119,8 @@ Compared with [Claude Code](https://claude.ai/code) v2.1.96 on Apple Silicon, sa
 
 | Metric | GenCode | Claude Code | Advantage |
 |--------|---------|-------------|-----------|
-| Install size | 38 MB | 174 MB | **4.6x smaller** |
+| Download size | 12 MB | 62 MB (+ Node.js 112 MB) | **5x smaller** |
+| Disk footprint | 38 MB | 174 MB | **4.6x smaller** |
 | Startup time | ~0.02s | ~0.18s | **9x faster** |
 | Startup memory | ~33 MB | ~185 MB | **5.6x less** |
 | Simple task | ~5.2s / 39 MB | ~11.9s / 282 MB | **2.3x faster, 7.2x less memory** |

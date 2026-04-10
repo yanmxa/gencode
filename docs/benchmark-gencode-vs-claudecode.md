@@ -12,10 +12,10 @@ Comparison between **GenCode v1.12.0** (Go) and **Claude Code v2.1.96** (Node.js
 
 | Metric | GenCode | Claude Code | Ratio |
 |--------|---------|-------------|-------|
-| Binary / Package | 38 MB | 62 MB | 0.6x |
-| Compressed (.tar.gz) | 12 MB | N/A (npm install) | - |
+| Download size | **12 MB** (.tar.gz) | 62 MB (npm) | **5x smaller** |
+| Binary / Package (on disk) | 38 MB | 62 MB | 0.6x |
 | Runtime dependency | None (static binary) | Node.js v24 (~112 MB) | - |
-| Total install footprint | **38 MB** | **~174 MB** (62 + 112) | **0.22x** |
+| Total disk footprint | **38 MB** | **~174 MB** (62 + 112) | **4.6x smaller** |
 | File count | 1 | ~30 + node_modules | - |
 
 GenCode ships as a single static binary with zero runtime dependencies. Claude Code requires Node.js and installs ~62 MB of npm packages (16 MB node_modules + 34 MB vendor).
@@ -110,7 +110,8 @@ Requires Glob/Bash tool call + counting + response.
 
 | Metric | GenCode | Claude Code | GenCode Advantage |
 |--------|---------|-------------|-------------------|
-| Install size | 38 MB | 174 MB | **4.6x smaller** |
+| Download size | 12 MB | 62 MB (+ Node.js) | **5x smaller** |
+| Disk footprint | 38 MB | 174 MB | **4.6x smaller** |
 | Startup time | ~0.02s | ~0.18s | **9x faster** |
 | Startup memory | ~33 MB | ~185 MB | **5.6x less** |
 | Simple task time | ~5.2s | ~11.9s | **2.3x faster** |
