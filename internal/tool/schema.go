@@ -23,9 +23,10 @@ const (
 	ToolCronCreate    = "CronCreate"
 	ToolCronDelete    = "CronDelete"
 	ToolCronList      = "CronList"
-	ToolEnterWorktree = "EnterWorktree"
-	ToolExitWorktree  = "ExitWorktree"
-	ToolToolSearch    = "ToolSearch"
+	ToolEnterWorktree   = "EnterWorktree"
+	ToolExitWorktree    = "ExitWorktree"
+	ToolToolSearch      = "ToolSearch"
+	ToolAskUserQuestion = "AskUserQuestion"
 )
 
 // IsAgentToolName reports whether the tool name represents an agent-like worker tool.

@@ -21,6 +21,8 @@ func RenderToolResultInline(data ToolResultData, mdRenderer *MDRenderer) string 
 		return RenderTaskResultInline(data, mdRenderer)
 	case tool.ToolTaskOutput:
 		return RenderTaskOutputResultInline(data)
+	case tool.ToolAskUserQuestion:
+		return renderAskUserResultInline(data)
 	}
 
 	sizeInfo := FormatToolResultSize(toolName, data.Content)
@@ -36,6 +38,34 @@ func RenderToolResultInline(data ToolResultData, mdRenderer *MDRenderer) string 
 		}
 	}
 
+	return sb.String()
+}
+
+// renderAskUserResultInline renders AskUserQuestion result with answer summary.
+func renderAskUserResultInline(data ToolResultData) string {
+	icon := toolResultIcon(data.IsError)
+
+	if data.IsError {
+		return ToolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, data.Content)) + "\n"
+	}
+
+	if strings.Contains(data.Content, "User cancelled") {
+		return ToolResultStyle.Render(fmt.Sprintf("  %s  Cancelled", icon)) + "\n"
+	}
+
+	var answers []string
+	for line := range strings.SplitSeq(data.Content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line == "User responses:" {
+			continue
+		}
+		answers = append(answers, line)
+	}
+
+	var sb strings.Builder
+	for _, a := range answers {
+		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, a)) + "\n")
+	}
 	return sb.String()
 }
 

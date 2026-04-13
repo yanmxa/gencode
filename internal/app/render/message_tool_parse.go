@@ -152,6 +152,13 @@ func ExtractToolArgs(input string) string {
 	if s, ok := params["skill"].(string); ok {
 		return s
 	}
+	if qs, ok := params["questions"].([]any); ok {
+		count := len(qs)
+		if count == 1 {
+			return "1 question"
+		}
+		return fmt.Sprintf("%d questions", count)
+	}
 
 	keys := make([]string, 0, len(params))
 	for k := range params {
