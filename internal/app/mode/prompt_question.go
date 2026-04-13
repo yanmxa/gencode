@@ -18,8 +18,9 @@ type QuestionPrompt struct {
 	request         *tool.QuestionRequest
 	width           int
 	currentQuestion int             // Current question index
-	selectedOption  int             // Currently highlighted option
-	selected        map[int][]int   // Question index -> selected option indices
+	selectedOption map[int]int    // Per-question highlighted option index
+	selected       map[int][]int  // Question index -> selected option indices
+	customAnswers  map[int]string // Question index -> custom "Other" answer text
 	customInput     textinput.Model // For "Other" option
 	showingCustom   bool            // Whether custom input is visible
 }
@@ -32,8 +33,10 @@ func NewQuestionPrompt() *QuestionPrompt {
 	ti.Width = 50
 
 	return &QuestionPrompt{
-		selected:    make(map[int][]int),
-		customInput: ti,
+		selectedOption: make(map[int]int),
+		selected:       make(map[int][]int),
+		customAnswers:  make(map[int]string),
+		customInput:    ti,
 	}
 }
 
@@ -43,8 +46,9 @@ func (p *QuestionPrompt) Show(req *tool.QuestionRequest, width int) {
 	p.request = req
 	p.width = width
 	p.currentQuestion = 0
-	p.selectedOption = 0
+	p.selectedOption = make(map[int]int)
 	p.selected = make(map[int][]int)
+	p.customAnswers = make(map[int]string)
 	p.showingCustom = false
 	p.customInput.Reset()
 }
@@ -66,6 +70,18 @@ func (p *QuestionPrompt) GetRequest() *tool.QuestionRequest {
 	return p.request
 }
 
+// isAnswered returns whether a question has been answered (via selection or custom input).
+func (p *QuestionPrompt) isAnswered(questionIdx int) bool {
+	return len(p.selected[questionIdx]) > 0 || p.customAnswers[questionIdx] != ""
+}
+
+// restoreCustomInput restores the custom input field value for the current question.
+func (p *QuestionPrompt) restoreCustomInput() {
+	if text := p.customAnswers[p.currentQuestion]; text != "" {
+		p.customInput.SetValue(text)
+	}
+}
+
 // HandleKeypress handles keyboard input for the question prompt.
 // Returns (cmd, response): cmd for UI updates, response when user makes a decision.
 func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionResponseMsg) {
@@ -73,7 +89,6 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 		return nil, nil
 	}
 
-	// If custom input is showing, handle text input
 	if p.showingCustom {
 		switch msg.Type {
 		case tea.KeyEnter:
@@ -91,17 +106,39 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 
 	currentQ := p.request.Questions[p.currentQuestion]
 	numOptions := len(currentQ.Options) + 1 // +1 for "Other"
+	curOption := p.selectedOption[p.currentQuestion]
 
 	switch msg.Type {
+	case tea.KeyLeft:
+		if len(p.request.Questions) > 1 && p.currentQuestion > 0 {
+			p.currentQuestion--
+			p.restoreCustomInput()
+		}
+		return nil, nil
+
+	case tea.KeyRight:
+		if len(p.request.Questions) > 1 && p.currentQuestion < len(p.request.Questions)-1 {
+			p.currentQuestion++
+			p.restoreCustomInput()
+		}
+		return nil, nil
+
+	case tea.KeyTab:
+		if len(p.request.Questions) > 1 {
+			p.currentQuestion = (p.currentQuestion + 1) % len(p.request.Questions)
+			p.restoreCustomInput()
+		}
+		return nil, nil
+
 	case tea.KeyUp, tea.KeyCtrlP:
-		if p.selectedOption > 0 {
-			p.selectedOption--
+		if curOption > 0 {
+			p.selectedOption[p.currentQuestion] = curOption - 1
 		}
 		return nil, nil
 
 	case tea.KeyDown, tea.KeyCtrlN:
-		if p.selectedOption < numOptions-1 {
-			p.selectedOption++
+		if curOption < numOptions-1 {
+			p.selectedOption[p.currentQuestion] = curOption + 1
 		}
 		return nil, nil
 
@@ -112,19 +149,20 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 		return nil, nil
 
 	case tea.KeyEnter:
-		if p.selectedOption == len(currentQ.Options) {
+		if curOption == len(currentQ.Options) {
 			p.showingCustom = true
 			p.customInput.Focus()
+			p.restoreCustomInput()
 			return nil, nil
 		}
 
 		if !currentQ.MultiSelect {
-			p.selected[p.currentQuestion] = []int{p.selectedOption}
+			p.selected[p.currentQuestion] = []int{curOption}
 		} else if len(p.selected[p.currentQuestion]) == 0 {
-			p.selected[p.currentQuestion] = []int{p.selectedOption}
+			p.selected[p.currentQuestion] = []int{curOption}
 		}
 
-		return p.confirmSelection()
+		return p.tryFinishOrAdvance()
 
 	case tea.KeyEsc, tea.KeyCtrlC:
 		req := p.request
@@ -135,22 +173,22 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 		}
 	}
 
-	// Handle number key shortcuts (1-4)
 	key := msg.String()
 	if key >= "1" && key <= "4" {
 		optionIdx := int(key[0] - '1')
 		if optionIdx < numOptions {
-			p.selectedOption = optionIdx
+			p.selectedOption[p.currentQuestion] = optionIdx
 
 			if optionIdx == len(currentQ.Options) {
 				p.showingCustom = true
 				p.customInput.Focus()
+				p.restoreCustomInput()
 				return nil, nil
 			}
 
 			if !currentQ.MultiSelect {
 				p.selected[p.currentQuestion] = []int{optionIdx}
-				return p.confirmSelection()
+				return p.tryFinishOrAdvance()
 			}
 			p.toggleSelection()
 		}
@@ -162,11 +200,12 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 // toggleSelection toggles the current option in multi-select mode
 func (p *QuestionPrompt) toggleSelection() {
 	current := p.selected[p.currentQuestion]
+	curOption := p.selectedOption[p.currentQuestion]
 	found := false
 	newSelection := []int{}
 
 	for _, idx := range current {
-		if idx == p.selectedOption {
+		if idx == curOption {
 			found = true
 		} else {
 			newSelection = append(newSelection, idx)
@@ -174,7 +213,7 @@ func (p *QuestionPrompt) toggleSelection() {
 	}
 
 	if !found {
-		newSelection = append(newSelection, p.selectedOption)
+		newSelection = append(newSelection, curOption)
 	}
 
 	p.selected[p.currentQuestion] = newSelection
@@ -187,39 +226,50 @@ func (p *QuestionPrompt) submitCustomInput() (tea.Cmd, *QuestionResponseMsg) {
 		return nil, nil
 	}
 
-	req := p.request
-	p.Hide()
+	p.customAnswers[p.currentQuestion] = customText
+	p.showingCustom = false
+	p.customInput.Blur()
+	p.customInput.Reset()
 
-	answers := make(map[int][]string)
-	answers[p.currentQuestion] = []string{customText}
-
-	return nil, &QuestionResponseMsg{
-		Request: req,
-		Response: &tool.QuestionResponse{
-			RequestID: req.ID,
-			Answers:   answers,
-			Cancelled: false,
-		},
-	}
+	return p.tryFinishOrAdvance()
 }
 
-// confirmSelection confirms the current selection and moves to next question or finishes.
-func (p *QuestionPrompt) confirmSelection() (tea.Cmd, *QuestionResponseMsg) {
-	// Move to next question if there are more
-	if p.currentQuestion < len(p.request.Questions)-1 {
-		p.currentQuestion++
-		p.selectedOption = 0
+// tryFinishOrAdvance checks if all questions are answered. If so, builds the response.
+// Otherwise, advances to the next unanswered question.
+func (p *QuestionPrompt) tryFinishOrAdvance() (tea.Cmd, *QuestionResponseMsg) {
+	n := len(p.request.Questions)
+
+	// Find next unanswered question, starting forward from current position
+	nextUnanswered := -1
+	for offset := 1; offset < n; offset++ {
+		idx := (p.currentQuestion + offset) % n
+		if !p.isAnswered(idx) {
+			nextUnanswered = idx
+			break
+		}
+	}
+
+	// If we found an unanswered question, navigate to it
+	if nextUnanswered >= 0 {
+		p.currentQuestion = nextUnanswered
 		return nil, nil
 	}
 
-	// All questions answered, build response
+	// Check if the current question itself is unanswered (single-question case)
+	if !p.isAnswered(p.currentQuestion) {
+		return nil, nil
+	}
+
 	req := p.request
 	answers := make(map[int][]string)
 
 	for qIdx := 0; qIdx < len(req.Questions); qIdx++ {
+		if customText, ok := p.customAnswers[qIdx]; ok {
+			answers[qIdx] = []string{customText}
+			continue
+		}
 		q := req.Questions[qIdx]
 		selectedIndices := p.selected[qIdx]
-
 		labels := []string{}
 		for _, optIdx := range selectedIndices {
 			if optIdx < len(q.Options) {
@@ -273,6 +323,21 @@ func getQuestionFooterStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
 }
 
+func getQuestionTabActiveStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(theme.CurrentTheme.TextBright).
+		Bold(true).
+		Underline(true)
+}
+
+func getQuestionTabInactiveStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+}
+
+func getQuestionTabAnsweredStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Success)
+}
+
 // Render renders the question prompt
 func (p *QuestionPrompt) Render() string {
 	if !p.active || p.request == nil {
@@ -292,6 +357,37 @@ func (p *QuestionPrompt) Render() string {
 	sb.WriteString(getQuestionSeparatorStyle().Render(solidSep))
 	sb.WriteString("\n")
 
+	// Tab bar (only when multiple questions)
+	if len(p.request.Questions) > 1 {
+		sb.WriteString(" ")
+		for i, q := range p.request.Questions {
+			label := q.Header
+			if label == "" {
+				label = fmt.Sprintf("Q%d", i+1)
+			}
+
+			var tabStyle lipgloss.Style
+			if i == p.currentQuestion {
+				tabStyle = getQuestionTabActiveStyle()
+			} else if p.isAnswered(i) {
+				label = "\u2713 " + label
+				tabStyle = getQuestionTabAnsweredStyle()
+			} else {
+				tabStyle = getQuestionTabInactiveStyle()
+			}
+
+			sb.WriteString(tabStyle.Render(label))
+			if i < len(p.request.Questions)-1 {
+				sb.WriteString(getQuestionSeparatorStyle().Render(" \u2502 "))
+			}
+		}
+		sb.WriteString("\n")
+
+		thinSep := strings.Repeat("\u2504", contentWidth)
+		sb.WriteString(getQuestionSeparatorStyle().Render(thinSep))
+		sb.WriteString("\n")
+	}
+
 	// Header badge
 	header := getQuestionHeaderStyle().Render(currentQ.Header)
 	sb.WriteString(" ")
@@ -305,16 +401,16 @@ func (p *QuestionPrompt) Render() string {
 
 	// Options
 	isMulti := currentQ.MultiSelect
+	curOption := p.selectedOption[p.currentQuestion]
 	selectedSet := make(map[int]bool)
 	for _, idx := range p.selected[p.currentQuestion] {
 		selectedSet[idx] = true
 	}
 
 	for i, opt := range currentQ.Options {
-		isHighlighted := i == p.selectedOption
+		isHighlighted := i == curOption
 		isSelected := selectedSet[i]
 
-		// Choose prefix based on selection mode and state
 		var prefix string
 		switch {
 		case isMulti && isSelected:
@@ -327,13 +423,11 @@ func (p *QuestionPrompt) Render() string {
 			prefix = "( )"
 		}
 
-		// Cursor indicator
 		cursor := "   "
 		if isHighlighted {
 			cursor = " \u276F "
 		}
 
-		// Option line
 		var optStyle lipgloss.Style
 		if isHighlighted {
 			optStyle = getQuestionSelectedStyle()
@@ -344,7 +438,6 @@ func (p *QuestionPrompt) Render() string {
 		optLine := fmt.Sprintf("%s%s %d. %s", cursor, prefix, i+1, opt.Label)
 		sb.WriteString(optStyle.Render(optLine))
 
-		// Description
 		if opt.Description != "" {
 			sb.WriteString(" - ")
 			sb.WriteString(getQuestionDescStyle().Render(opt.Description))
@@ -354,7 +447,7 @@ func (p *QuestionPrompt) Render() string {
 
 	// "Other" option
 	otherIdx := len(currentQ.Options)
-	isOtherHighlighted := p.selectedOption == otherIdx
+	isOtherHighlighted := curOption == otherIdx
 
 	otherCursor := "   "
 	if isOtherHighlighted {
@@ -384,6 +477,15 @@ func (p *QuestionPrompt) Render() string {
 		sb.WriteString("\n")
 	}
 
+	// Show custom answer if already set for this question
+	if !p.showingCustom {
+		if customText, ok := p.customAnswers[p.currentQuestion]; ok {
+			sb.WriteString("   ")
+			sb.WriteString(getQuestionDescStyle().Render("answered: " + customText))
+			sb.WriteString("\n")
+		}
+	}
+
 	// Dotted separator
 	dottedSep := strings.Repeat("\u254C", contentWidth)
 	sb.WriteString(getQuestionSeparatorStyle().Render(dottedSep))
@@ -391,6 +493,9 @@ func (p *QuestionPrompt) Render() string {
 
 	// Footer with hints
 	var hints []string
+	if len(p.request.Questions) > 1 {
+		hints = append(hints, "\u2190/\u2192 switch question")
+	}
 	hints = append(hints, "\u2191/\u2193 navigate")
 	if isMulti {
 		hints = append(hints, "Space toggle")
