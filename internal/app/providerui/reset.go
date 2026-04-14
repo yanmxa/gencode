@@ -14,18 +14,19 @@ func (s *Model) resetModelSearch() {
 
 func (s *Model) resetNavigation() {
 	s.selectedIdx = 0
-	s.parentIdx = 0
-	s.level = LevelProvider
+	s.scrollOffset = 0
 }
 
 // Cancel cancels the selector and clears transient state so the next open starts cleanly.
 func (s *Model) Cancel() {
 	s.active = false
-	s.selectorType = SelectorTypeProvider
-	s.providers = nil
-	s.models = nil
-	s.searchProviders = nil
-	s.tab = TabLLM
+	s.connectedProviders = nil
+	s.allProviders = nil
+	s.allModels = nil
+	s.filteredModels = nil
+	s.visibleItems = nil
+	s.expandedProviderIdx = -1
+	s.apiKeyActive = false
 	s.store = nil
 	s.resetNavigation()
 	s.resetModelSearch()

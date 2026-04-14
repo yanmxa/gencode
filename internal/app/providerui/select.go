@@ -1,113 +1,137 @@
 package providerui
 
 import (
-	"strings"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/provider/search"
 )
 
-// Select handles selection and returns a command.
 func (s *Model) Select() tea.Cmd {
-	switch {
-	case s.selectorType == SelectorTypeModel:
-		return s.selectModel()
-	case s.tab == TabSearch:
-		return s.selectSearchProvider()
-	case s.level == LevelProvider:
-		s.enterAuthMethodLevel()
+	if s.selectedIdx < 0 || s.selectedIdx >= len(s.visibleItems) {
 		return nil
+	}
+
+	item := s.visibleItems[s.selectedIdx]
+	switch item.Kind {
+	case ItemModel:
+		return s.selectModel(item.Model)
+	case ItemProvider:
+		return s.selectProvider(item)
+	case ItemAuthMethod:
+		return s.selectAuthMethod(item)
 	default:
-		return s.selectAuthMethod()
+		return nil
 	}
 }
 
-func (s *Model) selectModel() tea.Cmd {
-	if s.selectedIdx >= len(s.filteredModels) {
+func (s *Model) selectModel(m *ModelItem) tea.Cmd {
+	if m == nil {
 		return nil
 	}
-	selected := s.filteredModels[s.selectedIdx]
 	s.active = false
 	return func() tea.Msg {
 		return ModelSelectedMsg{
-			ModelID:      selected.ID,
-			ProviderName: selected.ProviderName,
-			AuthMethod:   selected.AuthMethod,
+			ModelID:      m.ID,
+			ProviderName: m.ProviderName,
+			AuthMethod:   m.AuthMethod,
 		}
 	}
 }
 
-func (s *Model) selectSearchProvider() tea.Cmd {
-	if s.selectedIdx >= len(s.searchProviders) {
+// selectProvider handles Enter on a provider row (Providers tab).
+// Connected single auth method: refresh models.
+// Disconnected single auth method: auto-connect or show API key input.
+// Multiple auth methods: expand inline to show auth method list.
+func (s *Model) selectProvider(item ListItem) tea.Cmd {
+	if item.Provider == nil {
 		return nil
 	}
-	selected := s.searchProviders[s.selectedIdx]
-	sp := search.CreateProvider(selected.Name)
-	if !sp.IsAvailable() && selected.RequiresKey {
-		s.lastConnectResult = "Missing: " + strings.Join(selected.EnvVars, ", ")
-		s.lastConnectAuthIdx = s.selectedIdx
-		s.lastConnectSuccess = false
-		return nil
-	}
+	p := item.Provider
 
-	if s.store != nil {
-		_ = s.store.SetSearchProvider(string(selected.Name))
-	}
-	for i := range s.searchProviders {
-		if s.searchProviders[i].Status == "current" {
-			s.searchProviders[i].Status = "available"
+	if len(p.AuthMethods) == 1 {
+		am := p.AuthMethods[0]
+		if am.Status == coreprovider.StatusConnected {
+			// Refresh: re-fetch models for this connected provider
+			return s.refreshAuthMethod(am, s.selectedIdx)
 		}
+		return s.tryConnectOrPromptKey(am, item.ProviderIdx, 0)
 	}
-	s.searchProviders[s.selectedIdx].Status = "current"
-	s.lastConnectResult = "\u2713 Selected"
-	s.lastConnectAuthIdx = s.selectedIdx
-	s.lastConnectSuccess = true
 
-	return func() tea.Msg {
-		return SearchProviderSelectedMsg{Provider: selected.Name}
+	if len(p.AuthMethods) == 0 {
+		return nil
 	}
-}
 
-func (s *Model) enterAuthMethodLevel() {
-	if s.selectedIdx >= len(s.providers) {
-		return
+	// Multiple auth methods: toggle inline expansion
+	if s.expandedProviderIdx == item.ProviderIdx {
+		s.expandedProviderIdx = -1
+	} else {
+		s.expandedProviderIdx = item.ProviderIdx
 	}
-	s.parentIdx = s.selectedIdx
-	s.level = LevelAuthMethod
-	s.selectedIdx = 0
 	s.resetConnectionResult()
+	s.rebuildVisibleItems()
+	return nil
 }
 
-func (s *Model) selectAuthMethod() tea.Cmd {
-	if s.parentIdx >= len(s.providers) {
+func (s *Model) selectAuthMethod(item ListItem) tea.Cmd {
+	if item.AuthMethod == nil {
 		return nil
 	}
-	authMethods := s.providers[s.parentIdx].AuthMethods
-	if s.selectedIdx >= len(authMethods) {
-		return nil
+	am := item.AuthMethod
+
+	if am.Status == coreprovider.StatusConnected {
+		// Refresh: re-fetch models for this connected auth method
+		return s.refreshAuthMethod(*am, s.selectedIdx)
 	}
 
-	item := authMethods[s.selectedIdx]
-	authIdx := s.selectedIdx
-	if item.Status == coreprovider.StatusConnected {
-		return s.disconnectAuthMethod(item, authMethods, authIdx)
-	}
-	return s.connectAuthMethod(item, authIdx)
+	return s.tryConnectOrPromptKey(*am, item.ProviderIdx, s.findAuthMethodIndex(item))
 }
 
-// HandleConnectResult updates the selector state with connection result.
-func (s *Model) HandleConnectResult(msg ConnectResultMsg) {
-	s.lastConnectAuthIdx = msg.AuthIdx
-	s.lastConnectResult = msg.Message
-	s.lastConnectSuccess = msg.Success
+// tryConnectOrPromptKey connects if env vars are available, otherwise shows API key input.
+func (s *Model) tryConnectOrPromptKey(am AuthMethodItem, providerIdx, authIdx int) tea.Cmd {
+	if am.Status == coreprovider.StatusAvailable || isEnvReady(am.EnvVars) {
+		return s.connectAuthMethod(am, s.selectedIdx)
+	}
 
-	if !msg.Success || s.parentIdx >= len(s.providers) {
-		return
+	// Show inline API key input
+	envVar := firstEnvVar(am.EnvVars)
+	if envVar == "" {
+		return nil
 	}
-	authMethods := s.providers[s.parentIdx].AuthMethods
-	if msg.AuthIdx < len(authMethods) {
-		authMethods[msg.AuthIdx].Status = msg.NewStatus
+	s.apiKeyProviderIdx = providerIdx
+	s.apiKeyAuthIdx = authIdx
+	s.initAPIKeyInput(envVar)
+	return nil
+}
+
+func (s *Model) findAuthMethodIndex(item ListItem) int {
+	if item.AuthMethod == nil || item.ProviderIdx < 0 || item.ProviderIdx >= len(s.allProviders) {
+		return 0
 	}
+	p := &s.allProviders[item.ProviderIdx]
+	for i, am := range p.AuthMethods {
+		if am.Provider == item.AuthMethod.Provider && am.AuthMethod == item.AuthMethod.AuthMethod {
+			return i
+		}
+	}
+	return 0
+}
+
+func isEnvReady(envVars []string) bool {
+	for _, v := range envVars {
+		if v != "" && os.Getenv(v) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func firstEnvVar(envVars []string) string {
+	for _, v := range envVars {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

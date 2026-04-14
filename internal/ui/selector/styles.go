@@ -44,4 +44,8 @@ var (
 	SelectorBreadcrumbStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.Text).
 				MarginBottom(1)
+
+	// SelectorDimStyle is a plain dim-text style (no margins/padding).
+	SelectorDimStyle = lipgloss.NewStyle().
+				Foreground(theme.CurrentTheme.TextDim)
 )

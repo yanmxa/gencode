@@ -227,6 +227,21 @@ func (s *Store) GetAllCachedModels() map[string][]ModelInfo {
 	return result
 }
 
+// GetAllCachedModelsIncludeExpired returns all cached models regardless of TTL.
+// Used to show stale data immediately rather than blocking the UI.
+func (s *Store) GetAllCachedModelsIncludeExpired() map[string][]ModelInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make(map[string][]ModelInfo)
+	for key, cache := range s.data.Models {
+		if len(cache.Models) > 0 {
+			result[key] = cache.Models
+		}
+	}
+	return result
+}
+
 // SetCurrentModel sets the current model with provider info
 func (s *Store) SetCurrentModel(modelID string, provider Provider, authMethod AuthMethod) error {
 	s.mu.Lock()

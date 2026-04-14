@@ -15,18 +15,19 @@ import (
 	"github.com/yanmxa/gencode/internal/plugin"
 )
 
-func handleProviderCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if err := m.provider.Selector.EnterProviderSelect(m.width, m.height); err != nil {
+func handleSearchCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
+	if err := m.search.Selector.Enter(m.width, m.height); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil
 }
 
 func handleModelCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if err := m.provider.Selector.EnterModelSelect(ctx, m.width, m.height); err != nil {
+	cmd, err := m.provider.Selector.Enter(ctx, m.width, m.height)
+	if err != nil {
 		return "", nil, err
 	}
-	return "", nil, nil
+	return "", cmd, nil
 }
 
 func handleInitCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {

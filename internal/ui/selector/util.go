@@ -2,6 +2,7 @@
 package selector
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -65,6 +66,35 @@ func ShortenPathForProject(path, cwd string) string {
 // TruncateWithEllipsis is an alias for TruncateText for backward compatibility.
 func TruncateWithEllipsis(s string, maxLen int) string {
 	return TruncateText(s, maxLen)
+}
+
+// RenderSelectableRow renders a row with "> " or "  " prefix.
+func RenderSelectableRow(line string, isSelected bool) string {
+	if isSelected {
+		return SelectorSelectedStyle.Render("> " + line)
+	}
+	return SelectorItemStyle.Render("  " + line)
+}
+
+// FormatAlignedRow formats "icon  name<padding>info" with name padded to colWidth.
+func FormatAlignedRow(icon, name string, colWidth int, info string) string {
+	nameWidth := len(name) // approximate; callers can use lipgloss.Width for ANSI-safe width
+	pad := ""
+	if nameWidth < colWidth {
+		pad = strings.Repeat(" ", colWidth-nameWidth)
+	}
+	return fmt.Sprintf("%s  %s%s%s", icon, name, pad, info)
+}
+
+// RenderEnvVarStatus returns a styled "ENVVAR ✓" or "ENVVAR ✗" indicator.
+func RenderEnvVarStatus(envVar string) string {
+	if envVar == "" {
+		return ""
+	}
+	if os.Getenv(envVar) != "" {
+		return SelectorStatusReady.Render(envVar + " ✓")
+	}
+	return SelectorStatusNone.Render(envVar + " ✗")
 }
 
 func MCPStatusDisplay(status mcp.ServerStatus) (icon, label string) {

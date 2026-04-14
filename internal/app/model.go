@@ -22,6 +22,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/pluginui"
 	"github.com/yanmxa/gencode/internal/app/providerui"
 	appqueue "github.com/yanmxa/gencode/internal/app/queue"
+	"github.com/yanmxa/gencode/internal/app/searchui"
 	"github.com/yanmxa/gencode/internal/app/sessionui"
 	"github.com/yanmxa/gencode/internal/app/skillui"
 	"github.com/yanmxa/gencode/internal/app/toolui"
@@ -67,6 +68,7 @@ type model struct {
 	mcp      mcpui.State
 	plugin   pluginui.State
 	agent    agentui.State
+	search   searchui.State
 	approval *appapproval.Model
 
 	// Input queue — buffers user messages submitted while the LLM is busy

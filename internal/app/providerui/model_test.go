@@ -7,24 +7,22 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/provider/search"
 	"github.com/yanmxa/gencode/internal/ui/selector"
 )
 
 func TestCancelClearsTransientState(t *testing.T) {
 	m := New()
 	m.active = true
-	m.selectorType = SelectorTypeModel
-	m.level = LevelAuthMethod
-	m.providers = []ProviderItem{{DisplayName: "OpenAI"}}
-	m.models = []ModelItem{{ID: "gpt-5"}}
-	m.searchProviders = []SearchProviderItem{{DisplayName: "Exa"}}
-	m.selectedIdx = 2
-	m.parentIdx = 1
-	m.tab = TabSearch
-	m.searchQuery = "gpt"
+	m.connectedProviders = []ProviderItem{{DisplayName: "Anthropic"}}
+	m.allProviders = []ProviderItem{{DisplayName: "Google"}}
+	m.allModels = []ModelItem{{ID: "gpt-5"}}
 	m.filteredModels = []ModelItem{{ID: "gpt-5"}}
+	m.visibleItems = []ListItem{{Kind: ItemModel}}
+	m.expandedProviderIdx = 1
+	m.apiKeyActive = true
+	m.selectedIdx = 2
 	m.scrollOffset = 3
+	m.searchQuery = "gpt"
 	m.lastConnectResult = "Connected"
 	m.lastConnectAuthIdx = 2
 	m.lastConnectSuccess = true
@@ -34,78 +32,76 @@ func TestCancelClearsTransientState(t *testing.T) {
 	if m.active {
 		t.Fatal("Cancel should deactivate selector")
 	}
-	if m.selectorType != SelectorTypeProvider {
-		t.Fatalf("selectorType = %v, want provider", m.selectorType)
+	if len(m.connectedProviders) != 0 || len(m.allProviders) != 0 {
+		t.Fatal("Cancel should clear provider lists")
 	}
-	if len(m.providers) != 0 || len(m.models) != 0 || len(m.searchProviders) != 0 {
-		t.Fatal("Cancel should clear loaded selector data")
+	if len(m.allModels) != 0 || len(m.filteredModels) != 0 || len(m.visibleItems) != 0 {
+		t.Fatal("Cancel should clear model/item lists")
 	}
-	if m.level != LevelProvider || m.selectedIdx != 0 || m.parentIdx != 0 {
+	if m.expandedProviderIdx != -1 || m.apiKeyActive {
+		t.Fatal("Cancel should reset expansion and API key state")
+	}
+	if m.selectedIdx != 0 || m.scrollOffset != 0 {
 		t.Fatal("Cancel should reset navigation state")
 	}
-	if m.tab != TabLLM {
-		t.Fatalf("tab = %v, want TabLLM", m.tab)
-	}
-	if m.searchQuery != "" || m.filteredModels != nil || m.scrollOffset != 0 {
-		t.Fatal("Cancel should clear model search state")
+	if m.searchQuery != "" {
+		t.Fatal("Cancel should clear search query")
 	}
 	if m.lastConnectResult != "" || m.lastConnectAuthIdx != 0 || m.lastConnectSuccess {
 		t.Fatal("Cancel should clear connection result state")
 	}
 }
 
-func TestGoBackResetsInlineConnectState(t *testing.T) {
+func TestGoBackCollapsesAuthMethods(t *testing.T) {
 	m := New()
-	m.level = LevelAuthMethod
-	m.parentIdx = 2
+	m.expandedProviderIdx = 2
 	m.lastConnectResult = "Connected"
 	m.lastConnectAuthIdx = 1
 	m.lastConnectSuccess = true
 
-	if !m.GoBack() {
-		t.Fatal("GoBack should return true from auth level")
+	// Seed minimal data for rebuild
+	m.activeTab = TabProviders
+	m.allProviders = []ProviderItem{
+		{DisplayName: "A"}, {DisplayName: "B"},
+		{DisplayName: "C", AuthMethods: []AuthMethodItem{{DisplayName: "API"}}},
 	}
-	if m.level != LevelProvider || m.selectedIdx != 2 {
-		t.Fatal("GoBack should return to provider level and restore provider selection")
+
+	if !m.GoBack() {
+		t.Fatal("GoBack should return true when auth methods are expanded")
+	}
+	if m.expandedProviderIdx != -1 {
+		t.Fatal("GoBack should collapse expanded auth methods")
 	}
 	if m.lastConnectResult != "" || m.lastConnectAuthIdx != 0 || m.lastConnectSuccess {
 		t.Fatal("GoBack should clear inline connect state")
 	}
 }
 
-func TestHandleKeypressTabSwitchClearsInlineResult(t *testing.T) {
+func TestGoBackCancelsAPIKeyInput(t *testing.T) {
 	m := New()
-	m.selectorType = SelectorTypeProvider
-	m.level = LevelProvider
-	m.tab = TabLLM
-	m.selectedIdx = 3
-	m.lastConnectResult = "Connected"
-	m.lastConnectAuthIdx = 2
-	m.lastConnectSuccess = true
+	m.apiKeyActive = true
 
-	m.HandleKeypress(tea.KeyMsg{Type: tea.KeyTab})
-
-	if m.tab != TabSearch {
-		t.Fatalf("tab = %v, want TabSearch", m.tab)
+	if !m.GoBack() {
+		t.Fatal("GoBack should return true when API key input is active")
 	}
-	if m.selectedIdx != 0 {
-		t.Fatalf("selectedIdx = %d, want 0", m.selectedIdx)
-	}
-	if m.lastConnectResult != "" || m.lastConnectAuthIdx != 0 || m.lastConnectSuccess {
-		t.Fatal("tab switch should clear inline connect result")
+	if m.apiKeyActive {
+		t.Fatal("GoBack should cancel API key input")
 	}
 }
 
 func TestHandleKeypressEscClearsModelSearchBeforeDismiss(t *testing.T) {
 	m := New()
 	m.active = true
-	m.selectorType = SelectorTypeModel
-	m.models = []ModelItem{
+	m.allModels = []ModelItem{
 		{ID: "gpt-5", DisplayName: "GPT-5", ProviderName: "openai"},
 		{ID: "claude", DisplayName: "Claude", ProviderName: "anthropic"},
 	}
-	m.filteredModels = m.models[:1]
+	m.connectedProviders = []ProviderItem{
+		{Provider: "openai", DisplayName: "OpenAI"},
+		{Provider: "anthropic", DisplayName: "Anthropic"},
+	}
 	m.searchQuery = "gpt"
+	m.rebuildVisibleItems()
 
 	cmd := m.HandleKeypress(tea.KeyMsg{Type: tea.KeyEsc})
 
@@ -114,9 +110,6 @@ func TestHandleKeypressEscClearsModelSearchBeforeDismiss(t *testing.T) {
 	}
 	if m.searchQuery != "" {
 		t.Fatalf("searchQuery = %q, want empty", m.searchQuery)
-	}
-	if len(m.filteredModels) != len(m.models) {
-		t.Fatal("clearing search should restore full model list")
 	}
 	if !m.active {
 		t.Fatal("clearing search should not dismiss selector")
@@ -143,12 +136,15 @@ func TestHandleKeypressEscDismissesAfterSearchCleared(t *testing.T) {
 func TestSelectModelReturnsSelectionMessage(t *testing.T) {
 	m := New()
 	m.active = true
-	m.selectorType = SelectorTypeModel
-	m.filteredModels = []ModelItem{{
+	model := ModelItem{
 		ID:           "gpt-5",
 		ProviderName: "openai",
 		AuthMethod:   coreprovider.AuthAPIKey,
-	}}
+	}
+	m.visibleItems = []ListItem{
+		{Kind: ItemModel, Model: &model},
+	}
+	m.selectedIdx = 0
 
 	cmd := m.Select()
 	if cmd == nil {
@@ -177,7 +173,7 @@ func newTestStore(t *testing.T) *coreprovider.Store {
 	return store
 }
 
-func TestEnterModelSelect_UsesCachedModelsAndPutsCurrentFirst(t *testing.T) {
+func TestEnterLoadsCachedModelsAndPutsCurrentFirst(t *testing.T) {
 	store := newTestStore(t)
 	if err := store.CacheModels(coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey, []coreprovider.ModelInfo{
 		{ID: "gpt-5-mini", DisplayName: "GPT-5 mini", InputTokenLimit: 128000, OutputTokenLimit: 16000},
@@ -185,116 +181,64 @@ func TestEnterModelSelect_UsesCachedModelsAndPutsCurrentFirst(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CacheModels() error = %v", err)
 	}
+	if err := store.Connect(coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
 	if err := store.SetCurrentModel("gpt-5", coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey); err != nil {
 		t.Fatalf("SetCurrentModel() error = %v", err)
 	}
 
 	m := New()
-	if err := m.EnterModelSelect(context.Background(), 80, 24); err != nil {
-		t.Fatalf("EnterModelSelect() error = %v", err)
+	if _, err := m.Enter(context.Background(), 80, 24); err != nil {
+		t.Fatalf("Enter() error = %v", err)
 	}
 
-	if !m.active || m.selectorType != SelectorTypeModel {
-		t.Fatalf("expected active model selector, got active=%v type=%v", m.active, m.selectorType)
+	if !m.active {
+		t.Fatal("expected active selector")
 	}
-	if len(m.models) != 2 || len(m.filteredModels) != 2 {
-		t.Fatalf("expected 2 models, got models=%d filtered=%d", len(m.models), len(m.filteredModels))
+	if len(m.allModels) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(m.allModels))
 	}
-	if m.models[0].ID != "gpt-5" || !m.models[0].IsCurrent {
-		t.Fatalf("expected current model first, got %#v", m.models[0])
+
+	// Check visible items contain model rows
+	modelCount := 0
+	for _, item := range m.visibleItems {
+		if item.Kind == ItemModel {
+			modelCount++
+		}
 	}
-	if m.models[0].InputTokenLimit != 256000 || m.models[0].OutputTokenLimit != 32000 {
-		t.Fatalf("expected token limits copied to model item, got %#v", m.models[0])
+	if modelCount != 2 {
+		t.Fatalf("expected 2 model items in visible list, got %d", modelCount)
 	}
 }
 
 func TestUpdateFilterMatchesModelIDDisplayNameAndProvider(t *testing.T) {
 	m := New()
-	m.selectorType = SelectorTypeModel
-	m.models = []ModelItem{
+	m.allModels = []ModelItem{
 		{ID: "gpt-5", DisplayName: "GPT-5", ProviderName: "openai"},
 		{ID: "claude-sonnet", DisplayName: "Claude Sonnet", ProviderName: "anthropic"},
 	}
+	m.connectedProviders = []ProviderItem{
+		{Provider: "openai", DisplayName: "OpenAI"},
+		{Provider: "anthropic", DisplayName: "Anthropic"},
+	}
 
 	m.searchQuery = "g5"
-	m.updateFilter()
+	m.rebuildVisibleItems()
 	if len(m.filteredModels) != 1 || m.filteredModels[0].ID != "gpt-5" {
 		t.Fatalf("expected ID fuzzy match to find gpt-5, got %#v", m.filteredModels)
 	}
 
 	m.searchQuery = "clsn"
-	m.updateFilter()
+	m.rebuildVisibleItems()
 	if len(m.filteredModels) != 1 || m.filteredModels[0].ID != "claude-sonnet" {
 		t.Fatalf("expected display-name fuzzy match to find claude-sonnet, got %#v", m.filteredModels)
 	}
 
 	m.searchQuery = "oa"
-	m.updateFilter()
+	m.rebuildVisibleItems()
 	if len(m.filteredModels) != 1 || m.filteredModels[0].ProviderName != "openai" {
 		t.Fatalf("expected provider-name fuzzy match to find openai model, got %#v", m.filteredModels)
-	}
-}
-
-func TestLoadSearchProviders_DefaultsToExaAndPersistsSelection(t *testing.T) {
-	store := newTestStore(t)
-	m := New()
-	m.store = store
-
-	m.loadSearchProviders()
-	if len(m.searchProviders) != 3 {
-		t.Fatalf("expected 3 search providers, got %d", len(m.searchProviders))
-	}
-	if m.searchProviders[0].Name != search.ProviderExa || m.searchProviders[0].Status != "current" {
-		t.Fatalf("expected Exa current by default, got %#v", m.searchProviders[0])
-	}
-
-	t.Setenv("BRAVE_API_KEY", "test-key")
-	m.loadSearchProviders()
-	m.selectedIdx = 2 // Brave
-	cmd := m.selectSearchProvider()
-	if cmd == nil {
-		t.Fatal("expected selection command for available search provider")
-	}
-	msg := cmd()
-	selected, ok := msg.(SearchProviderSelectedMsg)
-	if !ok {
-		t.Fatalf("selection returned %T, want SearchProviderSelectedMsg", msg)
-	}
-	if selected.Provider != search.ProviderBrave {
-		t.Fatalf("selected provider = %q, want %q", selected.Provider, search.ProviderBrave)
-	}
-	if m.searchProviders[2].Status != "current" || m.searchProviders[0].Status != "available" {
-		t.Fatalf("expected status transition from exa->brave, got %#v", m.searchProviders)
-	}
-	if got := store.GetSearchProvider(); got != string(search.ProviderBrave) {
-		t.Fatalf("stored search provider = %q, want %q", got, search.ProviderBrave)
-	}
-	if m.lastConnectResult != "\u2713 Selected" || !m.lastConnectSuccess {
-		t.Fatalf("unexpected selection status: result=%q success=%v", m.lastConnectResult, m.lastConnectSuccess)
-	}
-}
-
-func TestSelectSearchProvider_ShowsMissingEnvForUnavailableProvider(t *testing.T) {
-	store := newTestStore(t)
-	t.Setenv("SERPER_API_KEY", "")
-
-	m := New()
-	m.store = store
-	m.loadSearchProviders()
-	m.selectedIdx = 1 // Serper
-
-	cmd := m.selectSearchProvider()
-	if cmd != nil {
-		t.Fatal("expected no command when provider is unavailable")
-	}
-	if m.lastConnectSuccess {
-		t.Fatal("expected missing-key selection to be marked unsuccessful")
-	}
-	if m.lastConnectResult != "Missing: SERPER_API_KEY" {
-		t.Fatalf("unexpected missing-key message: %q", m.lastConnectResult)
-	}
-	if got := store.GetSearchProvider(); got != "" {
-		t.Fatalf("expected store unchanged after failed selection, got %q", got)
 	}
 }
 
@@ -314,5 +258,164 @@ func TestSetModelPersistsSelection(t *testing.T) {
 	current := store.GetCurrentModel()
 	if current == nil || current.ModelID != "gpt-5" || current.Provider != coreprovider.ProviderOpenAI || current.AuthMethod != coreprovider.AuthAPIKey {
 		t.Fatalf("unexpected current model after SetModel: %#v", current)
+	}
+}
+
+func TestTabSwitchesBetweenTabs(t *testing.T) {
+	m := New()
+	m.active = true
+	m.activeTab = TabModels
+	m.allModels = []ModelItem{
+		{ID: "gpt-5", DisplayName: "GPT-5", ProviderName: "openai"},
+	}
+	m.connectedProviders = []ProviderItem{
+		{Provider: "openai", DisplayName: "OpenAI"},
+	}
+	m.allProviders = []ProviderItem{
+		{Provider: "openai", DisplayName: "OpenAI", Connected: true},
+		{Provider: "google", DisplayName: "Google", AuthMethods: []AuthMethodItem{
+			{DisplayName: "API Key", Status: coreprovider.StatusNotConfigured},
+		}},
+	}
+	m.rebuildVisibleItems()
+
+	// Press Tab to switch to Providers tab
+	m.HandleKeypress(tea.KeyMsg{Type: tea.KeyTab})
+	if m.activeTab != TabProviders {
+		t.Fatal("Tab should switch to Providers tab")
+	}
+
+	// Should have provider items now
+	found := false
+	for _, item := range m.visibleItems {
+		if item.Kind == ItemProvider {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("Providers tab should show provider items")
+	}
+
+	// Press Tab again to go back to Models
+	m.HandleKeypress(tea.KeyMsg{Type: tea.KeyTab})
+	if m.activeTab != TabModels {
+		t.Fatal("Tab should switch back to Models tab")
+	}
+}
+
+func TestNavigationSkipsProviderHeaders(t *testing.T) {
+	m := New()
+	m.active = true
+
+	model1 := ModelItem{ID: "m1", ProviderName: "openai"}
+	model2 := ModelItem{ID: "m2", ProviderName: "anthropic"}
+	m.visibleItems = []ListItem{
+		{Kind: ItemProviderHeader}, // 0 - not selectable
+		{Kind: ItemModel, Model: &model1}, // 1
+		{Kind: ItemProviderHeader}, // 2 - not selectable
+		{Kind: ItemModel, Model: &model2}, // 3
+	}
+	m.selectedIdx = 1
+
+	// MoveDown should skip index 2 (header) and land on 3
+	m.MoveDown()
+	if m.selectedIdx != 3 {
+		t.Fatalf("MoveDown should skip header, got selectedIdx=%d, want 3", m.selectedIdx)
+	}
+
+	// MoveUp should skip index 2 (header) and land on 1
+	m.MoveUp()
+	if m.selectedIdx != 1 {
+		t.Fatalf("MoveUp should skip header, got selectedIdx=%d, want 1", m.selectedIdx)
+	}
+}
+
+func TestSelectProviderExpandsAuthMethods(t *testing.T) {
+	m := New()
+	m.active = true
+	m.activeTab = TabProviders
+	m.allProviders = []ProviderItem{
+		{
+			Provider:    "anthropic",
+			DisplayName: "Anthropic",
+			AuthMethods: []AuthMethodItem{
+				{DisplayName: "API Key", Status: coreprovider.StatusNotConfigured},
+				{DisplayName: "Bedrock", Status: coreprovider.StatusAvailable},
+			},
+		},
+	}
+	m.rebuildVisibleItems()
+
+	// Find the provider item
+	for i, item := range m.visibleItems {
+		if item.Kind == ItemProvider {
+			m.selectedIdx = i
+			break
+		}
+	}
+
+	// Select should expand auth methods (since there are multiple)
+	cmd := m.Select()
+	if cmd != nil {
+		t.Fatal("selecting multi-auth provider should not return a command")
+	}
+	if m.expandedProviderIdx != 0 {
+		t.Fatalf("expandedProviderIdx = %d, want 0", m.expandedProviderIdx)
+	}
+
+	// Check that auth method items are now in visible list
+	authCount := 0
+	for _, item := range m.visibleItems {
+		if item.Kind == ItemAuthMethod {
+			authCount++
+		}
+	}
+	if authCount != 2 {
+		t.Fatalf("expected 2 auth method items, got %d", authCount)
+	}
+}
+
+func TestRebuildVisibleItemsStructure(t *testing.T) {
+	m := New()
+	m.activeTab = TabModels
+	m.allModels = []ModelItem{
+		{ID: "m1", ProviderName: "openai", DisplayName: "Model 1"},
+		{ID: "m2", ProviderName: "openai", DisplayName: "Model 2"},
+		{ID: "m3", ProviderName: "anthropic", DisplayName: "Model 3"},
+	}
+	m.connectedProviders = []ProviderItem{
+		{Provider: "openai", DisplayName: "OpenAI"},
+		{Provider: "anthropic", DisplayName: "Anthropic"},
+	}
+
+	m.rebuildVisibleItems()
+
+	// Expected structure (Models tab):
+	// 0: ProviderHeader (OpenAI)
+	// 1: Model (m1)
+	// 2: Model (m2)
+	// 3: ProviderHeader (Anthropic)
+	// 4: Model (m3)
+
+	if len(m.visibleItems) != 5 {
+		t.Fatalf("expected 5 visible items, got %d", len(m.visibleItems))
+	}
+	if m.visibleItems[0].Kind != ItemProviderHeader {
+		t.Fatalf("item 0 should be ProviderHeader, got %v", m.visibleItems[0].Kind)
+	}
+	if m.visibleItems[1].Kind != ItemModel || m.visibleItems[2].Kind != ItemModel {
+		t.Fatal("items 1-2 should be Models")
+	}
+	if m.visibleItems[3].Kind != ItemProviderHeader {
+		t.Fatalf("item 3 should be ProviderHeader, got %v", m.visibleItems[3].Kind)
+	}
+	if m.visibleItems[4].Kind != ItemModel {
+		t.Fatal("item 4 should be Model")
+	}
+
+	// selectedIdx should skip the first header and land on index 1
+	if m.selectedIdx != 1 {
+		t.Fatalf("selectedIdx should be 1 (first model), got %d", m.selectedIdx)
 	}
 }

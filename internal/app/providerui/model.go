@@ -1,46 +1,50 @@
-// Package provider provides the provider selector feature.
+// Package provider provides the unified model & provider selector feature.
 package providerui
 
 import (
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/provider/search"
 	"github.com/yanmxa/gencode/internal/ui/selector"
 )
 
-// SelectorType represents what kind of selection we're doing
-type SelectorType int
+// Tab represents which tab is active in the selector.
+type Tab int
 
 const (
-	SelectorTypeProvider SelectorType = iota
-	SelectorTypeModel
+	TabModels    Tab = iota // model selection tab
+	TabProviders            // provider management tab
 )
 
-// SelectionLevel represents the current selection level
-type SelectionLevel int
+// ItemKind represents a row type in the visible-items list.
+type ItemKind int
 
 const (
-	LevelProvider SelectionLevel = iota
-	LevelAuthMethod
+	ItemProviderHeader ItemKind = iota // non-selectable provider group header (Models tab)
+	ItemModel                         // selectable model row (Models tab)
+	ItemProvider                      // provider row (Providers tab)
+	ItemAuthMethod                    // expanded auth-method sub-row (Providers tab)
 )
 
-// SelectorTab represents which tab is active in the provider selector
-type SelectorTab int
+// ListItem is a single row in the flattened visible-items list.
+type ListItem struct {
+	Kind        ItemKind
+	Model       *ModelItem
+	Provider    *ProviderItem
+	AuthMethod  *AuthMethodItem
+	ProviderIdx int // index into allProviders
+}
 
-const (
-	TabLLM SelectorTab = iota
-	TabSearch
-)
-
-// ProviderItem represents a provider in the first level
+// ProviderItem represents a provider with its auth methods.
 type ProviderItem struct {
 	Provider    coreprovider.Provider
 	DisplayName string
 	AuthMethods []AuthMethodItem
+	Connected   bool // whether this provider has at least one connected auth method
 }
 
-// AuthMethodItem represents an auth method in the second level
+// AuthMethodItem represents an auth method in the second level.
 type AuthMethodItem struct {
 	Provider    coreprovider.Provider
 	AuthMethod  coreprovider.AuthMethod
@@ -49,7 +53,7 @@ type AuthMethodItem struct {
 	EnvVars     []string
 }
 
-// ModelItem represents a model in the model selector
+// ModelItem represents a model in the selector.
 type ModelItem struct {
 	ID               string
 	Name             string
@@ -61,58 +65,61 @@ type ModelItem struct {
 	OutputTokenLimit int
 }
 
-// SearchProviderItem represents a search provider in the selector
-type SearchProviderItem struct {
-	Name        search.ProviderName
-	DisplayName string
-	Status      string // "current", "available", "unavailable"
-	RequiresKey bool
-	EnvVars     []string
-}
-
-// Model holds the state for the interactive provider selector.
+// Model holds the state for the unified model & provider selector.
 type Model struct {
-	active       bool
-	selectorType SelectorType
-	level        SelectionLevel
-	providers    []ProviderItem
-	models       []ModelItem
+	active bool
+	width  int
+	height int
+	store  *coreprovider.Store
+
+	// Tab
+	activeTab Tab
+
+	// Data
+	connectedProviders []ProviderItem // providers with models (Models tab headers)
+	allProviders       []ProviderItem // all providers (Providers tab)
+	allModels          []ModelItem
+
+	// Flattened visible-items list (rebuilt on state changes)
+	visibleItems []ListItem
 	selectedIdx  int
-	parentIdx    int // Selected provider index when in auth method level
-	width        int
-	height       int
-	store        *coreprovider.Store
+	scrollOffset int
+	maxVisible   int
 
-	// Tab support for provider selector
-	tab             SelectorTab          // Current tab (LLM or Search)
-	searchProviders []SearchProviderItem // Search providers list
+	// Providers tab: expanded provider
+	expandedProviderIdx int // index into allProviders; -1 = none
 
-	// Model selector scrolling and search
-	scrollOffset   int         // First visible item index
-	maxVisible     int         // Max items to show (default 10)
-	searchQuery    string      // Fuzzy search query
-	filteredModels []ModelItem // Filtered models based on search
+	// Inline API-key input
+	apiKeyInput       textinput.Model
+	apiKeyActive      bool
+	apiKeyEnvVar      string
+	apiKeyProviderIdx int // index into allProviders
+	apiKeyAuthIdx     int // index into that provider's AuthMethods
+
+	// Model search / filter
+	searchQuery    string
+	filteredModels []ModelItem
 
 	// Provider connection result (shown inline)
-	lastConnectResult  string // Result message from last connection
-	lastConnectAuthIdx int    // Index of auth method that was connected
-	lastConnectSuccess bool   // Whether last connection was successful
+	lastConnectResult  string
+	lastConnectAuthIdx int  // item index that triggered the connection
+	lastConnectSuccess bool
 }
 
-// statusDisplayInfo contains display information for a provider status
+// statusDisplayInfo contains display information for a provider status.
 type statusDisplayInfo struct {
 	icon  string
 	style lipgloss.Style
 	desc  string
 }
 
-// statusDisplayMap maps provider status to display information
+// statusDisplayMap maps provider status to display information.
 var statusDisplayMap = map[coreprovider.ProviderStatus]statusDisplayInfo{
 	coreprovider.StatusConnected: {"●", selector.SelectorStatusConnected, ""},
 	coreprovider.StatusAvailable: {"○", selector.SelectorStatusReady, "(available)"},
 }
 
-// getStatusDisplay returns the icon, style, and description for a provider status
+// getStatusDisplay returns the icon, style, and description for a provider status.
 func getStatusDisplay(status coreprovider.ProviderStatus) (icon string, style lipgloss.Style, desc string) {
 	if info, ok := statusDisplayMap[status]; ok {
 		return info.icon, info.style, info.desc
@@ -123,16 +130,14 @@ func getStatusDisplay(status coreprovider.ProviderStatus) (icon string, style li
 // New creates a new provider selector Model.
 func New() Model {
 	return Model{
-		active:      false,
-		level:       LevelProvider,
-		providers:   []ProviderItem{},
-		selectedIdx: 0,
-		parentIdx:   0,
-		maxVisible:  10, // Default max visible items
+		active:              false,
+		selectedIdx:         0,
+		maxVisible:          20,
+		expandedProviderIdx: -1,
 	}
 }
 
-// SelectedMsg is sent when a provider is selected.
+// SelectedMsg is sent when a provider auth method is selected (for connection).
 type SelectedMsg struct {
 	Provider   coreprovider.Provider
 	AuthMethod coreprovider.AuthMethod
@@ -153,9 +158,9 @@ type ConnectResultMsg struct {
 	NewStatus coreprovider.ProviderStatus
 }
 
-// SearchProviderSelectedMsg is sent when a search provider is selected.
-type SearchProviderSelectedMsg struct {
-	Provider search.ProviderName
+// ModelsLoadedMsg is sent when async model loading completes.
+type ModelsLoadedMsg struct {
+	Models []ModelItem
 }
 
 // IsActive returns whether the selector is active.

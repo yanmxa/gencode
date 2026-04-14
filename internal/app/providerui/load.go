@@ -5,45 +5,66 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/provider/search"
+	"github.com/yanmxa/gencode/internal/ui/selector"
 )
 
-// EnterProviderSelect enters provider selection mode.
-func (s *Model) EnterProviderSelect(width, height int) error {
-	store, err := coreprovider.NewStore()
-	if err != nil {
-		return fmt.Errorf("failed to load store: %w", err)
-	}
-	s.store = store
+// providerOrder defines the display order for providers.
+var providerOrder = []coreprovider.Provider{
+	coreprovider.ProviderAnthropic,
+	coreprovider.ProviderOpenAI,
+	coreprovider.ProviderGoogle,
+	coreprovider.ProviderMoonshot,
+	coreprovider.ProviderAlibaba,
+}
+
+// providerDisplayNames maps provider to human-readable name.
+var providerDisplayNames = map[coreprovider.Provider]string{
+	coreprovider.ProviderAnthropic: "Anthropic",
+	coreprovider.ProviderOpenAI:    "OpenAI",
+	coreprovider.ProviderGoogle:    "Google",
+	coreprovider.ProviderMoonshot:  "Moonshot",
+	coreprovider.ProviderAlibaba:   "Alibaba",
+}
+
+// Enter opens the unified model & provider selector.
+func (s *Model) Enter(ctx context.Context, width, height int) (tea.Cmd, error) {
 	s.resetNavigation()
 	s.resetModelSearch()
 	s.resetConnectionResult()
-	s.models = nil
-	s.filteredModels = nil
+	s.expandedProviderIdx = -1
+	s.apiKeyActive = false
+	s.active = true
+	s.activeTab = TabModels
+	s.width = width
+	s.height = height
+
+	cmd, err := s.loadProviderData()
+	if err != nil {
+		return nil, err
+	}
+	s.rebuildVisibleItems()
+	return cmd, nil
+}
+
+// loadProviderData refreshes provider and model data from a fresh store.
+// Does NOT reset UI state (tabs, selection, expansion) or call rebuildVisibleItems.
+func (s *Model) loadProviderData() (tea.Cmd, error) {
+	store, err := coreprovider.NewStore()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load store: %w", err)
+	}
+	s.store = store
 
 	providersWithStatus := coreprovider.GetProvidersWithStatus(store)
 
-	// Build provider list with auth methods
-	s.providers = []ProviderItem{}
-
-	providerOrder := []coreprovider.Provider{
-		coreprovider.ProviderAnthropic,
-		coreprovider.ProviderOpenAI,
-		coreprovider.ProviderGoogle,
-		coreprovider.ProviderMoonshot,
-		coreprovider.ProviderAlibaba,
-	}
-	displayNames := map[coreprovider.Provider]string{
-		coreprovider.ProviderAnthropic: "Anthropic",
-		coreprovider.ProviderOpenAI:    "OpenAI",
-		coreprovider.ProviderGoogle:    "Google",
-		coreprovider.ProviderMoonshot:  "Moonshot",
-		coreprovider.ProviderAlibaba:   "Alibaba",
-	}
+	s.connectedProviders = nil
+	s.allProviders = nil
 
 	for _, p := range providerOrder {
 		infos, ok := providersWithStatus[p]
@@ -51,80 +72,32 @@ func (s *Model) EnterProviderSelect(width, height int) error {
 			continue
 		}
 
-		providerItem := ProviderItem{
+		item := ProviderItem{
 			Provider:    p,
-			DisplayName: displayNames[p],
+			DisplayName: providerDisplayNames[p],
 			AuthMethods: make([]AuthMethodItem, 0, len(infos)),
 		}
 
+		connected := false
 		for _, info := range infos {
-			providerItem.AuthMethods = append(providerItem.AuthMethods, AuthMethodItem{
+			item.AuthMethods = append(item.AuthMethods, AuthMethodItem{
 				Provider:    info.Meta.Provider,
 				AuthMethod:  info.Meta.AuthMethod,
 				DisplayName: info.Meta.DisplayName,
 				Status:      info.Status,
 				EnvVars:     info.Meta.EnvVars,
 			})
+			if info.Status == coreprovider.StatusConnected {
+				connected = true
+			}
 		}
 
-		s.providers = append(s.providers, providerItem)
-	}
-
-	s.active = true
-	s.selectorType = SelectorTypeProvider
-	s.tab = TabLLM
-	s.width = width
-	s.height = height
-
-	// Load search providers
-	s.loadSearchProviders()
-
-	return nil
-}
-
-// loadSearchProviders loads the search provider list.
-func (s *Model) loadSearchProviders() {
-	currentProvider := ""
-	if s.store != nil {
-		currentProvider = s.store.GetSearchProvider()
-	}
-	if currentProvider == "" {
-		currentProvider = string(search.ProviderExa)
-	}
-
-	s.searchProviders = []SearchProviderItem{}
-	for _, meta := range search.AllProviders() {
-		sp := search.CreateProvider(meta.Name)
-		status := "unavailable"
-		if sp.IsAvailable() {
-			status = "available"
+		item.Connected = connected
+		s.allProviders = append(s.allProviders, item)
+		if connected {
+			s.connectedProviders = append(s.connectedProviders, item)
 		}
-		if string(meta.Name) == currentProvider {
-			status = "current"
-		}
-
-		s.searchProviders = append(s.searchProviders, SearchProviderItem{
-			Name:        meta.Name,
-			DisplayName: meta.DisplayName,
-			Status:      status,
-			RequiresKey: meta.RequiresAPIKey,
-			EnvVars:     meta.EnvVars,
-		})
 	}
-}
-
-// EnterModelSelect enters model selection mode.
-func (s *Model) EnterModelSelect(ctx context.Context, width, height int) error {
-	store, err := coreprovider.NewStore()
-	if err != nil {
-		return fmt.Errorf("failed to load store: %w", err)
-	}
-	s.store = store
-	s.resetNavigation()
-	s.resetModelSearch()
-	s.resetConnectionResult()
-	s.providers = nil
-	s.searchProviders = nil
 
 	current := store.GetCurrentModel()
 	var currentModelID string
@@ -132,60 +105,129 @@ func (s *Model) EnterModelSelect(ctx context.Context, width, height int) error {
 		currentModelID = current.ModelID
 	}
 
-	s.models = []ModelItem{}
+	s.allModels = nil
+	allCached := store.GetAllCachedModels()
+	if len(allCached) == 0 {
+		allCached = store.GetAllCachedModelsIncludeExpired()
+	}
 
-	allModels := store.GetAllCachedModels()
-	if len(allModels) == 0 {
-		s.appendConnectedProviderModels(ctx, store, currentModelID)
+	var asyncCmd tea.Cmd
+	if len(allCached) > 0 {
+		s.loadModelsCached(allCached, currentModelID)
 	} else {
-		s.appendCachedModels(allModels, currentModelID)
+		asyncCmd = s.loadModelsAsync(store, currentModelID)
 	}
 
-	sortModelsWithCurrentFirst(s.models)
+	s.ensureModelProvidersExist()
+	s.sortConnectedProviders(currentModelID)
 
-	s.filteredModels = s.models
-	s.ensureVisible()
-	s.active = true
-	s.selectorType = SelectorTypeModel
-	s.width = width
-	s.height = height
-
-	return nil
+	return asyncCmd, nil
 }
 
-func (s *Model) appendConnectedProviderModels(ctx context.Context, store *coreprovider.Store, currentModelID string) {
+// ensureModelProvidersExist ensures every provider that has cached models
+// is represented in connectedProviders (handles cases where registry doesn't
+// have the provider registered but models exist in cache).
+func (s *Model) ensureModelProvidersExist() {
+	existing := make(map[string]bool)
+	for _, cp := range s.connectedProviders {
+		existing[string(cp.Provider)] = true
+	}
+
+	// Collect unique provider names from models
+	seen := make(map[string]bool)
+	for _, m := range s.allModels {
+		if existing[m.ProviderName] || seen[m.ProviderName] {
+			continue
+		}
+		seen[m.ProviderName] = true
+
+		displayName := providerDisplayNames[coreprovider.Provider(m.ProviderName)]
+		if displayName == "" {
+			displayName = m.ProviderName
+		}
+
+		s.connectedProviders = append(s.connectedProviders, ProviderItem{
+			Provider:    coreprovider.Provider(m.ProviderName),
+			DisplayName: displayName,
+			Connected:   true,
+		})
+	}
+}
+
+// loadModelsAsync returns a tea.Cmd that fetches models from all connected
+// providers concurrently, sending a ModelsLoadedMsg when done.
+func (s *Model) loadModelsAsync(store *coreprovider.Store, currentModelID string) tea.Cmd {
 	connections := store.GetConnections()
-	for providerName, conn := range connections {
-		p, err := coreprovider.GetProvider(ctx, coreprovider.Provider(providerName), conn.AuthMethod)
-		if err != nil {
-			continue
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		type providerResult struct {
+			providerName string
+			authMethod   coreprovider.AuthMethod
+			models       []coreprovider.ModelInfo
 		}
 
-		models, err := p.ListModels(ctx)
-		if err != nil {
-			continue
+		ch := make(chan providerResult, len(connections))
+		var wg sync.WaitGroup
+
+		for name, conn := range connections {
+			wg.Add(1)
+			go func(providerName string, authMethod coreprovider.AuthMethod) {
+				defer wg.Done()
+				p, err := coreprovider.GetProvider(ctx, coreprovider.Provider(providerName), authMethod)
+				if err != nil {
+					return
+				}
+				mdls, err := p.ListModels(ctx)
+				if err != nil {
+					return
+				}
+				ch <- providerResult{providerName, authMethod, mdls}
+			}(name, conn.AuthMethod)
 		}
 
-		prov := coreprovider.Provider(providerName)
-		_ = store.CacheModels(prov, conn.AuthMethod, models)
+		go func() { wg.Wait(); close(ch) }()
 
-		for _, mdl := range models {
-			s.models = append(s.models, ModelItem{
-				ID:               mdl.ID,
-				Name:             mdl.Name,
-				DisplayName:      mdl.DisplayName,
-				ProviderName:     providerName,
-				AuthMethod:       conn.AuthMethod,
-				IsCurrent:        mdl.ID == currentModelID,
-				InputTokenLimit:  mdl.InputTokenLimit,
-				OutputTokenLimit: mdl.OutputTokenLimit,
-			})
+		var models []ModelItem
+		for r := range ch {
+			prov := coreprovider.Provider(r.providerName)
+			_ = store.CacheModels(prov, r.authMethod, r.models)
+
+			for _, mdl := range r.models {
+				models = append(models, ModelItem{
+					ID:               mdl.ID,
+					Name:             mdl.Name,
+					DisplayName:      mdl.DisplayName,
+					ProviderName:     r.providerName,
+					AuthMethod:       r.authMethod,
+					IsCurrent:        mdl.ID == currentModelID,
+					InputTokenLimit:  mdl.InputTokenLimit,
+					OutputTokenLimit: mdl.OutputTokenLimit,
+				})
+			}
 		}
+		return ModelsLoadedMsg{Models: models}
 	}
 }
 
-func (s *Model) appendCachedModels(allModels map[string][]coreprovider.ModelInfo, currentModelID string) {
-	for key, models := range allModels {
+// HandleModelsLoaded updates the panel with asynchronously loaded models.
+func (s *Model) HandleModelsLoaded(msg ModelsLoadedMsg) {
+	s.allModels = msg.Models
+	s.ensureModelProvidersExist()
+
+	var currentModelID string
+	if s.store != nil {
+		if current := s.store.GetCurrentModel(); current != nil {
+			currentModelID = current.ModelID
+		}
+	}
+	s.sortConnectedProviders(currentModelID)
+	s.rebuildVisibleItems()
+}
+
+// loadModelsCached loads models from the store cache.
+func (s *Model) loadModelsCached(allCached map[string][]coreprovider.ModelInfo, currentModelID string) {
+	for key, models := range allCached {
 		parts := strings.SplitN(key, ":", 2)
 		providerName := key
 		var authMethod coreprovider.AuthMethod
@@ -195,7 +237,7 @@ func (s *Model) appendCachedModels(allModels map[string][]coreprovider.ModelInfo
 		}
 
 		for _, mdl := range models {
-			s.models = append(s.models, ModelItem{
+			s.allModels = append(s.allModels, ModelItem{
 				ID:               mdl.ID,
 				Name:             mdl.Name,
 				DisplayName:      mdl.DisplayName,
@@ -209,26 +251,205 @@ func (s *Model) appendCachedModels(allModels map[string][]coreprovider.ModelInfo
 	}
 }
 
-func (s *Model) disconnectAuthMethod(item AuthMethodItem, authMethods []AuthMethodItem, authIdx int) tea.Cmd {
-	store, _ := coreprovider.NewStore()
-	if store != nil {
-		_ = store.Disconnect(item.Provider)
+// sortConnectedProviders sorts connected providers so that the current model's
+// provider comes first, then alphabetical.
+func (s *Model) sortConnectedProviders(currentModelID string) {
+	if currentModelID == "" {
+		return
 	}
-	s.lastConnectResult = "✓ Disconnected"
-	s.lastConnectAuthIdx = authIdx
-	s.lastConnectSuccess = true
-	authMethods[authIdx].Status = coreprovider.StatusAvailable
-	return nil
+	var currentProvider string
+	for _, m := range s.allModels {
+		if m.ID == currentModelID {
+			currentProvider = m.ProviderName
+			break
+		}
+	}
+	if currentProvider == "" {
+		return
+	}
+	sort.SliceStable(s.connectedProviders, func(i, j int) bool {
+		iMatch := string(s.connectedProviders[i].Provider) == currentProvider
+		jMatch := string(s.connectedProviders[j].Provider) == currentProvider
+		if iMatch != jMatch {
+			return iMatch
+		}
+		return false
+	})
 }
 
-func (s *Model) beginAuthConnection(authIdx int) {
+// rebuildVisibleItems constructs the flat visible-items list from current state.
+func (s *Model) rebuildVisibleItems() {
+	s.visibleItems = nil
+
+	switch s.activeTab {
+	case TabModels:
+		s.rebuildModelsTab()
+	case TabProviders:
+		s.rebuildProvidersTab()
+	}
+
+	s.clampSelection()
+}
+
+// rebuildModelsTab builds visible items for the Models tab.
+func (s *Model) rebuildModelsTab() {
+	s.applyFilter()
+
+	// Group filtered models by provider
+	providerModels := make(map[string][]ModelItem)
+	for i := range s.filteredModels {
+		m := &s.filteredModels[i]
+		providerModels[m.ProviderName] = append(providerModels[m.ProviderName], *m)
+	}
+
+	for i := range s.connectedProviders {
+		cp := &s.connectedProviders[i]
+		models := providerModels[string(cp.Provider)]
+		if len(models) == 0 && s.searchQuery != "" {
+			continue
+		}
+
+		s.visibleItems = append(s.visibleItems, ListItem{
+			Kind:        ItemProviderHeader,
+			Provider:    cp,
+			ProviderIdx: i,
+		})
+
+		// Sort models: current first
+		sort.SliceStable(models, func(a, b int) bool {
+			return models[a].IsCurrent && !models[b].IsCurrent
+		})
+
+		for j := range models {
+			s.visibleItems = append(s.visibleItems, ListItem{
+				Kind:        ItemModel,
+				Model:       &models[j],
+				ProviderIdx: i,
+			})
+		}
+	}
+}
+
+// rebuildProvidersTab builds visible items for the Providers tab.
+func (s *Model) rebuildProvidersTab() {
+	for i := range s.allProviders {
+		p := &s.allProviders[i]
+
+		// Apply search filter on provider name
+		if s.searchQuery != "" {
+			query := strings.ToLower(s.searchQuery)
+			if !selector.FuzzyMatch(strings.ToLower(p.DisplayName), query) &&
+				!selector.FuzzyMatch(strings.ToLower(string(p.Provider)), query) {
+				continue
+			}
+		}
+
+		s.visibleItems = append(s.visibleItems, ListItem{
+			Kind:        ItemProvider,
+			Provider:    p,
+			ProviderIdx: i,
+		})
+
+		// Show expanded auth methods
+		if s.expandedProviderIdx == i {
+			for j := range p.AuthMethods {
+				s.visibleItems = append(s.visibleItems, ListItem{
+					Kind:        ItemAuthMethod,
+					AuthMethod:  &p.AuthMethods[j],
+					ProviderIdx: i,
+				})
+			}
+		}
+	}
+}
+
+func (s *Model) applyFilter() {
+	if s.searchQuery == "" {
+		s.filteredModels = s.allModels
+		return
+	}
+	query := strings.ToLower(s.searchQuery)
+	s.filteredModels = nil
+	for _, m := range s.allModels {
+		if selector.FuzzyMatch(strings.ToLower(m.ID), query) ||
+			selector.FuzzyMatch(strings.ToLower(m.DisplayName), query) ||
+			selector.FuzzyMatch(strings.ToLower(m.ProviderName), query) {
+			s.filteredModels = append(s.filteredModels, m)
+		}
+	}
+}
+
+func (s *Model) clampSelection() {
+	if len(s.visibleItems) == 0 {
+		s.selectedIdx = 0
+		return
+	}
+	if s.selectedIdx >= len(s.visibleItems) {
+		s.selectedIdx = len(s.visibleItems) - 1
+	}
+	if s.selectedIdx < 0 {
+		s.selectedIdx = 0
+	}
+	// Skip non-selectable items forward
+	if s.visibleItems[s.selectedIdx].Kind == ItemProviderHeader {
+		for s.selectedIdx < len(s.visibleItems)-1 {
+			s.selectedIdx++
+			if s.visibleItems[s.selectedIdx].Kind != ItemProviderHeader {
+				break
+			}
+		}
+	}
+}
+
+// refreshAuthMethod re-fetches models for an already connected provider auth method.
+func (s *Model) refreshAuthMethod(item AuthMethodItem, authIdx int) tea.Cmd {
+	s.lastConnectResult = "Refreshing..."
+	s.lastConnectAuthIdx = authIdx
+	s.lastConnectSuccess = false
+
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		llmProvider, err := coreprovider.GetProvider(ctx, item.Provider, item.AuthMethod)
+		if err != nil {
+			return ConnectResultMsg{
+				AuthIdx: authIdx,
+				Success: false,
+				Message: "Failed: " + err.Error(),
+			}
+		}
+
+		models, err := llmProvider.ListModels(ctx)
+
+		store, _ := coreprovider.NewStore()
+		if store != nil && len(models) > 0 {
+			_ = store.CacheModels(item.Provider, item.AuthMethod, models)
+		}
+
+		if err != nil {
+			return ConnectResultMsg{
+				AuthIdx:   authIdx,
+				Success:   true,
+				Message:   fmt.Sprintf("⚠ %d models (static)", len(models)),
+				NewStatus: coreprovider.StatusConnected,
+			}
+		}
+
+		return ConnectResultMsg{
+			AuthIdx:   authIdx,
+			Success:   true,
+			Message:   fmt.Sprintf("✓ Refreshed: %d models", len(models)),
+			NewStatus: coreprovider.StatusConnected,
+		}
+	}
+}
+
+// connectAuthMethod initiates an async connection to a provider auth method.
+func (s *Model) connectAuthMethod(item AuthMethodItem, authIdx int) tea.Cmd {
 	s.lastConnectResult = "Connecting..."
 	s.lastConnectAuthIdx = authIdx
 	s.lastConnectSuccess = false
-}
 
-func (s *Model) connectAuthMethod(item AuthMethodItem, authIdx int) tea.Cmd {
-	s.beginAuthConnection(authIdx)
 	return func() tea.Msg {
 		ctx := context.Background()
 
@@ -286,20 +507,23 @@ func (s *Model) connectAuthMethod(item AuthMethodItem, authIdx int) tea.Cmd {
 	}
 }
 
-// sortModelsWithCurrentFirst sorts models with current model first, then by provider name.
-func sortModelsWithCurrentFirst(models []ModelItem) {
-	sort.SliceStable(models, func(i, j int) bool {
-		if models[i].IsCurrent && !models[j].IsCurrent {
-			return true
-		}
-		if !models[i].IsCurrent && models[j].IsCurrent {
-			return false
-		}
-		return models[i].ProviderName < models[j].ProviderName
-	})
+// HandleConnectResult updates the selector state with connection result.
+func (s *Model) HandleConnectResult(msg ConnectResultMsg) tea.Cmd {
+	s.lastConnectAuthIdx = msg.AuthIdx
+	s.lastConnectResult = msg.Message
+	s.lastConnectSuccess = msg.Success
+
+	if !msg.Success {
+		return nil
+	}
+
+	// Reload provider/model data, preserving UI state (tab, expansion, result).
+	cmd, _ := s.loadProviderData()
+	s.rebuildVisibleItems()
+	return cmd
 }
 
-// ConnectProvider connects to the selected provider and verifies the connection.
+// ConnectProvider connects to a provider and verifies the connection.
 func (s *Model) ConnectProvider(ctx context.Context, p coreprovider.Provider, authMethod coreprovider.AuthMethod) (string, error) {
 	if s.store == nil {
 		store, err := coreprovider.NewStore()
@@ -361,4 +585,17 @@ func (s *Model) SetModel(modelID string, providerName string, authMethod corepro
 	}
 
 	return fmt.Sprintf("Model set to: %s (%s)", modelID, providerName), nil
+}
+
+// initAPIKeyInput initializes the textinput for API key entry.
+func (s *Model) initAPIKeyInput(envVar string) {
+	ti := textinput.New()
+	ti.Placeholder = envVar
+	ti.Focus()
+	ti.CharLimit = 256
+	ti.Width = 40
+	ti.EchoMode = textinput.EchoPassword
+	s.apiKeyInput = ti
+	s.apiKeyActive = true
+	s.apiKeyEnvVar = envVar
 }

@@ -25,7 +25,6 @@ import (
 type CommandHandler func(ctx context.Context, m *model, args string) (string, tea.Cmd, error)
 
 var builtinCommandHandlers = map[string]CommandHandler{
-	"provider":       handleProviderCommand,
 	"model":          handleModelCommand,
 	"clear":          handleClearCommand,
 	"fork":           handleForkCommand,
@@ -45,6 +44,7 @@ var builtinCommandHandlers = map[string]CommandHandler{
 	"reload-plugins": handleReloadPluginsCommand,
 	"think":          handleThinkCommand,
 	"loop":           handleLoopCommand,
+	"search":         handleSearchCommand,
 }
 
 // handlerRegistry maps command names to their handler functions.

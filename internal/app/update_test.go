@@ -422,6 +422,7 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 		"*pluginui.Model",
 		"*sessionui.Model",
 		"*memory.Model",
+		"*searchui.Model",
 	}
 
 	if strings.Join(got, ",") != strings.Join(want, ",") {

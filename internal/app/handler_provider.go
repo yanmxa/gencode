@@ -23,6 +23,9 @@ func (m *model) updateProvider(msg tea.Msg) (tea.Cmd, bool) {
 	case providerui.ModelSelectedMsg:
 		c := m.handleModelSelected(msg)
 		return c, true
+	case providerui.ModelsLoadedMsg:
+		m.provider.Selector.HandleModelsLoaded(msg)
+		return nil, true
 	case providerui.StatusExpiredMsg:
 		m.provider.StatusMessage = ""
 		return nil, true
@@ -31,8 +34,7 @@ func (m *model) updateProvider(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (m *model) handleProviderConnectResult(msg providerui.ConnectResultMsg) tea.Cmd {
-	m.provider.Selector.HandleConnectResult(msg)
-	return nil
+	return m.provider.Selector.HandleConnectResult(msg)
 }
 
 func (m *model) handleProviderSelected(msg providerui.SelectedMsg) tea.Cmd {

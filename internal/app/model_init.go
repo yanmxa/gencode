@@ -18,6 +18,7 @@ import (
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/pluginui"
 	"github.com/yanmxa/gencode/internal/app/providerui"
+	"github.com/yanmxa/gencode/internal/app/searchui"
 	"github.com/yanmxa/gencode/internal/app/sessionui"
 	"github.com/yanmxa/gencode/internal/app/skillui"
 	"github.com/yanmxa/gencode/internal/app/toolui"
@@ -109,6 +110,7 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		mcp:      newMCPState(),
 		plugin:   newPluginState(),
 		agent:    newAgentState(),
+		search:   newSearchState(),
 		approval: appapproval.New(),
 
 		queueSelectIdx: -1,
@@ -188,6 +190,10 @@ func newPluginState() pluginui.State {
 
 func newAgentState() agentui.State {
 	return agentui.State{Selector: agentui.New()}
+}
+
+func newSearchState() searchui.State {
+	return searchui.State{Selector: searchui.New()}
 }
 
 func (m *model) applyRunOptions(opts config.RunOptions) error {

@@ -18,6 +18,7 @@ func (m *model) featureUpdaters() []messageUpdater {
 		(*model).updateMemory,
 		(*model).updateCron,
 		(*model).updateAsyncHooks,
+		(*model).updateSearch,
 		(*model).updateTaskNotifications,
 	}
 }
@@ -40,6 +41,7 @@ func (m *model) overlaySelectors() []overlaySelector {
 		&m.plugin.Selector,
 		&m.session.Selector,
 		&m.memory.Selector,
+		&m.search.Selector,
 	}
 }
 

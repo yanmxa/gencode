@@ -11,287 +11,349 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
-// Render renders the selector.
+// Render renders the unified model & provider selector as a full-screen overlay.
 func (s *Model) Render() string {
 	if !s.active {
 		return ""
 	}
 
-	if s.selectorType == SelectorTypeModel {
-		return s.renderModelSelector()
-	}
-
-	return s.renderProviderSelector()
-}
-
-// renderModelSelector renders the model selection UI.
-func (s *Model) renderModelSelector() string {
-	if len(s.models) == 0 {
-		return s.renderNoModelsState()
+	if len(s.visibleItems) == 0 && len(s.allModels) == 0 && len(s.allProviders) == 0 {
+		return s.renderEmptyState()
 	}
 
 	var sb strings.Builder
 
-	title := fmt.Sprintf("Select Model (%d/%d)", len(s.filteredModels), len(s.models))
-	sb.WriteString(selector.SelectorTitleStyle.Render(title))
+	sepStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+	sepWidth := s.contentWidth() - 8
+
+	// Separator above tabs
+	sb.WriteString(sepStyle.Render(strings.Repeat("─", sepWidth)))
 	sb.WriteString("\n")
 
-	searchPrompt := "🔍 "
-	if s.searchQuery == "" {
-		sb.WriteString(selector.SelectorHintStyle.Render(searchPrompt + "Type to filter..."))
-	} else {
-		sb.WriteString(selector.SelectorBreadcrumbStyle.Render(searchPrompt + s.searchQuery + "▏"))
-	}
+	// Tab header
+	sb.WriteString(s.renderTabs())
 	sb.WriteString("\n\n")
 
-	if len(s.filteredModels) == 0 {
-		sb.WriteString(selector.SelectorHintStyle.Render("  No models match the filter"))
+	// Search box
+	sb.WriteString(s.renderSearchBox())
+	sb.WriteString("\n\n")
+
+	if len(s.visibleItems) == 0 {
+		sb.WriteString(s.emptyFilterMsg())
 		sb.WriteString("\n")
 	} else {
-		endIdx := s.scrollOffset + s.maxVisible
-		if endIdx > len(s.filteredModels) {
-			endIdx = len(s.filteredModels)
+		s.renderItemList(&sb)
+	}
+
+	// Separator before hints
+	sb.WriteString("\n")
+	sb.WriteString(sepStyle.Render(strings.Repeat("─", sepWidth)))
+	sb.WriteString("\n")
+	sb.WriteString(s.renderHints())
+
+	content := sb.String()
+	cw := s.contentWidth()
+	box := lipgloss.NewStyle().
+		Width(cw).
+		Height(s.boxHeight()).
+		Padding(1, 2).
+		Render(content)
+	return lipgloss.Place(s.width, s.height-2, lipgloss.Center, lipgloss.Center, box)
+}
+
+// contentWidth returns the usable width for the panel content.
+func (s *Model) contentWidth() int {
+	// Use full terminal width minus a small margin
+	return max(60, s.width-6)
+}
+
+// boxHeight returns the fixed height for the panel, consistent across tabs.
+func (s *Model) boxHeight() int {
+	return max(18, s.height-4)
+}
+
+// emptyFilterMsg returns the "no matches" text for the current tab.
+func (s *Model) emptyFilterMsg() string {
+	if s.activeTab == TabModels {
+		return selector.SelectorDimStyle.PaddingLeft(2).Render("No models match the filter")
+	}
+	return selector.SelectorDimStyle.PaddingLeft(2).Render("No providers match the filter")
+}
+
+// renderItemList renders the scrollable item list into the builder.
+func (s *Model) renderItemList(sb *strings.Builder) {
+	endIdx := min(s.scrollOffset+s.maxVisible, len(s.visibleItems))
+
+	if s.scrollOffset > 0 {
+		sb.WriteString(selector.SelectorDimStyle.PaddingLeft(2).Render("↑ more above"))
+		sb.WriteString("\n")
+	}
+
+	for i := s.scrollOffset; i < endIdx; i++ {
+		item := s.visibleItems[i]
+		isSelected := i == s.selectedIdx
+
+		switch item.Kind {
+		case ItemProviderHeader:
+			sb.WriteString(s.renderProviderHeader(item))
+		case ItemModel:
+			sb.WriteString(s.renderModelRow(item, isSelected))
+		case ItemProvider:
+			sb.WriteString(s.renderProviderRow(item, isSelected, i))
+		case ItemAuthMethod:
+			sb.WriteString(s.renderAuthMethod(item, isSelected, i))
 		}
+		sb.WriteString("\n")
 
-		if s.scrollOffset > 0 {
-			sb.WriteString(selector.SelectorHintStyle.Render("  ↑ more above"))
-			sb.WriteString("\n")
-		}
-
-		currentProvider := ""
-		providerHeaderStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
-		warningStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Warning)
-		for i := s.scrollOffset; i < endIdx; i++ {
-			m := s.filteredModels[i]
-
-			if m.ProviderName != currentProvider {
-				currentProvider = m.ProviderName
-				displayProvider := currentProvider
-				if len(displayProvider) > 0 {
-					displayProvider = strings.ToUpper(displayProvider[:1]) + displayProvider[1:]
-				}
-				sb.WriteString(providerHeaderStyle.Render(displayProvider) + "\n")
-			}
-
-			indicator := "[ ]"
-			indicatorStyle := selector.SelectorStatusNone
-			if m.IsCurrent {
-				indicator = "[*]"
-				indicatorStyle = selector.SelectorStatusConnected
-			}
-
-			displayName := m.DisplayName
-			if displayName == "" {
-				displayName = m.Name
-			}
-			if displayName == "" {
-				displayName = m.ID
-			}
-
-			warning := ""
-			if m.InputTokenLimit == 0 && m.OutputTokenLimit == 0 {
-				warning = warningStyle.Render(" ⚠")
-			}
-
-			line := fmt.Sprintf("%s %s%s", indicatorStyle.Render(indicator), displayName, warning)
-
-			if i == s.selectedIdx {
-				sb.WriteString(selector.SelectorSelectedStyle.Render("> " + line))
-			} else {
-				sb.WriteString(selector.SelectorItemStyle.Render("  " + line))
-			}
-			sb.WriteString("\n")
-		}
-
-		if endIdx < len(s.filteredModels) {
-			sb.WriteString(selector.SelectorHintStyle.Render("  ↓ more below"))
+		// Inline API key input (render below the relevant item)
+		if s.apiKeyActive && isSelected {
+			sb.WriteString(s.renderAPIKeyInput())
 			sb.WriteString("\n")
 		}
 	}
 
-	sb.WriteString("\n")
-	sb.WriteString(selector.SelectorHintStyle.Render("↑/↓ navigate · Enter select · Esc clear/cancel"))
-	sb.WriteString("\n")
-	warningIcon := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Warning).Render("⚠")
-	sb.WriteString(selector.SelectorHintStyle.Render(warningIcon + " = No token limits (use /tokenlimit to set)"))
-
-	content := sb.String()
-	box := selector.SelectorBorderStyle.Width(selector.CalculateBoxWidth(s.width)).Render(content)
-	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)
+	if endIdx < len(s.visibleItems) {
+		sb.WriteString(selector.SelectorDimStyle.PaddingLeft(2).Render("↓ more below"))
+		sb.WriteString("\n")
+	}
 }
 
-// renderNoModelsState renders a styled empty state when no providers are connected.
-func (s *Model) renderNoModelsState() string {
+// ── Tab header ──────────────────────────────────────────────────────────────
+
+// Active tab colors — vivid enough to stand out on both dark and light terminals.
+var (
+	tabActiveBg = lipgloss.AdaptiveColor{Dark: "#4F6D9B", Light: "#3B6FC0"}
+	tabActiveFg = lipgloss.AdaptiveColor{Dark: "#FFFFFF", Light: "#FFFFFF"}
+)
+
+func (s *Model) renderTabs() string {
+	activeStyle := lipgloss.NewStyle().
+		Foreground(tabActiveFg).
+		Background(tabActiveBg).
+		Bold(true).
+		Padding(0, 2)
+	inactiveStyle := lipgloss.NewStyle().
+		Foreground(theme.CurrentTheme.TextDim).
+		Padding(0, 2)
+
+	tabs := []struct {
+		name string
+		tab  Tab
+	}{
+		{"Models", TabModels},
+		{"Providers", TabProviders},
+	}
+
+	var parts []string
+	for _, t := range tabs {
+		if t.tab == s.activeTab {
+			parts = append(parts, activeStyle.Render(t.name))
+		} else {
+			parts = append(parts, inactiveStyle.Render(t.name))
+		}
+	}
+
+	return strings.Join(parts, "  ")
+}
+
+// ── Search box ──────────────────────────────────────────────────────────────
+
+func (s *Model) renderSearchBox() string {
+	innerWidth := max(20, s.contentWidth()-8)
+
+	var text string
+	if s.activeTab == TabModels && s.searchQuery != "" {
+		totalModels := len(s.allModels)
+		filteredCount := len(s.filteredModels)
+		text = fmt.Sprintf(" 🔍 %s▏ (%d/%d)", s.searchQuery, filteredCount, totalModels)
+	} else if s.searchQuery != "" {
+		text = " 🔍 " + s.searchQuery + "▏"
+	} else {
+		if s.activeTab == TabProviders {
+			text = " 🔍 Type to filter providers..."
+		} else {
+			text = " 🔍 Type to filter models..."
+		}
+	}
+
+	textFg := theme.CurrentTheme.TextDim
+	if s.searchQuery != "" {
+		textFg = theme.CurrentTheme.Text
+	}
+
+	searchBg := lipgloss.AdaptiveColor{Dark: "#27272A", Light: "#E4E4E7"}
+	return lipgloss.NewStyle().
+		Foreground(textFg).
+		Background(searchBg).
+		Padding(0, 1).
+		Width(innerWidth).
+		Render(text)
+}
+
+// ── Empty / no providers ────────────────────────────────────────────────────
+
+func (s *Model) renderEmptyState() string {
 	warningStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Warning).Bold(true)
 	msgStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Text)
 	cmdStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
 
-	content := selector.SelectorTitleStyle.Render("Select Model") + "\n\n" +
+	content := s.renderTabs() + "\n\n" +
+		s.renderSearchBox() + "\n\n" +
 		warningStyle.Render("  ⚠  No Models Available") + "\n\n" +
 		msgStyle.Render("  No LLM provider is connected yet.") + "\n" +
-		msgStyle.Render("  Run ") + cmdStyle.Render("/provider") + msgStyle.Render(" to connect one first.") + "\n\n" +
-		selector.SelectorHintStyle.Render("Esc cancel")
+		msgStyle.Render("  Press ") + cmdStyle.Render("Tab") + msgStyle.Render(" to switch to Providers tab and connect one.") + "\n\n" +
+		selector.SelectorDimStyle.Render("←/→/Tab switch · Esc cancel")
 
-	box := selector.SelectorBorderStyle.Width(selector.CalculateBoxWidth(s.width)).Render(content)
-	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)
+	cw := s.contentWidth()
+	box := lipgloss.NewStyle().
+		Width(cw).
+		Height(s.boxHeight()).
+		Padding(1, 2).
+		Render(content)
+	return lipgloss.Place(s.width, s.height-2, lipgloss.Center, lipgloss.Center, box)
 }
 
-// renderProviderSelector renders the provider selection UI.
-func (s *Model) renderProviderSelector() string {
-	var sb strings.Builder
+// ── Models tab rows ─────────────────────────────────────────────────────────
 
-	if s.level == LevelProvider {
-		sb.WriteString(s.renderTabHeader())
-		sb.WriteString("\n\n")
-	} else {
-		sb.WriteString(selector.SelectorTitleStyle.Render("Select Provider"))
-		sb.WriteString("\n")
-		if s.parentIdx < len(s.providers) {
-			breadcrumb := fmt.Sprintf("› %s", s.providers[s.parentIdx].DisplayName)
-			sb.WriteString(selector.SelectorBreadcrumbStyle.Render(breadcrumb))
-			sb.WriteString("\n")
-		}
-		sb.WriteString("\n")
-	}
-
-	if s.tab == TabSearch && s.level == LevelProvider {
-		sb.WriteString(s.renderSearchProviders())
-	} else if s.level == LevelProvider {
-		for i, p := range s.providers {
-			availableCount := 0
-			for _, am := range p.AuthMethods {
-				if am.Status == coreprovider.StatusConnected || am.Status == coreprovider.StatusAvailable {
-					availableCount++
-				}
-			}
-
-			statusText := ""
-			if availableCount > 0 {
-				statusText = fmt.Sprintf(" (%d available)", availableCount)
-			}
-
-			line := fmt.Sprintf("%s%s", p.DisplayName, selector.SelectorStatusReady.Render(statusText))
-
-			if i == s.selectedIdx {
-				sb.WriteString(selector.SelectorSelectedStyle.Render("> " + line))
-			} else {
-				sb.WriteString(selector.SelectorItemStyle.Render("  " + line))
-			}
-			sb.WriteString("\n")
-		}
-	} else {
-		if s.parentIdx < len(s.providers) {
-			authMethods := s.providers[s.parentIdx].AuthMethods
-
-			for i, am := range authMethods {
-				statusIcon, statusStyle, statusDesc := getStatusDisplay(am.Status)
-
-				line := fmt.Sprintf("%s %s %s",
-					statusStyle.Render(statusIcon),
-					am.DisplayName,
-					selector.SelectorStatusNone.Render(statusDesc),
-				)
-
-				if i == s.selectedIdx {
-					sb.WriteString(selector.SelectorSelectedStyle.Render("> " + line))
-				} else {
-					sb.WriteString(selector.SelectorItemStyle.Render("  " + line))
-				}
-				sb.WriteString("\n")
-
-				if s.lastConnectResult != "" && i == s.lastConnectAuthIdx {
-					sb.WriteString(selector.SelectorItemStyle.Render("    " + s.renderConnectResult()))
-					sb.WriteString("\n")
-				}
-			}
-		}
-	}
-
-	sb.WriteString("\n")
-
-	if s.level == LevelProvider {
-		sb.WriteString(selector.SelectorHintStyle.Render("Tab switch · ↑/↓ navigate · Enter select · Esc cancel"))
-	} else {
-		sb.WriteString(selector.SelectorHintStyle.Render("↑/↓ navigate · Enter select · ←/Esc back"))
-	}
-
-	content := sb.String()
-	box := selector.SelectorBorderStyle.Width(selector.CalculateBoxWidth(s.width)).Render(content)
-	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)
-}
-
-// renderTabHeader renders the tab header for the provider selector.
-func (s *Model) renderTabHeader() string {
-	activeStyle := lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Primary).
+func (s *Model) renderProviderHeader(item ListItem) string {
+	style := lipgloss.NewStyle().
+		Foreground(theme.CurrentTheme.TextDim).
 		Bold(true)
-	inactiveStyle := lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Muted)
+	name := item.Provider.DisplayName
+	if name == "" {
+		name = string(item.Provider.Provider)
+	}
+	return style.Render(name)
+}
 
-	var llmTab, searchTab string
+func (s *Model) renderModelRow(item ListItem, isSelected bool) string {
+	m := item.Model
 
-	if s.tab == TabLLM {
-		llmTab = activeStyle.Render("[LLM]")
-		searchTab = inactiveStyle.Render(" Search ")
+	indicator := "[ ]"
+	indicatorStyle := selector.SelectorStatusNone
+	if m.IsCurrent {
+		indicator = "[*]"
+		indicatorStyle = selector.SelectorStatusConnected
+	}
+
+	displayName := m.DisplayName
+	if displayName == "" {
+		displayName = m.Name
+	}
+	if displayName == "" {
+		displayName = m.ID
+	}
+
+	warning := ""
+	if m.InputTokenLimit == 0 && m.OutputTokenLimit == 0 {
+		warning = lipgloss.NewStyle().Foreground(theme.CurrentTheme.Warning).Render(" ⚠")
+	}
+
+	line := fmt.Sprintf("%s %s%s", indicatorStyle.Render(indicator), displayName, warning)
+	return selector.RenderSelectableRow(line, isSelected)
+}
+
+// ── Providers tab rows ──────────────────────────────────────────────────────
+
+// providerNameColumnWidth is the fixed width for provider name alignment.
+const providerNameColumnWidth = 16
+
+func (s *Model) renderProviderRow(item ListItem, isSelected bool, itemIdx int) string {
+	p := item.Provider
+	if p == nil {
+		return ""
+	}
+
+	bestStatus := bestAuthMethodStatus(p.AuthMethods)
+	statusIcon, statusStyle, _ := getStatusDisplay(bestStatus)
+
+	envInfo := ""
+	if len(p.AuthMethods) == 1 {
+		envInfo = selector.RenderEnvVarStatus(firstEnvVar(p.AuthMethods[0].EnvVars))
+	} else if len(p.AuthMethods) > 1 {
+		envInfo = selector.SelectorDimStyle.Render(fmt.Sprintf("%d auth methods", len(p.AuthMethods)))
+	}
+
+	line := selector.FormatAlignedRow(statusStyle.Render(statusIcon), p.DisplayName, providerNameColumnWidth, envInfo)
+	result := selector.RenderSelectableRow(line, isSelected)
+
+	if s.lastConnectResult != "" && itemIdx == s.lastConnectAuthIdx {
+		result += "\n" + resultIndent + s.renderConnectResult()
+	}
+
+	return result
+}
+
+func (s *Model) renderAuthMethod(item ListItem, isSelected bool, itemIdx int) string {
+	am := item.AuthMethod
+	if am == nil {
+		return ""
+	}
+
+	statusIcon, statusStyle, statusDesc := getStatusDisplay(am.Status)
+
+	envInfo := ""
+	if am.Status != coreprovider.StatusConnected {
+		envInfo = selector.RenderEnvVarStatus(firstEnvVar(am.EnvVars))
+	}
+	if statusDesc != "" && envInfo == "" {
+		envInfo = selector.SelectorDimStyle.Render(statusDesc)
+	}
+
+	colWidth := providerNameColumnWidth - 2 // sub-item indent
+	line := "  " + selector.FormatAlignedRow(statusStyle.Render(statusIcon), am.DisplayName, colWidth, envInfo)
+	result := selector.RenderSelectableRow(line, isSelected)
+
+	if s.lastConnectResult != "" && itemIdx == s.lastConnectAuthIdx {
+		result += "\n" + resultIndent + "  " + s.renderConnectResult()
+	}
+
+	return result
+}
+
+// ── API key input ───────────────────────────────────────────────────────────
+
+func (s *Model) renderAPIKeyInput() string {
+	label := selector.SelectorDimStyle.Render(s.apiKeyEnvVar + ": ")
+	inputView := label + s.apiKeyInput.View()
+
+	inputBg := lipgloss.AdaptiveColor{Dark: "#1E293B", Light: "#F1F5F9"}
+	boxStyle := lipgloss.NewStyle().
+		Background(inputBg).
+		Padding(0, 1)
+
+	// Indent to align with auth method content (6 chars: PaddingLeft(2) + "  " + "  ")
+	return "      " + boxStyle.Render(inputView)
+}
+
+// ── Footer hints ────────────────────────────────────────────────────────────
+
+func (s *Model) renderHints() string {
+	if s.apiKeyActive {
+		return selector.SelectorDimStyle.Render("Paste API key · Enter confirm · Esc cancel")
+	}
+
+	var parts []string
+	parts = append(parts, "↑/↓ navigate")
+	if s.activeTab == TabProviders {
+		parts = append(parts, "Enter connect/refresh")
 	} else {
-		llmTab = inactiveStyle.Render(" LLM ")
-		searchTab = activeStyle.Render("[Search]")
+		parts = append(parts, "Enter select")
 	}
-
-	tabs := llmTab + "  " + searchTab
-	boxWidth := selector.CalculateBoxWidth(s.width)
-	return lipgloss.PlaceHorizontal(boxWidth-4, lipgloss.Center, tabs)
+	parts = append(parts, "←/→/Tab switch", "Esc cancel")
+	return selector.SelectorDimStyle.Render(strings.Join(parts, " · "))
 }
 
-// getSearchProviderStatus returns icon, style, and description for a search provider.
-func getSearchProviderStatus(status string, requiresKey bool) (icon string, style lipgloss.Style, desc string) {
-	switch status {
-	case "current":
-		return "●", selector.SelectorStatusConnected, ""
-	case "available":
-		return "○", selector.SelectorStatusReady, ""
-	default:
-		if requiresKey {
-			return "◌", selector.SelectorStatusNone, "(no credentials)"
-		}
-		return "◌", selector.SelectorStatusNone, ""
-	}
-}
+// ── Connection result ───────────────────────────────────────────────────────
 
-// renderSearchProviders renders the search provider list.
-func (s *Model) renderSearchProviders() string {
-	var sb strings.Builder
+// resultIndent is the fixed indent for connection result messages,
+// aligned with the provider name column.
+const resultIndent = "        "
 
-	for i, sp := range s.searchProviders {
-		statusIcon, statusStyle, statusDesc := getSearchProviderStatus(sp.Status, sp.RequiresKey)
-
-		line := fmt.Sprintf("%s %s %s",
-			statusStyle.Render(statusIcon),
-			sp.DisplayName,
-			selector.SelectorStatusNone.Render(statusDesc),
-		)
-
-		if i == s.selectedIdx {
-			sb.WriteString(selector.SelectorSelectedStyle.Render("> " + line))
-		} else {
-			sb.WriteString(selector.SelectorItemStyle.Render("  " + line))
-		}
-		sb.WriteString("\n")
-
-		if s.lastConnectResult != "" && i == s.lastConnectAuthIdx {
-			sb.WriteString(selector.SelectorItemStyle.Render("    " + s.renderConnectResult()))
-			sb.WriteString("\n")
-		}
-	}
-
-	return sb.String()
-}
-
-// connectResultStyle returns the appropriate style for a connection result message.
 func (s *Model) connectResultStyle() lipgloss.Style {
 	if !s.lastConnectSuccess {
-		if s.lastConnectResult == "Connecting..." {
-			return selector.SelectorHintStyle
+		if s.lastConnectResult == "Connecting..." || s.lastConnectResult == "Refreshing..." {
+			return selector.SelectorDimStyle
 		}
 		return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error)
 	}
@@ -301,7 +363,22 @@ func (s *Model) connectResultStyle() lipgloss.Style {
 	return selector.SelectorStatusConnected
 }
 
-// renderConnectResult returns the styled result message for connection attempts.
 func (s *Model) renderConnectResult() string {
 	return s.connectResultStyle().Render(s.lastConnectResult)
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+func bestAuthMethodStatus(methods []AuthMethodItem) coreprovider.ProviderStatus {
+	for _, m := range methods {
+		if m.Status == coreprovider.StatusConnected {
+			return coreprovider.StatusConnected
+		}
+	}
+	for _, m := range methods {
+		if m.Status == coreprovider.StatusAvailable {
+			return coreprovider.StatusAvailable
+		}
+	}
+	return coreprovider.StatusNotConfigured
 }

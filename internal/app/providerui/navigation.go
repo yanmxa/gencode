@@ -1,6 +1,7 @@
 package providerui
 
 import (
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -8,11 +9,7 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/selector"
 )
 
-// ensureVisible adjusts scrollOffset to keep selectedIdx visible.
 func (s *Model) ensureVisible() {
-	if s.selectorType != SelectorTypeModel {
-		return
-	}
 	if s.selectedIdx < s.scrollOffset {
 		s.scrollOffset = s.selectedIdx
 	}
@@ -21,129 +18,120 @@ func (s *Model) ensureVisible() {
 	}
 }
 
-// updateFilter filters models based on search query (fuzzy match).
-func (s *Model) updateFilter() {
-	if s.searchQuery == "" {
-		s.filteredModels = s.models
-	} else {
-		query := strings.ToLower(s.searchQuery)
-		s.filteredModels = make([]ModelItem, 0)
-		for _, m := range s.models {
-			if selector.FuzzyMatch(strings.ToLower(m.ID), query) ||
-				selector.FuzzyMatch(strings.ToLower(m.DisplayName), query) ||
-				selector.FuzzyMatch(strings.ToLower(m.ProviderName), query) {
-				s.filteredModels = append(s.filteredModels, m)
-			}
+func (s *Model) MoveUp() {
+	for s.selectedIdx > 0 {
+		s.selectedIdx--
+		if s.visibleItems[s.selectedIdx].Kind != ItemProviderHeader {
+			break
 		}
 	}
-	s.selectedIdx = 0
-	s.scrollOffset = 0
+	s.ensureVisible()
 }
 
-// MoveUp moves the selection up.
-func (s *Model) MoveUp() {
-	if s.selectedIdx > 0 {
-		s.selectedIdx--
-		s.ensureVisible()
-	}
-}
-
-// MoveDown moves the selection down.
 func (s *Model) MoveDown() {
-	maxIdx := s.getMaxIndex()
-	if s.selectedIdx < maxIdx {
+	for s.selectedIdx < len(s.visibleItems)-1 {
 		s.selectedIdx++
-		s.ensureVisible()
+		if s.visibleItems[s.selectedIdx].Kind != ItemProviderHeader {
+			break
+		}
 	}
+	s.ensureVisible()
 }
 
-// getMaxIndex returns the maximum selectable index for current level.
-func (s *Model) getMaxIndex() int {
-	if s.selectorType == SelectorTypeModel {
-		return len(s.filteredModels) - 1
+func (s *Model) switchTab(tab Tab) {
+	if tab == s.activeTab {
+		return
 	}
-	if s.tab == TabSearch {
-		return len(s.searchProviders) - 1
-	}
-	if s.level == LevelProvider {
-		return len(s.providers) - 1
-	}
-	if s.parentIdx < len(s.providers) {
-		return len(s.providers[s.parentIdx].AuthMethods) - 1
-	}
-	return 0
+	s.activeTab = tab
+	s.resetNavigation()
+	s.resetModelSearch()
+	s.resetConnectionResult()
+	s.expandedProviderIdx = -1
+	s.apiKeyActive = false
+	s.rebuildVisibleItems()
 }
 
-// GoBack goes back to the previous level.
+func (s *Model) NextTab() { s.switchTab((s.activeTab + 1) % 2) }
+func (s *Model) PrevTab() { s.switchTab((s.activeTab + 1 + 2) % 2) }
+
 func (s *Model) GoBack() bool {
-	if s.level != LevelAuthMethod {
-		return false
+	if s.apiKeyActive {
+		s.apiKeyActive = false
+		return true
 	}
-	s.level = LevelProvider
-	s.selectedIdx = s.parentIdx
-	s.resetConnectionResult()
-	return true
-}
-
-func (s *Model) switchProviderTab() {
-	if s.tab == TabLLM {
-		s.tab = TabSearch
-	} else {
-		s.tab = TabLLM
+	if s.expandedProviderIdx >= 0 {
+		s.expandedProviderIdx = -1
+		s.resetConnectionResult()
+		s.rebuildVisibleItems()
+		return true
 	}
-	s.selectedIdx = 0
-	s.resetConnectionResult()
+	return false
 }
 
 func (s *Model) clearModelSearch() bool {
-	if s.selectorType != SelectorTypeModel || s.searchQuery == "" {
+	if s.searchQuery == "" {
 		return false
 	}
 	s.searchQuery = ""
-	s.updateFilter()
+	s.rebuildVisibleItems()
 	return true
 }
 
 func (s *Model) trimModelSearch() {
-	if s.selectorType != SelectorTypeModel || len(s.searchQuery) == 0 {
+	if len(s.searchQuery) == 0 {
 		return
 	}
 	s.searchQuery = s.searchQuery[:len(s.searchQuery)-1]
-	s.updateFilter()
+	s.rebuildVisibleItems()
 }
 
-func (s *Model) appendModelSearch(text string) bool {
-	if s.selectorType != SelectorTypeModel {
-		return false
-	}
+func (s *Model) appendModelSearch(text string) {
 	s.searchQuery += text
-	s.updateFilter()
-	return true
+	s.rebuildVisibleItems()
 }
 
-func (s *Model) allowsVimNavigation() bool {
-	return s.selectorType != SelectorTypeModel || s.searchQuery == ""
-}
-
-// HandleKeypress handles a keypress and returns a command if selection is made.
 func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
+	// Route to API key input if active
+	if s.apiKeyActive {
+		return s.handleAPIKeyInput(key)
+	}
+
 	switch key.Type {
 	case tea.KeyTab:
-		if s.selectorType == SelectorTypeProvider && s.level == LevelProvider {
-			s.switchProviderTab()
+		if s.searchQuery == "" {
+			s.NextTab()
 		}
 		return nil
+
+	case tea.KeyShiftTab:
+		if s.searchQuery == "" {
+			s.PrevTab()
+		}
+		return nil
+
 	case tea.KeyUp, tea.KeyCtrlP:
 		s.MoveUp()
 		return nil
+
 	case tea.KeyDown, tea.KeyCtrlN:
 		s.MoveDown()
 		return nil
-	case tea.KeyEnter, tea.KeyRight:
+
+	case tea.KeyEnter:
 		return s.Select()
-	case tea.KeyLeft:
-		s.GoBack()
+
+	case tea.KeyRight:
+		if s.searchQuery == "" {
+			s.NextTab()
+		}
 		return nil
+
+	case tea.KeyLeft:
+		if s.searchQuery == "" && !s.GoBack() {
+			s.PrevTab()
+		}
+		return nil
+
 	case tea.KeyEsc:
 		if s.clearModelSearch() {
 			return nil
@@ -153,33 +141,67 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		}
 		s.Cancel()
 		return func() tea.Msg { return selector.DismissedMsg{} }
+
 	case tea.KeyBackspace:
 		s.trimModelSearch()
 		return nil
-	case tea.KeySpace:
-		if s.appendModelSearch(" ") {
-			return nil
-		}
-	case tea.KeyRunes:
-		if s.appendModelSearch(string(key.Runes)) {
-			return nil
-		}
-	}
 
-	if !s.allowsVimNavigation() {
+	case tea.KeySpace:
+		s.appendModelSearch(" ")
+		return nil
+
+	case tea.KeyRunes:
+		s.appendModelSearch(string(key.Runes))
 		return nil
 	}
 
-	switch key.String() {
-	case "j":
-		s.MoveDown()
-	case "k":
-		s.MoveUp()
-	case "l":
-		return s.Select()
-	case "h":
-		s.GoBack()
+	// Vim navigation (only when search query is empty)
+	if s.searchQuery == "" {
+		switch key.String() {
+		case "j":
+			s.MoveDown()
+		case "k":
+			s.MoveUp()
+		case "l":
+			s.NextTab()
+		case "h":
+			if !s.GoBack() {
+				s.PrevTab()
+			}
+		}
 	}
 
 	return nil
+}
+
+func (s *Model) handleAPIKeyInput(key tea.KeyMsg) tea.Cmd {
+	switch key.Type {
+	case tea.KeyEnter:
+		value := strings.TrimSpace(s.apiKeyInput.Value())
+		if value == "" {
+			return nil
+		}
+		// Set the env var for this session
+		os.Setenv(s.apiKeyEnvVar, value)
+		s.apiKeyActive = false
+
+		// Find the auth method and trigger connection
+		if s.apiKeyProviderIdx >= 0 && s.apiKeyProviderIdx < len(s.allProviders) {
+			dp := &s.allProviders[s.apiKeyProviderIdx]
+			if s.apiKeyAuthIdx >= 0 && s.apiKeyAuthIdx < len(dp.AuthMethods) {
+				am := dp.AuthMethods[s.apiKeyAuthIdx]
+				return s.connectAuthMethod(am, s.selectedIdx)
+			}
+		}
+		return nil
+
+	case tea.KeyEsc:
+		s.apiKeyActive = false
+		return nil
+
+	default:
+		var cmd tea.Cmd
+		s.apiKeyInput, cmd = s.apiKeyInput.Update(key)
+		return cmd
+	}
 }
