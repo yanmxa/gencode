@@ -48,4 +48,11 @@ var (
 	// SelectorDimStyle is a plain dim-text style (no margins/padding).
 	SelectorDimStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.TextDim)
+
+	// TabActiveBg is the background color for active tabs in tabbed panels.
+	TabActiveBg = lipgloss.AdaptiveColor{Dark: "#4F6D9B", Light: "#3B6FC0"}
+	// TabActiveFg is the foreground color for active tabs in tabbed panels.
+	TabActiveFg = lipgloss.AdaptiveColor{Dark: "#FFFFFF", Light: "#FFFFFF"}
+	// SearchBg is the background color for search/filter input boxes.
+	SearchBg = lipgloss.AdaptiveColor{Dark: "#27272A", Light: "#E4E4E7"}
 )

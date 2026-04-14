@@ -169,7 +169,7 @@ func TestRenderTabListShowsPluginManagerFrame(t *testing.T) {
 	m.filteredItems = []any{m.installedFlatList[0]}
 
 	rendered := m.Render()
-	for _, want := range []string{"Plugin Manager", "Discover", "Installed", "Marketplaces", "filter"} {
+	for _, want := range []string{"Discover", "Installed", "Marketplaces", "filter"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("Render() missing %q in output:\n%s", want, rendered)
 		}

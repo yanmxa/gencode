@@ -58,7 +58,7 @@ func (s *Model) Render() string {
 		Height(s.boxHeight()).
 		Padding(1, 2).
 		Render(content)
-	return lipgloss.Place(s.width, s.height-2, lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(s.width, s.height-2, lipgloss.Center, lipgloss.Top, box)
 }
 
 // contentWidth returns the usable width for the panel content.
@@ -120,16 +120,11 @@ func (s *Model) renderItemList(sb *strings.Builder) {
 
 // ── Tab header ──────────────────────────────────────────────────────────────
 
-// Active tab colors — vivid enough to stand out on both dark and light terminals.
-var (
-	tabActiveBg = lipgloss.AdaptiveColor{Dark: "#4F6D9B", Light: "#3B6FC0"}
-	tabActiveFg = lipgloss.AdaptiveColor{Dark: "#FFFFFF", Light: "#FFFFFF"}
-)
 
 func (s *Model) renderTabs() string {
 	activeStyle := lipgloss.NewStyle().
-		Foreground(tabActiveFg).
-		Background(tabActiveBg).
+		Foreground(selector.TabActiveFg).
+		Background(selector.TabActiveBg).
 		Bold(true).
 		Padding(0, 2)
 	inactiveStyle := lipgloss.NewStyle().
@@ -181,7 +176,7 @@ func (s *Model) renderSearchBox() string {
 		textFg = theme.CurrentTheme.Text
 	}
 
-	searchBg := lipgloss.AdaptiveColor{Dark: "#27272A", Light: "#E4E4E7"}
+	searchBg := selector.SearchBg
 	return lipgloss.NewStyle().
 		Foreground(textFg).
 		Background(searchBg).
@@ -210,7 +205,7 @@ func (s *Model) renderEmptyState() string {
 		Height(s.boxHeight()).
 		Padding(1, 2).
 		Render(content)
-	return lipgloss.Place(s.width, s.height-2, lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(s.width, s.height-2, lipgloss.Center, lipgloss.Top, box)
 }
 
 // ── Models tab rows ─────────────────────────────────────────────────────────

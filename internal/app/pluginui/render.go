@@ -11,6 +11,7 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
+
 func (s *Model) Render() string {
 	if !s.active {
 		return ""
@@ -37,27 +38,48 @@ func (s *Model) Render() string {
 }
 
 func (s *Model) boxWidth() int {
-	return max(80, s.width-4)
+	return max(60, s.width-6)
 }
 
 func (s *Model) boxHeight() int {
-	return max(18, s.height-6)
+	return max(18, s.height-4)
 }
 
 func (s *Model) contentWidth() int {
-	return s.boxWidth() - 6
+	return s.boxWidth() - 4 // padding(1,2) takes 4 chars
 }
 
 func (s *Model) bodyHeight() int {
-	return max(6, s.boxHeight()-8)
+	return max(6, s.boxHeight()-10)
 }
+
+func (s *Model) sepLine() string {
+	sepStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+	return sepStyle.Render(strings.Repeat("─", s.contentWidth()-4))
+}
+
+// ── Full-width placement ──────────────────────────────────────────────────
+
+func (s *Model) renderFullWidth(content string) string {
+	box := lipgloss.NewStyle().
+		Width(s.boxWidth()).
+		Height(s.boxHeight()).
+		Padding(1, 2).
+		Render(content)
+	return lipgloss.Place(s.width, s.height-2, lipgloss.Center, lipgloss.Top, box)
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
 
 func (s *Model) renderTabs() string {
 	activeStyle := lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Primary).
-		Bold(true)
+		Foreground(selector.TabActiveFg).
+		Background(selector.TabActiveBg).
+		Bold(true).
+		Padding(0, 2)
 	inactiveStyle := lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Muted)
+		Foreground(theme.CurrentTheme.TextDim).
+		Padding(0, 2)
 
 	tabs := []struct {
 		name string
@@ -71,29 +93,67 @@ func (s *Model) renderTabs() string {
 	var parts []string
 	for _, t := range tabs {
 		if t.tab == s.activeTab {
-			parts = append(parts, activeStyle.Render("["+t.name+"]"))
+			parts = append(parts, activeStyle.Render(t.name))
 		} else {
-			parts = append(parts, inactiveStyle.Render(" "+t.name+" "))
+			parts = append(parts, inactiveStyle.Render(t.name))
 		}
 	}
 
-	return strings.Join(parts, " ")
+	return strings.Join(parts, "  ")
 }
+
+// ── Search box ────────────────────────────────────────────────────────────
+
+func (s *Model) renderSearchBox(sb *strings.Builder) {
+	innerWidth := max(20, s.contentWidth()-4)
+
+	var text string
+	if s.searchQuery != "" {
+		pos, total := s.getItemCount()
+		text = fmt.Sprintf(" 🔍 %s▏ (%d/%d)", s.searchQuery, pos, total)
+	} else {
+		switch s.activeTab {
+		case TabDiscover:
+			text = " 🔍 Type to filter plugins..."
+		case TabInstalled:
+			text = " 🔍 Type to filter installed..."
+		case TabMarketplaces:
+			text = " 🔍 Type to filter marketplaces..."
+		}
+	}
+
+	textFg := theme.CurrentTheme.TextDim
+	if s.searchQuery != "" {
+		textFg = theme.CurrentTheme.Text
+	}
+
+	sb.WriteString(lipgloss.NewStyle().
+		Foreground(textFg).
+		Background(selector.SearchBg).
+		Padding(0, 1).
+		Width(innerWidth).
+		Render(text))
+}
+
+// ── Tab list (main view) ──────────────────────────────────────────────────
 
 func (s *Model) renderTabList() string {
 	var sb strings.Builder
-	var body strings.Builder
 
-	pos, total := s.getItemCount()
-	title := fmt.Sprintf("Plugin Manager (%d/%d)", pos, total)
-	sb.WriteString(selector.SelectorTitleStyle.Render(title))
+	// Separator above tabs
+	sb.WriteString(s.sepLine())
 	sb.WriteString("\n")
+
+	// Tab header
 	sb.WriteString(s.renderTabs())
 	sb.WriteString("\n\n")
 
+	// Search box
 	s.renderSearchBox(&sb)
 	sb.WriteString("\n\n")
 
+	// Tab content
+	var body strings.Builder
 	switch s.activeTab {
 	case TabInstalled:
 		s.renderInstalledList(&body)
@@ -102,12 +162,15 @@ func (s *Model) renderTabList() string {
 	case TabMarketplaces:
 		s.renderMarketplacesList(&body)
 	}
-
 	sb.WriteString(s.renderViewport(body.String(), 0))
 
-	hint := s.getTabHint()
-	s.renderFooter(&sb, hint)
-	return s.renderBox(sb.String())
+	// Footer
+	sb.WriteString("\n")
+	sb.WriteString(s.sepLine())
+	sb.WriteString("\n")
+	s.renderFooter(&sb, s.getTabHint())
+
+	return s.renderFullWidth(sb.String())
 }
 
 func (s *Model) getItemCount() (int, int) {
@@ -122,43 +185,31 @@ func (s *Model) getItemCount() (int, int) {
 	return pos, total
 }
 
-func (s *Model) renderSearchBox(sb *strings.Builder) {
-	searchStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
-	inputStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
-
-	searchPrompt := "\U0001f50d "
-	if s.searchQuery == "" {
-		sb.WriteString(searchStyle.Render(searchPrompt + "Type to filter..."))
-	} else {
-		sb.WriteString(searchStyle.Render(searchPrompt))
-		sb.WriteString(inputStyle.Render(s.searchQuery))
-		sb.WriteString(inputStyle.Render("\u258f"))
-	}
-}
-
 func (s *Model) getTabHint() string {
 	switch s.activeTab {
 	case TabInstalled:
-		return "\u2190/\u2192 tabs \u00b7 \u2191/\u2193 navigate \u00b7 space toggle \u00b7 enter details \u00b7 esc close"
+		return "←/→ tabs · ↑/↓ navigate · space toggle · enter details · esc close"
 	case TabDiscover:
-		return "\u2190/\u2192 tabs \u00b7 \u2191/\u2193 navigate \u00b7 enter details \u00b7 esc close"
+		return "←/→ tabs · ↑/↓ navigate · enter details · esc close"
 	case TabMarketplaces:
-		return "\u2190/\u2192 tabs \u00b7 \u2191/\u2193 navigate \u00b7 u update \u00b7 r remove \u00b7 esc close"
+		return "←/→ tabs · ↑/↓ navigate · u update · r remove · esc close"
 	}
 	return ""
 }
 
+// ── Installed list ────────────────────────────────────────────────────────
+
 func (s *Model) renderInstalledList(sb *strings.Builder) {
-	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	dimStyle := selector.SelectorDimStyle
 
 	if len(s.filteredItems) == 0 {
 		if len(s.installedFlatList) == 0 {
-			sb.WriteString(dimStyle.Render("  No plugins installed"))
+			sb.WriteString(dimStyle.PaddingLeft(2).Render("No plugins installed"))
 			sb.WriteString("\n\n")
-			sb.WriteString(dimStyle.Render("  Run: gen plugin install <name>@<marketplace>"))
+			sb.WriteString(dimStyle.PaddingLeft(2).Render("Run: gen plugin install <name>@<marketplace>"))
 			sb.WriteString("\n")
 		} else {
-			sb.WriteString(dimStyle.Render("  No plugins match the filter"))
+			sb.WriteString(dimStyle.PaddingLeft(2).Render("No plugins match the filter"))
 			sb.WriteString("\n")
 		}
 		return
@@ -168,26 +219,8 @@ func (s *Model) renderInstalledList(sb *strings.Builder) {
 	endIdx := min(s.scrollOffset+visible, len(s.filteredItems))
 	cw := s.contentWidth()
 
-	maxNameWidth := 0
-	for i := s.scrollOffset; i < endIdx; i++ {
-		p, ok := s.filteredItems[i].(PluginItem)
-		if !ok {
-			continue
-		}
-		nameLen := len(p.Name)
-		if p.Marketplace != "" {
-			nameLen += len(p.Marketplace) + 3
-		}
-		if nameLen > maxNameWidth {
-			maxNameWidth = nameLen
-		}
-	}
-	if maxNameWidth > 35 {
-		maxNameWidth = 35
-	}
-
 	if s.scrollOffset > 0 {
-		sb.WriteString(selector.SelectorHintStyle.Render("  \u2191 more above"))
+		sb.WriteString(dimStyle.PaddingLeft(2).Render("↑ more above"))
 		sb.WriteString("\n")
 	}
 
@@ -201,46 +234,47 @@ func (s *Model) renderInstalledList(sb *strings.Builder) {
 
 		nameStr := p.Name
 		if p.Marketplace != "" {
-			nameStr += dimStyle.Render(" \u00b7 " + p.Marketplace)
+			nameStr += dimStyle.Render(" · " + p.Marketplace)
 		}
 
-		sb.WriteString(pluginCursor(i == s.selectedIdx))
-		sb.WriteString(iconStyle.Render(icon))
-		sb.WriteString(" ")
-		sb.WriteString(nameStr)
+		line := fmt.Sprintf("%s %s", iconStyle.Render(icon), nameStr)
 
 		if p.Description != "" {
 			rawNameLen := len(p.Name)
 			if p.Marketplace != "" {
 				rawNameLen += 3 + len(p.Marketplace)
 			}
-			prefixLen := 4 + rawNameLen
+			prefixLen := 6 + rawNameLen // cursor(2) + icon(1) + space(1) + padding(2)
 			maxDescLen := cw - prefixLen - 2
 			if maxDescLen > 20 {
 				desc := selector.TruncateText(p.Description, maxDescLen)
-				sb.WriteString(dimStyle.Render(" \u00b7 " + desc))
+				line += dimStyle.Render(" · " + desc)
 			}
 		}
+
+		sb.WriteString(selector.RenderSelectableRow(line, i == s.selectedIdx))
 		sb.WriteString("\n")
 	}
 
 	if endIdx < len(s.filteredItems) {
-		sb.WriteString(selector.SelectorHintStyle.Render("  \u2193 more below"))
+		sb.WriteString(dimStyle.PaddingLeft(2).Render("↓ more below"))
 		sb.WriteString("\n")
 	}
 }
 
+// ── Discover list ─────────────────────────────────────────────────────────
+
 func (s *Model) renderDiscoverList(sb *strings.Builder) {
-	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	dimStyle := selector.SelectorDimStyle
 
 	if len(s.filteredItems) == 0 {
 		if len(s.discoverPlugins) == 0 {
-			sb.WriteString(dimStyle.Render("  No plugins available"))
+			sb.WriteString(dimStyle.PaddingLeft(2).Render("No plugins available"))
 			sb.WriteString("\n\n")
-			sb.WriteString(dimStyle.Render("  Add a marketplace in the Marketplaces tab"))
+			sb.WriteString(dimStyle.PaddingLeft(2).Render("Add a marketplace in the Marketplaces tab"))
 			sb.WriteString("\n")
 		} else {
-			sb.WriteString(dimStyle.Render("  No plugins match the filter"))
+			sb.WriteString(dimStyle.PaddingLeft(2).Render("No plugins match the filter"))
 			sb.WriteString("\n")
 		}
 		return
@@ -250,7 +284,7 @@ func (s *Model) renderDiscoverList(sb *strings.Builder) {
 	endIdx := min(s.scrollOffset+maxItems, len(s.filteredItems))
 
 	if s.scrollOffset > 0 {
-		sb.WriteString(selector.SelectorHintStyle.Render("  \u2191 more above"))
+		sb.WriteString(dimStyle.PaddingLeft(2).Render("↑ more above"))
 		sb.WriteString("\n")
 	}
 
@@ -261,18 +295,15 @@ func (s *Model) renderDiscoverList(sb *strings.Builder) {
 			continue
 		}
 
-		icon := "\u25cb"
+		icon := "○"
 		iconStyle := dimStyle
 		if p.Installed {
-			icon = "\u25cf"
+			icon = "●"
 			iconStyle = selector.SelectorStatusConnected
 		}
 
-		sb.WriteString(pluginCursor(i == s.selectedIdx))
-		sb.WriteString(iconStyle.Render(icon))
-		sb.WriteString(" ")
-		sb.WriteString(p.Name)
-		sb.WriteString(dimStyle.Render(" \u00b7 " + p.Marketplace))
+		line := fmt.Sprintf("%s %s%s", iconStyle.Render(icon), p.Name, dimStyle.Render(" · "+p.Marketplace))
+		sb.WriteString(selector.RenderSelectableRow(line, i == s.selectedIdx))
 		sb.WriteString("\n")
 
 		if p.Description != "" {
@@ -282,7 +313,7 @@ func (s *Model) renderDiscoverList(sb *strings.Builder) {
 			}
 			if maxDescLen > 20 {
 				desc := selector.TruncateText(p.Description, maxDescLen)
-				sb.WriteString(dimStyle.Render("    " + desc))
+				sb.WriteString(dimStyle.PaddingLeft(6).Render(desc))
 				sb.WriteString("\n")
 			}
 		}
@@ -292,22 +323,24 @@ func (s *Model) renderDiscoverList(sb *strings.Builder) {
 
 	remaining := len(s.filteredItems) - endIdx
 	if remaining > 0 {
-		sb.WriteString(selector.SelectorHintStyle.Render(fmt.Sprintf("  \u2193 %d more below", remaining)))
+		sb.WriteString(dimStyle.PaddingLeft(2).Render(fmt.Sprintf("↓ %d more below", remaining)))
 		sb.WriteString("\n")
 	}
 }
 
+// ── Marketplaces list ─────────────────────────────────────────────────────
+
 func (s *Model) renderMarketplacesList(sb *strings.Builder) {
-	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	dimStyle := selector.SelectorDimStyle
 	addStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Success).Bold(true)
 
-	sb.WriteString(pluginCursor(s.selectedIdx == 0))
-	sb.WriteString(addStyle.Render("+ Add Marketplace"))
+	addLine := addStyle.Render("+ Add Marketplace")
+	sb.WriteString(selector.RenderSelectableRow(addLine, s.selectedIdx == 0))
 	sb.WriteString("\n")
 
 	if len(s.filteredItems) == 0 {
 		sb.WriteString("\n")
-		sb.WriteString(dimStyle.Render("  No marketplaces configured"))
+		sb.WriteString(dimStyle.PaddingLeft(2).Render("No marketplaces configured"))
 		sb.WriteString("\n")
 		return
 	}
@@ -326,28 +359,27 @@ func (s *Model) renderMarketplacesList(sb *strings.Builder) {
 		displayIdx := i + 1
 		official := ""
 		if m.IsOfficial {
-			official = " \u272b"
+			official = " ★"
 		}
 
-		sb.WriteString(pluginCursor(displayIdx == s.selectedIdx))
-		sb.WriteString(selector.SelectorStatusConnected.Render("\u25cf"))
-		sb.WriteString(" ")
-		sb.WriteString(m.ID)
-		sb.WriteString(dimStyle.Render(official))
+		line := fmt.Sprintf("%s %s%s", selector.SelectorStatusConnected.Render("●"), m.ID, dimStyle.Render(official))
+		sb.WriteString(selector.RenderSelectableRow(line, displayIdx == s.selectedIdx))
 		sb.WriteString("\n")
 
 		if displayIdx == s.selectedIdx {
-			sb.WriteString(dimStyle.Render(fmt.Sprintf("    %s", m.Source)))
+			sb.WriteString(dimStyle.PaddingLeft(6).Render(m.Source))
 			sb.WriteString("\n")
-			stats := fmt.Sprintf("    %d available \u00b7 %d installed", m.Available, m.Installed)
+			stats := fmt.Sprintf("%d available · %d installed", m.Available, m.Installed)
 			if m.LastUpdated != "" {
-				stats += " \u00b7 " + m.LastUpdated
+				stats += " · " + m.LastUpdated
 			}
-			sb.WriteString(dimStyle.Render(stats))
+			sb.WriteString(dimStyle.PaddingLeft(6).Render(stats))
 			sb.WriteString("\n")
 		}
 	}
 }
+
+// ── Detail views ──────────────────────────────────────────────────────────
 
 func (s *Model) renderInstalledDetail() string {
 	if s.detailPlugin == nil {
@@ -358,9 +390,17 @@ func (s *Model) renderInstalledDetail() string {
 	p := s.detailPlugin
 	cw := s.contentWidth()
 
-	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	dimStyle := selector.SelectorDimStyle
 	brightStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
 	labelStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted).Width(12)
+
+	// Header
+	sb.WriteString(s.sepLine())
+	sb.WriteString("\n")
+	sb.WriteString(selector.SelectorTitleStyle.Render("Plugin Details"))
+	sb.WriteString("\n")
+	sb.WriteString(dimStyle.Render("> " + p.FullName))
+	sb.WriteString("\n\n")
 
 	icon, iconStyle := pluginStatusIconAndStyle(p.Enabled)
 	statusLabel := "Disabled"
@@ -392,7 +432,7 @@ func (s *Model) renderInstalledDetail() string {
 		sb.WriteString("  " + compLabel.Render("Components"))
 		sb.WriteString("\n")
 		for _, c := range components {
-			sb.WriteString("  " + dimStyle.Render("  \u2022 "+c))
+			sb.WriteString("  " + dimStyle.Render("  • "+c))
 			sb.WriteString("\n")
 		}
 	}
@@ -403,21 +443,19 @@ func (s *Model) renderInstalledDetail() string {
 		sb.WriteString("\n")
 		maxValueLen := cw - 8
 		for _, err := range p.Errors {
-			sb.WriteString("  " + selector.SelectorStatusError.Render("  \u2022 "+selector.TruncateText(err, maxValueLen)))
+			sb.WriteString("  " + selector.SelectorStatusError.Render("  • "+selector.TruncateText(err, maxValueLen)))
 			sb.WriteString("\n")
 		}
 	}
 
-	content := sb.String()
-	var frame strings.Builder
-	frame.WriteString(selector.SelectorTitleStyle.Render("Plugin Details"))
-	frame.WriteString("\n")
-	frame.WriteString(selector.SelectorBreadcrumbStyle.Render("> " + p.FullName))
-	frame.WriteString("\n\n")
-	frame.WriteString(s.renderViewport(content, s.detailScroll))
-	s.renderActions(&frame)
-	s.renderFooter(&frame, "\u2191/\u2193 scroll/actions \u00b7 enter select \u00b7 esc back")
-	return s.renderBox(frame.String())
+	s.renderActions(&sb)
+
+	sb.WriteString("\n")
+	sb.WriteString(s.sepLine())
+	sb.WriteString("\n")
+	s.renderFooter(&sb, "↑/↓ scroll/actions · enter select · esc back")
+
+	return s.renderFullWidth(sb.String())
 }
 
 func (s *Model) renderDiscoverDetail() string {
@@ -426,13 +464,20 @@ func (s *Model) renderDiscoverDetail() string {
 	}
 
 	var sb strings.Builder
-	var frame strings.Builder
 	p := s.detailDiscover
 	cw := s.contentWidth()
 
-	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	dimStyle := selector.SelectorDimStyle
 	brightStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
 	warnStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Warning)
+
+	// Header
+	sb.WriteString(s.sepLine())
+	sb.WriteString("\n")
+	sb.WriteString(selector.SelectorTitleStyle.Render("Install Plugin"))
+	sb.WriteString("\n")
+	sb.WriteString(dimStyle.Render("> " + p.Name + "@" + p.Marketplace))
+	sb.WriteString("\n\n")
 
 	sb.WriteString(brightStyle.Render(p.Name))
 	sb.WriteString("\n")
@@ -451,17 +496,17 @@ func (s *Model) renderDiscoverDetail() string {
 		sb.WriteString("\n\n")
 	}
 
-	sb.WriteString("  " + warnStyle.Render("\u26a0 Make sure you trust a plugin before installing"))
+	sb.WriteString("  " + warnStyle.Render("⚠ Make sure you trust a plugin before installing"))
 	sb.WriteString("\n")
 
-	frame.WriteString(selector.SelectorTitleStyle.Render("Install Plugin"))
-	frame.WriteString("\n")
-	frame.WriteString(selector.SelectorBreadcrumbStyle.Render("> " + p.Name + "@" + p.Marketplace))
-	frame.WriteString("\n\n")
-	frame.WriteString(s.renderViewport(sb.String(), s.detailScroll))
-	s.renderActions(&frame)
-	s.renderFooter(&frame, "\u2191/\u2193 scroll/actions \u00b7 enter select \u00b7 esc back")
-	return s.renderBox(frame.String())
+	s.renderActions(&sb)
+
+	sb.WriteString("\n")
+	sb.WriteString(s.sepLine())
+	sb.WriteString("\n")
+	s.renderFooter(&sb, "↑/↓ scroll/actions · enter select · esc back")
+
+	return s.renderFullWidth(sb.String())
 }
 
 func (s *Model) renderMarketplaceDetail() string {
@@ -470,11 +515,18 @@ func (s *Model) renderMarketplaceDetail() string {
 	}
 
 	var sb strings.Builder
-	var frame strings.Builder
 	m := s.detailMarketplace
 
-	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	dimStyle := selector.SelectorDimStyle
 	brightStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
+
+	// Header
+	sb.WriteString(s.sepLine())
+	sb.WriteString("\n")
+	sb.WriteString(selector.SelectorTitleStyle.Render("Marketplace Details"))
+	sb.WriteString("\n")
+	sb.WriteString(dimStyle.Render("> " + m.ID))
+	sb.WriteString("\n\n")
 
 	sb.WriteString(brightStyle.Render(m.ID))
 	sb.WriteString("\n")
@@ -490,29 +542,33 @@ func (s *Model) renderMarketplaceDetail() string {
 		sb.WriteString("\n")
 		for _, p := range coreplugin.DefaultRegistry.List() {
 			if idx := strings.Index(p.Source, "@"); idx != -1 && p.Source[idx+1:] == m.ID {
-				sb.WriteString("    " + selector.SelectorStatusConnected.Render("\u25cf") + " " + p.Name())
+				sb.WriteString("    " + selector.SelectorStatusConnected.Render("●") + " " + p.Name())
 				sb.WriteString("\n")
 			}
 		}
 	}
 
-	frame.WriteString(selector.SelectorTitleStyle.Render("Marketplace Details"))
-	frame.WriteString("\n")
-	frame.WriteString(selector.SelectorBreadcrumbStyle.Render("> " + m.ID))
-	frame.WriteString("\n\n")
-	frame.WriteString(s.renderViewport(sb.String(), s.detailScroll))
-	s.renderActions(&frame)
-	s.renderFooter(&frame, "\u2191/\u2193 scroll/actions \u00b7 enter select \u00b7 esc back")
-	return s.renderBox(frame.String())
+	s.renderActions(&sb)
+
+	sb.WriteString("\n")
+	sb.WriteString(s.sepLine())
+	sb.WriteString("\n")
+	s.renderFooter(&sb, "↑/↓ scroll/actions · enter select · esc back")
+
+	return s.renderFullWidth(sb.String())
 }
+
+// ── Add marketplace dialog ────────────────────────────────────────────────
 
 func (s *Model) renderAddMarketplaceDialog() string {
 	var sb strings.Builder
 	cw := s.contentWidth()
 
-	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	dimStyle := selector.SelectorDimStyle
 	brightStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
 
+	sb.WriteString(s.sepLine())
+	sb.WriteString("\n")
 	sb.WriteString(selector.SelectorTitleStyle.Render("Add Marketplace"))
 	sb.WriteString("\n\n")
 
@@ -520,33 +576,41 @@ func (s *Model) renderAddMarketplaceDialog() string {
 	sb.WriteString("\n\n")
 	sb.WriteString(dimStyle.Render("Examples:"))
 	sb.WriteString("\n")
-	sb.WriteString(dimStyle.Render("  \u2022 https://github.com/owner/repo"))
+	sb.WriteString(dimStyle.Render("  • https://github.com/owner/repo"))
 	sb.WriteString("\n")
-	sb.WriteString(dimStyle.Render("  \u2022 owner/repo (GitHub shorthand)"))
+	sb.WriteString(dimStyle.Render("  • owner/repo (GitHub shorthand)"))
 	sb.WriteString("\n")
-	sb.WriteString(dimStyle.Render("  \u2022 ./path/to/marketplace (local)"))
+	sb.WriteString(dimStyle.Render("  • ./path/to/marketplace (local)"))
 	sb.WriteString("\n\n")
 
 	maxInputLen := cw - 6
-	inputLine := s.addMarketplaceInput + "\u2502"
+	inputLine := s.addMarketplaceInput + "│"
 	if len(inputLine) > maxInputLen {
-		inputLine = "\u2026" + inputLine[len(inputLine)-maxInputLen+1:]
+		inputLine = "…" + inputLine[len(inputLine)-maxInputLen+1:]
 	}
 	sb.WriteString(brightStyle.Render("> " + inputLine))
 	sb.WriteString("\n")
 
-	s.renderFooter(&sb, "enter add \u00b7 esc cancel")
-	return s.renderBox(sb.String())
+	sb.WriteString("\n")
+	sb.WriteString(s.sepLine())
+	sb.WriteString("\n")
+	s.renderFooter(&sb, "enter add · esc cancel")
+
+	return s.renderFullWidth(sb.String())
 }
+
+// ── Browse plugins ────────────────────────────────────────────────────────
 
 func (s *Model) renderBrowsePlugins() string {
 	var sb strings.Builder
-	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	dimStyle := selector.SelectorDimStyle
 	brightStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
 
+	sb.WriteString(s.sepLine())
+	sb.WriteString("\n")
 	sb.WriteString(selector.SelectorTitleStyle.Render("Browse Marketplace"))
 	sb.WriteString("\n")
-	sb.WriteString(selector.SelectorBreadcrumbStyle.Render("> " + s.browseMarketplaceID))
+	sb.WriteString(dimStyle.Render("> " + s.browseMarketplaceID))
 	sb.WriteString("\n\n")
 
 	sb.WriteString(brightStyle.Render(s.browseMarketplaceID))
@@ -556,49 +620,53 @@ func (s *Model) renderBrowsePlugins() string {
 
 	cw := s.contentWidth()
 	if len(s.browsePlugins) == 0 {
-		sb.WriteString(dimStyle.Render("  No plugins found"))
+		sb.WriteString(dimStyle.PaddingLeft(2).Render("No plugins found"))
 		sb.WriteString("\n")
 	} else {
 		visible := max(4, s.bodyHeight())
 		endIdx := min(s.scrollOffset+visible, len(s.browsePlugins))
 
 		if s.scrollOffset > 0 {
-			sb.WriteString(selector.SelectorHintStyle.Render("  \u2191 more above"))
+			sb.WriteString(dimStyle.PaddingLeft(2).Render("↑ more above"))
 			sb.WriteString("\n")
 		}
 
 		for i := s.scrollOffset; i < endIdx; i++ {
 			p := s.browsePlugins[i]
 
-			icon := "\u25cb"
+			icon := "○"
 			iconStyle := dimStyle
 			if p.Installed {
-				icon = "\u25cf"
+				icon = "●"
 				iconStyle = selector.SelectorStatusConnected
 			}
 
-			sb.WriteString(pluginCursor(i == s.selectedIdx))
-			sb.WriteString(iconStyle.Render(icon))
-			sb.WriteString(" ")
-			sb.WriteString(p.Name)
+			line := fmt.Sprintf("%s %s", iconStyle.Render(icon), p.Name)
+			sb.WriteString(selector.RenderSelectableRow(line, i == s.selectedIdx))
 			sb.WriteString("\n")
 
 			if p.Description != "" && i == s.selectedIdx {
 				desc := selector.TruncateText(p.Description, cw-10)
-				sb.WriteString(dimStyle.Render("    " + desc))
+				sb.WriteString(dimStyle.PaddingLeft(6).Render(desc))
 				sb.WriteString("\n")
 			}
 		}
 
 		if endIdx < len(s.browsePlugins) {
-			sb.WriteString(selector.SelectorHintStyle.Render("  \u2193 more below"))
+			sb.WriteString(dimStyle.PaddingLeft(2).Render("↓ more below"))
 			sb.WriteString("\n")
 		}
 	}
 
-	s.renderFooter(&sb, "\u2191/\u2193 navigate \u00b7 enter details \u00b7 esc back")
-	return s.renderBox(sb.String())
+	sb.WriteString("\n")
+	sb.WriteString(s.sepLine())
+	sb.WriteString("\n")
+	s.renderFooter(&sb, "↑/↓ navigate · enter details · esc back")
+
+	return s.renderFullWidth(sb.String())
 }
+
+// ── Actions ───────────────────────────────────────────────────────────────
 
 func (s *Model) renderActions(sb *strings.Builder) {
 	sb.WriteString("\n")
@@ -612,7 +680,7 @@ func (s *Model) renderActions(sb *strings.Builder) {
 
 	for i, action := range s.actions {
 		if i == s.actionIdx {
-			sb.WriteString(accentStyle.Render("\u276f " + action.Label))
+			sb.WriteString(accentStyle.Render("❯ " + action.Label))
 		} else {
 			sb.WriteString(normalStyle.Render("  " + action.Label))
 		}
@@ -620,28 +688,26 @@ func (s *Model) renderActions(sb *strings.Builder) {
 	}
 }
 
+// ── Footer ────────────────────────────────────────────────────────────────
+
 func (s *Model) renderFooter(sb *strings.Builder, hint string) {
-	sb.WriteString("\n")
 	if s.isLoading {
 		spinnerStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Accent)
-		sb.WriteString(spinnerStyle.Render("  \u25d0 " + s.loadingMsg))
-		sb.WriteString("\n\n")
+		sb.WriteString(spinnerStyle.Render("  ◐ " + s.loadingMsg))
+		sb.WriteString("\n")
 	} else if s.lastMessage != "" {
 		if s.isError {
-			sb.WriteString(selector.SelectorStatusError.Render("  \u26a0 " + s.lastMessage))
+			sb.WriteString(selector.SelectorStatusError.Render("  ⚠ " + s.lastMessage))
 		} else {
 			successStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Success)
-			sb.WriteString(successStyle.Render("  \u2713 " + s.lastMessage))
+			sb.WriteString(successStyle.Render("  ✓ " + s.lastMessage))
 		}
-		sb.WriteString("\n\n")
+		sb.WriteString("\n")
 	}
-	sb.WriteString(s.renderHints(hint))
+	sb.WriteString(selector.SelectorDimStyle.Render(hint))
 }
 
-func (s *Model) renderHints(hint string) string {
-	hintStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
-	return hintStyle.Render(hint)
-}
+// ── Viewport ──────────────────────────────────────────────────────────────
 
 func (s *Model) renderViewport(content string, scroll int) string {
 	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
@@ -676,26 +742,13 @@ func (s *Model) renderViewport(content string, scroll int) string {
 	return strings.Join(view, "\n") + "\n"
 }
 
-func (s *Model) renderBox(content string) string {
-	box := selector.SelectorBorderStyle.
-		Width(s.boxWidth()).
-		Height(s.boxHeight()).
-		Render(content)
-	return lipgloss.NewStyle().Padding(0, 1).Render(box)
-}
+// ── Helpers ───────────────────────────────────────────────────────────────
 
 func pluginStatusIconAndStyle(enabled bool) (string, lipgloss.Style) {
 	if enabled {
-		return "\u25cf", selector.SelectorStatusConnected
+		return "●", selector.SelectorStatusConnected
 	}
-	return "\u25cb", selector.SelectorStatusNone
-}
-
-func pluginCursor(selected bool) string {
-	if selected {
-		return "\u276f "
-	}
-	return "  "
+	return "○", selector.SelectorStatusNone
 }
 
 func buildComponentList(p *PluginItem) []string {
@@ -705,12 +758,12 @@ func buildComponentList(p *PluginItem) []string {
 		count int
 	}
 	counts := []componentCount{
-		{"\u2726", "Skills", p.Skills},
-		{"\u2691", "Agents", p.Agents},
-		{"\u2318", "Commands", p.Commands},
-		{"\u21aa", "Hooks", p.Hooks},
-		{"\u2609", "MCP Servers", p.MCP},
-		{"\u29be", "LSP Servers", p.LSP},
+		{"✦", "Skills", p.Skills},
+		{"⚑", "Agents", p.Agents},
+		{"⌘", "Commands", p.Commands},
+		{"↪", "Hooks", p.Hooks},
+		{"☉", "MCP Servers", p.MCP},
+		{"⦾", "LSP Servers", p.LSP},
 	}
 
 	var result []string
