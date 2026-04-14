@@ -221,7 +221,9 @@ func sharedTaskNotificationBatch(items []taskNotification) *backgroundBatchSnaps
 			return nil
 		}
 	}
-	return items[0].Batch
+	// Use the last item's batch snapshot — it was captured most recently
+	// and has the most up-to-date completion counts.
+	return items[len(items)-1].Batch
 }
 
 func fallbackTaskCompletionNotice(subject, status string) string {

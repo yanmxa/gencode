@@ -89,11 +89,26 @@ func (b configHookBridge) ConfigChanged(source, filePath string) {
 	})
 }
 
+func joinNameDesc(name, desc string) string {
+	name = strings.TrimSpace(name)
+	desc = strings.TrimSpace(desc)
+	switch {
+	case name != "" && desc != "" && !strings.EqualFold(name, desc):
+		return name + ": " + desc
+	case desc != "":
+		return desc
+	case name != "":
+		return name
+	default:
+		return ""
+	}
+}
+
 func taskSubject(info task.TaskInfo) string {
 	switch info.Type {
 	case task.TaskTypeAgent:
-		if info.AgentName != "" {
-			return info.AgentName
+		if s := joinNameDesc(info.AgentName, info.Description); s != "" {
+			return s
 		}
 	case task.TaskTypeBash:
 		if info.Command != "" {

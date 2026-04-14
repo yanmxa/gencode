@@ -144,7 +144,7 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 			queuedCount := orchestration.DefaultStore.PendingMessageCount(resolvedTaskID, "")
 			return toolresult.ToolResult{
 				Success: true,
-				Output: fmt.Sprintf("Worker is still running. The message was queued for delivery at the worker's next safe turn boundary.\nTask ID: %s\nQueued messages: %d\n\nWait for automatic task-notification re-entry unless the user explicitly asks for ad-hoc inspection or the worker appears stuck. Send another message only if the worker needs more steering.",
+				Output: fmt.Sprintf("Worker is still running. The message was queued for delivery at the worker's next safe turn boundary.\nTask ID: %s\nQueued messages: %d\n\nYou will be automatically notified when the worker completes. Continue with other work or respond to the user instead.",
 					resolvedTaskID, queuedCount),
 				Metadata: toolresult.ResultMetadata{
 					Title:    t.Name(),
@@ -201,8 +201,8 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 
 		return toolresult.ToolResult{
 			Success: true,
-			Output: fmt.Sprintf("Message sent to worker in background.\nTask ID: %s\nAgent: %s\nContinuation of: %s\nDescription: %s\nOutputFile: %s\n\nThe main coordinator will be notified automatically when this worker completes. Do not poll this worker immediately after launch unless the user explicitly asks for ad-hoc inspection or the worker appears stuck.",
-				taskInfo.TaskID, taskInfo.AgentName, target.agentID, description, taskInfo.OutputFile),
+			Output: fmt.Sprintf("Message sent to worker in background.\nTask ID: %s\nAgent: %s\nContinuation of: %s\nDescription: %s"+backgroundLaunchSuffix,
+				taskInfo.TaskID, taskInfo.AgentName, target.agentID, description),
 			HookResponse: map[string]any{
 				"backgroundTask": map[string]any{
 					"taskId":      taskInfo.TaskID,

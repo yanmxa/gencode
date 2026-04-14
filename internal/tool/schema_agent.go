@@ -19,9 +19,8 @@ Usage notes:
 - Always include a short description (3-5 words) summarizing what the agent will do
 - Launch multiple agents concurrently whenever possible; to do that, use a single message with multiple Agent calls
 - Each agent runs in isolated context — the result returned by the agent is not visible to the user. To show the user the result, you should send a text message back with a concise summary.
-- Foreground (default): blocks until agent completes, use when you need results before proceeding
-- Background (run_in_background=true): returns task_id, you will be automatically notified on completion — do NOT sleep, poll, or proactively check progress
-- After launching background workers, stop and wait for task-notification re-entry instead of polling immediately
+- **Foreground vs background**: Use foreground (default) when you need the agent's results before you can proceed — e.g., research agents whose findings inform your next steps. Use background when you have genuinely independent work to do in parallel.
+- You can optionally run agents in the background using the run_in_background parameter. When an agent runs in the background, you will be automatically notified when it completes — do NOT sleep, poll, or proactively check on its progress. Continue with other work or respond to the user instead.
 - Provide clear, detailed prompts — brief the agent like a smart colleague who just walked into the room. It hasn't seen this conversation, doesn't know what you've tried.
 - Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent
 - Never delegate understanding. Don't write "based on your findings, fix the bug." Include file paths, line numbers, what specifically to change.`,
@@ -94,8 +93,7 @@ Usage notes:
 - Prefer task_id when continuing a background worker that was started earlier in this conversation
 - Use agent_id only when you already have a resumable agent/session ID
 - When using agent_id directly, also provide subagent_type so the runtime can restore the correct agent configuration
-- run_in_background=true starts a new background continuation and returns immediately
-- Background continuations notify the main coordinator on completion; do not immediately poll them unless the user asked or the worker appears stuck
+- run_in_background=true starts a new background continuation and returns immediately; you will be automatically notified when it completes — do not poll or check progress
 - Foreground continuations block until the worker finishes the new instruction`,
 	Parameters: map[string]any{
 		"type": "object",
@@ -170,8 +168,7 @@ Usage notes:
 - Prefer task_id when you have a background worker from this conversation
 - Use agent_id when you already know the resumable session/agent ID
 - When using agent_id directly, also provide subagent_type so the correct agent configuration can be restored
-- run_in_background=true resumes the worker asynchronously and returns immediately
-- Do not immediately poll a background follow-up unless the user asked for ad-hoc inspection or the worker appears stuck`,
+- run_in_background=true resumes the worker asynchronously and returns immediately; you will be automatically notified when it completes — do not poll or check progress`,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{

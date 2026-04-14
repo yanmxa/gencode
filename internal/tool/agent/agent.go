@@ -12,6 +12,8 @@ import (
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
+const backgroundLaunchSuffix = "\n\nThe agent is working in the background. You will be notified automatically when it completes.\nBriefly tell the user what you launched and end your response. Do not generate any other text — agent results will arrive in a subsequent message."
+
 // AgentTool spawns subagents to handle complex tasks.
 // It implements PermissionAwareTool to require user confirmation.
 type AgentTool struct {
@@ -204,8 +206,8 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 		duration := time.Since(start)
 		return toolresult.ToolResult{
 			Success: true,
-			Output: fmt.Sprintf("Agent started in background.\nTask ID: %s\nAgent: %s\nDescription: %s\nOutputFile: %s\n\nThe main coordinator will be notified automatically when this worker completes. Do not poll this worker immediately after launch unless the user explicitly asks for ad-hoc inspection or the worker appears stuck.",
-				taskInfo.TaskID, taskInfo.AgentName, description, taskInfo.OutputFile),
+			Output: fmt.Sprintf("Agent started in background.\nTask ID: %s\nAgent: %s\nDescription: %s"+backgroundLaunchSuffix,
+				taskInfo.TaskID, taskInfo.AgentName, description),
 			HookResponse: map[string]any{
 				"backgroundTask": map[string]any{
 					"taskId":      taskInfo.TaskID,

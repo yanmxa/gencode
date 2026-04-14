@@ -75,8 +75,8 @@ func (p *QuestionPrompt) isAnswered(questionIdx int) bool {
 	return len(p.selected[questionIdx]) > 0 || p.customAnswers[questionIdx] != ""
 }
 
-// restoreCustomInput restores the custom input field value for the current question.
 func (p *QuestionPrompt) restoreCustomInput() {
+	p.customInput.Reset()
 	if text := p.customAnswers[p.currentQuestion]; text != "" {
 		p.customInput.SetValue(text)
 	}

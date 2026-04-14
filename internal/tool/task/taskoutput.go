@@ -23,7 +23,7 @@ type TaskOutputTool struct{}
 
 func (t *TaskOutputTool) Name() string { return "TaskOutput" }
 func (t *TaskOutputTool) Description() string {
-	return "Inspect a background task when you specifically need ad-hoc status or output. Background agents normally notify the coordinator on completion, so avoid polling right after launch."
+	return "Inspect a completed background task when the user explicitly asks for detailed output. Background agents automatically notify you on completion — do not use this to poll or check progress."
 }
 func (t *TaskOutputTool) Icon() string { return IconTaskOutput }
 
@@ -98,7 +98,7 @@ func (t *TaskOutputTool) Execute(ctx context.Context, params map[string]any, cwd
 	if shouldDeferImmediatePolling(info, block) {
 		return toolresult.ToolResult{
 			Success: true,
-			Output: fmt.Sprintf("TaskOutput deferred for freshly launched background worker.\nTask ID: %s\nAgent: %s\nStatus: running\n\nThis worker started recently. Wait for automatic task-notification re-entry instead of polling immediately. Use TaskOutput later only for ad-hoc inspection if the user explicitly asks or the worker appears stuck.",
+			Output: fmt.Sprintf("TaskOutput deferred — this worker just started.\nTask ID: %s\nAgent: %s\nStatus: running\n\nYou will be automatically notified when this worker completes. Do not poll or check progress — continue with other work or respond to the user instead.",
 				info.ID, info.AgentName),
 			Metadata: toolresult.ResultMetadata{
 				Title:    t.Name(),

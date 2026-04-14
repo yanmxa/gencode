@@ -467,6 +467,31 @@ func normalizeTaskSlices(t *Task) {
 	}
 }
 
+// FindByMetadata returns the first non-deleted task whose metadata[key] equals want.
+// Returns nil if no match is found.
+func (s *Store) FindByMetadata(key, want string) *Task {
+	if want == "" {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, t := range s.tasks {
+		if t.Status == StatusDeleted {
+			continue
+		}
+		if t.Metadata == nil {
+			continue
+		}
+		if v, ok := t.Metadata[key]; ok {
+			if str, ok := v.(string); ok && str == want {
+				return t
+			}
+		}
+	}
+	return nil
+}
+
 // compareNumericIDs compares two task IDs numerically (e.g. "2" < "10").
 // Falls back to lexicographic comparison if parsing fails.
 func compareNumericIDs(a, b string) bool {

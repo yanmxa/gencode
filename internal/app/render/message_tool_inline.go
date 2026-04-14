@@ -62,6 +62,10 @@ func renderAskUserResultInline(data ToolResultData) string {
 		answers = append(answers, line)
 	}
 
+	if len(answers) == 0 {
+		return ToolResultStyle.Render(fmt.Sprintf("  %s  Answered", icon)) + "\n"
+	}
+
 	var sb strings.Builder
 	for _, a := range answers {
 		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, a)) + "\n")

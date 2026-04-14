@@ -300,7 +300,7 @@ You can use the run_in_background parameter to run the command in the background
 
 var taskOutputToolSchema = provider.ToolSchema{
 	Name:        ToolTaskOutput,
-	Description: "[Deprecated] Inspect current output or final result from a running/completed background task. Use this only as a fallback for ad-hoc inspection after the worker has been running for a while or when the user explicitly asks. Background workers normally notify the main coordinator on completion, so do not poll immediately after launch.",
+	Description: "[Deprecated] Inspect final result from a completed background task when the user explicitly asks. Background workers automatically notify you on completion — do not use this to poll or check progress.",
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{

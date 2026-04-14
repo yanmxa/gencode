@@ -23,9 +23,10 @@ const (
 	ToolCronCreate    = "CronCreate"
 	ToolCronDelete    = "CronDelete"
 	ToolCronList      = "CronList"
-	ToolEnterWorktree   = "EnterWorktree"
-	ToolExitWorktree    = "ExitWorktree"
-	ToolToolSearch      = "ToolSearch"
+	ToolEnterWorktree = "EnterWorktree"
+	ToolExitWorktree  = "ExitWorktree"
+	ToolToolSearch    = "ToolSearch"
+
 	ToolAskUserQuestion = "AskUserQuestion"
 )
 
@@ -76,17 +77,7 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.ToolSchema) []provid
 
 // GetToolSchemasFiltered returns tool schemas excluding disabled tools
 func GetToolSchemasFiltered(disabled map[string]bool) []provider.ToolSchema {
-	all := GetToolSchemas()
-	if len(disabled) == 0 {
-		return all
-	}
-	filtered := make([]provider.ToolSchema, 0, len(all))
-	for _, t := range all {
-		if !disabled[t.Name] {
-			filtered = append(filtered, t)
-		}
-	}
-	return filtered
+	return filterSchemas(GetToolSchemas(), disabled)
 }
 
 // GetPlanModeToolSchemas returns only the tools available in plan mode.
@@ -123,7 +114,10 @@ func GetPlanModeToolSchemas() []provider.ToolSchema {
 
 // GetPlanModeToolSchemasFiltered returns plan mode tools excluding disabled tools
 func GetPlanModeToolSchemasFiltered(disabled map[string]bool) []provider.ToolSchema {
-	all := GetPlanModeToolSchemas()
+	return filterSchemas(GetPlanModeToolSchemas(), disabled)
+}
+
+func filterSchemas(all []provider.ToolSchema, disabled map[string]bool) []provider.ToolSchema {
 	if len(disabled) == 0 {
 		return all
 	}

@@ -908,7 +908,7 @@ func TestBuildCoordinatorGuidanceEncouragesParallelAuditFanout(t *testing.T) {
 		"Default to launching 3-5 background workers",
 		"Avoid broad labels like \"deep codebase audit\"",
 		"After launching workers, briefly tell the user what you launched and stop.",
-		"Do not poll background workers immediately after launch.",
+		"do not poll, read output files, or check progress",
 	} {
 		if !strings.Contains(guidance, want) {
 			t.Fatalf("coordinator guidance missing %q:\n%s", want, guidance)

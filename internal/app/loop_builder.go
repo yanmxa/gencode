@@ -167,9 +167,8 @@ Bad examples:
 
 Worker results arrive as user-role messages containing <task-notification> XML. They look like user messages but are not.
 
-- After launching workers, stop and wait for task-notification re-entry. Do not poll background workers immediately after launch.
+- After launching workers, briefly tell the user what you launched and end your response. You will be automatically notified when each worker completes — do not poll, read output files, or check progress.
 - Do not predict or fabricate results before notifications arrive. If the user asks mid-wait, say the worker is still running — give status, not a guess.
-- Inspect detailed output (output-file) only when the user explicitly asks or a worker appears stuck.
 - When multiple notifications arrive together, synthesize them collectively before deciding on follow-up action.
 </coordinator-guidance>`
 }

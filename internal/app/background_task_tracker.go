@@ -343,32 +343,17 @@ func reconcileBackgroundBatch(parentID string) {
 }
 
 func backgroundWorkerSubject(launch backgroundTaskLaunch) string {
-	name := strings.TrimSpace(launch.AgentName)
-	desc := strings.TrimSpace(launch.Description)
-	switch {
-	case name != "" && desc != "" && !strings.EqualFold(name, desc):
-		return name + ": " + desc
-	case desc != "":
-		return desc
-	case name != "":
-		return name
-	case launch.AgentType != "":
-		return launch.AgentType
-	default:
-		return launch.TaskID
+	if s := joinNameDesc(launch.AgentName, launch.Description); s != "" {
+		return s
 	}
+	if launch.AgentType != "" {
+		return launch.AgentType
+	}
+	return launch.TaskID
 }
 
 func findTrackerByMetadata(key, want string) *tracker.Task {
-	if want == "" {
-		return nil
-	}
-	for _, t := range tracker.DefaultStore.List() {
-		if metadataString(t.Metadata, key) == want {
-			return t
-		}
-	}
-	return nil
+	return tracker.DefaultStore.FindByMetadata(key, want)
 }
 
 func childTrackers(parentID string) []*tracker.Task {

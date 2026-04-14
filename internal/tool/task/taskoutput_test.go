@@ -169,7 +169,7 @@ func TestTaskOutputTool_NonBlocking(t *testing.T) {
 		t.Errorf("Expected 'running' in output, got: %s", result.Output)
 	}
 
-	if !strings.Contains(result.Output, "TaskOutput deferred for freshly launched background worker.") {
+	if !strings.Contains(result.Output, "TaskOutput deferred") {
 		t.Errorf("Expected deferred polling hint in output, got: %s", result.Output)
 	}
 }

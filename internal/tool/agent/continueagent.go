@@ -188,8 +188,8 @@ func (t *ContinueAgentTool) execute(ctx context.Context, params map[string]any, 
 
 		return toolresult.ToolResult{
 			Success: true,
-			Output: fmt.Sprintf("Agent continuation started in background.\nTask ID: %s\nAgent: %s\nContinuation of: %s\nDescription: %s\nOutputFile: %s\n\nThe main coordinator will be notified automatically when this worker completes. Do not poll this worker immediately after launch unless the user explicitly asks for ad-hoc inspection or the worker appears stuck.",
-				taskInfo.TaskID, taskInfo.AgentName, target.agentID, description, taskInfo.OutputFile),
+			Output: fmt.Sprintf("Agent continuation started in background.\nTask ID: %s\nAgent: %s\nContinuation of: %s\nDescription: %s"+backgroundLaunchSuffix,
+				taskInfo.TaskID, taskInfo.AgentName, target.agentID, description),
 			HookResponse: map[string]any{
 				"backgroundTask": map[string]any{
 					"taskId":      taskInfo.TaskID,
