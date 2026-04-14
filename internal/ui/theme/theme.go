@@ -29,14 +29,14 @@ type Theme struct {
 }
 
 var CurrentTheme = Theme{
-	Muted:     lipgloss.AdaptiveColor{Dark: "#6B7280", Light: "#6B7280"},
-	Accent:    lipgloss.AdaptiveColor{Dark: "#94A3B8", Light: "#64748B"},
-	Primary:   lipgloss.AdaptiveColor{Dark: "#CBD5E1", Light: "#475569"},
-	AI:        lipgloss.AdaptiveColor{Dark: "#A8B3C7", Light: "#64748B"},
-	Separator: lipgloss.AdaptiveColor{Dark: "#475569", Light: "#CBD5E1"},
+	Muted:     lipgloss.AdaptiveColor{Dark: "#7B8696", Light: "#6B7280"},
+	Accent:    lipgloss.AdaptiveColor{Dark: "#9DB5D4", Light: "#64748B"},
+	Primary:   lipgloss.AdaptiveColor{Dark: "#D0DFEF", Light: "#475569"},
+	AI:        lipgloss.AdaptiveColor{Dark: "#B0C4E0", Light: "#64748B"},
+	Separator: lipgloss.AdaptiveColor{Dark: "#4E6580", Light: "#CBD5E1"},
 
-	Text:         lipgloss.AdaptiveColor{Dark: "#D4D4D8", Light: "#18181B"},
-	TextDim:      lipgloss.AdaptiveColor{Dark: "#A1A1AA", Light: "#71717A"},
+	Text:         lipgloss.AdaptiveColor{Dark: "#DDDEE2", Light: "#18181B"},
+	TextDim:      lipgloss.AdaptiveColor{Dark: "#A8AEBB", Light: "#71717A"},
 	TextBright:   lipgloss.AdaptiveColor{Dark: "#FAFAFA", Light: "#09090B"},
 	TextDisabled: lipgloss.AdaptiveColor{Dark: "#52525B", Light: "#A1A1AA"},
 
