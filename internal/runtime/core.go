@@ -11,11 +11,11 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/client"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/permission"
-	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
@@ -123,13 +123,14 @@ type MCPCaller interface {
 //	Synchronous: loop.Run(ctx, opts) — drives the full turn loop
 //	Incremental: loop.Stream()/Collect()/AddResponse()/FilterToolCalls()/ExecTool() — for event-driven callers
 type Loop struct {
-	System          *system.System
+	System          core.System
 	Client          *client.Client
 	Tool            *tool.Set
 	Permission      permission.Checker
 	Hooks           *hooks.Engine
 	MCP             MCPCaller // optional: routes mcp__*__* tool calls
 	QuestionHandler tool.AskQuestionFunc
+	Cwd             string // working directory for tool execution
 
 	// Agent context: when set, tool hook events include agent_id/agent_type (subagent mode)
 	AgentID   string
@@ -470,11 +471,8 @@ func (l *Loop) ExecTool(ctx context.Context, tc message.ToolCall) *message.ToolR
 
 	// Inject parent messages getter for fork support in Agent tools
 	if tool.IsAgentToolName(prepared.Call.Name) {
-		prepared.Params["_messagesGetter"] = tool.MessagesGetter(func() []message.Message {
-			// Return a copy to avoid concurrent mutation
-			msgs := make([]message.Message, len(l.messages))
-			copy(msgs, l.messages)
-			return msgs
+		prepared.Params["_messagesGetter"] = tool.MessagesGetter(func() []core.Message {
+			return message.ToCoreSlice(l.messages)
 		})
 	}
 
@@ -493,10 +491,7 @@ func (l *Loop) ExecTool(ctx context.Context, tc message.ToolCall) *message.ToolR
 
 // runTool runs the actual tool execution.
 func (l *Loop) runTool(ctx context.Context, prepared *tool.PreparedToolCall) *message.ToolResult {
-	cwd := ""
-	if l.System != nil {
-		cwd = l.System.Cwd
-	}
+	cwd := l.Cwd
 
 	if it, ok := prepared.Tool.(tool.InteractiveTool); ok && it.RequiresInteraction() {
 		req, err := it.PrepareInteraction(ctx, prepared.Params, cwd)

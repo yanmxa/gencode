@@ -7,7 +7,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/core/prompt"
 )
 
 // IsPromptTooLong checks if an API error indicates the prompt exceeded the context window.
@@ -66,7 +66,7 @@ func Compact(ctx context.Context, c *client.Client,
 	}
 
 	response, err := c.Complete(ctx,
-		system.CompactPrompt(),
+		prompt.CompactPrompt(),
 		[]message.Message{message.UserMessage(conversationText, nil)},
 		2048,
 	)

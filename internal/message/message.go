@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 // ChatMessage represents a UI-layer chat message with display state.
@@ -26,7 +28,6 @@ type ChatMessage struct {
 	RenderedInline    bool
 }
 
-// Role represents the role of a message participant.
 type Role string
 
 const (
@@ -48,7 +49,6 @@ type Message struct {
 	ToolResult        *ToolResult `json:"tool_result,omitempty"`
 }
 
-// ImageData represents image data for multimodal messages.
 type ImageData struct {
 	MediaType string `json:"media_type"`
 	Data      string `json:"data"`
@@ -64,13 +64,12 @@ type ToolCall struct {
 	ThoughtSignature []byte `json:"thought_signature,omitempty"` // Google Gemini: opaque signature to echo back
 }
 
-// ToolResult represents the result of a tool execution.
 type ToolResult struct {
 	ToolCallID   string `json:"tool_call_id"`
 	ToolName     string `json:"tool_name,omitempty"`
 	Content      string `json:"content"`
 	IsError      bool   `json:"is_error,omitempty"`
-	HookResponse any    `json:"-"` // structured response for hooks, not serialized to LLM
+	HookResponse any    `json:"-"`
 }
 
 // UserMessage creates a user message with optional images.
@@ -293,3 +292,141 @@ func buildImageIDMap(displayContent string, imageCount int) map[int]int {
 	}
 	return m
 }
+
+func ToCore(m Message) core.Message {
+	msg := core.Message{
+		Content:           m.Content,
+		DisplayContent:    m.DisplayContent,
+		Thinking:          m.Thinking,
+		ThinkingSignature: m.ThinkingSignature,
+	}
+	switch m.Role {
+	case RoleUser:
+		msg.Role = core.RoleUser
+		msg.Images = imagesToCore(m.Images)
+	case RoleAssistant:
+		msg.Role = core.RoleAssistant
+		msg.ToolCalls = toolCallsToCore(m.ToolCalls)
+	case RoleToolResult:
+		msg.Role = core.RoleTool
+		if m.ToolResult != nil {
+			msg.ToolResult = &core.ToolResult{
+				ToolCallID: m.ToolResult.ToolCallID,
+				ToolName:   m.ToolResult.ToolName,
+				Content:    m.ToolResult.Content,
+				IsError:    m.ToolResult.IsError,
+			}
+			msg.Content = m.ToolResult.Content
+		}
+	}
+	return msg
+}
+
+func ToCoreSlice(msgs []Message) []core.Message {
+	out := make([]core.Message, len(msgs))
+	for i, m := range msgs {
+		out[i] = ToCore(m)
+	}
+	return out
+}
+
+func FromCore(m core.Message) Message {
+	msg := Message{
+		Content:  m.Content,
+		Thinking: m.Thinking,
+	}
+	switch m.Role {
+	case core.RoleUser:
+		msg.Role = RoleUser
+		msg.Images = imagesFromCore(m.Images)
+	case core.RoleAssistant:
+		msg.Role = RoleAssistant
+		msg.ToolCalls = toolCallsFromCore(m.ToolCalls)
+	case core.RoleTool:
+		msg.Role = RoleToolResult
+		if m.ToolResult != nil {
+			msg.ToolResult = &ToolResult{
+				ToolCallID: m.ToolResult.ToolCallID,
+				ToolName:   m.ToolResult.ToolName,
+				Content:    m.ToolResult.Content,
+				IsError:    m.ToolResult.IsError,
+			}
+		}
+	}
+	return msg
+}
+
+func FromCoreSlice(msgs []core.Message) []Message {
+	out := make([]Message, len(msgs))
+	for i, m := range msgs {
+		out[i] = FromCore(m)
+	}
+	return out
+}
+
+func toolCallsToCore(calls []ToolCall) []core.ToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	out := make([]core.ToolCall, len(calls))
+	for i, tc := range calls {
+		input := make(map[string]any)
+		_ = json.Unmarshal([]byte(tc.Input), &input)
+		out[i] = core.ToolCall{
+			ID:    tc.ID,
+			Name:  tc.Name,
+			Input: input,
+		}
+	}
+	return out
+}
+
+func toolCallsFromCore(calls []core.ToolCall) []ToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	out := make([]ToolCall, len(calls))
+	for i, tc := range calls {
+		inputJSON, _ := json.Marshal(tc.Input)
+		out[i] = ToolCall{
+			ID:    tc.ID,
+			Name:  tc.Name,
+			Input: string(inputJSON),
+		}
+	}
+	return out
+}
+
+func imagesToCore(imgs []ImageData) []core.Image {
+	if len(imgs) == 0 {
+		return nil
+	}
+	out := make([]core.Image, len(imgs))
+	for i, img := range imgs {
+		out[i] = core.Image{
+			MediaType: img.MediaType,
+			Data:      img.Data,
+			FileName:  img.FileName,
+			Size:      img.Size,
+		}
+	}
+	return out
+}
+
+func imagesFromCore(imgs []core.Image) []ImageData {
+	if len(imgs) == 0 {
+		return nil
+	}
+	out := make([]ImageData, len(imgs))
+	for i, img := range imgs {
+		out[i] = ImageData{
+			MediaType: img.MediaType,
+			Data:      img.Data,
+			FileName:  img.FileName,
+			Size:      img.Size,
+		}
+	}
+	return out
+}
+
+

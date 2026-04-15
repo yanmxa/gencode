@@ -3,7 +3,7 @@ package app
 import "github.com/yanmxa/gencode/internal/message"
 
 func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
-	if m.loop.Client == nil {
+	if m.provider.LLM == nil {
 		return promptSuggestionRequest{}, false
 	}
 
@@ -28,7 +28,7 @@ func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
 	})
 
 	return promptSuggestionRequest{
-		Client:       m.loop.Client,
+		Client:       m.buildLoopClient(),
 		Messages:     msgs,
 		SystemPrompt: suggestionSystemPrompt,
 		UserPrompt:   suggestionUserPrompt,
@@ -48,7 +48,7 @@ func (m *model) buildTokenLimitFetchRequest() tokenLimitFetchRequest {
 
 func (m *model) buildCompactRequest(focus, trigger string) compactRequest {
 	return compactRequest{
-		Client:         m.loop.Client,
+		Client:         m.buildLoopClient(),
 		Messages:       m.conv.ConvertToProvider(),
 		SessionSummary: m.session.Summary,
 		Focus:          focus,

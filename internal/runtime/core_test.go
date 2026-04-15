@@ -7,10 +7,10 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/client"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 	_ "github.com/yanmxa/gencode/internal/tool/registry"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
@@ -65,10 +65,11 @@ func (t *hookResponseTestTool) Execute(ctx context.Context, params map[string]an
 func newTestLoop(mp provider.LLMProvider) *Loop {
 	c := &client.Client{Provider: mp, Model: "test-model", MaxTokens: 8192}
 	return &Loop{
-		System:     &system.System{Client: c, Cwd: "/tmp"},
+		System:     core.NewSystem(core.Layer{Name: "test", Priority: 0, Content: "test"}),
 		Client:     c,
 		Tool:       &tool.Set{},
 		Permission: permission.PermitAll(),
+		Cwd:        "/tmp",
 	}
 }
 

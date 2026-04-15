@@ -15,8 +15,8 @@ import (
 )
 
 func (e *Engine) executeMatchedHook(ctx context.Context, hook matchedHook, input HookInput) HookOutcome {
-	statusID := e.startStatus(matchedHookStatusMessage(hook))
-	defer e.endStatus(statusID)
+	statusID := e.status.Start(matchedHookStatusMessage(hook))
+	defer e.status.End(statusID)
 
 	if hook.Func != nil {
 		return e.executeFunctionHook(ctx, *hook.Func, input)

@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
-	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
@@ -86,10 +85,10 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	if m.provider.LLM == nil {
 		return "No provider connected. Use /provider to connect.", nil, nil
 	}
-	if m.loop.Client == nil {
+	if len(m.conv.Messages) == 0 {
 		return "No active LLM session. Send a message first to initialize the client.", nil, nil
 	}
-	if !runtime.CanCompactMessages(len(m.conv.Messages)) {
+	if !canCompactMessages(len(m.conv.Messages)) {
 		return "Not enough conversation history to compact.", nil, nil
 	}
 	if m.conv.Stream.Active {
@@ -182,7 +181,7 @@ func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 		}
 		m.conv.Append(message.ChatMessage{
 			Role:    message.RoleUser,
-			Content: runtime.AutoCompactResumePrompt,
+			Content: autoCompactResumePrompt,
 		})
 		cmds = append(cmds, m.startLLMStream(extra))
 	} else if restoredContext != "" {

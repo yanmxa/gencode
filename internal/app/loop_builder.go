@@ -3,11 +3,12 @@ package app
 import (
 	"fmt"
 
-	"github.com/yanmxa/gencode/internal/agent"
 	"github.com/yanmxa/gencode/internal/client"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/ext/skill"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/skill"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -20,9 +21,18 @@ func (m *model) buildLoopClient() *client.Client {
 	}
 }
 
-func (m *model) buildLoopSystem(extra []string, loopClient *client.Client) *system.System {
-	return &system.System{
-		Client:              loopClient,
+func (m *model) buildLoopSystem(extra []string, loopClient *client.Client) core.System {
+	providerName := ""
+	modelID := ""
+	if loopClient != nil {
+		modelID = loopClient.Model
+		if loopClient.Provider != nil {
+			providerName = loopClient.Provider.Name()
+		}
+	}
+	return prompt.Build(prompt.Config{
+		ProviderName:        providerName,
+		ModelID:             modelID,
 		Cwd:                 m.cwd,
 		IsGit:               m.isGit,
 		PlanMode:            m.mode.Enabled,
@@ -33,7 +43,7 @@ func (m *model) buildLoopSystem(extra []string, loopClient *client.Client) *syst
 		Agents:              m.buildLoopAgentsSection(),
 		DeferredTools:       tool.FormatDeferredToolsPrompt(),
 		Extra:               m.buildLoopExtra(extra),
-	}
+	})
 }
 
 func (m *model) buildLoopToolSet() *tool.Set {
@@ -188,10 +198,10 @@ func (m *model) buildLoopSkillsSection() string {
 }
 
 func (m *model) buildLoopAgentsSection() string {
-	if agent.DefaultRegistry == nil {
+	if subagent.DefaultRegistry == nil {
 		return ""
 	}
-	return agent.DefaultRegistry.GetAgentsSection()
+	return subagent.DefaultRegistry.GetAgentsSection()
 }
 
 func (m *model) buildMCPToolsGetter() func() []provider.ToolSchema {

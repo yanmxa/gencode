@@ -1,26 +1,26 @@
 package app
 
 import (
-	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/tool"
 	toolagent "github.com/yanmxa/gencode/internal/tool/agent"
 )
 
-type agentToolOption func(*agent.Executor)
+type agentToolOption func(*subagent.Executor)
 
 func configureAgentTool(llmProvider provider.LLMProvider, cwd string, modelID string, hookEngine *hooks.Engine, sessionStore *session.Store, parentSessionID string, opts ...agentToolOption) {
-	executor := agent.NewExecutor(llmProvider, cwd, modelID, hookEngine)
+	executor := subagent.NewExecutor(llmProvider, cwd, modelID, hookEngine)
 	if sessionStore != nil && parentSessionID != "" {
 		executor.SetSessionStore(sessionStore, parentSessionID)
 	}
 	for _, opt := range opts {
 		opt(executor)
 	}
-	adapter := agent.NewExecutorAdapter(executor)
+	adapter := subagent.NewExecutorAdapter(executor)
 
 	if t, ok := tool.Get(tool.ToolAgent); ok {
 		if agentTool, ok := t.(*toolagent.AgentTool); ok {
@@ -40,13 +40,13 @@ func configureAgentTool(llmProvider provider.LLMProvider, cwd string, modelID st
 }
 
 func withAgentContext(userInstructions, projectInstructions string, isGit bool) agentToolOption {
-	return func(e *agent.Executor) {
+	return func(e *subagent.Executor) {
 		e.SetContext(userInstructions, projectInstructions, isGit)
 	}
 }
 
 func withAgentMCP(getter func() []provider.ToolSchema, registry *mcp.Registry) agentToolOption {
-	return func(e *agent.Executor) {
+	return func(e *subagent.Executor) {
 		e.SetMCP(getter, registry)
 	}
 }

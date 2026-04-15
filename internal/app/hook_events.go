@@ -6,12 +6,12 @@ import (
 
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
 
 func (m *model) refreshMemoryContext(loadReason string) {
-	files := system.LoadMemoryFiles(m.cwd)
+	files := prompt.LoadMemoryFiles(m.cwd)
 	var userParts, projectParts []string
 	for _, f := range files {
 		switch f.Level {

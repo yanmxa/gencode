@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
@@ -168,7 +168,7 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 	}
 
 	// Resolve parent messages for fork
-	var parentMessages []message.Message
+	var parentMessages []core.Message
 	if fork {
 		if getter, ok := params["_messagesGetter"].(tool.MessagesGetter); ok {
 			parentMessages = getter()

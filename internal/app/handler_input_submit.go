@@ -6,11 +6,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appcommand "github.com/yanmxa/gencode/internal/app/command"
+	appcommand "github.com/yanmxa/gencode/internal/ext/command"
 	appinput "github.com/yanmxa/gencode/internal/app/input"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/ui/history"
 )
 
@@ -261,6 +262,29 @@ func (m *model) startProviderTurn(content string) tea.Cmd {
 			Content: "No provider connected. Use /provider to connect.",
 		})
 		return tea.Batch(m.commitMessages()...)
+	}
+
+	// core.Agent path — lazily create and send message to agent inbox
+	if m.agentSess != nil || m.shouldUseAgentPath() {
+		if m.agentSess == nil {
+			if err := m.ensureAgentSession(); err != nil {
+				m.conv.Append(message.ChatMessage{
+					Role:    message.RoleNotice,
+					Content: "Failed to start agent: " + err.Error(),
+				})
+				return tea.Batch(m.commitMessages()...)
+			}
+		}
+		var images []core.Image
+		lastMsg := m.conv.Messages[len(m.conv.Messages)-1]
+		for _, img := range lastMsg.Images {
+			images = append(images, core.Image{
+				MediaType: img.MediaType,
+				Data:      img.Data,
+				FileName:  img.FileName,
+			})
+		}
+		return m.sendToAgent(content, images)
 	}
 
 	m.detectThinkingKeywords(content)

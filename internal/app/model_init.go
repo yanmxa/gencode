@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/app/agentui"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
-	appcommand "github.com/yanmxa/gencode/internal/app/command"
+	appcommand "github.com/yanmxa/gencode/internal/ext/command"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appinput "github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/app/mcpui"
@@ -26,14 +26,14 @@ import (
 	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/session"
-	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tracker"
 	"github.com/yanmxa/gencode/internal/ui/progress"
@@ -239,7 +239,7 @@ func (m *model) reloadPluginBackedState() error {
 	if err := appcommand.Initialize(m.cwd); err != nil {
 		return fmt.Errorf("failed to reload custom commands: %w", err)
 	}
-	if err := agent.Initialize(m.cwd); err != nil {
+	if err := subagent.Initialize(m.cwd); err != nil {
 		return fmt.Errorf("failed to reload agent registry: %w", err)
 	}
 	if err := mcp.Initialize(m.cwd); err != nil {

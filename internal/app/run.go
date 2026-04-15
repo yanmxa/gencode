@@ -10,18 +10,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"go.uber.org/zap"
 
-	"github.com/yanmxa/gencode/internal/agent"
-	appcommand "github.com/yanmxa/gencode/internal/app/command"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
+	appcommand "github.com/yanmxa/gencode/internal/ext/command"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
 	_ "github.com/yanmxa/gencode/internal/provider/anthropic"
 	_ "github.com/yanmxa/gencode/internal/provider/google"
 	_ "github.com/yanmxa/gencode/internal/provider/openai"
-	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/tool"
 	_ "github.com/yanmxa/gencode/internal/tool/registry"
 	"github.com/yanmxa/gencode/internal/ui/theme"
@@ -169,7 +169,7 @@ func initializeRegistries(cwd string) {
 	if err := appcommand.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize custom commands", zap.Error(err))
 	}
-	if err := agent.Initialize(cwd); err != nil {
+	if err := subagent.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize agent registry", zap.Error(err))
 	}
 	if err := mcp.Initialize(cwd); err != nil {

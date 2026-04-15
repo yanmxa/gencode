@@ -7,10 +7,13 @@ import (
 )
 
 func (m *model) buildStreamRequest(extra []string) streamRequest {
-	m.configureLoop(extra)
+	m.ensureMemoryContextLoaded()
+	c := m.buildLoopClient()
 	return streamRequest{
-		Loop:     m.loop,
+		Client:   c,
 		Messages: m.conv.ConvertToProvider(),
+		Tools:    m.buildLoopToolSet().Tools(),
+		System:   m.buildLoopSystem(extra, c).Prompt(),
 	}
 }
 

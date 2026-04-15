@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/ui/selector"
 )
 
@@ -56,7 +56,7 @@ func (m *Model) EnterSelect(cwd string, width, height int) {
 	m.active = true
 	m.selectedIdx = 0
 
-	paths := system.GetAllMemoryPaths(cwd)
+	paths := prompt.GetAllMemoryPaths(cwd)
 	m.items = []Item{
 		m.buildItem("Global", "global", paths.Global, cwd,
 			fmt.Sprintf("Saved in %s", selector.ShortenPath(paths.Global[0])),
@@ -73,7 +73,7 @@ func (m *Model) EnterSelect(cwd string, width, height int) {
 }
 
 func (m *Model) buildItem(label, level string, searchPaths []string, cwd, defaultDesc, createHint string) Item {
-	foundPath := system.FindMemoryFile(searchPaths)
+	foundPath := prompt.FindMemoryFile(searchPaths)
 	exists := foundPath != ""
 
 	path := foundPath
@@ -91,7 +91,7 @@ func (m *Model) buildItem(label, level string, searchPaths []string, cwd, defaul
 		Description: description,
 		Path:        path,
 		Exists:      exists,
-		Size:        system.GetFileSize(path),
+		Size:        prompt.GetFileSize(path),
 		Level:       level,
 		CreateHint:  createHint,
 	}
@@ -203,7 +203,7 @@ func (m *Model) Render() string {
 		numKey := fmt.Sprintf("%d.", i+1)
 		sizeStr := ""
 		if item.Exists && item.Size > 0 {
-			sizeStr = fmt.Sprintf(" (%s)", system.FormatFileSize(item.Size))
+			sizeStr = fmt.Sprintf(" (%s)", prompt.FormatFileSize(item.Size))
 		}
 
 		line := fmt.Sprintf("%s %s %s",

@@ -12,6 +12,11 @@ import (
 )
 
 func (m *model) handleStreamCancel() tea.Cmd {
+	// Stop core.Agent if active — cancel its context to interrupt the loop
+	if m.agentSess != nil && m.agentSess.cancel != nil {
+		m.agentSess.stop()
+		m.agentSess = nil
+	}
 	if m.conv.Stream.Cancel != nil {
 		m.conv.Stream.Cancel()
 	}
@@ -136,6 +141,10 @@ func (m *model) pasteImageFromClipboard() (tea.Cmd, bool) {
 // quitWithCancel cancels any active stream and tool execution before quitting.
 // Use this as the single exit point for all quit paths (Ctrl+C, Ctrl+D, "exit").
 func (m *model) quitWithCancel() (tea.Cmd, bool) {
+	if m.agentSess != nil {
+		m.agentSess.stop()
+		m.agentSess = nil
+	}
 	if m.conv.Stream.Cancel != nil {
 		m.conv.Stream.Cancel()
 	}

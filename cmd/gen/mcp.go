@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yanmxa/gencode/internal/app/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
-	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/ext/mcp"
 )
 
 var mcpCmd = &cobra.Command{

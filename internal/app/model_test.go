@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	"github.com/yanmxa/gencode/internal/app/mcpui"
@@ -19,12 +19,11 @@ import (
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
@@ -272,15 +271,15 @@ func TestApplyRunOptionsPluginDirReloadsPluginComponents(t *testing.T) {
 
 	prevPluginRegistry := plugin.DefaultRegistry
 	prevSkillRegistry := skill.DefaultRegistry
-	prevAgentRegistry := agent.DefaultRegistry
+	prevAgentRegistry := subagent.DefaultRegistry
 	prevMCPRegistry := mcp.DefaultRegistry
 	plugin.DefaultRegistry = plugin.NewRegistry()
-	agent.DefaultRegistry = agent.NewRegistry()
+	subagent.DefaultRegistry = subagent.NewRegistry()
 	mcp.DefaultRegistry = nil
 	t.Cleanup(func() {
 		plugin.DefaultRegistry = prevPluginRegistry
 		skill.DefaultRegistry = prevSkillRegistry
-		agent.DefaultRegistry = prevAgentRegistry
+		subagent.DefaultRegistry = prevAgentRegistry
 		mcp.DefaultRegistry = prevMCPRegistry
 	})
 
@@ -348,7 +347,7 @@ You are a verifier.`), 0o644); err != nil {
 		t.Fatalf("applyRunOptions() error = %v", err)
 	}
 
-	if _, ok := agent.DefaultRegistry.Get("demo:verifier"); !ok {
+	if _, ok := subagent.DefaultRegistry.Get("demo:verifier"); !ok {
 		t.Fatal("expected plugin agent to be registered after --plugin-dir load")
 	}
 	if len(m.settings.Hooks["SessionStart"]) == 0 {
@@ -700,14 +699,14 @@ func TestPermissionDeniedRetryContinuesStream(t *testing.T) {
 		hookEngine: engine,
 		runtime:    rt,
 		conv:       appconv.New(),
-		loop:       &runtime.Loop{},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
 				PendingCalls: []message.ToolCall{{ID: "tc-1", Name: "Write"}},
 				CurrentIdx:   0,
 			},
 		},
-		output: appoutput.New(80, progress.NewHub(10)),
+		provider: providerui.State{LLM: testLLMProvider{}},
+		output:   appoutput.New(80, progress.NewHub(10)),
 	}
 
 	cmd := m.handlePermissionResponse(appapproval.ResponseMsg{
@@ -744,7 +743,6 @@ func TestAsyncHookTickRewakesModel(t *testing.T) {
 		runtime:        rt,
 		conv:           appconv.New(),
 		asyncHookQueue: newAsyncHookQueue(),
-		loop:           &runtime.Loop{},
 		provider:       providerui.State{LLM: testLLMProvider{}},
 		output:         appoutput.New(80, progress.NewHub(10)),
 	}
@@ -772,14 +770,11 @@ func TestAsyncHookTickRewakesModel(t *testing.T) {
 	if m.conv.Messages[1].Role != message.RoleAssistant {
 		t.Fatalf("expected second message to be assistant placeholder, got %v", m.conv.Messages[1].Role)
 	}
-	if rt.lastStreamReq.Loop == nil || rt.lastStreamReq.Loop.System == nil {
-		t.Fatal("expected async hook rewake to build loop system")
+	if rt.lastStreamReq.System == "" {
+		t.Fatal("expected async hook rewake to build system prompt")
 	}
-	if len(rt.lastStreamReq.Loop.System.Extra) == 0 {
-		t.Fatal("expected async hook rewake to pass internal continuation context")
-	}
-	if rt.lastStreamReq.Loop.System.Extra[0] != "<background-hook-result>\nstatus: blocked\n</background-hook-result>" {
-		t.Fatalf("unexpected async hook continuation context: %#v", rt.lastStreamReq.Loop.System.Extra)
+	if !strings.Contains(rt.lastStreamReq.System, "<background-hook-result>") {
+		t.Fatal("expected async hook rewake to pass internal continuation context in system prompt")
 	}
 	if got := rt.lastStreamReq.Messages[len(rt.lastStreamReq.Messages)-1]; got.Role != message.RoleUser || got.Content != "Re-evaluate the plan." {
 		t.Fatalf("expected provider-only continuation prompt, got %#v", got)
@@ -841,7 +836,6 @@ func TestTaskNotificationTickRewakesModel(t *testing.T) {
 		runtime:           rt,
 		conv:              appconv.New(),
 		taskNotifications: newTaskNotificationQueue(),
-		loop:              &runtime.Loop{},
 		provider:          providerui.State{LLM: testLLMProvider{}},
 		output:            appoutput.New(80, progress.NewHub(10)),
 	}
@@ -895,11 +889,11 @@ func TestTaskNotificationTickRewakesModel(t *testing.T) {
 	if !strings.Contains(prompt, "<should-finalize-summary>true</should-finalize-summary>") {
 		t.Fatalf("expected single completion to allow summary finalization, got %q", prompt)
 	}
-	if rt.lastStreamReq.Loop == nil || rt.lastStreamReq.Loop.System == nil {
-		t.Fatal("expected task notification to build loop system")
+	if rt.lastStreamReq.System == "" {
+		t.Fatal("expected task notification to build system prompt")
 	}
-	if len(rt.lastStreamReq.Loop.System.Extra) == 0 || !strings.Contains(rt.lastStreamReq.Loop.System.Extra[0], "<task-notification>") {
-		t.Fatalf("expected task notification continuation context, got %#v", rt.lastStreamReq.Loop.System.Extra)
+	if !strings.Contains(rt.lastStreamReq.System, "<task-notification>") {
+		t.Fatal("expected task notification continuation context in system prompt")
 	}
 }
 
@@ -939,7 +933,6 @@ func TestTaskNotificationTickBatchesQueuedNotifications(t *testing.T) {
 		runtime:           rt,
 		conv:              appconv.New(),
 		taskNotifications: newTaskNotificationQueue(),
-		loop:              &runtime.Loop{},
 		provider:          providerui.State{LLM: testLLMProvider{}},
 		output:            appoutput.New(80, progress.NewHub(10)),
 	}
@@ -1009,11 +1002,11 @@ func TestTaskNotificationTickBatchesQueuedNotifications(t *testing.T) {
 	if !strings.Contains(got.Content, "<task-id>bg-1</task-id>") || !strings.Contains(got.Content, "<task-id>bg-2</task-id>") {
 		t.Fatalf("expected both task notifications in provider prompt, got %q", got.Content)
 	}
-	if len(rt.lastStreamReq.Loop.System.Extra) == 0 || !strings.Contains(rt.lastStreamReq.Loop.System.Extra[0], "Multiple background tasks completed") {
-		t.Fatalf("expected batched continuation context, got %#v", rt.lastStreamReq.Loop.System.Extra)
+	if !strings.Contains(rt.lastStreamReq.System, "Multiple background tasks completed") {
+		t.Fatalf("expected batched continuation context in system prompt, got %q", rt.lastStreamReq.System)
 	}
-	if !strings.Contains(strings.Join(rt.lastStreamReq.Loop.System.Extra, "\n"), "Do not assume the batch is finished") {
-		t.Fatalf("expected partial-batch coordinator policy, got %#v", rt.lastStreamReq.Loop.System.Extra)
+	if !strings.Contains(rt.lastStreamReq.System, "Do not assume the batch is finished") {
+		t.Fatalf("expected partial-batch coordinator policy in system prompt, got %q", rt.lastStreamReq.System)
 	}
 }
 
@@ -1024,7 +1017,6 @@ func TestTaskNotificationTickAddsCoordinatorPolicyForCompletedFailedBatch(t *tes
 		runtime:           rt,
 		conv:              appconv.New(),
 		taskNotifications: newTaskNotificationQueue(),
-		loop:              &runtime.Loop{},
 		provider:          providerui.State{LLM: testLLMProvider{}},
 		output:            appoutput.New(80, progress.NewHub(10)),
 	}
@@ -1052,7 +1044,7 @@ func TestTaskNotificationTickAddsCoordinatorPolicyForCompletedFailedBatch(t *tes
 	if !rt.startCalled {
 		t.Fatal("expected task notification to start a follow-up stream")
 	}
-	joined := strings.Join(rt.lastStreamReq.Loop.System.Extra, "\n")
+	joined := rt.lastStreamReq.System
 	prompt := rt.lastStreamReq.Messages[len(rt.lastStreamReq.Messages)-1].Content
 	if !strings.Contains(prompt, "<coordinator-hint>") {
 		t.Fatalf("expected structured coordinator hint in prompt, got %q", prompt)
@@ -1076,9 +1068,9 @@ func TestTaskNotificationTickAddsCoordinatorPolicyForCompletedFailedBatch(t *tes
 		t.Fatalf("expected completed batch to allow final summary, got %q", prompt)
 	}
 	if !strings.Contains(joined, "background batch completed with failures") {
-		t.Fatalf("expected failed-batch coordinator policy, got %#v", rt.lastStreamReq.Loop.System.Extra)
+		t.Fatalf("expected failed-batch coordinator policy in system prompt, got %q", joined)
 	}
 	if !strings.Contains(joined, "continue a failed worker, spawn a verifier, or report a partial result") {
-		t.Fatalf("expected failed-batch follow-up guidance, got %#v", rt.lastStreamReq.Loop.System.Extra)
+		t.Fatalf("expected failed-batch follow-up guidance in system prompt, got %q", joined)
 	}
 }

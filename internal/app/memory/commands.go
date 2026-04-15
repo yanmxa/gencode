@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/ui/selector"
 )
 
@@ -178,7 +178,7 @@ const (
 
 // HandleMemoryList lists all memory files.
 func HandleMemoryList(cwd string) (string, error) {
-	paths := system.GetAllMemoryPaths(cwd)
+	paths := prompt.GetAllMemoryPaths(cwd)
 	state := &memoryListState{cwd: cwd}
 
 	var sb strings.Builder
@@ -193,7 +193,7 @@ func HandleMemoryList(cwd string) (string, error) {
 	sb.WriteString("╰────────────────────────────────────────────────────╯\n")
 
 	if state.totalFiles > 0 {
-		fmt.Fprintf(&sb, "  Total: %d file(s) loaded (%s)\n", state.totalFiles, system.FormatFileSize(state.totalSize))
+		fmt.Fprintf(&sb, "  Total: %d file(s) loaded (%s)\n", state.totalFiles, prompt.FormatFileSize(state.totalSize))
 	} else {
 		sb.WriteString("  No memory files loaded. Create with /init\n")
 	}
@@ -204,8 +204,8 @@ func HandleMemoryList(cwd string) (string, error) {
 }
 
 func (s *memoryListState) writeSection(sb *strings.Builder, label string, mainPaths []string, rulesDir, createHint string, isProject bool) {
-	mainFound := system.FindMemoryFile(mainPaths)
-	rulesFiles := system.ListRulesFiles(rulesDir)
+	mainFound := prompt.FindMemoryFile(mainPaths)
+	rulesFiles := prompt.ListRulesFiles(rulesDir)
 
 	if mainFound != "" || len(rulesFiles) > 0 {
 		sb.WriteString(formatBoxLine(fmt.Sprintf(" ● %s", label)))
@@ -223,7 +223,7 @@ func (s *memoryListState) writeSection(sb *strings.Builder, label string, mainPa
 }
 
 func (s *memoryListState) writeLocalSection(sb *strings.Builder, localPaths []string) {
-	localFound := system.FindMemoryFile(localPaths)
+	localFound := prompt.FindMemoryFile(localPaths)
 	if localFound != "" {
 		sb.WriteString(formatBoxLine(" ● Local (git-ignored)"))
 		s.writeFileLine(sb, localFound, true)
@@ -235,13 +235,13 @@ func (s *memoryListState) writeLocalSection(sb *strings.Builder, localPaths []st
 }
 
 func (s *memoryListState) writeFileLine(sb *strings.Builder, path string, isProject bool) {
-	size := system.GetFileSize(path)
+	size := prompt.GetFileSize(path)
 	s.totalFiles++
 	s.totalSize += size
 
 	displayPath := shortenPathForDisplay(path, s.cwd, isProject)
 	displayPath = truncatePathKeepFilename(displayPath, memoryMaxPath)
-	sizeStr := fmt.Sprintf("(%s)", system.FormatFileSize(size))
+	sizeStr := fmt.Sprintf("(%s)", prompt.FormatFileSize(size))
 	sb.WriteString(formatBoxLine(fmt.Sprintf("   %s %s", padRight(displayPath, memoryMaxPath), sizeStr)))
 }
 
@@ -290,7 +290,7 @@ func padRight(s string, length int) string {
 
 // HandleMemoryShow shows the current loaded memory content.
 func HandleMemoryShow(cwd string) (string, error) {
-	content := system.LoadMemory(cwd)
+	content := prompt.LoadMemory(cwd)
 	if content == "" {
 		return "No memory files loaded.\n\nCreate project memory with: /init", nil
 	}
@@ -306,7 +306,7 @@ func HandleMemoryShow(cwd string) (string, error) {
 // HandleMemoryEdit resolves the file to edit for the given scope.
 // Returns the file path to edit, or an empty string with a message if no file was found.
 func HandleMemoryEdit(cwd, scope string) (string, error) {
-	paths := system.GetAllMemoryPaths(cwd)
+	paths := prompt.GetAllMemoryPaths(cwd)
 
 	switch scope {
 	case "global", "user":
@@ -325,7 +325,7 @@ func HandleMemoryEdit(cwd, scope string) (string, error) {
 		return filePath, nil
 
 	default:
-		filePath := system.FindMemoryFile(paths.Project)
+		filePath := prompt.FindMemoryFile(paths.Project)
 		if filePath == "" {
 			// Return empty path; caller should display the message.
 			return "", nil
@@ -336,7 +336,7 @@ func HandleMemoryEdit(cwd, scope string) (string, error) {
 
 // EnsureMemoryFile finds or creates a memory file from the given search paths.
 func EnsureMemoryFile(searchPaths []string, template string) (string, error) {
-	filePath := system.FindMemoryFile(searchPaths)
+	filePath := prompt.FindMemoryFile(searchPaths)
 	if filePath != "" {
 		return filePath, nil
 	}

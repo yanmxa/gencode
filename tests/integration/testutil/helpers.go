@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/client"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
@@ -32,12 +32,14 @@ func NewTestLoopWithPermission(t *testing.T, checker permission.Checker,
 ) (*runtime.Loop, *client.FakeClient) {
 	t.Helper()
 
+	tmpDir := t.TempDir()
 	fake := &client.FakeClient{Responses: responses}
 	loop := &runtime.Loop{
-		System:     &system.System{Cwd: t.TempDir(), UserInstructions: "test"},
+		System:     core.NewSystem(core.Layer{Name: "test", Priority: 0, Content: "test"}),
 		Client:     NewTestClient(fake),
 		Tool:       &tool.Set{},
 		Permission: checker,
+		Cwd:        tmpDir,
 	}
 	return loop, fake
 }

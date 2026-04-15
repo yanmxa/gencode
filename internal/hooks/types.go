@@ -2,37 +2,41 @@
 // Compatible with Claude Code hooks that execute shell commands on events.
 package hooks
 
-import "context"
+import (
+	"context"
 
-// EventType represents the type of hook event.
-type EventType string
+	"github.com/yanmxa/gencode/internal/core"
+)
 
-// Event types with their matcher support noted.
+// EventType is an alias for core.EventType for backward compatibility.
+type EventType = core.EventType
+
+// Re-export core event constants for backward compatibility.
 const (
-	SessionStart       EventType = "SessionStart"       // matcher: startup, resume, clear, compact
-	UserPromptSubmit   EventType = "UserPromptSubmit"   // no matcher
-	PreToolUse         EventType = "PreToolUse"         // matcher: tool name
-	PermissionRequest  EventType = "PermissionRequest"  // matcher: tool name
-	PostToolUse        EventType = "PostToolUse"        // matcher: tool name
-	PostToolUseFailure EventType = "PostToolUseFailure" // matcher: tool name
-	Notification       EventType = "Notification"       // matcher: notification_type
-	SubagentStart      EventType = "SubagentStart"      // matcher: agent_type
-	SubagentStop       EventType = "SubagentStop"       // matcher: agent_type
-	Stop               EventType = "Stop"               // no matcher
-	StopFailure        EventType = "StopFailure"        // no matcher; fires when assistant stops due to an error
-	PermissionDenied   EventType = "PermissionDenied"   // matcher: tool name; fires when tool execution is denied
-	Setup              EventType = "Setup"              // matcher: init, maintenance
-	TaskCreated        EventType = "TaskCreated"        // matcher: task subject
-	TaskCompleted      EventType = "TaskCompleted"      // matcher: task subject
-	ConfigChange       EventType = "ConfigChange"       // matcher: config source
-	InstructionsLoaded EventType = "InstructionsLoaded" // matcher: file path
-	CwdChanged         EventType = "CwdChanged"         // matcher: new cwd
-	FileChanged        EventType = "FileChanged"        // matcher: file path
-	PreCompact         EventType = "PreCompact"         // matcher: manual, auto
-	PostCompact        EventType = "PostCompact"        // matcher: manual, auto; fire-and-forget after compact succeeds
-	WorktreeCreate     EventType = "WorktreeCreate"     // matcher: worktree name/slug
-	WorktreeRemove     EventType = "WorktreeRemove"     // matcher: worktree path
-	SessionEnd         EventType = "SessionEnd"         // matcher: reason
+	SessionStart       = core.SessionStart
+	UserPromptSubmit   = core.UserPromptSubmit
+	PreToolUse         = core.PreToolUse
+	PermissionRequest  = core.PermissionRequest
+	PostToolUse        = core.PostToolUse
+	PostToolUseFailure = core.PostToolUseFailure
+	Notification       = core.Notification
+	SubagentStart      = core.SubagentStart
+	SubagentStop       = core.SubagentStop
+	Stop               = core.Stop
+	StopFailure        = core.StopFailure
+	PermissionDenied   = core.PermissionDenied
+	Setup              = core.Setup
+	TaskCreated        = core.TaskCreated
+	TaskCompleted      = core.TaskCompleted
+	ConfigChange       = core.ConfigChange
+	InstructionsLoaded = core.InstructionsLoaded
+	CwdChanged         = core.CwdChanged
+	FileChanged        = core.FileChanged
+	PreCompact         = core.PreCompact
+	PostCompact        = core.PostCompact
+	WorktreeCreate     = core.WorktreeCreate
+	WorktreeRemove     = core.WorktreeRemove
+	SessionEnd         = core.SessionEnd
 )
 
 // HookInput is the JSON input passed to hook commands via stdin.

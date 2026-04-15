@@ -3,11 +3,13 @@ package compact
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/core/prompt"
 )
 
 // ShouldAutoCompact returns true when context usage is high enough to trigger
@@ -40,5 +42,26 @@ func GetMaxTokens(store *provider.Store, currentModel *provider.CurrentModelInfo
 // sessionMemory is the previous compaction summary loaded from persisted transcript state;
 // if non-empty it is prepended as prior context so the new summary preserves it.
 func CompactConversation(ctx context.Context, c *client.Client, msgs []message.Message, sessionMemory, focus string) (summary string, count int, err error) {
-	return runtime.Compact(ctx, c, msgs, sessionMemory, focus)
+	count = len(msgs)
+
+	conversationText := message.BuildConversationText(msgs)
+
+	if sessionMemory != "" {
+		conversationText = fmt.Sprintf("Previous session context:\n\n%s\n\n---\n\nRecent conversation:\n\n%s", sessionMemory, conversationText)
+	}
+
+	if focus != "" {
+		conversationText += fmt.Sprintf("\n\n**Important**: Focus the summary on: %s", focus)
+	}
+
+	response, err := c.Complete(ctx,
+		prompt.CompactPrompt(),
+		[]message.Message{message.UserMessage(conversationText, nil)},
+		2048,
+	)
+	if err != nil {
+		return "", count, fmt.Errorf("failed to generate summary: %w", err)
+	}
+
+	return strings.TrimSpace(response.Content), count, nil
 }

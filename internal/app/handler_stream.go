@@ -4,7 +4,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
-	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
@@ -41,7 +40,7 @@ func (m *model) handleStreamChunk(msg appconv.ChunkMsg) tea.Cmd {
 // handleStreamDone processes a completed stream.
 func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 	m.applyCompletedStreamState(msg)
-	decision := runtime.DecideCompletion(msg.StopReason, msg.ToolCalls, m.maxOutputRecoveryCount, runtime.DefaultMaxOutputRecovery)
+	decision := decideCompletion(msg.StopReason, msg.ToolCalls, m.maxOutputRecoveryCount, defaultMaxOutputRecovery)
 	return m.handleCompletionDecision(decision)
 }
 
@@ -56,11 +55,11 @@ func (m *model) applyCompletedStreamState(msg appconv.ChunkMsg) {
 	m.conv.SetLastThinkingSignature(msg.ThinkingSignature)
 }
 
-func (m *model) handleCompletionDecision(decision runtime.CompletionDecision) tea.Cmd {
+func (m *model) handleCompletionDecision(decision completionDecision) tea.Cmd {
 	switch decision.Action {
-	case runtime.CompletionRecoverMaxTokens:
+	case completionRecoverMaxTokens:
 		return m.recoverMaxOutputStream()
-	case runtime.CompletionRunTools:
+	case completionRunTools:
 		return m.handleCompletionToolCalls(decision.ToolCalls)
 	default:
 		return m.finalizeCompletedTurn()
@@ -71,7 +70,7 @@ func (m *model) recoverMaxOutputStream() tea.Cmd {
 	m.maxOutputRecoveryCount++
 	m.conv.Append(message.ChatMessage{
 		Role:    message.RoleUser,
-		Content: runtime.MaxOutputRecoveryPrompt,
+		Content: maxOutputRecoveryPrompt,
 	})
 	return m.startContinueStream()
 }
@@ -141,7 +140,7 @@ func (m *model) fireIdleHooks() {
 // handleStreamError processes a stream error.
 func (m *model) handleStreamError(err error) tea.Cmd {
 	// If "prompt too long", trigger auto-compact and retry
-	if runtime.ShouldCompactPromptTooLong(err, len(m.conv.Messages)) {
+	if shouldCompactPromptTooLong(err, len(m.conv.Messages)) {
 		m.conv.RemoveEmptyLastAssistant()
 		m.conv.Stream.Stop()
 		m.conv.Compact.AutoContinue = true // Auto-continue after compaction

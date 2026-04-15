@@ -16,13 +16,11 @@ import (
 	"github.com/yanmxa/gencode/internal/app/sessionui"
 	"github.com/yanmxa/gencode/internal/app/skillui"
 	"github.com/yanmxa/gencode/internal/app/toolui"
-	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/tracker"
@@ -359,14 +357,14 @@ func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 }
 
 // TestSessionSummary_InSystemPrompt verifies that session summary
-// appears in the final system prompt when set on the System struct.
+// appears in the final system prompt when set via prompt.Build.
 func TestSessionSummary_InSystemPrompt(t *testing.T) {
 	summary := "Refactored the session package. Added overflow storage."
 
-	sys := &system.System{
+	sys := prompt.Build(prompt.Config{
 		Cwd:            "/tmp",
 		SessionSummary: "<session-summary>\n" + summary + "\n</session-summary>",
-	}
+	})
 	prompt := sys.Prompt()
 
 	if !strings.Contains(prompt, "<session-summary>") {
@@ -383,10 +381,10 @@ func TestSessionSummary_InSystemPrompt(t *testing.T) {
 // TestSessionSummary_EmptyNotIncluded verifies that empty session summary
 // does not produce a <session-summary> block.
 func TestSessionSummary_EmptyNotIncluded(t *testing.T) {
-	sys := &system.System{
+	sys := prompt.Build(prompt.Config{
 		Cwd:            "/tmp",
 		SessionSummary: "",
-	}
+	})
 	prompt := sys.Prompt()
 
 	if strings.Contains(prompt, "<session-summary>") {
@@ -434,7 +432,7 @@ func TestStartPromptSuggestionUsesRuntimeInterface(t *testing.T) {
 	rt := &fakeConversationRuntime{}
 	m := &model{
 		runtime: rt,
-		loop:    &runtime.Loop{Client: &client.Client{}},
+		provider: providerui.State{LLM: testLLMProvider{}},
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
 				{Role: message.RoleAssistant, Content: "first"},
@@ -456,13 +454,13 @@ func TestStartLLMStreamUsesRuntimeInterface(t *testing.T) {
 	rt := &fakeConversationRuntime{}
 	m := &model{
 		runtime: rt,
-		loop:    &runtime.Loop{},
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
 				{Role: message.RoleUser, Content: "hello"},
 			},
 		},
 		provider: providerui.State{
+			LLM:              testLLMProvider{},
 			ThinkingOverride: provider.ThinkingOff,
 		},
 	}
@@ -505,7 +503,7 @@ func TestBuildStreamRequestExcludesAssistantPlaceholder(t *testing.T) {
 	rt.streamResult.Ch = ch
 	m := &model{
 		runtime: rt,
-		loop:    &runtime.Loop{},
+		provider: providerui.State{LLM: testLLMProvider{}},
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
 				{Role: message.RoleUser, Content: "user"},
@@ -526,7 +524,7 @@ func TestBuildStreamRequestExcludesAssistantPlaceholder(t *testing.T) {
 
 func TestBuildPromptSuggestionRequest(t *testing.T) {
 	m := &model{
-		loop: &runtime.Loop{Client: &client.Client{}},
+		provider: providerui.State{LLM: testLLMProvider{}},
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
 				{Role: message.RoleUser, Content: "u1"},
@@ -570,7 +568,6 @@ func TestHandleCompletionToolCalls_StopsStreamPhaseBeforeToolExecution(t *testin
 			ThinkingOverride: provider.ThinkingHigh,
 		},
 		output: appoutput.New(80, progress.NewHub(16)),
-		loop:   &runtime.Loop{},
 	}
 
 	cmd := m.handleCompletionToolCalls([]message.ToolCall{
@@ -645,7 +642,6 @@ func TestExecuteSubmitRequest_CancelsPendingToolsBeforeNewTurn(t *testing.T) {
 	base := newBaseModel(t.TempDir(), modelInfra{})
 	m := &base
 	m.runtime = rt
-	m.loop = &runtime.Loop{}
 	m.output = appoutput.New(80, progress.NewHub(16))
 	m.conv = appconv.Model{
 		Messages: []message.ChatMessage{
@@ -709,7 +705,6 @@ func TestHandleToolResultReplansAfterCwdChange(t *testing.T) {
 	base := newBaseModel(t.TempDir(), modelInfra{})
 	m := &base
 	m.runtime = rt
-	m.loop = &runtime.Loop{}
 	m.output = appoutput.New(80, progress.NewHub(16))
 	m.conv = appconv.Model{
 		Messages: []message.ChatMessage{
@@ -767,7 +762,6 @@ func TestHandleToolResultReplansAfterCwdChange(t *testing.T) {
 
 func TestBuildCompactRequest(t *testing.T) {
 	m := &model{
-		loop: &runtime.Loop{},
 		session: sessionui.State{
 			Summary: "existing summary",
 		},
@@ -837,29 +831,35 @@ func TestBuildLoopSystemIncludesSessionSummary(t *testing.T) {
 		},
 	}
 
-	sys := m.buildLoopSystem([]string{"extra"}, &client.Client{})
-	if sys.Cwd != "/tmp/project" {
-		t.Fatalf("unexpected cwd: %q", sys.Cwd)
+	sys := m.buildLoopSystem([]string{"extra"}, nil)
+	prompt := sys.Prompt()
+
+	// Verify environment layer includes cwd
+	if !strings.Contains(prompt, "/tmp/project") {
+		t.Fatalf("expected cwd in prompt, got: %s", prompt[:200])
 	}
-	if sys.SessionSummary != "<session-summary>\ncondensed summary\n</session-summary>" {
-		t.Fatalf("unexpected session summary block: %q", sys.SessionSummary)
+	// Verify session summary layer
+	if !strings.Contains(prompt, "<session-summary>") || !strings.Contains(prompt, "condensed summary") {
+		t.Fatalf("expected session summary in prompt")
 	}
-	if len(sys.Extra) != 2 || sys.Extra[0] != "extra" {
-		t.Fatalf("unexpected extra: %#v", sys.Extra)
+	// Verify extra layers
+	if !strings.Contains(prompt, "extra") {
+		t.Fatalf("expected 'extra' content in prompt")
 	}
-	if !strings.Contains(sys.Extra[1], "<coordinator-guidance>") {
-		t.Fatalf("expected coordinator guidance in extra, got %#v", sys.Extra)
+	if !strings.Contains(prompt, "<coordinator-guidance>") {
+		t.Fatalf("expected coordinator guidance in prompt")
 	}
-	if sys.UserInstructions != "user memory" || sys.ProjectInstructions != "project memory" {
-		t.Fatalf("unexpected memory context: user=%q project=%q", sys.UserInstructions, sys.ProjectInstructions)
+	// Verify instructions layers
+	if !strings.Contains(prompt, "user memory") || !strings.Contains(prompt, "project memory") {
+		t.Fatalf("expected user and project memory in prompt")
 	}
 }
 
-func TestConfigureLoopBuildsLoopComponents(t *testing.T) {
+func TestBuildStreamRequestPopulatesComponents(t *testing.T) {
 	m := &model{
-		cwd:  "/tmp/project",
-		loop: &runtime.Loop{},
+		cwd: "/tmp/project",
 		provider: providerui.State{
+			LLM:              testLLMProvider{},
 			ThinkingLevel:    provider.ThinkingNormal,
 			ThinkingOverride: provider.ThinkingHigh,
 		},
@@ -876,28 +876,25 @@ func TestConfigureLoopBuildsLoopComponents(t *testing.T) {
 		},
 	}
 
-	m.configureLoop([]string{"explicit-extra"})
+	req := m.buildStreamRequest([]string{"explicit-extra"})
 
-	if m.loop.Client == nil || m.loop.System == nil || m.loop.Tool == nil {
-		t.Fatal("configureLoop should populate loop client/system/tool")
+	if req.Client == nil {
+		t.Fatal("buildStreamRequest should populate client")
 	}
-	if m.loop.Client.ThinkingLevel != provider.ThinkingHigh {
-		t.Fatalf("unexpected thinking level: %v", m.loop.Client.ThinkingLevel)
+	if req.Client.ThinkingLevel != provider.ThinkingHigh {
+		t.Fatalf("unexpected thinking level: %v", req.Client.ThinkingLevel)
 	}
-	if !m.loop.Tool.PlanMode {
-		t.Fatal("expected plan mode on tool set")
+	if req.System == "" {
+		t.Fatal("expected system prompt to be populated")
 	}
-	if !m.loop.Tool.Disabled["Bash"] {
-		t.Fatalf("expected disabled tools to propagate: %#v", m.loop.Tool.Disabled)
+	if !strings.Contains(req.System, "session summary") {
+		t.Fatalf("expected session summary in system prompt")
 	}
-	if m.loop.System.SessionSummary != "<session-summary>\nsession summary\n</session-summary>" {
-		t.Fatalf("unexpected session summary: %q", m.loop.System.SessionSummary)
+	if !strings.Contains(req.System, "explicit-extra") {
+		t.Fatalf("expected explicit-extra in system prompt")
 	}
-	if len(m.loop.System.Extra) != 2 || m.loop.System.Extra[0] != "explicit-extra" {
-		t.Fatalf("unexpected system extra: %#v", m.loop.System.Extra)
-	}
-	if !strings.Contains(m.loop.System.Extra[1], "<coordinator-guidance>") {
-		t.Fatalf("expected coordinator guidance in system extra: %#v", m.loop.System.Extra)
+	if !strings.Contains(req.System, "<coordinator-guidance>") {
+		t.Fatalf("expected coordinator guidance in system prompt")
 	}
 }
 
@@ -938,7 +935,6 @@ func TestPlanModeAgentExecutionStartsContinuationWithoutHanging(t *testing.T) {
 	m := &model{
 		cwd:     t.TempDir(),
 		runtime: rt,
-		loop:    &runtime.Loop{},
 		output:  appoutput.New(80, progress.NewHub(16)),
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{

@@ -2,12 +2,12 @@ package hooks
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"sync"
-	"sync/atomic"
 
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -29,25 +29,10 @@ type Engine struct {
 	agentRunner    AgentRunner
 	asyncCallback  AsyncHookCallback
 
-	mu            sync.RWMutex
-	sessionHooks  map[EventType][]config.Hook
-	runtimeHooks  map[EventType][]config.Hook
-	sessionFuncs  map[EventType][]functionHookRegistration
-	runtimeFuncs  map[EventType][]functionHookRegistration
-	executedOnce  map[string]struct{}
-	functionSeqNo atomic.Uint64
-	statusSeq     atomic.Uint64
-	activeStatus  map[string]activeHookStatus
-}
-
-type functionHookRegistration struct {
-	Matcher string
-	Hook    FunctionHook
-}
-
-type activeHookStatus struct {
-	Message string
-	Seq     uint64
+	mu           sync.RWMutex
+	store        *HookStore
+	status       *StatusTracker
+	handlers     core.Hooks
 }
 
 // NewEngine creates a new hook execution engine.
@@ -59,12 +44,9 @@ func NewEngine(settings *config.Settings, sessionID, cwd, transcriptPath string)
 		transcriptPath: transcriptPath,
 		permissionMode: "default",
 		httpClient:     http.DefaultClient,
-		sessionHooks:   make(map[EventType][]config.Hook),
-		runtimeHooks:   make(map[EventType][]config.Hook),
-		sessionFuncs:   make(map[EventType][]functionHookRegistration),
-		runtimeFuncs:   make(map[EventType][]functionHookRegistration),
-		executedOnce:   make(map[string]struct{}),
-		activeStatus:   make(map[string]activeHookStatus),
+		store:          NewHookStore(),
+		status:         NewStatusTracker(),
+		handlers:       core.NewHooks(),
 	}
 }
 
@@ -136,70 +118,39 @@ func (e *Engine) SetSettings(settings *config.Settings) {
 
 // AddSessionHook registers an in-memory session-scoped hook.
 func (e *Engine) AddSessionHook(event EventType, matcher string, hook config.HookCmd) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.sessionHooks[event] = append(e.sessionHooks[event], config.Hook{
-		Matcher: matcher,
-		Hooks:   []config.HookCmd{hook},
-	})
+	e.store.AddSessionHook(event, matcher, hook)
 }
 
 // ClearSessionHooks removes all session-scoped hooks.
 func (e *Engine) ClearSessionHooks() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.sessionHooks = make(map[EventType][]config.Hook)
-	e.sessionFuncs = make(map[EventType][]functionHookRegistration)
+	e.store.ClearSessionHooks()
 }
 
 // AddRuntimeHook registers a process-level runtime hook.
 func (e *Engine) AddRuntimeHook(event EventType, matcher string, hook config.HookCmd) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.runtimeHooks[event] = append(e.runtimeHooks[event], config.Hook{
-		Matcher: matcher,
-		Hooks:   []config.HookCmd{hook},
-	})
+	e.store.AddRuntimeHook(event, matcher, hook)
 }
 
 // AddSessionFunctionHook registers an in-memory function hook scoped to the
 // current engine/session instance.
 func (e *Engine) AddSessionFunctionHook(event EventType, matcher string, hook FunctionHook) string {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	hook.ID = e.ensureFunctionHookIDLocked("session", event, hook.ID)
-	e.sessionFuncs[event] = append(e.sessionFuncs[event], functionHookRegistration{
-		Matcher: matcher,
-		Hook:    hook,
-	})
-	return hook.ID
+	return e.store.AddSessionFunctionHook(event, matcher, hook)
 }
 
 // AddRuntimeFunctionHook registers an in-memory function hook for the current
 // process.
 func (e *Engine) AddRuntimeFunctionHook(event EventType, matcher string, hook FunctionHook) string {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	hook.ID = e.ensureFunctionHookIDLocked("runtime", event, hook.ID)
-	e.runtimeFuncs[event] = append(e.runtimeFuncs[event], functionHookRegistration{
-		Matcher: matcher,
-		Hook:    hook,
-	})
-	return hook.ID
+	return e.store.AddRuntimeFunctionHook(event, matcher, hook)
 }
 
 // RemoveSessionFunctionHook removes a session-scoped function hook by ID.
 func (e *Engine) RemoveSessionFunctionHook(event EventType, id string) bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return removeFunctionHookByID(e.sessionFuncs, event, id)
+	return e.store.RemoveSessionFunctionHook(event, id)
 }
 
 // RemoveRuntimeFunctionHook removes a process-level function hook by ID.
 func (e *Engine) RemoveRuntimeFunctionHook(event EventType, id string) bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return removeFunctionHookByID(e.runtimeFuncs, event, id)
+	return e.store.RemoveRuntimeFunctionHook(event, id)
 }
 
 // Execute runs all matching hooks for an event synchronously.
@@ -242,13 +193,9 @@ func (e *Engine) ExecuteAsync(event EventType, input HookInput) {
 // HasHooks returns true if there are any hooks configured for the given event.
 func (e *Engine) HasHooks(event EventType) bool {
 	e.mu.RLock()
-	defer e.mu.RUnlock()
-
-	if e.settings != nil && len(e.settings.Hooks[string(event)]) > 0 {
-		return true
-	}
-	return len(e.sessionHooks[event]) > 0 || len(e.runtimeHooks[event]) > 0 ||
-		len(e.sessionFuncs[event]) > 0 || len(e.runtimeFuncs[event]) > 0
+	settings := e.settings
+	e.mu.RUnlock()
+	return e.store.HasHooks(event, settings)
 }
 
 // StopHookActive returns a *bool indicating whether Stop hooks are configured.
@@ -271,77 +218,149 @@ func (e *Engine) getAsyncHookCallback() AsyncHookCallback {
 
 // CurrentStatusMessage returns the most recently-started active hook status message.
 func (e *Engine) CurrentStatusMessage() string {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
-	var (
-		message string
-		maxSeq  uint64
-	)
-	for _, status := range e.activeStatus {
-		if status.Seq >= maxSeq {
-			maxSeq = status.Seq
-			message = status.Message
-		}
-	}
-	return message
+	return e.status.CurrentMessage()
 }
 
-func (e *Engine) ensureFunctionHookIDLocked(scope string, event EventType, current string) string {
-	if current != "" {
-		return current
-	}
-	seq := e.functionSeqNo.Add(1)
-	return fmt.Sprintf("%s-%s-%d", scope, event, seq)
+// Register registers a core.Hook and returns its ID.
+func (e *Engine) Register(hook core.Hook) string {
+	return e.handlers.Register(hook)
 }
 
-func removeFunctionHookByID(store map[EventType][]functionHookRegistration, event EventType, id string) bool {
-	hooks := store[event]
-	if len(hooks) == 0 {
-		return false
+// Unregister removes a core.Hook by ID.
+func (e *Engine) Unregister(id string) bool {
+	return e.handlers.Unregister(id)
+}
+
+// Fire executes Go handlers first, then config-driven hooks if the event maps.
+func (e *Engine) Fire(ctx context.Context, event core.Event) (core.Action, error) {
+	action, err := e.handlers.Fire(ctx, event)
+	if err != nil || action.Block {
+		return action, err
 	}
 
-	filtered := hooks[:0]
-	removed := false
-	for _, hook := range hooks {
-		if !removed && hook.Hook.ID == id {
-			removed = true
-			continue
-		}
-		filtered = append(filtered, hook)
+	engineEvent, ok := coreToEngineEvent(event)
+	if !ok {
+		return action, nil
 	}
 
-	if !removed {
-		return false
-	}
-	if len(filtered) == 0 {
-		delete(store, event)
+	input := buildHookInput(event)
+	outcome := e.Execute(ctx, engineEvent, input)
+	engineAction := outcomeToAction(outcome)
+
+	return core.MergeActions(action, engineAction), nil
+}
+
+// Has returns true if any Go handlers or config-driven hooks exist for the event.
+func (e *Engine) Has(event core.EventType) bool {
+	if e.handlers.Has(event) {
 		return true
 	}
-	store[event] = append([]functionHookRegistration(nil), filtered...)
-	return true
+	switch event {
+	case core.PostTool:
+		return e.HasHooks(PostToolUse) || e.HasHooks(PostToolUseFailure)
+	default:
+		if engineEvent, ok := coreToEngineEventType(event); ok {
+			return e.HasHooks(engineEvent)
+		}
+		return false
+	}
 }
 
-func (e *Engine) startStatus(message string) string {
-	if message == "" {
-		return ""
-	}
-	seq := e.statusSeq.Add(1)
-	key := fmt.Sprintf("status-%d", seq)
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.activeStatus[key] = activeHookStatus{
-		Message: message,
-		Seq:     seq,
-	}
-	return key
+var coreToEngineEventMap = map[core.EventType]core.EventType{
+	core.OnStart: SessionStart,
+	core.OnStop:  Stop,
+	core.PreTool: PreToolUse,
 }
 
-func (e *Engine) endStatus(id string) {
-	if id == "" {
-		return
+func coreToEngineEventType(event core.EventType) (core.EventType, bool) {
+	e, ok := coreToEngineEventMap[event]
+	return e, ok
+}
+
+func coreToEngineEvent(event core.Event) (core.EventType, bool) {
+	if event.Type == core.PostTool {
+		switch tr := event.Data.(type) {
+		case core.ToolResult:
+			if tr.IsError {
+				return PostToolUseFailure, true
+			}
+		}
+		return PostToolUse, true
 	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	delete(e.activeStatus, id)
+	e, ok := coreToEngineEventMap[event.Type]
+	return e, ok
+}
+
+func buildHookInput(event core.Event) HookInput {
+	input := HookInput{
+		HookEventName: string(event.Type),
+	}
+
+	switch event.Type {
+	case core.PreTool:
+		switch tc := event.Data.(type) {
+		case core.ToolCall:
+			input.ToolName = tc.Name
+			input.ToolInput = tc.Input
+			input.ToolUseID = tc.ID
+		case message.ToolCall:
+			input.ToolName = tc.Name
+			if params, _ := message.ParseToolInput(tc.Input); params != nil {
+				input.ToolInput = params
+			}
+			input.ToolUseID = tc.ID
+		}
+	case core.PostTool:
+		switch tr := event.Data.(type) {
+		case core.ToolResult:
+			input.ToolName = tr.ToolName
+			input.ToolUseID = tr.ToolCallID
+			input.ToolResponse = tr.Content
+			if tr.IsError {
+				input.Error = tr.Content
+			}
+		}
+	case core.OnStop:
+		if errVal, ok := event.Data.(error); ok && errVal != nil {
+			input.Error = errVal.Error()
+		}
+	}
+
+	return input
+}
+
+func outcomeToAction(outcome HookOutcome) core.Action {
+	var action core.Action
+
+	if outcome.ShouldBlock {
+		action.Block = true
+		action.Reason = outcome.BlockReason
+	}
+
+	if outcome.UpdatedInput != nil {
+		action.Modify = outcome.UpdatedInput
+	}
+
+	if outcome.AdditionalContext != "" {
+		action.Inject = outcome.AdditionalContext
+	}
+
+	meta := make(map[string]any)
+	if len(outcome.UpdatedPermissions) > 0 {
+		meta["updated_permissions"] = outcome.UpdatedPermissions
+	}
+	if len(outcome.WatchPaths) > 0 {
+		meta["watch_paths"] = outcome.WatchPaths
+	}
+	if outcome.InitialUserMessage != "" {
+		meta["initial_user_message"] = outcome.InitialUserMessage
+	}
+	if outcome.Retry {
+		meta["retry"] = true
+	}
+	if len(meta) > 0 {
+		action.Meta = meta
+	}
+
+	return action
 }

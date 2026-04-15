@@ -303,6 +303,11 @@ func buildRuleString(rule hooks.PermissionRule) string {
 }
 
 func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
+	// Route through the permission bridge when core.Agent is driving
+	if m.pendingPermBridge != nil {
+		return m.handlePermBridgeResponse(msg)
+	}
+
 	if !msg.Approved {
 		retry := false
 		if m.hookEngine != nil && msg.Request != nil {

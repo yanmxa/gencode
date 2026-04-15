@@ -7,7 +7,6 @@ import (
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
 	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
@@ -49,8 +48,10 @@ type compactRequest struct {
 }
 
 type streamRequest struct {
-	Loop     *runtime.Loop
+	Client   *client.Client
 	Messages []message.Message
+	Tools    []provider.ToolSchema
+	System   string
 }
 
 type streamStartResult struct {
@@ -115,9 +116,8 @@ func (defaultConversationRuntime) CompactCmd(req compactRequest) tea.Cmd {
 
 func (defaultConversationRuntime) StartStream(req streamRequest) streamStartResult {
 	ctx, cancel := context.WithCancel(context.Background())
-	req.Loop.SetMessages(req.Messages)
 	return streamStartResult{
 		Cancel: cancel,
-		Ch:     req.Loop.Stream(ctx),
+		Ch:     req.Client.Stream(ctx, req.Messages, req.Tools, req.System),
 	}
 }

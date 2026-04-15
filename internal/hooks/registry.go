@@ -19,8 +19,12 @@ func (e *Engine) getMatchingHooks(event EventType, input *HookInput) []matchedHo
 	e.populateInputFields(input, event)
 	matchValue := GetMatchValue(event, *input)
 
+	e.mu.RLock()
+	settings := e.settings
+	e.mu.RUnlock()
+
 	var matched []matchedHook
-	for _, source := range e.collectHooks(event) {
+	for _, source := range e.store.CollectHooks(event, settings) {
 		if !MatchesEvent(source.Matcher, matchValue) {
 			continue
 		}
@@ -41,7 +45,7 @@ func (e *Engine) getMatchingHooks(event EventType, input *HookInput) []matchedHo
 			matched = append(matched, hook)
 		}
 	}
-	for _, source := range e.collectFunctionHooks(event) {
+	for _, source := range e.store.CollectFunctionHooks(event) {
 		if !MatchesEvent(source.Matcher, matchValue) {
 			continue
 		}
@@ -60,49 +64,6 @@ func (e *Engine) getMatchingHooks(event EventType, input *HookInput) []matchedHo
 		}
 	}
 	return matched
-}
-
-func (e *Engine) collectHooks(event EventType) []hookSource {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
-	var hooks []hookSource
-	if e.settings != nil {
-		for _, hook := range e.settings.Hooks[string(event)] {
-			hooks = append(hooks, hookSource{
-				Matcher: hook.Matcher,
-				Hooks:   hook.Hooks,
-				Source:  "settings",
-			})
-		}
-	}
-	for _, hook := range e.runtimeHooks[event] {
-		hooks = append(hooks, hookSource{
-			Matcher: hook.Matcher,
-			Hooks:   hook.Hooks,
-			Source:  "runtime",
-		})
-	}
-	for _, hook := range e.sessionHooks[event] {
-		hooks = append(hooks, hookSource{
-			Matcher: hook.Matcher,
-			Hooks:   hook.Hooks,
-			Source:  "session",
-		})
-	}
-	return hooks
-}
-
-type hookSource struct {
-	Matcher string
-	Hooks   []config.HookCmd
-	Source  string
-}
-
-type functionHookSource struct {
-	Matcher string
-	Hooks   []FunctionHook
-	Source  string
 }
 
 func (e *Engine) populateInputFields(input *HookInput, event EventType) {
@@ -148,37 +109,7 @@ func (e *Engine) shouldRunHook(hook matchedHook) bool {
 	}
 
 	key := fmt.Sprintf("%s|%s|%s|%s|%s", hook.Event, hook.Source, hook.Matcher, matchedHookType(hook), matchedHookIdentity(hook))
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if _, ok := e.executedOnce[key]; ok {
-		return false
-	}
-	e.executedOnce[key] = struct{}{}
-	return true
-}
-
-func (e *Engine) collectFunctionHooks(event EventType) []functionHookSource {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
-	var hooks []functionHookSource
-	for _, hook := range e.runtimeFuncs[event] {
-		hookCopy := hook.Hook
-		hooks = append(hooks, functionHookSource{
-			Matcher: hook.Matcher,
-			Hooks:   []FunctionHook{hookCopy},
-			Source:  "runtime",
-		})
-	}
-	for _, hook := range e.sessionFuncs[event] {
-		hookCopy := hook.Hook
-		hooks = append(hooks, functionHookSource{
-			Matcher: hook.Matcher,
-			Hooks:   []FunctionHook{hookCopy},
-			Source:  "session",
-		})
-	}
-	return hooks
+	return e.store.CheckOnce(key)
 }
 
 func hookRunsOnce(hook matchedHook) bool {

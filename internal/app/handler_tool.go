@@ -8,6 +8,7 @@ import (
 
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	"github.com/yanmxa/gencode/internal/app/toolui"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -196,15 +197,11 @@ func (m *model) bufferParallelToolResult(msg toolui.ExecResultMsg) {
 func (m *model) handleStartToolExecution(toolCalls []message.ToolCall) tea.Cmd {
 	execCtx := m.tool.Begin()
 	// Inject messages getter for fork support in Agent tool
-	if m.loop != nil {
-		execCtx = tool.WithMessagesGetter(execCtx, func() []message.Message {
-			msgs := m.loop.Messages()
-			cp := make([]message.Message, len(msgs))
-			copy(cp, msgs)
-			return cp
-		})
-		m.tool.Ctx = execCtx
-	}
+	execCtx = tool.WithMessagesGetter(execCtx, func() []core.Message {
+		msgs := m.conv.ConvertToProvider()
+		return message.ToCoreSlice(msgs)
+	})
+	m.tool.Ctx = execCtx
 	m.tool.PendingCalls = m.filterToolCallsWithHooks(execCtx, toolCalls)
 	m.tool.CurrentIdx = 0
 
@@ -241,7 +238,7 @@ func (m *model) handleAllToolsCompleted() tea.Cmd {
 
 // filterToolCallsWithHooks runs PreToolUse hooks and filters blocked tools.
 func (m *model) filterToolCallsWithHooks(ctx context.Context, toolCalls []message.ToolCall) []message.ToolCall {
-	result := m.loop.FilterToolCallsEx(ctx, toolCalls)
+	result := filterToolCallsWithEngine(ctx, m.hookEngine, toolCalls)
 	m.tool.HookAllowed = result.HookAllowed
 	m.tool.HookForceAsk = result.HookForceAsk
 

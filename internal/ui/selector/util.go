@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/ext/mcp"
 )
 
 func FuzzyMatch(str, pattern string) bool {

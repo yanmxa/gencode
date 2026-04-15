@@ -17,9 +17,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/command"
+	"github.com/yanmxa/gencode/internal/ext/command"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/ext/skill"
 )
 
 type CommandHandler func(ctx context.Context, m *model, args string) (string, tea.Cmd, error)

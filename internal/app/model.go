@@ -98,6 +98,10 @@ type model struct {
 	runtime           conversationRuntime
 	promptSuggestion  promptSuggestionState
 	fileCache         *filecache.Cache
+
+	// core.Agent session (Phase 3 migration: TUI → core.Agent)
+	agentSess         *agentSession
+	pendingPermBridge *PermBridgeRequest
 }
 
 // --- Constructor and Init ---
@@ -253,6 +257,7 @@ func (m *model) configureLoop(extra []string) {
 	m.loop.Tool = m.buildLoopToolSet()
 	m.loop.Permission = nil
 	m.loop.Hooks = m.hookEngine
+	m.loop.Cwd = m.cwd
 }
 
 func (m *model) ensureMemoryContextLoaded() {

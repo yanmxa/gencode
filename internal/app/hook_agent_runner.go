@@ -4,16 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	agentruntime "github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/skill"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/ext/skill"
+	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -35,7 +35,7 @@ func newHookAgentRunner(llmProvider provider.LLMProvider, settings *config.Setti
 	}
 }
 
-func (r *hookAgentRunner) RunAgentHook(ctx context.Context, prompt string, model string) (string, error) {
+func (r *hookAgentRunner) RunAgentHook(ctx context.Context, userPrompt string, model string) (string, error) {
 	if r == nil || r.llmProvider == nil {
 		return "", fmt.Errorf("agent hook runner requires an active provider")
 	}
@@ -43,7 +43,7 @@ func (r *hookAgentRunner) RunAgentHook(ctx context.Context, prompt string, model
 		model = "claude-sonnet-4-20250514"
 	}
 
-	userInstructions, projectInstructions := system.LoadInstructions(r.cwd)
+	userInstructions, projectInstructions := prompt.LoadInstructions(r.cwd)
 	loopClient := &client.Client{
 		Provider:      r.llmProvider,
 		Model:         model,
@@ -51,8 +51,9 @@ func (r *hookAgentRunner) RunAgentHook(ctx context.Context, prompt string, model
 	}
 
 	loop := &runtime.Loop{
-		System: &system.System{
-			Client:              loopClient,
+		System: prompt.Build(prompt.Config{
+			ProviderName:        r.llmProvider.Name(),
+			ModelID:             model,
 			Cwd:                 r.cwd,
 			IsGit:               r.isGit,
 			UserInstructions:    userInstructions,
@@ -62,13 +63,14 @@ func (r *hookAgentRunner) RunAgentHook(ctx context.Context, prompt string, model
 			Extra: []string{
 				"You are an autonomous hook verifier. Use tools when needed, keep steps minimal, and finish by returning exactly one JSON object matching the hook output schema with no markdown fences or commentary.",
 			},
-		},
+		}),
 		Client:     loopClient,
 		Tool:       &tool.Set{Disabled: r.disabledTools(), MCP: r.mcpToolsGetter()},
 		Permission: permission.BypassPermissions(),
 		MCP:        r.mcpCaller(),
+		Cwd:        r.cwd,
 	}
-	loop.AddUser(prompt, nil)
+	loop.AddUser(userPrompt, nil)
 
 	result, err := loop.Run(ctx, runtime.RunOptions{MaxTurns: 16})
 	if err != nil {
@@ -116,10 +118,10 @@ func (r *hookAgentRunner) skillsSection() string {
 }
 
 func (r *hookAgentRunner) agentsSection() string {
-	if agentruntime.DefaultRegistry == nil {
+	if subagent.DefaultRegistry == nil {
 		return ""
 	}
-	return agentruntime.DefaultRegistry.GetAgentsSection()
+	return subagent.DefaultRegistry.GetAgentsSection()
 }
 
 var _ hooks.AgentRunner = (*hookAgentRunner)(nil)

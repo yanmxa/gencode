@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/tracker"
 	"github.com/yanmxa/gencode/internal/transcript"
@@ -233,6 +234,18 @@ func (s *Store) LoadSubagentMessages(agentID string) ([]message.Message, error) 
 		return nil, fmt.Errorf("no messages found in session %s", agentID)
 	}
 	return msgs, nil
+}
+
+func (s *Store) SaveSubagentCoreMessages(parentSessionID, title, modelID, cwd string, messages []core.Message) (string, string, error) {
+	return s.SaveSubagentConversation(parentSessionID, title, modelID, cwd, message.FromCoreSlice(messages))
+}
+
+func (s *Store) LoadSubagentCoreMessages(agentID string) ([]core.Message, error) {
+	msgs, err := s.LoadSubagentMessages(agentID)
+	if err != nil {
+		return nil, err
+	}
+	return message.ToCoreSlice(msgs), nil
 }
 
 func (s *Store) SaveSessionMemory(sessionID, summary string) error {

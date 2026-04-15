@@ -6,6 +6,7 @@ type messageUpdater func(*model, tea.Msg) (tea.Cmd, bool)
 
 func (m *model) featureUpdaters() []messageUpdater {
 	return []messageUpdater{
+		(*model).updateAgent, // core.Agent events (outbox + permission bridge)
 		(*model).updateStream,
 		(*model).updateTool,
 		(*model).updateApproval,

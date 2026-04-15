@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	coreagent "github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/ui/selector"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
@@ -75,10 +75,10 @@ func New() Model {
 // EnterSelect enters agent selection mode.
 func (s *Model) EnterSelect(width, height int) error {
 	// Get all agent configs from registry
-	allConfigs := coreagent.DefaultRegistry.ListConfigs()
+	allConfigs := subagent.DefaultRegistry.ListConfigs()
 
 	// Get disabled agents for the current level
-	disabledAgents := coreagent.DefaultRegistry.GetDisabledAt(s.saveLevel == SaveLevelUser)
+	disabledAgents := subagent.DefaultRegistry.GetDisabledAt(s.saveLevel == SaveLevelUser)
 
 	s.agents = make([]Item, 0, len(allConfigs))
 	for _, cfg := range allConfigs {
@@ -114,17 +114,17 @@ func (s *Model) EnterSelect(width, height int) error {
 }
 
 // formatPermissionMode converts PermissionMode to display string.
-func formatPermissionMode(mode coreagent.PermissionMode) string {
+func formatPermissionMode(mode subagent.PermissionMode) string {
 	switch mode {
-	case coreagent.PermissionPlan:
+	case subagent.PermissionPlan:
 		return "plan"
-	case coreagent.PermissionAcceptEdits:
+	case subagent.PermissionAcceptEdits:
 		return "acceptEdits"
-	case coreagent.PermissionDontAsk:
+	case subagent.PermissionDontAsk:
 		return "dontAsk"
-	case coreagent.PermissionBypassPermissions:
+	case subagent.PermissionBypassPermissions:
 		return "bypass"
-	case coreagent.PermissionAuto:
+	case subagent.PermissionAuto:
 		return "auto"
 	default:
 		return "default"
@@ -132,7 +132,7 @@ func formatPermissionMode(mode coreagent.PermissionMode) string {
 }
 
 // formatTools formats a tool list for display.
-func formatTools(tools coreagent.ToolList) string {
+func formatTools(tools subagent.ToolList) string {
 	if tools == nil {
 		return "all tools"
 	}
@@ -203,7 +203,7 @@ func (s *Model) updateFilter() {
 
 // reloadAgentStates reloads the enabled/disabled states from the current save level.
 func (s *Model) reloadAgentStates() {
-	disabledAgents := coreagent.DefaultRegistry.GetDisabledAt(s.saveLevel == SaveLevelUser)
+	disabledAgents := subagent.DefaultRegistry.GetDisabledAt(s.saveLevel == SaveLevelUser)
 
 	// Update agent enabled states
 	for i := range s.agents {
@@ -236,7 +236,7 @@ func (s *Model) Toggle() tea.Cmd {
 	}
 
 	// Save to registry (project or user level based on saveLevel)
-	_ = coreagent.DefaultRegistry.SetEnabled(
+	_ = subagent.DefaultRegistry.SetEnabled(
 		selected.Name,
 		selected.Enabled,
 		s.saveLevel == SaveLevelUser,

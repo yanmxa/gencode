@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	coremcp "github.com/yanmxa/gencode/internal/mcp"
+	coremcp "github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/ui/selector"
 )
 

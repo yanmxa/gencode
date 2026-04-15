@@ -9,13 +9,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -103,12 +103,12 @@ func runHeadlessAgent() error {
 	}
 
 	// Initialize agent registry
-	if err := agent.Initialize(cwd); err != nil {
+	if err := subagent.Initialize(cwd); err != nil {
 		return fmt.Errorf("failed to initialize agent registry: %w", err)
 	}
 
 	// Get agent configuration
-	agentCfg, ok := agent.DefaultRegistry.Get(agentRunOpts.agentType)
+	agentCfg, ok := subagent.DefaultRegistry.Get(agentRunOpts.agentType)
 	if !ok {
 		return fmt.Errorf("unknown agent type: %s", agentRunOpts.agentType)
 	}
@@ -120,10 +120,10 @@ func runHeadlessAgent() error {
 	}
 
 	// Set up the loop
-	sys := &system.System{
+	sys := prompt.Build(prompt.Config{
 		Cwd:   cwd,
 		IsGit: config.IsGitRepo(cwd),
-	}
+	})
 
 	loop := &runtime.Loop{
 		Client: &client.Client{
@@ -133,6 +133,7 @@ func runHeadlessAgent() error {
 		},
 		System: sys,
 		Tool:   toolSet,
+		Cwd:    cwd,
 	}
 
 	// Add user prompt
