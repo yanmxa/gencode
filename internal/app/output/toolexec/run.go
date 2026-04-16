@@ -1,5 +1,4 @@
-// Tool execution: permission checks, MCP tool support.
-package toolui
+package toolexec
 
 import (
 	"context"
@@ -8,12 +7,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/util/log"
-	"github.com/yanmxa/gencode/internal/extension/mcp"
+	"github.com/yanmxa/gencode/internal/app/output/progress"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/extension/mcp"
 	coretool "github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
-	"github.com/yanmxa/gencode/internal/app/output/progress"
+	"github.com/yanmxa/gencode/internal/util/log"
 )
 
 type defaultMCPExecutor struct{}
@@ -39,7 +38,6 @@ func (defaultMCPExecutor) ExecuteMCP(ctx context.Context, name string, params ma
 	}, nil
 }
 
-// ExecResultMsg carries the result of a single tool execution.
 type ExecResultMsg struct {
 	Index    int
 	Result   core.ToolResult
@@ -62,7 +60,6 @@ func newResultFromOutput(tc core.ToolCall, index int, output toolresult.ToolResu
 	}
 }
 
-// ExecuteApproved executes a tool that has been approved by the user.
 func ExecuteApproved(ctx context.Context, hub *progress.Hub, toolCalls []core.ToolCall, idx int, cwd string) tea.Cmd {
 	if idx >= len(toolCalls) {
 		return nil
@@ -108,7 +105,6 @@ func attachAgentCallbacks(ctx context.Context, hub *progress.Hub, idx int, prepa
 		return askAgentQuestion(qctx, hub, idx, req)
 	})
 
-	// Inject parent messages getter for fork support (from context)
 	if getter := coretool.GetMessagesGetter(ctx); getter != nil {
 		prepared.Params["_messagesGetter"] = getter
 	}

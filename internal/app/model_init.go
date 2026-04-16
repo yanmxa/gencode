@@ -23,7 +23,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/app/output/toolui"
+	"github.com/yanmxa/gencode/internal/app/user/toolui"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
@@ -187,8 +187,8 @@ func newModeState() appmode.State {
 	}
 }
 
-func newToolState() toolui.State {
-	return toolui.State{Selector: toolui.New()}
+func newToolState() toolui.Model {
+	return toolui.New()
 }
 
 func newMCPState() mcpui.State {

@@ -21,10 +21,10 @@ func handleClearCommand(ctx context.Context, m *model, args string) (string, tea
 		m.agentSess = nil
 	}
 	m.conv.Stream.Stop()
-	if m.tool.Cancel != nil {
-		m.tool.Cancel()
+	if m.toolExec.Cancel != nil {
+		m.toolExec.Cancel()
 	}
-	m.tool.Reset()
+	m.toolExec.Reset()
 
 	m.conv.Clear()
 	m.inputTokens = 0

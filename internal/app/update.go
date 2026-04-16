@@ -8,7 +8,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/agentui"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
-	"github.com/yanmxa/gencode/internal/app/output/toolui"
+	"github.com/yanmxa/gencode/internal/app/user/toolui"
 	"github.com/yanmxa/gencode/internal/extension/skill"
 )
 
@@ -27,7 +27,7 @@ type overlaySelector interface {
 func (m *model) overlaySelectors() []overlaySelector {
 	return []overlaySelector{
 		&m.provider.Selector,
-		&m.tool.Selector,
+		&m.tool,
 		&m.skill.Selector,
 		&m.agent,
 		&m.mcp.Selector,

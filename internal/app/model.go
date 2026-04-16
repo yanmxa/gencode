@@ -16,7 +16,8 @@ import (
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
-	"github.com/yanmxa/gencode/internal/app/output/toolui"
+	"github.com/yanmxa/gencode/internal/app/output/toolexec"
+	"github.com/yanmxa/gencode/internal/app/user/toolui"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/app/user/agentui"
@@ -96,7 +97,8 @@ type model struct {
 	session  sessionui.State
 	skill    skillui.State
 	memory   appmemory.State
-	tool     toolui.State
+	tool     toolui.Model
+	toolExec toolexec.ExecState
 	mcp      mcpui.State
 	plugin   pluginui.Model
 	agent    agentui.Model
