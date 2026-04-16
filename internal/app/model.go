@@ -7,7 +7,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -125,63 +124,6 @@ type model struct {
 
 	// Agent session
 	agentSess *agentSession
-}
-
-// --- Constructor and Init ---
-func initModel(opts config.RunOptions) (*model, error) {
-	cwd, _ := os.Getwd()
-	infra, err := initInfra(cwd)
-	if err != nil {
-		return nil, err
-	}
-	base := newBaseModel(cwd, infra)
-	m := &base
-	if m.hookEngine != nil && m.systemInput.AsyncHookQueue != nil {
-		queue := m.systemInput.AsyncHookQueue
-		m.hookEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
-			reason := result.BlockReason
-			if reason == "" {
-				reason = "asynchronous hook requested a rewake"
-			}
-			queue.Push(appsystem.AsyncHookRewake{
-				Notice:             fmt.Sprintf("Async hook blocked: %s", reason),
-				Context:            []string{formatAsyncHookContinuationContext(result, reason)},
-				ContinuationPrompt: "A background policy hook reported a blocking condition. Re-evaluate the plan and choose a safer next step.",
-			})
-		})
-	}
-
-	m.ensureMemoryContextLoaded()
-	m.reconfigureAgentTool()
-	if err := m.applyRunOptions(opts); err != nil {
-		return nil, err
-	}
-	m.initTaskStorage()
-
-	// Fire SessionStart during construction so hook-driven mutations apply
-	// before Bubble Tea starts driving the pointer-backed model.
-	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hook.Setup, hook.HookInput{
-			Trigger: "init",
-		})
-		source := "startup"
-		if m.sessionID != "" {
-			source = "resume"
-		}
-		outcome := m.hookEngine.Execute(context.Background(), hook.SessionStart, hook.HookInput{
-			Source: source,
-			Model:  m.getModelID(),
-		})
-		m.applyRuntimeHookOutcome(outcome)
-		if outcome.AdditionalContext != "" {
-			m.conv.Append(core.ChatMessage{
-				Role:    core.RoleUser,
-				Content: outcome.AdditionalContext,
-			})
-		}
-	}
-
-	return m, nil
 }
 
 // lastAssistantContent returns the text content of the most recent assistant core.
