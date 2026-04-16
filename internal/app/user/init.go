@@ -4,9 +4,9 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/app/history"
-	"github.com/yanmxa/gencode/internal/app/suggest"
-	"github.com/yanmxa/gencode/internal/app/theme"
+	"github.com/yanmxa/gencode/internal/app/ui/history"
+	"github.com/yanmxa/gencode/internal/app/ui/suggest"
+	"github.com/yanmxa/gencode/internal/app/ui/theme"
 )
 
 // New creates a fully initialized input Model.
@@ -14,10 +14,12 @@ func New(cwd string, width int, matchFunc suggest.Matcher) Model {
 	suggestions := suggest.NewState(matchFunc)
 	suggestions.SetCwd(cwd)
 	return Model{
-		Textarea:    newTextarea(width),
-		History:     history.Load(cwd),
-		HistoryIdx:  -1,
-		Suggestions: suggestions,
+		Textarea:       newTextarea(width),
+		History:        history.Load(cwd),
+		HistoryIdx:     -1,
+		Suggestions:    suggestions,
+		QueueSelectIdx: -1,
+		ShowTasks:      true,
 	}
 }
 

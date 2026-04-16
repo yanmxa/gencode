@@ -45,7 +45,7 @@ func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 	if childID2 == "" {
 		t.Fatal("expected worker tracker for bg-2")
 	}
-	ReconcileBackgroundBatch(parentID)
+	reconcileBackgroundBatch(parentID)
 	RecordBackgroundTaskLaunch(launch2, parentID, batchKey, 2)
 
 	tasks := tracker.DefaultStore.List()
@@ -53,7 +53,7 @@ func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 		t.Fatalf("expected 3 tracker tasks, got %d", len(tasks))
 	}
 
-	batch := FindTrackerByMetadata(BackgroundTrackerKindKey, BackgroundTrackerKindBatch)
+	batch := findTrackerByMetadata(BackgroundTrackerKindKey, BackgroundTrackerKindBatch)
 	if batch == nil {
 		t.Fatal("expected batch tracker")
 	}
@@ -61,7 +61,7 @@ func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 		t.Fatalf("batch status = %q, want %q", batch.Status, tracker.StatusInProgress)
 	}
 
-	child := FindTrackerByMetadata(BackgroundTrackerTaskID, "bg-2")
+	child := findTrackerByMetadata(BackgroundTrackerTaskID, "bg-2")
 	if child == nil {
 		t.Fatal("expected child tracker for bg-2")
 	}

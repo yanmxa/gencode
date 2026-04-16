@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/app/render"
+	"github.com/yanmxa/gencode/internal/app/ui/render"
 )
 
 func main() {

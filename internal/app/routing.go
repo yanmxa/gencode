@@ -28,7 +28,8 @@ func (m *model) overlaySelectors() []overlaySelector {
 
 func (m *model) routeFeatureUpdate(msg tea.Msg) (tea.Cmd, bool) {
 	for _, updater := range [...]messageUpdater{
-		(*model).updateAgent, // core.Agent events (outbox + permission bridge)
+		(*model).updateOutput, // agent outbox -> TUI output path
+		(*model).updateAgentInput,
 		(*model).updateApproval,
 		(*model).updateMode,
 		(*model).updateCompact,
@@ -37,10 +38,8 @@ func (m *model) routeFeatureUpdate(msg tea.Msg) (tea.Cmd, bool) {
 		(*model).updatePlugin,
 		(*model).updateSession,
 		(*model).updateMemory,
-		(*model).updateCron,
-		(*model).updateAsyncHooks,
+		(*model).updateSystemInput,
 		(*model).updateSearch,
-		(*model).updateTaskNotifications,
 	} {
 		if cmd, handled := updater(m, msg); handled {
 			return cmd, true

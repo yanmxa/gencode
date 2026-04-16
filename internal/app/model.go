@@ -14,21 +14,21 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	"github.com/yanmxa/gencode/internal/app/agentui"
-	appapproval "github.com/yanmxa/gencode/internal/app/approval"
-	appconv "github.com/yanmxa/gencode/internal/app/conversation"
-	"github.com/yanmxa/gencode/internal/app/mcpui"
-	appmemory "github.com/yanmxa/gencode/internal/app/memory"
-	appmode "github.com/yanmxa/gencode/internal/app/mode"
+	"github.com/yanmxa/gencode/internal/app/ui/agentui"
+	appapproval "github.com/yanmxa/gencode/internal/app/ui/approval"
+	appconv "github.com/yanmxa/gencode/internal/app/ui/conversation"
+	"github.com/yanmxa/gencode/internal/app/ui/mcpui"
+	appmemory "github.com/yanmxa/gencode/internal/app/ui/memory"
+	appmode "github.com/yanmxa/gencode/internal/app/ui/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/pluginui"
-	"github.com/yanmxa/gencode/internal/app/providerui"
-	appqueue "github.com/yanmxa/gencode/internal/app/queue"
-	"github.com/yanmxa/gencode/internal/app/searchui"
-	"github.com/yanmxa/gencode/internal/app/sessionui"
-	"github.com/yanmxa/gencode/internal/app/skillui"
+	"github.com/yanmxa/gencode/internal/app/ui/pluginui"
+	"github.com/yanmxa/gencode/internal/app/ui/providerui"
+	appqueue "github.com/yanmxa/gencode/internal/app/ui/queue"
+	"github.com/yanmxa/gencode/internal/app/ui/searchui"
+	"github.com/yanmxa/gencode/internal/app/ui/sessionui"
+	"github.com/yanmxa/gencode/internal/app/ui/skillui"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/app/toolui"
+	"github.com/yanmxa/gencode/internal/app/ui/toolui"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
@@ -52,12 +52,9 @@ type model struct {
 	// Source 1: userInput — textarea, history, images, queue, overlay, modal, mode
 	userInput        appuser.Model
 	inputQueue       appqueue.Queue
-	queueSelectIdx   int    // -1 = no selection, 0+ = selected queue item index
-	queueTempInput   string // stashed input when navigating into queue
 	mode             appmode.State
 	approval         *appapproval.Model
 	promptSuggestion promptSuggestionState
-	showTasks        bool // Ctrl+T toggles task list visibility
 
 	// Source 1 overlays — each selector is user-triggered
 	provider providerui.State
@@ -386,7 +383,7 @@ func (m *model) startAgentLoop(sess *agentSession) tea.Cmd {
 
 	// Return commands that drain the outbox and poll the permission bridge
 	return tea.Batch(
-		drainAgentOutbox(sess.agent.Outbox()),
+		appoutput.DrainAgentOutbox(sess.agent.Outbox()),
 		sess.permBridge.PollCmd(),
 	)
 }

@@ -5,8 +5,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 
+	"github.com/yanmxa/gencode/internal/app/ui/suggest"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/app/suggest"
 )
 
 // PastedChunk holds a collapsed multi-line paste block.
@@ -26,6 +26,9 @@ type Model struct {
 	Images         ImageState
 	TerminalHeight int
 	PastedChunks   []PastedChunk
+	QueueSelectIdx int    // -1 = no selection, 0+ = selected queue item index
+	QueueTempInput string // stashed input when navigating into queue
+	ShowTasks      bool   // Ctrl+T toggles task list visibility
 }
 
 // PendingImage holds an inline image token and its provider payload.

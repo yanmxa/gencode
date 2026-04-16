@@ -21,7 +21,7 @@ import (
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 	_ "github.com/yanmxa/gencode/internal/tool/registry"
-	"github.com/yanmxa/gencode/internal/app/theme"
+	"github.com/yanmxa/gencode/internal/app/ui/theme"
 )
 
 // RunWithOptions routes to either print mode or interactive TUI.

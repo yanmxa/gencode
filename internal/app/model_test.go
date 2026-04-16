@@ -10,12 +10,12 @@ import (
 	"time"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	appconv "github.com/yanmxa/gencode/internal/app/conversation"
-	"github.com/yanmxa/gencode/internal/app/mcpui"
-	appmode "github.com/yanmxa/gencode/internal/app/mode"
+	appconv "github.com/yanmxa/gencode/internal/app/ui/conversation"
+	"github.com/yanmxa/gencode/internal/app/ui/mcpui"
+	appmode "github.com/yanmxa/gencode/internal/app/ui/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/progress"
-	"github.com/yanmxa/gencode/internal/app/providerui"
+	"github.com/yanmxa/gencode/internal/app/ui/progress"
+	"github.com/yanmxa/gencode/internal/app/ui/providerui"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
@@ -705,19 +705,19 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 		t.Fatalf("unexpected notice content: %q", m.conv.Messages[0].Content)
 	}
 
-	// Verify coordinator hint is built correctly
-	hint := appagent.RenderCoordinatorHintXML(item)
-	if !strings.Contains(hint, "<phase>single_completion</phase>") {
-		t.Fatalf("expected single completion coordinator hint, got %q", hint)
+	// Verify coordinator hint is included in the continuation prompt
+	prompt := appagent.BuildContinuationPrompt(item)
+	if !strings.Contains(prompt, "<phase>single_completion</phase>") {
+		t.Fatalf("expected single completion coordinator hint, got %q", prompt)
 	}
-	if !strings.Contains(hint, "<recommended-action>synthesize_then_decide_followup</recommended-action>") {
-		t.Fatalf("expected single completion recommendation, got %q", hint)
+	if !strings.Contains(prompt, "<recommended-action>synthesize_then_decide_followup</recommended-action>") {
+		t.Fatalf("expected single completion recommendation, got %q", prompt)
 	}
-	if !strings.Contains(hint, "<wait-for-remaining-workers>false</wait-for-remaining-workers>") {
-		t.Fatalf("expected single completion to avoid waiting, got %q", hint)
+	if !strings.Contains(prompt, "<wait-for-remaining-workers>false</wait-for-remaining-workers>") {
+		t.Fatalf("expected single completion to avoid waiting, got %q", prompt)
 	}
-	if !strings.Contains(hint, "<should-finalize-summary>true</should-finalize-summary>") {
-		t.Fatalf("expected single completion to allow summary finalization, got %q", hint)
+	if !strings.Contains(prompt, "<should-finalize-summary>true</should-finalize-summary>") {
+		t.Fatalf("expected single completion to allow summary finalization, got %q", prompt)
 	}
 }
 
@@ -833,9 +833,16 @@ func TestTaskNotificationBatchMergeProducesCorrectXML(t *testing.T) {
 		t.Fatalf("expected batched continuation context, got %#v", contexts)
 	}
 
-	policy := appagent.BuildCoordinatorPolicy(merged)
-	if !strings.Contains(policy, "Do not assume the batch is finished") {
-		t.Fatalf("expected partial-batch coordinator policy, got %q", policy)
+	contextStrs := appagent.ContinuationContext(merged)
+	foundPolicy := false
+	for _, ctx := range contextStrs {
+		if strings.Contains(ctx, "Do not assume the batch is finished") {
+			foundPolicy = true
+			break
+		}
+	}
+	if !foundPolicy {
+		t.Fatalf("expected partial-batch coordinator policy in continuation context, got %#v", contextStrs)
 	}
 }
 
@@ -879,11 +886,16 @@ func TestCoordinatorPolicyForCompletedFailedBatch(t *testing.T) {
 		t.Fatalf("expected completed batch to allow final summary, got %q", prompt)
 	}
 
-	policy := appagent.BuildCoordinatorPolicy(item)
-	if !strings.Contains(policy, "background batch completed with failures") {
-		t.Fatalf("expected failed-batch coordinator policy, got %q", policy)
+	contextStrs := appagent.ContinuationContext(item)
+	foundPolicy := false
+	for _, ctx := range contextStrs {
+		if strings.Contains(ctx, "background batch completed with failures") &&
+			strings.Contains(ctx, "continue a failed worker, spawn a verifier, or report a partial result") {
+			foundPolicy = true
+			break
+		}
 	}
-	if !strings.Contains(policy, "continue a failed worker, spawn a verifier, or report a partial result") {
-		t.Fatalf("expected failed-batch follow-up guidance, got %q", policy)
+	if !foundPolicy {
+		t.Fatalf("expected failed-batch coordinator policy in continuation context, got %#v", contextStrs)
 	}
 }

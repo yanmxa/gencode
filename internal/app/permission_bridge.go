@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appapproval "github.com/yanmxa/gencode/internal/app/approval"
+	appapproval "github.com/yanmxa/gencode/internal/app/ui/approval"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool/perm"

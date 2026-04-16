@@ -13,13 +13,13 @@ import (
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
-const TickInterval = 500 * time.Millisecond
-const MaxPerContinuation = 8
+const tickInterval = 500 * time.Millisecond
+const maxPerContinuation = 8
 
 type TickMsg struct{}
 
 func StartTicker() tea.Cmd {
-	return tea.Tick(TickInterval, func(time.Time) tea.Msg {
+	return tea.Tick(tickInterval, func(time.Time) tea.Msg {
 		return TickMsg{}
 	})
 }
@@ -34,7 +34,7 @@ func PopReadyNotifications(queue *NotificationQueue, idle bool) []Notification {
 	if queue == nil || !idle {
 		return nil
 	}
-	return queue.PopBatch(MaxPerContinuation)
+	return queue.PopBatch(maxPerContinuation)
 }
 
 func MergeNotifications(items []Notification) Notification {
@@ -46,18 +46,18 @@ func MergeNotifications(items []Notification) Notification {
 	}
 
 	merged := Notification{
-		Notice:             SummarizeNotices(items),
-		Context:            MergeContexts(items),
-		ContinuationPrompt: WrapNotifications(items),
+		Notice:             summarizeNotices(items),
+		Context:            mergeContexts(items),
+		ContinuationPrompt: wrapNotifications(items),
 		Count:              len(items),
 	}
-	if batch := SharedBatch(items); batch != nil {
+	if batch := sharedBatch(items); batch != nil {
 		merged.Batch = batch
 	}
 	return merged
 }
 
-func SummarizeNotices(items []Notification) string {
+func summarizeNotices(items []Notification) string {
 	if len(items) == 0 {
 		return ""
 	}
@@ -85,7 +85,7 @@ func SummarizeNotices(items []Notification) string {
 	return summary
 }
 
-func MergeContexts(items []Notification) []string {
+func mergeContexts(items []Notification) []string {
 	seen := make(map[string]bool)
 	merged := make([]string, 0, len(items)+1)
 	merged = append(merged, fmt.Sprintf("Multiple background tasks completed while the main loop was idle. The next message may contain up to %d <task-notification> blocks. Synthesize the important results before deciding on follow-up action.", len(items)))
@@ -103,7 +103,7 @@ func MergeContexts(items []Notification) []string {
 	return merged
 }
 
-func WrapNotifications(items []Notification) string {
+func wrapNotifications(items []Notification) string {
 	if len(items) == 0 {
 		return ""
 	}
@@ -113,7 +113,7 @@ func WrapNotifications(items []Notification) string {
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "<task-notifications count=\"%d\">\n", len(items))
-	if batch := SharedBatch(items); batch != nil {
+	if batch := sharedBatch(items); batch != nil {
 		sb.WriteString("<batch-summary>\n")
 		sb.WriteString(renderBatchXML(batch, ""))
 		sb.WriteString("</batch-summary>\n")
@@ -130,7 +130,7 @@ func WrapNotifications(items []Notification) string {
 	return sb.String()
 }
 
-func SharedBatch(items []Notification) *orchestration.Batch {
+func sharedBatch(items []Notification) *orchestration.Batch {
 	if len(items) == 0 || items[0].Batch == nil || items[0].Batch.ID == "" {
 		return nil
 	}
@@ -147,7 +147,7 @@ func SharedBatch(items []Notification) *orchestration.Batch {
 
 func BuildContinuationPrompt(item Notification) string {
 	prompt := strings.TrimSpace(item.ContinuationPrompt)
-	hint := RenderCoordinatorHintXML(item)
+	hint := renderCoordinatorHintXML(item)
 	switch {
 	case hint == "" && prompt == "":
 		return ""
@@ -160,8 +160,8 @@ func BuildContinuationPrompt(item Notification) string {
 	}
 }
 
-func RenderCoordinatorHintXML(item Notification) string {
-	decision := CoordinatorHintDecision(item)
+func renderCoordinatorHintXML(item Notification) string {
+	decision := coordinatorHintDecision(item)
 	if decision.Phase == "" || decision.RecommendedAction == "" {
 		return ""
 	}
@@ -198,11 +198,11 @@ func RenderCoordinatorHintXML(item Notification) string {
 	return sb.String()
 }
 
-func CoordinatorHintDecision(item Notification) orchestration.CoordinatorDecision {
-	return orchestration.Decide(item.Status, item.Count, BatchToSnapshot(item.Batch))
+func coordinatorHintDecision(item Notification) orchestration.CoordinatorDecision {
+	return orchestration.Decide(item.Status, item.Count, batchToSnapshot(item.Batch))
 }
 
-func BatchToSnapshot(b *orchestration.Batch) *orchestration.BatchSnapshot {
+func batchToSnapshot(b *orchestration.Batch) *orchestration.BatchSnapshot {
 	if b == nil {
 		return nil
 	}
@@ -220,13 +220,13 @@ func BatchToSnapshot(b *orchestration.Batch) *orchestration.BatchSnapshot {
 
 func ContinuationContext(item Notification) []string {
 	contexts := append([]string(nil), item.Context...)
-	if policy := BuildCoordinatorPolicy(item); policy != "" {
+	if policy := buildCoordinatorPolicy(item); policy != "" {
 		contexts = append(contexts, policy)
 	}
 	return contexts
 }
 
-func BuildCoordinatorPolicy(item Notification) string {
+func buildCoordinatorPolicy(item Notification) string {
 	if item.Batch == nil || item.Batch.Total <= 0 {
 		return "Treat this as a coordinator signal. Synthesize the result before deciding whether any follow-up worker action or user-facing summary is needed."
 	}

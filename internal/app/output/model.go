@@ -6,8 +6,8 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/app/render"
-	"github.com/yanmxa/gencode/internal/app/progress"
+	"github.com/yanmxa/gencode/internal/app/ui/render"
+	"github.com/yanmxa/gencode/internal/app/ui/progress"
 )
 
 // Model holds all output-related state: spinner, markdown renderer, and task progress.

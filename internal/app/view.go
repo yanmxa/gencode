@@ -8,9 +8,9 @@ import (
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/render"
+	"github.com/yanmxa/gencode/internal/app/ui/render"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/app/theme"
+	"github.com/yanmxa/gencode/internal/app/ui/theme"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -120,7 +120,7 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 // renderTrackerList renders a compact task list above the input area.
 // Returns empty string when task display is toggled off via Ctrl+T.
 func (m model) renderTrackerList() string {
-	return appagent.RenderTrackerList(m.showTasks, m.conv.Stream.Active, m.width, m.agentOutput.Spinner.View())
+	return appagent.RenderTrackerList(m.userInput.ShowTasks, m.conv.Stream.Active, m.width, m.agentOutput.Spinner.View())
 }
 
 func (m model) renderWelcome() string {
@@ -145,7 +145,7 @@ func (m model) renderQueuePreview() string {
 	if len(items) == 0 {
 		return ""
 	}
-	return strings.TrimSuffix(render.RenderQueuePreview(items, m.queueSelectIdx, m.width), "\n")
+	return strings.TrimSuffix(render.RenderQueuePreview(items, m.userInput.QueueSelectIdx, m.width), "\n")
 }
 
 // --- Message rendering (thin delegation to output package) ---

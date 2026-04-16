@@ -3,7 +3,7 @@ package user
 import (
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/app/render"
+	"github.com/yanmxa/gencode/internal/app/ui/render"
 )
 
 // RenderTextarea renders the textarea with styled inline image tokens.

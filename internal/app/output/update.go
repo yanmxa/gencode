@@ -3,9 +3,9 @@ package output
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/render"
+	"github.com/yanmxa/gencode/internal/app/ui/render"
 	"github.com/yanmxa/gencode/internal/task/tracker"
-	"github.com/yanmxa/gencode/internal/app/progress"
+	"github.com/yanmxa/gencode/internal/app/ui/progress"
 )
 
 // drainProgress drains all pending task progress messages from the channel.

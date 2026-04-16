@@ -8,23 +8,23 @@ import (
 	"go.uber.org/zap"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	"github.com/yanmxa/gencode/internal/app/agentui"
-	appapproval "github.com/yanmxa/gencode/internal/app/approval"
-	appconv "github.com/yanmxa/gencode/internal/app/conversation"
-	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/app/mcpui"
-	appmemory "github.com/yanmxa/gencode/internal/app/memory"
-	appmode "github.com/yanmxa/gencode/internal/app/mode"
+	"github.com/yanmxa/gencode/internal/app/ui/agentui"
+	appapproval "github.com/yanmxa/gencode/internal/app/ui/approval"
+	appconv "github.com/yanmxa/gencode/internal/app/ui/conversation"
+	"github.com/yanmxa/gencode/internal/app/ui/mcpui"
+	appmemory "github.com/yanmxa/gencode/internal/app/ui/memory"
+	appmode "github.com/yanmxa/gencode/internal/app/ui/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/pluginui"
-	"github.com/yanmxa/gencode/internal/app/progress"
-	"github.com/yanmxa/gencode/internal/app/providerui"
-	"github.com/yanmxa/gencode/internal/app/searchui"
-	"github.com/yanmxa/gencode/internal/app/sessionui"
-	"github.com/yanmxa/gencode/internal/app/skillui"
-	"github.com/yanmxa/gencode/internal/app/suggest"
+	"github.com/yanmxa/gencode/internal/app/ui/pluginui"
+	"github.com/yanmxa/gencode/internal/app/ui/progress"
+	"github.com/yanmxa/gencode/internal/app/ui/providerui"
+	"github.com/yanmxa/gencode/internal/app/ui/searchui"
+	"github.com/yanmxa/gencode/internal/app/ui/sessionui"
+	"github.com/yanmxa/gencode/internal/app/ui/skillui"
+	"github.com/yanmxa/gencode/internal/app/ui/suggest"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/app/toolui"
+	"github.com/yanmxa/gencode/internal/app/ui/toolui"
+	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/prompt"
@@ -113,10 +113,10 @@ func newBaseModel(cwd string, infra modelInfra) model {
 	progressHub := progress.NewHub(100)
 
 	return model{
-		userInput:  appuser.New(cwd, defaultWidth, commandSuggestionMatcher()),
+		userInput:   appuser.New(cwd, defaultWidth, commandSuggestionMatcher()),
 		agentOutput: appoutput.New(defaultWidth, progressHub),
-		conv:   appconv.New(),
-		cwd:    cwd,
+		conv:        appconv.New(),
+		cwd:         cwd,
 
 		provider: newProviderState(infra),
 		session:  newSessionState(infra),
@@ -129,11 +129,7 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		agent:    newAgentState(),
 		search:   newSearchState(),
 		approval: appapproval.New(),
-
-		queueSelectIdx: -1,
-
-		showTasks: true,
-		isGit:     config.IsGitRepo(cwd),
+		isGit:    config.IsGitRepo(cwd),
 
 		systemInput: appsystem.New(),
 		settings:    infra.settings,

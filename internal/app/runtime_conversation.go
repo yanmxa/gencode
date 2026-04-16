@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appcompact "github.com/yanmxa/gencode/internal/app/compact"
+	appcompact "github.com/yanmxa/gencode/internal/app/ui/compact"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
