@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/extension/mcp"
 )
@@ -102,18 +101,18 @@ Examples:
 				return fmt.Errorf("%s transport requires a URL: gen mcp add --transport %s <name> <url>", mcpTransport, mcpTransport)
 			}
 			config.URL = args[1]
-			config.Headers = parseKeyValues(mcpHeaders, ":")
+			config.Headers = mcp.ParseKeyValues(mcpHeaders, ":")
 
 		default:
 			return fmt.Errorf("unsupported transport type: %s", mcpTransport)
 		}
 
-		config.Env = parseKeyValues(mcpEnvVars, "=")
+		config.Env = mcp.ParseKeyValues(mcpEnvVars, "=")
 
 		// Save configuration
 		cwd, _ := os.Getwd()
 		loader := mcp.NewConfigLoader(cwd)
-		scope := parseScope(mcpScope)
+		scope := mcp.ParseScope(mcpScope)
 
 		if err := loader.SaveServer(name, config, scope); err != nil {
 			return fmt.Errorf("failed to save server: %w", err)
@@ -143,7 +142,7 @@ Example:
 
 		cwd, _ := os.Getwd()
 		loader := mcp.NewConfigLoader(cwd)
-		scope := parseScope(mcpScope)
+		scope := mcp.ParseScope(mcpScope)
 
 		if err := loader.SaveServer(name, config, scope); err != nil {
 			return fmt.Errorf("failed to save server: %w", err)
@@ -166,7 +165,7 @@ var mcpEditCmd = &cobra.Command{
 			return fmt.Errorf("failed to load MCP configs: %w", err)
 		}
 
-		info, err := mcpui.PrepareServerEdit(mcp.DefaultRegistry, name)
+		info, err := mcp.PrepareServerEdit(mcp.DefaultRegistry, name)
 		if err != nil {
 			return err
 		}
@@ -182,7 +181,7 @@ var mcpEditCmd = &cobra.Command{
 			return fmt.Errorf("editor failed: %w", err)
 		}
 
-		if err := mcpui.ApplyServerEdit(mcp.DefaultRegistry, info); err != nil {
+		if err := mcp.ApplyServerEdit(mcp.DefaultRegistry, info); err != nil {
 			return err
 		}
 
@@ -280,27 +279,3 @@ var mcpRemoveCmd = &cobra.Command{
 	},
 }
 
-func parseScope(s string) mcp.Scope {
-	switch strings.ToLower(s) {
-	case "user", "global":
-		return mcp.ScopeUser
-	case "project":
-		return mcp.ScopeProject
-	default:
-		return mcp.ScopeLocal
-	}
-}
-
-// parseKeyValues parses a slice of "key=value" or "key:value" strings into a map
-func parseKeyValues(items []string, sep string) map[string]string {
-	if len(items) == 0 {
-		return nil
-	}
-	result := make(map[string]string, len(items))
-	for _, item := range items {
-		if key, value, ok := strings.Cut(item, sep); ok {
-			result[strings.TrimSpace(key)] = strings.TrimSpace(value)
-		}
-	}
-	return result
-}

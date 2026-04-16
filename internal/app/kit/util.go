@@ -66,9 +66,9 @@ func ShortenPathForProject(path, cwd string) string {
 // RenderSelectableRow renders a row with "> " or "  " prefix.
 func RenderSelectableRow(line string, isSelected bool) string {
 	if isSelected {
-		return SelectorSelectedStyle.Render("> " + line)
+		return SelectorSelectedStyle().Render("> " + line)
 	}
-	return SelectorItemStyle.Render("  " + line)
+	return SelectorItemStyle().Render("  " + line)
 }
 
 // FormatAlignedRow formats "icon  name<padding>info" with name padded to colWidth.
@@ -87,7 +87,7 @@ func RenderEnvVarStatus(envVar string) string {
 		return ""
 	}
 	if os.Getenv(envVar) != "" {
-		return SelectorStatusReady.Render(envVar + " ✓")
+		return SelectorStatusReady().Render(envVar + " ✓")
 	}
-	return SelectorStatusNone.Render(envVar + " ✗")
+	return SelectorStatusNone().Render(envVar + " ✗")
 }

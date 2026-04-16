@@ -21,14 +21,14 @@ func handlePlanCommand(ctx context.Context, m *model, args string) (string, tea.
 		return "Usage: /plan <task description>\n\nEnter plan mode to explore the codebase and create an implementation plan before making changes.", nil, nil
 	}
 
-	m.mode.Operation = config.ModePlan
+	m.operationMode = config.ModePlan
 	m.mode.Enabled = true
 	m.mode.Task = args
 
-	m.mode.SessionPermissions.AllowAllEdits = false
-	m.mode.SessionPermissions.AllowAllWrites = false
-	m.mode.SessionPermissions.AllowAllBash = false
-	m.mode.SessionPermissions.AllowAllSkills = false
+	m.sessionPermissions.AllowAllEdits = false
+	m.sessionPermissions.AllowAllWrites = false
+	m.sessionPermissions.AllowAllBash = false
+	m.sessionPermissions.AllowAllSkills = false
 
 	store, err := plan.NewStore()
 	if err != nil {

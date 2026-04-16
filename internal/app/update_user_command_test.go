@@ -11,9 +11,7 @@ import (
 
 	appcommand "github.com/yanmxa/gencode/internal/extension/command"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
-	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/app/user/sessionui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/core"
@@ -88,9 +86,7 @@ func TestExecuteCommandPlanUsageAndState(t *testing.T) {
 
 	t.Run("plan mode enabled when task provided", func(t *testing.T) {
 		m := &model{
-			mode: appmode.State{
-				SessionPermissions: config.NewSessionPermissions(),
-			},
+			sessionPermissions: config.NewSessionPermissions(),
 		}
 
 		result, cmd, handled := executeCommand(context.Background(), m, "/plan audit regression coverage")
@@ -100,8 +96,8 @@ func TestExecuteCommandPlanUsageAndState(t *testing.T) {
 		if cmd != nil {
 			t.Fatal("did not expect follow-up command")
 		}
-		if m.mode.Operation != config.ModePlan || !m.mode.Enabled {
-			t.Fatalf("expected plan mode enabled, got operation=%v enabled=%v", m.mode.Operation, m.mode.Enabled)
+		if m.operationMode != config.ModePlan || !m.mode.Enabled {
+			t.Fatalf("expected plan mode enabled, got operation=%v enabled=%v", m.operationMode, m.mode.Enabled)
 		}
 		if m.mode.Task != "audit regression coverage" {
 			t.Fatalf("unexpected plan task %q", m.mode.Task)
@@ -112,7 +108,7 @@ func TestExecuteCommandPlanUsageAndState(t *testing.T) {
 		if !strings.Contains(result, "Entering plan mode for: audit regression coverage") {
 			t.Fatalf("unexpected result: %q", result)
 		}
-		if m.mode.SessionPermissions.AllowAllEdits || m.mode.SessionPermissions.AllowAllWrites || m.mode.SessionPermissions.AllowAllBash || m.mode.SessionPermissions.AllowAllSkills {
+		if m.sessionPermissions.AllowAllEdits || m.sessionPermissions.AllowAllWrites || m.sessionPermissions.AllowAllBash || m.sessionPermissions.AllowAllSkills {
 			t.Fatal("plan mode should reset permissive session flags")
 		}
 	})
@@ -165,10 +161,10 @@ func TestExecuteCommandOpenSelectors(t *testing.T) {
 		}
 
 		m := &model{
-			cwd:     tmpDir,
-			width:   80,
-			height:  24,
-			session: sessionui.State{Store: store},
+			cwd:          tmpDir,
+			width:        80,
+			height:       24,
+			sessionStore: store,
 		}
 
 		result, cmd, handled := executeCommand(context.Background(), m, "/resume")

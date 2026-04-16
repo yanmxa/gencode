@@ -3,23 +3,14 @@ package mcpui
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	coremcp "github.com/yanmxa/gencode/internal/extension/mcp"
 )
 
-// EditInfo carries the temp file, server name and scope for editing a single server config.
-type EditInfo struct {
-	TempFile   string
-	ServerName string
-	Scope      coremcp.Scope
-}
-
 // HandleCommand dispatches /mcp subcommands.
-func HandleCommand(ctx context.Context, selector *Model, width, height int, args string) (string, *EditInfo, error) {
+func HandleCommand(ctx context.Context, selector *Model, width, height int, args string) (string, *coremcp.EditInfo, error) {
 	if selector.registry == nil {
 		return "MCP is not initialized.\n\nAdd MCP servers with:\n  /mcp add <name> -- <command> [args...]", nil, nil
 	}
@@ -117,75 +108,15 @@ func handleList(reg *coremcp.Registry) (string, error) {
 	return sb.String(), nil
 }
 
-func handleEdit(reg *coremcp.Registry, name string) (string, *EditInfo, error) {
+func handleEdit(reg *coremcp.Registry, name string) (string, *coremcp.EditInfo, error) {
 	if name == "" {
 		return "Usage: /mcp edit <server-name>", nil, nil
 	}
-	info, err := PrepareServerEdit(reg, name)
+	info, err := coremcp.PrepareServerEdit(reg, name)
 	if err != nil {
 		return err.Error(), nil, nil
 	}
 	return "", info, nil
-}
-
-// PrepareServerEdit extracts a single server's config into a temp file for editing.
-// The caller is responsible for calling ApplyServerEdit after the editor closes
-// and removing the temp file.
-func PrepareServerEdit(reg *coremcp.Registry, name string) (*EditInfo, error) {
-	config, ok := reg.GetConfig(name)
-	if !ok {
-		return nil, fmt.Errorf("server not found: %s\n\nUse /mcp list to see available servers", name)
-	}
-
-	scope := config.Scope
-	if scope == "" {
-		scope = coremcp.ScopeLocal
-	}
-
-	// Strip metadata fields before serializing
-	configToEdit := config
-	configToEdit.Name = ""
-	configToEdit.Scope = ""
-
-	data, err := json.MarshalIndent(configToEdit, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("failed to serialize config: %w", err)
-	}
-
-	tmpFile, err := os.CreateTemp("", fmt.Sprintf("mcp-%s-*.json", name))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %w", err)
-	}
-
-	if _, writeErr := tmpFile.Write(append(data, '\n')); writeErr != nil {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpFile.Name())
-		return nil, fmt.Errorf("failed to write temp file: %w", writeErr)
-	}
-	_ = tmpFile.Close()
-
-	return &EditInfo{TempFile: tmpFile.Name(), ServerName: name, Scope: scope}, nil
-}
-
-// ApplyServerEdit reads the edited temp file and saves the updated config back.
-func ApplyServerEdit(reg *coremcp.Registry, info *EditInfo) error {
-	defer func() { _ = os.Remove(info.TempFile) }()
-
-	data, err := os.ReadFile(info.TempFile)
-	if err != nil {
-		return fmt.Errorf("failed to read edited config: %w", err)
-	}
-
-	var updated coremcp.ServerConfig
-	if err := json.Unmarshal(data, &updated); err != nil {
-		return fmt.Errorf("invalid JSON: %w", err)
-	}
-
-	if err := reg.AddServer(info.ServerName, updated, info.Scope); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-
-	return nil
 }
 
 func handleConnect(reg *coremcp.Registry, ctx context.Context, name string) (string, error) {
@@ -291,15 +222,15 @@ func handleAdd(reg *coremcp.Registry, ctx context.Context, args []string) (strin
 			return fmt.Sprintf("%s transport requires a URL: /mcp add --transport %s <name> <url>", transport, transport), nil
 		}
 		config.URL = positional[1]
-		config.Headers = parseKeyValues(headers, ":")
+		config.Headers = coremcp.ParseKeyValues(headers, ":")
 
 	default:
 		return fmt.Sprintf("Unsupported transport type: %s (use stdio, http, or sse)", transport), nil
 	}
 
-	config.Env = parseKeyValues(envVars, "=")
+	config.Env = coremcp.ParseKeyValues(envVars, "=")
 
-	mcpScope := parseScope(scope)
+	mcpScope := coremcp.ParseScope(scope)
 	if err := reg.AddServer(name, config, mcpScope); err != nil {
 		return fmt.Sprintf("Failed to add server: %v", err), nil
 	}
@@ -425,32 +356,6 @@ func handleReconnect(reg *coremcp.Registry, ctx context.Context, name string) (s
 	}
 
 	return fmt.Sprintf("Reconnected to %s\nTools available: %d", name, toolCount), nil
-}
-
-// parseScope converts a string scope name to the MCP scope constant.
-func parseScope(s string) coremcp.Scope {
-	switch strings.ToLower(s) {
-	case "user", "global":
-		return coremcp.ScopeUser
-	case "project":
-		return coremcp.ScopeProject
-	default:
-		return coremcp.ScopeLocal
-	}
-}
-
-// parseKeyValues parses key=value or key:value pairs.
-func parseKeyValues(items []string, sep string) map[string]string {
-	if len(items) == 0 {
-		return nil
-	}
-	result := make(map[string]string, len(items))
-	for _, item := range items {
-		if key, value, ok := strings.Cut(item, sep); ok {
-			result[strings.TrimSpace(key)] = strings.TrimSpace(value)
-		}
-	}
-	return result
 }
 
 func addUsage() string {

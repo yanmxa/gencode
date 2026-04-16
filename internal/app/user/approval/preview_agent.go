@@ -1,33 +1,31 @@
-package agentui
+package approval
 
 import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 )
 
-// Preview renders a preview of agent metadata for permission prompts.
-type Preview struct {
+// agentPreview renders a preview of agent metadata for permission prompts.
+type agentPreview struct {
 	agentMeta *perm.AgentMetadata
 }
 
-// NewPreview creates a new Preview instance.
-func NewPreview(meta *perm.AgentMetadata) *Preview {
-	return &Preview{agentMeta: meta}
+func newAgentPreview(meta *perm.AgentMetadata) *agentPreview {
+	return &agentPreview{agentMeta: meta}
 }
 
 // Render renders the agent preview.
-func (p *Preview) Render(width int) string {
+func (p *agentPreview) Render(width int) string {
 	if p.agentMeta == nil {
 		return ""
 	}
 
 	var sb strings.Builder
 
-	// Styles
 	nameStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Primary).Bold(true)
 	dimStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 	labelStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
@@ -81,7 +79,6 @@ func (p *Preview) Render(width int) string {
 	sb.WriteString(labelStyle.Render("Task:"))
 	sb.WriteString("\n")
 
-	// Wrap and indent the prompt
 	prompt := p.agentMeta.Prompt
 	if len(prompt) > 500 {
 		prompt = prompt[:500] + "..."
@@ -107,8 +104,7 @@ func (p *Preview) Render(width int) string {
 	return sb.String()
 }
 
-// formatPermissionMode formats the permission mode for display.
-func (p *Preview) formatPermissionMode(mode string) string {
+func (p *agentPreview) formatPermissionMode(mode string) string {
 	switch mode {
 	case "plan":
 		return "Read-only (plan mode)"

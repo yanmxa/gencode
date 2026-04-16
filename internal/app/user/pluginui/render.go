@@ -198,7 +198,7 @@ func (s *Model) getTabHint() string {
 // ── Installed list ────────────────────────────────────────────────────────
 
 func (s *Model) renderInstalledList(sb *strings.Builder) {
-	dimStyle := kit.SelectorDimStyle
+	dimStyle := kit.SelectorDimStyle()
 
 	if len(s.filteredItems) == 0 {
 		if len(s.installedFlatList) == 0 {
@@ -263,7 +263,7 @@ func (s *Model) renderInstalledList(sb *strings.Builder) {
 // ── Discover list ─────────────────────────────────────────────────────────
 
 func (s *Model) renderDiscoverList(sb *strings.Builder) {
-	dimStyle := kit.SelectorDimStyle
+	dimStyle := kit.SelectorDimStyle()
 
 	if len(s.filteredItems) == 0 {
 		if len(s.discoverPlugins) == 0 {
@@ -297,7 +297,7 @@ func (s *Model) renderDiscoverList(sb *strings.Builder) {
 		iconStyle := dimStyle
 		if p.Installed {
 			icon = "●"
-			iconStyle = kit.SelectorStatusConnected
+			iconStyle = kit.SelectorStatusConnected()
 		}
 
 		line := fmt.Sprintf("%s %s%s", iconStyle.Render(icon), p.Name, dimStyle.Render(" · "+p.Marketplace))
@@ -329,7 +329,7 @@ func (s *Model) renderDiscoverList(sb *strings.Builder) {
 // ── Marketplaces list ─────────────────────────────────────────────────────
 
 func (s *Model) renderMarketplacesList(sb *strings.Builder) {
-	dimStyle := kit.SelectorDimStyle
+	dimStyle := kit.SelectorDimStyle()
 	addStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success).Bold(true)
 
 	addLine := addStyle.Render("+ Add Marketplace")
@@ -360,7 +360,7 @@ func (s *Model) renderMarketplacesList(sb *strings.Builder) {
 			official = " ★"
 		}
 
-		line := fmt.Sprintf("%s %s%s", kit.SelectorStatusConnected.Render("●"), m.ID, dimStyle.Render(official))
+		line := fmt.Sprintf("%s %s%s", kit.SelectorStatusConnected().Render("●"), m.ID, dimStyle.Render(official))
 		sb.WriteString(kit.RenderSelectableRow(line, displayIdx == s.selectedIdx))
 		sb.WriteString("\n")
 
@@ -388,14 +388,14 @@ func (s *Model) renderInstalledDetail() string {
 	p := s.detailPlugin
 	cw := s.contentWidth()
 
-	dimStyle := kit.SelectorDimStyle
+	dimStyle := kit.SelectorDimStyle()
 	brightStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
 	labelStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted).Width(12)
 
 	// Header
 	sb.WriteString(s.sepLine())
 	sb.WriteString("\n")
-	sb.WriteString(kit.SelectorTitleStyle.Render("Plugin Details"))
+	sb.WriteString(kit.SelectorTitleStyle().Render("Plugin Details"))
 	sb.WriteString("\n")
 	sb.WriteString(dimStyle.Render("> " + p.FullName))
 	sb.WriteString("\n\n")
@@ -437,11 +437,11 @@ func (s *Model) renderInstalledDetail() string {
 
 	if len(p.Errors) > 0 {
 		sb.WriteString("\n")
-		sb.WriteString("  " + kit.SelectorStatusError.Render("Errors"))
+		sb.WriteString("  " + kit.SelectorStatusError().Render("Errors"))
 		sb.WriteString("\n")
 		maxValueLen := cw - 8
 		for _, err := range p.Errors {
-			sb.WriteString("  " + kit.SelectorStatusError.Render("  • "+kit.TruncateText(err, maxValueLen)))
+			sb.WriteString("  " + kit.SelectorStatusError().Render("  • "+kit.TruncateText(err, maxValueLen)))
 			sb.WriteString("\n")
 		}
 	}
@@ -465,14 +465,14 @@ func (s *Model) renderDiscoverDetail() string {
 	p := s.detailDiscover
 	cw := s.contentWidth()
 
-	dimStyle := kit.SelectorDimStyle
+	dimStyle := kit.SelectorDimStyle()
 	brightStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
 	warnStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Warning)
 
 	// Header
 	sb.WriteString(s.sepLine())
 	sb.WriteString("\n")
-	sb.WriteString(kit.SelectorTitleStyle.Render("Install Plugin"))
+	sb.WriteString(kit.SelectorTitleStyle().Render("Install Plugin"))
 	sb.WriteString("\n")
 	sb.WriteString(dimStyle.Render("> " + p.Name + "@" + p.Marketplace))
 	sb.WriteString("\n\n")
@@ -515,13 +515,13 @@ func (s *Model) renderMarketplaceDetail() string {
 	var sb strings.Builder
 	m := s.detailMarketplace
 
-	dimStyle := kit.SelectorDimStyle
+	dimStyle := kit.SelectorDimStyle()
 	brightStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
 
 	// Header
 	sb.WriteString(s.sepLine())
 	sb.WriteString("\n")
-	sb.WriteString(kit.SelectorTitleStyle.Render("Marketplace Details"))
+	sb.WriteString(kit.SelectorTitleStyle().Render("Marketplace Details"))
 	sb.WriteString("\n")
 	sb.WriteString(dimStyle.Render("> " + m.ID))
 	sb.WriteString("\n\n")
@@ -540,7 +540,7 @@ func (s *Model) renderMarketplaceDetail() string {
 		sb.WriteString("\n")
 		for _, p := range s.registry.List() {
 			if idx := strings.Index(p.Source, "@"); idx != -1 && p.Source[idx+1:] == m.ID {
-				sb.WriteString("    " + kit.SelectorStatusConnected.Render("●") + " " + p.Name())
+				sb.WriteString("    " + kit.SelectorStatusConnected().Render("●") + " " + p.Name())
 				sb.WriteString("\n")
 			}
 		}
@@ -562,12 +562,12 @@ func (s *Model) renderAddMarketplaceDialog() string {
 	var sb strings.Builder
 	cw := s.contentWidth()
 
-	dimStyle := kit.SelectorDimStyle
+	dimStyle := kit.SelectorDimStyle()
 	brightStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
 
 	sb.WriteString(s.sepLine())
 	sb.WriteString("\n")
-	sb.WriteString(kit.SelectorTitleStyle.Render("Add Marketplace"))
+	sb.WriteString(kit.SelectorTitleStyle().Render("Add Marketplace"))
 	sb.WriteString("\n\n")
 
 	sb.WriteString(dimStyle.Render("Enter marketplace source:"))
@@ -601,12 +601,12 @@ func (s *Model) renderAddMarketplaceDialog() string {
 
 func (s *Model) renderBrowsePlugins() string {
 	var sb strings.Builder
-	dimStyle := kit.SelectorDimStyle
+	dimStyle := kit.SelectorDimStyle()
 	brightStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
 
 	sb.WriteString(s.sepLine())
 	sb.WriteString("\n")
-	sb.WriteString(kit.SelectorTitleStyle.Render("Browse Marketplace"))
+	sb.WriteString(kit.SelectorTitleStyle().Render("Browse Marketplace"))
 	sb.WriteString("\n")
 	sb.WriteString(dimStyle.Render("> " + s.browseMarketplaceID))
 	sb.WriteString("\n\n")
@@ -636,7 +636,7 @@ func (s *Model) renderBrowsePlugins() string {
 			iconStyle := dimStyle
 			if p.Installed {
 				icon = "●"
-				iconStyle = kit.SelectorStatusConnected
+				iconStyle = kit.SelectorStatusConnected()
 			}
 
 			line := fmt.Sprintf("%s %s", iconStyle.Render(icon), p.Name)
@@ -695,14 +695,14 @@ func (s *Model) renderFooter(sb *strings.Builder, hint string) {
 		sb.WriteString("\n")
 	} else if s.lastMessage != "" {
 		if s.isError {
-			sb.WriteString(kit.SelectorStatusError.Render("  ⚠ " + s.lastMessage))
+			sb.WriteString(kit.SelectorStatusError().Render("  ⚠ " + s.lastMessage))
 		} else {
 			successStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success)
 			sb.WriteString(successStyle.Render("  ✓ " + s.lastMessage))
 		}
 		sb.WriteString("\n")
 	}
-	sb.WriteString(kit.SelectorDimStyle.Render(hint))
+	sb.WriteString(kit.SelectorDimStyle().Render(hint))
 }
 
 // ── Viewport ──────────────────────────────────────────────────────────────
@@ -744,9 +744,9 @@ func (s *Model) renderViewport(content string, scroll int) string {
 
 func pluginStatusIconAndStyle(enabled bool) (string, lipgloss.Style) {
 	if enabled {
-		return "●", kit.SelectorStatusConnected
+		return "●", kit.SelectorStatusConnected()
 	}
-	return "○", kit.SelectorStatusNone
+	return "○", kit.SelectorStatusNone()
 }
 
 func buildComponentList(p *pluginItem) []string {

@@ -74,9 +74,9 @@ func (s *Model) boxHeight() int {
 // emptyFilterMsg returns the "no matches" text for the current tab.
 func (s *Model) emptyFilterMsg() string {
 	if s.activeTab == tabModels {
-		return kit.SelectorDimStyle.PaddingLeft(2).Render("No models match the filter")
+		return kit.SelectorDimStyle().PaddingLeft(2).Render("No models match the filter")
 	}
-	return kit.SelectorDimStyle.PaddingLeft(2).Render("No providers match the filter")
+	return kit.SelectorDimStyle().PaddingLeft(2).Render("No providers match the filter")
 }
 
 // renderItemList renders the scrollable item list into the builder.
@@ -84,7 +84,7 @@ func (s *Model) renderItemList(sb *strings.Builder) {
 	endIdx := min(s.scrollOffset+s.maxVisible, len(s.visibleItems))
 
 	if s.scrollOffset > 0 {
-		sb.WriteString(kit.SelectorDimStyle.PaddingLeft(2).Render("↑ more above"))
+		sb.WriteString(kit.SelectorDimStyle().PaddingLeft(2).Render("↑ more above"))
 		sb.WriteString("\n")
 	}
 
@@ -112,7 +112,7 @@ func (s *Model) renderItemList(sb *strings.Builder) {
 	}
 
 	if endIdx < len(s.visibleItems) {
-		sb.WriteString(kit.SelectorDimStyle.PaddingLeft(2).Render("↓ more below"))
+		sb.WriteString(kit.SelectorDimStyle().PaddingLeft(2).Render("↓ more below"))
 		sb.WriteString("\n")
 	}
 }
@@ -196,7 +196,7 @@ func (s *Model) renderEmptyState() string {
 		warningStyle.Render("  ⚠  No Models Available") + "\n\n" +
 		msgStyle.Render("  No LLM provider is connected yet.") + "\n" +
 		msgStyle.Render("  Press ") + cmdStyle.Render("Tab") + msgStyle.Render(" to switch to Providers tab and connect one.") + "\n\n" +
-		kit.SelectorDimStyle.Render("←/→/Tab switch · Esc cancel")
+		kit.SelectorDimStyle().Render("←/→/Tab switch · Esc cancel")
 
 	cw := s.contentWidth()
 	box := lipgloss.NewStyle().
@@ -224,10 +224,10 @@ func (s *Model) renderModelRow(item listItem, isSelected bool) string {
 	m := item.Model
 
 	indicator := "[ ]"
-	indicatorStyle := kit.SelectorStatusNone
+	indicatorStyle := kit.SelectorStatusNone()
 	if m.IsCurrent {
 		indicator = "[*]"
-		indicatorStyle = kit.SelectorStatusConnected
+		indicatorStyle = kit.SelectorStatusConnected()
 	}
 
 	displayName := m.DisplayName
@@ -265,7 +265,7 @@ func (s *Model) renderProviderRow(item listItem, isSelected bool, itemIdx int) s
 	if len(p.AuthMethods) == 1 {
 		envInfo = kit.RenderEnvVarStatus(firstEnvVar(p.AuthMethods[0].EnvVars))
 	} else if len(p.AuthMethods) > 1 {
-		envInfo = kit.SelectorDimStyle.Render(fmt.Sprintf("%d auth methods", len(p.AuthMethods)))
+		envInfo = kit.SelectorDimStyle().Render(fmt.Sprintf("%d auth methods", len(p.AuthMethods)))
 	}
 
 	line := kit.FormatAlignedRow(statusStyle.Render(statusIcon), p.DisplayName, providerNameColumnWidth, envInfo)
@@ -291,7 +291,7 @@ func (s *Model) renderAuthMethod(item listItem, isSelected bool, itemIdx int) st
 		envInfo = kit.RenderEnvVarStatus(firstEnvVar(am.EnvVars))
 	}
 	if statusDesc != "" && envInfo == "" {
-		envInfo = kit.SelectorDimStyle.Render(statusDesc)
+		envInfo = kit.SelectorDimStyle().Render(statusDesc)
 	}
 
 	colWidth := providerNameColumnWidth - 2 // sub-item indent
@@ -308,7 +308,7 @@ func (s *Model) renderAuthMethod(item listItem, isSelected bool, itemIdx int) st
 // ── API key input ───────────────────────────────────────────────────────────
 
 func (s *Model) renderAPIKeyInput() string {
-	label := kit.SelectorDimStyle.Render(s.apiKeyEnvVar + ": ")
+	label := kit.SelectorDimStyle().Render(s.apiKeyEnvVar + ": ")
 	inputView := label + s.apiKeyInput.View()
 
 	inputBg := lipgloss.AdaptiveColor{Dark: "#1E293B", Light: "#F1F5F9"}
@@ -324,7 +324,7 @@ func (s *Model) renderAPIKeyInput() string {
 
 func (s *Model) renderHints() string {
 	if s.apiKeyActive {
-		return kit.SelectorDimStyle.Render("Paste API key · Enter confirm · Esc cancel")
+		return kit.SelectorDimStyle().Render("Paste API key · Enter confirm · Esc cancel")
 	}
 
 	var parts []string
@@ -335,7 +335,7 @@ func (s *Model) renderHints() string {
 		parts = append(parts, "Enter select")
 	}
 	parts = append(parts, "←/→/Tab switch", "Esc cancel")
-	return kit.SelectorDimStyle.Render(strings.Join(parts, " · "))
+	return kit.SelectorDimStyle().Render(strings.Join(parts, " · "))
 }
 
 // ── Connection result ───────────────────────────────────────────────────────
@@ -347,14 +347,14 @@ const resultIndent = "        "
 func (s *Model) connectResultStyle() lipgloss.Style {
 	if !s.lastConnectSuccess {
 		if s.lastConnectResult == "Connecting..." || s.lastConnectResult == "Refreshing..." {
-			return kit.SelectorDimStyle
+			return kit.SelectorDimStyle()
 		}
 		return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error)
 	}
 	if strings.HasPrefix(s.lastConnectResult, "⚠") {
 		return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Warning)
 	}
-	return kit.SelectorStatusConnected
+	return kit.SelectorStatusConnected()
 }
 
 func (s *Model) renderConnectResult() string {

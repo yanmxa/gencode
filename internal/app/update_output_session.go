@@ -18,12 +18,12 @@ import (
 )
 
 func (m *model) ensureSessionStore() error {
-	if m.session.Store == nil {
+	if m.sessionStore == nil {
 		store, err := session.NewStore(m.cwd)
 		if err != nil {
 			return err
 		}
-		m.session.Store = store
+		m.sessionStore = store
 	}
 	return nil
 }
@@ -48,12 +48,12 @@ func (m *model) saveSession() error {
 
 	sess := &session.Snapshot{
 		Metadata: session.SessionMetadata{
-			ID:         m.session.CurrentID,
+			ID:         m.sessionID,
 			Provider:   providerName,
 			Model:      modelID,
 			Cwd:        m.cwd,
 			LastPrompt: session.ExtractLastUserText(entries),
-			Summary:    m.session.Summary,
+			Summary:    m.sessionSummary,
 			Mode:       m.currentSessionMode(),
 		},
 		Entries: entries,
@@ -64,15 +64,15 @@ func (m *model) saveSession() error {
 		sess.Metadata.Title = session.GenerateTitle(sess.Entries)
 	}
 
-	if err := m.session.Store.Save(sess); err != nil {
+	if err := m.sessionStore.Save(sess); err != nil {
 		return err
 	}
 
-	m.session.CurrentID = sess.Metadata.ID
+	m.sessionID = sess.Metadata.ID
 	m.initTaskStorage()
 
 	if m.hookEngine != nil {
-		m.hookEngine.SetTranscriptPath(m.session.Store.SessionPath(sess.Metadata.ID))
+		m.hookEngine.SetTranscriptPath(m.sessionStore.SessionPath(sess.Metadata.ID))
 	}
 
 	m.reconfigureAgentTool()
@@ -85,7 +85,7 @@ func (m *model) loadSession(id string) error {
 		return err
 	}
 
-	sess, err := m.session.Store.Load(id)
+	sess, err := m.sessionStore.Load(id)
 	if err != nil {
 		return err
 	}
@@ -107,13 +107,13 @@ func (m *model) loadSession(id string) error {
 
 func (m *model) restoreSessionData(sess *session.Snapshot) {
 	m.conv.Messages = session.ConvertFromEntries(sess.Entries)
-	m.session.CurrentID = sess.Metadata.ID
+	m.sessionID = sess.Metadata.ID
 
 	if sess.Metadata.Summary != "" {
-		m.session.Summary = sess.Metadata.Summary
-	} else if m.session.Store != nil {
-		if mem, err := m.session.Store.LoadSessionMemory(sess.Metadata.ID); err == nil && mem != "" {
-			m.session.Summary = mem
+		m.sessionSummary = sess.Metadata.Summary
+	} else if m.sessionStore != nil {
+		if mem, err := m.sessionStore.LoadSessionMemory(sess.Metadata.ID); err == nil && mem != "" {
+			m.sessionSummary = mem
 		}
 	}
 
@@ -143,10 +143,10 @@ func (m *model) initTaskStorage() {
 		return
 	}
 
-	if m.session.CurrentID == "" {
+	if m.sessionID == "" {
 		return
 	}
-	dir := filepath.Join(homeDir, ".gen", "tasks", m.session.CurrentID)
+	dir := filepath.Join(homeDir, ".gen", "tasks", m.sessionID)
 	tracker.DefaultStore.SetStorageDir(dir)
 	_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
 }
@@ -155,7 +155,7 @@ func (m *model) currentSessionMode() string {
 	if m.mode.Enabled {
 		return "plan"
 	}
-	switch m.mode.Operation {
+	switch m.operationMode {
 	case config.ModeAutoAccept:
 		return "auto-accept"
 	default:

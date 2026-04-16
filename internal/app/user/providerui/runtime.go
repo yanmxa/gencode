@@ -16,9 +16,8 @@ import (
 type Runtime interface {
 	AppendMessage(msg core.ChatMessage)
 	CommitMessages() []tea.Cmd
-	SetLLM(p provider.Provider)
+	SwitchProvider(p provider.Provider)
 	SetCurrentModel(m *provider.CurrentModelInfo)
-	OnProviderChanged()
 }
 
 // Update routes provider connection and selection messages.
@@ -64,7 +63,6 @@ func handleModelSelected(rt Runtime, state *State, msg ModelSelectedMsg) tea.Cmd
 		Provider:   provider.Name(msg.ProviderName),
 		AuthMethod: msg.AuthMethod,
 	})
-	rt.OnProviderChanged()
 	ctx := context.Background()
 	refreshProviderConnection(rt, state, ctx, provider.Name(msg.ProviderName), msg.AuthMethod)
 
@@ -81,6 +79,5 @@ func refreshProviderConnection(rt Runtime, state *State, ctx context.Context, pr
 			zap.Error(err))
 		return
 	}
-	rt.SetLLM(p)
-	rt.OnProviderChanged()
+	rt.SwitchProvider(p)
 }

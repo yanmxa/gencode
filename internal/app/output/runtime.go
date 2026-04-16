@@ -13,45 +13,64 @@ type AgentOutboxMsg struct {
 	Closed bool
 }
 
-// Runtime defines the callbacks the output package needs from the parent app model.
-type Runtime interface {
+// ConversationMutator handles message append, commit, and notice operations.
+type ConversationMutator interface {
 	CommitMessages() []tea.Cmd
 	AppendMessage(msg core.ChatMessage)
 	AppendToLast(text, thinking string)
 	SetLastToolCalls(calls []core.ToolCall)
 	SetLastThinkingSignature(sig string)
 	AddNotice(text string)
+}
 
+// StreamController manages LLM streaming lifecycle and outbox continuation.
+type StreamController interface {
 	ActivateStream()
 	SetBuildingTool(name string)
 	StopStream()
+	ContinueOutbox() tea.Cmd
+}
 
+// ToolSideEffects handles post-tool-execution side effects and hooks.
+type ToolSideEffects interface {
+	ApplyToolSideEffects(toolName string, sideEffect any)
+	FirePostToolHook(tr core.ToolResult, sideEffect any)
+	PersistOverflow(result *core.ToolResult)
+}
+
+// TurnManager handles end-of-turn operations: metrics, hooks, session
+// persistence, compaction, queue draining, and agent lifecycle.
+type TurnManager interface {
 	SetTokenCounts(in, out int)
 	ClearWarningSuppressed()
 	IncrementTurnCounter()
 	ResetTurnCounter()
-
 	ClearThinkingOverride()
 
-	ContinueOutbox() tea.Cmd
-
-	ApplyToolSideEffects(toolName string, sideEffect any)
-	FirePostToolHook(tr core.ToolResult, sideEffect any)
-	PersistOverflow(result *core.ToolResult)
-
 	FireIdleHooks() bool
+	FireStopFailureHook(err error)
+
 	SaveSession()
 	ShouldAutoCompact() bool
 	SetAutoCompactContinue()
 	TriggerAutoCompact() tea.Cmd
+
 	StartPromptSuggestion() tea.Cmd
 	DrainInputQueue() tea.Cmd
 	DrainCronQueue() tea.Cmd
 	DrainAsyncHookQueue() tea.Cmd
 	DrainTaskNotifications() tea.Cmd
 
-	FireStopFailureHook(err error)
 	StopAgentSession()
+}
+
+// Runtime is the union of all interfaces needed by the output event handlers.
+// The parent app model satisfies all four sub-interfaces.
+type Runtime interface {
+	ConversationMutator
+	StreamController
+	ToolSideEffects
+	TurnManager
 }
 
 // DrainAgentOutbox blocks until the next outbox event arrives, then emits an AgentOutboxMsg.

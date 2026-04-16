@@ -290,15 +290,15 @@ func (s *Model) Render() string {
 	// Title with count and save level indicator
 	levelIndicator := fmt.Sprintf("[%s]", s.saveLevel.String())
 	title := fmt.Sprintf("Manage Tools (%d/%d)  %s", len(s.filteredTools), len(s.tools), levelIndicator)
-	sb.WriteString(kit.SelectorTitleStyle.Render(title))
+	sb.WriteString(kit.SelectorTitleStyle().Render(title))
 	sb.WriteString("\n")
 
 	// Search input box
 	searchPrompt := "🔍 "
 	if s.searchQuery == "" {
-		sb.WriteString(kit.SelectorHintStyle.Render(searchPrompt + "Type to filter..."))
+		sb.WriteString(kit.SelectorHintStyle().Render(searchPrompt + "Type to filter..."))
 	} else {
-		sb.WriteString(kit.SelectorBreadcrumbStyle.Render(searchPrompt + s.searchQuery + "▏"))
+		sb.WriteString(kit.SelectorBreadcrumbStyle().Render(searchPrompt + s.searchQuery + "▏"))
 	}
 	sb.WriteString("\n\n")
 
@@ -310,7 +310,7 @@ func (s *Model) Render() string {
 
 	// Handle empty results
 	if len(s.filteredTools) == 0 {
-		sb.WriteString(kit.SelectorHintStyle.Render("  No tools match the filter"))
+		sb.WriteString(kit.SelectorHintStyle().Render("  No tools match the filter"))
 		sb.WriteString("\n")
 	} else {
 		// Calculate visible range
@@ -318,7 +318,7 @@ func (s *Model) Render() string {
 
 		// Show scroll up indicator
 		if s.scrollOffset > 0 {
-			sb.WriteString(kit.SelectorHintStyle.Render("  ↑ more above"))
+			sb.WriteString(kit.SelectorHintStyle().Render("  ↑ more above"))
 			sb.WriteString("\n")
 		}
 
@@ -331,10 +331,10 @@ func (s *Model) Render() string {
 			var statusStyle lipgloss.Style
 			if t.Enabled {
 				statusIcon = "●"
-				statusStyle = kit.SelectorStatusConnected
+				statusStyle = kit.SelectorStatusConnected()
 			} else {
 				statusIcon = "○"
-				statusStyle = kit.SelectorStatusNone
+				statusStyle = kit.SelectorStatusNone()
 			}
 
 			// Use only the first line of description, then truncate if needed
@@ -355,26 +355,26 @@ func (s *Model) Render() string {
 			)
 
 			if i == s.selectedIdx {
-				sb.WriteString(kit.SelectorSelectedStyle.Render("> " + line))
+				sb.WriteString(kit.SelectorSelectedStyle().Render("> " + line))
 			} else {
-				sb.WriteString(kit.SelectorItemStyle.Render("  " + line))
+				sb.WriteString(kit.SelectorItemStyle().Render("  " + line))
 			}
 			sb.WriteString("\n")
 		}
 
 		// Show scroll down indicator
 		if endIdx < len(s.filteredTools) {
-			sb.WriteString(kit.SelectorHintStyle.Render("  ↓ more below"))
+			sb.WriteString(kit.SelectorHintStyle().Render("  ↓ more below"))
 			sb.WriteString("\n")
 		}
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(kit.SelectorHintStyle.Render("↑/↓ navigate · Enter toggle · Tab level · Esc cancel"))
+	sb.WriteString(kit.SelectorHintStyle().Render("↑/↓ navigate · Enter toggle · Tab level · Esc cancel"))
 
 	// Wrap in border
 	content := sb.String()
-	box := kit.SelectorBorderStyle.Width(boxWidth).Render(content)
+	box := kit.SelectorBorderStyle().Width(boxWidth).Render(content)
 
 	// Center the box
 	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)

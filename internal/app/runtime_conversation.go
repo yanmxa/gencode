@@ -147,7 +147,7 @@ func (m *model) buildCompactRequest(focus, trigger string) compactRequest {
 		Ctx:            context.Background(),
 		Client:         m.buildLoopClient(),
 		Messages:       m.conv.ConvertToProvider(),
-		SessionSummary: m.session.Summary,
+		SessionSummary: m.sessionSummary,
 		Focus:          focus,
 		HookEngine:     m.hookEngine,
 		Trigger:        trigger,

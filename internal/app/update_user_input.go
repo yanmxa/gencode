@@ -7,7 +7,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/hook"
 )
 
@@ -283,13 +282,13 @@ func (m *model) checkPromptHook(prompt string) (bool, string) {
 // --- Queue selection (Source 1 overlay) ---
 
 func (m *model) handleQueueSelectKey(msg tea.KeyMsg) (tea.Cmd, bool) {
-	return appuser.HandleQueueSelectKey(&m.userInput, &m.inputQueue, msg)
+	return m.userInput.HandleQueueSelectKey(&m.inputQueue, msg)
 }
 
 func (m *model) enterQueueSelection() {
-	appuser.EnterQueueSelection(&m.userInput, &m.inputQueue)
+	m.userInput.EnterQueueSelection(&m.inputQueue)
 }
 
 func (m *model) saveCurrentQueueEdit() {
-	appuser.SaveCurrentQueueEdit(&m.userInput, &m.inputQueue)
+	m.userInput.SaveCurrentQueueEdit(&m.inputQueue)
 }

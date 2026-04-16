@@ -7,8 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/app/user/agentui"
-	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/app/kit"
@@ -20,8 +18,8 @@ type Model struct {
 	request      *perm.PermissionRequest
 	diffPreview  *diffPreview
 	bashPreview  *bashPreview
-	skillPreview *skillui.Preview
-	agentPreview *agentui.Preview
+	skillPreview *skillPreview
+	agentPreview *agentPreview
 	width        int
 	selectedIdx  int // Current menu selection (0=Yes, 1=Yes all, 2=No)
 }
@@ -52,13 +50,13 @@ func (p *Model) setRequest(req *perm.PermissionRequest, width int) {
 	}
 
 	if req.SkillMeta != nil {
-		p.skillPreview = skillui.NewPreview(req.SkillMeta)
+		p.skillPreview = newSkillPreview(req.SkillMeta)
 	} else {
 		p.skillPreview = nil
 	}
 
 	if req.AgentMeta != nil {
-		p.agentPreview = agentui.NewPreview(req.AgentMeta)
+		p.agentPreview = newAgentPreview(req.AgentMeta)
 	} else {
 		p.agentPreview = nil
 	}

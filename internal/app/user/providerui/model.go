@@ -115,8 +115,8 @@ type statusDisplayInfo struct {
 
 // statusDisplayMap maps provider status to display information.
 var statusDisplayMap = map[coreprovider.Status]statusDisplayInfo{
-	coreprovider.StatusConnected: {"●", kit.SelectorStatusConnected, ""},
-	coreprovider.StatusAvailable: {"○", kit.SelectorStatusReady, "(available)"},
+	coreprovider.StatusConnected: {"●", kit.SelectorStatusConnected(), ""},
+	coreprovider.StatusAvailable: {"○", kit.SelectorStatusReady(), "(available)"},
 }
 
 // getStatusDisplay returns the icon, style, and description for a provider status.
@@ -124,7 +124,7 @@ func getStatusDisplay(status coreprovider.Status) (icon string, style lipgloss.S
 	if info, ok := statusDisplayMap[status]; ok {
 		return info.icon, info.style, info.desc
 	}
-	return "◌", kit.SelectorStatusNone, ""
+	return "◌", kit.SelectorStatusNone(), ""
 }
 
 // New creates a new provider selector Model.

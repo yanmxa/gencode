@@ -185,7 +185,7 @@ func (m *Model) Render() string {
 
 	var sb strings.Builder
 
-	sb.WriteString(kit.SelectorTitleStyle.Render("Select memory to edit:"))
+	sb.WriteString(kit.SelectorTitleStyle().Render("Select memory to edit:"))
 	sb.WriteString("\n\n")
 
 	for i, item := range m.items {
@@ -194,10 +194,10 @@ func (m *Model) Render() string {
 
 		if item.Exists {
 			statusIcon = "●"
-			statusStyle = kit.SelectorStatusConnected
+			statusStyle = kit.SelectorStatusConnected()
 		} else {
 			statusIcon = "○"
-			statusStyle = kit.SelectorStatusNone
+			statusStyle = kit.SelectorStatusNone()
 		}
 
 		numKey := fmt.Sprintf("%d.", i+1)
@@ -209,27 +209,27 @@ func (m *Model) Render() string {
 		line := fmt.Sprintf("%s %s %s",
 			statusStyle.Render(statusIcon),
 			item.Label,
-			kit.SelectorHintStyle.Render(item.Description+sizeStr),
+			kit.SelectorHintStyle().Render(item.Description+sizeStr),
 		)
 
 		if i == m.selectedIdx {
-			sb.WriteString(kit.SelectorSelectedStyle.Render(fmt.Sprintf("❯ %s %s", numKey, line)))
+			sb.WriteString(kit.SelectorSelectedStyle().Render(fmt.Sprintf("❯ %s %s", numKey, line)))
 		} else {
-			sb.WriteString(kit.SelectorItemStyle.Render(fmt.Sprintf("  %s %s", numKey, line)))
+			sb.WriteString(kit.SelectorItemStyle().Render(fmt.Sprintf("  %s %s", numKey, line)))
 		}
 		sb.WriteString("\n")
 
 		if !item.Exists && i == m.selectedIdx {
-			sb.WriteString(kit.SelectorItemStyle.Render("      " + kit.SelectorHintStyle.Render(item.CreateHint)))
+			sb.WriteString(kit.SelectorItemStyle().Render("      " + kit.SelectorHintStyle().Render(item.CreateHint)))
 			sb.WriteString("\n")
 		}
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(kit.SelectorHintStyle.Render("↑/↓ navigate · Enter edit · 1-3 quick select · Esc cancel"))
+	sb.WriteString(kit.SelectorHintStyle().Render("↑/↓ navigate · Enter edit · 1-3 quick select · Esc cancel"))
 
 	content := sb.String()
-	box := kit.SelectorBorderStyle.Width(kit.CalculateBoxWidth(m.width)).Render(content)
+	box := kit.SelectorBorderStyle().Width(kit.CalculateBoxWidth(m.width)).Render(content)
 
 	return lipgloss.Place(m.width, m.height-4, lipgloss.Center, lipgloss.Center, box)
 }

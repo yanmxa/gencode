@@ -176,10 +176,10 @@ func (s *Model) Render() string {
 
 	var sb strings.Builder
 
-	dimStyle := kit.SelectorDimStyle
+	dimStyle := kit.SelectorDimStyle()
 
 	// Title
-	sb.WriteString(kit.SelectorTitleStyle.Render("Search Engine"))
+	sb.WriteString(kit.SelectorTitleStyle().Render("Search Engine"))
 	sb.WriteString("\n\n")
 
 	// Provider list
@@ -188,10 +188,10 @@ func (s *Model) Render() string {
 		isSelected := i == s.selectedIdx
 
 		marker := "[ ]"
-		markerStyle := kit.SelectorStatusNone
+		markerStyle := kit.SelectorStatusNone()
 		if item.IsCurrent {
 			marker = "[*]"
-			markerStyle = kit.SelectorStatusConnected
+			markerStyle = kit.SelectorStatusConnected()
 		}
 
 		envInfo := ""
@@ -211,7 +211,7 @@ func (s *Model) Render() string {
 
 	content := sb.String()
 	boxWidth := kit.CalculateToolBoxWidth(s.width)
-	box := kit.SelectorBorderStyle.Width(boxWidth).Render(content)
+	box := kit.SelectorBorderStyle().Width(boxWidth).Render(content)
 
 	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)
 }

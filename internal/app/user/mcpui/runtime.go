@@ -8,7 +8,8 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
-	)
+	coremcp "github.com/yanmxa/gencode/internal/extension/mcp"
+)
 
 // Runtime defines the callbacks the mcpui package needs from the parent app model.
 type Runtime interface {
@@ -64,7 +65,7 @@ func Update(rt Runtime, state *State, msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 
 	case EditServerMsg:
-		info, err := PrepareServerEdit(state.Selector.registry, msg.ServerName)
+		info, err := coremcp.PrepareServerEdit(state.Selector.registry, msg.ServerName)
 		if err != nil {
 			rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Error: %v", err)})
 			return tea.Batch(rt.CommitMessages()...), true
@@ -75,7 +76,7 @@ func Update(rt Runtime, state *State, msg tea.Msg) (tea.Cmd, bool) {
 		return StartMCPEditor(info.TempFile), true
 
 	case EditorFinishedMsg:
-		info := &EditInfo{
+		info := &coremcp.EditInfo{
 			TempFile:   state.EditingFile,
 			ServerName: state.EditingServer,
 			Scope:      state.EditingScope,
@@ -88,7 +89,7 @@ func Update(rt Runtime, state *State, msg tea.Msg) (tea.Cmd, bool) {
 			return tea.Batch(rt.CommitMessages()...), true
 		}
 
-		if err := ApplyServerEdit(state.Selector.registry, info); err != nil {
+		if err := coremcp.ApplyServerEdit(state.Selector.registry, info); err != nil {
 			rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Failed to apply edit: %v", err)})
 			return tea.Batch(rt.CommitMessages()...), true
 		}

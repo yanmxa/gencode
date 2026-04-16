@@ -48,6 +48,7 @@ func (l SaveLevel) String() string {
 
 // Model holds state for the skill kit.
 type Model struct {
+	registry       *coreskill.Registry
 	active         bool
 	skills         []item
 	filteredSkills []item
@@ -72,8 +73,9 @@ type InvokeMsg struct {
 }
 
 // New creates a new skill selector Model.
-func New() Model {
+func New(reg *coreskill.Registry) Model {
 	return Model{
+		registry:   reg,
 		active:     false,
 		skills:     []item{},
 		maxVisible: 10,
@@ -82,14 +84,14 @@ func New() Model {
 
 // EnterSelect enters skill selection mode.
 func (s *Model) EnterSelect(width, height int) error {
-	if coreskill.DefaultRegistry == nil {
+	if s.registry == nil {
 		return fmt.Errorf("skill registry not initialized")
 	}
 
-	allSkills := coreskill.DefaultRegistry.List()
+	allSkills := s.registry.List()
 
 	// Get states from current level
-	levelStates := coreskill.DefaultRegistry.GetStatesAt(s.saveLevel == saveLevelUser)
+	levelStates := s.registry.GetStatesAt(s.saveLevel == saveLevelUser)
 
 	s.skills = make([]item, 0, len(allSkills))
 	for _, sk := range allSkills {
@@ -121,11 +123,11 @@ func (s *Model) EnterSelect(width, height int) error {
 
 // reloadSkillStates reloads skill states from the current save level.
 func (s *Model) reloadSkillStates() {
-	if coreskill.DefaultRegistry == nil {
+	if s.registry == nil {
 		return
 	}
 
-	levelStates := coreskill.DefaultRegistry.GetStatesAt(s.saveLevel == saveLevelUser)
+	levelStates := s.registry.GetStatesAt(s.saveLevel == saveLevelUser)
 
 	for i := range s.skills {
 		fullName := s.skills[i].FullName()
@@ -221,8 +223,8 @@ func (s *Model) CycleState() tea.Cmd {
 	}
 
 	// Persist via registry (using FullName) to the current save level
-	if coreskill.DefaultRegistry != nil {
-		_ = coreskill.DefaultRegistry.SetState(fullName, newState, s.saveLevel == saveLevelUser)
+	if s.registry != nil {
+		_ = s.registry.SetState(fullName, newState, s.saveLevel == saveLevelUser)
 	}
 
 	return func() tea.Msg {
@@ -315,21 +317,21 @@ func (s *Model) Render() string {
 	// Title with count and save level indicator
 	levelIndicator := fmt.Sprintf("[%s]", s.saveLevel.String())
 	title := fmt.Sprintf("Manage Skills (%d/%d)  %s", len(s.filteredSkills), len(s.skills), levelIndicator)
-	sb.WriteString(kit.SelectorTitleStyle.Render(title))
+	sb.WriteString(kit.SelectorTitleStyle().Render(title))
 	sb.WriteString("\n")
 
 	// Search input box
 	searchPrompt := "\U0001f50d "
 	if s.searchQuery == "" {
-		sb.WriteString(kit.SelectorHintStyle.Render(searchPrompt + "Type to filter..."))
+		sb.WriteString(kit.SelectorHintStyle().Render(searchPrompt + "Type to filter..."))
 	} else {
-		sb.WriteString(kit.SelectorBreadcrumbStyle.Render(searchPrompt + s.searchQuery + "\u258f"))
+		sb.WriteString(kit.SelectorBreadcrumbStyle().Render(searchPrompt + s.searchQuery + "\u258f"))
 	}
 	sb.WriteString("\n\n")
 
 	// Handle empty results
 	if len(s.filteredSkills) == 0 {
-		sb.WriteString(kit.SelectorHintStyle.Render("  No skills match the filter"))
+		sb.WriteString(kit.SelectorHintStyle().Render("  No skills match the filter"))
 		sb.WriteString("\n")
 	} else {
 		// Calculate visible range
@@ -358,7 +360,7 @@ func (s *Model) Render() string {
 
 		// Show scroll up indicator
 		if s.scrollOffset > 0 {
-			sb.WriteString(kit.SelectorHintStyle.Render("  \u2191 more above"))
+			sb.WriteString(kit.SelectorHintStyle().Render("  \u2191 more above"))
 			sb.WriteString("\n")
 		}
 
@@ -372,13 +374,13 @@ func (s *Model) Render() string {
 			switch sk.State {
 			case coreskill.StateActive:
 				statusIcon = "\u25cf"
-				statusStyle = kit.SelectorStatusConnected
+				statusStyle = kit.SelectorStatusConnected()
 			case coreskill.StateEnable:
 				statusIcon = "\u25d0"
 				statusStyle = lipgloss.NewStyle().Foreground(kit.CurrentTheme.Warning)
 			default:
 				statusIcon = "\u25cb"
-				statusStyle = kit.SelectorStatusNone
+				statusStyle = kit.SelectorStatusNone()
 			}
 
 			// Use FullName (namespace:name) for display
@@ -437,17 +439,17 @@ func (s *Model) Render() string {
 
 		// Show scroll down indicator
 		if endIdx < len(s.filteredSkills) {
-			sb.WriteString(kit.SelectorHintStyle.Render("  \u2193 more below"))
+			sb.WriteString(kit.SelectorHintStyle().Render("  \u2193 more below"))
 			sb.WriteString("\n")
 		}
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(kit.SelectorHintStyle.Render("\u2191/\u2193 navigate \u00b7 Tab level \u00b7 Enter toggle \u00b7 Esc close"))
+	sb.WriteString(kit.SelectorHintStyle().Render("\u2191/\u2193 navigate \u00b7 Tab level \u00b7 Enter toggle \u00b7 Esc close"))
 
 	// Wrap in border
 	content := sb.String()
-	box := kit.SelectorBorderStyle.Width(boxWidth).Render(content)
+	box := kit.SelectorBorderStyle().Width(boxWidth).Render(content)
 
 	// Center the box
 	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)

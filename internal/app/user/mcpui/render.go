@@ -30,13 +30,13 @@ func statusIconAndStyle(status coremcp.ServerStatus) (string, lipgloss.Style) {
 	icon, _ := mcpStatusDisplay(status)
 	switch status {
 	case coremcp.StatusConnected:
-		return icon, kit.SelectorStatusConnected
+		return icon, kit.SelectorStatusConnected()
 	case coremcp.StatusConnecting:
-		return icon, kit.SelectorStatusReady
+		return icon, kit.SelectorStatusReady()
 	case coremcp.StatusError:
-		return icon, kit.SelectorStatusError
+		return icon, kit.SelectorStatusError()
 	default:
-		return icon, kit.SelectorStatusNone
+		return icon, kit.SelectorStatusNone()
 	}
 }
 
@@ -55,20 +55,20 @@ func (s *Model) Render() string {
 // renderErrorAndFooter appends the error message (if any) and footer hint to the builder
 func (s *Model) renderErrorAndFooter(sb *strings.Builder, hint string) {
 	if s.lastError != "" {
-		sb.WriteString(kit.SelectorStatusError.Render("    ! " + s.lastError + "\n"))
+		sb.WriteString(kit.SelectorStatusError().Render("    ! " + s.lastError + "\n"))
 	}
 	sb.WriteString("\n")
 	if s.connecting {
-		sb.WriteString(kit.SelectorHintStyle.Render("Connecting... (Esc to cancel)"))
+		sb.WriteString(kit.SelectorHintStyle().Render("Connecting... (Esc to cancel)"))
 	} else {
-		sb.WriteString(kit.SelectorHintStyle.Render(hint))
+		sb.WriteString(kit.SelectorHintStyle().Render(hint))
 	}
 }
 
 // renderBox wraps content in a centered bordered box
 func (s *Model) renderBox(content string) string {
 	boxWidth := kit.CalculateToolBoxWidth(s.width)
-	box := kit.SelectorBorderStyle.Width(boxWidth).Render(content)
+	box := kit.SelectorBorderStyle().Width(boxWidth).Render(content)
 	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)
 }
 
@@ -79,32 +79,32 @@ func (s *Model) renderList() string {
 
 	// Title with filtered/total count
 	title := fmt.Sprintf("MCP Servers (%d/%d)", len(s.filteredServers), len(s.servers))
-	sb.WriteString(kit.SelectorTitleStyle.Render(title))
+	sb.WriteString(kit.SelectorTitleStyle().Render(title))
 	sb.WriteString("\n")
 
 	// Search input
 	searchPrompt := ">> "
 	if s.searchQuery == "" {
-		sb.WriteString(kit.SelectorHintStyle.Render(searchPrompt + "Type to filter..."))
+		sb.WriteString(kit.SelectorHintStyle().Render(searchPrompt + "Type to filter..."))
 	} else {
-		sb.WriteString(kit.SelectorBreadcrumbStyle.Render(searchPrompt + s.searchQuery + "|"))
+		sb.WriteString(kit.SelectorBreadcrumbStyle().Render(searchPrompt + s.searchQuery + "|"))
 	}
 	sb.WriteString("\n\n")
 
 	if len(s.filteredServers) == 0 {
 		if len(s.servers) == 0 {
-			sb.WriteString(kit.SelectorHintStyle.Render("  No MCP servers configured\n\n"))
-			sb.WriteString(kit.SelectorHintStyle.Render("  Add servers with:\n"))
-			sb.WriteString(kit.SelectorHintStyle.Render("    gen mcp add <name> -- <command>\n"))
+			sb.WriteString(kit.SelectorHintStyle().Render("  No MCP servers configured\n\n"))
+			sb.WriteString(kit.SelectorHintStyle().Render("  Add servers with:\n"))
+			sb.WriteString(kit.SelectorHintStyle().Render("    gen mcp add <name> -- <command>\n"))
 		} else {
-			sb.WriteString(kit.SelectorHintStyle.Render("  No servers match the filter"))
+			sb.WriteString(kit.SelectorHintStyle().Render("  No servers match the filter"))
 			sb.WriteString("\n")
 		}
 	} else {
 		endIdx := min(s.scrollOffset+s.maxVisible, len(s.filteredServers))
 
 		if s.scrollOffset > 0 {
-			sb.WriteString(kit.SelectorHintStyle.Render("  ^ more above"))
+			sb.WriteString(kit.SelectorHintStyle().Render("  ^ more above"))
 			sb.WriteString("\n")
 		}
 
@@ -127,15 +127,15 @@ func (s *Model) renderList() string {
 			)
 
 			if i == s.selectedIdx {
-				sb.WriteString(kit.SelectorSelectedStyle.Render("> " + line))
+				sb.WriteString(kit.SelectorSelectedStyle().Render("> " + line))
 			} else {
-				sb.WriteString(kit.SelectorItemStyle.Render("  " + line))
+				sb.WriteString(kit.SelectorItemStyle().Render("  " + line))
 			}
 			sb.WriteString("\n")
 		}
 
 		if endIdx < len(s.filteredServers) {
-			sb.WriteString(kit.SelectorHintStyle.Render("  v more below"))
+			sb.WriteString(kit.SelectorHintStyle().Render("  v more below"))
 			sb.WriteString("\n")
 		}
 	}
@@ -159,11 +159,11 @@ func (s *Model) renderDetail() string {
 	valueStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
 
 	// Title
-	sb.WriteString(kit.SelectorTitleStyle.Render("MCP Server"))
+	sb.WriteString(kit.SelectorTitleStyle().Render("MCP Server"))
 	sb.WriteString("\n")
 
 	// Server name breadcrumb
-	sb.WriteString(kit.SelectorBreadcrumbStyle.Render("> " + srv.Name))
+	sb.WriteString(kit.SelectorBreadcrumbStyle().Render("> " + srv.Name))
 	sb.WriteString("\n\n")
 
 	// Status
@@ -218,7 +218,7 @@ func (s *Model) renderDetail() string {
 	if srv.Error != "" {
 		fmt.Fprintf(&sb, "  %s  %s\n",
 			labelStyle.Render("Error: "),
-			kit.SelectorStatusError.Render(srv.Error),
+			kit.SelectorStatusError().Render(srv.Error),
 		)
 	}
 
@@ -229,9 +229,9 @@ func (s *Model) renderDetail() string {
 	sb.WriteString("\n")
 	for i, action := range s.actions {
 		if i == s.actionIdx {
-			sb.WriteString(kit.SelectorSelectedStyle.Render("> " + action.Label))
+			sb.WriteString(kit.SelectorSelectedStyle().Render("> " + action.Label))
 		} else {
-			sb.WriteString(kit.SelectorItemStyle.Render("  " + action.Label))
+			sb.WriteString(kit.SelectorItemStyle().Render("  " + action.Label))
 		}
 		sb.WriteString("\n")
 	}

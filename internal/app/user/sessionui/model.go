@@ -336,9 +336,9 @@ func (s *Model) getFirstSubstantiveMessage(sess *session.SessionMetadata) string
 // Subtitle line: the last message in the conversation (any role) is shown as
 // a muted preview.
 func (s *Model) renderSession(sess *session.SessionMetadata, isSelected bool, sb *strings.Builder, boxWidth int) {
-	titleStyle, indent := kit.SelectorItemStyle, "  "
+	titleStyle, indent := kit.SelectorItemStyle(), "  "
 	if isSelected {
-		titleStyle, indent = kit.SelectorSelectedStyle, "> "
+		titleStyle, indent = kit.SelectorSelectedStyle(), "> "
 	}
 
 	// Determine display title — prefer substantive message over short titles.
@@ -383,19 +383,19 @@ func (s *Model) Render() string {
 
 	// Title with project name and count
 	title := fmt.Sprintf("Resume Session - %s (%d/%d)", filepath.Base(s.cwd), len(s.filtered), len(s.sessions))
-	sb.WriteString(kit.SelectorTitleStyle.Render(title) + "\n")
+	sb.WriteString(kit.SelectorTitleStyle().Render(title) + "\n")
 
 	// Search input
 	searchLine := "🔍 Type to filter..."
-	searchStyle := kit.SelectorHintStyle
+	searchStyle := kit.SelectorHintStyle()
 	if s.searchQuery != "" {
 		searchLine = "> " + s.searchQuery + "_"
-		searchStyle = kit.SelectorBreadcrumbStyle
+		searchStyle = kit.SelectorBreadcrumbStyle()
 	}
 	sb.WriteString(searchStyle.Render(searchLine) + "\n\n")
 
 	if len(s.filtered) == 0 {
-		sb.WriteString(kit.SelectorHintStyle.Render("  No sessions match the filter") + "\n")
+		sb.WriteString(kit.SelectorHintStyle().Render("  No sessions match the filter") + "\n")
 	} else {
 		endIdx := min(s.scrollOffset+s.maxVisible, len(s.filtered))
 		s.renderScrollIndicator(&sb, s.scrollOffset > 0, "↑ more above")
@@ -407,14 +407,14 @@ func (s *Model) Render() string {
 		s.renderScrollIndicator(&sb, endIdx < len(s.filtered), "↓ more below")
 	}
 
-	sb.WriteString("\n" + kit.SelectorHintStyle.Render("↑/↓ navigate · Enter select · Esc clear/cancel"))
+	sb.WriteString("\n" + kit.SelectorHintStyle().Render("↑/↓ navigate · Enter select · Esc clear/cancel"))
 	return sb.String()
 }
 
 // renderScrollIndicator writes a scroll indicator if the condition is true
 func (s *Model) renderScrollIndicator(sb *strings.Builder, show bool, text string) {
 	if show {
-		sb.WriteString(kit.SelectorHintStyle.Render("  "+text) + "\n")
+		sb.WriteString(kit.SelectorHintStyle().Render("  "+text) + "\n")
 	}
 }
 

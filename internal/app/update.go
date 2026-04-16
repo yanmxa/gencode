@@ -30,12 +30,12 @@ func (m *model) overlaySelectors() []overlaySelector {
 		&m.provider.Selector,
 		&m.tool.Selector,
 		&m.skill.Selector,
-		&m.agent.Model,
+		&m.agent,
 		&m.mcp.Selector,
 		&m.plugin.Selector,
 		&m.session.Selector,
 		&m.memory.Selector,
-		&m.search.Model,
+		&m.search,
 	}
 }
 

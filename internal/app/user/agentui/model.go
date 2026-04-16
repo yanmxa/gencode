@@ -44,6 +44,7 @@ func (l SaveLevel) String() string {
 
 // Model holds the state for the agent kit.
 type Model struct {
+	registry       *agent.Registry
 	active         bool
 	agents         []item
 	filteredAgents []item
@@ -63,8 +64,9 @@ type ToggleMsg struct {
 }
 
 // New creates a new agent selector Model.
-func New() Model {
+func New(reg *agent.Registry) Model {
 	return Model{
+		registry:   reg,
 		active:     false,
 		agents:     []item{},
 		maxVisible: 10,
@@ -74,10 +76,10 @@ func New() Model {
 // EnterSelect enters agent selection mode.
 func (s *Model) EnterSelect(width, height int) error {
 	// Get all agent configs from registry
-	allConfigs := agent.DefaultRegistry.ListConfigs()
+	allConfigs := s.registry.ListConfigs()
 
 	// Get disabled agents for the current level
-	disabledAgents := agent.DefaultRegistry.GetDisabledAt(s.saveLevel == saveLevelUser)
+	disabledAgents := s.registry.GetDisabledAt(s.saveLevel == saveLevelUser)
 
 	s.agents = make([]item, 0, len(allConfigs))
 	for _, cfg := range allConfigs {
@@ -202,7 +204,7 @@ func (s *Model) updateFilter() {
 
 // reloadAgentStates reloads the enabled/disabled states from the current save level.
 func (s *Model) reloadAgentStates() {
-	disabledAgents := agent.DefaultRegistry.GetDisabledAt(s.saveLevel == saveLevelUser)
+	disabledAgents := s.registry.GetDisabledAt(s.saveLevel == saveLevelUser)
 
 	// Update agent enabled states
 	for i := range s.agents {
@@ -235,7 +237,7 @@ func (s *Model) Toggle() tea.Cmd {
 	}
 
 	// Save to registry (project or user level based on saveLevel)
-	_ = agent.DefaultRegistry.SetEnabled(
+	_ = s.registry.SetEnabled(
 		selected.Name,
 		selected.Enabled,
 		s.saveLevel == saveLevelUser,
@@ -325,15 +327,15 @@ func (s *Model) Render() string {
 	// Title with count and save level indicator
 	levelIndicator := fmt.Sprintf("[%s]", s.saveLevel.String())
 	title := fmt.Sprintf("Manage Agents (%d/%d)  %s", len(s.filteredAgents), len(s.agents), levelIndicator)
-	sb.WriteString(kit.SelectorTitleStyle.Render(title))
+	sb.WriteString(kit.SelectorTitleStyle().Render(title))
 	sb.WriteString("\n")
 
 	// Search input box
 	searchPrompt := "\U0001f50d "
 	if s.searchQuery == "" {
-		sb.WriteString(kit.SelectorHintStyle.Render(searchPrompt + "Type to filter..."))
+		sb.WriteString(kit.SelectorHintStyle().Render(searchPrompt + "Type to filter..."))
 	} else {
-		sb.WriteString(kit.SelectorBreadcrumbStyle.Render(searchPrompt + s.searchQuery + "\u258f"))
+		sb.WriteString(kit.SelectorBreadcrumbStyle().Render(searchPrompt + s.searchQuery + "\u258f"))
 	}
 	sb.WriteString("\n\n")
 
@@ -342,7 +344,7 @@ func (s *Model) Render() string {
 
 	// Handle empty results
 	if len(s.filteredAgents) == 0 {
-		sb.WriteString(kit.SelectorHintStyle.Render("  No agents match the filter"))
+		sb.WriteString(kit.SelectorHintStyle().Render("  No agents match the filter"))
 		sb.WriteString("\n")
 	} else {
 		// Calculate visible range
@@ -350,7 +352,7 @@ func (s *Model) Render() string {
 
 		// Show scroll up indicator
 		if s.scrollOffset > 0 {
-			sb.WriteString(kit.SelectorHintStyle.Render("  \u2191 more above"))
+			sb.WriteString(kit.SelectorHintStyle().Render("  \u2191 more above"))
 			sb.WriteString("\n")
 		}
 
@@ -363,10 +365,10 @@ func (s *Model) Render() string {
 			var statusStyle lipgloss.Style
 			if a.Enabled {
 				statusIcon = "\u25cf"
-				statusStyle = kit.SelectorStatusConnected
+				statusStyle = kit.SelectorStatusConnected()
 			} else {
 				statusIcon = "\u25cb"
-				statusStyle = kit.SelectorStatusNone
+				statusStyle = kit.SelectorStatusNone()
 			}
 
 			// Format agent info
@@ -417,26 +419,26 @@ func (s *Model) Render() string {
 			)
 
 			if i == s.selectedIdx {
-				sb.WriteString(kit.SelectorSelectedStyle.Render("> " + line))
+				sb.WriteString(kit.SelectorSelectedStyle().Render("> " + line))
 			} else {
-				sb.WriteString(kit.SelectorItemStyle.Render("  " + line))
+				sb.WriteString(kit.SelectorItemStyle().Render("  " + line))
 			}
 			sb.WriteString("\n")
 		}
 
 		// Show scroll down indicator
 		if endIdx < len(s.filteredAgents) {
-			sb.WriteString(kit.SelectorHintStyle.Render("  \u2193 more below"))
+			sb.WriteString(kit.SelectorHintStyle().Render("  \u2193 more below"))
 			sb.WriteString("\n")
 		}
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(kit.SelectorHintStyle.Render("\u2191/\u2193 navigate \u00b7 Enter toggle \u00b7 Tab level \u00b7 Esc cancel"))
+	sb.WriteString(kit.SelectorHintStyle().Render("\u2191/\u2193 navigate \u00b7 Enter toggle \u00b7 Tab level \u00b7 Esc cancel"))
 
 	// Wrap in border
 	content := sb.String()
-	box := kit.SelectorBorderStyle.Width(boxWidth).Render(content)
+	box := kit.SelectorBorderStyle().Width(boxWidth).Render(content)
 
 	// Center the box
 	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)

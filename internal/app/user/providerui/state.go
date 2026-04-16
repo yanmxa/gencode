@@ -15,6 +15,11 @@ type State struct {
 	StatusMessage  string // Temporary status shown in status bar
 }
 
+// SetStatusMessage sets the temporary status message displayed in the status bar.
+func (s *State) SetStatusMessage(msg string) {
+	s.StatusMessage = msg
+}
+
 // StatusExpiredMsg signals that the temporary status message should be cleared.
 type StatusExpiredMsg struct{}
 

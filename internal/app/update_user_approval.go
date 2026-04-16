@@ -103,7 +103,7 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 
 		// Hook wants to allow — validate against safety invariant
 		args := m.buildPermissionArgs(msg.Request)
-		if m.settings != nil && m.settings.ResolveHookAllow(msg.Request.ToolName, args, m.mode.SessionPermissions) {
+		if m.settings != nil && m.settings.ResolveHookAllow(msg.Request.ToolName, args, m.sessionPermissions) {
 			// Hook allow is valid, skip permission prompt
 			m.approval.Hide()
 			return toolui.ExecuteApproved(m.tool.Context(), m.agentOutput.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
@@ -242,22 +242,22 @@ func (m *model) applyPermissionUpdates(updates []hooks.PermissionUpdate) {
 	for _, pu := range updates {
 		switch pu.Type {
 		case "setMode":
-			if m.mode.SessionPermissions != nil {
+			if m.sessionPermissions != nil {
 				switch pu.Mode {
 				case "bypassPermissions":
 					// Hooks cannot escalate to bypassPermissions — ignore
 					log.Logger().Warn("hook attempted to set bypassPermissions mode, denied")
 				case "acceptEdits":
-					m.mode.SessionPermissions.Mode = config.ModeAutoAccept
-					m.mode.Operation = config.ModeAutoAccept
+					m.sessionPermissions.Mode = config.ModeAutoAccept
+					m.operationMode = config.ModeAutoAccept
 				case "dontAsk":
-					m.mode.SessionPermissions.Mode = config.ModeDontAsk
+					m.sessionPermissions.Mode = config.ModeDontAsk
 				case "plan":
-					m.mode.SessionPermissions.Mode = config.ModePlan
-					m.mode.Operation = config.ModePlan
+					m.sessionPermissions.Mode = config.ModePlan
+					m.operationMode = config.ModePlan
 				case "normal":
-					m.mode.SessionPermissions.Mode = config.ModeNormal
-					m.mode.Operation = config.ModeNormal
+					m.sessionPermissions.Mode = config.ModeNormal
+					m.operationMode = config.ModeNormal
 				}
 			}
 
@@ -281,16 +281,16 @@ func (m *model) applyPermissionUpdates(updates []hooks.PermissionUpdate) {
 						log.Logger().Warn("failed to persist hook rule", zap.Error(err))
 					}
 					needReload = true
-				} else if m.mode.SessionPermissions != nil {
+				} else if m.sessionPermissions != nil {
 					// Session-scoped (default)
-					m.mode.SessionPermissions.AllowPattern(ruleStr)
+					m.sessionPermissions.AllowPattern(ruleStr)
 				}
 			}
 
 		case "addDirectories":
-			if m.mode.SessionPermissions != nil {
+			if m.sessionPermissions != nil {
 				for _, dir := range pu.Directories {
-					m.mode.SessionPermissions.AddWorkingDirectory(dir)
+					m.sessionPermissions.AddWorkingDirectory(dir)
 				}
 			}
 		}

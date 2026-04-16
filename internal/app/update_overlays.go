@@ -41,7 +41,7 @@ func (m *model) updateSearch(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case searchui.SelectedMsg:
 		m.search.Cancel()
-		m.provider.StatusMessage = fmt.Sprintf("Search engine: %s", msg.Provider)
+		m.provider.SetStatusMessage(fmt.Sprintf("Search engine: %s", msg.Provider))
 		return providerui.StatusTimer(3 * time.Second), true
 	}
 	return nil, false
@@ -62,6 +62,10 @@ func (m *model) GetCwd() string                { return m.cwd }
 func (m *model) ReloadPluginBackedState() error { return m.reloadPluginBackedState() }
 
 // memory.Runtime
+func (m *model) ClearCachedInstructions() {
+	m.cachedUserInstructions = ""
+	m.cachedProjectInstructions = ""
+}
 func (m *model) RefreshMemoryContext(trigger string) { m.refreshMemoryContext(trigger) }
 func (m *model) FireFileChanged(path, tool string)   { m.fireFileChanged(path, tool) }
 
@@ -69,19 +73,19 @@ func (m *model) FireFileChanged(path, tool string)   { m.fireFileChanged(path, t
 func (m *model) SetInputText(text string) { m.userInput.Textarea.SetValue(text) }
 
 // providerui.Runtime
-func (m *model) SetLLM(p provider.Provider)                    { m.llmProvider = p }
-func (m *model) SetCurrentModel(cm *provider.CurrentModelInfo) { m.currentModel = cm }
-func (m *model) OnProviderChanged() {
+func (m *model) SwitchProvider(p provider.Provider) {
+	m.llmProvider = p
 	if m.hookEngine != nil {
 		m.hookEngine.SetLLMCompleter(buildLLMCompleter(m.llmProvider), m.getModelID())
 	}
 	m.reconfigureAgentTool()
 }
+func (m *model) SetCurrentModel(cm *provider.CurrentModelInfo) { m.currentModel = cm }
 
 // sessionui.Runtime
 func (m *model) EnsureSessionStore() error { return m.ensureSessionStore() }
 func (m *model) ForkSession(id string) (string, error) {
-	forked, err := m.session.Store.Fork(id)
+	forked, err := m.sessionStore.Fork(id)
 	if err != nil {
 		return "", err
 	}

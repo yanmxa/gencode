@@ -71,7 +71,7 @@ func TestPrepareServerEditAndApplyServerEdit_RoundTrip(t *testing.T) {
 		t.Fatalf("AddServer() error = %v", err)
 	}
 
-	info, err := PrepareServerEdit(coremcp.DefaultRegistry, "demo")
+	info, err := coremcp.PrepareServerEdit(coremcp.DefaultRegistry, "demo")
 	if err != nil {
 		t.Fatalf("PrepareServerEdit() error = %v", err)
 	}
@@ -92,7 +92,7 @@ func TestPrepareServerEditAndApplyServerEdit_RoundTrip(t *testing.T) {
 		t.Fatalf("WriteFile(temp) error = %v", err)
 	}
 
-	if err := ApplyServerEdit(coremcp.DefaultRegistry, info); err != nil {
+	if err := coremcp.ApplyServerEdit(coremcp.DefaultRegistry, info); err != nil {
 		t.Fatalf("ApplyServerEdit() error = %v", err)
 	}
 
@@ -138,22 +138,22 @@ func TestHandleGet_MasksSecretsAndShowsDefaults(t *testing.T) {
 }
 
 func Test_parseScopeAndKeyValues(t *testing.T) {
-	if parseScope("global") != coremcp.ScopeUser {
+	if coremcp.ParseScope("global") != coremcp.ScopeUser {
 		t.Fatal("expected global alias to map to user scope")
 	}
-	if parseScope("project") != coremcp.ScopeProject {
+	if coremcp.ParseScope("project") != coremcp.ScopeProject {
 		t.Fatal("expected project scope")
 	}
-	if parseScope("anything-else") != coremcp.ScopeLocal {
+	if coremcp.ParseScope("anything-else") != coremcp.ScopeLocal {
 		t.Fatal("expected unknown scope to default to local")
 	}
 
-	got := parseKeyValues([]string{"API_KEY = secret ", " BadEntry ", "X-Test: abc "}, "=")
+	got := coremcp.ParseKeyValues([]string{"API_KEY = secret ", " BadEntry ", "X-Test: abc "}, "=")
 	if len(got) != 1 || got["API_KEY"] != "secret" {
 		t.Fatalf("unexpected parsed equals map: %#v", got)
 	}
 
-	got = parseKeyValues([]string{"Authorization: Bearer token", "InvalidHeader"}, ":")
+	got = coremcp.ParseKeyValues([]string{"Authorization: Bearer token", "InvalidHeader"}, ":")
 	if len(got) != 1 || got["Authorization"] != "Bearer token" {
 		t.Fatalf("unexpected parsed header map: %#v", got)
 	}
@@ -165,7 +165,7 @@ func TestApplyServerEdit_InvalidJSONReturnsErrorAndRemovesTempFile(t *testing.T)
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	err := ApplyServerEdit(nil, &EditInfo{
+	err := coremcp.ApplyServerEdit(nil, &coremcp.EditInfo{
 		TempFile:   tmpFile,
 		ServerName: "demo",
 		Scope:      coremcp.ScopeLocal,

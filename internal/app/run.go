@@ -254,11 +254,11 @@ func cloneSettings(src *config.Settings) *config.Settings {
 
 // printExitMessage prints resume command after the TUI exits.
 func printExitMessage(m model) {
-	if m.session.CurrentID != "" {
+	if m.sessionID != "" {
 		dim := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 		fmt.Println()
 		fmt.Println(dim.Render("Resume this session with:"))
-		fmt.Println(dim.Render("gen -r " + m.session.CurrentID))
+		fmt.Println(dim.Render("gen -r " + m.sessionID))
 		fmt.Println()
 	}
 }

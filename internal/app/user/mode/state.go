@@ -1,19 +1,14 @@
 package mode
 
 import (
-	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
-// State holds all operation mode and plan state for the TUI model.
+// State holds plan mode UI state and modal prompts.
+// Domain state (OperationMode, SessionPermissions, DisabledTools) lives on the
+// parent app model, not here.
 type State struct {
-	// Operation mode
-	Operation          config.OperationMode
-	SessionPermissions *config.SessionPermissions
-	DisabledTools      map[string]bool
-
-	// Plan
 	Enabled              bool
 	Task                 string
 	Store                *plan.Store

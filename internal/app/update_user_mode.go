@@ -28,9 +28,9 @@ func (m *model) ensurePlanStore() {
 }
 
 func (m *model) cycleOperationMode() {
-	m.mode.Operation = m.mode.Operation.NextWithBypass(m.settings != nil && m.settings.AllowBypass != nil && *m.settings.AllowBypass)
+	m.operationMode = m.operationMode.NextWithBypass(m.settings != nil && m.settings.AllowBypass != nil && *m.settings.AllowBypass)
 	m.applyOperationModePermissions()
-	m.mode.Enabled = m.mode.Operation == config.ModePlan
+	m.mode.Enabled = m.operationMode == config.ModePlan
 
 	// Ensure plan store is initialized when entering plan mode via shift+tab.
 	if m.mode.Enabled {
@@ -45,30 +45,30 @@ func (m *model) cycleOperationMode() {
 // applyOperationModePermissions configures session permissions based on the current mode.
 func (m *model) applyOperationModePermissions() {
 	// Reset all permissions first
-	m.mode.SessionPermissions.AllowAllEdits = false
-	m.mode.SessionPermissions.AllowAllWrites = false
-	m.mode.SessionPermissions.AllowAllBash = false
-	m.mode.SessionPermissions.AllowAllSkills = false
-	m.mode.SessionPermissions.Mode = config.ModeNormal
+	m.sessionPermissions.AllowAllEdits = false
+	m.sessionPermissions.AllowAllWrites = false
+	m.sessionPermissions.AllowAllBash = false
+	m.sessionPermissions.AllowAllSkills = false
+	m.sessionPermissions.Mode = config.ModeNormal
 
 	// Enable auto-accept permissions
-	if m.mode.Operation == config.ModeAutoAccept {
-		m.mode.SessionPermissions.AllowAllEdits = true
-		m.mode.SessionPermissions.AllowAllWrites = true
-		m.mode.SessionPermissions.AddWorkingDirectory(m.cwd)
+	if m.operationMode == config.ModeAutoAccept {
+		m.sessionPermissions.AllowAllEdits = true
+		m.sessionPermissions.AllowAllWrites = true
+		m.sessionPermissions.AddWorkingDirectory(m.cwd)
 		for _, pattern := range config.CommonAllowPatterns {
-			m.mode.SessionPermissions.AllowPattern(pattern)
+			m.sessionPermissions.AllowPattern(pattern)
 		}
 	}
 
-	if m.mode.Operation == config.ModeBypassPermissions {
-		m.mode.SessionPermissions.Mode = config.ModeBypassPermissions
+	if m.operationMode == config.ModeBypassPermissions {
+		m.sessionPermissions.Mode = config.ModeBypassPermissions
 	}
 }
 
 // operationModeName returns the string name of the current operation mode.
 func (m *model) operationModeName() string {
-	switch m.mode.Operation {
+	switch m.operationMode {
 	case config.ModeAutoAccept:
 		return "auto"
 	case config.ModePlan:
@@ -82,13 +82,13 @@ func (m *model) operationModeName() string {
 
 // enableAutoAcceptMode enables auto-accept permissions and sets the mode.
 func (m *model) enableAutoAcceptMode() {
-	m.mode.SessionPermissions.AllowAllEdits = true
-	m.mode.SessionPermissions.AllowAllWrites = true
-	m.mode.SessionPermissions.AddWorkingDirectory(m.cwd)
+	m.sessionPermissions.AllowAllEdits = true
+	m.sessionPermissions.AllowAllWrites = true
+	m.sessionPermissions.AddWorkingDirectory(m.cwd)
 	for _, pattern := range config.CommonAllowPatterns {
-		m.mode.SessionPermissions.AllowPattern(pattern)
+		m.sessionPermissions.AllowPattern(pattern)
 	}
-	m.mode.Operation = config.ModeAutoAccept
+	m.operationMode = config.ModeAutoAccept
 	m.mode.Enabled = false
 }
 
@@ -160,7 +160,7 @@ func (m *model) handlePlanRequest(msg appmode.PlanRequestMsg) tea.Cmd {
 func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 	if !msg.Approved {
 		m.mode.Enabled = false
-		m.mode.Operation = config.ModeNormal
+		m.operationMode = config.ModeNormal
 		return m.abortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.", false)
 	}
 
@@ -192,10 +192,10 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 	case "auto":
 		m.enableAutoAcceptMode()
 	case "manual":
-		m.mode.Operation = config.ModeNormal
+		m.operationMode = config.ModeNormal
 		m.mode.Enabled = false
 	case "modify":
-		m.mode.Operation = config.ModePlan
+		m.operationMode = config.ModePlan
 		m.mode.Enabled = true
 	}
 
@@ -223,7 +223,7 @@ func (m *model) handleEnterPlanRequest(msg appmode.EnterPlanRequestMsg) tea.Cmd 
 func (m *model) handleEnterPlanResponse(msg appmode.EnterPlanResponseMsg) tea.Cmd {
 	if msg.Approved {
 		m.mode.Enabled = true
-		m.mode.Operation = config.ModePlan
+		m.operationMode = config.ModePlan
 		if msg.Request != nil && msg.Request.Message != "" {
 			m.mode.Task = msg.Request.Message
 		}

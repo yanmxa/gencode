@@ -1,4 +1,4 @@
-package skillui
+package approval
 
 import (
 	"fmt"
@@ -6,29 +6,27 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 )
 
-// Preview renders a preview of skill metadata for permission prompts.
-type Preview struct {
+// skillPreview renders a preview of skill metadata for permission prompts.
+type skillPreview struct {
 	skillMeta *perm.SkillMetadata
 }
 
-// NewPreview creates a new Preview instance.
-func NewPreview(meta *perm.SkillMetadata) *Preview {
-	return &Preview{skillMeta: meta}
+func newSkillPreview(meta *perm.SkillMetadata) *skillPreview {
+	return &skillPreview{skillMeta: meta}
 }
 
 // Render renders the skill preview.
-func (p *Preview) Render(width int) string {
+func (p *skillPreview) Render(width int) string {
 	if p.skillMeta == nil {
 		return ""
 	}
 
 	var sb strings.Builder
 
-	// Skill name style
 	nameStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Primary).Bold(true)
 	dimStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 	labelStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)

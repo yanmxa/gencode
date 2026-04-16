@@ -12,7 +12,6 @@ import (
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
-	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
@@ -151,8 +150,8 @@ func TestFreshSessionInitializesTaskStorageAndOutputDir(t *testing.T) {
 	_ = task.SetOutputDir("")
 
 	m := newBaseModel(t.TempDir(), modelInfra{initialSessionID: "session-fresh-123"})
-	if m.session.CurrentID != "session-fresh-123" {
-		t.Fatalf("expected initial session id to propagate, got %q", m.session.CurrentID)
+	if m.sessionID != "session-fresh-123" {
+		t.Fatalf("expected initial session id to propagate, got %q", m.sessionID)
 	}
 
 	m.initTaskStorage()
@@ -469,12 +468,10 @@ func TestChangeCwdReloadsProjectScopedSettings(t *testing.T) {
 	}
 
 	m := &model{
-		cwd:      oldCwd,
-		settings: initSettings(oldCwd),
-		mode: appmode.State{
-			SessionPermissions: config.NewSessionPermissions(),
-			DisabledTools:      map[string]bool{"Bash": true},
-		},
+		cwd:                oldCwd,
+		settings:           initSettings(oldCwd),
+		sessionPermissions: config.NewSessionPermissions(),
+		disabledTools:      map[string]bool{"Bash": true},
 	}
 
 	m.changeCwd(newCwd)
@@ -485,11 +482,11 @@ func TestChangeCwdReloadsProjectScopedSettings(t *testing.T) {
 	if m.settings.DisabledTools["Bash"] {
 		t.Fatalf("expected Bash disable from old cwd to be cleared, got %#v", m.settings.DisabledTools)
 	}
-	if !m.mode.DisabledTools["Grep"] {
-		t.Fatalf("expected mode disabled tools to reload for new cwd, got %#v", m.mode.DisabledTools)
+	if !m.disabledTools["Grep"] {
+		t.Fatalf("expected mode disabled tools to reload for new cwd, got %#v", m.disabledTools)
 	}
-	if m.mode.DisabledTools["Bash"] {
-		t.Fatalf("expected old cwd disabled tools to be replaced, got %#v", m.mode.DisabledTools)
+	if m.disabledTools["Bash"] {
+		t.Fatalf("expected old cwd disabled tools to be replaced, got %#v", m.disabledTools)
 	}
 }
 
