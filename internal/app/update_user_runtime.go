@@ -37,13 +37,13 @@ func (m *model) handleStreamCancel() tea.Cmd {
 func (m *model) cancelPendingToolCalls() {
 	var toolCalls []core.ToolCall
 
-	if m.toolExec.Cancel != nil {
-		m.toolExec.Cancel()
+	if m.tool.Cancel != nil {
+		m.tool.Cancel()
 	}
 
-	if m.toolExec.PendingCalls != nil && m.toolExec.CurrentIdx < len(m.toolExec.PendingCalls) {
-		toolCalls = m.toolExec.PendingCalls[m.toolExec.CurrentIdx:]
-		m.toolExec.Reset()
+	if m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls) {
+		toolCalls = m.tool.PendingCalls[m.tool.CurrentIdx:]
+		m.tool.Reset()
 	} else if len(m.conv.Messages) > 0 {
 		lastMsg := m.conv.Messages[len(m.conv.Messages)-1]
 		if lastMsg.Role == core.RoleAssistant {
@@ -69,10 +69,10 @@ func (m *model) cancelPendingToolCalls() {
 // assistant message has a corresponding tool_result so the API doesn't reject
 // the request with "tool_use ids were found without tool_result blocks".
 func (m *model) cancelRemainingToolCalls(startIdx int) {
-	if m.toolExec.PendingCalls == nil || startIdx >= len(m.toolExec.PendingCalls) {
+	if m.tool.PendingCalls == nil || startIdx >= len(m.tool.PendingCalls) {
 		return
 	}
-	for _, tc := range m.toolExec.PendingCalls[startIdx:] {
+	for _, tc := range m.tool.PendingCalls[startIdx:] {
 		m.conv.Append(core.ChatMessage{
 			Role:     core.RoleUser,
 			ToolName: tc.Name,
@@ -166,8 +166,8 @@ func (m *model) quitWithCancel() (tea.Cmd, bool) {
 		m.agentSess = nil
 	}
 	m.conv.Stream.Stop()
-	if m.toolExec.Cancel != nil {
-		m.toolExec.Cancel()
+	if m.tool.Cancel != nil {
+		m.tool.Cancel()
 	}
 	m.fireSessionEnd("prompt_input_exit")
 	return tea.Quit, true

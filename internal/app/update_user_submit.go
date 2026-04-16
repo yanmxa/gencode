@@ -221,7 +221,7 @@ func (m *model) handleCommandSubmit(input string) (tea.Cmd, bool) {
 	}
 
 	insertAt := len(m.conv.Messages)
-	result, cmd, isCmd := executeCommand(m.toolExec.Begin(), m, input)
+	result, cmd, isCmd := executeCommand(m.tool.Begin(), m, input)
 	if !isCmd {
 		if preAppended && len(m.conv.Messages) > 0 {
 			m.conv.Messages = m.conv.Messages[:len(m.conv.Messages)-1]

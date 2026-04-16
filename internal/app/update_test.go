@@ -11,7 +11,7 @@ import (
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
-	"github.com/yanmxa/gencode/internal/app/output/toolexec"
+	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -35,12 +35,14 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 			PlanApproval: appmode.NewPlanPrompt(),
 			Question:     appmode.NewQuestionPrompt(),
 		},
-		toolExec: toolexec.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
 			},
+		},
 		conv: appconv.New(),
 	}
 
@@ -79,12 +81,14 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 			PlanApproval: appmode.NewPlanPrompt(),
 			Question:     appmode.NewQuestionPrompt(),
 		},
-		toolExec: toolexec.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
 			},
+		},
 		conv: appconv.New(),
 	}
 
@@ -120,12 +124,14 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 			PlanApproval: appmode.NewPlanPrompt(),
 			Question:     appmode.NewQuestionPrompt(),
 		},
-		toolExec: toolexec.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
 			},
+		},
 		conv: appconv.New(),
 	}
 
@@ -164,12 +170,14 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 			PlanApproval: appmode.NewPlanPrompt(),
 			Question:     appmode.NewQuestionPrompt(),
 		},
-		toolExec: toolexec.ExecState{
+		tool: toolui.State{
+			ExecState: toolui.ExecState{
 				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
 			},
+		},
 		conv: appconv.New(),
 	}
 

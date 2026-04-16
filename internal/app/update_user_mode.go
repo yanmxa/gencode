@@ -207,7 +207,7 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
 	m.conv.Clear()
 	m.enableAutoAcceptMode()
-	m.toolExec.Reset()
+	m.tool.Reset()
 
 	userMsg := fmt.Sprintf("Implement the following approved plan step by step. Start coding immediately — do NOT explore or investigate further.\n\n%s", planContent)
 	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: userMsg})

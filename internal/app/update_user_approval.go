@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
-	"github.com/yanmxa/gencode/internal/app/output/toolexec"
+	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/util/log"
@@ -57,7 +57,7 @@ func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
 // keeping the TUI responsive while waiting for external hook responses (e.g. FIFO-based monitors).
 func (m *model) dispatchPermissionHookAsync(req *perm.PermissionRequest) tea.Cmd {
 	hookEngine := m.hookEngine
-	ctx := m.toolExec.Context()
+	ctx := m.tool.Context()
 
 	hookInput := hooks.HookInput{
 		ToolName:  req.ToolName,
@@ -106,7 +106,7 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 		if m.settings != nil && m.settings.ResolveHookAllow(msg.Request.ToolName, args, m.sessionPermissions) {
 			// Hook allow is valid, skip permission prompt
 			m.approval.Hide()
-			return toolexec.ExecuteApproved(m.toolExec.Context(), m.agentOutput.ProgressHub, m.toolExec.PendingCalls, m.toolExec.CurrentIdx, m.cwd)
+			return toolui.ExecuteApproved(m.tool.Context(), m.agentOutput.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
 		}
 		// Safety invariant denied the hook allow — fall through to normal approval modal
 	}
@@ -147,12 +147,12 @@ func (m *model) showApprovalModal(req *perm.PermissionRequest) tea.Cmd {
 }
 
 func (m *model) abortToolWithError(errorMsg string, retry bool) tea.Cmd {
-	if m.toolExec.PendingCalls == nil || m.toolExec.CurrentIdx >= len(m.toolExec.PendingCalls) {
-		m.toolExec.Reset()
+	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
+		m.tool.Reset()
 		m.conv.Stream.Stop()
 		return tea.Batch(m.commitMessages()...)
 	}
-	tc := m.toolExec.PendingCalls[m.toolExec.CurrentIdx]
+	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 	m.conv.Append(core.ChatMessage{
 		Role:     core.RoleUser,
 		ToolName: tc.Name,
@@ -162,8 +162,8 @@ func (m *model) abortToolWithError(errorMsg string, retry bool) tea.Cmd {
 			IsError:    true,
 		},
 	})
-	m.cancelRemainingToolCalls(m.toolExec.CurrentIdx + 1)
-	m.toolExec.Reset()
+	m.cancelRemainingToolCalls(m.tool.CurrentIdx + 1)
+	m.tool.Reset()
 	m.conv.Stream.Stop()
 	commitCmds := m.commitMessages()
 	if retry {
@@ -224,8 +224,8 @@ func (m *model) buildPermissionArgs(req *perm.PermissionRequest) map[string]any 
 // for use in hook events (matching CC's behavior of sending all params).
 // Falls back to buildPermissionArgs if the pending call can't be parsed.
 func (m *model) fullToolInputForHook(req *perm.PermissionRequest) map[string]any {
-	if m.toolExec.PendingCalls != nil && m.toolExec.CurrentIdx < len(m.toolExec.PendingCalls) {
-		tc := m.toolExec.PendingCalls[m.toolExec.CurrentIdx]
+	if m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls) {
+		tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 		if tc.Name == req.ToolName {
 			if params, err := core.ParseToolInput(tc.Input); err == nil {
 				return params
@@ -324,14 +324,14 @@ func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
 // applyUpdatedToolInput marshals the hook-provided input and updates the current
 // pending tool call so the executor uses the modified arguments.
 func (m *model) applyUpdatedToolInput(updated map[string]any) {
-	if m.toolExec.PendingCalls == nil || m.toolExec.CurrentIdx >= len(m.toolExec.PendingCalls) {
+	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
 		return
 	}
 	data, err := json.Marshal(updated)
 	if err != nil {
 		return
 	}
-	m.toolExec.PendingCalls[m.toolExec.CurrentIdx].Input = string(data)
+	m.tool.PendingCalls[m.tool.CurrentIdx].Input = string(data)
 }
 
 // togglePermissionPreview toggles the expand state of permission prompt previews.
