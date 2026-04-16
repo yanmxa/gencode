@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/user/memory"
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/extension/mcp"
 )
@@ -103,7 +103,7 @@ func Update(rt Runtime, state *State, msg tea.Msg) (tea.Cmd, bool) {
 // StartMCPEditor launches the external editor for an MCP config file.
 // Exported for use by command handlers in the parent app package.
 func StartMCPEditor(filePath string) tea.Cmd {
-	return memory.StartExternalEditor(filePath, func(err error) tea.Msg {
+	return kit.StartExternalEditor(filePath, func(err error) tea.Msg {
 		return EditorFinishedMsg{Err: err}
 	})
 }

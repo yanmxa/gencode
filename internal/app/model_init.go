@@ -193,7 +193,7 @@ func newToolState() toolui.State {
 }
 
 func newMCPState() mcpui.State {
-	return mcpui.State{Selector: mcpui.New(), Registry: mcp.DefaultRegistry}
+	return mcpui.State{Selector: mcpui.New()}
 }
 
 func newPluginState() pluginui.State {
@@ -258,13 +258,12 @@ func (m *model) reloadPluginBackedState() error {
 	if err := mcp.Initialize(m.cwd); err != nil {
 		return fmt.Errorf("failed to reload MCP registry: %w", err)
 	}
-	m.mcp.Registry = mcp.DefaultRegistry
 
 	settings := initSettings(m.cwd)
 	m.settings = settings
 	if m.hookEngine != nil {
 		m.hookEngine.SetSettings(settings)
-		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.llmProvider, settings, m.cwd, m.isGit, m.mcp.Registry, m.getModelID()))
+		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.llmProvider, settings, m.cwd, m.isGit, mcp.DefaultRegistry, m.getModelID()))
 	}
 	m.reconfigureAgentTool()
 
@@ -433,10 +432,10 @@ func (m *model) buildLoopAgentsSection() string {
 }
 
 func (m *model) buildMCPToolsGetter() func() []core.ToolSchema {
-	if m.mcp.Registry == nil {
+	if mcp.DefaultRegistry == nil {
 		return nil
 	}
-	return m.mcp.Registry.GetToolSchemas
+	return mcp.DefaultRegistry.GetToolSchemas
 }
 
 type agentToolOption func(*agent.Executor)

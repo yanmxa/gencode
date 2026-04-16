@@ -6,6 +6,7 @@ import (
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/extension/mcp"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/app/user/suggest"
 )
@@ -66,7 +67,7 @@ func (m *model) changeCwd(newCwd string) {
 
 	if m.hookEngine != nil {
 		m.hookEngine.SetCwd(newCwd)
-		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.llmProvider, m.settings, newCwd, m.isGit, m.mcp.Registry, m.getModelID()))
+		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.llmProvider, m.settings, newCwd, m.isGit, mcp.DefaultRegistry, m.getModelID()))
 		outcome := m.hookEngine.Execute(context.Background(), hooks.CwdChanged, hooks.HookInput{
 			OldCwd: oldCwd,
 			NewCwd: newCwd,

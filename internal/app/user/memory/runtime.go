@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
 )
 
@@ -77,7 +78,7 @@ func handleEditorFinished(rt Runtime, state *State, msg EditorFinishedMsg) tea.C
 
 // startExternalEditorForMemory launches the external editor for a memory file.
 func startExternalEditorForMemory(filePath string) tea.Cmd {
-	return StartExternalEditor(filePath, func(err error) tea.Msg {
+	return kit.StartExternalEditor(filePath, func(err error) tea.Msg {
 		return EditorFinishedMsg{Err: err}
 	})
 }

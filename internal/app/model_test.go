@@ -274,10 +274,10 @@ You are a verifier.`), 0o644); err != nil {
 	if !m.hookEngine.HasHooks(hooks.SessionStart) {
 		t.Fatal("expected hook engine to see plugin hooks after --plugin-dir load")
 	}
-	if m.mcp.Registry == nil {
+	if mcp.DefaultRegistry == nil {
 		t.Fatal("expected MCP registry to be reloaded after --plugin-dir load")
 	}
-	if _, ok := m.mcp.Registry.GetConfig("demo:db"); !ok {
+	if _, ok := mcp.DefaultRegistry.GetConfig("demo:db"); !ok {
 		t.Fatal("expected plugin MCP server to be available after --plugin-dir load")
 	}
 }

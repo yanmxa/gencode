@@ -11,7 +11,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/app/kit"
-	"github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
 	appcommand "github.com/yanmxa/gencode/internal/extension/command"
@@ -116,7 +115,7 @@ func initTheme() (done bool, err error) {
 	settings := initSettings("")
 	themeValue := settings.Theme
 	if themeValue == "" {
-		chosen, err := user.RunThemeSelector()
+		chosen, err := kit.RunThemeSelector()
 		if err != nil {
 			return false, fmt.Errorf("theme selection failed: %w", err)
 		}

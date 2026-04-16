@@ -32,6 +32,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/extension/mcp"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/task/tracker"
@@ -244,8 +245,8 @@ func (m *model) agentToolOpts() []agentToolOption {
 	opts := []agentToolOption{
 		withAgentContext(m.memory.CachedUser, m.memory.CachedProject, m.isGit),
 	}
-	if m.mcp.Registry != nil {
-		opts = append(opts, withAgentMCP(m.mcp.Registry.GetToolSchemas, m.mcp.Registry))
+	if mcp.DefaultRegistry != nil {
+		opts = append(opts, withAgentMCP(mcp.DefaultRegistry.GetToolSchemas, mcp.DefaultRegistry))
 	}
 	return opts
 }

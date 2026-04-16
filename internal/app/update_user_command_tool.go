@@ -10,6 +10,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/extension/mcp"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -32,8 +33,8 @@ func handleGlobCommand(ctx context.Context, m *model, args string) (string, tea.
 
 func handleToolCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
 	var mcpTools func() []core.ToolSchema
-	if m.mcp.Registry != nil {
-		mcpTools = m.mcp.Registry.GetToolSchemas
+	if mcp.DefaultRegistry != nil {
+		mcpTools = mcp.DefaultRegistry.GetToolSchemas
 	}
 	if err := m.tool.Selector.EnterSelect(m.width, m.height, m.mode.DisabledTools, mcpTools); err != nil {
 		return "", nil, err
