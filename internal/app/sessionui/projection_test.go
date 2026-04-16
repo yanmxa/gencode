@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/yanmxa/gencode/internal/session"
-	"github.com/yanmxa/gencode/internal/transcript"
+	"github.com/yanmxa/gencode/internal/session/transcript"
 )
 
 func TestEntriesToNodesAppliesDefaults(t *testing.T) {

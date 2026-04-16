@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/yanmxa/gencode/internal/app/render"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -64,8 +64,8 @@ func getTokenLimitAgentTools() []provider.ToolSchema {
 }
 
 // appendToolCallMessages executes tool calls and appends the results as messages.
-func appendToolCallMessages(ctx context.Context, messages []message.Message, toolCalls []message.ToolCall, cwd string) []message.Message {
-	messages = append(messages, message.AssistantMessage("", "", toolCalls))
+func appendToolCallMessages(ctx context.Context, messages []core.Message, toolCalls []core.ToolCall, cwd string) []core.Message {
+	messages = append(messages, core.AssistantMessage("", "", toolCalls))
 
 	for _, tc := range toolCalls {
 		var params map[string]any
@@ -74,7 +74,7 @@ func appendToolCallMessages(ctx context.Context, messages []message.Message, too
 		}
 
 		result := tool.Execute(ctx, tc.Name, params, cwd)
-		messages = append(messages, message.ToolResultMessage(message.ToolResult{
+		messages = append(messages, core.ToolResultMessage(core.ToolResult{
 			ToolCallID: tc.ID,
 			ToolName:   tc.Name,
 			Content:    result.Output,
@@ -206,8 +206,8 @@ func AutoFetchTokenLimits(ctx context.Context, deps AutoFetchTokenLimitsDeps) (s
 	}
 
 	systemPrompt := buildTokenLimitAgentPrompt(modelID, providerName, string(deps.CurrentModel.AuthMethod))
-	messages := []message.Message{
-		message.UserMessage(fmt.Sprintf("Find the token limits for model: %s (provider: %s)", modelID, providerName), nil),
+	messages := []core.Message{
+		core.UserMessage(fmt.Sprintf("Find the token limits for model: %s (provider: %s)", modelID, providerName), nil),
 	}
 
 	const maxTurns = 5
@@ -235,8 +235,8 @@ func AutoFetchTokenLimits(ctx context.Context, deps AutoFetchTokenLimitsDeps) (s
 		}
 
 		messages = append(messages,
-			message.AssistantMessage(content, "", nil),
-			message.UserMessage("Please continue searching or respond with FOUND or NOT_FOUND.", nil))
+			core.AssistantMessage(content, "", nil),
+			core.UserMessage("Please continue searching or respond with FOUND or NOT_FOUND.", nil))
 	}
 
 	return tokenLimitNotFoundMessage(modelID), nil

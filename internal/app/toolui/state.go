@@ -3,7 +3,7 @@ package toolui
 import (
 	"context"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 // State holds tool selector and execution state for the TUI model.
@@ -14,10 +14,10 @@ type State struct {
 
 // ExecState holds tool execution state for the TUI model.
 type ExecState struct {
-	PendingCalls    []message.ToolCall
+	PendingCalls    []core.ToolCall
 	CurrentIdx      int
 	Parallel        bool
-	ParallelResults map[int]message.ToolResult
+	ParallelResults map[int]core.ToolResult
 	ParallelCount   int
 	HookAllowed     map[string]bool // Tool call IDs pre-approved by hooks
 	HookForceAsk    map[string]bool // Tool call IDs forced to prompt by hooks (PreToolUse "ask")

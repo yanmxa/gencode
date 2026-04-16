@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
 // Lipgloss styles for tool result rendering, referencing theme directly.

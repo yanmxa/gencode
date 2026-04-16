@@ -5,8 +5,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/ui/suggest"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/app/suggest"
 )
 
 // PastedChunk holds a collapsed multi-line paste block.
@@ -31,7 +31,7 @@ type Model struct {
 // PendingImage holds an inline image token and its provider payload.
 type PendingImage struct {
 	ID   int
-	Data message.ImageData
+	Data core.Image
 }
 
 // ImageSelection tracks the currently selected inline image token.

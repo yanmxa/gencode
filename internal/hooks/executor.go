@@ -11,13 +11,12 @@ import (
 
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/message"
 )
 
 // FilterToolCallsResult holds the results from PreToolUse hook filtering.
 type FilterToolCallsResult struct {
-	Allowed           []message.ToolCall
-	Blocked           []message.ToolResult
+	Allowed           []core.ToolCall
+	Blocked           []core.ToolResult
 	HookAllowed       map[string]bool // tool call IDs pre-approved by hooks
 	HookForceAsk      map[string]bool // tool call IDs forced to prompt by hooks
 	AdditionalContext string
@@ -26,7 +25,7 @@ type FilterToolCallsResult struct {
 // FilterToolCalls runs PreToolUse hooks on each tool call and returns which
 // calls are allowed, which are blocked, and any context/permission flags.
 // The optional agentID/agentType are set when called from a subagent context.
-func (e *Engine) FilterToolCalls(ctx context.Context, calls []message.ToolCall, agentID, agentType string) FilterToolCallsResult {
+func (e *Engine) FilterToolCalls(ctx context.Context, calls []core.ToolCall, agentID, agentType string) FilterToolCallsResult {
 	r := FilterToolCallsResult{
 		HookAllowed:  make(map[string]bool),
 		HookForceAsk: make(map[string]bool),
@@ -37,7 +36,7 @@ func (e *Engine) FilterToolCalls(ctx context.Context, calls []message.ToolCall, 
 	}
 
 	for _, tc := range calls {
-		params, _ := message.ParseToolInput(tc.Input)
+		params, _ := core.ParseToolInput(tc.Input)
 		hookInput := HookInput{
 			ToolName:  tc.Name,
 			ToolInput: params,
@@ -47,10 +46,10 @@ func (e *Engine) FilterToolCalls(ctx context.Context, calls []message.ToolCall, 
 			hookInput.AgentID = agentID
 			hookInput.AgentType = agentType
 		}
-		outcome := e.Execute(ctx, core.PreToolUse, hookInput)
+		outcome := e.Execute(ctx, PreToolUse, hookInput)
 
 		if outcome.ShouldBlock {
-			r.Blocked = append(r.Blocked, *message.ErrorResult(tc, "Blocked by hook: "+outcome.BlockReason))
+			r.Blocked = append(r.Blocked, *core.ErrorResult(tc, "Blocked by hook: "+outcome.BlockReason))
 			continue
 		}
 

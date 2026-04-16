@@ -11,8 +11,8 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 
-	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/provider/openaicompat"
 	streamutil "github.com/yanmxa/gencode/internal/provider/stream"
@@ -44,7 +44,7 @@ func isResponsesModel(model string) bool {
 
 // Stream sends a completion request and returns a channel of streaming chunks.
 // It routes to the Responses API for codex models and Chat Completions for all others.
-func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
+func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan core.StreamChunk {
 	if isResponsesModel(opts.Model) {
 		return c.streamResponses(ctx, opts)
 	}
@@ -52,8 +52,8 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 }
 
 // streamResponses implements streaming via the Responses API for codex models.
-func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
-	ch := make(chan message.StreamChunk)
+func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOptions) <-chan core.StreamChunk {
+	ch := make(chan core.StreamChunk)
 
 	go func() {
 		defer close(ch)
@@ -63,7 +63,7 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 
 		for _, msg := range opts.Messages {
 			switch msg.Role {
-			case message.RoleUser:
+			case core.RoleUser:
 				if msg.ToolResult != nil {
 					inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 						OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
@@ -83,7 +83,7 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 						},
 					})
 				}
-			case message.RoleAssistant:
+			case core.RoleAssistant:
 				if len(msg.ToolCalls) > 0 {
 					// Add text content as a message if present
 					if msg.Content != "" {
@@ -183,7 +183,7 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 		state := streamutil.NewState(c.name)
 
 		// Track tool calls by item ID
-		toolCalls := make(map[string]*message.ToolCall)
+		toolCalls := make(map[string]*core.ToolCall)
 		hasToolCalls := false
 
 		// Read stream events
@@ -201,7 +201,7 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 				if itemEvent.Item.Type == "function_call" {
 					funcCall := itemEvent.Item.AsFunctionCall()
 					hasToolCalls = true
-					toolCalls[funcCall.ID] = &message.ToolCall{
+					toolCalls[funcCall.ID] = &core.ToolCall{
 						ID:   funcCall.CallID,
 						Name: funcCall.Name,
 					}
@@ -264,8 +264,8 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 }
 
 // streamChatCompletions implements streaming via the Chat Completions API.
-func (c *Client) streamChatCompletions(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
-	ch := make(chan message.StreamChunk)
+func (c *Client) streamChatCompletions(ctx context.Context, opts provider.CompletionOptions) <-chan core.StreamChunk {
+	ch := make(chan core.StreamChunk)
 
 	go func() {
 		defer close(ch)
@@ -304,7 +304,7 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 		state := streamutil.NewState(c.name)
 
 		// Track tool calls
-		toolCalls := make(map[int]*message.ToolCall)
+		toolCalls := make(map[int]*core.ToolCall)
 
 		// Read stream events
 		for stream.Next() {
@@ -323,7 +323,7 @@ func (c *Client) streamChatCompletions(ctx context.Context, opts provider.Comple
 
 					// Initialize new tool call
 					if _, exists := toolCalls[idx]; !exists {
-						toolCalls[idx] = &message.ToolCall{
+						toolCalls[idx] = &core.ToolCall{
 							ID:   tc.ID,
 							Name: tc.Function.Name,
 						}

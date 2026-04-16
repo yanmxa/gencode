@@ -134,9 +134,9 @@ func (t *BashTask) Complete(exitCode int, err error) {
 	notifyTaskCompleted(t.GetStatus())
 }
 
-// MarkKilled marks the task as killed (internal use).
+// markKilled marks the task as killed (internal use).
 // Closes the done channel so WaitForCompletion unblocks.
-func (t *BashTask) MarkKilled() {
+func (t *BashTask) markKilled() {
 	t.mu.Lock()
 	t.status = StatusKilled
 	t.endTime = time.Now()
@@ -206,7 +206,7 @@ func (t *BashTask) Kill() error {
 		}
 	}
 
-	t.MarkKilled()
+	t.markKilled()
 	return nil
 }
 

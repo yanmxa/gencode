@@ -9,7 +9,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
 const (
@@ -62,7 +62,7 @@ func RenderModeStatus(params OperationModeParams) string {
 		parts = append(parts, thinkingStatus)
 	}
 
-	if tokenUsage := RenderTokenUsage(params.InputTokens, params.InputLimit); tokenUsage != "" {
+	if tokenUsage := renderTokenUsage(params.InputTokens, params.InputLimit); tokenUsage != "" {
 		parts = append(parts, tokenUsage)
 	}
 
@@ -135,8 +135,8 @@ func RenderThinkingIndicator(level provider.ThinkingLevel) string {
 	return "  " + style.Render(icon+label)
 }
 
-// RenderTokenUsage returns token usage indicator.
-func RenderTokenUsage(inputTokens, inputLimit int) string {
+// renderTokenUsage returns token usage indicator.
+func renderTokenUsage(inputTokens, inputLimit int) string {
 	if inputLimit == 0 || inputTokens == 0 {
 		return ""
 	}

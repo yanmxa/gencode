@@ -3,7 +3,7 @@ package tool
 import (
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 // parentOnlyTools are tools that only the parent conversation can use.
@@ -19,10 +19,10 @@ var parentOnlyTools = map[string]bool{
 // If Static is non-nil, it is returned directly (for custom agents).
 // Otherwise, tools are resolved dynamically using the config fields.
 type Set struct {
-	Static    []message.ToolSchema        // fixed tool list (overrides dynamic)
+	Static    []core.ToolSchema        // fixed tool list (overrides dynamic)
 	Disabled  map[string]bool              // excluded tools
 	PlanMode  bool                         // plan mode filter
-	MCP       func() []message.ToolSchema // MCP tools getter
+	MCP       func() []core.ToolSchema // MCP tools getter
 	Allow     []string                     // agent allow list (nil = all tools, non-nil = only these)
 	Disallow     []string                  // agent deny list (excluded after allow filtering)
 	IsAgent      bool                      // true for subagent tool sets (excludes parent-only tools)
@@ -30,7 +30,7 @@ type Set struct {
 }
 
 // Tools returns the resolved tool set for a turn.
-func (s *Set) Tools() []message.ToolSchema {
+func (s *Set) Tools() []core.ToolSchema {
 	// Static tools override everything
 	if s.Static != nil {
 		return s.Static
@@ -51,14 +51,14 @@ func (s *Set) Tools() []message.ToolSchema {
 }
 
 // defaultTools returns the full tool set filtered by disabled/plan/deferred mode.
-func (s *Set) defaultTools() []message.ToolSchema {
+func (s *Set) defaultTools() []core.ToolSchema {
 	if s.PlanMode {
 		return getPlanModeToolSchemasFiltered(s.Disabled)
 	}
 
 	tools := GetToolSchemasWithMCP(s.MCP)
 
-	filtered := make([]message.ToolSchema, 0, len(tools))
+	filtered := make([]core.ToolSchema, 0, len(tools))
 	for _, t := range tools {
 		if s.Disabled[t.Name] {
 			continue
@@ -74,9 +74,9 @@ func (s *Set) defaultTools() []message.ToolSchema {
 
 // agentAllTools returns all tools except parent-only and disallowed tools.
 // Used for agents with nil Allow (= all tools).
-func (s *Set) agentAllTools() []message.ToolSchema {
+func (s *Set) agentAllTools() []core.ToolSchema {
 	allTools := GetToolSchemasWithMCP(s.MCP)
-	filtered := make([]message.ToolSchema, 0, len(allTools))
+	filtered := make([]core.ToolSchema, 0, len(allTools))
 	for _, t := range allTools {
 		if !parentOnlyTools[t.Name] && !s.isDisallowed(t.Name) {
 			filtered = append(filtered, t)
@@ -88,7 +88,7 @@ func (s *Set) agentAllTools() []message.ToolSchema {
 // agentTools returns tools filtered by the allow list.
 // Only tools in the Allow list are included. MCP tools matching
 // the allow list (e.g. "mcp__server__tool") are also included.
-func (s *Set) agentTools() []message.ToolSchema {
+func (s *Set) agentTools() []core.ToolSchema {
 	allTools := GetToolSchemas()
 
 	// Build allow set for fast lookup
@@ -97,7 +97,7 @@ func (s *Set) agentTools() []message.ToolSchema {
 		allowSet[strings.ToLower(name)] = true
 	}
 
-	filtered := make([]message.ToolSchema, 0, len(s.Allow))
+	filtered := make([]core.ToolSchema, 0, len(s.Allow))
 	for _, t := range allTools {
 		if allowSet[strings.ToLower(t.Name)] && !s.isDisallowed(t.Name) {
 			filtered = append(filtered, t)

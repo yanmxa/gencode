@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/yanmxa/gencode/internal/session"
-	"github.com/yanmxa/gencode/internal/tracker"
-	"github.com/yanmxa/gencode/internal/transcript"
+	"github.com/yanmxa/gencode/internal/task/tracker"
+	"github.com/yanmxa/gencode/internal/session/transcript"
 )
 
 func TestNormalizeMetadataAppliesDefaults(t *testing.T) {

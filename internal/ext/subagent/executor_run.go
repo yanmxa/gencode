@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/orchestration"
-	"github.com/yanmxa/gencode/internal/runtime"
+	"github.com/yanmxa/gencode/internal/loop"
 	"go.uber.org/zap"
 )
 
@@ -66,22 +66,22 @@ func (e *Executor) logRunStart(run *preparedRun) {
 	)
 }
 
-func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*runtime.Result, error) {
-	loop, cleanupLoop, err := e.buildLoop(ctx, run.cfg, run.cwd)
+func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*loop.Result, error) {
+	lp, cleanupLoop, err := e.buildLoop(ctx, run.cfg, run.cwd)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanupLoop()
 
-	loop.SetAgentContext(run.hookID, run.req.Agent)
+	lp.SetAgentContext(run.hookID, run.req.Agent)
 
-	if err := e.loadConversation(loop, run.req); err != nil {
+	if err := e.loadConversation(lp, run.req); err != nil {
 		return nil, err
 	}
-	loop.SetQuestionHandler(run.req.OnQuestion)
+	lp.SetQuestionHandler(run.req.OnQuestion)
 
 	onToolStart := e.buildOnToolStart(run.req, &run.progress)
-	return loop.Run(ctx, runtime.RunOptions{
+	return lp.Run(ctx, loop.RunOptions{
 		MaxTurns:            run.cfg.maxTurns,
 		OnToolStart:         onToolStart,
 		DrainInjectedInputs: e.buildDrainInjectedInputs(run.req),
@@ -97,7 +97,7 @@ func (e *Executor) buildDrainInjectedInputs(req AgentRequest) func() []string {
 	}
 }
 
-func (e *Executor) logRunCompletion(run *preparedRun, result *runtime.Result, success bool) {
+func (e *Executor) logRunCompletion(run *preparedRun, result *loop.Result, success bool) {
 	logFields := []zap.Field{
 		zap.String("agent", run.cfg.displayName),
 		zap.String("stopReason", result.StopReason),
@@ -112,7 +112,7 @@ func (e *Executor) logRunCompletion(run *preparedRun, result *runtime.Result, su
 	log.Logger().Warn("Agent completed", logFields...)
 }
 
-func (e *Executor) buildAgentResult(run *preparedRun, result *runtime.Result) *AgentResult {
+func (e *Executor) buildAgentResult(run *preparedRun, result *loop.Result) *AgentResult {
 	success, errMsg := interpretStopReason(result, run.cfg.maxTurns)
 	e.logRunCompletion(run, result, success)
 
@@ -141,8 +141,8 @@ func (e *Executor) buildAgentResult(run *preparedRun, result *runtime.Result) *A
 	}
 }
 
-func (e *Executor) buildCancelledAgentResult(run *preparedRun, result *runtime.Result) *AgentResult {
-	if result == nil || result.StopReason != runtime.StopCancelled {
+func (e *Executor) buildCancelledAgentResult(run *preparedRun, result *loop.Result) *AgentResult {
+	if result == nil || result.StopReason != loop.StopCancelled {
 		return nil
 	}
 

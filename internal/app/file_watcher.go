@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 )
 
@@ -165,7 +164,7 @@ func (w *fileWatcher) poll() {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		outcome := w.engine.Execute(ctx, core.FileChanged, hooks.HookInput{
+		outcome := w.engine.Execute(ctx, hooks.FileChanged, hooks.HookInput{
 			FilePath: change.path,
 			Event:    change.event,
 		})

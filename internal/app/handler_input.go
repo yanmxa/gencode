@@ -8,9 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appinput "github.com/yanmxa/gencode/internal/app/input"
-	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/ui/suggest"
+	"github.com/yanmxa/gencode/internal/app/suggest"
 )
 
 func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Cmd, bool) {
@@ -214,7 +213,7 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 			m.input.Suggestions.Hide()
 			return nil, true
 		}
-		if m.conv.Stream.Active && m.conv.Stream.Cancel != nil {
+		if m.conv.Stream.Active {
 			return m.handleStreamCancel(), true
 		}
 		return nil, true
@@ -283,11 +282,25 @@ func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 		return true, cmd
 	}
 
-	// Check selectors via unified interface dispatch.
-	for _, sel := range m.overlaySelectors() {
-		if sel.IsActive() {
-			return true, sel.HandleKeypress(msg)
-		}
+	switch {
+	case m.provider.Selector.IsActive():
+		return true, m.provider.Selector.HandleKeypress(msg)
+	case m.tool.Selector.IsActive():
+		return true, m.tool.Selector.HandleKeypress(msg)
+	case m.skill.Selector.IsActive():
+		return true, m.skill.Selector.HandleKeypress(msg)
+	case m.agent.Selector.IsActive():
+		return true, m.agent.Selector.HandleKeypress(msg)
+	case m.mcp.Selector.IsActive():
+		return true, m.mcp.Selector.HandleKeypress(msg)
+	case m.plugin.Selector.IsActive():
+		return true, m.plugin.Selector.HandleKeypress(msg)
+	case m.session.Selector.IsActive():
+		return true, m.session.Selector.HandleKeypress(msg)
+	case m.memory.Selector.IsActive():
+		return true, m.memory.Selector.HandleKeypress(msg)
+	case m.search.Selector.IsActive():
+		return true, m.search.Selector.HandleKeypress(msg)
 	}
 
 	return false, nil
@@ -371,6 +384,6 @@ func (m *model) checkPromptHook(prompt string) (bool, string) {
 	if m.hookEngine == nil {
 		return false, ""
 	}
-	outcome := m.hookEngine.Execute(context.Background(), core.UserPromptSubmit, hooks.HookInput{Prompt: prompt})
+	outcome := m.hookEngine.Execute(context.Background(), hooks.UserPromptSubmit, hooks.HookInput{Prompt: prompt})
 	return outcome.ShouldBlock, outcome.BlockReason
 }

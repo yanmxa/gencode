@@ -1,7 +1,7 @@
 package pluginui
 
 func (s *Model) resetListState() {
-	s.level = LevelTabList
+	s.level = levelTabList
 	s.selectedIdx = 0
 	s.scrollOffset = 0
 	s.parentIdx = 0

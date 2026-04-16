@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/tracker"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 // buildSystemPrompt builds agent-specific Extra content for the system prompt.

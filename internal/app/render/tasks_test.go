@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/orchestration"
-	"github.com/yanmxa/gencode/internal/tracker"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 func TestRenderTrackerListGroupsBackgroundBatchChildren(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/ui/selector"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/selector"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
 // Render renders the unified model & provider selector as a full-screen overlay.
@@ -74,7 +74,7 @@ func (s *Model) boxHeight() int {
 
 // emptyFilterMsg returns the "no matches" text for the current tab.
 func (s *Model) emptyFilterMsg() string {
-	if s.activeTab == TabModels {
+	if s.activeTab == tabModels {
 		return selector.SelectorDimStyle.PaddingLeft(2).Render("No models match the filter")
 	}
 	return selector.SelectorDimStyle.PaddingLeft(2).Render("No providers match the filter")
@@ -94,13 +94,13 @@ func (s *Model) renderItemList(sb *strings.Builder) {
 		isSelected := i == s.selectedIdx
 
 		switch item.Kind {
-		case ItemProviderHeader:
+		case itemProviderHeader:
 			sb.WriteString(s.renderProviderHeader(item))
-		case ItemModel:
+		case itemModel:
 			sb.WriteString(s.renderModelRow(item, isSelected))
-		case ItemProvider:
+		case itemProvider:
 			sb.WriteString(s.renderProviderRow(item, isSelected, i))
-		case ItemAuthMethod:
+		case itemAuthMethod:
 			sb.WriteString(s.renderAuthMethod(item, isSelected, i))
 		}
 		sb.WriteString("\n")
@@ -133,10 +133,10 @@ func (s *Model) renderTabs() string {
 
 	tabs := []struct {
 		name string
-		tab  Tab
+		tab  tab
 	}{
-		{"Models", TabModels},
-		{"Providers", TabProviders},
+		{"Models", tabModels},
+		{"Providers", tabProviders},
 	}
 
 	var parts []string
@@ -157,14 +157,14 @@ func (s *Model) renderSearchBox() string {
 	innerWidth := max(20, s.contentWidth()-8)
 
 	var text string
-	if s.activeTab == TabModels && s.searchQuery != "" {
+	if s.activeTab == tabModels && s.searchQuery != "" {
 		totalModels := len(s.allModels)
 		filteredCount := len(s.filteredModels)
 		text = fmt.Sprintf(" 🔍 %s▏ (%d/%d)", s.searchQuery, filteredCount, totalModels)
 	} else if s.searchQuery != "" {
 		text = " 🔍 " + s.searchQuery + "▏"
 	} else {
-		if s.activeTab == TabProviders {
+		if s.activeTab == tabProviders {
 			text = " 🔍 Type to filter providers..."
 		} else {
 			text = " 🔍 Type to filter models..."
@@ -210,7 +210,7 @@ func (s *Model) renderEmptyState() string {
 
 // ── Models tab rows ─────────────────────────────────────────────────────────
 
-func (s *Model) renderProviderHeader(item ListItem) string {
+func (s *Model) renderProviderHeader(item listItem) string {
 	style := lipgloss.NewStyle().
 		Foreground(theme.CurrentTheme.TextDim).
 		Bold(true)
@@ -221,7 +221,7 @@ func (s *Model) renderProviderHeader(item ListItem) string {
 	return style.Render(name)
 }
 
-func (s *Model) renderModelRow(item ListItem, isSelected bool) string {
+func (s *Model) renderModelRow(item listItem, isSelected bool) string {
 	m := item.Model
 
 	indicator := "[ ]"
@@ -253,7 +253,7 @@ func (s *Model) renderModelRow(item ListItem, isSelected bool) string {
 // providerNameColumnWidth is the fixed width for provider name alignment.
 const providerNameColumnWidth = 16
 
-func (s *Model) renderProviderRow(item ListItem, isSelected bool, itemIdx int) string {
+func (s *Model) renderProviderRow(item listItem, isSelected bool, itemIdx int) string {
 	p := item.Provider
 	if p == nil {
 		return ""
@@ -279,7 +279,7 @@ func (s *Model) renderProviderRow(item ListItem, isSelected bool, itemIdx int) s
 	return result
 }
 
-func (s *Model) renderAuthMethod(item ListItem, isSelected bool, itemIdx int) string {
+func (s *Model) renderAuthMethod(item listItem, isSelected bool, itemIdx int) string {
 	am := item.AuthMethod
 	if am == nil {
 		return ""
@@ -330,7 +330,7 @@ func (s *Model) renderHints() string {
 
 	var parts []string
 	parts = append(parts, "↑/↓ navigate")
-	if s.activeTab == TabProviders {
+	if s.activeTab == tabProviders {
 		parts = append(parts, "Enter connect/refresh")
 	} else {
 		parts = append(parts, "Enter select")
@@ -364,7 +364,7 @@ func (s *Model) renderConnectResult() string {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-func bestAuthMethodStatus(methods []AuthMethodItem) coreprovider.ProviderStatus {
+func bestAuthMethodStatus(methods []authMethodItem) coreprovider.ProviderStatus {
 	for _, m := range methods {
 		if m.Status == coreprovider.StatusConnected {
 			return coreprovider.StatusConnected

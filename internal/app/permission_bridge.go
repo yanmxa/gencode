@@ -58,7 +58,8 @@ func (pb *permissionBridge) PermissionFunc() core.PermissionFunc {
 			return true, ""
 		}
 
-		decision := settings.HasPermissionToUseTool(tc.Name, tc.Input, pb.sessionFn())
+		args, _ := core.ParseToolInput(tc.Input)
+		decision := settings.HasPermissionToUseTool(tc.Name, args, pb.sessionFn())
 
 		switch decision.Behavior {
 		case config.Allow:

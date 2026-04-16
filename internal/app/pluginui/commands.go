@@ -39,26 +39,26 @@ func HandleCommand(ctx context.Context, selector *Model, cwd string, width, heig
 
 	switch subCmd {
 	case "list":
-		return HandleList()
+		return handleList()
 	case "install":
-		return HandleInstall(ctx, cwd, parts[1:])
+		return handleInstall(ctx, cwd, parts[1:])
 	case "marketplace":
-		return HandleMarketplace(ctx, cwd, parts[1:])
+		return handleMarketplace(ctx, cwd, parts[1:])
 	case "enable":
-		return HandleEnable(ctx, pluginName)
+		return handleEnable(ctx, pluginName)
 	case "disable":
-		return HandleDisable(ctx, pluginName)
+		return handleDisable(ctx, pluginName)
 	case "info":
-		return HandleInfo(pluginName)
+		return handleInfo(pluginName)
 	case "errors":
-		return HandleErrors()
+		return handleErrors()
 	default:
-		return HandleInfo(subCmd)
+		return handleInfo(subCmd)
 	}
 }
 
-// HandleList shows all installed plugins.
-func HandleList() (string, error) {
+// handleList shows all installed plugins.
+func handleList() (string, error) {
 	plugins := coreplugin.DefaultRegistry.List()
 
 	if len(plugins) == 0 {
@@ -128,8 +128,8 @@ func formatComponentCounts(p *coreplugin.Plugin) []string {
 	return components
 }
 
-// HandleEnable enables a plugin.
-func HandleEnable(_ context.Context, name string) (string, error) {
+// handleEnable enables a plugin.
+func handleEnable(_ context.Context, name string) (string, error) {
 	if name == "" {
 		return "Usage: /plugin enable <plugin-name>", nil
 	}
@@ -141,8 +141,8 @@ func HandleEnable(_ context.Context, name string) (string, error) {
 	return fmt.Sprintf("Enabled plugin '%s'\n\nRun /reload-plugins to apply changes in the current session.", name), nil
 }
 
-// HandleDisable disables a plugin.
-func HandleDisable(_ context.Context, name string) (string, error) {
+// handleDisable disables a plugin.
+func handleDisable(_ context.Context, name string) (string, error) {
 	if name == "" {
 		return "Usage: /plugin disable <plugin-name>", nil
 	}
@@ -154,8 +154,8 @@ func HandleDisable(_ context.Context, name string) (string, error) {
 	return fmt.Sprintf("Disabled plugin '%s'\n\nRun /reload-plugins to apply changes in the current session.", name), nil
 }
 
-// HandleInfo shows detailed info for a plugin.
-func HandleInfo(name string) (string, error) {
+// handleInfo shows detailed info for a plugin.
+func handleInfo(name string) (string, error) {
 	if name == "" {
 		return "Usage: /plugin info <plugin-name>", nil
 	}
@@ -210,8 +210,8 @@ func writeComponentCount(sb *strings.Builder, label string, count int) {
 	}
 }
 
-// HandleErrors shows all plugin errors.
-func HandleErrors() (string, error) {
+// handleErrors shows all plugin errors.
+func handleErrors() (string, error) {
 	plugins := coreplugin.DefaultRegistry.List()
 
 	var sb strings.Builder
@@ -235,8 +235,8 @@ func HandleErrors() (string, error) {
 	return sb.String(), nil
 }
 
-// HandleInstall installs a plugin from a configured marketplace.
-func HandleInstall(ctx context.Context, cwd string, args []string) (string, error) {
+// handleInstall installs a plugin from a configured marketplace.
+func handleInstall(ctx context.Context, cwd string, args []string) (string, error) {
 	if len(args) == 0 {
 		return "Usage: /plugin install <plugin>@<marketplace> [user|project|local]", nil
 	}
@@ -272,8 +272,8 @@ func HandleInstall(ctx context.Context, cwd string, args []string) (string, erro
 	), nil
 }
 
-// HandleMarketplace dispatches /plugin marketplace subcommands.
-func HandleMarketplace(ctx context.Context, cwd string, args []string) (string, error) {
+// handleMarketplace dispatches /plugin marketplace subcommands.
+func handleMarketplace(ctx context.Context, cwd string, args []string) (string, error) {
 	if len(args) == 0 {
 		return strings.Join([]string{
 			"Usage: /plugin marketplace <subcommand>",
@@ -288,20 +288,20 @@ func HandleMarketplace(ctx context.Context, cwd string, args []string) (string, 
 
 	switch strings.ToLower(args[0]) {
 	case "list":
-		return HandleMarketplaceList(cwd)
+		return handleMarketplaceList(cwd)
 	case "add":
-		return HandleMarketplaceAdd(cwd, args[1:])
+		return handleMarketplaceAdd(cwd, args[1:])
 	case "remove":
-		return HandleMarketplaceRemove(cwd, args[1:])
+		return handleMarketplaceRemove(cwd, args[1:])
 	case "sync":
-		return HandleMarketplaceSync(ctx, cwd, args[1:])
+		return handleMarketplaceSync(ctx, cwd, args[1:])
 	default:
 		return fmt.Sprintf("Unknown marketplace subcommand: %s", args[0]), nil
 	}
 }
 
-// HandleMarketplaceList shows configured plugin marketplaces.
-func HandleMarketplaceList(cwd string) (string, error) {
+// handleMarketplaceList shows configured plugin marketplaces.
+func handleMarketplaceList(cwd string) (string, error) {
 	manager := coreplugin.NewMarketplaceManager(cwd)
 	if err := manager.Load(); err != nil {
 		return fmt.Sprintf("Failed to load marketplaces: %v", err), nil
@@ -338,8 +338,8 @@ func HandleMarketplaceList(cwd string) (string, error) {
 	return sb.String(), nil
 }
 
-// HandleMarketplaceAdd registers a new marketplace source.
-func HandleMarketplaceAdd(cwd string, args []string) (string, error) {
+// handleMarketplaceAdd registers a new marketplace source.
+func handleMarketplaceAdd(cwd string, args []string) (string, error) {
 	if len(args) == 0 || len(args) > 2 {
 		return "Usage: /plugin marketplace add <owner/repo|path> [marketplace-id]", nil
 	}
@@ -371,8 +371,8 @@ func HandleMarketplaceAdd(cwd string, args []string) (string, error) {
 	), nil
 }
 
-// HandleMarketplaceRemove removes a configured marketplace.
-func HandleMarketplaceRemove(cwd string, args []string) (string, error) {
+// handleMarketplaceRemove removes a configured marketplace.
+func handleMarketplaceRemove(cwd string, args []string) (string, error) {
 	if len(args) != 1 {
 		return "Usage: /plugin marketplace remove <marketplace-id>", nil
 	}
@@ -393,8 +393,8 @@ func HandleMarketplaceRemove(cwd string, args []string) (string, error) {
 	return fmt.Sprintf("Removed marketplace '%s'.", id), nil
 }
 
-// HandleMarketplaceSync updates one or all configured marketplaces.
-func HandleMarketplaceSync(ctx context.Context, cwd string, args []string) (string, error) {
+// handleMarketplaceSync updates one or all configured marketplaces.
+func handleMarketplaceSync(ctx context.Context, cwd string, args []string) (string, error) {
 	if len(args) != 1 {
 		return "Usage: /plugin marketplace sync <marketplace-id|all>", nil
 	}

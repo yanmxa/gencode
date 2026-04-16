@@ -4,26 +4,6 @@ import tea "github.com/charmbracelet/bubbletea"
 
 type messageUpdater func(*model, tea.Msg) (tea.Cmd, bool)
 
-func (m *model) featureUpdaters() []messageUpdater {
-	return []messageUpdater{
-		(*model).updateAgent, // core.Agent events (outbox + permission bridge)
-		(*model).updateStream,
-		(*model).updateTool,
-		(*model).updateApproval,
-		(*model).updateMode,
-		(*model).updateCompact,
-		(*model).updateProvider,
-		(*model).updateMCP,
-		(*model).updatePlugin,
-		(*model).updateSession,
-		(*model).updateMemory,
-		(*model).updateCron,
-		(*model).updateAsyncHooks,
-		(*model).updateSearch,
-		(*model).updateTaskNotifications,
-	}
-}
-
 // overlaySelector is implemented by full-screen selector components that can
 // render themselves and receive keyboard input when active.
 type overlaySelector interface {
@@ -47,7 +27,21 @@ func (m *model) overlaySelectors() []overlaySelector {
 }
 
 func (m *model) routeFeatureUpdate(msg tea.Msg) (tea.Cmd, bool) {
-	for _, updater := range m.featureUpdaters() {
+	for _, updater := range [...]messageUpdater{
+		(*model).updateAgent, // core.Agent events (outbox + permission bridge)
+		(*model).updateApproval,
+		(*model).updateMode,
+		(*model).updateCompact,
+		(*model).updateProvider,
+		(*model).updateMCP,
+		(*model).updatePlugin,
+		(*model).updateSession,
+		(*model).updateMemory,
+		(*model).updateCron,
+		(*model).updateAsyncHooks,
+		(*model).updateSearch,
+		(*model).updateTaskNotifications,
+	} {
 		if cmd, handled := updater(m, msg); handled {
 			return cmd, true
 		}
@@ -56,63 +50,43 @@ func (m *model) routeFeatureUpdate(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (m *model) renderOverlaySelector() string {
-	for _, selector := range m.overlaySelectors() {
-		if selector.IsActive() {
-			return selector.Render()
-		}
-	}
-	return ""
-}
-
-type modalRenderer struct {
-	isActive func() bool
-	render   func() string
-}
-
-func (m *model) modalRenderers(separator, trackerPrefix string) []modalRenderer {
-	return []modalRenderer{
-		{
-			isActive: func() bool {
-				return m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive()
-			},
-			render: func() string {
-				return separatorWrapped(trackerPrefix, separator, m.mode.PlanApproval.RenderMenu())
-			},
-		},
-		{
-			isActive: func() bool {
-				return m.approval != nil && m.approval.IsActive()
-			},
-			render: func() string {
-				return separatorWrapped(trackerPrefix, separator, m.approval.Render())
-			},
-		},
-		{
-			isActive: func() bool {
-				return m.mode.Question.IsActive()
-			},
-			render: func() string {
-				return separatorWrapped(trackerPrefix, separator, m.mode.Question.Render())
-			},
-		},
-		{
-			isActive: func() bool {
-				return m.mode.PlanEntry.IsActive()
-			},
-			render: func() string {
-				return separatorWrapped(trackerPrefix, separator, m.mode.PlanEntry.Render())
-			},
-		},
+	switch {
+	case m.provider.Selector.IsActive():
+		return m.provider.Selector.Render()
+	case m.tool.Selector.IsActive():
+		return m.tool.Selector.Render()
+	case m.skill.Selector.IsActive():
+		return m.skill.Selector.Render()
+	case m.agent.Selector.IsActive():
+		return m.agent.Selector.Render()
+	case m.mcp.Selector.IsActive():
+		return m.mcp.Selector.Render()
+	case m.plugin.Selector.IsActive():
+		return m.plugin.Selector.Render()
+	case m.session.Selector.IsActive():
+		return m.session.Selector.Render()
+	case m.memory.Selector.IsActive():
+		return m.memory.Selector.Render()
+	case m.search.Selector.IsActive():
+		return m.search.Selector.Render()
+	default:
+		return ""
 	}
 }
 
 func (m *model) renderActiveModal(separator, trackerPrefix string) string {
-	for _, modal := range m.modalRenderers(separator, trackerPrefix) {
-		if modal.isActive() {
-			return modal.render()
-		}
+	switch {
+	case m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.mode.PlanApproval.RenderMenu())
+	case m.approval != nil && m.approval.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.approval.Render())
+	case m.mode.Question.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.mode.Question.Render())
+	case m.mode.PlanEntry.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.mode.PlanEntry.Render())
+	default:
+		return ""
 	}
-	return ""
 }
 
 func separatorWrapped(trackerPrefix, separator, content string) string {

@@ -239,11 +239,6 @@ func configSourceFromFilePath(filePath string) string {
 	}
 }
 
-// GetUserDir returns the user config directory
-func (l *ConfigLoader) GetUserDir() string {
-	return l.userDir
-}
-
 // GetProjectDir returns the project config directory
 func (l *ConfigLoader) GetProjectDir() string {
 	return l.projectDir

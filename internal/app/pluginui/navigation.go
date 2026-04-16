@@ -3,7 +3,7 @@ package pluginui
 import (
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
 // Tab navigation
@@ -30,16 +30,16 @@ func (s *Model) updateFilter() {
 // filterItemsForTab returns filtered items based on the active tab and query
 func (s *Model) filterItemsForTab(query string) []any {
 	switch s.activeTab {
-	case TabInstalled:
-		return filterItems(s.installedFlatList, query, func(p PluginItem) []string {
+	case tabInstalled:
+		return filterItems(s.installedFlatList, query, func(p pluginItem) []string {
 			return []string{p.Name, p.Description}
 		})
-	case TabDiscover:
-		return filterItems(s.discoverPlugins, query, func(p DiscoverPluginItem) []string {
+	case tabDiscover:
+		return filterItems(s.discoverPlugins, query, func(p discoverPluginItem) []string {
 			return []string{p.Name, p.Description, p.Marketplace}
 		})
-	case TabMarketplaces:
-		return filterItems(s.marketplaces, query, func(m MarketplaceItem) []string {
+	case tabMarketplaces:
+		return filterItems(s.marketplaces, query, func(m marketplaceItem) []string {
 			return []string{m.ID, m.Source}
 		})
 	default:
@@ -73,7 +73,7 @@ func filterItems[T any](items []T, query string, getFields func(T) []string) []a
 func (s *Model) MoveUp() {
 	s.clearMessage()
 	switch s.level {
-	case LevelDetail, LevelInstallOptions:
+	case levelDetail, levelInstallOptions:
 		if s.actionIdx > 0 {
 			s.actionIdx--
 		} else if s.detailScroll > 0 {
@@ -90,7 +90,7 @@ func (s *Model) MoveUp() {
 func (s *Model) MoveDown() {
 	s.clearMessage()
 	switch s.level {
-	case LevelDetail, LevelInstallOptions:
+	case levelDetail, levelInstallOptions:
 		if s.actionIdx < len(s.actions)-1 {
 			s.actionIdx++
 		} else {
@@ -108,11 +108,11 @@ func (s *Model) MoveDown() {
 // getMaxIndex returns the maximum selectable index for the current view.
 func (s *Model) getMaxIndex() int {
 	switch s.level {
-	case LevelBrowsePlugins:
+	case levelBrowsePlugins:
 		return len(s.browsePlugins) - 1
 	default:
 		maxIdx := len(s.filteredItems) - 1
-		if s.activeTab == TabMarketplaces {
+		if s.activeTab == tabMarketplaces {
 			maxIdx++
 		}
 		return maxIdx
@@ -122,13 +122,13 @@ func (s *Model) getMaxIndex() int {
 func (s *Model) ensureVisible() {
 	visible := s.maxVisible
 	switch s.level {
-	case LevelBrowsePlugins:
+	case levelBrowsePlugins:
 		visible = max(4, s.height-14)
 	default:
 		switch s.activeTab {
-		case TabDiscover:
+		case tabDiscover:
 			visible = max(3, (s.height-14)/3)
-		case TabMarketplaces:
+		case tabMarketplaces:
 			visible = max(4, (s.height-14)/2)
 		default:
 			visible = max(4, s.height-14)
@@ -147,11 +147,11 @@ func (s *Model) enterDetail() {
 	s.parentIdx = s.selectedIdx
 
 	switch s.activeTab {
-	case TabInstalled:
+	case tabInstalled:
 		s.enterInstalledDetail()
-	case TabDiscover:
+	case tabDiscover:
 		s.enterDiscoverDetail()
-	case TabMarketplaces:
+	case tabMarketplaces:
 		s.enterMarketplaceDetail()
 	}
 }
@@ -160,11 +160,11 @@ func (s *Model) enterInstalledDetail() {
 	if s.selectedIdx >= len(s.filteredItems) {
 		return
 	}
-	if p, ok := s.filteredItems[s.selectedIdx].(PluginItem); ok {
+	if p, ok := s.filteredItems[s.selectedIdx].(pluginItem); ok {
 		s.detailPlugin = &p
 		s.actions = s.buildInstalledActions(p)
 		s.actionIdx = 0
-		s.level = LevelDetail
+		s.level = levelDetail
 	}
 }
 
@@ -172,17 +172,17 @@ func (s *Model) enterDiscoverDetail() {
 	if s.selectedIdx >= len(s.filteredItems) {
 		return
 	}
-	if p, ok := s.filteredItems[s.selectedIdx].(DiscoverPluginItem); ok {
+	if p, ok := s.filteredItems[s.selectedIdx].(discoverPluginItem); ok {
 		s.detailDiscover = &p
 		s.actions = s.buildDiscoverActions(p)
 		s.actionIdx = 0
-		s.level = LevelDetail
+		s.level = levelDetail
 	}
 }
 
 func (s *Model) enterMarketplaceDetail() {
 	if s.selectedIdx == 0 {
-		s.level = LevelAddMarketplace
+		s.level = levelAddMarketplace
 		s.addMarketplaceInput = ""
 		s.addDialogCursor = 0
 		return
@@ -191,34 +191,34 @@ func (s *Model) enterMarketplaceDetail() {
 	if mktIdx >= len(s.filteredItems) {
 		return
 	}
-	if m, ok := s.filteredItems[mktIdx].(MarketplaceItem); ok {
+	if m, ok := s.filteredItems[mktIdx].(marketplaceItem); ok {
 		s.detailMarketplace = &m
 		s.actions = s.buildMarketplaceActions(m)
 		s.actionIdx = 0
-		s.level = LevelDetail
+		s.level = levelDetail
 	}
 }
 
 // goBack returns to the previous view.
 func (s *Model) goBack() bool {
 	switch s.level {
-	case LevelDetail:
-		s.level = LevelTabList
+	case levelDetail:
+		s.level = levelTabList
 		s.selectedIdx = s.parentIdx
 		s.resetDetailState()
 		s.clearMessage()
 		return true
-	case LevelInstallOptions:
-		s.level = LevelDetail
+	case levelInstallOptions:
+		s.level = levelDetail
 		s.actions = s.buildDiscoverActions(*s.detailDiscover)
 		s.actionIdx = 0
 		return true
-	case LevelAddMarketplace:
-		s.level = LevelTabList
+	case levelAddMarketplace:
+		s.level = levelTabList
 		s.addMarketplaceInput = ""
 		return true
-	case LevelBrowsePlugins:
-		s.level = LevelDetail
+	case levelBrowsePlugins:
+		s.level = levelDetail
 		s.resetBrowseState()
 		s.selectedIdx = 0
 		return true

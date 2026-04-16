@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/ui/selector"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/selector"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
 // PlanPrompt manages the plan approval UI

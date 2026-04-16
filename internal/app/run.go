@@ -10,18 +10,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"go.uber.org/zap"
 
-	"github.com/yanmxa/gencode/internal/ext/subagent"
-	appcommand "github.com/yanmxa/gencode/internal/ext/command"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/log"
+	appcommand "github.com/yanmxa/gencode/internal/ext/command"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/ext/skill"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
+	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/tool"
 	_ "github.com/yanmxa/gencode/internal/tool/registry"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
 // RunWithOptions routes to either print mode or interactive TUI.
@@ -58,8 +58,8 @@ func RunWithOptions(opts config.RunOptions) error {
 		return fmt.Errorf("failed to run TUI: %w", err)
 	}
 
-	if fm, ok := finalModel.(model); ok {
-		printExitMessage(fm)
+	if fm, ok := finalModel.(*model); ok {
+		printExitMessage(*fm)
 	}
 	return nil
 }
@@ -101,21 +101,21 @@ func runNonInteractive(userMessage string) error {
 	}
 
 	completionOpts := provider.CompletionOptions{
-			Model:        modelID,
-			MaxTokens:    config.DefaultMaxTokens,
-			SystemPrompt: config.DefaultSystemPrompt,
-			Messages:     []message.Message{message.UserMessage(userMessage, nil)},
-			Tools:        tool.GetToolSchemas(),
-		}
+		Model:        modelID,
+		MaxTokens:    config.DefaultMaxTokens,
+		SystemPrompt: config.DefaultSystemPrompt,
+		Messages:     []core.Message{core.UserMessage(userMessage, nil)},
+		Tools:        tool.GetToolSchemas(),
+	}
 
 	streamChan := llmProvider.Stream(ctx, completionOpts)
 	for chunk := range streamChan {
 		switch chunk.Type {
-		case message.ChunkTypeText:
+		case core.ChunkTypeText:
 			fmt.Print(chunk.Text)
-		case message.ChunkTypeError:
+		case core.ChunkTypeError:
 			return chunk.Error
-		case message.ChunkTypeDone:
+		case core.ChunkTypeDone:
 			fmt.Println()
 		}
 	}
@@ -163,6 +163,7 @@ func initializeRegistries(cwd string) {
 	if err := skill.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize skill registry", zap.Error(err))
 	}
+	appcommand.SetDynamicInfoProviders(skillCommandInfos)
 	if err := appcommand.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize custom commands", zap.Error(err))
 	}

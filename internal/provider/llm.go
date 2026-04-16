@@ -2,36 +2,48 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/message"
 )
+
+// defaultMaxTokens is the fallback max output tokens when neither the caller
+// nor the provider specifies a limit.
+const defaultMaxTokens = 8192
+
+// TokenUsage tracks token consumption for a conversation.
+type TokenUsage struct {
+	InputTokens  int
+	OutputTokens int
+	TotalTokens  int
+}
 
 // LLM adapts a LLMProvider to core.LLM.
 //
+// It also provides streaming and completion methods for the loop/app layer,
+// plus cumulative token usage tracking.
+//
 // SetThinking can be called while the agent is running.
-// Changes take effect on the next Infer call.
+// Changes take effect on the next Infer/Stream call.
 type LLM struct {
 	mu            sync.RWMutex
 	provider      LLMProvider
 	model         string
 	maxTokens     int
 	thinkingLevel ThinkingLevel
+	tokens        TokenUsage
 }
 
-// NewLLM wraps an existing provider as a core.LLM.
+// NewLLM wraps an existing provider as a core.LLM with streaming and
+// completion support. maxTokens=0 means resolve from provider metadata
+// or fall back to defaultMaxTokens.
 func NewLLM(p LLMProvider, model string, maxTokens int) *LLM {
 	return &LLM{provider: p, model: model, maxTokens: maxTokens}
 }
 
-// SetThinking changes the thinking/reasoning level.
-func (l *LLM) SetThinking(level ThinkingLevel) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.thinkingLevel = level
-}
+// ---------------------------------------------------------------------------
+// core.LLM interface
+// ---------------------------------------------------------------------------
 
 func (l *LLM) Infer(ctx context.Context, req core.InferRequest) (<-chan core.Chunk, error) {
 	l.mu.RLock()
@@ -44,7 +56,7 @@ func (l *LLM) Infer(ctx context.Context, req core.InferRequest) (<-chan core.Chu
 	opts := CompletionOptions{
 		Model:         model,
 		Messages:      toProviderMessages(req.Messages),
-		Tools:         toProviderTools(req.Tools),
+		Tools:         req.Tools,
 		SystemPrompt:  req.System,
 		MaxTokens:     maxTokens,
 		ThinkingLevel: thinking,
@@ -57,13 +69,13 @@ func (l *LLM) Infer(ctx context.Context, req core.InferRequest) (<-chan core.Chu
 		defer close(ch)
 		for sc := range srcCh {
 			switch sc.Type {
-			case message.ChunkTypeText:
+			case core.ChunkTypeText:
 				ch <- core.Chunk{Text: sc.Text}
-			case message.ChunkTypeThinking:
+			case core.ChunkTypeThinking:
 				ch <- core.Chunk{Thinking: sc.Text}
-			case message.ChunkTypeDone:
+			case core.ChunkTypeDone:
 				ch <- core.Chunk{Done: true, Response: toInferResponse(sc.Response)}
-			case message.ChunkTypeError:
+			case core.ChunkTypeError:
 				ch <- core.Chunk{Err: sc.Error}
 				return
 			}
@@ -73,36 +85,196 @@ func (l *LLM) Infer(ctx context.Context, req core.InferRequest) (<-chan core.Chu
 	return ch, nil
 }
 
-// --- core.Message → message.Message ---
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
 
-func toProviderMessages(msgs []core.Message) []message.Message {
-	out := make([]message.Message, 0, len(msgs))
+// SetThinking changes the thinking/reasoning level.
+func (l *LLM) SetThinking(level ThinkingLevel) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.thinkingLevel = level
+}
+
+// ThinkingLevel returns the current thinking/reasoning level.
+func (l *LLM) ThinkingLevel() ThinkingLevel {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.thinkingLevel
+}
+
+// ---------------------------------------------------------------------------
+// Streaming & Completion (used by loop/app layer)
+// ---------------------------------------------------------------------------
+
+// Stream starts a streaming completion request and returns a chunk channel.
+func (l *LLM) Stream(ctx context.Context, msgs []core.Message,
+	tools []ToolSchema, sysPrompt string,
+) <-chan core.StreamChunk {
+	return l.provider.Stream(ctx, l.completionOpts(msgs, tools, sysPrompt))
+}
+
+// Complete sends a one-shot completion (custom max tokens, no tools).
+// Used for utility calls like conversation compaction.
+func (l *LLM) Complete(ctx context.Context,
+	sysPrompt string, msgs []core.Message, maxTokens int,
+) (core.CompletionResponse, error) {
+	l.mu.RLock()
+	model := l.model
+	p := l.provider
+	l.mu.RUnlock()
+
+	return Complete(ctx, p, CompletionOptions{
+		Model:        model,
+		SystemPrompt: sysPrompt,
+		Messages:     msgs,
+		MaxTokens:    maxTokens,
+	})
+}
+
+// send sends a non-streaming completion request and returns the full response.
+func (l *LLM) send(ctx context.Context, msgs []core.Message,
+	tools []ToolSchema, sysPrompt string,
+) (core.CompletionResponse, error) {
+	return Complete(ctx, l.provider, l.completionOpts(msgs, tools, sysPrompt))
+}
+
+// ---------------------------------------------------------------------------
+// Token Tracking
+// ---------------------------------------------------------------------------
+
+// AddUsage accumulates token usage from a completion response.
+func (l *LLM) AddUsage(usage core.Usage) {
+	l.mu.Lock()
+	l.tokens.InputTokens += usage.InputTokens
+	l.tokens.OutputTokens += usage.OutputTokens
+	l.tokens.TotalTokens = l.tokens.InputTokens + l.tokens.OutputTokens
+	l.mu.Unlock()
+}
+
+// Tokens returns the accumulated token usage.
+func (l *LLM) Tokens() TokenUsage {
+	l.mu.RLock()
+	t := l.tokens
+	l.mu.RUnlock()
+	return t
+}
+
+// ---------------------------------------------------------------------------
+// Identity & Limits
+// ---------------------------------------------------------------------------
+
+// Name returns the provider name (e.g., "anthropic").
+func (l *LLM) Name() string {
+	l.mu.RLock()
+	p := l.provider
+	l.mu.RUnlock()
+	if p == nil {
+		return ""
+	}
+	return p.Name()
+}
+
+// ModelID returns the model identifier.
+func (l *LLM) ModelID() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.model
+}
+
+// ResolveMaxTokens returns the effective output token limit.
+// Priority: 1. Custom override (maxTokens field)
+//
+//	2. Provider's model metadata (OutputTokenLimit from ListModels)
+//	3. Default (8192)
+func (l *LLM) ResolveMaxTokens(ctx context.Context) int {
+	l.mu.RLock()
+	p := l.provider
+	model := l.model
+	mt := l.maxTokens
+	l.mu.RUnlock()
+
+	if mt > 0 {
+		return mt
+	}
+	if limit := outputLimitFromProvider(p, model); limit > 0 {
+		return limit
+	}
+	return defaultMaxTokens
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+// completionOpts builds CompletionOptions from the LLM's current configuration.
+func (l *LLM) completionOpts(msgs []core.Message, tools []ToolSchema, sysPrompt string) CompletionOptions {
+	l.mu.RLock()
+	model := l.model
+	maxTokens := l.maxTokens
+	thinking := l.thinkingLevel
+	p := l.provider
+	l.mu.RUnlock()
+
+	if maxTokens <= 0 {
+		if limit := outputLimitFromProvider(p, model); limit > 0 {
+			maxTokens = limit
+		} else {
+			maxTokens = defaultMaxTokens
+		}
+	}
+	return CompletionOptions{
+		Model:         model,
+		Messages:      msgs,
+		MaxTokens:     maxTokens,
+		Tools:         tools,
+		SystemPrompt:  sysPrompt,
+		ThinkingLevel: thinking,
+	}
+}
+
+// outputLimitFromProvider queries the provider for the model's output token limit.
+func outputLimitFromProvider(p LLMProvider, model string) int {
+	if p == nil {
+		return 0
+	}
+	models, err := p.ListModels(context.TODO())
+	if err != nil {
+		return 0
+	}
+	for _, m := range models {
+		if m.ID == model {
+			return m.OutputTokenLimit
+		}
+	}
+	return 0
+}
+
+// toProviderMessages converts core messages for provider consumption.
+// Key semantic change: RoleTool messages become RoleUser with ToolResult.
+func toProviderMessages(msgs []core.Message) []core.Message {
+	out := make([]core.Message, 0, len(msgs))
 	for _, m := range msgs {
 		switch m.Role {
 		case core.RoleUser:
-			out = append(out, message.Message{
-				Role:    message.RoleUser,
+			out = append(out, core.Message{
+				Role:    core.RoleUser,
 				Content: m.Content,
-				Images:  toProviderImages(m.Images),
+				Images:  m.Images,
 			})
 		case core.RoleAssistant:
-			out = append(out, message.Message{
-				Role:              message.RoleAssistant,
+			out = append(out, core.Message{
+				Role:              core.RoleAssistant,
 				Content:           m.Content,
 				Thinking:          m.Thinking,
 				ThinkingSignature: m.ThinkingSignature,
-				ToolCalls:         toProviderToolCalls(m.ToolCalls),
+				ToolCalls:         m.ToolCalls,
 			})
 		case core.RoleTool:
 			if m.ToolResult != nil {
-				out = append(out, message.Message{
-					Role: message.RoleUser,
-					ToolResult: &message.ToolResult{
-						ToolCallID: m.ToolResult.ToolCallID,
-						ToolName:   m.ToolResult.ToolName,
-						Content:    m.ToolResult.Content,
-						IsError:    m.ToolResult.IsError,
-					},
+				out = append(out, core.Message{
+					Role:       core.RoleUser,
+					ToolResult: m.ToolResult,
 				})
 			}
 		}
@@ -110,56 +282,8 @@ func toProviderMessages(msgs []core.Message) []message.Message {
 	return out
 }
 
-func toProviderImages(imgs []core.Image) []message.ImageData {
-	if len(imgs) == 0 {
-		return nil
-	}
-	out := make([]message.ImageData, len(imgs))
-	for i, img := range imgs {
-		out[i] = message.ImageData{
-			MediaType: img.MediaType,
-			Data:      img.Data,
-			FileName:  img.FileName,
-			Size:      img.Size,
-		}
-	}
-	return out
-}
-
-func toProviderToolCalls(calls []core.ToolCall) []message.ToolCall {
-	if len(calls) == 0 {
-		return nil
-	}
-	out := make([]message.ToolCall, len(calls))
-	for i, tc := range calls {
-		inputJSON, _ := json.Marshal(tc.Input)
-		out[i] = message.ToolCall{
-			ID:    tc.ID,
-			Name:  tc.Name,
-			Input: string(inputJSON),
-		}
-	}
-	return out
-}
-
-func toProviderTools(schemas []core.ToolSchema) []message.ToolSchema {
-	if len(schemas) == 0 {
-		return nil
-	}
-	out := make([]message.ToolSchema, len(schemas))
-	for i, s := range schemas {
-		out[i] = message.ToolSchema{
-			Name:        s.Name,
-			Description: s.Description,
-			Parameters:  s.Parameters,
-		}
-	}
-	return out
-}
-
-// --- message.CompletionResponse → core.InferResponse ---
-
-func toInferResponse(r *message.CompletionResponse) *core.InferResponse {
+// toInferResponse converts a CompletionResponse to an InferResponse.
+func toInferResponse(r *core.CompletionResponse) *core.InferResponse {
 	if r == nil {
 		return nil
 	}
@@ -167,30 +291,9 @@ func toInferResponse(r *message.CompletionResponse) *core.InferResponse {
 		Content:           r.Content,
 		Thinking:          r.Thinking,
 		ThinkingSignature: r.ThinkingSignature,
-		ToolCalls:         toCoreToolCalls(r.ToolCalls),
+		ToolCalls:         r.ToolCalls,
 		StopReason:        core.StopReason(r.StopReason),
 		TokensIn:          r.Usage.InputTokens,
 		TokensOut:         r.Usage.OutputTokens,
 	}
-}
-
-func toCoreToolCalls(calls []message.ToolCall) []core.ToolCall {
-	if len(calls) == 0 {
-		return nil
-	}
-	out := make([]core.ToolCall, len(calls))
-	for i, tc := range calls {
-		input := make(map[string]any)
-		if tc.Input != "" {
-			if err := json.Unmarshal([]byte(tc.Input), &input); err != nil {
-				input = map[string]any{"_raw": tc.Input}
-			}
-		}
-		out[i] = core.ToolCall{
-			ID:    tc.ID,
-			Name:  tc.Name,
-			Input: input,
-		}
-	}
-	return out
 }

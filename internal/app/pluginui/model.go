@@ -11,20 +11,20 @@ import (
 type Tab int
 
 const (
-	TabDiscover Tab = iota
-	TabInstalled
-	TabMarketplaces
+	tabDiscover Tab = iota
+	tabInstalled
+	tabMarketplaces
 )
 
 // Level represents the navigation level within the plugin selector
 type Level int
 
 const (
-	LevelTabList Level = iota
-	LevelDetail
-	LevelInstallOptions
-	LevelAddMarketplace
-	LevelBrowsePlugins
+	levelTabList Level = iota
+	levelDetail
+	levelInstallOptions
+	levelAddMarketplace
+	levelBrowsePlugins
 )
 
 // Action represents an action available in detail view
@@ -33,8 +33,8 @@ type Action struct {
 	Action string
 }
 
-// PluginItem represents a plugin in the selector
-type PluginItem struct {
+// pluginItem represents a plugin in the selector
+type pluginItem struct {
 	Name        string
 	FullName    string
 	Description string
@@ -54,8 +54,8 @@ type PluginItem struct {
 	Marketplace string
 }
 
-// DiscoverPluginItem represents a plugin available in a marketplace
-type DiscoverPluginItem struct {
+// discoverPluginItem represents a plugin available in a marketplace
+type discoverPluginItem struct {
 	Name        string
 	Description string
 	Marketplace string
@@ -65,8 +65,8 @@ type DiscoverPluginItem struct {
 	Version     string
 }
 
-// MarketplaceItem represents a marketplace in the selector
-type MarketplaceItem struct {
+// marketplaceItem represents a marketplace in the selector
+type marketplaceItem struct {
 	ID          string
 	Source      string
 	SourceType  string
@@ -89,11 +89,11 @@ type Model struct {
 
 	activeTab Tab
 
-	installedPlugins  map[coreplugin.Scope][]PluginItem
+	installedPlugins  map[coreplugin.Scope][]pluginItem
 	installedScopes   []coreplugin.Scope
-	installedFlatList []PluginItem
-	discoverPlugins   []DiscoverPluginItem
-	marketplaces      []MarketplaceItem
+	installedFlatList []pluginItem
+	discoverPlugins   []discoverPluginItem
+	marketplaces      []marketplaceItem
 
 	level        Level
 	selectedIdx   int
@@ -103,9 +103,9 @@ type Model struct {
 	searchQuery   string
 	filteredItems []any
 
-	detailPlugin      *PluginItem
-	detailDiscover    *DiscoverPluginItem
-	detailMarketplace *MarketplaceItem
+	detailPlugin      *pluginItem
+	detailDiscover    *discoverPluginItem
+	detailMarketplace *marketplaceItem
 	actions           []Action
 	actionIdx         int
 	parentIdx         int
@@ -114,7 +114,7 @@ type Model struct {
 	addDialogCursor     int
 
 	browseMarketplaceID string
-	browsePlugins       []DiscoverPluginItem
+	browsePlugins       []discoverPluginItem
 
 	marketplaceManager *coreplugin.MarketplaceManager
 	installer          *coreplugin.Installer
@@ -152,8 +152,8 @@ func New() Model {
 	return Model{
 		active:             false,
 		maxVisible:         15,
-		activeTab:          TabInstalled,
-		installedPlugins:   make(map[coreplugin.Scope][]PluginItem),
+		activeTab:          tabInstalled,
+		installedPlugins:   make(map[coreplugin.Scope][]pluginItem),
 		marketplaceManager: coreplugin.NewMarketplaceManager(cwd),
 		installer:          coreplugin.NewInstaller(coreplugin.DefaultRegistry, cwd),
 	}

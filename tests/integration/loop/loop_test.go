@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/message"
+	agentloop "github.com/yanmxa/gencode/internal/loop"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
 
@@ -15,7 +15,7 @@ func TestLoop_SingleTurn_EndTurn(t *testing.T) {
 	)
 	loop.AddUser("hi", nil)
 
-	result, err := loop.Run(context.Background(), runtime.RunOptions{})
+	result, err := loop.Run(context.Background(), agentloop.RunOptions{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -44,8 +44,8 @@ func TestLoop_MultiTurn_ToolUse(t *testing.T) {
 	loop.AddUser("use tool", nil)
 
 	var toolExecuted bool
-	result, err := loop.Run(context.Background(), runtime.RunOptions{
-		OnToolDone: func(tc message.ToolCall, r message.ToolResult) {
+	result, err := loop.Run(context.Background(), agentloop.RunOptions{
+		OnToolDone: func(tc core.ToolCall, r core.ToolResult) {
 			toolExecuted = true
 			if tc.Name != "MyTool" {
 				t.Errorf("expected tool 'MyTool', got %q", tc.Name)
@@ -71,7 +71,7 @@ func TestLoop_MultiTurn_ToolUse(t *testing.T) {
 	hasToolCall := false
 	hasToolResult := false
 	for _, m := range msgs {
-		if m.Role == message.RoleAssistant && len(m.ToolCalls) > 0 {
+		if m.Role == core.RoleAssistant && len(m.ToolCalls) > 0 {
 			hasToolCall = true
 		}
 		if m.ToolResult != nil {
@@ -90,7 +90,7 @@ func TestLoop_MaxTurns(t *testing.T) {
 	testutil.RegisterFakeTool(t, "AlwaysTool", "ok")
 
 	// Queue enough tool-use responses to exceed max turns
-	responses := make([]message.CompletionResponse, 10)
+	responses := make([]core.CompletionResponse, 10)
 	for i := range responses {
 		responses[i] = testutil.ToolCallResponse("AlwaysTool", "tc", `{}`)
 	}
@@ -98,7 +98,7 @@ func TestLoop_MaxTurns(t *testing.T) {
 	loop, _ := testutil.NewTestLoop(t, responses...)
 	loop.AddUser("go", nil)
 
-	result, err := loop.Run(context.Background(), runtime.RunOptions{MaxTurns: 3})
+	result, err := loop.Run(context.Background(), agentloop.RunOptions{MaxTurns: 3})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestLoop_ContextCancellation(t *testing.T) {
 	)
 	loop.AddUser("hello", nil)
 
-	result, err := loop.Run(ctx, runtime.RunOptions{})
+	result, err := loop.Run(ctx, agentloop.RunOptions{})
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
 	}
@@ -134,7 +134,7 @@ func TestLoop_UnknownTool(t *testing.T) {
 	)
 	loop.AddUser("call unknown", nil)
 
-	result, err := loop.Run(context.Background(), runtime.RunOptions{})
+	result, err := loop.Run(context.Background(), agentloop.RunOptions{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -162,16 +162,16 @@ func TestLoop_MultipleToolCalls(t *testing.T) {
 
 	loop, _ := testutil.NewTestLoop(t,
 		testutil.MultiToolCallResponse(
-			message.ToolCall{ID: "tc1", Name: "ToolA", Input: `{}`},
-			message.ToolCall{ID: "tc2", Name: "ToolB", Input: `{}`},
+			core.ToolCall{ID: "tc1", Name: "ToolA", Input: `{}`},
+			core.ToolCall{ID: "tc2", Name: "ToolB", Input: `{}`},
 		),
 		testutil.EndTurnResponse("both done"),
 	)
 	loop.AddUser("use both", nil)
 
 	var toolsDone int
-	result, err := loop.Run(context.Background(), runtime.RunOptions{
-		OnToolDone: func(tc message.ToolCall, r message.ToolResult) {
+	result, err := loop.Run(context.Background(), agentloop.RunOptions{
+		OnToolDone: func(tc core.ToolCall, r core.ToolResult) {
 			toolsDone++
 		},
 	})
@@ -205,7 +205,7 @@ func TestLoop_TokenAccumulation(t *testing.T) {
 	)
 	loop.AddUser("go", nil)
 
-	result, err := loop.Run(context.Background(), runtime.RunOptions{})
+	result, err := loop.Run(context.Background(), agentloop.RunOptions{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestLoop_StreamChunks(t *testing.T) {
 	loop.AddUser("hello", nil)
 
 	ch := loop.Stream(context.Background())
-	resp, err := runtime.Collect(context.Background(), ch)
+	resp, err := agentloop.Collect(context.Background(), ch)
 	if err != nil {
 		t.Fatalf("Collect() error: %v", err)
 	}

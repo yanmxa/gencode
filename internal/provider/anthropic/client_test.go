@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 func TestToolIDSanitizer_ValidIDPassthrough(t *testing.T) {
@@ -139,10 +139,10 @@ func TestMergeConsecutiveMessages_Single(t *testing.T) {
 }
 
 func TestSanitizeToolResults_OrphanedToolResult(t *testing.T) {
-	msgs := []message.Message{
-		{Role: message.RoleAssistant, Content: "hi", ToolCalls: []message.ToolCall{{ID: "tc_1", Name: "Read"}}},
-		{Role: message.RoleUser, ToolResult: &message.ToolResult{ToolCallID: "tc_1", Content: "ok"}},
-		{Role: message.RoleUser, ToolResult: &message.ToolResult{ToolCallID: "tc_stale", Content: "stale"}},
+	msgs := []core.Message{
+		{Role: core.RoleAssistant, Content: "hi", ToolCalls: []core.ToolCall{{ID: "tc_1", Name: "Read"}}},
+		{Role: core.RoleUser, ToolResult: &core.ToolResult{ToolCallID: "tc_1", Content: "ok"}},
+		{Role: core.RoleUser, ToolResult: &core.ToolResult{ToolCallID: "tc_stale", Content: "stale"}},
 	}
 
 	result := sanitizeToolResults(msgs)
@@ -153,15 +153,15 @@ func TestSanitizeToolResults_OrphanedToolResult(t *testing.T) {
 
 func TestSanitizeToolResults_OrphanedToolUse(t *testing.T) {
 	// Assistant has 3 tool_use blocks, but only 2 have matching tool_results.
-	// The orphaned tool_use should be stripped from the assistant message.
-	msgs := []message.Message{
-		{Role: message.RoleAssistant, Content: "running tools", ToolCalls: []message.ToolCall{
+	// The orphaned tool_use should be stripped from the assistant core.
+	msgs := []core.Message{
+		{Role: core.RoleAssistant, Content: "running tools", ToolCalls: []core.ToolCall{
 			{ID: "tc_1", Name: "Read"},
 			{ID: "tc_2", Name: "Write"},
 			{ID: "tc_3", Name: "Bash"},
 		}},
-		{Role: message.RoleUser, ToolResult: &message.ToolResult{ToolCallID: "tc_1", Content: "ok"}},
-		{Role: message.RoleUser, ToolResult: &message.ToolResult{ToolCallID: "tc_2", Content: "ok"}},
+		{Role: core.RoleUser, ToolResult: &core.ToolResult{ToolCallID: "tc_1", Content: "ok"}},
+		{Role: core.RoleUser, ToolResult: &core.ToolResult{ToolCallID: "tc_2", Content: "ok"}},
 		// tc_3 has no result
 	}
 
@@ -179,13 +179,13 @@ func TestSanitizeToolResults_OrphanedToolUse(t *testing.T) {
 }
 
 func TestSanitizeToolResults_AllPaired(t *testing.T) {
-	msgs := []message.Message{
-		{Role: message.RoleUser, Content: "hello"},
-		{Role: message.RoleAssistant, Content: "let me check", ToolCalls: []message.ToolCall{
+	msgs := []core.Message{
+		{Role: core.RoleUser, Content: "hello"},
+		{Role: core.RoleAssistant, Content: "let me check", ToolCalls: []core.ToolCall{
 			{ID: "tc_1", Name: "Read"},
 		}},
-		{Role: message.RoleUser, ToolResult: &message.ToolResult{ToolCallID: "tc_1", Content: "file content"}},
-		{Role: message.RoleAssistant, Content: "done"},
+		{Role: core.RoleUser, ToolResult: &core.ToolResult{ToolCallID: "tc_1", Content: "file content"}},
+		{Role: core.RoleAssistant, Content: "done"},
 	}
 
 	result := sanitizeToolResults(msgs)
@@ -199,12 +199,12 @@ func TestSanitizeToolResults_AllPaired(t *testing.T) {
 
 func TestSanitizeToolResults_AllToolUsesOrphaned(t *testing.T) {
 	// Assistant message with tool_uses but no tool_results at all.
-	msgs := []message.Message{
-		{Role: message.RoleAssistant, Content: "running", ToolCalls: []message.ToolCall{
+	msgs := []core.Message{
+		{Role: core.RoleAssistant, Content: "running", ToolCalls: []core.ToolCall{
 			{ID: "tc_1", Name: "Read"},
 			{ID: "tc_2", Name: "Write"},
 		}},
-		{Role: message.RoleUser, Content: "user interrupted"},
+		{Role: core.RoleUser, Content: "user interrupted"},
 	}
 
 	result := sanitizeToolResults(msgs)

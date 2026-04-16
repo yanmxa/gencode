@@ -11,11 +11,11 @@ import (
 
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/provider/search"
-	"github.com/yanmxa/gencode/internal/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
-// Item represents a search provider in the selector.
-type Item struct {
+// item represents a search provider in the selector.
+type item struct {
 	Name        search.ProviderName
 	DisplayName string
 	EnvVars     []string
@@ -31,7 +31,7 @@ type SelectedMsg struct {
 // Model holds state for the search engine selector.
 type Model struct {
 	active      bool
-	items       []Item
+	items       []item
 	selectedIdx int
 	width       int
 	height      int
@@ -56,7 +56,7 @@ func (s *Model) Enter(width, height int) error {
 	}
 
 	allMeta := search.AllProviders()
-	s.items = make([]Item, 0, len(allMeta))
+	s.items = make([]item, 0, len(allMeta))
 	for _, meta := range allMeta {
 		available := !meta.RequiresAPIKey
 		if !available {
@@ -67,7 +67,7 @@ func (s *Model) Enter(width, height int) error {
 				}
 			}
 		}
-		s.items = append(s.items, Item{
+		s.items = append(s.items, item{
 			Name:        meta.Name,
 			DisplayName: meta.DisplayName,
 			EnvVars:     meta.EnvVars,

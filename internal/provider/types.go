@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/message"
 )
 
 // Provider represents a provider name
@@ -99,7 +98,7 @@ type ModelInfo struct {
 // CompletionOptions contains options for a completion request
 type CompletionOptions struct {
 	Model         string
-	Messages      []message.Message
+	Messages      []core.Message
 	MaxTokens     int
 	Temperature   float64
 	Tools         []ToolSchema
@@ -107,13 +106,13 @@ type CompletionOptions struct {
 	ThinkingLevel ThinkingLevel
 }
 
-// ToolSchema is a backward-compatible alias for message.ToolSchema.
-type ToolSchema = message.ToolSchema
+// ToolSchema is a backward-compatible alias for core.ToolSchema.
+type ToolSchema = core.ToolSchema
 
 // LLMProvider is the interface that all providers must implement
 type LLMProvider interface {
 	// Stream sends a completion request and returns a channel of streaming chunks
-	Stream(ctx context.Context, opts CompletionOptions) <-chan message.StreamChunk
+	Stream(ctx context.Context, opts CompletionOptions) <-chan core.StreamChunk
 
 	// ListModels returns the available models for this provider
 	ListModels(ctx context.Context) ([]ModelInfo, error)
@@ -133,24 +132,24 @@ type ProviderFactory func(ctx context.Context) (LLMProvider, error)
 
 // Complete is a helper function that collects stream chunks into a complete response
 // This provides non-streaming output from any LLMProvider
-func Complete(ctx context.Context, provider LLMProvider, opts CompletionOptions) (message.CompletionResponse, error) {
-	var response message.CompletionResponse
+func Complete(ctx context.Context, provider LLMProvider, opts CompletionOptions) (core.CompletionResponse, error) {
+	var response core.CompletionResponse
 
 	streamChan := provider.Stream(ctx, opts)
 
 	gotDone := false
 	for chunk := range streamChan {
 		switch chunk.Type {
-		case message.ChunkTypeText:
+		case core.ChunkTypeText:
 			response.Content += chunk.Text
-		case message.ChunkTypeToolStart, message.ChunkTypeToolInput:
+		case core.ChunkTypeToolStart, core.ChunkTypeToolInput:
 			// Tool calls are accumulated in the done chunk
-		case message.ChunkTypeDone:
+		case core.ChunkTypeDone:
 			if chunk.Response != nil {
 				return *chunk.Response, nil
 			}
 			gotDone = true
-		case message.ChunkTypeError:
+		case core.ChunkTypeError:
 			return response, chunk.Error
 		}
 	}

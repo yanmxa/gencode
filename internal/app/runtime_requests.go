@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
@@ -13,7 +13,7 @@ func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
 
 	assistantCount := 0
 	for _, msg := range m.conv.Messages {
-		if msg.Role == message.RoleAssistant {
+		if msg.Role == core.RoleAssistant {
 			assistantCount++
 		}
 	}
@@ -26,8 +26,8 @@ func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
 		startIdx = len(m.conv.Messages) - maxSuggestionMessages
 	}
 	msgs := m.conv.ConvertToProviderFrom(startIdx)
-	msgs = append(msgs, message.Message{
-		Role:    message.RoleUser,
+	msgs = append(msgs, core.Message{
+		Role:    core.RoleUser,
 		Content: suggestionUserPrompt,
 	})
 

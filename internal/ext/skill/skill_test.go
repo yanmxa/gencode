@@ -69,7 +69,7 @@ This is the skill content.
 		t.Fatal(err)
 	}
 
-	loader := NewLoader(tmpDir)
+	loader := newLoader(tmpDir)
 	skill, err := loader.loadSkillFile(skillPath, ScopeUser, "")
 	if err != nil {
 		t.Fatalf("loadSkillFile failed: %v", err)
@@ -115,13 +115,13 @@ Example instructions.
 	}
 
 	// Create loader with the temp directory as project root
-	loader := &Loader{
+	loader := &loader{
 		cwd: tmpDir,
 	}
 
-	skills, err := loader.LoadAll()
+	skills, err := loader.loadAll()
 	if err != nil {
-		t.Fatalf("LoadAll failed: %v", err)
+		t.Fatalf("loadAll failed: %v", err)
 	}
 
 	skill, ok := skills["example-skill"]
@@ -159,13 +159,13 @@ Commit instructions.
 	}
 
 	// Create loader with the temp directory as project root
-	loader := &Loader{
+	loader := &loader{
 		cwd: tmpDir,
 	}
 
-	skills, err := loader.LoadAll()
+	skills, err := loader.loadAll()
 	if err != nil {
-		t.Fatalf("LoadAll failed: %v", err)
+		t.Fatalf("loadAll failed: %v", err)
 	}
 
 	// Skill should be keyed by FullName (git:commit)
@@ -208,13 +208,13 @@ Test instructions.
 	}
 
 	// Override the loader to use our temp directory
-	loader := &Loader{
+	loader := &loader{
 		cwd: tmpDir,
 	}
 
-	skills, err := loader.LoadAll()
+	skills, err := loader.loadAll()
 	if err != nil {
-		t.Fatalf("LoadAll failed: %v", err)
+		t.Fatalf("loadAll failed: %v", err)
 	}
 
 	// Create mock stores in temp dir
@@ -313,9 +313,9 @@ Git commit instructions.
 		t.Fatal(err)
 	}
 
-	installedPlugins := InstalledPluginsData{
+	installedPlugins := installedPluginsData{
 		Version: 2,
-		Plugins: map[string][]PluginInstall{
+		Plugins: map[string][]pluginInstall{
 			"git@test-marketplace": {
 				{
 					Scope:       "user",
@@ -332,13 +332,13 @@ Git commit instructions.
 	}
 
 	// Create loader with the temp directory as project root
-	loader := &Loader{
+	loader := &loader{
 		cwd: tmpDir,
 	}
 
-	skills, err := loader.LoadAll()
+	skills, err := loader.loadAll()
 	if err != nil {
-		t.Fatalf("LoadAll failed: %v", err)
+		t.Fatalf("loadAll failed: %v", err)
 	}
 
 	// Skill should inherit namespace from plugin name (git)
@@ -391,9 +391,9 @@ Review instructions.
 		t.Fatal(err)
 	}
 
-	installedPlugins := InstalledPluginsData{
+	installedPlugins := installedPluginsData{
 		Version: 2,
-		Plugins: map[string][]PluginInstall{
+		Plugins: map[string][]pluginInstall{
 			"my-plugin@test-marketplace": {
 				{
 					Scope:       "user",
@@ -410,13 +410,13 @@ Review instructions.
 	}
 
 	// Create loader with the temp directory as project root
-	loader := &Loader{
+	loader := &loader{
 		cwd: tmpDir,
 	}
 
-	skills, err := loader.LoadAll()
+	skills, err := loader.loadAll()
 	if err != nil {
-		t.Fatalf("LoadAll failed: %v", err)
+		t.Fatalf("loadAll failed: %v", err)
 	}
 
 	// Skill should use explicit namespace (code) not plugin name (my-plugin)

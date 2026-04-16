@@ -9,7 +9,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/yanmxa/gencode/internal/tool/perm"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
 const (

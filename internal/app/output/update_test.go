@@ -3,7 +3,7 @@ package output
 import (
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/ui/progress"
+	"github.com/yanmxa/gencode/internal/app/progress"
 )
 
 func TestHandleProgressWithoutHubDoesNotPanic(t *testing.T) {

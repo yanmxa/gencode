@@ -4,10 +4,9 @@ package compact
 import (
 	"context"
 
-	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/runtime"
+	"github.com/yanmxa/gencode/internal/loop"
 )
 
 // ShouldAutoCompact returns true when context usage is high enough to trigger
@@ -16,7 +15,7 @@ func ShouldAutoCompact(llm provider.LLMProvider, messageCount, inputTokens int, 
 	if llm == nil || messageCount < 3 {
 		return false
 	}
-	return message.NeedsCompaction(inputTokens, GetEffectiveInputLimit(store, currentModel))
+	return core.NeedsCompaction(inputTokens, GetEffectiveInputLimit(store, currentModel))
 }
 
 // GetContextUsagePercent returns what percentage of the context window is used.
@@ -38,6 +37,6 @@ func GetMaxTokens(store *provider.Store, currentModel *provider.CurrentModelInfo
 
 // CompactConversation compacts the message history into a summary.
 // Delegates to runtime.Compact as the canonical implementation.
-func CompactConversation(ctx context.Context, c *client.Client, msgs []message.Message, sessionMemory, focus string) (summary string, count int, err error) {
-	return runtime.Compact(ctx, c, msgs, sessionMemory, focus)
+func CompactConversation(ctx context.Context, c *provider.LLM, msgs []core.Message, sessionMemory, focus string) (summary string, count int, err error) {
+	return loop.Compact(ctx, c, msgs, sessionMemory, focus)
 }

@@ -7,10 +7,11 @@ import (
 	"go.uber.org/zap"
 
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
+	"github.com/yanmxa/gencode/internal/app/progress"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -96,6 +97,12 @@ func (m *model) enableAutoAcceptMode() {
 // Note: response messages are handled directly in delegateToActiveModal.
 func (m *model) updateMode(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
+	case progress.QuestionMsg:
+		c := m.handleQuestionRequest(appmode.QuestionRequestMsg{
+			Request: msg.Request,
+			Reply:   msg.Reply,
+		})
+		return c, true
 	case appmode.QuestionRequestMsg:
 		c := m.handleQuestionRequest(msg)
 		return c, true
@@ -190,8 +197,8 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 				Content: planContent,
 			}
 			if _, err := m.mode.Store.Save(savedPlan); err != nil {
-				m.conv.Append(message.ChatMessage{
-					Role:    message.RoleNotice,
+				m.conv.Append(core.ChatMessage{
+					Role:    core.RoleNotice,
 					Content: fmt.Sprintf("Warning: failed to save plan: %v", err),
 				})
 			}
@@ -222,9 +229,9 @@ func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
 	m.tool.Reset()
 
 	userMsg := fmt.Sprintf("Implement the following approved plan step by step. Start coding immediately — do NOT explore or investigate further.\n\n%s", planContent)
-	m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: userMsg})
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: userMsg})
 
-	return m.startLLMStream(nil)
+	return m.sendToAgent(userMsg, nil)
 }
 
 func (m *model) handleEnterPlanRequest(msg appmode.EnterPlanRequestMsg) tea.Cmd {

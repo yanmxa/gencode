@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 func TestRenderUserMessagePreservesInlineImagePosition(t *testing.T) {
 	rendered := RenderUserMessage(
 		"这个图片说了什么 请说一下",
 		"[Image #1] 这个图片说了什么 请说一下",
-		[]message.ImageData{{FileName: "clip.png"}},
+		[]core.Image{{FileName: "clip.png"}},
 		nil,
 		80,
 	)

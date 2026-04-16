@@ -8,21 +8,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
 
 func TestAgent_ExploreAgent(t *testing.T) {
 	mp := &testutil.MockProvider{
-		Responses: []message.CompletionResponse{
+		Responses: []core.CompletionResponse{
 			{
 				Content: "Explored the codebase", StopReason: "end_turn",
-				Usage: message.Usage{InputTokens: 50, OutputTokens: 25},
+				Usage: core.Usage{InputTokens: 50, OutputTokens: 25},
 			},
 		},
 	}
@@ -63,12 +62,12 @@ func TestAgent_UnknownAgent(t *testing.T) {
 
 func TestAgent_MaxTurnsRespected(t *testing.T) {
 	// LLM always returns tool calls to force hitting max turns
-	responses := make([]message.CompletionResponse, 10)
+	responses := make([]core.CompletionResponse, 10)
 	for i := range responses {
-		responses[i] = message.CompletionResponse{
+		responses[i] = core.CompletionResponse{
 			StopReason: "tool_use",
-			ToolCalls:  []message.ToolCall{{ID: "tc", Name: "UnknownTool", Input: "{}"}},
-			Usage:      message.Usage{InputTokens: 1, OutputTokens: 1},
+			ToolCalls:  []core.ToolCall{{ID: "tc", Name: "UnknownTool", Input: "{}"}},
+			Usage:      core.Usage{InputTokens: 1, OutputTokens: 1},
 		}
 	}
 
@@ -107,7 +106,7 @@ func TestAgent_ModelResolution(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mp := &testutil.MockProvider{
-				Responses: []message.CompletionResponse{
+				Responses: []core.CompletionResponse{
 					{Content: "ok", StopReason: "end_turn"},
 				},
 			}
@@ -159,20 +158,20 @@ func TestAgent_PlanPermissionMode_BlocksWrites(t *testing.T) {
 	// call queued. The tool call should be rejected (not executed), and the agent
 	// should still complete because the LLM gets the error result and ends turn.
 	mp := &testutil.MockProvider{
-		Responses: []message.CompletionResponse{
+		Responses: []core.CompletionResponse{
 			// First response: LLM tries to write a file
 			{
 				StopReason: "tool_use",
-				ToolCalls: []message.ToolCall{
+				ToolCalls: []core.ToolCall{
 					{ID: "tc1", Name: "Write", Input: `{"file_path":"/tmp/x.txt","content":"hello"}`},
 				},
-				Usage: message.Usage{InputTokens: 20, OutputTokens: 10},
+				Usage: core.Usage{InputTokens: 20, OutputTokens: 10},
 			},
 			// Second response: LLM acknowledges the error and ends
 			{
 				Content:    "Cannot write files in plan mode",
 				StopReason: "end_turn",
-				Usage:      message.Usage{InputTokens: 30, OutputTokens: 15},
+				Usage:      core.Usage{InputTokens: 30, OutputTokens: 15},
 			},
 		},
 	}
@@ -208,7 +207,7 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 	// Each hook writes to a temp file so we can verify it fired.
 	settings := &config.Settings{
 		Hooks: map[string][]config.Hook{
-			string(core.SubagentStart): {
+			string(hooks.SubagentStart): {
 				{
 					Matcher: "",
 					Hooks: []config.HookCmd{
@@ -216,7 +215,7 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 					},
 				},
 			},
-			string(core.SubagentStop): {
+			string(hooks.SubagentStop): {
 				{
 					Matcher: "",
 					Hooks: []config.HookCmd{
@@ -230,11 +229,11 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 	engine := hooks.NewEngine(settings, "test-session-id", tmpDir, "")
 
 	mp := &testutil.MockProvider{
-		Responses: []message.CompletionResponse{
+		Responses: []core.CompletionResponse{
 			{
 				Content:    "done",
 				StopReason: "end_turn",
-				Usage:      message.Usage{InputTokens: 10, OutputTokens: 5},
+				Usage:      core.Usage{InputTokens: 10, OutputTokens: 5},
 			},
 		},
 	}
@@ -268,10 +267,10 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 
 func TestAgent_BackgroundExecution(t *testing.T) {
 	mp := &testutil.MockProvider{
-		Responses: []message.CompletionResponse{
+		Responses: []core.CompletionResponse{
 			{
 				Content: "background result", StopReason: "end_turn",
-				Usage: message.Usage{InputTokens: 10, OutputTokens: 5},
+				Usage: core.Usage{InputTokens: 10, OutputTokens: 5},
 			},
 		},
 	}
@@ -306,10 +305,10 @@ func TestAgent_OnProgressReceivesToolUpdates(t *testing.T) {
 	}
 
 	mp := &testutil.MockProvider{
-		Responses: []message.CompletionResponse{
+		Responses: []core.CompletionResponse{
 			{
 				StopReason: "tool_use",
-				ToolCalls: []message.ToolCall{
+				ToolCalls: []core.ToolCall{
 					{
 						ID:    "tc1",
 						Name:  "Read",

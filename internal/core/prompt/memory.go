@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/util/log"
 	"go.uber.org/zap"
 )
 

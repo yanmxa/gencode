@@ -11,8 +11,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/session"
-	"github.com/yanmxa/gencode/internal/ui/selector"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/selector"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
 // SelectedMsg is sent when a session is selected

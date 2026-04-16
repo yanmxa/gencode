@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/yanmxa/gencode/internal/core/prompt"
-	"github.com/yanmxa/gencode/internal/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
 // HandleInitCommand handles the /init command.
@@ -75,7 +75,7 @@ func handleInitLocal(cwd string) (string, error) {
 		return "", fmt.Errorf("failed to write file %s: %w", filePath, err)
 	}
 
-	AddToGitignore(cwd, "GEN.local.md")
+	addToGitignore(cwd, "GEN.local.md")
 
 	return fmt.Sprintf("Created %s (added to .gitignore)\n\nEdit with: /memory edit local", filePath), nil
 }
@@ -104,9 +104,9 @@ func handleInitRules(cwd string, isClaude bool) (string, error) {
 	return fmt.Sprintf("Created %s\n\nAdd .md files to this directory to define rules.\nExample created: %s", rulesDir, examplePath), nil
 }
 
-// AddToGitignore adds an entry to .gitignore in the given directory if not already present.
+// addToGitignore adds an entry to .gitignore in the given directory if not already present.
 // Creates the file if it doesn't exist.
-func AddToGitignore(cwd, entry string) {
+func addToGitignore(cwd, entry string) {
 	gitignorePath := filepath.Join(cwd, ".gitignore")
 	data, err := os.ReadFile(gitignorePath)
 	if err != nil && !os.IsNotExist(err) {
@@ -150,13 +150,13 @@ func HandleMemoryCommand(selector *Model, cwd string, width, height int, args st
 
 	switch subCmd {
 	case "list":
-		result, err := HandleMemoryList(cwd)
+		result, err := handleMemoryList(cwd)
 		return result, "", err
 	case "show":
-		result, err := HandleMemoryShow(cwd)
+		result, err := handleMemoryShow(cwd)
 		return result, "", err
 	case "edit":
-		editPath, err := HandleMemoryEdit(cwd, scope)
+		editPath, err := handleMemoryEdit(cwd, scope)
 		if err != nil {
 			return "", "", err
 		}
@@ -180,8 +180,8 @@ const (
 	memoryMaxPath  = 36
 )
 
-// HandleMemoryList lists all memory files.
-func HandleMemoryList(cwd string) (string, error) {
+// handleMemoryList lists all memory files.
+func handleMemoryList(cwd string) (string, error) {
 	paths := prompt.GetAllMemoryPaths(cwd)
 	state := &memoryListState{cwd: cwd}
 
@@ -292,8 +292,8 @@ func padRight(s string, length int) string {
 	return s + strings.Repeat(" ", length-len(s))
 }
 
-// HandleMemoryShow shows the current loaded memory content.
-func HandleMemoryShow(cwd string) (string, error) {
+// handleMemoryShow shows the current loaded memory content.
+func handleMemoryShow(cwd string) (string, error) {
 	content := prompt.LoadMemory(cwd)
 	if content == "" {
 		return "No memory files loaded.\n\nCreate project memory with: /init", nil
@@ -307,25 +307,25 @@ func HandleMemoryShow(cwd string) (string, error) {
 	return fmt.Sprintf("Current Memory:\n\n%s", content), nil
 }
 
-// HandleMemoryEdit resolves the file to edit for the given scope.
+// handleMemoryEdit resolves the file to edit for the given scope.
 // Returns the file path to edit, or an empty string with a message if no file was found.
-func HandleMemoryEdit(cwd, scope string) (string, error) {
+func handleMemoryEdit(cwd, scope string) (string, error) {
 	paths := prompt.GetAllMemoryPaths(cwd)
 
 	switch scope {
 	case "global", "user":
-		filePath, err := EnsureMemoryFile(paths.Global, getGlobalTemplate())
+		filePath, err := ensureMemoryFile(paths.Global, getGlobalTemplate())
 		if err != nil {
 			return "", err
 		}
 		return filePath, nil
 
 	case "local":
-		filePath, err := EnsureMemoryFile(paths.Local, getLocalTemplate())
+		filePath, err := ensureMemoryFile(paths.Local, getLocalTemplate())
 		if err != nil {
 			return "", err
 		}
-		AddToGitignore(cwd, "GEN.local.md")
+		addToGitignore(cwd, "GEN.local.md")
 		return filePath, nil
 
 	default:
@@ -338,8 +338,8 @@ func HandleMemoryEdit(cwd, scope string) (string, error) {
 	}
 }
 
-// EnsureMemoryFile finds or creates a memory file from the given search paths.
-func EnsureMemoryFile(searchPaths []string, template string) (string, error) {
+// ensureMemoryFile finds or creates a memory file from the given search paths.
+func ensureMemoryFile(searchPaths []string, template string) (string, error) {
 	filePath := prompt.FindMemoryFile(searchPaths)
 	if filePath != "" {
 		return filePath, nil
@@ -432,18 +432,18 @@ This file defines specific rules for GenCode to follow.
 
 // CreateMemoryFile creates a memory file if it doesn't exist.
 func CreateMemoryFile(filePath, level, cwd string) error {
-	template := GetTemplateForLevel(level, cwd)
-	if _, err := EnsureMemoryFile([]string{filePath}, template); err != nil {
+	template := getTemplateForLevel(level, cwd)
+	if _, err := ensureMemoryFile([]string{filePath}, template); err != nil {
 		return err
 	}
 	if level == "local" {
-		AddToGitignore(cwd, "GEN.local.md")
+		addToGitignore(cwd, "GEN.local.md")
 	}
 	return nil
 }
 
-// GetTemplateForLevel returns the template content for a given memory level.
-func GetTemplateForLevel(level, cwd string) string {
+// getTemplateForLevel returns the template content for a given memory level.
+func getTemplateForLevel(level, cwd string) string {
 	switch level {
 	case "global":
 		return getGlobalTemplate()

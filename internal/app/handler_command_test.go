@@ -16,7 +16,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/sessionui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/cron"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/ext/skill"
@@ -511,10 +511,10 @@ func TestHandleCommandSubmit_LoopDeleteAllPreservesLiteralInputAndDeletesJobs(t 
 	if len(m.conv.Messages) != 2 {
 		t.Fatalf("expected preserved user command and notice, got %d messages", len(m.conv.Messages))
 	}
-	if m.conv.Messages[0].Role != message.RoleUser || m.conv.Messages[0].Content != "/loop delete all" {
+	if m.conv.Messages[0].Role != core.RoleUser || m.conv.Messages[0].Content != "/loop delete all" {
 		t.Fatalf("expected preserved literal slash command, got %#v", m.conv.Messages[0])
 	}
-	if m.conv.Messages[1].Role != message.RoleNotice || !strings.Contains(m.conv.Messages[1].Content, "Cancelled 2 scheduled task(s).") {
+	if m.conv.Messages[1].Role != core.RoleNotice || !strings.Contains(m.conv.Messages[1].Content, "Cancelled 2 scheduled task(s).") {
 		t.Fatalf("expected delete-all notice, got %#v", m.conv.Messages[1])
 	}
 }
@@ -543,7 +543,7 @@ func TestHandleCommandSubmit_ToolsPreservesLiteralInput(t *testing.T) {
 	if len(m.conv.Messages) != 1 {
 		t.Fatalf("expected preserved user command only, got %d messages", len(m.conv.Messages))
 	}
-	if m.conv.Messages[0].Role != message.RoleUser || m.conv.Messages[0].Content != "/tools" {
+	if m.conv.Messages[0].Role != core.RoleUser || m.conv.Messages[0].Content != "/tools" {
 		t.Fatalf("expected preserved /tools command, got %#v", m.conv.Messages[0])
 	}
 }
@@ -571,10 +571,10 @@ func TestHandleCommandSubmit_LoopOncePlacesCommandBeforeNotice(t *testing.T) {
 	if len(m.conv.Messages) != 2 {
 		t.Fatalf("expected command and notice, got %d messages", len(m.conv.Messages))
 	}
-	if m.conv.Messages[0].Role != message.RoleUser || m.conv.Messages[0].Content != "/loop once 20m check the deploy" {
+	if m.conv.Messages[0].Role != core.RoleUser || m.conv.Messages[0].Content != "/loop once 20m check the deploy" {
 		t.Fatalf("expected literal slash command first, got %#v", m.conv.Messages[0])
 	}
-	if m.conv.Messages[1].Role != message.RoleNotice || !strings.Contains(m.conv.Messages[1].Content, "Scheduled one-shot task") {
+	if m.conv.Messages[1].Role != core.RoleNotice || !strings.Contains(m.conv.Messages[1].Content, "Scheduled one-shot task") {
 		t.Fatalf("expected one-shot notice second, got %#v", m.conv.Messages[1])
 	}
 }
@@ -602,13 +602,13 @@ func TestHandleCommandSubmit_LoopRecurringPlacesCommandBeforeNoticeAndPrompt(t *
 	if len(m.conv.Messages) < 3 {
 		t.Fatalf("expected at least command, notice, and parsed prompt, got %d messages", len(m.conv.Messages))
 	}
-	if m.conv.Messages[0].Role != message.RoleUser || m.conv.Messages[0].Content != "/loop 5m check the deploy" {
+	if m.conv.Messages[0].Role != core.RoleUser || m.conv.Messages[0].Content != "/loop 5m check the deploy" {
 		t.Fatalf("expected literal slash command first, got %#v", m.conv.Messages[0])
 	}
-	if m.conv.Messages[1].Role != message.RoleNotice || !strings.Contains(m.conv.Messages[1].Content, "Scheduled recurring task") {
+	if m.conv.Messages[1].Role != core.RoleNotice || !strings.Contains(m.conv.Messages[1].Content, "Scheduled recurring task") {
 		t.Fatalf("expected recurring notice second, got %#v", m.conv.Messages[1])
 	}
-	if m.conv.Messages[2].Role != message.RoleUser || m.conv.Messages[2].Content != "check the deploy" {
+	if m.conv.Messages[2].Role != core.RoleUser || m.conv.Messages[2].Content != "check the deploy" {
 		t.Fatalf("expected parsed prompt third, got %#v", m.conv.Messages[2])
 	}
 }

@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
 // providerOrder defines the display order for providers.
@@ -40,7 +40,7 @@ func (s *Model) Enter(ctx context.Context, width, height int) (tea.Cmd, error) {
 	s.expandedProviderIdx = -1
 	s.apiKeyActive = false
 	s.active = true
-	s.activeTab = TabModels
+	s.activeTab = tabModels
 	s.width = width
 	s.height = height
 
@@ -72,15 +72,15 @@ func (s *Model) loadProviderData() (tea.Cmd, error) {
 			continue
 		}
 
-		item := ProviderItem{
+		item := providerItem{
 			Provider:    p,
 			DisplayName: providerDisplayNames[p],
-			AuthMethods: make([]AuthMethodItem, 0, len(infos)),
+			AuthMethods: make([]authMethodItem, 0, len(infos)),
 		}
 
 		connected := false
 		for _, info := range infos {
-			item.AuthMethods = append(item.AuthMethods, AuthMethodItem{
+			item.AuthMethods = append(item.AuthMethods, authMethodItem{
 				Provider:    info.Meta.Provider,
 				AuthMethod:  info.Meta.AuthMethod,
 				DisplayName: info.Meta.DisplayName,
@@ -146,7 +146,7 @@ func (s *Model) ensureModelProvidersExist() {
 			displayName = m.ProviderName
 		}
 
-		s.connectedProviders = append(s.connectedProviders, ProviderItem{
+		s.connectedProviders = append(s.connectedProviders, providerItem{
 			Provider:    coreprovider.Provider(m.ProviderName),
 			DisplayName: displayName,
 			Connected:   true,
@@ -188,13 +188,13 @@ func (s *Model) loadModelsAsync(store *coreprovider.Store, currentModelID string
 
 		go func() { wg.Wait(); close(ch) }()
 
-		var models []ModelItem
+		var models []modelItem
 		for r := range ch {
 			prov := coreprovider.Provider(r.providerName)
 			_ = store.CacheModels(prov, r.authMethod, r.models)
 
 			for _, mdl := range r.models {
-				models = append(models, ModelItem{
+				models = append(models, modelItem{
 					ID:               mdl.ID,
 					Name:             mdl.Name,
 					DisplayName:      mdl.DisplayName,
@@ -237,7 +237,7 @@ func (s *Model) loadModelsCached(allCached map[string][]coreprovider.ModelInfo, 
 		}
 
 		for _, mdl := range models {
-			s.allModels = append(s.allModels, ModelItem{
+			s.allModels = append(s.allModels, modelItem{
 				ID:               mdl.ID,
 				Name:             mdl.Name,
 				DisplayName:      mdl.DisplayName,
@@ -282,9 +282,9 @@ func (s *Model) rebuildVisibleItems() {
 	s.visibleItems = nil
 
 	switch s.activeTab {
-	case TabModels:
+	case tabModels:
 		s.rebuildModelsTab()
-	case TabProviders:
+	case tabProviders:
 		s.rebuildProvidersTab()
 	}
 
@@ -296,7 +296,7 @@ func (s *Model) rebuildModelsTab() {
 	s.applyFilter()
 
 	// Group filtered models by provider
-	providerModels := make(map[string][]ModelItem)
+	providerModels := make(map[string][]modelItem)
 	for i := range s.filteredModels {
 		m := &s.filteredModels[i]
 		providerModels[m.ProviderName] = append(providerModels[m.ProviderName], *m)
@@ -309,8 +309,8 @@ func (s *Model) rebuildModelsTab() {
 			continue
 		}
 
-		s.visibleItems = append(s.visibleItems, ListItem{
-			Kind:        ItemProviderHeader,
+		s.visibleItems = append(s.visibleItems, listItem{
+			Kind:        itemProviderHeader,
 			Provider:    cp,
 			ProviderIdx: i,
 		})
@@ -321,8 +321,8 @@ func (s *Model) rebuildModelsTab() {
 		})
 
 		for j := range models {
-			s.visibleItems = append(s.visibleItems, ListItem{
-				Kind:        ItemModel,
+			s.visibleItems = append(s.visibleItems, listItem{
+				Kind:        itemModel,
 				Model:       &models[j],
 				ProviderIdx: i,
 			})
@@ -344,8 +344,8 @@ func (s *Model) rebuildProvidersTab() {
 			}
 		}
 
-		s.visibleItems = append(s.visibleItems, ListItem{
-			Kind:        ItemProvider,
+		s.visibleItems = append(s.visibleItems, listItem{
+			Kind:        itemProvider,
 			Provider:    p,
 			ProviderIdx: i,
 		})
@@ -353,8 +353,8 @@ func (s *Model) rebuildProvidersTab() {
 		// Show expanded auth methods
 		if s.expandedProviderIdx == i {
 			for j := range p.AuthMethods {
-				s.visibleItems = append(s.visibleItems, ListItem{
-					Kind:        ItemAuthMethod,
+				s.visibleItems = append(s.visibleItems, listItem{
+					Kind:        itemAuthMethod,
 					AuthMethod:  &p.AuthMethods[j],
 					ProviderIdx: i,
 				})
@@ -391,10 +391,10 @@ func (s *Model) clampSelection() {
 		s.selectedIdx = 0
 	}
 	// Skip non-selectable items forward
-	if s.visibleItems[s.selectedIdx].Kind == ItemProviderHeader {
+	if s.visibleItems[s.selectedIdx].Kind == itemProviderHeader {
 		for s.selectedIdx < len(s.visibleItems)-1 {
 			s.selectedIdx++
-			if s.visibleItems[s.selectedIdx].Kind != ItemProviderHeader {
+			if s.visibleItems[s.selectedIdx].Kind != itemProviderHeader {
 				break
 			}
 		}
@@ -402,7 +402,7 @@ func (s *Model) clampSelection() {
 }
 
 // refreshAuthMethod re-fetches models for an already connected provider auth method.
-func (s *Model) refreshAuthMethod(item AuthMethodItem, authIdx int) tea.Cmd {
+func (s *Model) refreshAuthMethod(item authMethodItem, authIdx int) tea.Cmd {
 	s.lastConnectResult = "Refreshing..."
 	s.lastConnectAuthIdx = authIdx
 	s.lastConnectSuccess = false
@@ -445,7 +445,7 @@ func (s *Model) refreshAuthMethod(item AuthMethodItem, authIdx int) tea.Cmd {
 }
 
 // connectAuthMethod initiates an async connection to a provider auth method.
-func (s *Model) connectAuthMethod(item AuthMethodItem, authIdx int) tea.Cmd {
+func (s *Model) connectAuthMethod(item authMethodItem, authIdx int) tea.Cmd {
 	s.lastConnectResult = "Connecting..."
 	s.lastConnectAuthIdx = authIdx
 	s.lastConnectSuccess = false

@@ -9,9 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yanmxa/gencode/internal/markdown"
+	"github.com/yanmxa/gencode/internal/util/markdown"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/ext/skill"
 
 	"gopkg.in/yaml.v3"
 )
@@ -92,10 +91,9 @@ func GetMatchingCommands(query string) []Info {
 		}
 	}
 
-	skillCmds := GetSkillCommands()
-	for _, cmd := range skillCmds {
-		if fuzzyMatch(strings.ToLower(cmd.Name), query) {
-			if !seen[cmd.Name] {
+	for _, provider := range getDynamicInfoProviders() {
+		for _, cmd := range provider() {
+			if fuzzyMatch(strings.ToLower(cmd.Name), query) && !seen[cmd.Name] {
 				matches = append(matches, cmd)
 				seen[cmd.Name] = true
 			}
@@ -119,53 +117,15 @@ func GetMatchingCommands(query string) []Info {
 	return matches
 }
 
-// IsSkillCommand checks whether the given command name matches an enabled skill.
-func IsSkillCommand(cmd string) (*skill.Skill, bool) {
-	if skill.DefaultRegistry == nil {
-		return nil, false
-	}
-
-	s, ok := skill.DefaultRegistry.Get(cmd)
-	if !ok {
-		return nil, false
-	}
-
-	if !s.IsEnabled() {
-		return nil, false
-	}
-
-	return s, true
-}
-
-// GetSkillCommands returns Info entries for all enabled skills.
-func GetSkillCommands() []Info {
-	if skill.DefaultRegistry == nil {
-		return nil
-	}
-
-	var cmds []Info
-	for _, s := range skill.DefaultRegistry.GetEnabled() {
-		hint := ""
-		if s.ArgumentHint != "" {
-			hint = " " + s.ArgumentHint
-		}
-		cmds = append(cmds, Info{
-			Name:        s.FullName(),
-			Description: s.Description + hint,
-		})
-	}
-	return cmds
-}
-
-// CommandScope represents where a custom command was loaded from.
+// commandScope represents where a custom command was loaded from.
 // Higher values have higher priority.
-type CommandScope int
+type commandScope int
 
 const (
-	ScopeUser          CommandScope = iota // ~/.gen/commands/
-	ScopeUserPlugin                        // ~/.gen/plugins/*/commands/
-	ScopeProjectPlugin                     // .gen/plugins/*/commands/
-	ScopeProject                           // .gen/commands/
+	scopeUser         commandScope = iota // ~/.gen/commands/
+	scopeUserPlugin                        // ~/.gen/plugins/*/commands/
+	scopeProjectPlugin                     // .gen/plugins/*/commands/
+	scopeProject                          // .gen/commands/
 )
 
 // CustomCommand represents a user-defined slash command from
@@ -177,7 +137,7 @@ type CustomCommand struct {
 	Description string `yaml:"description"`
 	Namespace   string `yaml:"namespace"`
 	FilePath    string
-	Scope       CommandScope
+	Scope       commandScope
 }
 
 // FullName returns the namespaced command name (namespace:name or just name).
@@ -202,6 +162,7 @@ var (
 	commandMu            sync.RWMutex
 	commandCwd           string
 	cachedCustomCommands []CustomCommand
+	dynamicInfoProviders []func() []Info
 )
 
 // Initialize sets the working directory for resolving project-level commands
@@ -213,6 +174,20 @@ func Initialize(cwd string) error {
 	commandCwd = cwd
 	cachedCustomCommands = nil
 	return nil
+}
+
+// SetDynamicInfoProviders configures additional command metadata sources that
+// are composed above this package, such as skill-backed slash commands.
+func SetDynamicInfoProviders(providers ...func() []Info) {
+	commandMu.Lock()
+	defer commandMu.Unlock()
+	dynamicInfoProviders = append([]func() []Info(nil), providers...)
+}
+
+func getDynamicInfoProviders() []func() []Info {
+	commandMu.RLock()
+	defer commandMu.RUnlock()
+	return append([]func() []Info(nil), dynamicInfoProviders...)
 }
 
 // GetCustomCommands returns Info entries for all custom commands
@@ -270,7 +245,7 @@ func loadCustomCommandsFromDisk() []CustomCommand {
 	homeDir, _ := os.UserHomeDir()
 	if homeDir != "" {
 		userDir := filepath.Join(homeDir, ".gen", "commands")
-		for _, pc := range loadCommandsFromDir(userDir, "", ScopeUser) {
+		for _, pc := range loadCommandsFromDir(userDir, "", scopeUser) {
 			cmdMap[pc.FullName()] = pc
 		}
 	}
@@ -280,7 +255,7 @@ func loadCustomCommandsFromDisk() []CustomCommand {
 		for _, pp := range paths {
 			pc := loadCustomCommandFile(pp.Path, pp.Namespace)
 			if pc != nil {
-				pc.Scope = pluginScopeToCommandScope(pp.Scope)
+				pc.Scope = pluginScopeTocommandScope(pp.Scope)
 				cmdMap[pc.FullName()] = *pc
 			}
 		}
@@ -288,7 +263,7 @@ func loadCustomCommandsFromDisk() []CustomCommand {
 
 	if commandCwd != "" {
 		projectDir := filepath.Join(commandCwd, ".gen", "commands")
-		for _, pc := range loadCommandsFromDir(projectDir, "", ScopeProject) {
+		for _, pc := range loadCommandsFromDir(projectDir, "", scopeProject) {
 			cmdMap[pc.FullName()] = pc
 		}
 	}
@@ -303,18 +278,18 @@ func loadCustomCommandsFromDisk() []CustomCommand {
 	return cmds
 }
 
-// pluginScopeToCommandScope maps plugin.Scope to CommandScope.
-func pluginScopeToCommandScope(s plugin.Scope) CommandScope {
+// pluginScopeTocommandScope maps plugin.Scope to commandScope.
+func pluginScopeTocommandScope(s plugin.Scope) commandScope {
 	switch s {
 	case plugin.ScopeProject, plugin.ScopeLocal:
-		return ScopeProjectPlugin
+		return scopeProjectPlugin
 	default:
-		return ScopeUserPlugin
+		return scopeUserPlugin
 	}
 }
 
 // loadCommandsFromDir scans a directory for markdown command files.
-func loadCommandsFromDir(dir, defaultNamespace string, scope CommandScope) []CustomCommand {
+func loadCommandsFromDir(dir, defaultNamespace string, scope commandScope) []CustomCommand {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil

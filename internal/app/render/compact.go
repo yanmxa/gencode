@@ -5,8 +5,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/ui/selector"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/selector"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
 func RenderCompactStatus(width int, spinnerView string, active bool, focus, phase, result string, isError bool) string {

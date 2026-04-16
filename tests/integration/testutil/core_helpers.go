@@ -5,13 +5,12 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
 // FakeLLM implements core.LLM for testing, returning queued responses.
 type FakeLLM struct {
-	Responses []message.CompletionResponse
+	Responses []core.CompletionResponse
 	callIdx   int
 }
 
@@ -19,12 +18,12 @@ func (f *FakeLLM) Infer(_ context.Context, _ core.InferRequest) (<-chan core.Chu
 	ch := make(chan core.Chunk, 1)
 	go func() {
 		defer close(ch)
-		var resp message.CompletionResponse
+		var resp core.CompletionResponse
 		if f.callIdx < len(f.Responses) {
 			resp = f.Responses[f.callIdx]
 			f.callIdx++
 		} else {
-			resp = message.CompletionResponse{Content: "no more responses", StopReason: "end_turn"}
+			resp = core.CompletionResponse{Content: "no more responses", StopReason: "end_turn"}
 		}
 		// Convert via bridge's toInferResponse path
 		ch <- core.Chunk{
@@ -42,21 +41,18 @@ func (f *FakeLLM) Infer(_ context.Context, _ core.InferRequest) (<-chan core.Chu
 	return ch, nil
 }
 
-func legacyToCoreCalls(calls []message.ToolCall) []core.ToolCall {
+func legacyToCoreCalls(calls []core.ToolCall) []core.ToolCall {
 	if len(calls) == 0 {
 		return nil
 	}
 	out := make([]core.ToolCall, len(calls))
-	for i, tc := range calls {
-		params, _ := message.ParseToolInput(tc.Input)
-		out[i] = core.ToolCall{ID: tc.ID, Name: tc.Name, Input: params}
-	}
+	copy(out, calls)
 	return out
 }
 
 // NewTestAgent creates a core.Agent backed by a FakeLLM with queued responses.
 // All globally registered tools (including dynamically registered fakes) are included.
-func NewTestAgent(t *testing.T, responses ...message.CompletionResponse) (core.Agent, *FakeLLM) {
+func NewTestAgent(t *testing.T, responses ...core.CompletionResponse) (core.Agent, *FakeLLM) {
 	t.Helper()
 	fakeLLM := &FakeLLM{Responses: responses}
 	cwd := t.TempDir()

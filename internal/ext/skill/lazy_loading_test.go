@@ -36,7 +36,7 @@ This is the full skill instructions content.
 	}
 
 	// Load the skill (simulating startup)
-	loader := NewLoader(tmpDir)
+	loader := newLoader(tmpDir)
 	skill, err := loader.loadSkillFile(skillFile, ScopeUser, "")
 	if err != nil {
 		t.Fatalf("Failed to load skill file: %v", err)

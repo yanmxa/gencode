@@ -11,13 +11,12 @@ import (
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
 	"github.com/yanmxa/gencode/internal/app/render"
-	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/filecache"
-	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/util/filecache"
+	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/loop"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
 // updateCompact routes compaction and token limit messages.
@@ -81,7 +80,7 @@ func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
 	}
 
 	m.provider.FetchingLimits = true
-	return "", tea.Batch(m.output.Spinner.Tick, m.asyncOps.FetchTokenLimitsCmd(m.buildTokenLimitFetchRequest())), nil
+	return "", tea.Batch(m.output.Spinner.Tick, fetchTokenLimitsCmd(m.buildTokenLimitFetchRequest())), nil
 }
 
 func handleCompactCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
@@ -91,7 +90,7 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	if len(m.conv.Messages) == 0 {
 		return "No active LLM session. Send a message first to initialize the client.", nil, nil
 	}
-	if !runtime.CanCompactMessages(len(m.conv.Messages)) {
+	if !loop.CanCompactMessages(len(m.conv.Messages)) {
 		return "Not enough conversation history to compact.", nil, nil
 	}
 	if m.conv.Stream.Active {
@@ -100,7 +99,7 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = strings.TrimSpace(args)
 	m.conv.Compact.Phase = appcompact.PhaseSummarizing
-	return "", tea.Batch(m.output.Spinner.Tick, m.asyncOps.CompactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
+	return "", tea.Batch(m.output.Spinner.Tick, compactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
 }
 
 func (m *model) getEffectiveInputLimit() int {
@@ -125,7 +124,7 @@ func (m *model) triggerAutoCompact() tea.Cmd {
 	m.conv.Compact.Phase = appcompact.PhaseSummarizing
 	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()))
 	commitCmds := m.commitMessages()
-	commitCmds = append(commitCmds, m.output.Spinner.Tick, m.asyncOps.CompactCmd(m.buildCompactRequest("", "auto")))
+	commitCmds = append(commitCmds, m.output.Spinner.Tick, compactCmd(m.buildCompactRequest("", "auto")))
 	return tea.Batch(commitCmds...)
 }
 
@@ -169,7 +168,7 @@ func (m *model) handleCompactResult(msg appcompact.ResultMsg) tea.Cmd {
 
 	// Fire PostCompact hook (fire-and-forget; no blocking semantics)
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(core.PostCompact, hooks.HookInput{
+		m.hookEngine.ExecuteAsync(hooks.PostCompact, hooks.HookInput{
 			Trigger: msg.Trigger,
 		})
 	}
@@ -181,18 +180,20 @@ func (m *model) handleCompactResult(msg appcompact.ResultMsg) tea.Cmd {
 	cmds := []tea.Cmd{scrollPart}
 	if shouldContinue {
 		m.conv.Compact.ClearResult()
-		var extra []string
 		if restoredContext != "" {
-			extra = append(extra, restoredContext)
+			m.conv.Append(core.ChatMessage{
+				Role:    core.RoleUser,
+				Content: restoredContext,
+			})
 		}
-		m.conv.Append(message.ChatMessage{
-			Role:    message.RoleUser,
-			Content: runtime.AutoCompactResumePrompt,
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleUser,
+			Content: loop.AutoCompactResumePrompt,
 		})
-		cmds = append(cmds, m.startLLMStream(extra))
+		cmds = append(cmds, m.sendToAgent(loop.AutoCompactResumePrompt, nil))
 	} else if restoredContext != "" {
-		m.conv.Append(message.ChatMessage{
-			Role:    message.RoleUser,
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleUser,
 			Content: restoredContext,
 		})
 		m.conv.AddNotice(fmt.Sprintf("Restored %d recently accessed file(s) for context.", len(restoredFiles)))

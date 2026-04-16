@@ -5,11 +5,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tracker"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 const (
@@ -63,7 +63,7 @@ func (m *model) syncBackgroundTaskTracker(msg tooluiExecResultLike) {
 
 type tooluiExecResultLike struct {
 	ToolName string
-	Result   message.ToolResult
+	Result   core.ToolResult
 }
 
 func extractBackgroundTaskLaunch(msg tooluiExecResultLike) (backgroundTaskLaunch, bool) {
@@ -92,7 +92,7 @@ func extractBackgroundTaskLaunch(msg tooluiExecResultLike) (backgroundTaskLaunch
 	return launch, true
 }
 
-func backgroundBatchSpec(calls []message.ToolCall) (string, int) {
+func backgroundBatchSpec(calls []core.ToolCall) (string, int) {
 	var ids []string
 	for _, tc := range calls {
 		if !tool.IsAgentToolName(tc.Name) || !toolCallRunsInBackground(tc.Input) {
@@ -107,7 +107,7 @@ func backgroundBatchSpec(calls []message.ToolCall) (string, int) {
 }
 
 func toolCallRunsInBackground(input string) bool {
-	params, err := message.ParseToolInput(input)
+	params, err := core.ParseToolInput(input)
 	if err != nil {
 		return false
 	}

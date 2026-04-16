@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -148,7 +148,7 @@ func TestPlanMode_AgentSchema_IsForegroundAndRestricted(t *testing.T) {
 	set := &tool.Set{PlanMode: true}
 	tools := set.Tools()
 
-	var agent message.ToolSchema
+	var agent core.ToolSchema
 	found := false
 	for _, t := range tools {
 		if t.Name == tool.ToolAgent {

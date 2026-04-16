@@ -18,8 +18,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/ext/command"
-	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/ext/skill"
+	"github.com/yanmxa/gencode/internal/plugin"
 )
 
 type commandHandler func(ctx context.Context, m *model, args string) (string, tea.Cmd, error)
@@ -54,28 +54,7 @@ func handlerRegistry() map[string]commandHandler {
 }
 
 func executeCommand(ctx context.Context, m *model, input string) (string, tea.Cmd, bool) {
-	cmd, args, isCmd := command.ParseCommand(input)
-	if !isCmd {
-		return "", nil, false
-	}
-
-	if result, followUp, handled := executeExitCommand(m, cmd); handled {
-		return result, followUp, true
-	}
-
-	if result, followUp, handled := executeBuiltinCommand(ctx, m, cmd, args); handled {
-		return result, followUp, true
-	}
-
-	if sk, ok := command.IsSkillCommand(cmd); ok {
-		return executeSkillSlashCommand(m, sk, args), m.handleSkillInvocation(), true
-	}
-
-	if pc, ok := command.IsCustomCommand(cmd); ok {
-		return executeCustomCommand(m, pc, args), m.handleSkillInvocation(), true
-	}
-
-	return unknownCommandResult(cmd), nil, true
+	return m.commands().execute(ctx, input)
 }
 
 func executeSkillCommand(m *model, sk *skill.Skill, args string) {
@@ -96,9 +75,11 @@ func executeExitCommand(m *model, cmd string) (string, tea.Cmd, bool) {
 	if cmd != "exit" {
 		return "", nil, false
 	}
-	if m.conv.Stream.Cancel != nil {
-		m.conv.Stream.Cancel()
+	if m.agentSess != nil {
+		m.agentSess.stop()
+		m.agentSess = nil
 	}
+	m.conv.Stream.Stop()
 	m.fireSessionEnd("prompt_input_exit")
 	return "", tea.Quit, true
 }
@@ -119,6 +100,38 @@ func executeBuiltinCommand(ctx context.Context, m *model, cmd, args string) (str
 func executeSkillSlashCommand(m *model, sk *skill.Skill, args string) string {
 	executeSkillCommand(m, sk, args)
 	return ""
+}
+
+func lookupSkillCommand(cmd string) (*skill.Skill, bool) {
+	if skill.DefaultRegistry == nil {
+		return nil, false
+	}
+
+	sk, ok := skill.DefaultRegistry.Get(cmd)
+	if !ok || !sk.IsEnabled() {
+		return nil, false
+	}
+	return sk, true
+}
+
+func skillCommandInfos() []command.Info {
+	if skill.DefaultRegistry == nil {
+		return nil
+	}
+
+	enabled := skill.DefaultRegistry.GetEnabled()
+	infos := make([]command.Info, 0, len(enabled))
+	for _, sk := range enabled {
+		description := sk.Description
+		if sk.ArgumentHint != "" {
+			description += " " + sk.ArgumentHint
+		}
+		infos = append(infos, command.Info{
+			Name:        sk.FullName(),
+			Description: description,
+		})
+	}
+	return infos
 }
 
 func executeCustomCommand(m *model, pc *command.CustomCommand, args string) string {

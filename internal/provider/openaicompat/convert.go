@@ -9,7 +9,7 @@ import (
 
 	"github.com/openai/openai-go/v3"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -19,9 +19,9 @@ import (
 // inject provider-specific fields (e.g. reasoning_content extra fields).
 // Pass nil to use the default assistant conversion (no extra fields).
 func ConvertMessages(
-	msgs []message.Message,
+	msgs []core.Message,
 	systemPrompt string,
-	convertAssistant func(msg message.Message) openai.ChatCompletionMessageParamUnion,
+	convertAssistant func(msg core.Message) openai.ChatCompletionMessageParamUnion,
 ) []openai.ChatCompletionMessageParamUnion {
 	out := make([]openai.ChatCompletionMessageParamUnion, 0, len(msgs)+1)
 
@@ -31,9 +31,9 @@ func ConvertMessages(
 
 	for _, msg := range msgs {
 		switch msg.Role {
-		case message.RoleUser:
+		case core.RoleUser:
 			out = append(out, convertUserMessage(msg))
-		case message.RoleAssistant:
+		case core.RoleAssistant:
 			if convertAssistant != nil {
 				out = append(out, convertAssistant(msg))
 			} else {
@@ -47,20 +47,20 @@ func ConvertMessages(
 }
 
 // convertUserMessage converts a user-role message (text, images, or tool result).
-func convertUserMessage(msg message.Message) openai.ChatCompletionMessageParamUnion {
+func convertUserMessage(msg core.Message) openai.ChatCompletionMessageParamUnion {
 	if msg.ToolResult != nil {
 		return openai.ToolMessage(msg.ToolResult.Content, msg.ToolResult.ToolCallID)
 	}
 	if len(msg.Images) > 0 {
-		if parts := message.InterleavedContentParts(msg); parts != nil {
+		if parts := core.InterleavedContentParts(msg); parts != nil {
 			oaiParts := make([]openai.ChatCompletionContentPartUnionParam, 0, len(parts))
 			for _, p := range parts {
 				switch p.Type {
-				case message.ContentPartText:
+				case core.ContentPartText:
 					oaiParts = append(oaiParts, openai.ChatCompletionContentPartUnionParam{
 						OfText: &openai.ChatCompletionContentPartTextParam{Text: p.Text},
 					})
-				case message.ContentPartImage:
+				case core.ContentPartImage:
 					dataURI := fmt.Sprintf("data:%s;base64,%s", p.Image.MediaType, p.Image.Data)
 					oaiParts = append(oaiParts, openai.ChatCompletionContentPartUnionParam{
 						OfImageURL: &openai.ChatCompletionContentPartImageParam{
@@ -105,7 +105,7 @@ func convertUserMessage(msg message.Message) openai.ChatCompletionMessageParamUn
 // DefaultAssistantMessage converts an assistant message without extra fields.
 // Use this for the base OpenAI provider; providers needing reasoning_content
 // should implement their own assistant converter and pass it to ConvertMessages.
-func DefaultAssistantMessage(msg message.Message) openai.ChatCompletionMessageParamUnion {
+func DefaultAssistantMessage(msg core.Message) openai.ChatCompletionMessageParamUnion {
 	if len(msg.ToolCalls) > 0 {
 		var asstMsg openai.ChatCompletionAssistantMessageParam
 		if msg.Content != "" {
@@ -120,7 +120,7 @@ func DefaultAssistantMessage(msg message.Message) openai.ChatCompletionMessagePa
 // AssistantMessageWithReasoning converts an assistant message and sets
 // reasoning_content as an extra field. Pass empty string to set the field
 // to "" (some providers require this for all assistant messages).
-func AssistantMessageWithReasoning(msg message.Message, reasoning string) openai.ChatCompletionMessageParamUnion {
+func AssistantMessageWithReasoning(msg core.Message, reasoning string) openai.ChatCompletionMessageParamUnion {
 	var asstMsg openai.ChatCompletionAssistantMessageParam
 	if msg.Content != "" {
 		asstMsg.Content.OfString = openai.Opt(msg.Content)
@@ -133,7 +133,7 @@ func AssistantMessageWithReasoning(msg message.Message, reasoning string) openai
 }
 
 // convertToolCallParams converts internal ToolCall slice to OpenAI SDK format.
-func convertToolCallParams(calls []message.ToolCall) []openai.ChatCompletionMessageToolCallUnionParam {
+func convertToolCallParams(calls []core.ToolCall) []openai.ChatCompletionMessageToolCallUnionParam {
 	result := make([]openai.ChatCompletionMessageToolCallUnionParam, len(calls))
 	for i, tc := range calls {
 		result[i] = openai.ChatCompletionMessageToolCallUnionParam{

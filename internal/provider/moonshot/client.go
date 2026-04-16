@@ -10,8 +10,8 @@ import (
 
 	"github.com/openai/openai-go/v3"
 
-	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/provider/openaicompat"
 	streamutil "github.com/yanmxa/gencode/internal/provider/stream"
@@ -39,13 +39,13 @@ func (c *Client) Name() string {
 // convertAssistant converts an assistant message for Moonshot.
 // Moonshot requires reasoning_content on all assistant messages when thinking
 // is enabled — we always include the field (empty string if no thinking content).
-func convertAssistant(msg message.Message) openai.ChatCompletionMessageParamUnion {
+func convertAssistant(msg core.Message) openai.ChatCompletionMessageParamUnion {
 	return openaicompat.AssistantMessageWithReasoning(msg, msg.Thinking)
 }
 
 // Stream sends a completion request and returns a channel of streaming chunks.
-func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
-	ch := make(chan message.StreamChunk)
+func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan core.StreamChunk {
+	ch := make(chan core.StreamChunk)
 
 	go func() {
 		defer close(ch)
@@ -80,7 +80,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 
 		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 		state := streamutil.NewState(c.name)
-		toolCalls := make(map[int]*message.ToolCall)
+		toolCalls := make(map[int]*core.ToolCall)
 
 		for stream.Next() {
 			chunk := stream.Current()
@@ -99,7 +99,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				for _, tc := range choice.Delta.ToolCalls {
 					idx := int(tc.Index)
 					if _, exists := toolCalls[idx]; !exists {
-						toolCalls[idx] = &message.ToolCall{ID: tc.ID, Name: tc.Function.Name}
+						toolCalls[idx] = &core.ToolCall{ID: tc.ID, Name: tc.Function.Name}
 						state.EmitToolStart(ch, tc.ID, tc.Function.Name)
 					}
 					if tc.Function.Arguments != "" {

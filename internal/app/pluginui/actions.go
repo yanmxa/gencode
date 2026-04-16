@@ -12,7 +12,7 @@ import (
 )
 
 // buildInstalledActions returns actions for an installed plugin.
-func (s *Model) buildInstalledActions(p PluginItem) []Action {
+func (s *Model) buildInstalledActions(p pluginItem) []Action {
 	actions := []Action{}
 	if p.Enabled {
 		actions = append(actions, Action{Label: "Disable plugin", Action: "disable"})
@@ -27,7 +27,7 @@ func (s *Model) buildInstalledActions(p PluginItem) []Action {
 }
 
 // buildDiscoverActions returns actions for a discoverable plugin.
-func (s *Model) buildDiscoverActions(p DiscoverPluginItem) []Action {
+func (s *Model) buildDiscoverActions(p discoverPluginItem) []Action {
 	actions := []Action{}
 	if !p.Installed {
 		actions = append(actions,
@@ -46,7 +46,7 @@ func (s *Model) buildDiscoverActions(p DiscoverPluginItem) []Action {
 }
 
 // buildMarketplaceActions returns actions for a marketplace.
-func (s *Model) buildMarketplaceActions(m MarketplaceItem) []Action {
+func (s *Model) buildMarketplaceActions(m marketplaceItem) []Action {
 	return []Action{
 		{Label: fmt.Sprintf("Browse plugins (%d)", m.Available), Action: "browse"},
 		{Label: "Update marketplace", Action: "update"},
@@ -134,7 +134,7 @@ func (s *Model) browseMarketplace() {
 	}
 
 	s.browseMarketplaceID = s.detailMarketplace.ID
-	s.browsePlugins = []DiscoverPluginItem{}
+	s.browsePlugins = []discoverPluginItem{}
 
 	plugins, err := s.marketplaceManager.ListPlugins(s.detailMarketplace.ID)
 	if err != nil {
@@ -153,7 +153,7 @@ func (s *Model) browseMarketplace() {
 		s.browsePlugins = append(s.browsePlugins, item)
 	}
 
-	s.level = LevelBrowsePlugins
+	s.level = levelBrowsePlugins
 	s.selectedIdx = 0
 	s.scrollOffset = 0
 }
@@ -175,8 +175,8 @@ func (s *Model) syncMarketplace(id string) tea.Cmd {
 
 // toggleSelectedPlugin toggles enable/disable for the selected plugin.
 func (s *Model) toggleSelectedPlugin() tea.Cmd {
-	if s.activeTab == TabInstalled && s.level == LevelTabList && s.selectedIdx < len(s.filteredItems) {
-		if p, ok := s.filteredItems[s.selectedIdx].(PluginItem); ok {
+	if s.activeTab == tabInstalled && s.level == levelTabList && s.selectedIdx < len(s.filteredItems) {
+		if p, ok := s.filteredItems[s.selectedIdx].(pluginItem); ok {
 			if p.Enabled {
 				return func() tea.Msg { return DisableMsg{PluginName: p.FullName} }
 			}

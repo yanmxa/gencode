@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 	"gopkg.in/yaml.v3"
 )
@@ -187,7 +187,7 @@ type AgentRequest struct {
 	TeamName string
 
 	// ParentMessages is the conversation history from the parent (for context)
-	ParentMessages []message.Message
+	ParentMessages []core.Message
 
 	// OnProgress is called when the agent makes progress (tool execution, etc.)
 	OnProgress ProgressCallback
@@ -220,7 +220,7 @@ type AgentResult struct {
 	TranscriptPath string
 
 	// Messages contains the full conversation history
-	Messages []message.Message
+	Messages []core.Message
 
 	// TurnCount is the number of turns used
 	TurnCount int
@@ -229,7 +229,7 @@ type AgentResult struct {
 	ToolUses int
 
 	// TokenUsage is the total tokens consumed
-	TokenUsage client.TokenUsage
+	TokenUsage provider.TokenUsage
 
 	// Duration is the total execution time
 	Duration time.Duration

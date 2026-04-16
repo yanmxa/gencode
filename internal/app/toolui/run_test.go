@@ -6,7 +6,7 @@ import (
 
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	coretool "github.com/yanmxa/gencode/internal/tool"
 	_ "github.com/yanmxa/gencode/internal/tool/registry"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
@@ -32,7 +32,7 @@ func TestExecuteParallelPropagatesContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	cmd := ExecuteParallel(ctx, nil, []message.ToolCall{{
+	cmd := ExecuteParallel(ctx, nil, []core.ToolCall{{
 		ID:    "tc1",
 		Name:  "AppToolCancellationTestTool",
 		Input: `{}`,
@@ -53,7 +53,7 @@ func TestExecuteParallelPropagatesContextCancellation(t *testing.T) {
 
 func TestRequiresUserInteraction_AskUserQuestionEvenWhenSafeToolAllowed(t *testing.T) {
 	settings := config.Default()
-	tc := message.ToolCall{
+	tc := core.ToolCall{
 		ID:    "tc-question",
 		Name:  "AskUserQuestion",
 		Input: `{"questions":[{"question":"Choose","header":"Pick","options":[{"label":"A"},{"label":"B"}]}]}`,
@@ -66,13 +66,13 @@ func TestRequiresUserInteraction_AskUserQuestionEvenWhenSafeToolAllowed(t *testi
 
 func TestProcessNext_RoutesAskUserQuestionToQuestionRequest(t *testing.T) {
 	settings := config.Default()
-	tc := message.ToolCall{
+	tc := core.ToolCall{
 		ID:    "tc-question",
 		Name:  "AskUserQuestion",
 		Input: `{"questions":[{"question":"Choose","header":"Pick","options":[{"label":"A"},{"label":"B"}]}]}`,
 	}
 
-	msg := ProcessNext(context.Background(), nil, []message.ToolCall{tc}, 0, "", settings, nil, nil, nil)()
+	msg := ProcessNext(context.Background(), nil, []core.ToolCall{tc}, 0, "", settings, nil, nil, nil)()
 	reqMsg, ok := msg.(appmode.QuestionRequestMsg)
 	if !ok {
 		t.Fatalf("expected QuestionRequestMsg, got %T", msg)

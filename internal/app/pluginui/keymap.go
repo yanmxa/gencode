@@ -5,18 +5,18 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
 // HandleKeypress handles a keypress and returns a command if needed.
 func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
-	if s.level == LevelAddMarketplace {
+	if s.level == levelAddMarketplace {
 		return s.handleAddMarketplaceKeypress(key)
 	}
-	if s.level == LevelDetail || s.level == LevelInstallOptions {
+	if s.level == levelDetail || s.level == levelInstallOptions {
 		return s.handleDetailKeypress(key)
 	}
-	if s.level == LevelBrowsePlugins {
+	if s.level == levelBrowsePlugins {
 		return s.handleBrowseKeypress(key)
 	}
 	return s.handleListKeypress(key)
@@ -76,7 +76,7 @@ func (s *Model) handleBrowseKeypress(key tea.KeyMsg) tea.Cmd {
 			s.detailDiscover = &p
 			s.actions = s.buildDiscoverActions(p)
 			s.actionIdx = 0
-			s.level = LevelDetail
+			s.level = levelDetail
 		}
 	case tea.KeyEsc, tea.KeyLeft:
 		s.goBack()
@@ -158,11 +158,11 @@ func (s *Model) handleListRuneKey(r string) tea.Cmd {
 		case " ":
 			return s.toggleSelectedPlugin()
 		case "u":
-			return s.handleMarketplaceAction(func(m MarketplaceItem) tea.Cmd {
+			return s.handleMarketplaceAction(func(m marketplaceItem) tea.Cmd {
 				return s.syncMarketplace(m.ID)
 			})
 		case "r":
-			return s.handleMarketplaceAction(func(m MarketplaceItem) tea.Cmd {
+			return s.handleMarketplaceAction(func(m marketplaceItem) tea.Cmd {
 				return func() tea.Msg { return MarketplaceRemoveMsg{ID: m.ID} }
 			})
 		}
@@ -173,13 +173,13 @@ func (s *Model) handleListRuneKey(r string) tea.Cmd {
 }
 
 // handleMarketplaceAction executes an action on the selected marketplace.
-func (s *Model) handleMarketplaceAction(action func(MarketplaceItem) tea.Cmd) tea.Cmd {
-	if s.activeTab != TabMarketplaces || s.selectedIdx == 0 {
+func (s *Model) handleMarketplaceAction(action func(marketplaceItem) tea.Cmd) tea.Cmd {
+	if s.activeTab != tabMarketplaces || s.selectedIdx == 0 {
 		return nil
 	}
 	mktIdx := s.selectedIdx - 1
 	if mktIdx < len(s.filteredItems) {
-		if m, ok := s.filteredItems[mktIdx].(MarketplaceItem); ok {
+		if m, ok := s.filteredItems[mktIdx].(marketplaceItem); ok {
 			return action(m)
 		}
 	}

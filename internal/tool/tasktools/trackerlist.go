@@ -7,7 +7,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
-	"github.com/yanmxa/gencode/internal/tracker"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 // TrackerListTool lists all tracked tasks

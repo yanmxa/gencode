@@ -9,8 +9,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/util/log"
 )
 
 // LLMCompleter performs a single-turn LLM completion for hook execution.
@@ -37,11 +36,11 @@ type Engine struct {
 	asyncCallback  AsyncHookCallback
 	envProvider    func() []string
 
-	mu           sync.RWMutex
-	store        *hookStore
-	status       *statusTracker
-	handlers     core.Hooks
-	detachedWg   sync.WaitGroup // tracks fire-and-forget goroutines
+	mu         sync.RWMutex
+	store      *hookStore
+	status     *statusTracker
+	handlers   core.Hooks
+	detachedWg sync.WaitGroup // tracks fire-and-forget goroutines
 }
 
 // NewEngine creates a new hook execution engine.
@@ -202,7 +201,7 @@ func (e *Engine) HasHooks(event EventType) bool {
 
 // StopHookActive returns a *bool indicating whether Stop hooks are configured.
 func (e *Engine) StopHookActive() *bool {
-	active := e.HasHooks(core.Stop)
+	active := e.HasHooks(Stop)
 	return &active
 }
 
@@ -234,7 +233,7 @@ func AsCoreHooks(engine *Engine) core.Hooks {
 	return engine
 }
 
-// CurrentStatusMessage returns the most recently-started active hook status message.
+// CurrentStatusMessage returns the most recently-started active hook status core.
 func (e *Engine) CurrentStatusMessage() string {
 	return e.status.CurrentMessage()
 }
@@ -275,7 +274,7 @@ func (e *Engine) Has(event core.EventType) bool {
 	}
 	switch event {
 	case core.PostTool:
-		return e.HasHooks(core.PostToolUse) || e.HasHooks(core.PostToolUseFailure)
+		return e.HasHooks(PostToolUse) || e.HasHooks(PostToolUseFailure)
 	default:
 		if engineEvent, ok := coreToEngineEventType(event); ok {
 			return e.HasHooks(engineEvent)
@@ -285,9 +284,9 @@ func (e *Engine) Has(event core.EventType) bool {
 }
 
 var coreToEngineEventMap = map[core.EventType]core.EventType{
-	core.OnStart: core.SessionStart,
-	core.OnStop:  core.Stop,
-	core.PreTool: core.PreToolUse,
+	core.OnStart: SessionStart,
+	core.OnStop:  Stop,
+	core.PreTool: PreToolUse,
 }
 
 func coreToEngineEventType(event core.EventType) (core.EventType, bool) {
@@ -300,10 +299,10 @@ func coreToEngineEvent(event core.Event) (core.EventType, bool) {
 		switch tr := event.Data.(type) {
 		case core.ToolResult:
 			if tr.IsError {
-				return core.PostToolUseFailure, true
+				return PostToolUseFailure, true
 			}
 		}
-		return core.PostToolUse, true
+		return PostToolUse, true
 	}
 	e, ok := coreToEngineEventMap[event.Type]
 	return e, ok
@@ -316,17 +315,12 @@ func buildHookInput(event core.Event) HookInput {
 
 	switch event.Type {
 	case core.PreTool:
-		switch tc := event.Data.(type) {
-		case core.ToolCall:
+		if tc, ok := event.Data.(core.ToolCall); ok {
 			input.ToolName = tc.Name
-			input.ToolInput = tc.Input
 			input.ToolUseID = tc.ID
-		case message.ToolCall:
-			input.ToolName = tc.Name
-			if params, _ := message.ParseToolInput(tc.Input); params != nil {
+			if params, _ := core.ParseToolInput(tc.Input); params != nil {
 				input.ToolInput = params
 			}
-			input.ToolUseID = tc.ID
 		}
 	case core.PostTool:
 		switch tr := event.Data.(type) {

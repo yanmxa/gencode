@@ -1,18 +1,15 @@
 package app
 
 import (
-	"context"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appcommand "github.com/yanmxa/gencode/internal/ext/command"
 	appinput "github.com/yanmxa/gencode/internal/app/input"
+	appcommand "github.com/yanmxa/gencode/internal/ext/command"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/ui/history"
+	"github.com/yanmxa/gencode/internal/app/history"
 )
 
 type submitRequest struct {
@@ -36,13 +33,11 @@ func (m *model) handleSubmit() tea.Cmd {
 		return nil
 	}
 
-	// If the LLM is busy (streaming or tools running), enqueue instead of blocking
 	if m.isTurnActive() {
 		m.enqueueCurrentInput(input)
 		return nil
 	}
 
-	m.maxOutputRecoveryCount = 0
 	m.conv.Compact.ClearResult()
 
 	return m.executeSubmitRequest(submitRequest{Input: input})
@@ -50,12 +45,12 @@ func (m *model) handleSubmit() tea.Cmd {
 
 // isTurnActive returns true when the LLM is streaming or tools are executing.
 func (m *model) isTurnActive() bool {
-	return m.conv.Stream.Active || m.isToolPhaseActive()
+	return m.conv.Stream.Active
 }
 
 // enqueueCurrentInput captures the current input field content into the queue.
 func (m *model) enqueueCurrentInput(input string) {
-	var images []message.ImageData
+	var images []core.Image
 	for _, p := range m.input.Images.Pending {
 		images = append(images, p.Data)
 	}
@@ -74,7 +69,6 @@ func (m *model) drainInputQueue() tea.Cmd {
 		return nil
 	}
 
-	m.maxOutputRecoveryCount = 0
 	m.conv.Compact.ClearResult()
 
 	m.input.Textarea.SetValue(item.Content)
@@ -84,7 +78,6 @@ func (m *model) drainInputQueue() tea.Cmd {
 	m.input.Images.Selection = appinput.ImageSelection{}
 
 	req := submitRequest{Input: item.Content}
-	// Restore images into the input model so prepareSubmittedUserMessage can process them
 	for i, img := range item.Images {
 		id := m.input.Images.NextID + i + 1
 		m.input.Images.Pending = append(m.input.Images.Pending, appinput.PendingImage{
@@ -107,16 +100,9 @@ func (m *model) executeSubmitRequest(req submitRequest) tea.Cmd {
 		return m.blockPromptSubmission(reason)
 	}
 
-	// If the user submits a new turn while tools are still running, cancel the
-	// unfinished tool calls first and append synthetic tool_result messages so
-	// the next provider request does not contain orphaned tool_use blocks.
-	if m.isToolPhaseActive() {
-		m.cancelPendingToolCalls()
-	}
-
 	m.recordSubmittedInput(req.Input)
 
-	if cmd, handled := m.handleCommandSubmit(req.Input); handled {
+	if cmd, handled := m.commands().handleSubmit(req.Input); handled {
 		return cmd
 	}
 
@@ -132,13 +118,9 @@ func (m *model) executeSubmitRequest(req submitRequest) tea.Cmd {
 	return m.startProviderTurn(userMsg.Content)
 }
 
-func isExitRequest(input string) bool {
-	return strings.EqualFold(input, "exit")
-}
-
 func (m *model) blockPromptSubmission(reason string) tea.Cmd {
-	m.conv.Append(message.ChatMessage{
-		Role:    message.RoleNotice,
+	m.conv.Append(core.ChatMessage{
+		Role:    core.RoleNotice,
 		Content: "Prompt blocked: " + reason,
 	})
 	m.resetInputField()
@@ -155,16 +137,91 @@ func (m *model) recordSubmittedInput(input string) {
 	history.Save(m.cwd, m.input.History)
 }
 
+func (m *model) prepareSubmittedUserMessage(input string) (core.ChatMessage, tea.Cmd, bool) {
+	content, fileImages, err := appinput.ProcessImageRefs(m.cwd, input)
+	if err != nil {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Image error: " + err.Error()})
+		return core.ChatMessage{}, tea.Batch(m.commitMessages()...), true
+	}
+
+	displayContent := content
+	content, inlineImages := m.input.ExtractInlineImages(content)
+	allImages := make([]core.Image, 0, len(inlineImages)+len(fileImages))
+	allImages = append(allImages, inlineImages...)
+	allImages = append(allImages, fileImages...)
+
+	return core.ChatMessage{
+		Role:           core.RoleUser,
+		Content:        content,
+		DisplayContent: displayContent,
+		Images:         allImages,
+	}, nil, false
+}
+
+// startProviderTurn starts an LLM turn by sending the user message to the agent.
+func (m *model) startProviderTurn(content string) tea.Cmd {
+	if m.provider.LLM == nil {
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleNotice,
+			Content: "No provider connected. Use /provider to connect.",
+		})
+		return tea.Batch(m.commitMessages()...)
+	}
+
+	// Ensure agent session exists (lazy initialization)
+	if err := m.ensureAgentSession(); err != nil {
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleNotice,
+			Content: "Failed to start agent: " + err.Error(),
+		})
+		return tea.Batch(m.commitMessages()...)
+	}
+
+	// Detect thinking keywords for per-turn override
+	m.detectThinkingKeywords(content)
+
+	// Get images from the last appended user message
+	var images []core.Image
+	if len(m.conv.Messages) > 0 {
+		lastMsg := m.conv.Messages[len(m.conv.Messages)-1]
+		images = lastMsg.Images
+	}
+
+	return m.sendToAgent(content, images)
+}
+
+func isExitRequest(input string) bool {
+	return strings.EqualFold(input, "exit")
+}
+
+func shouldPreserveCommandInConversation(input, result string, cmd tea.Cmd) bool {
+	name, _, isCmd := appcommand.ParseCommand(input)
+	if !isCmd {
+		return false
+	}
+	switch name {
+	case "clear", "exit":
+		return false
+	}
+	if _, ok := lookupSkillCommand(name); ok {
+		return false
+	}
+	if _, ok := appcommand.IsCustomCommand(name); ok {
+		return false
+	}
+	return true
+}
+
 func (m *model) handleCommandSubmit(input string) (tea.Cmd, bool) {
 	preserve := shouldPreserveCommandInConversation(input, "", nil)
 	preAppended := false
 	if preserve && shouldPreserveBeforeCommandExecution(input) {
-		m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: input})
+		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: input})
 		preAppended = true
 	}
 
 	insertAt := len(m.conv.Messages)
-	result, cmd, isCmd := executeCommand(context.Background(), m, input)
+	result, cmd, isCmd := executeCommand(m.tool.Begin(), m, input)
 	if !isCmd {
 		if preAppended && len(m.conv.Messages) > 0 {
 			m.conv.Messages = m.conv.Messages[:len(m.conv.Messages)-1]
@@ -174,12 +231,8 @@ func (m *model) handleCommandSubmit(input string) (tea.Cmd, bool) {
 
 	m.resetInputField()
 
-	// Slash commands should remain visible in the conversation so the transcript
-	// reflects the user's literal input and arguments. Skill commands are the
-	// exception here because handleSkillInvocation appends the full slash
-	// invocation itself before starting the provider turn.
 	if preserve && !preAppended {
-		m.insertConversationMessage(insertAt, message.ChatMessage{Role: message.RoleUser, Content: input})
+		m.insertConversationMessage(insertAt, core.ChatMessage{Role: core.RoleUser, Content: input})
 	}
 	if result != "" {
 		m.conv.AddNotice(result)
@@ -200,96 +253,16 @@ func shouldPreserveBeforeCommandExecution(input string) bool {
 	return name == "loop"
 }
 
-func (m *model) insertConversationMessage(idx int, msg message.ChatMessage) {
+func (m *model) insertConversationMessage(idx int, msg core.ChatMessage) {
 	if idx < 0 || idx >= len(m.conv.Messages) {
 		m.conv.Append(msg)
 		return
 	}
 
-	m.conv.Messages = append(m.conv.Messages, message.ChatMessage{})
+	m.conv.Messages = append(m.conv.Messages, core.ChatMessage{})
 	copy(m.conv.Messages[idx+1:], m.conv.Messages[idx:])
 	m.conv.Messages[idx] = msg
 	if idx < m.conv.CommittedCount {
 		m.conv.CommittedCount++
 	}
-}
-
-func shouldPreserveCommandInConversation(input, result string, cmd tea.Cmd) bool {
-	name, _, isCmd := appcommand.ParseCommand(input)
-	if !isCmd {
-		return false
-	}
-	switch name {
-	case "clear", "exit":
-		return false
-	}
-
-	if skill.DefaultRegistry != nil {
-		if sk, ok := skill.DefaultRegistry.Get(name); ok && sk.IsEnabled() {
-			return false
-		}
-	}
-
-	if _, ok := appcommand.IsCustomCommand(name); ok {
-		return false
-	}
-
-	return true
-}
-
-func (m *model) prepareSubmittedUserMessage(input string) (message.ChatMessage, tea.Cmd, bool) {
-	content, fileImages, err := appinput.ProcessImageRefs(m.cwd, input)
-	if err != nil {
-		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "Image error: " + err.Error()})
-		return message.ChatMessage{}, tea.Batch(m.commitMessages()...), true
-	}
-
-	displayContent := content
-	content, inlineImages := m.input.ExtractInlineImages(content)
-	allImages := make([]message.ImageData, 0, len(inlineImages)+len(fileImages))
-	allImages = append(allImages, inlineImages...)
-	allImages = append(allImages, fileImages...)
-
-	return message.ChatMessage{
-		Role:           message.RoleUser,
-		Content:        content,
-		DisplayContent: displayContent,
-		Images:         allImages,
-	}, nil, false
-}
-
-func (m *model) startProviderTurn(content string) tea.Cmd {
-	if m.provider.LLM == nil {
-		m.conv.Append(message.ChatMessage{
-			Role:    message.RoleNotice,
-			Content: "No provider connected. Use /provider to connect.",
-		})
-		return tea.Batch(m.commitMessages()...)
-	}
-
-	// core.Agent path — lazily create and send message to agent inbox
-	if m.agentSess != nil || m.shouldUseAgentPath() {
-		if m.agentSess == nil {
-			if err := m.ensureAgentSession(); err != nil {
-				m.conv.Append(message.ChatMessage{
-					Role:    message.RoleNotice,
-					Content: "Failed to start agent: " + err.Error(),
-				})
-				return tea.Batch(m.commitMessages()...)
-			}
-		}
-		var images []core.Image
-		lastMsg := m.conv.Messages[len(m.conv.Messages)-1]
-		for _, img := range lastMsg.Images {
-			images = append(images, core.Image{
-				MediaType: img.MediaType,
-				Data:      img.Data,
-				FileName:  img.FileName,
-			})
-		}
-		return m.sendToAgent(content, images)
-	}
-
-	m.detectThinkingKeywords(content)
-	return m.startLLMStream(nil)
 }

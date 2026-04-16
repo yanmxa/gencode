@@ -139,7 +139,7 @@ func TestHandleInitCommand(t *testing.T) {
 	})
 }
 
-func TestHandleMemoryList(t *testing.T) {
+func Test_handleMemoryList(t *testing.T) {
 	// Create temp directory with some memory files
 	tmpDir, err := os.MkdirTemp("", "gencode-memory-list-test")
 	if err != nil {
@@ -152,9 +152,9 @@ func TestHandleMemoryList(t *testing.T) {
 	os.MkdirAll(genDir, 0o755)
 	os.WriteFile(filepath.Join(genDir, "GEN.md"), []byte("# Test Memory"), 0o644)
 
-	result, err := HandleMemoryList(tmpDir)
+	result, err := handleMemoryList(tmpDir)
 	if err != nil {
-		t.Fatalf("HandleMemoryList failed: %v", err)
+		t.Fatalf("handleMemoryList failed: %v", err)
 	}
 
 	// Verify output contains project section marker

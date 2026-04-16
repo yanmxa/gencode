@@ -3,8 +3,6 @@ package hooks
 import (
 	"regexp"
 	"sync"
-
-	"github.com/yanmxa/gencode/internal/core"
 )
 
 // matcherCache caches compiled regexes for matcher patterns.
@@ -44,33 +42,33 @@ func matchesEvent(matcher, matchValue string) bool {
 // getMatchValue extracts the value to match against based on event type.
 func getMatchValue(event EventType, input HookInput) string {
 	switch event {
-	case core.PreToolUse, core.PostToolUse, core.PostToolUseFailure, core.PermissionRequest, core.PermissionDenied:
+	case PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, PermissionDenied:
 		return input.ToolName
-	case core.SessionStart:
+	case SessionStart:
 		return input.Source
-	case core.SessionEnd:
+	case SessionEnd:
 		return input.Reason
-	case core.Notification:
+	case Notification:
 		return input.NotificationType
-	case core.Setup:
+	case Setup:
 		return input.Trigger
-	case core.SubagentStart, core.SubagentStop:
+	case SubagentStart, SubagentStop:
 		return input.AgentType
-	case core.TaskCreated, core.TaskCompleted:
+	case TaskCreated, TaskCompleted:
 		return input.TaskSubject
-	case core.ConfigChange:
+	case ConfigChange:
 		return input.Source
-	case core.InstructionsLoaded:
+	case InstructionsLoaded:
 		return input.FilePath
-	case core.CwdChanged:
+	case CwdChanged:
 		return input.NewCwd
-	case core.FileChanged:
+	case FileChanged:
 		return input.FilePath
-	case core.PreCompact, core.PostCompact:
+	case PreCompact, PostCompact:
 		return input.Trigger
-	case core.WorktreeCreate:
+	case WorktreeCreate:
 		return input.Name
-	case core.WorktreeRemove:
+	case WorktreeRemove:
 		return input.WorktreePath
 	default:
 		return ""
@@ -80,7 +78,7 @@ func getMatchValue(event EventType, input HookInput) string {
 // eventSupportsMatcher returns true if the event type supports matcher filtering.
 func eventSupportsMatcher(event EventType) bool {
 	switch event {
-	case core.UserPromptSubmit, core.Stop, core.StopFailure:
+	case UserPromptSubmit, Stop, StopFailure:
 		return false
 	default:
 		return true

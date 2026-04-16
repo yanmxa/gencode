@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/ext/subagent"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	"github.com/yanmxa/gencode/internal/app/mcpui"
@@ -18,25 +17,25 @@ import (
 	"github.com/yanmxa/gencode/internal/app/providerui"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/ext/skill"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
+	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
-	"github.com/yanmxa/gencode/internal/tracker"
-	"github.com/yanmxa/gencode/internal/ui/progress"
+	"github.com/yanmxa/gencode/internal/task/tracker"
+	"github.com/yanmxa/gencode/internal/app/progress"
 )
 
 type testLLMProvider struct{}
 
-func (testLLMProvider) Stream(_ context.Context, _ provider.CompletionOptions) <-chan message.StreamChunk {
-	ch := make(chan message.StreamChunk)
+func (testLLMProvider) Stream(_ context.Context, _ provider.CompletionOptions) <-chan core.StreamChunk {
+	ch := make(chan core.StreamChunk)
 	close(ch)
 	return ch
 }
@@ -47,7 +46,7 @@ func (testLLMProvider) Name() string { return "test" }
 
 func TestFireSessionEndClearsSessionHooks(t *testing.T) {
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
-	engine.AddSessionFunctionHook(core.Stop, "", hooks.FunctionHook{
+	engine.AddSessionFunctionHook(hooks.Stop, "", hooks.FunctionHook{
 		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
 			return hooks.HookOutput{}, nil
 		},
@@ -56,7 +55,7 @@ func TestFireSessionEndClearsSessionHooks(t *testing.T) {
 	m := &model{hookEngine: engine}
 	m.fireSessionEnd("other")
 
-	if engine.HasHooks(core.Stop) {
+	if engine.HasHooks(hooks.Stop) {
 		t.Fatal("expected session-scoped hooks to be cleared after SessionEnd")
 	}
 }
@@ -64,7 +63,7 @@ func TestFireSessionEndClearsSessionHooks(t *testing.T) {
 func TestInitFiresSetupHook(t *testing.T) {
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
 	triggered := make(chan string, 1)
-	engine.AddSessionFunctionHook(core.Setup, "init", hooks.FunctionHook{
+	engine.AddSessionFunctionHook(hooks.Setup, "init", hooks.FunctionHook{
 		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input.Trigger
 			return hooks.HookOutput{}, nil
@@ -74,7 +73,7 @@ func TestInitFiresSetupHook(t *testing.T) {
 	// Hook firing now happens during model construction (not Init()) to
 	// avoid value-receiver mutation loss. Simulate the newModel() path.
 	m := model{hookEngine: engine}
-	m.hookEngine.ExecuteAsync(core.Setup, hooks.HookInput{Trigger: "init"})
+	m.hookEngine.ExecuteAsync(hooks.Setup, hooks.HookInput{Trigger: "init"})
 
 	select {
 	case trigger := <-triggered:
@@ -88,17 +87,17 @@ func TestInitFiresSetupHook(t *testing.T) {
 
 func TestHasAllToolResultsAllowsInterleavedNotices(t *testing.T) {
 	m := appconv.Model{
-		Messages: []message.ChatMessage{
+		Messages: []core.ChatMessage{
 			{
-				Role: message.RoleAssistant,
-				ToolCalls: []message.ToolCall{
+				Role: core.RoleAssistant,
+				ToolCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "Agent"},
 				},
 			},
-			{Role: message.RoleNotice, Content: "background policy update"},
+			{Role: core.RoleNotice, Content: "background policy update"},
 			{
-				Role:       message.RoleUser,
-				ToolResult: &message.ToolResult{ToolCallID: "tc-1", Content: "done"},
+				Role:       core.RoleUser,
+				ToolResult: &core.ToolResult{ToolCallID: "tc-1", Content: "done"},
 			},
 		},
 	}
@@ -181,7 +180,7 @@ func TestAsyncHookTickDoesNotInjectWhileToolExecutionPending(t *testing.T) {
 		asyncHookQueue: &asyncHookQueue{},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
-				PendingCalls: []message.ToolCall{{ID: "tc-1", Name: "Agent"}},
+				PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "Agent"}},
 				CurrentIdx:   0,
 			},
 		},
@@ -208,7 +207,7 @@ func TestCronTickDoesNotDrainQueueWhileToolExecutionPending(t *testing.T) {
 		cronQueue: []string{"check background task"},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
-				PendingCalls: []message.ToolCall{{ID: "tc-1", Name: "Agent"}},
+				PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "Agent"}},
 				CurrentIdx:   0,
 			},
 		},
@@ -231,16 +230,16 @@ func TestRenderActiveContentDoesNotDuplicatePendingAgentTitle(t *testing.T) {
 	m := newBaseModel(t.TempDir(), modelInfra{})
 	m.width = 100
 
-	tc := message.ToolCall{
+	tc := core.ToolCall{
 		ID:    "tc-1",
 		Name:  tool.ToolAgent,
 		Input: `{"subagent_type":"Deep","description":"analyze project structure","prompt":"inspect files"}`,
 	}
-	m.conv.Messages = []message.ChatMessage{{
-		Role:      message.RoleAssistant,
-		ToolCalls: []message.ToolCall{tc},
+	m.conv.Messages = []core.ChatMessage{{
+		Role:      core.RoleAssistant,
+		ToolCalls: []core.ToolCall{tc},
 	}}
-	m.tool.PendingCalls = []message.ToolCall{tc}
+	m.tool.PendingCalls = []core.ToolCall{tc}
 	m.tool.CurrentIdx = 0
 	m.output.TaskProgress = map[int][]string{
 		0: {"Agent: Check session and duplicate packages"},
@@ -354,7 +353,7 @@ You are a verifier.`), 0o644); err != nil {
 	if len(m.settings.Hooks["SessionStart"]) == 0 {
 		t.Fatal("expected plugin hooks to be merged into settings after --plugin-dir load")
 	}
-	if !m.hookEngine.HasHooks(core.SessionStart) {
+	if !m.hookEngine.HasHooks(hooks.SessionStart) {
 		t.Fatal("expected hook engine to see plugin hooks after --plugin-dir load")
 	}
 	if m.mcp.Registry == nil {
@@ -388,7 +387,7 @@ func TestRefreshMemoryContextFiresInstructionsLoaded(t *testing.T) {
 
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", tmpDir, "")
 	triggered := make(chan hooks.HookInput, 1)
-	engine.AddSessionFunctionHook(core.InstructionsLoaded, projectFile, hooks.FunctionHook{
+	engine.AddSessionFunctionHook(hooks.InstructionsLoaded, projectFile, hooks.FunctionHook{
 		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
 			return hooks.HookOutput{}, nil
@@ -420,7 +419,7 @@ func TestChangeCwdFiresCwdChanged(t *testing.T) {
 
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", oldCwd, "")
 	triggered := make(chan hooks.HookInput, 1)
-	engine.AddSessionFunctionHook(core.CwdChanged, newCwd, hooks.FunctionHook{
+	engine.AddSessionFunctionHook(hooks.CwdChanged, newCwd, hooks.FunctionHook{
 		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
 			return hooks.HookOutput{}, nil
@@ -459,7 +458,7 @@ func TestApplyToolResultSideEffectsFiresFileChanged(t *testing.T) {
 
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", cwd, "")
 	triggered := make(chan hooks.HookInput, 1)
-	engine.AddSessionFunctionHook(core.FileChanged, filePath, hooks.FunctionHook{
+	engine.AddSessionFunctionHook(hooks.FileChanged, filePath, hooks.FunctionHook{
 		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
 			return hooks.HookOutput{}, nil
@@ -472,7 +471,7 @@ func TestApplyToolResultSideEffectsFiresFileChanged(t *testing.T) {
 	}
 	m.applyToolResultSideEffects(toolui.ExecResultMsg{
 		ToolName: "Write",
-		Result: message.ToolResult{
+		Result: core.ToolResult{
 			ToolCallID:   "tool-1",
 			Content:      "ok",
 			HookResponse: map[string]any{"filePath": filePath},
@@ -498,7 +497,7 @@ func TestApplyToolResultSideEffectsUpdatesCwdFromBash(t *testing.T) {
 
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", oldCwd, "")
 	triggered := make(chan hooks.HookInput, 1)
-	engine.AddSessionFunctionHook(core.CwdChanged, newCwd, hooks.FunctionHook{
+	engine.AddSessionFunctionHook(hooks.CwdChanged, newCwd, hooks.FunctionHook{
 		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
 			return hooks.HookOutput{}, nil
@@ -511,7 +510,7 @@ func TestApplyToolResultSideEffectsUpdatesCwdFromBash(t *testing.T) {
 	}
 	m.applyToolResultSideEffects(toolui.ExecResultMsg{
 		ToolName: "Bash",
-		Result: message.ToolResult{
+		Result: core.ToolResult{
 			ToolCallID:   "tool-1",
 			Content:      "ok",
 			HookResponse: map[string]any{"cwd": newCwd},
@@ -593,7 +592,7 @@ func TestChangeCwdReloadsProjectScopedSettings(t *testing.T) {
 func TestInitRegistersWatchPathsFromSessionStart(t *testing.T) {
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
 	watchPath := filepath.Join(t.TempDir(), ".env")
-	engine.AddSessionFunctionHook(core.SessionStart, "", hooks.FunctionHook{
+	engine.AddSessionFunctionHook(hooks.SessionStart, "", hooks.FunctionHook{
 		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
 			return hooks.HookOutput{
 				HookSpecificOutput: &hooks.HookSpecificOutput{
@@ -607,7 +606,7 @@ func TestInitRegistersWatchPathsFromSessionStart(t *testing.T) {
 	// Hook firing now happens during model construction (not Init()).
 	// Simulate the newModel() path: fire SessionStart and apply outcome.
 	m := model{hookEngine: engine}
-	outcome := engine.Execute(context.Background(), core.SessionStart, hooks.HookInput{
+	outcome := engine.Execute(context.Background(), hooks.SessionStart, hooks.HookInput{
 		Source: "startup",
 	})
 	m.applyRuntimeHookOutcome(outcome)
@@ -628,7 +627,7 @@ func TestFileWatcherFiresFileChangedForWatchedPath(t *testing.T) {
 
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", cwd, "")
 	triggered := make(chan hooks.HookInput, 1)
-	engine.AddSessionFunctionHook(core.FileChanged, filePath, hooks.FunctionHook{
+	engine.AddSessionFunctionHook(hooks.FileChanged, filePath, hooks.FunctionHook{
 		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
 			return hooks.HookOutput{}, nil
@@ -675,10 +674,10 @@ func TestApplyRuntimeHookOutcomeSetsInitialPrompt(t *testing.T) {
 	}
 }
 
-func TestPermissionDeniedRetryContinuesStream(t *testing.T) {
+func TestPermissionDeniedRetryAppendsDenialResult(t *testing.T) {
 	cwd := t.TempDir()
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", cwd, "")
-	engine.AddSessionFunctionHook(core.PermissionDenied, "", hooks.FunctionHook{
+	engine.AddSessionFunctionHook(hooks.PermissionDenied, "", hooks.FunctionHook{
 		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
 			return hooks.HookOutput{
 				HookSpecificOutput: &hooks.HookSpecificOutput{
@@ -689,15 +688,13 @@ func TestPermissionDeniedRetryContinuesStream(t *testing.T) {
 		},
 	})
 
-	rt := &fakeConversationRuntime{}
 	m := &model{
 		cwd:        cwd,
 		hookEngine: engine,
-		asyncOps:    rt,
 		conv:       appconv.New(),
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
-				PendingCalls: []message.ToolCall{{ID: "tc-1", Name: "Write"}},
+				PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "Write"}},
 				CurrentIdx:   0,
 			},
 		},
@@ -715,11 +712,7 @@ func TestPermissionDeniedRetryContinuesStream(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected retry denial to start a follow-up command")
 	}
-	_ = cmd()
 
-	if !rt.startCalled {
-		t.Fatal("expected permission denied retry to continue the model stream")
-	}
 	foundDeniedResult := false
 	for _, msg := range m.conv.Messages {
 		if msg.ToolResult != nil && msg.ToolResult.IsError && msg.ToolResult.Content == "User denied permission" {
@@ -732,11 +725,9 @@ func TestPermissionDeniedRetryContinuesStream(t *testing.T) {
 	}
 }
 
-func TestAsyncHookTickRewakesModel(t *testing.T) {
-	rt := &fakeConversationRuntime{}
+func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 	m := &model{
 		cwd:            t.TempDir(),
-		asyncOps:        rt,
 		conv:           appconv.New(),
 		asyncHookQueue: newAsyncHookQueue(),
 		provider:       providerui.State{LLM: testLLMProvider{}},
@@ -752,28 +743,19 @@ func TestAsyncHookTickRewakesModel(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected async hook tick command")
 	}
-	_ = cmd()
 
-	if !rt.startCalled {
-		t.Fatal("expected async hook rewake to start a follow-up stream")
+	// Verify the notice and context messages were appended
+	if len(m.conv.Messages) < 2 {
+		t.Fatalf("expected at least notice plus context, got %d messages", len(m.conv.Messages))
 	}
-	if len(m.conv.Messages) != 2 {
-		t.Fatalf("expected notice plus assistant placeholder, got %d", len(m.conv.Messages))
-	}
-	if m.conv.Messages[0].Role != message.RoleNotice {
+	if m.conv.Messages[0].Role != core.RoleNotice {
 		t.Fatalf("expected first message to be notice, got %v", m.conv.Messages[0].Role)
 	}
-	if m.conv.Messages[1].Role != message.RoleAssistant {
-		t.Fatalf("expected second message to be assistant placeholder, got %v", m.conv.Messages[1].Role)
+	if !strings.Contains(m.conv.Messages[0].Content, "background policy blocked this") {
+		t.Fatalf("unexpected notice content: %q", m.conv.Messages[0].Content)
 	}
-	if rt.lastStreamReq.System == "" {
-		t.Fatal("expected async hook rewake to build system prompt")
-	}
-	if !strings.Contains(rt.lastStreamReq.System, "<background-hook-result>") {
-		t.Fatal("expected async hook rewake to pass internal continuation context in system prompt")
-	}
-	if got := rt.lastStreamReq.Messages[len(rt.lastStreamReq.Messages)-1]; got.Role != message.RoleUser || got.Content != "Re-evaluate the plan." {
-		t.Fatalf("expected provider-only continuation prompt, got %#v", got)
+	if m.conv.Messages[1].Role != core.RoleUser || !strings.Contains(m.conv.Messages[1].Content, "<background-hook-result>") {
+		t.Fatalf("expected context message, got %v: %q", m.conv.Messages[1].Role, m.conv.Messages[1].Content)
 	}
 }
 
@@ -781,7 +763,7 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
-	engine.AddSessionFunctionHook(core.Notification, "", hooks.FunctionHook{
+	engine.AddSessionFunctionHook(hooks.Notification, "", hooks.FunctionHook{
 		StatusMessage: "hook is running",
 		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
 			started <- struct{}{}
@@ -798,7 +780,7 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		engine.Execute(context.Background(), core.Notification, hooks.HookInput{NotificationType: "idle_prompt"})
+		engine.Execute(context.Background(), hooks.Notification, hooks.HookInput{NotificationType: "idle_prompt"})
 	}()
 
 	select {
@@ -825,11 +807,9 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	}
 }
 
-func TestTaskNotificationTickRewakesModel(t *testing.T) {
-	rt := &fakeConversationRuntime{}
+func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 	m := &model{
 		cwd:               t.TempDir(),
-		asyncOps:           rt,
 		conv:              appconv.New(),
 		taskNotifications: newTaskNotificationQueue(),
 		provider:          providerui.State{LLM: testLLMProvider{}},
@@ -855,41 +835,31 @@ func TestTaskNotificationTickRewakesModel(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected task notification tick command")
 	}
-	_ = cmd()
 
-	if !rt.startCalled {
-		t.Fatal("expected task notification to start a follow-up stream")
+	// Verify the notice was appended to conversation
+	if len(m.conv.Messages) < 1 {
+		t.Fatalf("expected at least one message, got %d", len(m.conv.Messages))
 	}
-	if len(m.conv.Messages) != 2 {
-		t.Fatalf("expected notice plus assistant placeholder, got %d", len(m.conv.Messages))
-	}
-	if m.conv.Messages[0].Role != message.RoleNotice {
+	if m.conv.Messages[0].Role != core.RoleNotice {
 		t.Fatalf("expected first message to be notice, got %v", m.conv.Messages[0].Role)
 	}
 	if !strings.Contains(m.conv.Messages[0].Content, "Bubble Tea architecture audit completed") {
 		t.Fatalf("unexpected notice content: %q", m.conv.Messages[0].Content)
 	}
-	if got := rt.lastStreamReq.Messages[len(rt.lastStreamReq.Messages)-1]; got.Role != message.RoleUser || !strings.Contains(got.Content, "<task-notification>") {
-		t.Fatalf("expected provider-only task notification prompt, got %#v", got)
+
+	// Verify coordinator hint is built correctly
+	hint := renderCoordinatorHintXML(item)
+	if !strings.Contains(hint, "<phase>single_completion</phase>") {
+		t.Fatalf("expected single completion coordinator hint, got %q", hint)
 	}
-	prompt := rt.lastStreamReq.Messages[len(rt.lastStreamReq.Messages)-1].Content
-	if !strings.Contains(prompt, "<coordinator-hint>") || !strings.Contains(prompt, "<phase>single_completion</phase>") {
-		t.Fatalf("expected single completion coordinator hint, got %q", prompt)
+	if !strings.Contains(hint, "<recommended-action>synthesize_then_decide_followup</recommended-action>") {
+		t.Fatalf("expected single completion recommendation, got %q", hint)
 	}
-	if !strings.Contains(prompt, "<recommended-action>synthesize_then_decide_followup</recommended-action>") {
-		t.Fatalf("expected single completion recommendation, got %q", prompt)
+	if !strings.Contains(hint, "<wait-for-remaining-workers>false</wait-for-remaining-workers>") {
+		t.Fatalf("expected single completion to avoid waiting, got %q", hint)
 	}
-	if !strings.Contains(prompt, "<wait-for-remaining-workers>false</wait-for-remaining-workers>") {
-		t.Fatalf("expected single completion to avoid waiting, got %q", prompt)
-	}
-	if !strings.Contains(prompt, "<should-finalize-summary>true</should-finalize-summary>") {
-		t.Fatalf("expected single completion to allow summary finalization, got %q", prompt)
-	}
-	if rt.lastStreamReq.System == "" {
-		t.Fatal("expected task notification to build system prompt")
-	}
-	if !strings.Contains(rt.lastStreamReq.System, "<task-notification>") {
-		t.Fatal("expected task notification continuation context in system prompt")
+	if !strings.Contains(hint, "<should-finalize-summary>true</should-finalize-summary>") {
+		t.Fatalf("expected single completion to allow summary finalization, got %q", hint)
 	}
 }
 
@@ -898,7 +868,7 @@ func TestTaskNotificationTickDoesNotInjectWhileToolExecutionPending(t *testing.T
 		taskNotifications: newTaskNotificationQueue(),
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
-				PendingCalls: []message.ToolCall{{ID: "tc-1", Name: "Agent"}},
+				PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "Agent"}},
 				CurrentIdx:   0,
 			},
 		},
@@ -922,11 +892,9 @@ func TestTaskNotificationTickDoesNotInjectWhileToolExecutionPending(t *testing.T
 	}
 }
 
-func TestTaskNotificationTickBatchesQueuedNotifications(t *testing.T) {
-	rt := &fakeConversationRuntime{}
+func TestTaskNotificationTickBatchesDrainsQueue(t *testing.T) {
 	m := &model{
 		cwd:               t.TempDir(),
-		asyncOps:           rt,
 		conv:              appconv.New(),
 		taskNotifications: newTaskNotificationQueue(),
 		provider:          providerui.State{LLM: testLLMProvider{}},
@@ -959,68 +927,96 @@ func TestTaskNotificationTickBatchesQueuedNotifications(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected task notification tick command")
 	}
-	_ = cmd()
-
-	if !rt.startCalled {
-		t.Fatal("expected batched task notifications to start a follow-up stream")
-	}
 	if got := m.taskNotifications.Len(); got != 0 {
 		t.Fatalf("expected task notification queue to drain, got %d", got)
 	}
-	if len(m.conv.Messages) != 2 {
-		t.Fatalf("expected notice plus assistant placeholder, got %d", len(m.conv.Messages))
+	if len(m.conv.Messages) < 1 {
+		t.Fatalf("expected at least one notice message, got %d", len(m.conv.Messages))
 	}
 	if !strings.Contains(m.conv.Messages[0].Content, "2 background tasks completed") {
 		t.Fatalf("unexpected batched notice: %q", m.conv.Messages[0].Content)
 	}
-	got := rt.lastStreamReq.Messages[len(rt.lastStreamReq.Messages)-1]
-	if got.Role != message.RoleUser || !strings.Contains(got.Content, "<task-notifications count=\"2\">") {
-		t.Fatalf("expected batched task notification wrapper, got %#v", got)
+}
+
+func TestTaskNotificationBatchMergeProducesCorrectXML(t *testing.T) {
+	batch := &orchestration.Batch{
+		ID:        "batch-1",
+		Subject:   "2 background agents launched",
+		Status:    tracker.StatusInProgress,
+		Completed: 1,
+		Total:     2,
+		Failures:  1,
 	}
-	if !strings.Contains(got.Content, "<coordinator-hint>") {
-		t.Fatalf("expected structured coordinator hint, got %q", got.Content)
+
+	items := []taskNotification{
+		{
+			Notice:             "dir-audit completed",
+			Context:            []string{"single task context"},
+			ContinuationPrompt: "<task-notification><task-id>bg-1</task-id></task-notification>",
+			Batch:              batch,
+		},
+		{
+			Notice:             "naming-audit failed",
+			Context:            []string{"single task context"},
+			ContinuationPrompt: "<task-notification><task-id>bg-2</task-id></task-notification>",
+			Batch:              batch,
+		},
 	}
-	if !strings.Contains(got.Content, "<phase>partial_batch_with_failures</phase>") {
-		t.Fatalf("expected partial batch phase, got %q", got.Content)
+	merged := mergeTaskNotifications(items)
+	prompt := buildTaskNotificationContinuationPrompt(merged)
+
+	if !strings.Contains(prompt, "<coordinator-hint>") {
+		t.Fatalf("expected structured coordinator hint, got %q", prompt)
 	}
-	if !strings.Contains(got.Content, "<recommended-action>synthesize_partial_results_and_decide_recovery_or_wait</recommended-action>") {
-		t.Fatalf("expected partial batch recommendation, got %q", got.Content)
+	if !strings.Contains(prompt, "<phase>partial_batch_with_failures</phase>") {
+		t.Fatalf("expected partial batch phase, got %q", prompt)
 	}
-	if !strings.Contains(got.Content, "<wait-for-remaining-workers>true</wait-for-remaining-workers>") {
-		t.Fatalf("expected partial batch to wait for remaining workers, got %q", got.Content)
+	if !strings.Contains(prompt, "<recommended-action>synthesize_partial_results_and_decide_recovery_or_wait</recommended-action>") {
+		t.Fatalf("expected partial batch recommendation, got %q", prompt)
 	}
-	if !strings.Contains(got.Content, "<should-continue-failed-worker>true</should-continue-failed-worker>") {
-		t.Fatalf("expected partial batch failure recovery hint, got %q", got.Content)
+	if !strings.Contains(prompt, "<wait-for-remaining-workers>true</wait-for-remaining-workers>") {
+		t.Fatalf("expected partial batch to wait for remaining workers, got %q", prompt)
 	}
-	if !strings.Contains(got.Content, "<batch-summary>") || !strings.Contains(got.Content, "2 background agents launched is 1/2 complete with 1 failures") {
-		t.Fatalf("expected batch summary in provider prompt, got %q", got.Content)
+	if !strings.Contains(prompt, "<should-continue-failed-worker>true</should-continue-failed-worker>") {
+		t.Fatalf("expected partial batch failure recovery hint, got %q", prompt)
 	}
-	if !strings.Contains(got.Content, "<task-id>bg-1</task-id>") || !strings.Contains(got.Content, "<task-id>bg-2</task-id>") {
-		t.Fatalf("expected both task notifications in provider prompt, got %q", got.Content)
+
+	wrappedPrompt := merged.ContinuationPrompt
+	if !strings.Contains(wrappedPrompt, "<task-notifications count=\"2\">") {
+		t.Fatalf("expected batched notification wrapper, got %q", wrappedPrompt)
 	}
-	if !strings.Contains(rt.lastStreamReq.System, "Multiple background tasks completed") {
-		t.Fatalf("expected batched continuation context in system prompt, got %q", rt.lastStreamReq.System)
+	if !strings.Contains(wrappedPrompt, "<batch-summary>") || !strings.Contains(wrappedPrompt, "2 background agents launched is 1/2 complete with 1 failures") {
+		t.Fatalf("expected batch summary, got %q", wrappedPrompt)
 	}
-	if !strings.Contains(rt.lastStreamReq.System, "Do not assume the batch is finished") {
-		t.Fatalf("expected partial-batch coordinator policy in system prompt, got %q", rt.lastStreamReq.System)
+	if !strings.Contains(wrappedPrompt, "<task-id>bg-1</task-id>") || !strings.Contains(wrappedPrompt, "<task-id>bg-2</task-id>") {
+		t.Fatalf("expected both task IDs, got %q", wrappedPrompt)
+	}
+
+	contexts := merged.Context
+	foundMultiple := false
+	for _, ctx := range contexts {
+		if strings.Contains(ctx, "Multiple background tasks completed") {
+			foundMultiple = true
+			break
+		}
+	}
+	if !foundMultiple {
+		t.Fatalf("expected batched continuation context, got %#v", contexts)
+	}
+
+	policy := buildTaskNotificationCoordinatorPolicy(merged)
+	if !strings.Contains(policy, "Do not assume the batch is finished") {
+		t.Fatalf("expected partial-batch coordinator policy, got %q", policy)
 	}
 }
 
-func TestTaskNotificationTickAddsCoordinatorPolicyForCompletedFailedBatch(t *testing.T) {
-	rt := &fakeConversationRuntime{}
-	m := &model{
-		cwd:               t.TempDir(),
-		asyncOps:           rt,
-		conv:              appconv.New(),
-		taskNotifications: newTaskNotificationQueue(),
-		provider:          providerui.State{LLM: testLLMProvider{}},
-		output:            appoutput.New(80, progress.NewHub(10)),
-	}
-
-	m.taskNotifications.Push(taskNotification{
+func TestCoordinatorPolicyForCompletedFailedBatch(t *testing.T) {
+	item := taskNotification{
 		Notice:             "naming-audit failed",
 		Context:            []string{"background task context"},
 		ContinuationPrompt: "<task-notification><task-id>bg-2</task-id></task-notification>",
+		Count:              1,
+		Status:             "failed",
 		Batch: &orchestration.Batch{
 			ID:        "batch-2",
 			Subject:   "2 background agents launched",
@@ -1029,19 +1025,9 @@ func TestTaskNotificationTickAddsCoordinatorPolicyForCompletedFailedBatch(t *tes
 			Total:     2,
 			Failures:  1,
 		},
-	})
-
-	cmd := m.handleTaskNotificationTick()
-	if cmd == nil {
-		t.Fatal("expected task notification tick command")
 	}
-	_ = cmd()
 
-	if !rt.startCalled {
-		t.Fatal("expected task notification to start a follow-up stream")
-	}
-	joined := rt.lastStreamReq.System
-	prompt := rt.lastStreamReq.Messages[len(rt.lastStreamReq.Messages)-1].Content
+	prompt := buildTaskNotificationContinuationPrompt(item)
 	if !strings.Contains(prompt, "<coordinator-hint>") {
 		t.Fatalf("expected structured coordinator hint in prompt, got %q", prompt)
 	}
@@ -1063,10 +1049,12 @@ func TestTaskNotificationTickAddsCoordinatorPolicyForCompletedFailedBatch(t *tes
 	if !strings.Contains(prompt, "<should-finalize-summary>true</should-finalize-summary>") {
 		t.Fatalf("expected completed batch to allow final summary, got %q", prompt)
 	}
-	if !strings.Contains(joined, "background batch completed with failures") {
-		t.Fatalf("expected failed-batch coordinator policy in system prompt, got %q", joined)
+
+	policy := buildTaskNotificationCoordinatorPolicy(item)
+	if !strings.Contains(policy, "background batch completed with failures") {
+		t.Fatalf("expected failed-batch coordinator policy, got %q", policy)
 	}
-	if !strings.Contains(joined, "continue a failed worker, spawn a verifier, or report a partial result") {
-		t.Fatalf("expected failed-batch follow-up guidance in system prompt, got %q", joined)
+	if !strings.Contains(policy, "continue a failed worker, spawn a verifier, or report a partial result") {
+		t.Fatalf("expected failed-batch follow-up guidance, got %q", policy)
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -35,7 +35,7 @@ func renderAgentProgress(progress []string) string {
 
 // renderTaskProgressInline renders live progress for a parallel Agent tool call.
 // Spinner is on the header line; this only renders progress lines below it.
-func renderTaskProgressInline(tc message.ToolCall, pendingCalls []message.ToolCall, parallelResults map[int]bool, taskProgress map[int][]string) string {
+func renderTaskProgressInline(tc core.ToolCall, pendingCalls []core.ToolCall, parallelResults map[int]bool, taskProgress map[int][]string) string {
 	idx := -1
 	for i, pending := range pendingCalls {
 		if pending.ID == tc.ID {
@@ -68,7 +68,7 @@ type PendingToolSpinnerParams struct {
 	// BuildingTool is the tool name being built during streaming.
 	BuildingTool string
 	// PendingCalls are the pending tool calls.
-	PendingCalls []message.ToolCall
+	PendingCalls []core.ToolCall
 	// CurrentIdx is the index of the current sequential tool.
 	CurrentIdx int
 	// TaskProgress tracks agent progress messages by index.

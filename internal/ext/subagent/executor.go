@@ -7,16 +7,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/core/prompt"
+	"github.com/yanmxa/gencode/internal/loop"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/worktree"
@@ -29,18 +27,18 @@ type Executor struct {
 	cwd                 string
 	parentModelID       string // Parent conversation's model ID (used when inheriting)
 	hooks               *hooks.Engine
-	sessionStore        SubagentSessionStore         // Optional: when set, subagent sessions are persisted
-	parentSessionID     string                       // Parent session ID for linking subagent sessions
-	userInstructions    string                       // ~/.gen/GEN.md + rules
-	projectInstructions string                       // .gen/GEN.md + rules + local
-	isGit               bool                         // whether cwd is a git repository
-	mcpGetter           func() []message.ToolSchema // MCP tool schemas from parent
-	mcpRegistry         *mcp.Registry                // MCP registry for tool execution
+	sessionStore        SubagentSessionStore        // Optional: when set, subagent sessions are persisted
+	parentSessionID     string                      // Parent session ID for linking subagent sessions
+	userInstructions    string                      // ~/.gen/GEN.md + rules
+	projectInstructions string                      // .gen/GEN.md + rules + local
+	isGit               bool                        // whether cwd is a git repository
+	mcpGetter           func() []core.ToolSchema // MCP tool schemas from parent
+	mcpRegistry         *mcp.Registry               // MCP registry for tool execution
 }
 
 type SubagentSessionStore interface {
-	SaveSubagentConversation(parentSessionID, title, modelID, cwd string, messages []message.Message) (string, string, error)
-	LoadSubagentMessages(agentID string) ([]message.Message, error)
+	SaveSubagentConversation(parentSessionID, title, modelID, cwd string, messages []core.Message) (string, string, error)
+	LoadSubagentMessages(agentID string) ([]core.Message, error)
 }
 
 type runConfig struct {
@@ -74,7 +72,7 @@ func (e *Executor) SetContext(userInstructions, projectInstructions string, isGi
 
 // SetMCP provides the parent's MCP tool getter and registry so subagents
 // can access MCP tools (schemas via getter, execution via registry).
-func (e *Executor) SetMCP(getter func() []message.ToolSchema, registry *mcp.Registry) {
+func (e *Executor) SetMCP(getter func() []core.ToolSchema, registry *mcp.Registry) {
 	e.mcpGetter = getter
 	e.mcpRegistry = registry
 }
@@ -238,14 +236,14 @@ func (e *Executor) fireSubagentStart(req AgentRequest, agentHookID string) {
 	if e.hooks == nil {
 		return
 	}
-	e.hooks.ExecuteAsync(core.SubagentStart, hooks.HookInput{
+	e.hooks.ExecuteAsync(hooks.SubagentStart, hooks.HookInput{
 		AgentType:   req.Agent,
 		AgentID:     agentHookID,
 		Description: req.Description,
 	})
 }
 
-func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string) (*runtime.Loop, func(), error) {
+func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string) (*loop.Loop, func(), error) {
 	cleanup := func() {}
 
 	if len(rc.config.McpServers) > 0 && e.mcpRegistry != nil {
@@ -258,12 +256,12 @@ func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string
 		}
 	}
 
-	var mcpCaller runtime.MCPCaller
+	var mcpCaller loop.MCPCaller
 	if e.mcpRegistry != nil {
 		mcpCaller = mcp.NewCaller(e.mcpRegistry)
 	}
 
-	loop, err := runtime.NewLoop(runtime.LoopConfig{
+	l, err := loop.NewLoop(loop.LoopConfig{
 		System: prompt.Build(prompt.Config{
 			ProviderName:        e.provider.Name(),
 			ModelID:             rc.modelID,
@@ -274,7 +272,7 @@ func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string
 			ProjectInstructions: e.projectInstructions,
 			Extra:               []string{rc.agentPrompt},
 		}),
-		Client:     client.NewClient(e.provider, rc.modelID),
+		Client:     provider.NewLLM(e.provider, rc.modelID, 0),
 		Tool:       newAgentToolSet([]string(rc.config.Tools), []string(rc.config.DisallowedTools), e.mcpGetter),
 		Permission: agentPermission(rc.permMode),
 		Hooks:      e.hooks,
@@ -286,37 +284,37 @@ func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string
 		return nil, cleanup, err
 	}
 
-	return loop, cleanup, nil
+	return l, cleanup, nil
 }
 
-func (e *Executor) loadConversation(loop *runtime.Loop, req AgentRequest) error {
+func (e *Executor) loadConversation(lp *loop.Loop, req AgentRequest) error {
 	// Fork: inherit parent conversation context
 	if len(req.ParentMessages) > 0 {
 		// Guard against recursive forking
 		if depth := countForkDepth(req.ParentMessages); depth >= maxForkDepth {
 			return fmt.Errorf("maximum fork depth (%d) exceeded — forked agents cannot fork more than %d levels deep", maxForkDepth, maxForkDepth)
 		}
-		loop.SetMessages(prepareForkedMessages(req.ParentMessages))
-		loop.AddUser(req.Prompt, nil)
+		lp.SetMessages(prepareForkedMessages(req.ParentMessages))
+		lp.AddUser(req.Prompt, nil)
 		return nil
 	}
 
 	// Resume from saved session
 	if req.ResumeID != "" {
-		if err := e.resumeFromSession(loop, req.ResumeID, req.Prompt); err != nil {
+		if err := e.resumeFromSession(lp, req.ResumeID, req.Prompt); err != nil {
 			return fmt.Errorf("failed to resume agent: %w", err)
 		}
 		return nil
 	}
 
 	// Fresh start
-	loop.AddUser(req.Prompt, nil)
+	lp.AddUser(req.Prompt, nil)
 	return nil
 }
 
-func (e *Executor) buildOnToolStart(req AgentRequest, allProgress *[]string) func(tc message.ToolCall) bool {
-	return func(tc message.ToolCall) bool {
-		params, _ := message.ParseToolInput(tc.Input)
+func (e *Executor) buildOnToolStart(req AgentRequest, allProgress *[]string) func(tc core.ToolCall) bool {
+	return func(tc core.ToolCall) bool {
+		params, _ := core.ParseToolInput(tc.Input)
 		progressMsg := formatToolProgress(tc.Name, params)
 		*allProgress = append(*allProgress, progressMsg)
 		if req.OnProgress != nil {
@@ -326,14 +324,14 @@ func (e *Executor) buildOnToolStart(req AgentRequest, allProgress *[]string) fun
 	}
 }
 
-func interpretStopReason(result *runtime.Result, maxTurns int) (success bool, errMsg string) {
-	success = result.StopReason == runtime.StopEndTurn
+func interpretStopReason(result *loop.Result, maxTurns int) (success bool, errMsg string) {
+	success = result.StopReason == loop.StopEndTurn
 	switch result.StopReason {
-	case runtime.StopMaxTurns:
+	case loop.StopMaxTurns:
 		errMsg = fmt.Sprintf("reached maximum turns (%d)", maxTurns)
-	case runtime.StopMaxOutputRecoveryExhausted:
+	case loop.StopMaxOutputRecoveryExhausted:
 		errMsg = "output was repeatedly truncated and recovery was exhausted"
-	case runtime.StopHook:
+	case loop.StopHook:
 		errMsg = result.StopDetail
 	}
 	return success, errMsg
@@ -348,7 +346,7 @@ func (e *Executor) fireSubagentStop(req AgentRequest, agentHookID, agentSessionI
 	if agentSessionID != "" {
 		stopAgentID = agentSessionID
 	}
-	e.hooks.ExecuteAsync(core.SubagentStop, hooks.HookInput{
+	e.hooks.ExecuteAsync(hooks.SubagentStop, hooks.HookInput{
 		AgentType:            req.Agent,
 		AgentID:              stopAgentID,
 		AgentTranscriptPath:  agentTranscriptPath,
@@ -382,7 +380,7 @@ func agentPermission(mode PermissionMode) permission.Checker {
 }
 
 // newAgentToolSet creates a tool.Set for subagents with the disallow set eagerly initialized.
-func newAgentToolSet(allow, disallow []string, mcpGetter func() []message.ToolSchema) *tool.Set {
+func newAgentToolSet(allow, disallow []string, mcpGetter func() []core.ToolSchema) *tool.Set {
 	s := &tool.Set{Allow: allow, Disallow: disallow, MCP: mcpGetter, IsAgent: true}
 	s.InitDisallowSet()
 	return s

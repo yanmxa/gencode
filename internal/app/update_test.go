@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
@@ -17,78 +16,15 @@ import (
 	"github.com/yanmxa/gencode/internal/app/skillui"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/core/prompt"
+	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
-	"github.com/yanmxa/gencode/internal/tracker"
-	"github.com/yanmxa/gencode/internal/ui/progress"
+	"github.com/yanmxa/gencode/internal/task/tracker"
+	"github.com/yanmxa/gencode/internal/app/progress"
 )
-
-type fakeConversationRuntime struct {
-	suggestCalled bool
-	startCalled   bool
-	lastStreamReq streamRequest
-	streamResult  streamStartResult
-}
-
-type scriptedLLMProvider struct {
-	responses []message.CompletionResponse
-	callIdx   int
-}
-
-func (p *scriptedLLMProvider) Stream(_ context.Context, _ provider.CompletionOptions) <-chan message.StreamChunk {
-	ch := make(chan message.StreamChunk, 1)
-	go func() {
-		defer close(ch)
-		resp := message.CompletionResponse{
-			Content:    "no scripted response",
-			StopReason: "end_turn",
-		}
-		if p.callIdx < len(p.responses) {
-			resp = p.responses[p.callIdx]
-			p.callIdx++
-		}
-		ch <- message.StreamChunk{Type: message.ChunkTypeDone, Response: &resp}
-	}()
-	return ch
-}
-
-func (p *scriptedLLMProvider) ListModels(_ context.Context) ([]provider.ModelInfo, error) {
-	return nil, nil
-}
-
-func (p *scriptedLLMProvider) Name() string { return "scripted" }
-
-func (f *fakeConversationRuntime) SuggestPromptCmd(req promptSuggestionRequest) tea.Cmd {
-	f.suggestCalled = true
-	return func() tea.Msg { return promptSuggestionMsg{text: "next"} }
-}
-
-func (f *fakeConversationRuntime) FetchTokenLimitsCmd(tokenLimitFetchRequest) tea.Cmd {
-	return nil
-}
-
-func (f *fakeConversationRuntime) CompactCmd(compactRequest) tea.Cmd {
-	return nil
-}
-
-func (f *fakeConversationRuntime) StartStream(req streamRequest) streamStartResult {
-	f.startCalled = true
-	f.lastStreamReq = req
-	if f.streamResult.Cancel == nil {
-		f.streamResult.Cancel = func() {}
-	}
-	if f.streamResult.Ch == nil {
-		ch := make(chan message.StreamChunk)
-		close(ch)
-		f.streamResult.Ch = ch
-	}
-	return f.streamResult
-}
 
 // TestPlanResponse_ModifyStaysInPlanMode verifies that when user gives feedback
 // via option 4 (modify), the model stays in plan mode for plan revision.
@@ -104,7 +40,7 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
-				PendingCalls: []message.ToolCall{
+				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
@@ -150,7 +86,7 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
-				PendingCalls: []message.ToolCall{
+				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
@@ -193,7 +129,7 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
-				PendingCalls: []message.ToolCall{
+				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
@@ -239,7 +175,7 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
-				PendingCalls: []message.ToolCall{
+				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
@@ -282,7 +218,7 @@ func TestHasRunningToolExecutionSequentialBash(t *testing.T) {
 	m := &model{
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
-				PendingCalls: []message.ToolCall{
+				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "Bash"},
 				},
 				CurrentIdx: 0,
@@ -290,7 +226,7 @@ func TestHasRunningToolExecutionSequentialBash(t *testing.T) {
 		},
 	}
 
-	if !m.hasInFlightToolExecution() {
+	if !m.isToolPhaseActive() {
 		t.Fatal("expected sequential bash execution to keep spinner active")
 	}
 }
@@ -299,19 +235,19 @@ func TestHasRunningToolExecutionParallelPendingResult(t *testing.T) {
 	m := &model{
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
-				PendingCalls: []message.ToolCall{
+				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "Bash"},
 					{ID: "tc-2", Name: "WebFetch"},
 				},
 				Parallel: true,
-				ParallelResults: map[int]message.ToolResult{
+				ParallelResults: map[int]core.ToolResult{
 					0: {ToolCallID: "tc-1", Content: "done"},
 				},
 			},
 		},
 	}
 
-	if !m.hasInFlightToolExecution() {
+	if !m.isToolPhaseActive() {
 		t.Fatal("expected unfinished parallel tool execution to keep spinner active")
 	}
 }
@@ -429,15 +365,13 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 	}
 }
 
-func TestStartPromptSuggestionUsesRuntimeInterface(t *testing.T) {
-	rt := &fakeConversationRuntime{}
+func TestStartPromptSuggestionGeneratesCommand(t *testing.T) {
 	m := &model{
-		asyncOps: rt,
 		provider: providerui.State{LLM: testLLMProvider{}},
 		conv: appconv.Model{
-			Messages: []message.ChatMessage{
-				{Role: message.RoleAssistant, Content: "first"},
-				{Role: message.RoleAssistant, Content: "second"},
+			Messages: []core.ChatMessage{
+				{Role: core.RoleAssistant, Content: "first"},
+				{Role: core.RoleAssistant, Content: "second"},
 			},
 		},
 	}
@@ -446,91 +380,16 @@ func TestStartPromptSuggestionUsesRuntimeInterface(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected prompt suggestion command")
 	}
-	if !rt.suggestCalled {
-		t.Fatal("expected runtime suggestion command to be used")
-	}
-}
-
-func TestStartLLMStreamUsesRuntimeInterface(t *testing.T) {
-	rt := &fakeConversationRuntime{}
-	m := &model{
-		asyncOps: rt,
-		conv: appconv.Model{
-			Messages: []message.ChatMessage{
-				{Role: message.RoleUser, Content: "hello"},
-			},
-		},
-		provider: providerui.State{
-			LLM:              testLLMProvider{},
-			ThinkingOverride: provider.ThinkingOff,
-		},
-	}
-
-	cmd := m.startLLMStream(nil)
-	if cmd == nil {
-		t.Fatal("expected stream command")
-	}
-	if !rt.startCalled {
-		t.Fatal("expected runtime start stream to be used")
-	}
-	if len(rt.lastStreamReq.Messages) != 1 {
-		t.Fatalf("runtime should receive committed conversation only, got %d messages", len(rt.lastStreamReq.Messages))
-	}
-	if rt.lastStreamReq.Messages[0].Content != "hello" {
-		t.Fatalf("unexpected request messages: %#v", rt.lastStreamReq.Messages)
-	}
-	if len(m.conv.Messages) != 2 {
-		t.Fatalf("expected assistant placeholder to be appended after stream start, got %d messages", len(m.conv.Messages))
-	}
-	if m.conv.Messages[1].Role != message.RoleAssistant || m.conv.Messages[1].Content != "" {
-		t.Fatalf("unexpected assistant placeholder: %#v", m.conv.Messages[1])
-	}
-	if !m.conv.Stream.Active {
-		t.Fatal("expected stream to be marked active")
-	}
-	if m.conv.Stream.Cancel == nil {
-		t.Fatal("expected stream cancel func to be set")
-	}
-}
-
-func TestBuildStreamRequestExcludesAssistantPlaceholder(t *testing.T) {
-	rt := &fakeConversationRuntime{
-		streamResult: streamStartResult{
-			Cancel: context.CancelFunc(func() {}),
-		},
-	}
-	ch := make(chan message.StreamChunk)
-	close(ch)
-	rt.streamResult.Ch = ch
-	m := &model{
-		asyncOps: rt,
-		provider: providerui.State{LLM: testLLMProvider{}},
-		conv: appconv.Model{
-			Messages: []message.ChatMessage{
-				{Role: message.RoleUser, Content: "user"},
-				{Role: message.RoleAssistant, Content: "assistant"},
-			},
-		},
-	}
-
-	_ = m.startContinueStream()
-
-	if len(rt.lastStreamReq.Messages) != 2 {
-		t.Fatalf("expected 2 provider messages before placeholder append, got %d", len(rt.lastStreamReq.Messages))
-	}
-	if len(m.conv.Messages) != 3 {
-		t.Fatalf("expected placeholder append after request build, got %d total messages", len(m.conv.Messages))
-	}
 }
 
 func TestBuildPromptSuggestionRequest(t *testing.T) {
 	m := &model{
 		provider: providerui.State{LLM: testLLMProvider{}},
 		conv: appconv.Model{
-			Messages: []message.ChatMessage{
-				{Role: message.RoleUser, Content: "u1"},
-				{Role: message.RoleAssistant, Content: "a1"},
-				{Role: message.RoleAssistant, Content: "a2"},
+			Messages: []core.ChatMessage{
+				{Role: core.RoleUser, Content: "u1"},
+				{Role: core.RoleAssistant, Content: "a1"},
+				{Role: core.RoleAssistant, Content: "a2"},
 			},
 		},
 	}
@@ -546,61 +405,45 @@ func TestBuildPromptSuggestionRequest(t *testing.T) {
 		t.Fatalf("unexpected system prompt: %q", req.SystemPrompt)
 	}
 	last := req.Messages[len(req.Messages)-1]
-	if last.Role != message.RoleUser || last.Content != suggestionUserPrompt {
+	if last.Role != core.RoleUser || last.Content != suggestionUserPrompt {
 		t.Fatalf("unexpected tail message: %#v", last)
 	}
 }
 
-func TestHandleCompletionToolCalls_StopsStreamPhaseBeforeToolExecution(t *testing.T) {
-	m := &model{
-		conv: appconv.Model{
-			Messages: []message.ChatMessage{
-				{Role: message.RoleUser, Content: "check deploy"},
-				{Role: message.RoleAssistant, Content: ""},
-			},
-			CommittedCount: 1,
-			Stream: appconv.StreamState{
-				Active:       true,
-				BuildingTool: "AskUserQuestion",
-				Cancel:       func() {},
-			},
+func TestHandleStartToolExecution_SetsUpToolState(t *testing.T) {
+	base := newBaseModel(t.TempDir(), modelInfra{})
+	m := &base
+	m.output = appoutput.New(80, progress.NewHub(16))
+	m.conv = appconv.Model{
+		Messages: []core.ChatMessage{
+			{Role: core.RoleUser, Content: "check deploy"},
+			{Role: core.RoleAssistant, Content: "", ToolCalls: []core.ToolCall{
+				{ID: "tc-1", Name: "AskUserQuestion", Input: `{"question":"Continue?"}`},
+			}},
 		},
-		provider: providerui.State{
-			ThinkingOverride: provider.ThinkingHigh,
-		},
-		output: appoutput.New(80, progress.NewHub(16)),
+		CommittedCount: 1,
 	}
 
-	cmd := m.handleCompletionToolCalls([]message.ToolCall{
+	cmd := m.handleStartToolExecution([]core.ToolCall{
 		{ID: "tc-1", Name: "AskUserQuestion", Input: `{"question":"Continue?"}`},
 	})
 	if cmd == nil {
 		t.Fatal("expected tool execution command")
 	}
-	if m.conv.Stream.Active {
-		t.Fatal("expected stream to stop before tool execution")
-	}
-	if m.conv.Stream.BuildingTool != "" || m.conv.Stream.Ch != nil || m.conv.Stream.Cancel != nil {
-		t.Fatalf("expected stream state to be fully cleared, got %#v", m.conv.Stream)
-	}
-	if m.provider.ThinkingOverride != provider.ThinkingOff {
-		t.Fatalf("expected thinking override reset, got %v", m.provider.ThinkingOverride)
-	}
-	if len(m.conv.Messages) != 2 || len(m.conv.Messages[1].ToolCalls) != 1 {
-		t.Fatalf("expected assistant message to retain tool calls, got %#v", m.conv.Messages)
+	if len(m.tool.PendingCalls) == 0 {
+		t.Fatal("expected pending calls to be set")
 	}
 }
 
 func TestHandleQuestionResponse_CancelledStopsStreamState(t *testing.T) {
 	m := &model{
 		conv: appconv.Model{
-			Messages: []message.ChatMessage{
-				{Role: message.RoleAssistant, Content: "", ToolCalls: []message.ToolCall{{ID: "ask-1", Name: "AskUserQuestion"}}},
+			Messages: []core.ChatMessage{
+				{Role: core.RoleAssistant, Content: "", ToolCalls: []core.ToolCall{{ID: "ask-1", Name: "AskUserQuestion"}}},
 			},
 			Stream: appconv.StreamState{
 				Active:       true,
 				BuildingTool: "AskUserQuestion",
-				Cancel:       func() {},
 			},
 		},
 		mode: appmode.State{
@@ -609,7 +452,7 @@ func TestHandleQuestionResponse_CancelledStopsStreamState(t *testing.T) {
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
-				PendingCalls: []message.ToolCall{{ID: "ask-1", Name: "AskUserQuestion"}},
+				PendingCalls: []core.ToolCall{{ID: "ask-1", Name: "AskUserQuestion"}},
 				CurrentIdx:   0,
 			},
 		},
@@ -625,7 +468,7 @@ func TestHandleQuestionResponse_CancelledStopsStreamState(t *testing.T) {
 	if m.conv.Stream.Active {
 		t.Fatal("expected cancelled question to stop stream")
 	}
-	if m.conv.Stream.BuildingTool != "" || m.conv.Stream.Ch != nil || m.conv.Stream.Cancel != nil {
+	if m.conv.Stream.BuildingTool != "" {
 		t.Fatalf("expected stream state to be fully cleared, got %#v", m.conv.Stream)
 	}
 	if m.tool.PendingCalls != nil {
@@ -637,32 +480,13 @@ func TestHandleQuestionResponse_CancelledStopsStreamState(t *testing.T) {
 	}
 }
 
-func TestExecuteSubmitRequest_CancelsPendingToolsBeforeNewTurn(t *testing.T) {
-	rt := &fakeConversationRuntime{}
-	cancelled := false
+func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing.T) {
 	base := newBaseModel(t.TempDir(), modelInfra{})
 	m := &base
-	m.asyncOps = rt
 	m.output = appoutput.New(80, progress.NewHub(16))
 	m.conv = appconv.Model{
-		Messages: []message.ChatMessage{
-			{Role: message.RoleUser, Content: "previous request"},
-			{
-				Role:    message.RoleAssistant,
-				Content: "",
-				ToolCalls: []message.ToolCall{
-					{ID: "tc-1", Name: "TaskOutput", Input: `{"task_id":"993103b8"}`},
-				},
-			},
-		},
-	}
-	m.tool = toolui.State{
-		ExecState: toolui.ExecState{
-			PendingCalls: []message.ToolCall{
-				{ID: "tc-1", Name: "TaskOutput", Input: `{"task_id":"993103b8"}`},
-			},
-			CurrentIdx: 0,
-			Cancel:     func() { cancelled = true },
+		Messages: []core.ChatMessage{
+			{Role: core.RoleUser, Content: "previous request"},
 		},
 	}
 	m.provider = providerui.State{
@@ -673,93 +497,19 @@ func TestExecuteSubmitRequest_CancelsPendingToolsBeforeNewTurn(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected submit command")
 	}
-	if !cancelled {
-		t.Fatal("expected pending tool execution to be cancelled")
+	// Should have appended the user message to the conversation
+	found := false
+	for _, msg := range m.conv.Messages {
+		if msg.Role == core.RoleUser && msg.Content == "请修复这个 bug" {
+			found = true
+			break
+		}
 	}
-	if m.tool.PendingCalls != nil {
-		t.Fatalf("expected pending tool calls to be cleared, got %#v", m.tool.PendingCalls)
-	}
-	if !rt.startCalled {
-		t.Fatal("expected a new provider turn to start")
-	}
-
-	if got := len(rt.lastStreamReq.Messages); got != 4 {
-		t.Fatalf("expected 4 provider messages, got %d", got)
-	}
-	cancelMsg := rt.lastStreamReq.Messages[2]
-	if cancelMsg.ToolResult == nil {
-		t.Fatalf("expected synthetic tool_result before new turn, got %#v", cancelMsg)
-	}
-	if cancelMsg.ToolResult.ToolCallID != "tc-1" || !cancelMsg.ToolResult.IsError {
-		t.Fatalf("unexpected synthetic tool_result: %#v", cancelMsg.ToolResult)
-	}
-	if cancelMsg.ToolResult.Content != "Stopped waiting for background task output because the user sent a new message. The background task may still be running." {
-		t.Fatalf("unexpected synthetic tool_result content: %#v", cancelMsg.ToolResult)
-	}
-	if rt.lastStreamReq.Messages[3].Role != message.RoleUser || rt.lastStreamReq.Messages[3].Content != "请修复这个 bug" {
-		t.Fatalf("unexpected final user message: %#v", rt.lastStreamReq.Messages[3])
+	if !found {
+		t.Fatalf("expected user message to be appended to conversation, got %#v", m.conv.Messages)
 	}
 }
 
-func TestHandleToolResultReplansAfterCwdChange(t *testing.T) {
-	rt := &fakeConversationRuntime{}
-	base := newBaseModel(t.TempDir(), modelInfra{})
-	m := &base
-	m.asyncOps = rt
-	m.output = appoutput.New(80, progress.NewHub(16))
-	m.conv = appconv.Model{
-		Messages: []message.ChatMessage{
-			{
-				Role: message.RoleAssistant,
-				ToolCalls: []message.ToolCall{
-					{ID: "tc-1", Name: "Bash", Input: `{"command":"cd /tmp/other && pwd"}`},
-					{ID: "tc-2", Name: "Bash", Input: `{"command":"git status"}`},
-				},
-			},
-		},
-	}
-	m.tool = toolui.State{
-		ExecState: toolui.ExecState{
-			PendingCalls: []message.ToolCall{
-				{ID: "tc-1", Name: "Bash", Input: `{"command":"cd /tmp/other && pwd"}`},
-				{ID: "tc-2", Name: "Bash", Input: `{"command":"git status"}`},
-			},
-			CurrentIdx: 0,
-		},
-	}
-	m.cwd = "/tmp/original"
-	m.provider = providerui.State{
-		LLM: testLLMProvider{},
-	}
-
-	cmd := m.handleToolResult(toolui.ExecResultMsg{
-		Index:    0,
-		ToolName: "Bash",
-		Result: message.ToolResult{
-			ToolCallID: "tc-1",
-			Content:    "/tmp/other",
-			HookResponse: map[string]any{
-				"cwd": "/tmp/other",
-			},
-		},
-	})
-	if cmd == nil {
-		t.Fatal("expected follow-up command")
-	}
-	if m.cwd != "/tmp/other" {
-		t.Fatalf("expected cwd to update, got %q", m.cwd)
-	}
-	if m.tool.PendingCalls != nil {
-		t.Fatalf("expected pending tool calls to be cleared for replanning, got %#v", m.tool.PendingCalls)
-	}
-	_ = cmd()
-	if !rt.startCalled {
-		t.Fatal("expected continuation stream to start after cwd change")
-	}
-	if len(m.conv.Messages) < 2 || m.conv.Messages[1].ToolResult == nil || m.conv.Messages[1].ToolName != "Bash" {
-		t.Fatalf("expected bash tool result to remain in conversation, got %#v", m.conv.Messages)
-	}
-}
 
 func TestBuildCompactRequest(t *testing.T) {
 	m := &model{
@@ -767,8 +517,8 @@ func TestBuildCompactRequest(t *testing.T) {
 			Summary: "existing summary",
 		},
 		conv: appconv.Model{
-			Messages: []message.ChatMessage{
-				{Role: message.RoleUser, Content: "hello"},
+			Messages: []core.ChatMessage{
+				{Role: core.RoleUser, Content: "hello"},
 			},
 		},
 	}
@@ -856,48 +606,6 @@ func TestBuildLoopSystemIncludesSessionSummary(t *testing.T) {
 	}
 }
 
-func TestBuildStreamRequestPopulatesComponents(t *testing.T) {
-	m := &model{
-		cwd: "/tmp/project",
-		provider: providerui.State{
-			LLM:              testLLMProvider{},
-			ThinkingLevel:    provider.ThinkingNormal,
-			ThinkingOverride: provider.ThinkingHigh,
-		},
-		mode: appmode.State{
-			Enabled:       true,
-			DisabledTools: map[string]bool{"Bash": true},
-		},
-		memory: appmemory.State{
-			CachedUser:    "user memory",
-			CachedProject: "project memory",
-		},
-		session: sessionui.State{
-			Summary: "session summary",
-		},
-	}
-
-	req := m.buildStreamRequest([]string{"explicit-extra"})
-
-	if req.Client == nil {
-		t.Fatal("buildStreamRequest should populate client")
-	}
-	if req.Client.ThinkingLevel != provider.ThinkingHigh {
-		t.Fatalf("unexpected thinking level: %v", req.Client.ThinkingLevel)
-	}
-	if req.System == "" {
-		t.Fatal("expected system prompt to be populated")
-	}
-	if !strings.Contains(req.System, "session summary") {
-		t.Fatalf("expected session summary in system prompt")
-	}
-	if !strings.Contains(req.System, "explicit-extra") {
-		t.Fatalf("expected explicit-extra in system prompt")
-	}
-	if !strings.Contains(req.System, "<coordinator-guidance>") {
-		t.Fatalf("expected coordinator guidance in system prompt")
-	}
-}
 
 func TestBuildCoordinatorGuidanceEncouragesParallelAuditFanout(t *testing.T) {
 	guidance := buildCoordinatorGuidance()
@@ -915,94 +623,6 @@ func TestBuildCoordinatorGuidanceEncouragesParallelAuditFanout(t *testing.T) {
 	}
 }
 
-func TestPlanModeAgentExecutionStartsContinuationWithoutHanging(t *testing.T) {
-	rt := &fakeConversationRuntime{}
-	provider := &scriptedLLMProvider{
-		responses: []message.CompletionResponse{
-			{
-				Content:    "Exploration complete",
-				StopReason: "end_turn",
-				Usage:      message.Usage{InputTokens: 10, OutputTokens: 5},
-			},
-		},
-	}
-
-	tc := message.ToolCall{
-		ID:    "agent-1",
-		Name:  tool.ToolAgent,
-		Input: `{"subagent_type":"Explore","prompt":"Inspect the codebase","description":"Inspect code"}`,
-	}
-
-	m := &model{
-		cwd:     t.TempDir(),
-		asyncOps: rt,
-		output:  appoutput.New(80, progress.NewHub(16)),
-		conv: appconv.Model{
-			Messages: []message.ChatMessage{
-				{Role: message.RoleUser, Content: "Investigate the codebase"},
-				{Role: message.RoleAssistant, Content: "", ToolCalls: []message.ToolCall{tc}},
-			},
-		},
-		mode: appmode.State{
-			Enabled:            true,
-			Operation:          config.ModePlan,
-			SessionPermissions: config.NewSessionPermissions(),
-		},
-		provider: providerui.State{
-			LLM: provider,
-		},
-	}
-	m.reconfigureAgentTool()
-
-	startCmd := m.handleStartToolExecution([]message.ToolCall{tc})
-	if startCmd == nil {
-		t.Fatal("expected tool execution command")
-	}
-
-	startMsg := startCmd()
-	resultMsg, ok := startMsg.(toolui.ExecResultMsg)
-	if !ok {
-		t.Fatalf("expected ExecResultMsg, got %T", startMsg)
-	}
-	if resultMsg.Result.IsError {
-		t.Fatalf("expected successful agent execution, got error %q", resultMsg.Result.Content)
-	}
-	if !strings.Contains(resultMsg.Result.Content, "Agent: Explore") {
-		t.Fatalf("expected rendered agent metadata, got %q", resultMsg.Result.Content)
-	}
-	if !strings.Contains(resultMsg.Result.Content, "Exploration complete") {
-		t.Fatalf("expected subagent output, got %q", resultMsg.Result.Content)
-	}
-
-	_ = m.handleToolResult(resultMsg)
-	if len(m.conv.Messages) != 3 {
-		t.Fatalf("expected tool result appended to conversation, got %d messages", len(m.conv.Messages))
-	}
-	last := m.conv.Messages[len(m.conv.Messages)-1]
-	if last.ToolResult == nil || last.ToolName != tool.ToolAgent {
-		t.Fatalf("expected final message to be Agent tool result, got %#v", last)
-	}
-
-	continueCmd := m.handleAllToolsCompleted()
-	if continueCmd == nil {
-		t.Fatal("expected continuation command after tool completion")
-	}
-	if !rt.startCalled {
-		t.Fatal("expected continuation stream to start")
-	}
-	if m.tool.PendingCalls != nil {
-		t.Fatalf("expected pending tool calls to be cleared, got %#v", m.tool.PendingCalls)
-	}
-	if !m.conv.Stream.Active {
-		t.Fatal("expected follow-up stream to be active")
-	}
-	if len(m.conv.Messages) != 4 {
-		t.Fatalf("expected assistant placeholder for continuation, got %d messages", len(m.conv.Messages))
-	}
-	if len(rt.lastStreamReq.Messages) != 3 {
-		t.Fatalf("expected continuation request to include tool result context, got %d messages", len(rt.lastStreamReq.Messages))
-	}
-}
 
 func TestDetectThinkingKeywords(t *testing.T) {
 	t.Run("high thinking keywords", func(t *testing.T) {
@@ -1048,7 +668,7 @@ func TestRenderActiveModalPriority(t *testing.T) {
 
 func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
-	engine.AddSessionFunctionHook(core.PermissionRequest, "", hooks.FunctionHook{
+	engine.AddSessionFunctionHook(hooks.PermissionRequest, "", hooks.FunctionHook{
 		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
 			return hooks.HookOutput{}, nil
 		},

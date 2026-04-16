@@ -9,14 +9,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	coretool "github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/ui/selector"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/selector"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
-// Item represents a tool in the selector
-type Item struct {
+// item represents a tool in the selector
+type item struct {
 	Name        string
 	Description string
 	Enabled     bool
@@ -26,13 +26,13 @@ type Item struct {
 type SaveLevel int
 
 const (
-	SaveLevelProject SaveLevel = iota // Save to .gen/settings.json
-	SaveLevelUser                     // Save to ~/.gen/settings.json
+	saveLevelProject SaveLevel = iota // Save to .gen/settings.json
+	saveLevelUser                     // Save to ~/.gen/settings.json
 )
 
 // String returns the display name for the save level
 func (l SaveLevel) String() string {
-	if l == SaveLevelUser {
+	if l == saveLevelUser {
 		return "User"
 	}
 	return "Project"
@@ -41,8 +41,8 @@ func (l SaveLevel) String() string {
 // Model holds state for the tool selector
 type Model struct {
 	active        bool
-	tools         []Item // All tools
-	filteredTools []Item // Filtered tools based on search
+	tools         []item // All tools
+	filteredTools []item // Filtered tools based on search
 	selectedIdx   int
 	width         int
 	height        int
@@ -64,19 +64,19 @@ type ToggleMsg struct {
 func New() Model {
 	return Model{
 		active:     false,
-		tools:      []Item{},
+		tools:      []item{},
 		maxVisible: 10,
 	}
 }
 
 // EnterSelect enters tool selection mode
-func (s *Model) EnterSelect(width, height int, disabledTools map[string]bool, mcpTools func() []message.ToolSchema) error {
+func (s *Model) EnterSelect(width, height int, disabledTools map[string]bool, mcpTools func() []core.ToolSchema) error {
 	// Get all tool schemas including MCP tools
 	allTools := coretool.GetToolSchemasWithMCP(mcpTools)
 
-	s.tools = make([]Item, 0, len(allTools))
+	s.tools = make([]item, 0, len(allTools))
 	for _, t := range allTools {
-		s.tools = append(s.tools, Item{
+		s.tools = append(s.tools, item{
 			Name:        t.Name,
 			Description: t.Description,
 			Enabled:     !disabledTools[t.Name],
@@ -103,8 +103,8 @@ func (s *Model) IsActive() bool {
 // Cancel cancels the selector
 func (s *Model) Cancel() {
 	s.active = false
-	s.tools = []Item{}
-	s.filteredTools = []Item{}
+	s.tools = []item{}
+	s.filteredTools = []item{}
 	s.selectedIdx = 0
 	s.scrollOffset = 0
 	s.searchQuery = ""
@@ -144,7 +144,7 @@ func (s *Model) updateFilter() {
 		s.filteredTools = s.tools
 	} else {
 		query := strings.ToLower(s.searchQuery)
-		s.filteredTools = make([]Item, 0)
+		s.filteredTools = make([]item, 0)
 		for _, t := range s.tools {
 			// Fuzzy match: check if query chars appear in order
 			if selector.FuzzyMatch(strings.ToLower(t.Name), query) ||
@@ -161,7 +161,7 @@ func (s *Model) updateFilter() {
 // reloadToolStates reloads the enabled/disabled states from the current save level
 func (s *Model) reloadToolStates() {
 	// Load disabled tools from the current level (not merged)
-	levelDisabled := config.GetDisabledToolsAt(s.saveLevel == SaveLevelUser)
+	levelDisabled := config.GetDisabledToolsAt(s.saveLevel == saveLevelUser)
 
 	// Update disabledTools reference
 	// Clear and repopulate to maintain the same map reference
@@ -208,7 +208,7 @@ func (s *Model) Toggle() tea.Cmd {
 	}
 
 	// Save to settings (project or user level based on saveLevel)
-	_ = config.UpdateDisabledToolsAt(s.disabledTools, s.saveLevel == SaveLevelUser)
+	_ = config.UpdateDisabledToolsAt(s.disabledTools, s.saveLevel == saveLevelUser)
 
 	return func() tea.Msg {
 		return ToggleMsg{
@@ -229,10 +229,10 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		return nil
 	case tea.KeyTab:
 		// Toggle save level between project and user
-		if s.saveLevel == SaveLevelProject {
-			s.saveLevel = SaveLevelUser
+		if s.saveLevel == saveLevelProject {
+			s.saveLevel = saveLevelUser
 		} else {
-			s.saveLevel = SaveLevelProject
+			s.saveLevel = saveLevelProject
 		}
 		// Reload tool states from the new level
 		s.reloadToolStates()

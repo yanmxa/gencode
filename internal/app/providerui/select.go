@@ -15,18 +15,18 @@ func (s *Model) Select() tea.Cmd {
 
 	item := s.visibleItems[s.selectedIdx]
 	switch item.Kind {
-	case ItemModel:
+	case itemModel:
 		return s.selectModel(item.Model)
-	case ItemProvider:
+	case itemProvider:
 		return s.selectProvider(item)
-	case ItemAuthMethod:
+	case itemAuthMethod:
 		return s.selectAuthMethod(item)
 	default:
 		return nil
 	}
 }
 
-func (s *Model) selectModel(m *ModelItem) tea.Cmd {
+func (s *Model) selectModel(m *modelItem) tea.Cmd {
 	if m == nil {
 		return nil
 	}
@@ -44,7 +44,7 @@ func (s *Model) selectModel(m *ModelItem) tea.Cmd {
 // Connected single auth method: refresh models.
 // Disconnected single auth method: auto-connect or show API key input.
 // Multiple auth methods: expand inline to show auth method list.
-func (s *Model) selectProvider(item ListItem) tea.Cmd {
+func (s *Model) selectProvider(item listItem) tea.Cmd {
 	if item.Provider == nil {
 		return nil
 	}
@@ -74,7 +74,7 @@ func (s *Model) selectProvider(item ListItem) tea.Cmd {
 	return nil
 }
 
-func (s *Model) selectAuthMethod(item ListItem) tea.Cmd {
+func (s *Model) selectAuthMethod(item listItem) tea.Cmd {
 	if item.AuthMethod == nil {
 		return nil
 	}
@@ -89,7 +89,7 @@ func (s *Model) selectAuthMethod(item ListItem) tea.Cmd {
 }
 
 // tryConnectOrPromptKey connects if env vars are available, otherwise shows API key input.
-func (s *Model) tryConnectOrPromptKey(am AuthMethodItem, providerIdx, authIdx int) tea.Cmd {
+func (s *Model) tryConnectOrPromptKey(am authMethodItem, providerIdx, authIdx int) tea.Cmd {
 	if am.Status == coreprovider.StatusAvailable || isEnvReady(am.EnvVars) {
 		return s.connectAuthMethod(am, s.selectedIdx)
 	}
@@ -105,7 +105,7 @@ func (s *Model) tryConnectOrPromptKey(am AuthMethodItem, providerIdx, authIdx in
 	return nil
 }
 
-func (s *Model) findAuthMethodIndex(item ListItem) int {
+func (s *Model) findAuthMethodIndex(item listItem) int {
 	if item.AuthMethod == nil || item.ProviderIdx < 0 || item.ProviderIdx >= len(s.allProviders) {
 		return 0
 	}

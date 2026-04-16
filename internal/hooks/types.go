@@ -11,6 +11,35 @@ import (
 // EventType is an alias for core.EventType.
 type EventType = core.EventType
 
+// Application-layer hook events live in the hooks package.
+// They intentionally stay separate from core agent lifecycle events.
+const (
+	SessionStart       EventType = "SessionStart"
+	SessionEnd         EventType = "SessionEnd"
+	UserPromptSubmit   EventType = "UserPromptSubmit"
+	PreToolUse         EventType = "PreToolUse"
+	PostToolUse        EventType = "PostToolUse"
+	PostToolUseFailure EventType = "PostToolUseFailure"
+	PermissionRequest  EventType = "PermissionRequest"
+	PermissionDenied   EventType = "PermissionDenied"
+	Stop               EventType = "Stop"
+	StopFailure        EventType = "StopFailure"
+	Notification       EventType = "Notification"
+	SubagentStart      EventType = "SubagentStart"
+	SubagentStop       EventType = "SubagentStop"
+	Setup              EventType = "Setup"
+	TaskCreated        EventType = "TaskCreated"
+	TaskCompleted      EventType = "TaskCompleted"
+	ConfigChange       EventType = "ConfigChange"
+	InstructionsLoaded EventType = "InstructionsLoaded"
+	CwdChanged         EventType = "CwdChanged"
+	FileChanged        EventType = "FileChanged"
+	PreCompact         EventType = "PreCompact"
+	PostCompact        EventType = "PostCompact"
+	WorktreeCreate     EventType = "WorktreeCreate"
+	WorktreeRemove     EventType = "WorktreeRemove"
+)
+
 // HookInput is the JSON input passed to hook commands via stdin.
 type HookInput struct {
 	// Common fields

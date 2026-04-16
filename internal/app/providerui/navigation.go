@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
 func (s *Model) ensureVisible() {
@@ -21,7 +21,7 @@ func (s *Model) ensureVisible() {
 func (s *Model) MoveUp() {
 	for s.selectedIdx > 0 {
 		s.selectedIdx--
-		if s.visibleItems[s.selectedIdx].Kind != ItemProviderHeader {
+		if s.visibleItems[s.selectedIdx].Kind != itemProviderHeader {
 			break
 		}
 	}
@@ -31,18 +31,18 @@ func (s *Model) MoveUp() {
 func (s *Model) MoveDown() {
 	for s.selectedIdx < len(s.visibleItems)-1 {
 		s.selectedIdx++
-		if s.visibleItems[s.selectedIdx].Kind != ItemProviderHeader {
+		if s.visibleItems[s.selectedIdx].Kind != itemProviderHeader {
 			break
 		}
 	}
 	s.ensureVisible()
 }
 
-func (s *Model) switchTab(tab Tab) {
-	if tab == s.activeTab {
+func (s *Model) switchTab(t tab) {
+	if t == s.activeTab {
 		return
 	}
-	s.activeTab = tab
+	s.activeTab = t
 	s.resetNavigation()
 	s.resetModelSearch()
 	s.resetConnectionResult()

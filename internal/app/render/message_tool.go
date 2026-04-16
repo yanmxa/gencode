@@ -5,19 +5,19 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
 // ToolCallsParams holds the parameters for rendering tool calls.
 type ToolCallsParams struct {
-	ToolCalls         []message.ToolCall
+	ToolCalls         []core.ToolCall
 	ToolCallsExpanded bool
 	ResultMap         map[string]ToolResultData
 	ParallelMode      bool
 	ParallelResults   map[int]bool
 	TaskProgress      map[int][]string
-	PendingCalls      []message.ToolCall
+	PendingCalls      []core.ToolCall
 	CurrentIdx        int
 	SpinnerView       string
 	TaskOwnerMap      map[string]string
@@ -35,7 +35,7 @@ type ToolResultData struct {
 	ToolInput string
 }
 
-// RenderToolCalls renders the tool calls section of an assistant message.
+// RenderToolCalls renders the tool calls section of an assistant core.
 func RenderToolCalls(params ToolCallsParams) string {
 	var sb strings.Builder
 
@@ -97,7 +97,7 @@ func RenderToolCalls(params ToolCallsParams) string {
 	return sb.String()
 }
 
-func toolCallIcon(tc message.ToolCall, pendingCalls []message.ToolCall, currentIdx int, parallelMode bool, parallelResults map[int]bool, spinnerView string) string {
+func toolCallIcon(tc core.ToolCall, pendingCalls []core.ToolCall, currentIdx int, parallelMode bool, parallelResults map[int]bool, spinnerView string) string {
 	idx := -1
 	for i, pending := range pendingCalls {
 		if pending.ID == tc.ID {

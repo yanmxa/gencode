@@ -3,11 +3,11 @@ package app
 import (
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tracker"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 func TestSyncBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
@@ -19,14 +19,14 @@ func TestSyncBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 	})
 
 	m := newBaseModel(t.TempDir(), modelInfra{})
-	m.tool.PendingCalls = []message.ToolCall{
+	m.tool.PendingCalls = []core.ToolCall{
 		{ID: "call-1", Name: tool.ToolAgent, Input: `{"subagent_type":"Explore","description":"Directory audit","run_in_background":true,"prompt":"inspect"}`},
 		{ID: "call-2", Name: tool.ToolContinueAgent, Input: `{"subagent_type":"Plan","description":"Naming audit","run_in_background":true,"prompt":"continue"}`},
 	}
 
 	m.syncBackgroundTaskTracker(tooluiExecResultLike{
 		ToolName: tool.ToolAgent,
-		Result: message.ToolResult{
+		Result: core.ToolResult{
 			HookResponse: map[string]any{
 				"backgroundTask": map[string]any{
 					"taskId":      "bg-1",
@@ -39,7 +39,7 @@ func TestSyncBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 	})
 	m.syncBackgroundTaskTracker(tooluiExecResultLike{
 		ToolName: tool.ToolContinueAgent,
-		Result: message.ToolResult{
+		Result: core.ToolResult{
 			HookResponse: map[string]any{
 				"backgroundTask": map[string]any{
 					"taskId":      "bg-2",

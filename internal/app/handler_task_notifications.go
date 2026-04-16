@@ -8,10 +8,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
-	"github.com/yanmxa/gencode/internal/tracker"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 const taskNotificationTickInterval = 500 * time.Millisecond
@@ -60,29 +60,36 @@ func (m *model) handleTaskNotificationTick() tea.Cmd {
 
 func (m *model) injectTaskNotificationContinuation(item taskNotification) tea.Cmd {
 	if item.Notice != "" {
-		m.conv.Append(message.ChatMessage{
-			Role:    message.RoleNotice,
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleNotice,
 			Content: item.Notice,
 		})
 	}
 	if m.provider.LLM == nil {
 		if item.Notice == "" {
-			m.conv.Append(message.ChatMessage{
-				Role:    message.RoleNotice,
+			m.conv.Append(core.ChatMessage{
+				Role:    core.RoleNotice,
 				Content: "A background task completed, but no provider is connected.",
 			})
 		}
 		return tea.Batch(m.commitMessages()...)
 	}
 	if item.ContinuationPrompt == "" {
-		m.conv.Append(message.ChatMessage{
-			Role:    message.RoleNotice,
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleNotice,
 			Content: "A background task completed, but no task notification payload was available.",
 		})
 		return tea.Batch(m.commitMessages()...)
 	}
 
-	return m.startConversationStream(m.buildInternalContinuationRequest(taskNotificationContinuationContext(item), buildTaskNotificationContinuationPrompt(item)))
+	// Inject context as messages, then send the continuation prompt to the agent
+	for _, ctx := range taskNotificationContinuationContext(item) {
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleUser,
+			Content: ctx,
+		})
+	}
+	return m.sendToAgent(buildTaskNotificationContinuationPrompt(item), nil)
 }
 
 func backgroundTaskNotificationContext() []string {

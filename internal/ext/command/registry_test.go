@@ -6,88 +6,25 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/ext/skill"
 )
 
-func newTestSkillRegistry(t *testing.T, skills map[string]*skill.Skill) *skill.Registry {
-	t.Helper()
-	tmpDir := t.TempDir()
-	userStore, err := skill.NewStore(filepath.Join(tmpDir, "user-skills.json"))
-	if err != nil {
-		t.Fatalf("NewStore(user): %v", err)
-	}
-	projectStore, err := skill.NewStore(filepath.Join(tmpDir, "project-skills.json"))
-	if err != nil {
-		t.Fatalf("NewStore(project): %v", err)
-	}
-	return skill.NewRegistryForTest(skills, userStore, projectStore)
-}
+func TestGetMatchingCommands_IncludesDynamicProviders(t *testing.T) {
+	prevProviders := getDynamicInfoProviders()
+	t.Cleanup(func() { SetDynamicInfoProviders(prevProviders...) })
 
-func TestGetSkillCommands_OnlyEnabledAndIncludesArgumentHint(t *testing.T) {
-	prev := skill.DefaultRegistry
-	t.Cleanup(func() { skill.DefaultRegistry = prev })
-
-	skill.DefaultRegistry = newTestSkillRegistry(t, map[string]*skill.Skill{
-		"search": {
-			Name:         "search",
-			Description:  "Search files",
-			ArgumentHint: "<pattern>",
-			State:        skill.StateEnable,
-		},
-		"review": {
-			Name:        "review",
-			Description: "Review code",
-			State:       skill.StateActive,
-		},
-		"hidden": {
-			Name:        "hidden",
-			Description: "Hidden skill",
-			State:       skill.StateDisable,
-		},
+	SetDynamicInfoProviders(func() []Info {
+		return []Info{
+			{Name: "search", Description: "Search files <pattern>"},
+			{Name: "review", Description: "Review code"},
+		}
 	})
 
-	cmds := GetSkillCommands()
-	if len(cmds) != 2 {
-		t.Fatalf("expected 2 enabled skill commands, got %d", len(cmds))
+	matches := GetMatchingCommands("sea")
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 matching dynamic command, got %d", len(matches))
 	}
-
-	foundSearch := false
-	for _, cmd := range cmds {
-		if cmd.Name == "search" {
-			foundSearch = true
-			if cmd.Description != "Search files <pattern>" {
-				t.Errorf("search description = %q, want %q", cmd.Description, "Search files <pattern>")
-			}
-		}
-		if cmd.Name == "hidden" {
-			t.Fatal("disabled skill should not appear in slash command list")
-		}
-	}
-	if !foundSearch {
-		t.Fatal("expected enabled search skill in slash command list")
-	}
-}
-
-func TestIsSkillCommand_RejectsDisabledSkill(t *testing.T) {
-	prev := skill.DefaultRegistry
-	t.Cleanup(func() { skill.DefaultRegistry = prev })
-
-	skill.DefaultRegistry = newTestSkillRegistry(t, map[string]*skill.Skill{
-		"enabled": {
-			Name:  "enabled",
-			State: skill.StateEnable,
-		},
-		"disabled": {
-			Name:  "disabled",
-			State: skill.StateDisable,
-		},
-	})
-
-	if _, ok := IsSkillCommand("enabled"); !ok {
-		t.Fatal("expected enabled skill to be invocable as slash command")
-	}
-	if _, ok := IsSkillCommand("disabled"); ok {
-		t.Fatal("disabled skill should not be invocable as slash command")
+	if matches[0].Name != "search" {
+		t.Fatalf("unexpected dynamic command %q", matches[0].Name)
 	}
 }
 
@@ -228,14 +165,14 @@ func TestIsCustomCommand_MatchesCustomCommands(t *testing.T) {
 
 func TestGetMatchingCommands_IncludesCustomCommands(t *testing.T) {
 	prevReg := plugin.DefaultRegistry
-	prevSkill := skill.DefaultRegistry
+	prevProviders := getDynamicInfoProviders()
 	prevCache := cachedCustomCommands
 	t.Cleanup(func() {
 		plugin.DefaultRegistry = prevReg
-		skill.DefaultRegistry = prevSkill
+		SetDynamicInfoProviders(prevProviders...)
 		cachedCustomCommands = prevCache
 	})
-	skill.DefaultRegistry = nil
+	SetDynamicInfoProviders()
 	cachedCustomCommands = nil
 
 	tmpDir := setupPluginRegistryWithCommands(t)
@@ -273,15 +210,15 @@ func TestLoadCommandsFromDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmds := loadCommandsFromDir(cmdsDir, "", ScopeUser)
+	cmds := loadCommandsFromDir(cmdsDir, "", scopeUser)
 	if len(cmds) != 1 {
 		t.Fatalf("expected 1 command, got %d", len(cmds))
 	}
 	if cmds[0].Name != "lint" {
 		t.Errorf("name = %q, want %q", cmds[0].Name, "lint")
 	}
-	if cmds[0].Scope != ScopeUser {
-		t.Errorf("scope = %d, want %d (ScopeUser)", cmds[0].Scope, ScopeUser)
+	if cmds[0].Scope != scopeUser {
+		t.Errorf("scope = %d, want %d (scopeUser)", cmds[0].Scope, scopeUser)
 	}
 	if cmds[0].Namespace != "" {
 		t.Errorf("namespace = %q, want empty (user-level has no namespace)", cmds[0].Namespace)
@@ -289,7 +226,7 @@ func TestLoadCommandsFromDir(t *testing.T) {
 }
 
 func TestLoadCommandsFromDir_NonexistentDir(t *testing.T) {
-	cmds := loadCommandsFromDir("/nonexistent/path", "", ScopeProject)
+	cmds := loadCommandsFromDir("/nonexistent/path", "", scopeProject)
 	if len(cmds) != 0 {
 		t.Fatalf("expected 0 commands from nonexistent dir, got %d", len(cmds))
 	}
@@ -297,18 +234,18 @@ func TestLoadCommandsFromDir_NonexistentDir(t *testing.T) {
 
 func TestProjectCommandOverridesUser(t *testing.T) {
 	prevReg := plugin.DefaultRegistry
-	prevSkill := skill.DefaultRegistry
+	prevProviders := getDynamicInfoProviders()
 	prevCwd := commandCwd
 	prevCache := cachedCustomCommands
 	t.Cleanup(func() {
 		plugin.DefaultRegistry = prevReg
-		skill.DefaultRegistry = prevSkill
+		SetDynamicInfoProviders(prevProviders...)
 		commandCwd = prevCwd
 		cachedCustomCommands = prevCache
 	})
 	cachedCustomCommands = nil
 	plugin.DefaultRegistry = nil
-	skill.DefaultRegistry = nil
+	SetDynamicInfoProviders()
 
 	root := t.TempDir()
 
@@ -345,8 +282,8 @@ func TestProjectCommandOverridesUser(t *testing.T) {
 	if cmds[0].Description != "Project deploy" {
 		t.Errorf("description = %q, want %q (project should override user)", cmds[0].Description, "Project deploy")
 	}
-	if cmds[0].Scope != ScopeProject {
-		t.Errorf("scope = %d, want %d (ScopeProject)", cmds[0].Scope, ScopeProject)
+	if cmds[0].Scope != scopeProject {
+		t.Errorf("scope = %d, want %d (scopeProject)", cmds[0].Scope, scopeProject)
 	}
 }
 
@@ -361,7 +298,7 @@ func TestUserCommandWithoutNamespace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmds := loadCommandsFromDir(cmdsDir, "", ScopeUser)
+	cmds := loadCommandsFromDir(cmdsDir, "", scopeUser)
 	if len(cmds) != 1 {
 		t.Fatalf("expected 1 command, got %d", len(cmds))
 	}
@@ -372,18 +309,18 @@ func TestUserCommandWithoutNamespace(t *testing.T) {
 
 func TestIsCustomCommand_MatchesUserAndProjectCommands(t *testing.T) {
 	prevReg := plugin.DefaultRegistry
-	prevSkill := skill.DefaultRegistry
+	prevProviders := getDynamicInfoProviders()
 	prevCwd := commandCwd
 	prevCache := cachedCustomCommands
 	t.Cleanup(func() {
 		plugin.DefaultRegistry = prevReg
-		skill.DefaultRegistry = prevSkill
+		SetDynamicInfoProviders(prevProviders...)
 		commandCwd = prevCwd
 		cachedCustomCommands = prevCache
 	})
 	cachedCustomCommands = nil
 	plugin.DefaultRegistry = nil
-	skill.DefaultRegistry = nil
+	SetDynamicInfoProviders()
 
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "project")
@@ -409,48 +346,48 @@ func TestIsCustomCommand_MatchesUserAndProjectCommands(t *testing.T) {
 	if pc.Description != "Format code" {
 		t.Errorf("description = %q, want %q", pc.Description, "Format code")
 	}
-	if pc.Scope != ScopeProject {
-		t.Errorf("scope = %d, want %d (ScopeProject)", pc.Scope, ScopeProject)
+	if pc.Scope != scopeProject {
+		t.Errorf("scope = %d, want %d (scopeProject)", pc.Scope, scopeProject)
 	}
 }
 
 func TestPluginScopeMapping(t *testing.T) {
 	tests := []struct {
 		pluginScope plugin.Scope
-		want        CommandScope
+		want        commandScope
 	}{
-		{plugin.ScopeUser, ScopeUserPlugin},
-		{plugin.ScopeManaged, ScopeUserPlugin},
-		{plugin.ScopeProject, ScopeProjectPlugin},
-		{plugin.ScopeLocal, ScopeProjectPlugin},
+		{plugin.ScopeUser, scopeUserPlugin},
+		{plugin.ScopeManaged, scopeUserPlugin},
+		{plugin.ScopeProject, scopeProjectPlugin},
+		{plugin.ScopeLocal, scopeProjectPlugin},
 	}
 	for _, tt := range tests {
-		got := pluginScopeToCommandScope(tt.pluginScope)
+		got := pluginScopeTocommandScope(tt.pluginScope)
 		if got != tt.want {
-			t.Errorf("pluginScopeToCommandScope(%q) = %d, want %d", tt.pluginScope, got, tt.want)
+			t.Errorf("pluginScopeTocommandScope(%q) = %d, want %d", tt.pluginScope, got, tt.want)
 		}
 	}
 }
 
-func TestCustomCommandScopeFromRegistry(t *testing.T) {
+func TestCustomcommandScopeFromRegistry(t *testing.T) {
 	prevReg := plugin.DefaultRegistry
-	prevSkill := skill.DefaultRegistry
+	prevProviders := getDynamicInfoProviders()
 	prevCwd := commandCwd
 	prevCache := cachedCustomCommands
 	t.Cleanup(func() {
 		plugin.DefaultRegistry = prevReg
-		skill.DefaultRegistry = prevSkill
+		SetDynamicInfoProviders(prevProviders...)
 		commandCwd = prevCwd
 		cachedCustomCommands = prevCache
 	})
 	cachedCustomCommands = nil
-	skill.DefaultRegistry = nil
+	SetDynamicInfoProviders()
 	commandCwd = ""
 
 	tmpDir := setupPluginRegistryWithCommands(t)
 
 	plugin.DefaultRegistry = plugin.NewRegistry()
-	// LoadFromPath uses ScopeLocal → should map to ScopeProjectPlugin
+	// LoadFromPath uses ScopeLocal → should map to scopeProjectPlugin
 	if err := plugin.DefaultRegistry.LoadFromPath(nil, filepath.Join(tmpDir, "myplugin")); err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +400,7 @@ func TestCustomCommandScopeFromRegistry(t *testing.T) {
 	if !ok {
 		t.Fatal("expected plugin command to be found")
 	}
-	if pc.Scope != ScopeProjectPlugin {
-		t.Errorf("scope = %d, want %d (ScopeProjectPlugin for ScopeLocal plugin)", pc.Scope, ScopeProjectPlugin)
+	if pc.Scope != scopeProjectPlugin {
+		t.Errorf("scope = %d, want %d (scopeProjectPlugin for ScopeLocal plugin)", pc.Scope, scopeProjectPlugin)
 	}
 }

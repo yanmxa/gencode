@@ -122,7 +122,7 @@ func TestManager_Cleanup(t *testing.T) {
 	task.mu.Unlock()
 
 	// Cleanup tasks older than 1 hour
-	m.Cleanup(time.Hour)
+	m.cleanup(time.Hour)
 
 	_, ok := m.Get(task.ID)
 	if ok {
@@ -143,7 +143,7 @@ func TestManager_CleanupKeepsRecent(t *testing.T) {
 	task.Complete(0, nil)
 
 	// Cleanup with 1 hour threshold - task just completed so should be kept
-	m.Cleanup(time.Hour)
+	m.cleanup(time.Hour)
 
 	_, ok := m.Get(task.ID)
 	if !ok {
@@ -163,7 +163,7 @@ func TestManager_CleanupKeepsRunning(t *testing.T) {
 	task := m.CreateBashTask(cmd, "echo test", "Test task", ctx, cancel)
 
 	// Don't complete, keep it running
-	m.Cleanup(0) // Cleanup all old tasks
+	m.cleanup(0) // Cleanup all old tasks
 
 	_, ok := m.Get(task.ID)
 	if !ok {
@@ -224,7 +224,7 @@ func TestManager_GetBashTask(t *testing.T) {
 
 	created := m.CreateBashTask(cmd, "echo test", "Test task", ctx, cancel)
 
-	task, ok := m.GetBashTask(created.ID)
+	task, ok := m.getBashTask(created.ID)
 	if !ok {
 		t.Error("should find bash task")
 	}

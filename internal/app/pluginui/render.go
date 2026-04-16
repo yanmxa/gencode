@@ -7,8 +7,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	coreplugin "github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/ui/selector"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/selector"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
 
@@ -18,7 +18,7 @@ func (s *Model) Render() string {
 	}
 
 	switch s.level {
-	case LevelDetail:
+	case levelDetail:
 		if s.detailPlugin != nil {
 			return s.renderInstalledDetail()
 		}
@@ -28,9 +28,9 @@ func (s *Model) Render() string {
 		if s.detailMarketplace != nil {
 			return s.renderMarketplaceDetail()
 		}
-	case LevelAddMarketplace:
+	case levelAddMarketplace:
 		return s.renderAddMarketplaceDialog()
-	case LevelBrowsePlugins:
+	case levelBrowsePlugins:
 		return s.renderBrowsePlugins()
 	}
 
@@ -85,9 +85,9 @@ func (s *Model) renderTabs() string {
 		name string
 		tab  Tab
 	}{
-		{"Discover", TabDiscover},
-		{"Installed", TabInstalled},
-		{"Marketplaces", TabMarketplaces},
+		{"Discover", tabDiscover},
+		{"Installed", tabInstalled},
+		{"Marketplaces", tabMarketplaces},
 	}
 
 	var parts []string
@@ -113,11 +113,11 @@ func (s *Model) renderSearchBox(sb *strings.Builder) {
 		text = fmt.Sprintf(" 🔍 %s▏ (%d/%d)", s.searchQuery, pos, total)
 	} else {
 		switch s.activeTab {
-		case TabDiscover:
+		case tabDiscover:
 			text = " 🔍 Type to filter plugins..."
-		case TabInstalled:
+		case tabInstalled:
 			text = " 🔍 Type to filter installed..."
-		case TabMarketplaces:
+		case tabMarketplaces:
 			text = " 🔍 Type to filter marketplaces..."
 		}
 	}
@@ -155,11 +155,11 @@ func (s *Model) renderTabList() string {
 	// Tab content
 	var body strings.Builder
 	switch s.activeTab {
-	case TabInstalled:
+	case tabInstalled:
 		s.renderInstalledList(&body)
-	case TabDiscover:
+	case tabDiscover:
 		s.renderDiscoverList(&body)
-	case TabMarketplaces:
+	case tabMarketplaces:
 		s.renderMarketplacesList(&body)
 	}
 	sb.WriteString(s.renderViewport(body.String(), 0))
@@ -175,7 +175,7 @@ func (s *Model) renderTabList() string {
 
 func (s *Model) getItemCount() (int, int) {
 	total := len(s.filteredItems)
-	if s.activeTab == TabMarketplaces {
+	if s.activeTab == tabMarketplaces {
 		total++
 	}
 	pos := s.selectedIdx + 1
@@ -187,11 +187,11 @@ func (s *Model) getItemCount() (int, int) {
 
 func (s *Model) getTabHint() string {
 	switch s.activeTab {
-	case TabInstalled:
+	case tabInstalled:
 		return "←/→ tabs · ↑/↓ navigate · space toggle · enter details · esc close"
-	case TabDiscover:
+	case tabDiscover:
 		return "←/→ tabs · ↑/↓ navigate · enter details · esc close"
-	case TabMarketplaces:
+	case tabMarketplaces:
 		return "←/→ tabs · ↑/↓ navigate · u update · r remove · esc close"
 	}
 	return ""
@@ -225,7 +225,7 @@ func (s *Model) renderInstalledList(sb *strings.Builder) {
 	}
 
 	for i := s.scrollOffset; i < endIdx; i++ {
-		p, ok := s.filteredItems[i].(PluginItem)
+		p, ok := s.filteredItems[i].(pluginItem)
 		if !ok {
 			continue
 		}
@@ -290,7 +290,7 @@ func (s *Model) renderDiscoverList(sb *strings.Builder) {
 
 	cw := s.contentWidth()
 	for i := s.scrollOffset; i < endIdx; i++ {
-		p, ok := s.filteredItems[i].(DiscoverPluginItem)
+		p, ok := s.filteredItems[i].(discoverPluginItem)
 		if !ok {
 			continue
 		}
@@ -351,7 +351,7 @@ func (s *Model) renderMarketplacesList(sb *strings.Builder) {
 	endIdx := min(s.scrollOffset+visible, len(s.filteredItems))
 
 	for i := s.scrollOffset; i < endIdx; i++ {
-		m, ok := s.filteredItems[i].(MarketplaceItem)
+		m, ok := s.filteredItems[i].(marketplaceItem)
 		if !ok {
 			continue
 		}
@@ -751,7 +751,7 @@ func pluginStatusIconAndStyle(enabled bool) (string, lipgloss.Style) {
 	return "○", selector.SelectorStatusNone
 }
 
-func buildComponentList(p *PluginItem) []string {
+func buildComponentList(p *pluginItem) []string {
 	type componentCount struct {
 		icon  string
 		name  string

@@ -11,17 +11,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tracker"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 func handleClearCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	// Cancel any active stream and tool execution before clearing state
-	if m.agentSess != nil && m.agentSess.cancel != nil {
+	// Cancel any active agent session and tool execution before clearing state
+	if m.agentSess != nil {
 		m.agentSess.stop()
 		m.agentSess = nil
-	}
-	if m.conv.Stream.Cancel != nil {
-		m.conv.Stream.Cancel()
 	}
 	m.conv.Stream.Stop()
 	if m.tool.Cancel != nil {

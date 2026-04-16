@@ -191,9 +191,9 @@ func (t *AgentTask) Complete(err error) {
 	notifyTaskCompleted(t.GetStatus())
 }
 
-// MarkKilled marks the task as killed (internal use).
+// markKilled marks the task as killed (internal use).
 // Closes the done channel and subscriber channels so WaitForCompletion unblocks.
-func (t *AgentTask) MarkKilled() {
+func (t *AgentTask) markKilled() {
 	t.mu.Lock()
 	t.Status = StatusKilled
 	t.EndTime = time.Now()
@@ -239,7 +239,7 @@ func (t *AgentTask) Kill() error {
 	if t.cancel != nil {
 		t.cancel()
 	}
-	t.MarkKilled()
+	t.markKilled()
 	return nil
 }
 

@@ -3,7 +3,7 @@ package queue
 import (
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 func TestEnqueueDequeue(t *testing.T) {
@@ -38,7 +38,7 @@ func TestEnqueueDequeue(t *testing.T) {
 func TestEnqueueWithImages(t *testing.T) {
 	var q Queue
 
-	images := []message.ImageData{{FileName: "test.png"}}
+	images := []core.Image{{FileName: "test.png"}}
 	q.Enqueue("with image", images)
 
 	item, ok := q.Dequeue()
@@ -57,7 +57,7 @@ func TestRemove(t *testing.T) {
 	id2 := q.Enqueue("b", nil)
 	q.Enqueue("c", nil)
 
-	if !q.Remove(id2) {
+	if !q.remove(id2) {
 		t.Fatal("expected Remove to return true")
 	}
 	if q.Len() != 2 {
@@ -78,7 +78,7 @@ func TestRemove(t *testing.T) {
 func TestRemoveNotFound(t *testing.T) {
 	var q Queue
 	q.Enqueue("a", nil)
-	if q.Remove(999) {
+	if q.remove(999) {
 		t.Fatal("expected Remove to return false for non-existent ID")
 	}
 }

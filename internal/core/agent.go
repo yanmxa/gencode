@@ -86,16 +86,17 @@ type Agent interface {
 // Required fields: LLM, System, Tools. NewAgent panics if any is nil.
 // Optional fields: Hooks, Permission, ID, CWD, MaxTurns, InboxBuf, OutboxBuf.
 type Config struct {
-	ID         string
-	LLM        LLM            // required: inference backend
-	System     System         // required: system prompt layers
-	Tools      Tools          // required: available tools
-	Hooks      Hooks          // optional: event handlers
-	Permission PermissionFunc // optional: called before each tool execution (runs before PreTool hooks)
-	CWD        string
-	MaxTurns   int // max LLM inference rounds per cycle, 0 = unlimited
-	InboxBuf   int // inbox channel buffer size, default 16
-	OutboxBuf  int // outbox channel buffer size, default 64
+	ID                string
+	LLM               LLM            // required: inference backend
+	System             System         // required: system prompt layers
+	Tools              Tools          // required: available tools
+	Hooks              Hooks          // optional: event handlers
+	Permission         PermissionFunc // optional: called before each tool execution (runs before PreTool hooks)
+	CWD                string
+	MaxTurns           int // max LLM inference rounds per cycle, 0 = unlimited
+	MaxOutputRecovery  int // max retries on truncated output, 0 = use default (3)
+	InboxBuf           int // inbox channel buffer size, default 16
+	OutboxBuf          int // outbox channel buffer size, default 64
 }
 
 // NewAgent creates an agent from config.
@@ -120,26 +121,29 @@ func NewAgent(cfg Config) Agent {
 		cfg.OutboxBuf = 64
 	}
 	return &agent{
-		id:         cfg.ID,
-		system:     cfg.System,
-		tools:      cfg.Tools,
-		hooks:      cfg.Hooks,
-		permission: cfg.Permission,
-		llm:        cfg.LLM,
-		cwd:        cfg.CWD,
-		maxTurns:   cfg.MaxTurns,
-		inbox:      make(chan Message, cfg.InboxBuf),
-		outbox:     make(chan Event, cfg.OutboxBuf),
+		id:                cfg.ID,
+		system:            cfg.System,
+		tools:             cfg.Tools,
+		hooks:             cfg.Hooks,
+		permission:        cfg.Permission,
+		llm:               cfg.LLM,
+		cwd:               cfg.CWD,
+		maxTurns:          cfg.MaxTurns,
+		maxOutputRecovery: cfg.MaxOutputRecovery,
+		inbox:             make(chan Message, cfg.InboxBuf),
+		outbox:            make(chan Event, cfg.OutboxBuf),
 	}
 }
 
 // Result represents the outcome of one completed turn (end_turn).
 // Emitted to Outbox as Event{Type: OnTurn, Data: result}.
 type Result struct {
-	Content   string    // final text output of this turn
-	Messages  []Message // full conversation history
-	Turns     int       // LLM inference rounds in this cycle
-	ToolUses  int       // tool calls in this cycle
-	TokensIn  int       // input tokens consumed
-	TokensOut int       // output tokens produced
+	Content    string     // final text output of this turn
+	Messages   []Message  // full conversation history
+	Turns      int        // LLM inference rounds in this cycle
+	ToolUses   int        // tool calls in this cycle
+	TokensIn   int        // input tokens consumed
+	TokensOut  int        // output tokens produced
+	StopReason StopReason // why the loop stopped
+	StopDetail string     // human-readable detail (e.g. hook block reason)
 }

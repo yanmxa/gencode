@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 func Test_extractIntField(t *testing.T) {
@@ -90,7 +90,7 @@ func Test_extractToolArgsPreservesFullCommand(t *testing.T) {
 
 func TestRenderToolCallsUsesEightyPercentWidth(t *testing.T) {
 	params := ToolCallsParams{
-		ToolCalls: []message.ToolCall{{
+		ToolCalls: []core.ToolCall{{
 			ID:    "tc-1",
 			Name:  "Bash",
 			Input: `{"command":"cd /Users/myan/Workspace/ideas/gencode && git describe --tags --abbrev=0 2>/dev/null"}`,
@@ -110,13 +110,13 @@ func TestRenderToolCallsUsesEightyPercentWidth(t *testing.T) {
 
 func TestRenderToolCallsShowsRunningStateForPendingBash(t *testing.T) {
 	params := ToolCallsParams{
-		ToolCalls: []message.ToolCall{{
+		ToolCalls: []core.ToolCall{{
 			ID:    "tc-1",
 			Name:  "Bash",
 			Input: `{"command":"find /Users/myan -name test"}`,
 		}},
 		ResultMap: map[string]ToolResultData{},
-		PendingCalls: []message.ToolCall{{
+		PendingCalls: []core.ToolCall{{
 			ID:    "tc-1",
 			Name:  "Bash",
 			Input: `{"command":"find /Users/myan -name test"}`,
@@ -137,13 +137,13 @@ func TestRenderToolCallsShowsRunningStateForPendingBash(t *testing.T) {
 
 func TestRenderToolCallsShowsGapForPendingAgent(t *testing.T) {
 	params := ToolCallsParams{
-		ToolCalls: []message.ToolCall{{
+		ToolCalls: []core.ToolCall{{
 			ID:    "tc-1",
 			Name:  "Agent",
 			Input: `{"subagent_type":"Explore","description":"HA code structure","prompt":"Inspect the codebase"}`,
 		}},
 		ResultMap: map[string]ToolResultData{},
-		PendingCalls: []message.ToolCall{{
+		PendingCalls: []core.ToolCall{{
 			ID:    "tc-1",
 			Name:  "Agent",
 			Input: `{"subagent_type":"Explore","description":"HA code structure","prompt":"Inspect the codebase"}`,

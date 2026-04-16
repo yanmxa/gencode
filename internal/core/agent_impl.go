@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -13,16 +14,17 @@ import (
 
 // agent is the default Agent implementation.
 type agent struct {
-	id         string
-	system     System
-	tools      Tools
-	hooks      Hooks
-	permission PermissionFunc
-	llm        LLM
-	cwd        string
-	maxTurns   int
-	inbox      chan Message
-	outbox     chan Event
+	id                string
+	system            System
+	tools             Tools
+	hooks             Hooks
+	permission        PermissionFunc
+	llm               LLM
+	cwd               string
+	maxTurns          int
+	maxOutputRecovery int
+	inbox             chan Message
+	outbox            chan Event
 
 	mu       sync.RWMutex
 	messages []Message // conversation history
@@ -30,13 +32,13 @@ type agent struct {
 	closed atomic.Bool // guards outbox writes after close
 }
 
-func (a *agent) ID() string           { return a.id }
-func (a *agent) System() System       { return a.system }
-func (a *agent) Tools() Tools         { return a.tools }
-func (a *agent) Hooks() Hooks         { return a.hooks }
+func (a *agent) ID() string            { return a.id }
+func (a *agent) System() System        { return a.system }
+func (a *agent) Tools() Tools          { return a.tools }
+func (a *agent) Hooks() Hooks          { return a.hooks }
 func (a *agent) Inbox() chan<- Message { return a.inbox }
 func (a *agent) Outbox() <-chan Event  { return a.outbox }
-func (a *agent) Messages() []Message  { return a.snapshot() }
+func (a *agent) Messages() []Message   { return a.snapshot() }
 
 func (a *agent) SetMessages(msgs []Message) {
 	a.mu.Lock()
@@ -86,6 +88,10 @@ func (a *agent) Run(ctx context.Context) error {
 
 var errStopped = errors.New("stopped")
 
+// TruncatedResumePrompt is injected when generation stops at the output limit
+// and the caller wants the model to continue in the next turn.
+const TruncatedResumePrompt = "Your response was truncated due to output token limits. Resume directly from where you left off. Do not repeat any content."
+
 // waitForInput blocks until at least one message arrives, then drains remaining.
 func (a *agent) waitForInput(ctx context.Context) error {
 	// Block until first message
@@ -124,9 +130,15 @@ func (a *agent) ingest(ctx context.Context, msg Message) {
 // thinkAct runs the LLM inference loop until end_turn.
 func (a *agent) thinkAct(ctx context.Context) error {
 	var turns, toolUses, tokensIn, tokensOut int
+	var maxOutputRecoveryCount int
 
 	for {
 		if ctx.Err() != nil {
+			a.emit(ctx, TurnEvent(a.id, Result{
+				Messages: a.snapshot(),
+				Turns: turns, ToolUses: toolUses, TokensIn: tokensIn, TokensOut: tokensOut,
+				StopReason: StopCancelled,
+			}))
 			return ctx.Err()
 		}
 
@@ -135,6 +147,7 @@ func (a *agent) thinkAct(ctx context.Context) error {
 			a.emit(ctx, TurnEvent(a.id, Result{
 				Content: "max turns reached", Messages: a.snapshot(),
 				Turns: turns, ToolUses: toolUses, TokensIn: tokensIn, TokensOut: tokensOut,
+				StopReason: StopMaxTurns,
 			}))
 			break
 		}
@@ -149,6 +162,12 @@ func (a *agent) thinkAct(ctx context.Context) error {
 		// PreInfer hook — can inject context, block, or compact (via SetMessages)
 		action := a.fire(ctx, PreInferEvent(a.id))
 		if action.Block {
+			a.emit(ctx, TurnEvent(a.id, Result{
+				Messages: a.snapshot(),
+				Turns: turns, ToolUses: toolUses, TokensIn: tokensIn, TokensOut: tokensOut,
+				StopReason: StopHook,
+				StopDetail: action.Reason,
+			}))
 			break
 		}
 		if action.Inject != "" {
@@ -174,24 +193,38 @@ func (a *agent) thinkAct(ctx context.Context) error {
 			Role: RoleAssistant, From: a.id,
 			Content: resp.Content, Thinking: resp.Thinking,
 			ThinkingSignature: resp.ThinkingSignature,
-			ToolCalls: resp.ToolCalls,
+			ToolCalls:         resp.ToolCalls,
 		})
 
 		// Max tokens recovery — output truncated, ask LLM to continue
 		if resp.StopReason == StopMaxTokens && len(resp.ToolCalls) == 0 {
-			a.append(Message{Role: RoleUser, From: "system", Content: continuePrompt})
+			maxRecovery := a.maxOutputRecovery
+			if maxRecovery <= 0 {
+				maxRecovery = 3
+			}
+			if maxOutputRecoveryCount >= maxRecovery {
+				a.emit(ctx, TurnEvent(a.id, Result{
+					Content: resp.Content, Messages: a.snapshot(),
+					Turns: turns, ToolUses: toolUses, TokensIn: tokensIn, TokensOut: tokensOut,
+					StopReason: StopMaxOutputRecoveryExhausted,
+				}))
+				break
+			}
+			maxOutputRecoveryCount++
+			a.append(Message{Role: RoleUser, From: "system", Content: TruncatedResumePrompt})
 			continue
 		}
 
 		// No tool calls → end turn
 		if len(resp.ToolCalls) == 0 {
 			a.emit(ctx, TurnEvent(a.id, Result{
-				Content:   resp.Content,
-				Messages:  a.snapshot(),
-				Turns:     turns,
-				ToolUses:  toolUses,
-				TokensIn:  tokensIn,
-				TokensOut: tokensOut,
+				Content:    resp.Content,
+				Messages:   a.snapshot(),
+				Turns:      turns,
+				ToolUses:   toolUses,
+				TokensIn:   tokensIn,
+				TokensOut:  tokensOut,
+				StopReason: StopEndTurn,
 			}))
 			break
 		}
@@ -202,8 +235,6 @@ func (a *agent) thinkAct(ctx context.Context) error {
 
 	return nil
 }
-
-const continuePrompt = "Your response was truncated. Continue from where you left off. Do not repeat what you already said."
 
 // execTools runs tool calls in three phases:
 //  1. Permission check (runs first) + PreTool hooks — sequential
@@ -233,7 +264,9 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 			continue
 		}
 		if action.Modify != nil {
-			tc.Input = action.Modify
+			if modifiedJSON, err := json.Marshal(action.Modify); err == nil {
+				tc.Input = string(modifiedJSON)
+			}
 		}
 		t := a.tools.Get(tc.Name)
 		if t == nil {
@@ -260,7 +293,9 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 					results[0] = output{"", fmt.Errorf("tool %s panicked: %v", tasks[0].call.Name, r)}
 				}
 			}()
-			content, err := tasks[0].tool.Execute(ctx, tasks[0].call.Input)
+			params, _ := ParseToolInput(tasks[0].call.Input)
+			execCtx := WithToolCallID(ctx, tasks[0].call.ID)
+			content, err := tasks[0].tool.Execute(execCtx, params)
 			results[0] = output{content, err}
 		}()
 	} else {
@@ -275,7 +310,9 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 						results[i] = output{"", fmt.Errorf("tool %s panicked: %v", t.call.Name, r)}
 					}
 				}()
-				content, err := t.tool.Execute(ctx, t.call.Input)
+				params, _ := ParseToolInput(t.call.Input)
+				execCtx := WithToolCallID(ctx, t.call.ID)
+				content, err := t.tool.Execute(execCtx, params)
 				results[i] = output{content, err}
 			}(i, t)
 		}
@@ -300,6 +337,25 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 		}))
 	}
 	return toolUses
+}
+
+// --- context keys ---
+
+type contextKey string
+
+const toolCallIDKey contextKey = "tool_call_id"
+
+// WithToolCallID returns a context carrying the given tool call ID.
+func WithToolCallID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, toolCallIDKey, id)
+}
+
+// ToolCallIDFromContext extracts the tool call ID from the context.
+func ToolCallIDFromContext(ctx context.Context) string {
+	if id, ok := ctx.Value(toolCallIDKey).(string); ok {
+		return id
+	}
+	return ""
 }
 
 // --- internals ---

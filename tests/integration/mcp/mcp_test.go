@@ -13,7 +13,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/ext/mcp/transport"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 // ---------------------------------------------------------------------------
@@ -1097,7 +1097,7 @@ func TestRealMCP_Registry_EndToEnd(t *testing.T) {
 	defer registry.DisconnectAll()
 
 	// Tool schemas — wait for async tool list to populate
-	var schemas []message.ToolSchema
+	var schemas []core.ToolSchema
 	for range 20 {
 		schemas = registry.GetToolSchemas()
 		if len(schemas) > 0 {

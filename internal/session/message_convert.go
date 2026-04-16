@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 var inlineImageTokenPattern = regexp.MustCompile(`\[Image #(\d+)\]`)
 
-func messagesToEntries(msgs []message.Message) []Entry {
+func messagesToEntries(msgs []core.Message) []Entry {
 	entries := make([]Entry, 0, len(msgs))
 	var prevUUID string
 
@@ -33,14 +33,14 @@ func messagesToEntries(msgs []message.Message) []Entry {
 		}
 
 		switch msg.Role {
-		case message.RoleUser:
+		case core.RoleUser:
 			entry.Type = EntryUser
 			if msg.ToolResult != nil {
 				entry.Message = &EntryMessage{Role: "user", Content: toolResultToBlocks(msg.ToolResult)}
 			} else {
 				entry.Message = &EntryMessage{Role: "user", Content: userContentToBlocks(msg.Content, msg.DisplayContent, msg.Images)}
 			}
-		case message.RoleAssistant:
+		case core.RoleAssistant:
 			entry.Type = EntryAssistant
 			entry.Message = &EntryMessage{
 				Role:    "assistant",
@@ -57,7 +57,7 @@ func messagesToEntries(msgs []message.Message) []Entry {
 	return entries
 }
 
-func EntriesToMessages(entries []Entry) []message.Message {
+func EntriesToMessages(entries []Entry) []core.Message {
 	toolNameMap := make(map[string]string)
 	for _, entry := range entries {
 		if entry.Type == EntryAssistant && entry.Message != nil {
@@ -69,11 +69,11 @@ func EntriesToMessages(entries []Entry) []message.Message {
 		}
 	}
 
-	msgs := make([]message.Message, 0, len(entries))
+	msgs := make([]core.Message, 0, len(entries))
 	for _, entry := range entries {
 		switch entry.Type {
 		case EntryUser:
-			msg := message.Message{Role: message.RoleUser}
+			msg := core.Message{Role: core.RoleUser}
 			if entry.Message != nil {
 				extractUserContent(entry.Message.Content, &msg)
 			}
@@ -84,7 +84,7 @@ func EntriesToMessages(entries []Entry) []message.Message {
 			}
 			msgs = append(msgs, msg)
 		case EntryAssistant:
-			msg := message.Message{Role: message.RoleAssistant}
+			msg := core.Message{Role: core.RoleAssistant}
 			if entry.Message != nil {
 				extractAssistantContent(entry.Message.Content, &msg)
 			}
@@ -94,7 +94,7 @@ func EntriesToMessages(entries []Entry) []message.Message {
 	return msgs
 }
 
-func userContentToBlocks(content, displayContent string, images []message.ImageData) []ContentBlock {
+func userContentToBlocks(content, displayContent string, images []core.Image) []ContentBlock {
 	if len(images) > 0 && displayContent != "" && inlineImageTokenPattern.MatchString(displayContent) {
 		return interleavedUserContentToBlocks(content, displayContent, images)
 	}
@@ -112,11 +112,11 @@ func userContentToBlocks(content, displayContent string, images []message.ImageD
 	return blocks
 }
 
-func interleavedUserContentToBlocks(content, displayContent string, images []message.ImageData) []ContentBlock {
+func interleavedUserContentToBlocks(content, displayContent string, images []core.Image) []ContentBlock {
 	var blocks []ContentBlock
 	last := 0
 
-	idToIdx := message.BuildImageIDMap(displayContent, len(images))
+	idToIdx := core.BuildImageIDMap(displayContent, len(images))
 
 	matches := inlineImageTokenPattern.FindAllStringSubmatchIndex(displayContent, -1)
 	for _, match := range matches {
@@ -154,7 +154,7 @@ func interleavedUserContentToBlocks(content, displayContent string, images []mes
 }
 
 
-func assistantContentToBlocks(content, thinking, thinkingSignature string, toolCalls []message.ToolCall) []ContentBlock {
+func assistantContentToBlocks(content, thinking, thinkingSignature string, toolCalls []core.ToolCall) []ContentBlock {
 	var blocks []ContentBlock
 	if thinking != "" {
 		blocks = append(blocks, ContentBlock{Type: "thinking", Thinking: thinking, Signature: thinkingSignature})
@@ -172,7 +172,7 @@ func assistantContentToBlocks(content, thinking, thinkingSignature string, toolC
 	return blocks
 }
 
-func toolResultToBlocks(tr *message.ToolResult) []ContentBlock {
+func toolResultToBlocks(tr *core.ToolResult) []ContentBlock {
 	block := ContentBlock{Type: "tool_result", ToolUseID: tr.ToolCallID, IsError: tr.IsError}
 	if tr.Content != "" {
 		block.Content = []ContentBlock{{Type: "text", Text: tr.Content}}
@@ -189,7 +189,7 @@ func ExtractLastUserText(entries []Entry) string {
 	return ""
 }
 
-func extractUserContent(blocks []ContentBlock, msg *message.Message) {
+func extractUserContent(blocks []ContentBlock, msg *core.Message) {
 	imageCount := 0
 	var display strings.Builder
 	var content strings.Builder
@@ -201,12 +201,12 @@ func extractUserContent(blocks []ContentBlock, msg *message.Message) {
 			display.WriteString(block.Text)
 		case "image":
 			if block.Source != nil {
-				msg.Images = append(msg.Images, message.ImageData{MediaType: block.Source.MediaType, Data: block.Source.Data})
+				msg.Images = append(msg.Images, core.Image{MediaType: block.Source.MediaType, Data: block.Source.Data})
 				imageCount++
 				display.WriteString(fmt.Sprintf("[Image #%d]", imageCount))
 			}
 		case "tool_result":
-			tr := &message.ToolResult{ToolCallID: block.ToolUseID, IsError: block.IsError}
+			tr := &core.ToolResult{ToolCallID: block.ToolUseID, IsError: block.IsError}
 			for _, sub := range block.Content {
 				if sub.Type == "text" {
 					tr.Content = sub.Text
@@ -222,7 +222,7 @@ func extractUserContent(blocks []ContentBlock, msg *message.Message) {
 	}
 }
 
-func extractAssistantContent(blocks []ContentBlock, msg *message.Message) {
+func extractAssistantContent(blocks []ContentBlock, msg *core.Message) {
 	var content strings.Builder
 	for _, block := range blocks {
 		switch block.Type {
@@ -232,7 +232,7 @@ func extractAssistantContent(blocks []ContentBlock, msg *message.Message) {
 			msg.Thinking = block.Thinking
 			msg.ThinkingSignature = block.Signature
 		case "tool_use":
-			tc := message.ToolCall{ID: block.ID, Name: block.Name}
+			tc := core.ToolCall{ID: block.ID, Name: block.Name}
 			if block.Input != nil {
 				tc.Input = string(block.Input)
 			}

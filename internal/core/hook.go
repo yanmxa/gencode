@@ -22,36 +22,6 @@ const (
 	OnTurn    EventType = "Turn"       // think+act cycle completed (Result in Data)
 )
 
-// Application-layer lifecycle events (Claude Code compatible).
-// These are passed through by the core hooks system but have no
-// special meaning at the core level.
-const (
-	SessionStart       EventType = "SessionStart"       // matcher: startup, resume, clear, compact
-	SessionEnd         EventType = "SessionEnd"         // matcher: reason
-	UserPromptSubmit   EventType = "UserPromptSubmit"   // no matcher
-	PreToolUse         EventType = "PreToolUse"         // matcher: tool name
-	PostToolUse        EventType = "PostToolUse"        // matcher: tool name
-	PostToolUseFailure EventType = "PostToolUseFailure" // matcher: tool name
-	PermissionRequest  EventType = "PermissionRequest"  // matcher: tool name
-	PermissionDenied   EventType = "PermissionDenied"   // matcher: tool name
-	Stop               EventType = "Stop"               // no matcher — app-level stop (distinct from core OnStop)
-	StopFailure        EventType = "StopFailure"        // no matcher
-	Notification       EventType = "Notification"       // matcher: notification_type
-	SubagentStart      EventType = "SubagentStart"      // matcher: agent_type
-	SubagentStop       EventType = "SubagentStop"       // matcher: agent_type
-	Setup              EventType = "Setup"              // matcher: init, maintenance
-	TaskCreated        EventType = "TaskCreated"        // matcher: task subject
-	TaskCompleted      EventType = "TaskCompleted"      // matcher: task subject
-	ConfigChange       EventType = "ConfigChange"       // matcher: config source
-	InstructionsLoaded EventType = "InstructionsLoaded" // matcher: file path
-	CwdChanged         EventType = "CwdChanged"         // matcher: new cwd
-	FileChanged        EventType = "FileChanged"        // matcher: file path
-	PreCompact         EventType = "PreCompact"         // matcher: manual, auto
-	PostCompact        EventType = "PostCompact"        // matcher: manual, auto
-	WorktreeCreate     EventType = "WorktreeCreate"     // matcher: worktree name/slug
-	WorktreeRemove     EventType = "WorktreeRemove"     // matcher: worktree path
-)
-
 // Event carries context for a hook invocation.
 // Also emitted to Outbox for external observation.
 type Event struct {
@@ -120,12 +90,16 @@ func (e Event) Error() (error, bool)             { err, ok := e.Data.(error); re
 
 // Typed event constructors — enforce correct Data types at construction.
 
-func StartEvent(agentID string) Event         { return Event{Type: OnStart, Source: agentID} }
-func StopEvent(agentID string, err error) Event { return Event{Type: OnStop, Source: agentID, Data: err} }
-func ChunkEvent(agentID string, c Chunk) Event  { return Event{Type: OnChunk, Source: agentID, Data: c} }
+func StartEvent(agentID string) Event { return Event{Type: OnStart, Source: agentID} }
+func StopEvent(agentID string, err error) Event {
+	return Event{Type: OnStop, Source: agentID, Data: err}
+}
+func ChunkEvent(agentID string, c Chunk) Event { return Event{Type: OnChunk, Source: agentID, Data: c} }
 func MessageEvent(msg Message) Event           { return Event{Type: OnMessage, Source: msg.From, Data: msg} }
-func TurnEvent(agentID string, r Result) Event  { return Event{Type: OnTurn, Source: agentID, Data: r} }
-func PreInferEvent(agentID string) Event        { return Event{Type: PreInfer, Source: agentID} }
-func PostInferEvent(agentID string, r *InferResponse) Event { return Event{Type: PostInfer, Source: agentID, Data: r} }
-func PreToolEvent(tc ToolCall) Event            { return Event{Type: PreTool, Source: tc.Name, Data: tc} }
-func PostToolEvent(tr ToolResult) Event         { return Event{Type: PostTool, Source: tr.ToolName, Data: tr} }
+func TurnEvent(agentID string, r Result) Event { return Event{Type: OnTurn, Source: agentID, Data: r} }
+func PreInferEvent(agentID string) Event       { return Event{Type: PreInfer, Source: agentID} }
+func PostInferEvent(agentID string, r *InferResponse) Event {
+	return Event{Type: PostInfer, Source: agentID, Data: r}
+}
+func PreToolEvent(tc ToolCall) Event    { return Event{Type: PreTool, Source: tc.Name, Data: tc} }
+func PostToolEvent(tr ToolResult) Event { return Event{Type: PostTool, Source: tr.ToolName, Data: tr} }

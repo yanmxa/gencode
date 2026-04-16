@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 const asyncHookTickInterval = 500 * time.Millisecond
@@ -47,8 +47,8 @@ func (m *model) handleAsyncHookTick() tea.Cmd {
 
 func (m *model) injectAsyncHookContinuation(item asyncHookRewake) tea.Cmd {
 	if item.Notice != "" {
-		m.conv.Append(message.ChatMessage{
-			Role:    message.RoleNotice,
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleNotice,
 			Content: item.Notice,
 		})
 	}
@@ -56,12 +56,19 @@ func (m *model) injectAsyncHookContinuation(item asyncHookRewake) tea.Cmd {
 		return tea.Batch(m.commitMessages()...)
 	}
 	if m.provider.LLM == nil {
-		m.conv.Append(message.ChatMessage{
-			Role:    message.RoleNotice,
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleNotice,
 			Content: "Async hook requested a follow-up, but no provider is connected.",
 		})
 		return tea.Batch(m.commitMessages()...)
 	}
 
-	return m.startConversationStream(m.buildInternalContinuationRequest(item.Context, item.ContinuationPrompt))
+	// Inject context as system-reminder messages, then send the continuation prompt to the agent
+	for _, ctx := range item.Context {
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleUser,
+			Content: ctx,
+		})
+	}
+	return m.sendToAgent(item.ContinuationPrompt, nil)
 }

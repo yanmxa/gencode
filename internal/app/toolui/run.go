@@ -11,12 +11,12 @@ import (
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	coretool "github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
-	"github.com/yanmxa/gencode/internal/ui/progress"
+	"github.com/yanmxa/gencode/internal/app/progress"
 )
 
 type defaultMCPExecutor struct{}
@@ -48,22 +48,22 @@ type ExecDoneMsg struct{}
 // ExecResultMsg carries the result of a single tool execution.
 type ExecResultMsg struct {
 	Index    int
-	Result   message.ToolResult
+	Result   core.ToolResult
 	ToolName string
 }
 
-func newResult(tc message.ToolCall, index int, content string, isError bool) ExecResultMsg {
+func newResult(tc core.ToolCall, index int, content string, isError bool) ExecResultMsg {
 	return ExecResultMsg{
 		Index:    index,
-		Result:   message.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isError},
+		Result:   core.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isError},
 		ToolName: tc.Name,
 	}
 }
 
-func newResultFromOutput(tc message.ToolCall, index int, output toolresult.ToolResult) ExecResultMsg {
+func newResultFromOutput(tc core.ToolCall, index int, output toolresult.ToolResult) ExecResultMsg {
 	return ExecResultMsg{
 		Index:    index,
-		Result:   message.ToolResult{ToolCallID: tc.ID, Content: output.FormatForLLM(), IsError: !output.Success, HookResponse: output.HookResponse},
+		Result:   core.ToolResult{ToolCallID: tc.ID, Content: output.FormatForLLM(), IsError: !output.Success, HookResponse: output.HookResponse},
 		ToolName: tc.Name,
 	}
 }
@@ -71,7 +71,7 @@ func newResultFromOutput(tc message.ToolCall, index int, output toolresult.ToolR
 // ExecuteParallel dispatches tool calls in parallel when possible, sequentially otherwise.
 // hookAllowed contains tool call IDs that were pre-approved by hooks (may be nil).
 // hookForceAsk contains tool call IDs forced to prompt by PreToolUse "ask" decision (may be nil).
-func ExecuteParallel(ctx context.Context, hub *progress.Hub, toolCalls []message.ToolCall, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool, hookForceAsk map[string]bool) tea.Cmd {
+func ExecuteParallel(ctx context.Context, hub *progress.Hub, toolCalls []core.ToolCall, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool, hookForceAsk map[string]bool) tea.Cmd {
 	if len(toolCalls) == 0 {
 		return func() tea.Msg {
 			return ExecDoneMsg{}
@@ -101,7 +101,7 @@ func ExecuteParallel(ctx context.Context, hub *progress.Hub, toolCalls []message
 	return tea.Batch(cmds...)
 }
 
-func executeToolAsync(ctx context.Context, hub *progress.Hub, tc message.ToolCall, index int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
+func executeToolAsync(ctx context.Context, hub *progress.Hub, tc core.ToolCall, index int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
 	return func() tea.Msg {
 		ctx = executionContext(ctx)
 
@@ -151,7 +151,7 @@ func executeAndLog(prepared *coretool.PreparedToolCall, index int, fn func() too
 
 // ProcessNext executes the next tool call in sequence.
 // hookAllowed/hookForceAsk are maps of pre-approved or force-ask tool call IDs from hooks (may be nil).
-func ProcessNext(ctx context.Context, hub *progress.Hub, toolCalls []message.ToolCall, idx int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions, hookAllowed, hookForceAsk map[string]bool) tea.Cmd {
+func ProcessNext(ctx context.Context, hub *progress.Hub, toolCalls []core.ToolCall, idx int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions, hookAllowed, hookForceAsk map[string]bool) tea.Cmd {
 	if idx >= len(toolCalls) {
 		return func() tea.Msg { return ExecDoneMsg{} }
 	}
@@ -229,7 +229,7 @@ func checkPermissionTool(ctx context.Context, prepared *coretool.PreparedToolCal
 }
 
 // ExecuteApproved executes a tool that has been approved by the user.
-func ExecuteApproved(ctx context.Context, hub *progress.Hub, toolCalls []message.ToolCall, idx int, cwd string) tea.Cmd {
+func ExecuteApproved(ctx context.Context, hub *progress.Hub, toolCalls []core.ToolCall, idx int, cwd string) tea.Cmd {
 	if idx >= len(toolCalls) {
 		return nil
 	}
@@ -288,7 +288,7 @@ func askAgentQuestion(ctx context.Context, hub *progress.Hub, idx int, req *core
 }
 
 // ExecuteInteractive executes a tool with an interactive response.
-func ExecuteInteractive[T any](ctx context.Context, tc message.ToolCall, response T, cwd string) tea.Cmd {
+func ExecuteInteractive[T any](ctx context.Context, tc core.ToolCall, response T, cwd string) tea.Cmd {
 	return func() tea.Msg {
 		ctx = executionContext(ctx)
 
@@ -312,7 +312,7 @@ func ExecuteInteractive[T any](ctx context.Context, tc message.ToolCall, respons
 // RequiresUserInteraction checks if a tool call needs user approval.
 // hookAllowed contains tool call IDs that were pre-approved by hooks (may be nil).
 // hookForceAsk contains tool call IDs forced to prompt by PreToolUse "ask" decision (may be nil).
-func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool, hookForceAsk map[string]bool) bool {
+func RequiresUserInteraction(tc core.ToolCall, settings *config.Settings, sessionPerms *config.SessionPermissions, planMode bool, hookAllowed map[string]bool, hookForceAsk map[string]bool) bool {
 	// Hook "ask" decision forces user interaction regardless of other settings
 	if hookForceAsk[tc.ID] {
 		return true
@@ -322,7 +322,7 @@ func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, ses
 		return false
 	}
 
-	params, err := message.ParseToolInput(tc.Input)
+	params, err := core.ParseToolInput(tc.Input)
 	if err != nil {
 		return true
 	}

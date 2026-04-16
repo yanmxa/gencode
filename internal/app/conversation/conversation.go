@@ -1,33 +1,33 @@
 package conversation
 
 import (
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 // Append adds a message to the conversation.
-func (m *Model) Append(msg message.ChatMessage) {
+func (m *Model) Append(msg core.ChatMessage) {
 	m.Messages = append(m.Messages, msg)
 }
 
 // Clear resets the conversation to empty.
 // Also used after compaction since the summary now lives in transcript state.
 func (m *Model) Clear() {
-	m.Messages = []message.ChatMessage{}
+	m.Messages = []core.ChatMessage{}
 	m.CommittedCount = 0
 }
 
 // AddNotice appends a notice message to the conversation.
 func (m *Model) AddNotice(content string) {
-	m.Messages = append(m.Messages, message.ChatMessage{Role: message.RoleNotice, Content: content})
+	m.Messages = append(m.Messages, core.ChatMessage{Role: core.RoleNotice, Content: content})
 }
 
-// AppendToLast appends text and thinking content to the last assistant message.
+// AppendToLast appends text and thinking content to the last assistant core.
 func (m *Model) AppendToLast(text, thinking string) {
 	if len(m.Messages) == 0 {
 		return
 	}
 	idx := len(m.Messages) - 1
-	if m.Messages[idx].Role != message.RoleAssistant {
+	if m.Messages[idx].Role != core.RoleAssistant {
 		return
 	}
 	if thinking != "" {
@@ -38,14 +38,14 @@ func (m *Model) AppendToLast(text, thinking string) {
 	}
 }
 
-// SetLastToolCalls sets tool calls on the last message.
-func (m *Model) SetLastToolCalls(calls []message.ToolCall) {
+// SetLastToolCalls sets tool calls on the last core.
+func (m *Model) SetLastToolCalls(calls []core.ToolCall) {
 	if len(m.Messages) > 0 {
 		m.Messages[len(m.Messages)-1].ToolCalls = calls
 	}
 }
 
-// SetLastThinkingSignature sets the thinking signature on the last message.
+// SetLastThinkingSignature sets the thinking signature on the last core.
 func (m *Model) SetLastThinkingSignature(sig string) {
 	if len(m.Messages) > 0 && sig != "" {
 		m.Messages[len(m.Messages)-1].ThinkingSignature = sig
@@ -60,11 +60,11 @@ func (m *Model) AppendErrorToLast(err error) {
 	}
 }
 
-// RemoveEmptyLastAssistant removes the last message if it's an empty assistant message.
+// RemoveEmptyLastAssistant removes the last message if it's an empty assistant core.
 func (m *Model) RemoveEmptyLastAssistant() {
 	if len(m.Messages) > 0 {
 		last := m.Messages[len(m.Messages)-1]
-		if last.Role == message.RoleAssistant && last.Content == "" {
+		if last.Role == core.RoleAssistant && last.Content == "" {
 			m.Messages = m.Messages[:len(m.Messages)-1]
 		}
 	}
@@ -74,7 +74,7 @@ func (m *Model) RemoveEmptyLastAssistant() {
 func (m *Model) MarkLastInterrupted() {
 	for i := len(m.Messages) - 1; i >= 0; i-- {
 		msg := &m.Messages[i]
-		if msg.Role != message.RoleAssistant {
+		if msg.Role != core.RoleAssistant {
 			continue
 		}
 		if len(msg.ToolCalls) == 0 {
@@ -88,7 +88,7 @@ func (m *Model) MarkLastInterrupted() {
 	}
 }
 
-// ToggleMostRecentExpandable toggles the expansion state of the most recent expandable message.
+// ToggleMostRecentExpandable toggles the expansion state of the most recent expandable core.
 func (m *Model) ToggleMostRecentExpandable() {
 	for i := len(m.Messages) - 1; i >= 0; i-- {
 		msg := &m.Messages[i]
@@ -120,7 +120,7 @@ func (m *Model) HasAllToolResults(idx int) bool {
 
 	for j := idx + 1; j < len(m.Messages); j++ {
 		msg := m.Messages[j]
-		if msg.Role == message.RoleNotice {
+		if msg.Role == core.RoleNotice {
 			continue
 		}
 		if msg.ToolResult == nil {
@@ -145,26 +145,26 @@ func (m *Model) HasAllToolResults(idx int) bool {
 }
 
 // ConvertToProvider converts chat messages to provider format, skipping notices.
-func (m Model) ConvertToProvider() []message.Message {
+func (m Model) ConvertToProvider() []core.Message {
 	return m.ConvertToProviderFrom(0)
 }
 
 // ConvertToProviderFrom converts chat messages starting from startIdx to provider format.
-func (m Model) ConvertToProviderFrom(startIdx int) []message.Message {
+func (m Model) ConvertToProviderFrom(startIdx int) []core.Message {
 	if startIdx < 0 {
 		startIdx = 0
 	}
 	if startIdx > len(m.Messages) {
 		startIdx = len(m.Messages)
 	}
-	providerMsgs := make([]message.Message, 0, len(m.Messages)-startIdx)
+	providerMsgs := make([]core.Message, 0, len(m.Messages)-startIdx)
 	for i := startIdx; i < len(m.Messages); i++ {
 		msg := m.Messages[i]
-		if msg.Role == message.RoleNotice {
+		if msg.Role == core.RoleNotice {
 			continue
 		}
 
-		providerMsg := message.Message{
+		providerMsg := core.Message{
 			Role:              msg.Role,
 			Content:           msg.Content,
 			DisplayContent:    msg.DisplayContent,

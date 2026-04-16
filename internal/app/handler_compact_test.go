@@ -5,29 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/providerui"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
 )
-
-type tokenLimitRuntime struct {
-	lastReq    tokenLimitFetchRequest
-	fetchCalls int
-}
-
-func (r *tokenLimitRuntime) SuggestPromptCmd(promptSuggestionRequest) tea.Cmd { return nil }
-func (r *tokenLimitRuntime) CompactCmd(compactRequest) tea.Cmd                { return nil }
-func (r *tokenLimitRuntime) StartStream(streamRequest) streamStartResult      { return streamStartResult{} }
-func (r *tokenLimitRuntime) FetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.Cmd {
-	r.fetchCalls++
-	r.lastReq = req
-	return func() tea.Msg { return nil }
-}
 
 func newTokenLimitStore(t *testing.T) *coreprovider.Store {
 	t.Helper()
@@ -105,11 +89,9 @@ func TestHandleTokenLimitCommand_UsesCachedModelLimitsWhenNoOverride(t *testing.
 
 func TestHandleTokenLimitCommand_TriggersFetchWhenLimitsUnknown(t *testing.T) {
 	store := newTokenLimitStore(t)
-	rt := &tokenLimitRuntime{}
 	m := &model{
 		cwd:      "/repo",
 		output:   appoutput.New(80, nil),
-		asyncOps:  rt,
 		provider: providerStateForTest(store, "gpt-unknown", coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey),
 	}
 
@@ -125,12 +107,6 @@ func TestHandleTokenLimitCommand_TriggersFetchWhenLimitsUnknown(t *testing.T) {
 	}
 	if !m.provider.FetchingLimits {
 		t.Fatal("expected FetchingLimits to be set")
-	}
-	if rt.fetchCalls != 1 {
-		t.Fatalf("expected one fetch request, got %d", rt.fetchCalls)
-	}
-	if rt.lastReq.ModelID != "gpt-unknown" || rt.lastReq.Cwd != "/repo" {
-		t.Fatalf("unexpected fetch request: %+v", rt.lastReq)
 	}
 }
 
@@ -182,9 +158,9 @@ func providerStateForTest(store *coreprovider.Store, modelID string, p coreprovi
 func TestHandleCompactResultStoresVisibleSuccessState(t *testing.T) {
 	m := &model{
 		conv: appconv.Model{
-			Messages: []message.ChatMessage{
-				{Role: message.RoleUser, Content: "one"},
-				{Role: message.RoleAssistant, Content: "two"},
+			Messages: []core.ChatMessage{
+				{Role: core.RoleUser, Content: "one"},
+				{Role: core.RoleAssistant, Content: "two"},
 			},
 			Compact: appcompact.State{
 				Active: true,

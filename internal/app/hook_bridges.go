@@ -3,9 +3,8 @@ package app
 import (
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/worktree"
@@ -20,7 +19,7 @@ func (b taskHookBridge) TaskCreated(info task.TaskInfo) {
 	if b.engine == nil {
 		return
 	}
-	b.engine.ExecuteAsync(core.TaskCreated, hooks.HookInput{
+	b.engine.ExecuteAsync(hooks.TaskCreated, hooks.HookInput{
 		TaskID:          info.ID,
 		TaskSubject:     taskSubject(info),
 		TaskDescription: info.Description,
@@ -29,7 +28,7 @@ func (b taskHookBridge) TaskCreated(info task.TaskInfo) {
 
 func (b taskHookBridge) TaskCompleted(info task.TaskInfo) {
 	if b.engine != nil {
-		b.engine.ExecuteAsync(core.TaskCompleted, hooks.HookInput{
+		b.engine.ExecuteAsync(hooks.TaskCompleted, hooks.HookInput{
 			TaskID:          info.ID,
 			TaskSubject:     taskSubject(info),
 			TaskDescription: info.Description,
@@ -57,7 +56,7 @@ func (b worktreeHookBridge) WorktreeCreated(name, path string) {
 	if b.engine == nil {
 		return
 	}
-	b.engine.ExecuteAsync(core.WorktreeCreate, hooks.HookInput{
+	b.engine.ExecuteAsync(hooks.WorktreeCreate, hooks.HookInput{
 		Name:         name,
 		WorktreePath: path,
 	})
@@ -67,7 +66,7 @@ func (b worktreeHookBridge) WorktreeRemoved(path string) {
 	if b.engine == nil {
 		return
 	}
-	b.engine.ExecuteAsync(core.WorktreeRemove, hooks.HookInput{
+	b.engine.ExecuteAsync(hooks.WorktreeRemove, hooks.HookInput{
 		WorktreePath: path,
 	})
 }
@@ -76,11 +75,11 @@ func (b configHookBridge) ConfigChanged(source, filePath string) {
 	if b.engine == nil {
 		return
 	}
-	b.engine.ExecuteAsync(core.ConfigChange, hooks.HookInput{
+	b.engine.ExecuteAsync(hooks.ConfigChange, hooks.HookInput{
 		Source:   source,
 		FilePath: filePath,
 	})
-	b.engine.ExecuteAsync(core.FileChanged, hooks.HookInput{
+	b.engine.ExecuteAsync(hooks.FileChanged, hooks.HookInput{
 		Source:   source,
 		FilePath: filePath,
 	})

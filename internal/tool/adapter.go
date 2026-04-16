@@ -3,9 +3,25 @@ package tool
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/yanmxa/gencode/internal/core"
 )
+
+// sideEffects stores HookResponse values keyed by tool call ID.
+// The TUI retrieves these when handling PostTool events to apply
+// environment side effects (cwd changes, file cache, background tasks).
+var sideEffects sync.Map
+
+// PopSideEffect retrieves and removes the HookResponse for a tool call.
+// Returns nil if no side effect was stored.
+func PopSideEffect(toolCallID string) any {
+	val, ok := sideEffects.LoadAndDelete(toolCallID)
+	if !ok {
+		return nil
+	}
+	return val
+}
 
 // AdaptTool wraps a legacy Tool as a core.Tool with a dynamic CWD resolver.
 func AdaptTool(t Tool, schema core.ToolSchema, cwd func() string) core.Tool {
@@ -49,6 +65,15 @@ func (a *toolAdapter) Execute(ctx context.Context, input map[string]any) (string
 	}
 
 	result := a.inner.Execute(ctx, input, cwd)
+
+	// Capture side effects (HookResponse) for the TUI to retrieve later.
+	// The tool call ID comes from the context, injected by core.Agent.execTools().
+	if result.HookResponse != nil {
+		if callID := core.ToolCallIDFromContext(ctx); callID != "" {
+			sideEffects.Store(callID, result.HookResponse)
+		}
+	}
+
 	text := result.FormatForLLM()
 	if !result.Success {
 		return text, fmt.Errorf("%s", text)

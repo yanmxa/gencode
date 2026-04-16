@@ -181,3 +181,138 @@ Before merging structural changes, verify:
 - Does any domain package now depend on `internal/app` or Bubble Tea?
 - Did we introduce duplicate registries or duplicate sources of truth?
 - Did we update docs to match the new structure?
+
+## Model-View-Update Architecture
+
+The app layer follows the Bubble Tea Model-View-Update pattern. The Model has exactly two sources of state mutation:
+
+1. **User input** — keypress, submit, slash commands, selector interactions
+2. **Core Agent events** — the background agent loop emits events via its Outbox channel
+
+```
+User Input                                Core Agent (background goroutine)
+   │                                         │
+   ├─ handleKeypress()                       ├─ PreInfer  → stream active
+   ├─ handleSubmit()                         ├─ OnChunk   → append text
+   │   ├─ slash commands                     ├─ PostInfer → token counts, tool calls
+   │   └─ sendToAgent() ────Inbox────→       ├─ PreTool   → building indicator
+   │                                         ├─ PostTool  → tool result, side effects
+   ├─ handleApproval() ←──permBridge──       ├─ OnTurn    → commit, save, drain queues
+   │   └─ response ──channel──→              └─ OnStop    → cleanup
+   │
+   └─ selector interactions (provider/model/mcp/...)
+                     │
+                     ▼
+              Model State (single source of truth)
+                     │
+                     ▼
+               View() — pure render
+```
+
+### Model State Organization
+
+```
+┌─ Model State ───────────────────────────────────────────┐
+│                                                         │
+│  Conversation (conv)          ← both sources write      │
+│  ├── Messages []ChatMessage                             │
+│  ├── CommittedCount           ← commit pipeline manages │
+│  └── Stream {Active, BuildingTool}  ← agent events      │
+│                                                         │
+│  Agent Session                                          │
+│  ├── agentSess {agent, permBridge, cancel}              │
+│  └── pendingPermBridge                                  │
+│                                                         │
+│  UI State                     ← user input side only    │
+│  ├── input, inputQueue, cronQueue                       │
+│  ├── mode (plan/normal), approval                       │
+│  └── showTasks, hookStatus, promptSuggestion            │
+│                                                         │
+│  Provider / Infra             ← init + occasional update│
+│  ├── provider, session, settings, hookEngine            │
+│  └── mcp, plugin, skill, agent, search, memory          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Update Routing
+
+Messages flow through `routeFeatureUpdate()` in priority order. Each handler returns `(tea.Cmd, bool)` — the first to return `handled=true` wins.
+
+```
+Update(msg)
+  ├─ [direct]  KeyMsg, WindowSizeMsg, SpinnerTickMsg, SkillInvokeMsg
+  ├─ [routed]  routeFeatureUpdate() priority chain:
+  │   ├── updateAgent            ← core.Agent outbox + permission bridge
+  │   ├── updateApproval         ← permission approval dialog
+  │   ├── updateMode             ← plan/question/enter-plan modals
+  │   ├── updateCompact          ← context compaction
+  │   ├── updateProvider         ← provider/model selection
+  │   ├── updateMCP              ← MCP server management
+  │   ├── updatePlugin           ← plugin management
+  │   ├── updateSession          ← session restore
+  │   ├── updateMemory           ← memory selector
+  │   ├── updateCron             ← scheduled prompts
+  │   ├── updateAsyncHooks       ← async hook results
+  │   ├── updateSearch           ← search provider
+  │   └── updateTaskNotifications← background task updates
+  └─ [fallthrough] textarea + spinner
+```
+
+### View Composition
+
+```
+View()
+├── [1] Overlay Layer — full-screen takeover
+│   ├── renderOverlaySelector()     provider/tool/skill/agent/mcp/...
+│   └── renderActiveModal()         approval, question, plan
+│
+├── [2] Content Layer — conversation messages
+│   ├── renderActiveContent()       uncommitted messages (CommittedCount..)
+│   │   ├── renderMessageRange()    message list
+│   │   └── renderPendingToolSpinner()  agent executing tools
+│   ├── renderTrackerList()         background tasks (Ctrl+T)
+│   └── renderCompactStatus()       compaction state
+│
+├── [3] Input Layer — user interaction
+│   ├── tokenWarning
+│   ├── ── separator ──
+│   ├── queuePreview
+│   ├── inputView (prompt + textarea)
+│   └── suggestions
+│
+└── [4] Status Layer
+    ├── ── separator ──
+    └── statusLine (mode + model + tokens)
+```
+
+### Core Agent Integration
+
+The TUI communicates with the core.Agent through two channels:
+
+- **Inbox** (TUI → Agent): user messages, queued inputs, cron prompts, async hook continuations
+- **Outbox** (Agent → TUI): lifecycle events that drive model state changes
+
+```
+agent_events.go (single integration point)
+
+  agentOutboxMsg → handleAgentEvent(ev)
+    ├── OnStart   → continue outbox
+    ├── PreInfer  → stream.Active=true, append empty assistant msg, commit
+    ├── OnChunk   → conv.AppendToLast(text, thinking)
+    ├── PostInfer → update tokens, set tool calls on last msg
+    ├── PreTool   → set BuildingTool indicator
+    ├── PostTool  → apply side effects, append tool result msg
+    ├── OnTurn    → stop stream, commit, save session, drain queues
+    └── OnStop    → cleanup agent session
+```
+
+The **permissionBridge** is the only synchronous bidirectional channel: the agent goroutine blocks waiting for TUI approval, the TUI shows the approval dialog, and the response is sent back via a Go channel.
+
+### Committed vs Uncommitted Messages
+
+Messages are divided by `CommittedCount`:
+
+- `[0, CommittedCount)` — pushed to terminal scrollback via `tea.Println()`, immutable
+- `[CommittedCount, len)` — rendered in the managed terminal region by `renderActiveContent()`
+
+When `commitMessages()` runs, it renders each uncommitted message, outputs it to scrollback, and advances `CommittedCount`. This creates the scrolling effect where messages move from the active display area into permanent history.

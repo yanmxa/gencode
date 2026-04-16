@@ -3,13 +3,13 @@ package app
 import (
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 func TestDrainInputQueueRestoresQueuedInlineImages(t *testing.T) {
 	m := newBaseModel(t.TempDir(), modelInfra{})
-	label := m.input.AddPendingImage(message.ImageData{FileName: "queued.png"})
-	m.inputQueue.Enqueue(label+" describe this", []message.ImageData{{FileName: "queued.png"}})
+	label := m.input.AddPendingImage(core.Image{FileName: "queued.png"})
+	m.inputQueue.Enqueue(label+" describe this", []core.Image{{FileName: "queued.png"}})
 	m.input.ClearImages()
 	m.input.Textarea.SetValue("")
 
@@ -26,7 +26,7 @@ func TestDrainInputQueueRestoresQueuedInlineImages(t *testing.T) {
 	}
 
 	userMsg := m.conv.Messages[0]
-	if userMsg.Role != message.RoleUser {
+	if userMsg.Role != core.RoleUser {
 		t.Fatalf("expected first message to be user role, got %#v", userMsg)
 	}
 	if userMsg.Content != "describe this" {
@@ -42,7 +42,7 @@ func TestDrainInputQueueRestoresQueuedInlineImages(t *testing.T) {
 
 func TestSaveCurrentQueueEditPreservesImages(t *testing.T) {
 	m := newBaseModel(t.TempDir(), modelInfra{})
-	images := []message.ImageData{{FileName: "queued.png"}}
+	images := []core.Image{{FileName: "queued.png"}}
 	m.inputQueue.Enqueue("[Image #1] prompt", images)
 	m.queueSelectIdx = 0
 	m.input.Textarea.SetValue("[Image #1] updated prompt")

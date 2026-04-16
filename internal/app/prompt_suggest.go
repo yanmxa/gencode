@@ -51,7 +51,7 @@ func (m *model) startPromptSuggestion() tea.Cmd {
 	m.promptSuggestion.cancel = cancel
 	req.Ctx = ctx
 
-	return m.asyncOps.SuggestPromptCmd(req)
+	return suggestPromptCmd(req)
 }
 
 // handlePromptSuggestion processes the suggestion result.

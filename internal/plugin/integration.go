@@ -128,28 +128,6 @@ func GetPluginMCPServers() []PluginMCPServer {
 	return servers
 }
 
-// PluginLSPServer represents an LSP server from a plugin with full metadata.
-type PluginLSPServer struct {
-	Name   string          // Language name (e.g., "go", "rust")
-	Config LSPServerConfig // Server configuration
-	Scope  Scope           // Plugin scope
-}
-
-// GetPluginLSPServers returns all LSP servers from enabled plugins.
-func GetPluginLSPServers() []PluginLSPServer {
-	var servers []PluginLSPServer
-	for _, p := range DefaultRegistry.GetEnabled() {
-		for name, cfg := range p.Components.LSP {
-			servers = append(servers, PluginLSPServer{
-				Name:   name,
-				Config: cfg,
-				Scope:  p.Scope,
-			})
-		}
-	}
-	return servers
-}
-
 // GetPluginNamespace extracts the namespace from a plugin path or source.
 func GetPluginNamespace(source string) string {
 	name, _ := ParsePluginRef(source)

@@ -8,8 +8,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/app/providerui"
-	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
@@ -43,9 +43,9 @@ func (m *model) handleProviderSelected(msg providerui.SelectedMsg) tea.Cmd {
 	ctx := context.Background()
 	result, err := m.provider.Selector.ConnectProvider(ctx, msg.Provider, msg.AuthMethod)
 	if err != nil {
-		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "Error: " + err.Error()})
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Error: " + err.Error()})
 	} else {
-		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: result})
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: result})
 		m.refreshProviderConnection(ctx, msg.Provider, msg.AuthMethod)
 	}
 	return tea.Batch(m.commitMessages()...)
@@ -54,7 +54,7 @@ func (m *model) handleProviderSelected(msg providerui.SelectedMsg) tea.Cmd {
 func (m *model) handleModelSelected(msg providerui.ModelSelectedMsg) tea.Cmd {
 	_, err := m.provider.Selector.SetModel(msg.ModelID, msg.ProviderName, msg.AuthMethod)
 	if err != nil {
-		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "Error: " + err.Error()})
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Error: " + err.Error()})
 		return tea.Batch(m.commitMessages()...)
 	}
 

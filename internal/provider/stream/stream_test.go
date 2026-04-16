@@ -5,11 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 func TestStateEmitsAndAccumulatesChunks(t *testing.T) {
-	ch := make(chan message.StreamChunk, 8)
+	ch := make(chan core.StreamChunk, 8)
 	state := NewState("test")
 
 	state.EmitText(ch, "hello")
@@ -18,17 +18,17 @@ func TestStateEmitsAndAccumulatesChunks(t *testing.T) {
 	state.EmitToolInput(ch, "tool-1", `{"path":"a.go"}`)
 
 	// Verify streaming chunks emitted in order
-	msgs := []message.StreamChunk{<-ch, <-ch, <-ch, <-ch}
-	if msgs[0].Type != message.ChunkTypeText || msgs[0].Text != "hello" {
+	msgs := []core.StreamChunk{<-ch, <-ch, <-ch, <-ch}
+	if msgs[0].Type != core.ChunkTypeText || msgs[0].Text != "hello" {
 		t.Fatalf("unexpected text chunk: %#v", msgs[0])
 	}
-	if msgs[1].Type != message.ChunkTypeThinking || msgs[1].Text != "thinking" {
+	if msgs[1].Type != core.ChunkTypeThinking || msgs[1].Text != "thinking" {
 		t.Fatalf("unexpected thinking chunk: %#v", msgs[1])
 	}
-	if msgs[2].Type != message.ChunkTypeToolStart || msgs[2].ToolID != "tool-1" || msgs[2].ToolName != "Read" {
+	if msgs[2].Type != core.ChunkTypeToolStart || msgs[2].ToolID != "tool-1" || msgs[2].ToolName != "Read" {
 		t.Fatalf("unexpected tool start chunk: %#v", msgs[2])
 	}
-	if msgs[3].Type != message.ChunkTypeToolInput || msgs[3].ToolID != "tool-1" || msgs[3].Text != `{"path":"a.go"}` {
+	if msgs[3].Type != core.ChunkTypeToolInput || msgs[3].ToolID != "tool-1" || msgs[3].Text != `{"path":"a.go"}` {
 		t.Fatalf("unexpected tool input chunk: %#v", msgs[3])
 	}
 
@@ -45,7 +45,7 @@ func TestStateEmitsAndAccumulatesChunks(t *testing.T) {
 
 func TestStateAddsToolCallsInStableOrder(t *testing.T) {
 	byIndex := NewState("test")
-	byIndex.AddToolCallsSorted(map[int]*message.ToolCall{
+	byIndex.AddToolCallsSorted(map[int]*core.ToolCall{
 		2: {ID: "c", Name: "third"},
 		0: {ID: "a", Name: "first"},
 		1: {ID: "b", Name: "second"},
@@ -59,7 +59,7 @@ func TestStateAddsToolCallsInStableOrder(t *testing.T) {
 	}
 
 	byKey := NewState("test")
-	byKey.AddToolCallsByKey(map[string]*message.ToolCall{
+	byKey.AddToolCallsByKey(map[string]*core.ToolCall{
 		"z": {ID: "3", Name: "third"},
 		"a": {ID: "1", Name: "first"},
 		"m": {ID: "2", Name: "second"},
@@ -75,7 +75,7 @@ func TestStateAddsToolCallsInStableOrder(t *testing.T) {
 
 func TestStateEnsureToolUseStopReason(t *testing.T) {
 	state := NewState("test")
-	state.Response.ToolCalls = []message.ToolCall{{ID: "tool-1", Name: "Read"}}
+	state.Response.ToolCalls = []core.ToolCall{{ID: "tool-1", Name: "Read"}}
 	state.EnsureToolUseStopReason()
 
 	if got := state.Response.StopReason; got != "tool_use" {
@@ -90,7 +90,7 @@ func TestStateEnsureToolUseStopReason(t *testing.T) {
 }
 
 func TestStateFailAndFinishEmitTerminalChunks(t *testing.T) {
-	ch := make(chan message.StreamChunk, 4)
+	ch := make(chan core.StreamChunk, 4)
 	state := NewState("test")
 
 	// Accumulate content via EmitText (content flushes in Finish)
@@ -99,13 +99,13 @@ func TestStateFailAndFinishEmitTerminalChunks(t *testing.T) {
 
 	state.Fail(ch, errors.New("boom"))
 	errChunk := <-ch
-	if errChunk.Type != message.ChunkTypeError || errChunk.Error == nil || errChunk.Error.Error() != "boom" {
+	if errChunk.Type != core.ChunkTypeError || errChunk.Error == nil || errChunk.Error.Error() != "boom" {
 		t.Fatalf("unexpected error chunk: %#v", errChunk)
 	}
 
 	state.Finish(context.Background(), ch)
 	doneChunk := <-ch
-	if doneChunk.Type != message.ChunkTypeDone || doneChunk.Response == nil {
+	if doneChunk.Type != core.ChunkTypeDone || doneChunk.Response == nil {
 		t.Fatalf("unexpected done chunk: %#v", doneChunk)
 	}
 	if doneChunk.Response.Content != "done" {

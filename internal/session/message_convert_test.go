@@ -3,19 +3,19 @@ package session
 import (
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 func Test_messagesToEntries_roundtrip(t *testing.T) {
 	// Test that messagesToEntries -> EntriesToMessages roundtrips correctly.
-	msgs := []message.Message{
-		{Role: message.RoleUser, Content: "hello"},
-		{Role: message.RoleAssistant, Content: "hi", Thinking: "let me think",
-			ToolCalls: []message.ToolCall{{ID: "tc-1", Name: "Read", Input: `{"file_path":"/tmp/test"}`}}},
-		{Role: message.RoleUser, ToolResult: &message.ToolResult{
+	msgs := []core.Message{
+		{Role: core.RoleUser, Content: "hello"},
+		{Role: core.RoleAssistant, Content: "hi", Thinking: "let me think",
+			ToolCalls: []core.ToolCall{{ID: "tc-1", Name: "Read", Input: `{"file_path":"/tmp/test"}`}}},
+		{Role: core.RoleUser, ToolResult: &core.ToolResult{
 			ToolCallID: "tc-1", ToolName: "Read", Content: "file contents",
 		}},
-		{Role: message.RoleAssistant, Content: "I see the file."},
+		{Role: core.RoleAssistant, Content: "I see the file."},
 	}
 
 	entries := messagesToEntries(msgs)
@@ -61,7 +61,7 @@ func Test_userContentToBlocks_preserveInlineImageOrder(t *testing.T) {
 	blocks := userContentToBlocks(
 		"这个图片说了什么 请说一下",
 		"[Image #1] 这个图片说了什么 请说一下",
-		[]message.ImageData{{MediaType: "image/png", Data: "abc"}},
+		[]core.Image{{MediaType: "image/png", Data: "abc"}},
 	)
 
 	if len(blocks) != 2 {

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/task"
-	"github.com/yanmxa/gencode/internal/tracker"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 func TestBuildTaskNotificationIncludesResumableAgentIdentity(t *testing.T) {

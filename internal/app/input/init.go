@@ -4,9 +4,9 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/ui/history"
-	"github.com/yanmxa/gencode/internal/ui/suggest"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/history"
+	"github.com/yanmxa/gencode/internal/app/suggest"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
 // New creates a fully initialized input Model.

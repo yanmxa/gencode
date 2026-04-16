@@ -6,14 +6,12 @@ package app
 
 import (
 	"context"
-	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/messageconv"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -117,13 +115,6 @@ func (sess *agentSession) stop() {
 	}
 }
 
-// shouldUseAgentPath returns true when the TUI should use the core.Agent
-// execution path instead of the legacy streaming path. Currently controlled
-// by the GEN_CORE_AGENT=1 environment variable for opt-in testing.
-func (m *model) shouldUseAgentPath() bool {
-	return os.Getenv("GEN_CORE_AGENT") == "1"
-}
-
 // ensureAgentSession lazily creates and starts the core.Agent session.
 func (m *model) ensureAgentSession() error {
 	if m.agentSess != nil {
@@ -139,7 +130,7 @@ func (m *model) ensureAgentSession() error {
 	if len(m.conv.Messages) > 0 {
 		var coreMessages []core.Message
 		for _, msg := range m.conv.ConvertToProvider() {
-			coreMessages = append(coreMessages, messageconv.ToCore(msg))
+			coreMessages = append(coreMessages, msg)
 		}
 		sess.agent.SetMessages(coreMessages)
 	}

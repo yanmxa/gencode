@@ -7,27 +7,27 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	coreplugin "github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
 func TestCancelClearsTransientPluginSelectorState(t *testing.T) {
 	m := New()
 	m.active = true
-	m.level = LevelDetail
+	m.level = levelDetail
 	m.selectedIdx = 3
 	m.scrollOffset = 4
 	m.parentIdx = 2
 	m.searchQuery = "plug"
 	m.filteredItems = []any{"plugin"}
-	m.detailPlugin = &PluginItem{Name: "demo"}
-	m.detailDiscover = &DiscoverPluginItem{Name: "discover"}
-	m.detailMarketplace = &MarketplaceItem{ID: "market"}
+	m.detailPlugin = &pluginItem{Name: "demo"}
+	m.detailDiscover = &discoverPluginItem{Name: "discover"}
+	m.detailMarketplace = &marketplaceItem{ID: "market"}
 	m.actions = []Action{{Label: "Back", Action: "back"}}
 	m.actionIdx = 1
 	m.addMarketplaceInput = "owner/repo"
 	m.addDialogCursor = 1
 	m.browseMarketplaceID = "market"
-	m.browsePlugins = []DiscoverPluginItem{{Name: "child"}}
+	m.browsePlugins = []discoverPluginItem{{Name: "child"}}
 	m.isLoading = true
 	m.loadingMsg = "loading"
 	m.lastMessage = "oops"
@@ -38,7 +38,7 @@ func TestCancelClearsTransientPluginSelectorState(t *testing.T) {
 	if m.active {
 		t.Fatal("Cancel should deactivate selector")
 	}
-	if m.level != LevelTabList || m.selectedIdx != 0 || m.scrollOffset != 0 || m.parentIdx != 0 {
+	if m.level != levelTabList || m.selectedIdx != 0 || m.scrollOffset != 0 || m.parentIdx != 0 {
 		t.Fatal("Cancel should reset list navigation state")
 	}
 	if m.searchQuery != "" || m.filteredItems != nil {
@@ -64,8 +64,8 @@ func TestCancelClearsTransientPluginSelectorState(t *testing.T) {
 func TestHandleListEscClearsSearchBeforeDismiss(t *testing.T) {
 	m := New()
 	m.active = true
-	m.activeTab = TabInstalled
-	m.installedFlatList = []PluginItem{
+	m.activeTab = tabInstalled
+	m.installedFlatList = []pluginItem{
 		{Name: "alpha"},
 		{Name: "beta"},
 	}
@@ -107,22 +107,22 @@ func TestHandleListEscDismissesSelector(t *testing.T) {
 
 func TestSwitchTabResetsDetailStateAndSearch(t *testing.T) {
 	m := New()
-	m.activeTab = TabInstalled
-	m.level = LevelDetail
+	m.activeTab = tabInstalled
+	m.level = levelDetail
 	m.selectedIdx = 3
 	m.scrollOffset = 2
 	m.parentIdx = 1
 	m.searchQuery = "demo"
-	m.detailPlugin = &PluginItem{Name: "demo"}
+	m.detailPlugin = &pluginItem{Name: "demo"}
 	m.actions = []Action{{Label: "Back", Action: "back"}}
-	m.marketplaces = []MarketplaceItem{{ID: "market"}}
+	m.marketplaces = []marketplaceItem{{ID: "market"}}
 
-	m.switchTab(TabMarketplaces)
+	m.switchTab(tabMarketplaces)
 
-	if m.activeTab != TabMarketplaces {
-		t.Fatalf("activeTab = %v, want TabMarketplaces", m.activeTab)
+	if m.activeTab != tabMarketplaces {
+		t.Fatalf("activeTab = %v, want tabMarketplaces", m.activeTab)
 	}
-	if m.level != LevelTabList || m.selectedIdx != 0 || m.scrollOffset != 0 || m.parentIdx != 0 {
+	if m.level != levelTabList || m.selectedIdx != 0 || m.scrollOffset != 0 || m.parentIdx != 0 {
 		t.Fatal("switchTab should reset list navigation")
 	}
 	if m.searchQuery != "" {
@@ -138,10 +138,10 @@ func TestSwitchTabResetsDetailStateAndSearch(t *testing.T) {
 
 func TestToggleSelectedPluginReturnsDisableMsg(t *testing.T) {
 	m := New()
-	m.activeTab = TabInstalled
-	m.level = LevelTabList
+	m.activeTab = tabInstalled
+	m.level = levelTabList
 	m.filteredItems = []any{
-		PluginItem{
+		pluginItem{
 			Name:     "demo",
 			FullName: "demo",
 			Enabled:  true,
@@ -164,8 +164,8 @@ func TestRenderTabListShowsPluginManagerFrame(t *testing.T) {
 	m.active = true
 	m.width = 100
 	m.height = 30
-	m.activeTab = TabInstalled
-	m.installedFlatList = []PluginItem{{Name: "demo", Description: "demo plugin"}}
+	m.activeTab = tabInstalled
+	m.installedFlatList = []pluginItem{{Name: "demo", Description: "demo plugin"}}
 	m.filteredItems = []any{m.installedFlatList[0]}
 
 	rendered := m.Render()
@@ -181,8 +181,8 @@ func TestRenderInstalledDetailShowsStructuredSections(t *testing.T) {
 	m.active = true
 	m.width = 100
 	m.height = 30
-	m.level = LevelDetail
-	m.detailPlugin = &PluginItem{
+	m.level = levelDetail
+	m.detailPlugin = &pluginItem{
 		Name:        "deploy",
 		FullName:    "deploy@corp",
 		Description: "Deploy safely",

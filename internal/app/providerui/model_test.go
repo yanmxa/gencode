@@ -7,17 +7,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
 func TestCancelClearsTransientState(t *testing.T) {
 	m := New()
 	m.active = true
-	m.connectedProviders = []ProviderItem{{DisplayName: "Anthropic"}}
-	m.allProviders = []ProviderItem{{DisplayName: "Google"}}
-	m.allModels = []ModelItem{{ID: "gpt-5"}}
-	m.filteredModels = []ModelItem{{ID: "gpt-5"}}
-	m.visibleItems = []ListItem{{Kind: ItemModel}}
+	m.connectedProviders = []providerItem{{DisplayName: "Anthropic"}}
+	m.allProviders = []providerItem{{DisplayName: "Google"}}
+	m.allModels = []modelItem{{ID: "gpt-5"}}
+	m.filteredModels = []modelItem{{ID: "gpt-5"}}
+	m.visibleItems = []listItem{{Kind: itemModel}}
 	m.expandedProviderIdx = 1
 	m.apiKeyActive = true
 	m.selectedIdx = 2
@@ -60,10 +60,10 @@ func TestGoBackCollapsesAuthMethods(t *testing.T) {
 	m.lastConnectSuccess = true
 
 	// Seed minimal data for rebuild
-	m.activeTab = TabProviders
-	m.allProviders = []ProviderItem{
+	m.activeTab = tabProviders
+	m.allProviders = []providerItem{
 		{DisplayName: "A"}, {DisplayName: "B"},
-		{DisplayName: "C", AuthMethods: []AuthMethodItem{{DisplayName: "API"}}},
+		{DisplayName: "C", AuthMethods: []authMethodItem{{DisplayName: "API"}}},
 	}
 
 	if !m.GoBack() {
@@ -92,11 +92,11 @@ func TestGoBackCancelsAPIKeyInput(t *testing.T) {
 func TestHandleKeypressEscClearsModelSearchBeforeDismiss(t *testing.T) {
 	m := New()
 	m.active = true
-	m.allModels = []ModelItem{
+	m.allModels = []modelItem{
 		{ID: "gpt-5", DisplayName: "GPT-5", ProviderName: "openai"},
 		{ID: "claude", DisplayName: "Claude", ProviderName: "anthropic"},
 	}
-	m.connectedProviders = []ProviderItem{
+	m.connectedProviders = []providerItem{
 		{Provider: "openai", DisplayName: "OpenAI"},
 		{Provider: "anthropic", DisplayName: "Anthropic"},
 	}
@@ -136,13 +136,13 @@ func TestHandleKeypressEscDismissesAfterSearchCleared(t *testing.T) {
 func TestSelectModelReturnsSelectionMessage(t *testing.T) {
 	m := New()
 	m.active = true
-	model := ModelItem{
+	model := modelItem{
 		ID:           "gpt-5",
 		ProviderName: "openai",
 		AuthMethod:   coreprovider.AuthAPIKey,
 	}
-	m.visibleItems = []ListItem{
-		{Kind: ItemModel, Model: &model},
+	m.visibleItems = []listItem{
+		{Kind: itemModel, Model: &model},
 	}
 	m.selectedIdx = 0
 
@@ -203,7 +203,7 @@ func TestEnterLoadsCachedModelsAndPutsCurrentFirst(t *testing.T) {
 	// Check visible items contain model rows
 	modelCount := 0
 	for _, item := range m.visibleItems {
-		if item.Kind == ItemModel {
+		if item.Kind == itemModel {
 			modelCount++
 		}
 	}
@@ -214,11 +214,11 @@ func TestEnterLoadsCachedModelsAndPutsCurrentFirst(t *testing.T) {
 
 func TestUpdateFilterMatchesModelIDDisplayNameAndProvider(t *testing.T) {
 	m := New()
-	m.allModels = []ModelItem{
+	m.allModels = []modelItem{
 		{ID: "gpt-5", DisplayName: "GPT-5", ProviderName: "openai"},
 		{ID: "claude-sonnet", DisplayName: "Claude Sonnet", ProviderName: "anthropic"},
 	}
-	m.connectedProviders = []ProviderItem{
+	m.connectedProviders = []providerItem{
 		{Provider: "openai", DisplayName: "OpenAI"},
 		{Provider: "anthropic", DisplayName: "Anthropic"},
 	}
@@ -264,16 +264,16 @@ func TestSetModelPersistsSelection(t *testing.T) {
 func TestTabSwitchesBetweenTabs(t *testing.T) {
 	m := New()
 	m.active = true
-	m.activeTab = TabModels
-	m.allModels = []ModelItem{
+	m.activeTab = tabModels
+	m.allModels = []modelItem{
 		{ID: "gpt-5", DisplayName: "GPT-5", ProviderName: "openai"},
 	}
-	m.connectedProviders = []ProviderItem{
+	m.connectedProviders = []providerItem{
 		{Provider: "openai", DisplayName: "OpenAI"},
 	}
-	m.allProviders = []ProviderItem{
+	m.allProviders = []providerItem{
 		{Provider: "openai", DisplayName: "OpenAI", Connected: true},
-		{Provider: "google", DisplayName: "Google", AuthMethods: []AuthMethodItem{
+		{Provider: "google", DisplayName: "Google", AuthMethods: []authMethodItem{
 			{DisplayName: "API Key", Status: coreprovider.StatusNotConfigured},
 		}},
 	}
@@ -281,14 +281,14 @@ func TestTabSwitchesBetweenTabs(t *testing.T) {
 
 	// Press Tab to switch to Providers tab
 	m.HandleKeypress(tea.KeyMsg{Type: tea.KeyTab})
-	if m.activeTab != TabProviders {
+	if m.activeTab != tabProviders {
 		t.Fatal("Tab should switch to Providers tab")
 	}
 
 	// Should have provider items now
 	found := false
 	for _, item := range m.visibleItems {
-		if item.Kind == ItemProvider {
+		if item.Kind == itemProvider {
 			found = true
 			break
 		}
@@ -299,7 +299,7 @@ func TestTabSwitchesBetweenTabs(t *testing.T) {
 
 	// Press Tab again to go back to Models
 	m.HandleKeypress(tea.KeyMsg{Type: tea.KeyTab})
-	if m.activeTab != TabModels {
+	if m.activeTab != tabModels {
 		t.Fatal("Tab should switch back to Models tab")
 	}
 }
@@ -308,13 +308,13 @@ func TestNavigationSkipsProviderHeaders(t *testing.T) {
 	m := New()
 	m.active = true
 
-	model1 := ModelItem{ID: "m1", ProviderName: "openai"}
-	model2 := ModelItem{ID: "m2", ProviderName: "anthropic"}
-	m.visibleItems = []ListItem{
-		{Kind: ItemProviderHeader}, // 0 - not selectable
-		{Kind: ItemModel, Model: &model1}, // 1
-		{Kind: ItemProviderHeader}, // 2 - not selectable
-		{Kind: ItemModel, Model: &model2}, // 3
+	model1 := modelItem{ID: "m1", ProviderName: "openai"}
+	model2 := modelItem{ID: "m2", ProviderName: "anthropic"}
+	m.visibleItems = []listItem{
+		{Kind: itemProviderHeader}, // 0 - not selectable
+		{Kind: itemModel, Model: &model1}, // 1
+		{Kind: itemProviderHeader}, // 2 - not selectable
+		{Kind: itemModel, Model: &model2}, // 3
 	}
 	m.selectedIdx = 1
 
@@ -334,12 +334,12 @@ func TestNavigationSkipsProviderHeaders(t *testing.T) {
 func TestSelectProviderExpandsAuthMethods(t *testing.T) {
 	m := New()
 	m.active = true
-	m.activeTab = TabProviders
-	m.allProviders = []ProviderItem{
+	m.activeTab = tabProviders
+	m.allProviders = []providerItem{
 		{
 			Provider:    "anthropic",
 			DisplayName: "Anthropic",
-			AuthMethods: []AuthMethodItem{
+			AuthMethods: []authMethodItem{
 				{DisplayName: "API Key", Status: coreprovider.StatusNotConfigured},
 				{DisplayName: "Bedrock", Status: coreprovider.StatusAvailable},
 			},
@@ -349,7 +349,7 @@ func TestSelectProviderExpandsAuthMethods(t *testing.T) {
 
 	// Find the provider item
 	for i, item := range m.visibleItems {
-		if item.Kind == ItemProvider {
+		if item.Kind == itemProvider {
 			m.selectedIdx = i
 			break
 		}
@@ -367,7 +367,7 @@ func TestSelectProviderExpandsAuthMethods(t *testing.T) {
 	// Check that auth method items are now in visible list
 	authCount := 0
 	for _, item := range m.visibleItems {
-		if item.Kind == ItemAuthMethod {
+		if item.Kind == itemAuthMethod {
 			authCount++
 		}
 	}
@@ -378,13 +378,13 @@ func TestSelectProviderExpandsAuthMethods(t *testing.T) {
 
 func TestRebuildVisibleItemsStructure(t *testing.T) {
 	m := New()
-	m.activeTab = TabModels
-	m.allModels = []ModelItem{
+	m.activeTab = tabModels
+	m.allModels = []modelItem{
 		{ID: "m1", ProviderName: "openai", DisplayName: "Model 1"},
 		{ID: "m2", ProviderName: "openai", DisplayName: "Model 2"},
 		{ID: "m3", ProviderName: "anthropic", DisplayName: "Model 3"},
 	}
-	m.connectedProviders = []ProviderItem{
+	m.connectedProviders = []providerItem{
 		{Provider: "openai", DisplayName: "OpenAI"},
 		{Provider: "anthropic", DisplayName: "Anthropic"},
 	}
@@ -401,16 +401,16 @@ func TestRebuildVisibleItemsStructure(t *testing.T) {
 	if len(m.visibleItems) != 5 {
 		t.Fatalf("expected 5 visible items, got %d", len(m.visibleItems))
 	}
-	if m.visibleItems[0].Kind != ItemProviderHeader {
+	if m.visibleItems[0].Kind != itemProviderHeader {
 		t.Fatalf("item 0 should be ProviderHeader, got %v", m.visibleItems[0].Kind)
 	}
-	if m.visibleItems[1].Kind != ItemModel || m.visibleItems[2].Kind != ItemModel {
+	if m.visibleItems[1].Kind != itemModel || m.visibleItems[2].Kind != itemModel {
 		t.Fatal("items 1-2 should be Models")
 	}
-	if m.visibleItems[3].Kind != ItemProviderHeader {
+	if m.visibleItems[3].Kind != itemProviderHeader {
 		t.Fatalf("item 3 should be ProviderHeader, got %v", m.visibleItems[3].Kind)
 	}
-	if m.visibleItems[4].Kind != ItemModel {
+	if m.visibleItems[4].Kind != itemModel {
 		t.Fatal("item 4 should be Model")
 	}
 

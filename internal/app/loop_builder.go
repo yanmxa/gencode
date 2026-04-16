@@ -3,32 +3,26 @@ package app
 import (
 	"fmt"
 
-	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
-func (m *model) buildLoopClient() *client.Client {
-	return &client.Client{
-		Provider:      m.provider.LLM,
-		Model:         m.getModelID(),
-		MaxTokens:     m.getMaxTokens(),
-		ThinkingLevel: m.effectiveThinkingLevel(),
-	}
+func (m *model) buildLoopClient() *provider.LLM {
+	llm := provider.NewLLM(m.provider.LLM, m.getModelID(), m.getMaxTokens())
+	llm.SetThinking(m.effectiveThinkingLevel())
+	return llm
 }
 
-func (m *model) buildLoopSystem(extra []string, loopClient *client.Client) core.System {
+func (m *model) buildLoopSystem(extra []string, loopClient *provider.LLM) core.System {
 	providerName := ""
 	modelID := ""
 	if loopClient != nil {
-		modelID = loopClient.Model
-		if loopClient.Provider != nil {
-			providerName = loopClient.Provider.Name()
-		}
+		modelID = loopClient.ModelID()
+		providerName = loopClient.Name()
 	}
 	return prompt.Build(prompt.Config{
 		ProviderName:        providerName,
@@ -93,7 +87,7 @@ func (m *model) buildLoopAgentsSection() string {
 	return subagent.DefaultRegistry.GetAgentsSection()
 }
 
-func (m *model) buildMCPToolsGetter() func() []message.ToolSchema {
+func (m *model) buildMCPToolsGetter() func() []core.ToolSchema {
 	if m.mcp.Registry == nil {
 		return nil
 	}

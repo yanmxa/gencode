@@ -1,9 +1,9 @@
 package tool
 
-import "github.com/yanmxa/gencode/internal/message"
+import "github.com/yanmxa/gencode/internal/core"
 
 // agentToolSchema is the schema for the Agent tool.
-var agentToolSchema = message.ToolSchema{
+var agentToolSchema = core.ToolSchema{
 	Name: "Agent",
 	Description: `Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to it.
 
@@ -83,7 +83,7 @@ Usage notes:
 	},
 }
 
-var continueAgentToolSchema = message.ToolSchema{
+var continueAgentToolSchema = core.ToolSchema{
 	Name: "ContinueAgent",
 	Description: `Continue a previously spawned subagent using its saved conversation state.
 
@@ -154,7 +154,7 @@ Usage notes:
 	},
 }
 
-var sendMessageToolSchema = message.ToolSchema{
+var sendMessageToolSchema = core.ToolSchema{
 	Name: "SendMessage",
 	Description: `Send a follow-up message to an existing subagent worker.
 
@@ -174,7 +174,7 @@ Usage notes:
 		"properties": map[string]any{
 			"task_id": map[string]any{
 				"type":        "string",
-				"description": "Background task ID for the worker you want to message. Preferred when available.",
+				"description": "Background task ID for the worker you want to core. Preferred when available.",
 			},
 			"agent_id": map[string]any{
 				"type":        "string",
@@ -229,7 +229,7 @@ Usage notes:
 }
 
 // skillToolSchema is the schema for the Skill tool.
-var skillToolSchema = message.ToolSchema{
+var skillToolSchema = core.ToolSchema{
 	Name: "Skill",
 	Description: `Execute a skill within the main conversation.
 
@@ -271,7 +271,7 @@ Important:
 }
 
 // enterPlanModeSchema is the schema for EnterPlanMode tool.
-var enterPlanModeSchema = message.ToolSchema{
+var enterPlanModeSchema = core.ToolSchema{
 	Name: "EnterPlanMode",
 	Description: `Request to enter plan mode for tasks that need exploration before implementation. The user must approve entering plan mode.
 
@@ -302,7 +302,7 @@ When NOT to use:
 }
 
 // exitPlanModeSchema is the schema for ExitPlanMode tool.
-var exitPlanModeSchema = message.ToolSchema{
+var exitPlanModeSchema = core.ToolSchema{
 	Name:        "ExitPlanMode",
 	Description: "Exit plan mode and submit your implementation plan for user approval. Call this when you have finished exploring the codebase and created a complete implementation plan.",
 	Parameters: map[string]any{
@@ -318,7 +318,7 @@ var exitPlanModeSchema = message.ToolSchema{
 }
 
 // toolSearchSchema defines the schema for the ToolSearch tool.
-var toolSearchSchema = message.ToolSchema{
+var toolSearchSchema = core.ToolSchema{
 	Name: "ToolSearch",
 	Description: `Fetches full schema definitions for deferred tools so they can be called.
 
@@ -349,7 +349,7 @@ Query forms:
 
 // planModeAgentSchema is an Agent tool schema for plan mode.
 // It omits run_in_background (foreground-only) and restricts to read-only agents.
-var planModeAgentSchema = message.ToolSchema{
+var planModeAgentSchema = core.ToolSchema{
 	Name: "Agent",
 	Description: `Launch a subagent to research the codebase.
 

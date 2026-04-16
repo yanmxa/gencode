@@ -9,12 +9,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	coreskill "github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/ui/selector"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/selector"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
-// Item represents a skill in the selector.
-type Item struct {
+// item represents a skill in the selector.
+type item struct {
 	Name        string // Base name
 	Namespace   string // Optional namespace
 	Description string
@@ -24,7 +24,7 @@ type Item struct {
 }
 
 // FullName returns the namespaced skill name (namespace:name or just name).
-func (s *Item) FullName() string {
+func (s *item) FullName() string {
 	if s.Namespace != "" {
 		return s.Namespace + ":" + s.Name
 	}
@@ -35,13 +35,13 @@ func (s *Item) FullName() string {
 type SaveLevel int
 
 const (
-	SaveLevelProject SaveLevel = iota // Save to .gen/skills.json
-	SaveLevelUser                     // Save to ~/.gen/skills.json
+	saveLevelProject SaveLevel = iota // Save to .gen/skills.json
+	saveLevelUser                     // Save to ~/.gen/skills.json
 )
 
 // String returns the display name for the save level.
 func (l SaveLevel) String() string {
-	if l == SaveLevelUser {
+	if l == saveLevelUser {
 		return "User"
 	}
 	return "Project"
@@ -50,8 +50,8 @@ func (l SaveLevel) String() string {
 // Model holds state for the skill selector.
 type Model struct {
 	active         bool
-	skills         []Item
-	filteredSkills []Item
+	skills         []item
+	filteredSkills []item
 	selectedIdx    int
 	width          int
 	height         int
@@ -76,7 +76,7 @@ type InvokeMsg struct {
 func New() Model {
 	return Model{
 		active:     false,
-		skills:     []Item{},
+		skills:     []item{},
 		maxVisible: 10,
 	}
 }
@@ -90,16 +90,16 @@ func (s *Model) EnterSelect(width, height int) error {
 	allSkills := coreskill.DefaultRegistry.List()
 
 	// Get states from current level
-	levelStates := coreskill.DefaultRegistry.GetStatesAt(s.saveLevel == SaveLevelUser)
+	levelStates := coreskill.DefaultRegistry.GetStatesAt(s.saveLevel == saveLevelUser)
 
-	s.skills = make([]Item, 0, len(allSkills))
+	s.skills = make([]item, 0, len(allSkills))
 	for _, sk := range allSkills {
 		// Use level-specific state if available, otherwise use merged state
 		state := sk.State
 		if levelState, ok := levelStates[sk.FullName()]; ok {
 			state = levelState
 		}
-		s.skills = append(s.skills, Item{
+		s.skills = append(s.skills, item{
 			Name:        sk.Name,
 			Namespace:   sk.Namespace,
 			Description: sk.Description,
@@ -126,7 +126,7 @@ func (s *Model) reloadSkillStates() {
 		return
 	}
 
-	levelStates := coreskill.DefaultRegistry.GetStatesAt(s.saveLevel == SaveLevelUser)
+	levelStates := coreskill.DefaultRegistry.GetStatesAt(s.saveLevel == saveLevelUser)
 
 	for i := range s.skills {
 		fullName := s.skills[i].FullName()
@@ -147,8 +147,8 @@ func (s *Model) IsActive() bool {
 // Cancel cancels the selector.
 func (s *Model) Cancel() {
 	s.active = false
-	s.skills = []Item{}
-	s.filteredSkills = []Item{}
+	s.skills = []item{}
+	s.filteredSkills = []item{}
 	s.selectedIdx = 0
 	s.scrollOffset = 0
 	s.searchQuery = ""
@@ -186,7 +186,7 @@ func (s *Model) updateFilter() {
 		s.filteredSkills = s.skills
 	} else {
 		query := strings.ToLower(s.searchQuery)
-		s.filteredSkills = make([]Item, 0)
+		s.filteredSkills = make([]item, 0)
 		for _, sk := range s.skills {
 			// Match against full name (namespace:name), name, or description
 			if selector.FuzzyMatch(strings.ToLower(sk.FullName()), query) ||
@@ -223,7 +223,7 @@ func (s *Model) CycleState() tea.Cmd {
 
 	// Persist via registry (using FullName) to the current save level
 	if coreskill.DefaultRegistry != nil {
-		_ = coreskill.DefaultRegistry.SetState(fullName, newState, s.saveLevel == SaveLevelUser)
+		_ = coreskill.DefaultRegistry.SetState(fullName, newState, s.saveLevel == saveLevelUser)
 	}
 
 	return func() tea.Msg {
@@ -245,10 +245,10 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		return nil
 	case tea.KeyTab:
 		// Tab toggles save level between project and user
-		if s.saveLevel == SaveLevelProject {
-			s.saveLevel = SaveLevelUser
+		if s.saveLevel == saveLevelProject {
+			s.saveLevel = saveLevelUser
 		} else {
-			s.saveLevel = SaveLevelProject
+			s.saveLevel = saveLevelProject
 		}
 		// Reload skill states from the new level
 		s.reloadSkillStates()

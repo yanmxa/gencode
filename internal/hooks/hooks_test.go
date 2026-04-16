@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
 )
 
 type stubAgentRunner struct {
@@ -71,29 +70,29 @@ func Test_getMatchValue(t *testing.T) {
 		input HookInput
 		want  string
 	}{
-		{core.PreToolUse, HookInput{ToolName: "Bash"}, "Bash"},
-		{core.PostToolUse, HookInput{ToolName: "Edit"}, "Edit"},
-		{core.PostToolUseFailure, HookInput{ToolName: "Write"}, "Write"},
-		{core.PermissionRequest, HookInput{ToolName: "Task"}, "Task"},
-		{core.PermissionDenied, HookInput{ToolName: "Bash"}, "Bash"},
-		{core.Setup, HookInput{Trigger: "init"}, "init"},
-		{core.SessionStart, HookInput{Source: "startup"}, "startup"},
-		{core.SessionEnd, HookInput{Reason: "quit"}, "quit"},
-		{core.Notification, HookInput{NotificationType: "permission_prompt"}, "permission_prompt"},
-		{core.SubagentStart, HookInput{AgentType: "Explore"}, "Explore"},
-		{core.SubagentStop, HookInput{AgentType: "Plan"}, "Plan"},
-		{core.TaskCreated, HookInput{TaskSubject: "Explore"}, "Explore"},
-		{core.TaskCompleted, HookInput{TaskSubject: "Plan"}, "Plan"},
-		{core.ConfigChange, HookInput{Source: "user_settings"}, "user_settings"},
-		{core.InstructionsLoaded, HookInput{FilePath: "/tmp/GEN.md"}, "/tmp/GEN.md"},
-		{core.CwdChanged, HookInput{NewCwd: "/tmp/worktree"}, "/tmp/worktree"},
-		{core.FileChanged, HookInput{FilePath: "/tmp/file.txt"}, "/tmp/file.txt"},
-		{core.PreCompact, HookInput{Trigger: "auto"}, "auto"},
-		{core.PostCompact, HookInput{Trigger: "manual"}, "manual"},
-		{core.WorktreeCreate, HookInput{Name: "feature-123"}, "feature-123"},
-		{core.WorktreeRemove, HookInput{WorktreePath: "/tmp/wt"}, "/tmp/wt"},
-		{core.UserPromptSubmit, HookInput{Prompt: "hello"}, ""}, // No matcher support
-		{core.Stop, HookInput{}, ""},                            // No matcher support
+		{PreToolUse, HookInput{ToolName: "Bash"}, "Bash"},
+		{PostToolUse, HookInput{ToolName: "Edit"}, "Edit"},
+		{PostToolUseFailure, HookInput{ToolName: "Write"}, "Write"},
+		{PermissionRequest, HookInput{ToolName: "Task"}, "Task"},
+		{PermissionDenied, HookInput{ToolName: "Bash"}, "Bash"},
+		{Setup, HookInput{Trigger: "init"}, "init"},
+		{SessionStart, HookInput{Source: "startup"}, "startup"},
+		{SessionEnd, HookInput{Reason: "quit"}, "quit"},
+		{Notification, HookInput{NotificationType: "permission_prompt"}, "permission_prompt"},
+		{SubagentStart, HookInput{AgentType: "Explore"}, "Explore"},
+		{SubagentStop, HookInput{AgentType: "Plan"}, "Plan"},
+		{TaskCreated, HookInput{TaskSubject: "Explore"}, "Explore"},
+		{TaskCompleted, HookInput{TaskSubject: "Plan"}, "Plan"},
+		{ConfigChange, HookInput{Source: "user_settings"}, "user_settings"},
+		{InstructionsLoaded, HookInput{FilePath: "/tmp/GEN.md"}, "/tmp/GEN.md"},
+		{CwdChanged, HookInput{NewCwd: "/tmp/worktree"}, "/tmp/worktree"},
+		{FileChanged, HookInput{FilePath: "/tmp/file.txt"}, "/tmp/file.txt"},
+		{PreCompact, HookInput{Trigger: "auto"}, "auto"},
+		{PostCompact, HookInput{Trigger: "manual"}, "manual"},
+		{WorktreeCreate, HookInput{Name: "feature-123"}, "feature-123"},
+		{WorktreeRemove, HookInput{WorktreePath: "/tmp/wt"}, "/tmp/wt"},
+		{UserPromptSubmit, HookInput{Prompt: "hello"}, ""}, // No matcher support
+		{Stop, HookInput{}, ""},                            // No matcher support
 	}
 
 	for _, tt := range tests {
@@ -108,14 +107,14 @@ func Test_getMatchValue(t *testing.T) {
 
 func Test_eventSupportsMatcher(t *testing.T) {
 	supported := []EventType{
-		core.PreToolUse, core.PostToolUse, core.PostToolUseFailure, core.PermissionRequest,
-		core.PermissionDenied, core.Setup, core.SessionStart, core.SessionEnd, core.Notification,
-		core.SubagentStart, core.SubagentStop, core.TaskCreated, core.TaskCompleted, core.ConfigChange, core.InstructionsLoaded, core.CwdChanged, core.FileChanged, core.PreCompact, core.PostCompact,
-		core.WorktreeCreate, core.WorktreeRemove,
+		PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest,
+		PermissionDenied, Setup, SessionStart, SessionEnd, Notification,
+		SubagentStart, SubagentStop, TaskCreated, TaskCompleted, ConfigChange, InstructionsLoaded, CwdChanged, FileChanged, PreCompact, PostCompact,
+		WorktreeCreate, WorktreeRemove,
 	}
 
 	notSupported := []EventType{
-		core.UserPromptSubmit, core.Stop, core.StopFailure,
+		UserPromptSubmit, Stop, StopFailure,
 	}
 
 	for _, event := range supported {
@@ -135,7 +134,7 @@ func TestEngineNoHooks(t *testing.T) {
 	settings := config.NewSettings()
 	engine := NewEngine(settings, "test-session", "/tmp", "")
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	if !outcome.ShouldContinue {
 		t.Error("Expected ShouldContinue=true when no hooks configured")
@@ -148,7 +147,7 @@ func TestEngineNoHooks(t *testing.T) {
 func TestEngineNilSettings(t *testing.T) {
 	engine := NewEngine(nil, "test-session", "/tmp", "")
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	if !outcome.ShouldContinue {
 		t.Error("Expected ShouldContinue=true with nil settings")
@@ -163,10 +162,10 @@ func TestEngineHasHooks(t *testing.T) {
 
 	engine := NewEngine(settings, "test-session", "/tmp", "")
 
-	if !engine.HasHooks(core.Stop) {
+	if !engine.HasHooks(Stop) {
 		t.Error("Expected HasHooks(Stop)=true")
 	}
-	if engine.HasHooks(core.PreToolUse) {
+	if engine.HasHooks(PreToolUse) {
 		t.Error("Expected HasHooks(PreToolUse)=false")
 	}
 }
@@ -175,7 +174,7 @@ func TestMatchesIfConditionMatchesBashSubcommands(t *testing.T) {
 	engine := NewEngine(config.NewSettings(), "test-session", "/tmp/repo", "")
 	cmd := config.HookCmd{If: "Bash(git:*)"}
 	input := HookInput{
-		HookEventName: string(core.PreToolUse),
+		HookEventName: string(PreToolUse),
 		ToolName:      "Bash",
 		ToolInput:     map[string]any{"command": "cd /tmp/repo && git status"},
 	}
@@ -187,49 +186,49 @@ func TestMatchesIfConditionMatchesBashSubcommands(t *testing.T) {
 
 func TestEngineRuntimeAndSessionHooks(t *testing.T) {
 	engine := NewEngine(config.NewSettings(), "test-session", "/tmp", "")
-	engine.store.AddRuntimeHook(core.PreToolUse, "Bash", config.HookCmd{Type: "command", Command: "echo runtime"})
-	engine.store.AddSessionHook(core.Stop, "", config.HookCmd{Type: "command", Command: "echo session"})
-	engine.AddRuntimeFunctionHook(core.StopFailure, "", FunctionHook{
+	engine.store.AddRuntimeHook(PreToolUse, "Bash", config.HookCmd{Type: "command", Command: "echo runtime"})
+	engine.store.AddSessionHook(Stop, "", config.HookCmd{Type: "command", Command: "echo session"})
+	engine.AddRuntimeFunctionHook(StopFailure, "", FunctionHook{
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
 			msg := "runtime function"
 			return HookOutput{SystemMessage: msg}, nil
 		},
 	})
-	engine.AddSessionFunctionHook(core.Notification, "", FunctionHook{
+	engine.AddSessionFunctionHook(Notification, "", FunctionHook{
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
 			msg := "session function"
 			return HookOutput{SystemMessage: msg}, nil
 		},
 	})
 
-	if !engine.HasHooks(core.PreToolUse) {
+	if !engine.HasHooks(PreToolUse) {
 		t.Fatal("expected runtime hook to be visible")
 	}
-	if !engine.HasHooks(core.Stop) {
+	if !engine.HasHooks(Stop) {
 		t.Fatal("expected session hook to be visible")
 	}
-	if !engine.HasHooks(core.StopFailure) {
+	if !engine.HasHooks(StopFailure) {
 		t.Fatal("expected runtime function hook to be visible")
 	}
-	if !engine.HasHooks(core.Notification) {
+	if !engine.HasHooks(Notification) {
 		t.Fatal("expected session function hook to be visible")
 	}
 
 	engine.ClearSessionHooks()
-	if !engine.HasHooks(core.PreToolUse) {
+	if !engine.HasHooks(PreToolUse) {
 		t.Fatal("runtime hook should remain after clearing session hooks")
 	}
-	if !engine.HasHooks(core.StopFailure) {
+	if !engine.HasHooks(StopFailure) {
 		t.Fatal("runtime function hook should remain after clearing session hooks")
 	}
-	if engine.HasHooks(core.Notification) {
+	if engine.HasHooks(Notification) {
 		t.Fatal("session function hook should be cleared")
 	}
 }
 
 func TestEngineSessionFunctionHook(t *testing.T) {
 	engine := NewEngine(config.NewSettings(), "test-session", "/tmp", "")
-	id := engine.AddSessionFunctionHook(core.PreToolUse, "Bash", FunctionHook{
+	id := engine.AddSessionFunctionHook(PreToolUse, "Bash", FunctionHook{
 		Callback: func(_ context.Context, input HookInput) (HookOutput, error) {
 			if input.ToolName != "Bash" {
 				t.Fatalf("unexpected tool name: %q", input.ToolName)
@@ -242,12 +241,12 @@ func TestEngineSessionFunctionHook(t *testing.T) {
 		t.Fatal("expected generated function hook ID")
 	}
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 	if outcome.AdditionalContext != "function hook fired" {
 		t.Fatalf("expected function hook context, got %q", outcome.AdditionalContext)
 	}
 
-	outcome = engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Write"})
+	outcome = engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Write"})
 	if outcome.AdditionalContext != "" {
 		t.Fatalf("expected matcher-missed function hook to skip, got %q", outcome.AdditionalContext)
 	}
@@ -255,7 +254,7 @@ func TestEngineSessionFunctionHook(t *testing.T) {
 
 func TestEngineRemoveSessionFunctionHook(t *testing.T) {
 	engine := NewEngine(config.NewSettings(), "test-session", "/tmp", "")
-	id := engine.AddSessionFunctionHook(core.Stop, "", FunctionHook{
+	id := engine.AddSessionFunctionHook(Stop, "", FunctionHook{
 		ID: "fn-stop",
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
 			msg := "should not run"
@@ -265,11 +264,11 @@ func TestEngineRemoveSessionFunctionHook(t *testing.T) {
 	if id != "fn-stop" {
 		t.Fatalf("expected stable hook ID, got %q", id)
 	}
-	if !engine.store.RemoveSessionFunctionHook(core.Stop, id) {
+	if !engine.store.RemoveSessionFunctionHook(Stop, id) {
 		t.Fatal("expected function hook removal to succeed")
 	}
 
-	outcome := engine.Execute(context.Background(), core.Stop, HookInput{})
+	outcome := engine.Execute(context.Background(), Stop, HookInput{})
 	if outcome.AdditionalContext != "" {
 		t.Fatalf("expected removed function hook to stop running, got %q", outcome.AdditionalContext)
 	}
@@ -297,13 +296,13 @@ echo '{"systemMessage":"hook executed"}'
 	engine := NewEngine(settings, "test-session", tmpDir, "")
 
 	// Should match
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 	if outcome.AdditionalContext != "hook executed" {
 		t.Errorf("Expected context from hook, got %q", outcome.AdditionalContext)
 	}
 
 	// Should not match
-	outcome = engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Edit"})
+	outcome = engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Edit"})
 	if outcome.AdditionalContext != "" {
 		t.Errorf("Expected no context for non-matching tool, got %q", outcome.AdditionalContext)
 	}
@@ -331,7 +330,7 @@ echo '{"systemMessage":"hook executed"}'
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{
 		ToolName:  "Bash",
 		ToolInput: map[string]any{"command": "git status"},
 	})
@@ -339,7 +338,7 @@ echo '{"systemMessage":"hook executed"}'
 		t.Fatalf("expected if-filtered hook to match git command, got %q", outcome.AdditionalContext)
 	}
 
-	outcome = engine.Execute(context.Background(), core.PreToolUse, HookInput{
+	outcome = engine.Execute(context.Background(), PreToolUse, HookInput{
 		ToolName:  "Bash",
 		ToolInput: map[string]any{"command": "npm test"},
 	})
@@ -367,7 +366,7 @@ exit 2
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	if outcome.ShouldContinue {
 		t.Error("Expected ShouldContinue=false for blocking hook")
@@ -398,7 +397,7 @@ echo '{"continue":false,"stopReason":"Denied by hook"}'
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	if outcome.ShouldContinue {
 		t.Error("Expected ShouldContinue=false")
@@ -432,7 +431,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":` + str
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{
 		ToolName:  "Bash",
 		ToolInput: map[string]any{"command": "rm -rf /"},
 	})
@@ -463,7 +462,7 @@ echo "{\"systemMessage\":\"GEN=$GEN_PROJECT_DIR CLAUDE=$CLAUDE_PROJECT_DIR\"}"
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
 
-	outcome := engine.Execute(context.Background(), core.Stop, HookInput{})
+	outcome := engine.Execute(context.Background(), Stop, HookInput{})
 
 	expected := "GEN=" + tmpDir + " CLAUDE=" + tmpDir
 	if outcome.AdditionalContext != expected {
@@ -500,7 +499,7 @@ exec sleep 30
 	engine := NewEngine(settings, "test-session", tmpDir, "")
 
 	start := time.Now()
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 	elapsed := time.Since(start)
 
 	// Should terminate well before the sleep duration (30s)
@@ -538,8 +537,8 @@ echo -n "x" >> `+counterFile+`
 	engine := NewEngine(settings, "test-session", tmpDir, "")
 
 	// Fire the hook twice
-	engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
-	engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
+	engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	// Read the counter — should be exactly 1 character (fired once)
 	content, err := os.ReadFile(counterFile)
@@ -572,7 +571,7 @@ cat > `+captureFile+`
 	const sessionID = "test-session-xyz"
 	engine := NewEngine(settings, sessionID, tmpDir, "")
 
-	engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	// Read captured JSON
 	data, err := os.ReadFile(captureFile)
@@ -616,7 +615,7 @@ cat > `+captureFile+`
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
 	engine.SetPermissionMode("plan")
-	engine.Execute(context.Background(), core.PermissionDenied, HookInput{ToolName: "Write"})
+	engine.Execute(context.Background(), PermissionDenied, HookInput{ToolName: "Write"})
 
 	data, err := os.ReadFile(captureFile)
 	if err != nil {
@@ -654,7 +653,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"R
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Edit"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Edit"})
 
 	if outcome.AdditionalContext != "Review: all edits must include tests" {
 		t.Errorf("expected additionalContext, got %q", outcome.AdditionalContext)
@@ -667,7 +666,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"R
 func TestHooks_ExtractWatchPaths(t *testing.T) {
 	settings := config.NewSettings()
 	engine := NewEngine(settings, "test-session", t.TempDir(), "")
-	engine.AddSessionFunctionHook(core.SessionStart, "", FunctionHook{
+	engine.AddSessionFunctionHook(SessionStart, "", FunctionHook{
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
 			return HookOutput{
 				HookSpecificOutput: &HookSpecificOutput{
@@ -678,7 +677,7 @@ func TestHooks_ExtractWatchPaths(t *testing.T) {
 		},
 	})
 
-	outcome := engine.Execute(context.Background(), core.SessionStart, HookInput{})
+	outcome := engine.Execute(context.Background(), SessionStart, HookInput{})
 	if len(outcome.WatchPaths) != 2 {
 		t.Fatalf("expected 2 watch paths, got %#v", outcome.WatchPaths)
 	}
@@ -689,7 +688,7 @@ func TestHooks_ExtractWatchPaths(t *testing.T) {
 
 func TestHooks_MergeWatchPathsFromMultipleHooks(t *testing.T) {
 	engine := NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
-	engine.AddSessionFunctionHook(core.SessionStart, "", FunctionHook{
+	engine.AddSessionFunctionHook(SessionStart, "", FunctionHook{
 		ID: "watch-a",
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
 			return HookOutput{
@@ -700,7 +699,7 @@ func TestHooks_MergeWatchPathsFromMultipleHooks(t *testing.T) {
 			}, nil
 		},
 	})
-	engine.AddSessionFunctionHook(core.SessionStart, "", FunctionHook{
+	engine.AddSessionFunctionHook(SessionStart, "", FunctionHook{
 		ID: "watch-b",
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
 			return HookOutput{
@@ -712,7 +711,7 @@ func TestHooks_MergeWatchPathsFromMultipleHooks(t *testing.T) {
 		},
 	})
 
-	outcome := engine.Execute(context.Background(), core.SessionStart, HookInput{})
+	outcome := engine.Execute(context.Background(), SessionStart, HookInput{})
 	want := []string{"/tmp/a", "/tmp/b", "/tmp/c"}
 	if len(outcome.WatchPaths) != len(want) {
 		t.Fatalf("expected %d watch paths, got %#v", len(want), outcome.WatchPaths)
@@ -726,7 +725,7 @@ func TestHooks_MergeWatchPathsFromMultipleHooks(t *testing.T) {
 
 func TestHooks_ExtractInitialUserMessage(t *testing.T) {
 	engine := NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
-	engine.AddSessionFunctionHook(core.SessionStart, "", FunctionHook{
+	engine.AddSessionFunctionHook(SessionStart, "", FunctionHook{
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
 			return HookOutput{
 				HookSpecificOutput: &HookSpecificOutput{
@@ -737,7 +736,7 @@ func TestHooks_ExtractInitialUserMessage(t *testing.T) {
 		},
 	})
 
-	outcome := engine.Execute(context.Background(), core.SessionStart, HookInput{})
+	outcome := engine.Execute(context.Background(), SessionStart, HookInput{})
 	if outcome.InitialUserMessage != "Inspect the repo and summarize risks." {
 		t.Fatalf("unexpected initial user message: %q", outcome.InitialUserMessage)
 	}
@@ -747,7 +746,7 @@ func TestHooks_CurrentStatusMessageTracksActiveHook(t *testing.T) {
 	engine := NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
-	engine.AddSessionFunctionHook(core.Notification, "", FunctionHook{
+	engine.AddSessionFunctionHook(Notification, "", FunctionHook{
 		StatusMessage: "running notification hook",
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
 			started <- struct{}{}
@@ -759,7 +758,7 @@ func TestHooks_CurrentStatusMessageTracksActiveHook(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		engine.Execute(context.Background(), core.Notification, HookInput{NotificationType: "idle_prompt"})
+		engine.Execute(context.Background(), Notification, HookInput{NotificationType: "idle_prompt"})
 	}()
 
 	select {
@@ -786,7 +785,7 @@ func TestHooks_CurrentStatusMessageTracksActiveHook(t *testing.T) {
 
 func TestHooks_ExtractPermissionDeniedRetry(t *testing.T) {
 	engine := NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
-	engine.AddSessionFunctionHook(core.PermissionDenied, "", FunctionHook{
+	engine.AddSessionFunctionHook(PermissionDenied, "", FunctionHook{
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
 			return HookOutput{
 				HookSpecificOutput: &HookSpecificOutput{
@@ -797,7 +796,7 @@ func TestHooks_ExtractPermissionDeniedRetry(t *testing.T) {
 		},
 	})
 
-	outcome := engine.Execute(context.Background(), core.PermissionDenied, HookInput{ToolName: "Write"})
+	outcome := engine.Execute(context.Background(), PermissionDenied, HookInput{ToolName: "Write"})
 	if !outcome.Retry {
 		t.Fatal("expected retry=true from PermissionDenied hook output")
 	}
@@ -819,7 +818,7 @@ echo '{"systemMessage":"injected context from hook"}'
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	if outcome.AdditionalContext != "injected context from hook" {
 		t.Errorf("expected systemMessage as context, got %q", outcome.AdditionalContext)
@@ -844,7 +843,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Write"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Write"})
 
 	if !outcome.PermissionAllow {
 		t.Error("expected PermissionAllow=true")
@@ -871,7 +870,7 @@ func TestHooks_PromptHook(t *testing.T) {
 		`{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}`,
 	), "test-model")
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 	if !outcome.PermissionAllow {
 		t.Fatal("expected prompt hook to allow execution")
 	}
@@ -891,7 +890,7 @@ func TestHooks_AgentHook(t *testing.T) {
 		`{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}`,
 	), "test-model")
 
-	outcome := engine.Execute(context.Background(), core.PermissionRequest, HookInput{ToolName: "Write"})
+	outcome := engine.Execute(context.Background(), PermissionRequest, HookInput{ToolName: "Write"})
 	if !outcome.PermissionAllow {
 		t.Fatal("expected agent hook to allow execution")
 	}
@@ -926,7 +925,7 @@ func TestHooks_HTTPHook(t *testing.T) {
 		}),
 	}
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 	if !outcome.PermissionAllow {
 		t.Fatal("expected http hook to allow execution")
 	}
@@ -948,7 +947,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	if !outcome.ShouldBlock {
 		t.Error("expected ShouldBlock=true for permission deny")
@@ -974,7 +973,7 @@ func TestHooks_AgentHook_UsesInjectedRunner(t *testing.T) {
 		response: `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}`,
 	})
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 	if !outcome.PermissionAllow {
 		t.Fatal("expected agent runner to allow execution")
 	}
@@ -998,7 +997,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PermissionRequest, HookInput{ToolName: "Write"})
+	outcome := engine.Execute(context.Background(), PermissionRequest, HookInput{ToolName: "Write"})
 
 	if !outcome.PermissionAllow {
 		t.Error("expected PermissionAllow=true")
@@ -1024,7 +1023,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PermissionRequest, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PermissionRequest, HookInput{ToolName: "Bash"})
 
 	if !outcome.ShouldBlock {
 		t.Error("expected ShouldBlock=true for deny")
@@ -1050,7 +1049,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PermissionRequest, HookInput{ToolName: "Edit"})
+	outcome := engine.Execute(context.Background(), PermissionRequest, HookInput{ToolName: "Edit"})
 
 	if !outcome.PermissionAllow {
 		t.Error("expected PermissionAllow=true")
@@ -1086,7 +1085,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PermissionRequest, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PermissionRequest, HookInput{ToolName: "Bash"})
 
 	if !outcome.PermissionAllow {
 		t.Error("expected PermissionAllow=true")
@@ -1122,7 +1121,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PermissionRequest, HookInput{ToolName: "Write"})
+	outcome := engine.Execute(context.Background(), PermissionRequest, HookInput{ToolName: "Write"})
 
 	if !outcome.PermissionAllow {
 		t.Error("expected PermissionAllow=true")
@@ -1155,7 +1154,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PermissionRequest, HookInput{
+	outcome := engine.Execute(context.Background(), PermissionRequest, HookInput{
 		ToolName:  "Write",
 		ToolInput: map[string]any{"file_path": "/original/path.txt"},
 	})
@@ -1220,7 +1219,7 @@ fi
 		}, false
 	})
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	if !outcome.PermissionAllow {
 		t.Error("expected PermissionAllow=true after user approved prompt")
@@ -1258,7 +1257,7 @@ fi
 		return PromptResponse{PromptResponse: "confirm", Selected: "no"}, false
 	})
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	if !outcome.ShouldBlock {
 		t.Error("expected ShouldBlock=true after user declined")
@@ -1293,7 +1292,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"
 		return PromptResponse{}, true
 	})
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	// Cancelled prompt should continue (no block, no allow — just pass through)
 	if outcome.ShouldBlock {
@@ -1348,7 +1347,7 @@ fi
 		}
 	})
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	if callCount != 2 {
 		t.Errorf("expected 2 prompt rounds, got %d", callCount)
@@ -1384,7 +1383,7 @@ echo "async_done" > `+markerFile+`
 		return PromptResponse{}, true
 	})
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	// Async detach: should continue without blocking or allowing
 	if outcome.ShouldBlock {
@@ -1430,14 +1429,14 @@ exit 2
 		resultCh <- result
 	})
 
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Write"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Write"})
 	if outcome.ShouldBlock {
 		t.Fatal("asyncRewake should not synchronously block the caller")
 	}
 
 	select {
 	case result := <-resultCh:
-		if result.Event != core.PreToolUse {
+		if result.Event != PreToolUse {
 			t.Fatalf("expected PreToolUse async callback, got %v", result.Event)
 		}
 		if result.BlockReason != "background policy blocked this" {
@@ -1466,7 +1465,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Read"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Read"})
 
 	if !outcome.ForceAsk {
 		t.Error("expected ForceAsk=true for permissionDecision:ask")
@@ -1498,7 +1497,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","decision":{"behavior"
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
-	outcome := engine.Execute(context.Background(), core.PreToolUse, HookInput{ToolName: "Bash"})
+	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
 
 	// The decision field should be ignored for PreToolUse (hookEventName != PermissionRequest)
 	if outcome.PermissionAllow {
@@ -1527,7 +1526,7 @@ cat > `+captureFile+`
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
 	engine.SetPermissionMode("auto")
-	engine.Execute(context.Background(), core.SessionStart, HookInput{Source: "resume"})
+	engine.Execute(context.Background(), SessionStart, HookInput{Source: "resume"})
 
 	data, err := os.ReadFile(captureFile)
 	if err != nil {

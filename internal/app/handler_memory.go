@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 // startExternalEditor is a thin wrapper that delegates to memory.StartExternalEditor
@@ -36,8 +36,8 @@ func (m *model) handleMemorySelected(msg appmemory.SelectedMsg) tea.Cmd {
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		if err := appmemory.CreateMemoryFile(filePath, msg.Level, m.cwd); err != nil {
-			m.conv.Append(message.ChatMessage{
-				Role:    message.RoleNotice,
+			m.conv.Append(core.ChatMessage{
+				Role:    core.RoleNotice,
 				Content: fmt.Sprintf("Error: %v", err),
 			})
 			return tea.Batch(m.commitMessages()...)
@@ -48,8 +48,8 @@ func (m *model) handleMemorySelected(msg appmemory.SelectedMsg) tea.Cmd {
 
 	displayPath := appmemory.FormatMemoryDisplayPath(filePath, msg.Level, m.cwd)
 
-	m.conv.Append(message.ChatMessage{
-		Role:    message.RoleNotice,
+	m.conv.Append(core.ChatMessage{
+		Role:    core.RoleNotice,
 		Content: fmt.Sprintf("Opening %s memory: %s", msg.Level, displayPath),
 	})
 
@@ -73,6 +73,6 @@ func (m *model) handleEditorFinished(msg appmemory.EditorFinishedMsg) tea.Cmd {
 		m.fireFileChanged(filePath, "memory_editor")
 	}
 
-	m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: content})
+	m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: content})
 	return tea.Batch(m.commitMessages()...)
 }

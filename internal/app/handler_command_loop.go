@@ -14,7 +14,7 @@ import (
 
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	"github.com/yanmxa/gencode/internal/cron"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 const loopDefaultInterval = "10m"
@@ -78,8 +78,8 @@ func handleLoopCommand(ctx context.Context, m *model, args string) (string, tea.
 		parsed.Cron,
 		parsed.Note,
 	))
-	m.conv.Append(message.ChatMessage{
-		Role:    message.RoleUser,
+	m.conv.Append(core.ChatMessage{
+		Role:    core.RoleUser,
 		Content: parsed.Prompt,
 	})
 

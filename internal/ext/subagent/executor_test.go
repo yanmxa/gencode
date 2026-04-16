@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/loop"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/ext/skill"
 )
 
@@ -19,25 +19,25 @@ type stubSubagentSessionStore struct {
 	saveTitle    string
 	saveModelID  string
 	saveCwd      string
-	saveMessages []message.Message
-	loadMessages []message.Message
+	saveMessages []core.Message
+	loadMessages []core.Message
 	loadErr      error
 }
 
-func (s *stubSubagentSessionStore) SaveSubagentConversation(parentSessionID, title, modelID, cwd string, messages []message.Message) (string, string, error) {
+func (s *stubSubagentSessionStore) SaveSubagentConversation(parentSessionID, title, modelID, cwd string, messages []core.Message) (string, string, error) {
 	s.saveParentID = parentSessionID
 	s.saveTitle = title
 	s.saveModelID = modelID
 	s.saveCwd = cwd
-	s.saveMessages = append([]message.Message(nil), messages...)
+	s.saveMessages = append([]core.Message(nil), messages...)
 	return "agent-1", "/tmp/transcripts/agent-1.jsonl", nil
 }
 
-func (s *stubSubagentSessionStore) LoadSubagentMessages(agentID string) ([]message.Message, error) {
+func (s *stubSubagentSessionStore) LoadSubagentMessages(agentID string) ([]core.Message, error) {
 	if s.loadErr != nil {
 		return nil, s.loadErr
 	}
-	return append([]message.Message(nil), s.loadMessages...), nil
+	return append([]core.Message(nil), s.loadMessages...), nil
 }
 
 func TestPrepareRunConfigRespectsOverrides(t *testing.T) {
@@ -102,12 +102,12 @@ func TestBuildCancelledAgentResultUsesPreparedRunMetadata(t *testing.T) {
 		progress:  []string{"Read(main.go)"},
 	}
 
-	result := executor.buildCancelledAgentResult(run, &runtime.Result{
+	result := executor.buildCancelledAgentResult(run, &loop.Result{
 		Content:    "partial",
-		Messages:   []message.Message{{Role: message.RoleAssistant, Content: "partial"}},
+		Messages:   []core.Message{{Role: core.RoleAssistant, Content: "partial"}},
 		Turns:      2,
 		ToolUses:   1,
-		StopReason: runtime.StopCancelled,
+		StopReason: loop.StopCancelled,
 	})
 	if result == nil {
 		t.Fatal("expected cancelled result")
@@ -237,8 +237,8 @@ func TestPersistSubagentSessionUsesSessionStore(t *testing.T) {
 		parentSessionID: "parent-1",
 	}
 
-	sessionID, transcriptPath := executor.persistSubagentSession("Explore", "test-model", "Inspect code", []message.Message{
-		{Role: message.RoleUser, Content: "hello"},
+	sessionID, transcriptPath := executor.persistSubagentSession("Explore", "test-model", "Inspect code", []core.Message{
+		{Role: core.RoleUser, Content: "hello"},
 	})
 
 	if sessionID != "agent-1" {
@@ -257,30 +257,30 @@ func TestPersistSubagentSessionUsesSessionStore(t *testing.T) {
 
 func TestResumeFromSessionUsesSessionStore(t *testing.T) {
 	store := &stubSubagentSessionStore{
-		loadMessages: []message.Message{
-			{Role: message.RoleUser, Content: "previous"},
-			{Role: message.RoleAssistant, Content: "response"},
+		loadMessages: []core.Message{
+			{Role: core.RoleUser, Content: "previous"},
+			{Role: core.RoleAssistant, Content: "response"},
 		},
 	}
 	executor := &Executor{sessionStore: store}
-	loop := &runtime.Loop{}
+	lp := &loop.Loop{}
 
-	if err := executor.resumeFromSession(loop, "agent-1", "continue"); err != nil {
+	if err := executor.resumeFromSession(lp, "agent-1", "continue"); err != nil {
 		t.Fatalf("resumeFromSession(): %v", err)
 	}
 
-	msgs := loop.Messages()
+	msgs := lp.Messages()
 	if len(msgs) != 3 {
 		t.Fatalf("len(messages) = %d, want 3", len(msgs))
 	}
-	if msgs[2].Role != message.RoleUser || msgs[2].Content != "continue" {
+	if msgs[2].Role != core.RoleUser || msgs[2].Content != "continue" {
 		t.Fatalf("unexpected continuation message: %+v", msgs[2])
 	}
 }
 
 func TestResumeFromSessionRequiresSessionStore(t *testing.T) {
 	executor := &Executor{}
-	err := executor.resumeFromSession(&runtime.Loop{}, "agent-1", "continue")
+	err := executor.resumeFromSession(&loop.Loop{}, "agent-1", "continue")
 	if err == nil || !strings.Contains(err.Error(), "session store not configured") {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestResumeFromSessionPropagatesLoadError(t *testing.T) {
 	executor := &Executor{
 		sessionStore: &stubSubagentSessionStore{loadErr: errors.New("boom")},
 	}
-	err := executor.resumeFromSession(&runtime.Loop{}, "agent-1", "continue")
+	err := executor.resumeFromSession(&loop.Loop{}, "agent-1", "continue")
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("unexpected error: %v", err)
 	}

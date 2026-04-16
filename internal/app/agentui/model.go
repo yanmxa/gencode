@@ -9,12 +9,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/ui/selector"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/selector"
+	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
-// Item represents an agent in the selector.
-type Item struct {
+// item represents an agent in the selector.
+type item struct {
 	Name           string
 	Description    string
 	Model          string // inherit/sonnet/opus/haiku
@@ -29,14 +29,14 @@ type Item struct {
 type SaveLevel int
 
 const (
-	SaveLevelProject SaveLevel = iota // Save to .gen/agents.json
-	SaveLevelUser                     // Save to ~/.gen/agents.json
+	saveLevelProject SaveLevel = iota // Save to .gen/agents.json
+	saveLevelUser                     // Save to ~/.gen/agents.json
 )
 
 // String returns the display name for the save level.
 func (l SaveLevel) String() string {
 	switch l {
-	case SaveLevelUser:
+	case saveLevelUser:
 		return "User"
 	default:
 		return "Project"
@@ -46,8 +46,8 @@ func (l SaveLevel) String() string {
 // Model holds the state for the agent selector.
 type Model struct {
 	active         bool
-	agents         []Item
-	filteredAgents []Item
+	agents         []item
+	filteredAgents []item
 	selectedIdx    int
 	width          int
 	height         int
@@ -67,7 +67,7 @@ type ToggleMsg struct {
 func New() Model {
 	return Model{
 		active:     false,
-		agents:     []Item{},
+		agents:     []item{},
 		maxVisible: 10,
 	}
 }
@@ -78,9 +78,9 @@ func (s *Model) EnterSelect(width, height int) error {
 	allConfigs := subagent.DefaultRegistry.ListConfigs()
 
 	// Get disabled agents for the current level
-	disabledAgents := subagent.DefaultRegistry.GetDisabledAt(s.saveLevel == SaveLevelUser)
+	disabledAgents := subagent.DefaultRegistry.GetDisabledAt(s.saveLevel == saveLevelUser)
 
-	s.agents = make([]Item, 0, len(allConfigs))
+	s.agents = make([]item, 0, len(allConfigs))
 	for _, cfg := range allConfigs {
 		lowerName := strings.ToLower(cfg.Name)
 
@@ -90,7 +90,7 @@ func (s *Model) EnterSelect(width, height int) error {
 			pluginName = cfg.Name[:idx]
 		}
 
-		s.agents = append(s.agents, Item{
+		s.agents = append(s.agents, item{
 			Name:           cfg.Name,
 			Description:    cfg.Description,
 			Model:          cfg.Model,
@@ -150,8 +150,8 @@ func (s *Model) IsActive() bool {
 // Cancel cancels the selector.
 func (s *Model) Cancel() {
 	s.active = false
-	s.agents = []Item{}
-	s.filteredAgents = []Item{}
+	s.agents = []item{}
+	s.filteredAgents = []item{}
 	s.selectedIdx = 0
 	s.scrollOffset = 0
 	s.searchQuery = ""
@@ -189,7 +189,7 @@ func (s *Model) updateFilter() {
 		s.filteredAgents = s.agents
 	} else {
 		query := strings.ToLower(s.searchQuery)
-		s.filteredAgents = make([]Item, 0)
+		s.filteredAgents = make([]item, 0)
 		for _, a := range s.agents {
 			if selector.FuzzyMatch(strings.ToLower(a.Name), query) ||
 				selector.FuzzyMatch(strings.ToLower(a.Description), query) {
@@ -203,7 +203,7 @@ func (s *Model) updateFilter() {
 
 // reloadAgentStates reloads the enabled/disabled states from the current save level.
 func (s *Model) reloadAgentStates() {
-	disabledAgents := subagent.DefaultRegistry.GetDisabledAt(s.saveLevel == SaveLevelUser)
+	disabledAgents := subagent.DefaultRegistry.GetDisabledAt(s.saveLevel == saveLevelUser)
 
 	// Update agent enabled states
 	for i := range s.agents {
@@ -239,7 +239,7 @@ func (s *Model) Toggle() tea.Cmd {
 	_ = subagent.DefaultRegistry.SetEnabled(
 		selected.Name,
 		selected.Enabled,
-		s.saveLevel == SaveLevelUser,
+		s.saveLevel == saveLevelUser,
 	)
 
 	return func() tea.Msg {
@@ -261,10 +261,10 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		return nil
 	case tea.KeyTab:
 		// Toggle save level between project and user
-		if s.saveLevel == SaveLevelProject {
-			s.saveLevel = SaveLevelUser
+		if s.saveLevel == saveLevelProject {
+			s.saveLevel = saveLevelUser
 		} else {
-			s.saveLevel = SaveLevelProject
+			s.saveLevel = saveLevelProject
 		}
 		s.reloadAgentStates()
 		return nil

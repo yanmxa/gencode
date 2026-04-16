@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/render"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -31,7 +31,7 @@ func handleGlobCommand(ctx context.Context, m *model, args string) (string, tea.
 }
 
 func handleToolCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	var mcpTools func() []message.ToolSchema
+	var mcpTools func() []core.ToolSchema
 	if m.mcp.Registry != nil {
 		mcpTools = m.mcp.Registry.GetToolSchemas
 	}

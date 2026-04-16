@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/transcript"
+	"github.com/yanmxa/gencode/internal/session/transcript"
 )
 
 var appVersion string

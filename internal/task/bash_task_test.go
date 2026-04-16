@@ -59,7 +59,7 @@ func TestBashTask_MarkKilled(t *testing.T) {
 
 	task := NewBashTask("kill-id", "sleep 100", "Long task", cmd, ctx, cancel)
 
-	task.MarkKilled()
+	task.markKilled()
 
 	info := task.GetStatus()
 	if info.Status != StatusKilled {
@@ -267,7 +267,7 @@ func TestBashTask_AllStateTransitions(t *testing.T) {
 		cmd := exec.CommandContext(ctx, "echo", "test")
 		cmd.Start()
 		task := NewBashTask("t3", "sleep 100", "test", cmd, ctx, cancel)
-		task.MarkKilled()
+		task.markKilled()
 		if info := task.GetStatus(); info.Status != StatusKilled {
 			t.Errorf("want %s, got %s", StatusKilled, info.Status)
 		}

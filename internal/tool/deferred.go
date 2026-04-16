@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 // deferredToolNames lists tools whose schemas are NOT sent to the LLM initially.
@@ -79,8 +79,8 @@ func FormatDeferredToolsPrompt() string {
 
 // SearchDeferredTools matches a query against deferred tool schemas.
 // Supports "select:Name1,Name2" for exact match or keyword search.
-// Returns matched schemas as message.ToolSchema slices.
-func SearchDeferredTools(query string, maxResults int) []message.ToolSchema {
+// Returns matched schemas as core.ToolSchema slices.
+func SearchDeferredTools(query string, maxResults int) []core.ToolSchema {
 	if maxResults <= 0 {
 		maxResults = 5
 	}
@@ -95,7 +95,7 @@ func SearchDeferredTools(query string, maxResults int) []message.ToolSchema {
 		for _, n := range names {
 			nameSet[strings.TrimSpace(n)] = true
 		}
-		var matched []message.ToolSchema
+		var matched []core.ToolSchema
 		for _, s := range allSchemas {
 			if nameSet[s.Name] {
 				matched = append(matched, s)
@@ -109,7 +109,7 @@ func SearchDeferredTools(query string, maxResults int) []message.ToolSchema {
 	keywords := strings.Fields(queryLower)
 
 	type scored struct {
-		tool  message.ToolSchema
+		tool  core.ToolSchema
 		score int
 	}
 	var results []scored
@@ -136,7 +136,7 @@ func SearchDeferredTools(query string, maxResults int) []message.ToolSchema {
 		return results[i].score > results[j].score
 	})
 
-	matched := make([]message.ToolSchema, 0, maxResults)
+	matched := make([]core.ToolSchema, 0, maxResults)
 	for i, r := range results {
 		if i >= maxResults {
 			break
@@ -147,7 +147,7 @@ func SearchDeferredTools(query string, maxResults int) []message.ToolSchema {
 }
 
 // FormatToolSchemas formats tool schemas as a <functions> block (matching CC's format).
-func FormatToolSchemas(tools []message.ToolSchema) string {
+func FormatToolSchemas(tools []core.ToolSchema) string {
 	if len(tools) == 0 {
 		return "No matching tools found."
 	}
@@ -170,9 +170,9 @@ func FormatToolSchemas(tools []message.ToolSchema) string {
 }
 
 // allDeferredSchemas returns the full schemas for all deferred tools.
-func allDeferredSchemas() []message.ToolSchema {
+func allDeferredSchemas() []core.ToolSchema {
 	// Collect from known schema slices that contain deferred tools
-	var all []message.ToolSchema
+	var all []core.ToolSchema
 	for _, s := range cronToolSchemas {
 		if deferredToolNames[s.Name] {
 			all = append(all, s)

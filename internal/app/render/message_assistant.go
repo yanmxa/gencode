@@ -7,14 +7,14 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
 var inlineImageTokenPattern = regexp.MustCompile(`\[Image #\d+\]`)
 
 // RenderUserMessage renders a user message with prompt and optional images.
-func RenderUserMessage(content, displayContent string, images []message.ImageData, mdRenderer *MDRenderer, width int) string {
+func RenderUserMessage(content, displayContent string, images []core.Image, mdRenderer *MDRenderer, width int) string {
 	var sb strings.Builder
 	prompt := InputPromptStyle.Render("❯ ")
 	if displayContent == "" {
@@ -54,11 +54,11 @@ func styleInlineImageTokens(content string) string {
 	})
 }
 
-// AssistantParams holds the parameters for rendering an assistant message.
+// AssistantParams holds the parameters for rendering an assistant core.
 type AssistantParams struct {
 	Content           string
 	Thinking          string
-	ToolCalls         []message.ToolCall
+	ToolCalls         []core.ToolCall
 	ToolCallsExpanded bool
 	StreamActive      bool
 	IsLast            bool
@@ -163,7 +163,7 @@ func getToolExecutionDesc(toolName string) string {
 	}
 }
 
-// RenderSystemMessage renders a system/notice message.
+// RenderSystemMessage renders a system/notice core.
 func RenderSystemMessage(content string) string {
 	return systemMsgStyle.Render(content) + "\n"
 }

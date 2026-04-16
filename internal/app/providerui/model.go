@@ -6,46 +6,46 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
-// Tab represents which tab is active in the selector.
-type Tab int
+// tab represents which tab is active in the selector.
+type tab int
 
 const (
-	TabModels    Tab = iota // model selection tab
-	TabProviders            // provider management tab
+	tabModels    tab = iota // model selection tab
+	tabProviders            // provider management tab
 )
 
-// ItemKind represents a row type in the visible-items list.
-type ItemKind int
+// itemKind represents a row type in the visible-items list.
+type itemKind int
 
 const (
-	ItemProviderHeader ItemKind = iota // non-selectable provider group header (Models tab)
-	ItemModel                         // selectable model row (Models tab)
-	ItemProvider                      // provider row (Providers tab)
-	ItemAuthMethod                    // expanded auth-method sub-row (Providers tab)
+	itemProviderHeader itemKind = iota // non-selectable provider group header (Models tab)
+	itemModel                        // selectable model row (Models tab)
+	itemProvider                     // provider row (Providers tab)
+	itemAuthMethod                    // expanded auth-method sub-row (Providers tab)
 )
 
-// ListItem is a single row in the flattened visible-items list.
-type ListItem struct {
-	Kind        ItemKind
-	Model       *ModelItem
-	Provider    *ProviderItem
-	AuthMethod  *AuthMethodItem
+// listItem is a single row in the flattened visible-items list.
+type listItem struct {
+	Kind        itemKind
+	Model       *modelItem
+	Provider    *providerItem
+	AuthMethod  *authMethodItem
 	ProviderIdx int // index into allProviders
 }
 
-// ProviderItem represents a provider with its auth methods.
-type ProviderItem struct {
+// providerItem represents a provider with its auth methods.
+type providerItem struct {
 	Provider    coreprovider.Provider
 	DisplayName string
-	AuthMethods []AuthMethodItem
+	AuthMethods []authMethodItem
 	Connected   bool // whether this provider has at least one connected auth method
 }
 
-// AuthMethodItem represents an auth method in the second level.
-type AuthMethodItem struct {
+// authMethodItem represents an auth method in the second level.
+type authMethodItem struct {
 	Provider    coreprovider.Provider
 	AuthMethod  coreprovider.AuthMethod
 	DisplayName string
@@ -53,8 +53,8 @@ type AuthMethodItem struct {
 	EnvVars     []string
 }
 
-// ModelItem represents a model in the selector.
-type ModelItem struct {
+// modelItem represents a model in the selector.
+type modelItem struct {
 	ID               string
 	Name             string
 	DisplayName      string
@@ -73,15 +73,15 @@ type Model struct {
 	store  *coreprovider.Store
 
 	// Tab
-	activeTab Tab
+	activeTab tab
 
 	// Data
-	connectedProviders []ProviderItem // providers with models (Models tab headers)
-	allProviders       []ProviderItem // all providers (Providers tab)
-	allModels          []ModelItem
+	connectedProviders []providerItem // providers with models (Models tab headers)
+	allProviders       []providerItem // all providers (Providers tab)
+	allModels          []modelItem
 
 	// Flattened visible-items list (rebuilt on state changes)
-	visibleItems []ListItem
+	visibleItems []listItem
 	selectedIdx  int
 	scrollOffset int
 	maxVisible   int
@@ -98,7 +98,7 @@ type Model struct {
 
 	// Model search / filter
 	searchQuery    string
-	filteredModels []ModelItem
+	filteredModels []modelItem
 
 	// Provider connection result (shown inline)
 	lastConnectResult  string
@@ -160,7 +160,7 @@ type ConnectResultMsg struct {
 
 // ModelsLoadedMsg is sent when async model loading completes.
 type ModelsLoadedMsg struct {
-	Models []ModelItem
+	Models []modelItem
 }
 
 // IsActive returns whether the selector is active.

@@ -35,8 +35,8 @@ type Store struct {
 	states map[string]SkillState
 }
 
-// StoreData is the JSON structure for skills.json.
-type StoreData struct {
+// storeData is the JSON structure for skills.json.
+type storeData struct {
 	Skills map[string]SkillState `json:"skills"`
 }
 
@@ -74,7 +74,7 @@ func (s *Store) load() {
 		return // File doesn't exist or can't be read
 	}
 
-	var storeData StoreData
+	var storeData storeData
 	if err := json.Unmarshal(data, &storeData); err != nil {
 		return
 	}
@@ -92,7 +92,7 @@ func (s *Store) save() error {
 		return err
 	}
 
-	storeData := StoreData{
+	storeData := storeData{
 		Skills: s.states,
 	}
 
@@ -127,9 +127,9 @@ func (s *Store) SetState(name string, state SkillState) error {
 // Initialize loads all skills and applies persisted states.
 // This should be called at application startup.
 func Initialize(cwd string) error {
-	loader := NewLoader(cwd)
+	loader := newLoader(cwd)
 
-	skills, err := loader.LoadAll()
+	skills, err := loader.loadAll()
 	if err != nil {
 		return err
 	}
@@ -391,9 +391,9 @@ func (r *Registry) AddPluginSkills(paths []struct {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	loader := NewLoader(r.cwd)
+	loader := newLoader(r.cwd)
 	for _, p := range paths {
-		loader.AddPluginPath(p.Path, p.Namespace, p.IsProject)
+		loader.addPluginPath(p.Path, p.Namespace, p.IsProject)
 	}
 
 	// Only walk the additional plugin paths, not all paths

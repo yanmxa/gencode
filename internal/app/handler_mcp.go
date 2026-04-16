@@ -9,7 +9,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 // updateMCP routes MCP server management messages.
@@ -34,7 +34,7 @@ func (m *model) updateMCP(msg tea.Msg) (tea.Cmd, bool) {
 		m.mcp.Selector.HandleConnectResult(msg)
 		if !m.mcp.Selector.IsActive() && !msg.Success {
 			content := fmt.Sprintf("Failed to connect to '%s': %v", msg.ServerName, msg.Error)
-			m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: content})
+			m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: content})
 			return tea.Batch(m.commitMessages()...), true
 		}
 		return nil, true
@@ -61,7 +61,7 @@ func (m *model) updateMCP(msg tea.Msg) (tea.Cmd, bool) {
 	case mcpui.EditServerMsg:
 		info, err := mcpui.PrepareServerEdit(msg.ServerName)
 		if err != nil {
-			m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: fmt.Sprintf("Error: %v", err)})
+			m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Error: %v", err)})
 			return tea.Batch(m.commitMessages()...), true
 		}
 		m.mcp.EditingFile = info.TempFile
@@ -79,16 +79,16 @@ func (m *model) updateMCP(msg tea.Msg) (tea.Cmd, bool) {
 
 		if msg.Err != nil {
 			os.Remove(info.TempFile)
-			m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: fmt.Sprintf("Editor error: %v", msg.Err)})
+			m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Editor error: %v", msg.Err)})
 			return tea.Batch(m.commitMessages()...), true
 		}
 
 		if err := mcpui.ApplyServerEdit(info); err != nil {
-			m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: fmt.Sprintf("Failed to apply edit: %v", err)})
+			m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Failed to apply edit: %v", err)})
 			return tea.Batch(m.commitMessages()...), true
 		}
 
-		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: fmt.Sprintf("Updated MCP server '%s'", info.ServerName)})
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Updated MCP server '%s'", info.ServerName)})
 		return tea.Batch(m.commitMessages()...), true
 	}
 	return nil, false

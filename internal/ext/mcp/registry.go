@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plugin"
 )
 
@@ -317,19 +317,19 @@ var emptySchema = map[string]any{
 	"properties": map[string]any{},
 }
 
-// GetToolSchemas returns message.ToolSchema schemas for all connected MCP servers
-func (r *Registry) GetToolSchemas() []message.ToolSchema {
+// GetToolSchemas returns core.ToolSchema schemas for all connected MCP servers
+func (r *Registry) GetToolSchemas() []core.ToolSchema {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var tools []message.ToolSchema
+	var tools []core.ToolSchema
 	for serverName, client := range r.clients {
 		if !client.IsConnected() {
 			continue
 		}
 
 		for _, mcpTool := range client.GetCachedTools() {
-			tools = append(tools, message.ToolSchema{
+			tools = append(tools, core.ToolSchema{
 				Name:        fmt.Sprintf("mcp__%s__%s", serverName, mcpTool.Name),
 				Description: mcpTool.Description,
 				Parameters:  parseInputSchema(mcpTool.InputSchema),

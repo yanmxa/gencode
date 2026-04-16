@@ -10,8 +10,8 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
 	streamutil "github.com/yanmxa/gencode/internal/provider/stream"
 )
@@ -67,8 +67,8 @@ func (c *Client) Name() string {
 }
 
 // Stream sends a completion request and returns a channel of streaming chunks
-func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
-	ch := make(chan message.StreamChunk)
+func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan core.StreamChunk {
+	ch := make(chan core.StreamChunk)
 
 	go func() {
 		defer close(ch)
@@ -78,7 +78,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		thinkingBudget := int64(opts.ThinkingLevel.BudgetTokens())
 
 		// Remove orphaned tool_result blocks whose tool_use_id doesn't match
-		// any tool_use in the nearest preceding assistant message. This guards
+		// any tool_use in the nearest preceding assistant core. This guards
 		// against stale results from cancelled tool executions.
 		sanitized := sanitizeToolResults(opts.Messages)
 
@@ -86,7 +86,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		anthropicMsgs := make([]anthropic.MessageParam, 0, len(sanitized))
 		for _, msg := range sanitized {
 			switch msg.Role {
-			case message.RoleUser:
+			case core.RoleUser:
 				if msg.ToolResult != nil {
 					// Tool result message
 					anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(
@@ -97,13 +97,13 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 						),
 					))
 				} else if len(msg.Images) > 0 {
-					if parts := message.InterleavedContentParts(msg); parts != nil {
+					if parts := core.InterleavedContentParts(msg); parts != nil {
 						blocks := make([]anthropic.ContentBlockParamUnion, 0, len(parts))
 						for _, p := range parts {
 							switch p.Type {
-							case message.ContentPartText:
+							case core.ContentPartText:
 								blocks = append(blocks, anthropic.NewTextBlock(p.Text))
-							case message.ContentPartImage:
+							case core.ContentPartImage:
 								blocks = append(blocks, anthropic.NewImageBlockBase64(p.Image.MediaType, p.Image.Data))
 							}
 						}
@@ -126,7 +126,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 						anthropic.NewTextBlock(msg.Content),
 					))
 				}
-			case message.RoleAssistant:
+			case core.RoleAssistant:
 				blocks := assistantContentBlocks(msg, thinkingBudget)
 				if len(msg.ToolCalls) > 0 {
 					for _, tc := range msg.ToolCalls {
@@ -234,7 +234,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 			case "content_block_stop":
 				// When a tool block ends, add the accumulated tool call
 				if currentToolID != "" && currentToolName != "" {
-					state.Response.ToolCalls = append(state.Response.ToolCalls, message.ToolCall{
+					state.Response.ToolCalls = append(state.Response.ToolCalls, core.ToolCall{
 						ID:    currentToolID,
 						Name:  currentToolName,
 						Input: currentToolInput.String(),
@@ -327,32 +327,32 @@ func (c *Client) fetchModels(ctx context.Context) ([]provider.ModelInfo, error) 
 
 // sanitizeToolResults ensures tool_use/tool_result consistency:
 //  1. Removes orphaned tool_result messages whose tool_use_id doesn't match
-//     any tool_use in the nearest preceding assistant message.
+//     any tool_use in the nearest preceding assistant core.
 //  2. Strips tool_use blocks from assistant messages when no corresponding
 //     tool_result exists in the immediately following messages.
 //
 // This prevents API errors ("unexpected tool_use_id" and "tool_use ids were
 // found without tool_result blocks") caused by stale results from cancelled
 // tool executions, session restore artifacts, or interrupted tool dispatch.
-func sanitizeToolResults(msgs []message.Message) []message.Message {
+func sanitizeToolResults(msgs []core.Message) []core.Message {
 	// First pass: collect all tool_result IDs for forward-reference checking.
 	allResultIDs := make(map[string]bool, len(msgs))
 	for _, msg := range msgs {
-		if msg.Role == message.RoleUser && msg.ToolResult != nil {
+		if msg.Role == core.RoleUser && msg.ToolResult != nil {
 			allResultIDs[msg.ToolResult.ToolCallID] = true
 		}
 	}
 
 	// Second pass: filter orphaned tool_results and strip orphaned tool_uses.
 	var currentToolIDs map[string]bool
-	result := make([]message.Message, 0, len(msgs))
+	result := make([]core.Message, 0, len(msgs))
 
 	for _, msg := range msgs {
 		switch {
-		case msg.Role == message.RoleAssistant:
+		case msg.Role == core.RoleAssistant:
 			// Strip tool_use blocks that have no matching tool_result anywhere.
 			if len(msg.ToolCalls) > 0 {
-				filtered := make([]message.ToolCall, 0, len(msg.ToolCalls))
+				filtered := make([]core.ToolCall, 0, len(msg.ToolCalls))
 				for _, tc := range msg.ToolCalls {
 					if allResultIDs[tc.ID] {
 						filtered = append(filtered, tc)
@@ -369,7 +369,7 @@ func sanitizeToolResults(msgs []message.Message) []message.Message {
 			}
 			result = append(result, msg)
 
-		case msg.Role == message.RoleUser && msg.ToolResult != nil:
+		case msg.Role == core.RoleUser && msg.ToolResult != nil:
 			if currentToolIDs != nil && currentToolIDs[msg.ToolResult.ToolCallID] {
 				result = append(result, msg)
 			}
@@ -446,8 +446,8 @@ func anyStrings(v any) []string {
 	return nil
 }
 
-// assistantContentBlocks builds the thinking + text content blocks for an assistant message.
-func assistantContentBlocks(msg message.Message, thinkingBudget int64) []anthropic.ContentBlockParamUnion {
+// assistantContentBlocks builds the thinking + text content blocks for an assistant core.
+func assistantContentBlocks(msg core.Message, thinkingBudget int64) []anthropic.ContentBlockParamUnion {
 	blocks := make([]anthropic.ContentBlockParamUnion, 0, 2)
 	if msg.Thinking != "" && thinkingBudget > 0 && msg.ThinkingSignature != "" {
 		blocks = append(blocks, anthropic.NewThinkingBlock(msg.ThinkingSignature, msg.Thinking))

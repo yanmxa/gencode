@@ -6,19 +6,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appinput "github.com/yanmxa/gencode/internal/app/input"
-	"github.com/yanmxa/gencode/internal/image"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/util/image"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
 func (m *model) handleStreamCancel() tea.Cmd {
 	// Stop core.Agent if active — cancel its context to interrupt the loop
-	if m.agentSess != nil && m.agentSess.cancel != nil {
+	if m.agentSess != nil {
 		m.agentSess.stop()
 		m.agentSess = nil
-	}
-	if m.conv.Stream.Cancel != nil {
-		m.conv.Stream.Cancel()
 	}
 	m.conv.Stream.Stop()
 	// Reset per-turn thinking override so it doesn't leak into subsequent turns
@@ -38,7 +35,7 @@ func (m *model) handleStreamCancel() tea.Cmd {
 
 // cancelPendingToolCalls adds cancellation messages for pending tool calls.
 func (m *model) cancelPendingToolCalls() {
-	var toolCalls []message.ToolCall
+	var toolCalls []core.ToolCall
 
 	if m.tool.Cancel != nil {
 		m.tool.Cancel()
@@ -49,16 +46,16 @@ func (m *model) cancelPendingToolCalls() {
 		m.tool.Reset()
 	} else if len(m.conv.Messages) > 0 {
 		lastMsg := m.conv.Messages[len(m.conv.Messages)-1]
-		if lastMsg.Role == message.RoleAssistant {
+		if lastMsg.Role == core.RoleAssistant {
 			toolCalls = lastMsg.ToolCalls
 		}
 	}
 
 	for _, tc := range toolCalls {
-		m.conv.Append(message.ChatMessage{
-			Role:     message.RoleUser,
+		m.conv.Append(core.ChatMessage{
+			Role:     core.RoleUser,
 			ToolName: tc.Name,
-			ToolResult: &message.ToolResult{
+			ToolResult: &core.ToolResult{
 				ToolCallID: tc.ID,
 				Content:    pendingToolCancellationContent(tc),
 				IsError:    true,
@@ -76,10 +73,10 @@ func (m *model) cancelRemainingToolCalls(startIdx int) {
 		return
 	}
 	for _, tc := range m.tool.PendingCalls[startIdx:] {
-		m.conv.Append(message.ChatMessage{
-			Role:     message.RoleUser,
+		m.conv.Append(core.ChatMessage{
+			Role:     core.RoleUser,
 			ToolName: tc.Name,
-			ToolResult: &message.ToolResult{
+			ToolResult: &core.ToolResult{
 				ToolCallID: tc.ID,
 				Content:    "Tool execution skipped.",
 				IsError:    true,
@@ -88,12 +85,12 @@ func (m *model) cancelRemainingToolCalls(startIdx int) {
 	}
 }
 
-func pendingToolCancellationContent(tc message.ToolCall) string {
+func pendingToolCancellationContent(tc core.ToolCall) string {
 	switch tc.Name {
 	case "TaskOutput":
-		return "Stopped waiting for background task output because the user sent a new message. The background task may still be running."
+		return "Stopped waiting for background task output because the user sent a new core. The background task may still be running."
 	default:
-		return "Tool execution interrupted because the user sent a new message."
+		return "Tool execution interrupted because the user sent a new core."
 	}
 }
 
@@ -123,7 +120,7 @@ func (m *model) detectThinkingKeywords(input string) {
 // instructions and args to the LLM.
 func (m *model) handleSkillInvocation() tea.Cmd {
 	if m.provider.LLM == nil {
-		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "No provider connected. Use /provider to connect."})
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "No provider connected. Use /provider to connect."})
 		m.skill.PendingInstructions = ""
 		m.skill.PendingArgs = ""
 		return tea.Batch(m.commitMessages()...)
@@ -133,7 +130,7 @@ func (m *model) handleSkillInvocation() tea.Cmd {
 	if userMsg == "" {
 		userMsg = "Execute the skill."
 	}
-	m.conv.Append(message.ChatMessage{Role: message.RoleUser, Content: userMsg})
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: userMsg})
 
 	if m.skill.PendingInstructions != "" {
 		m.skill.ActiveInvocation = m.skill.PendingInstructions
@@ -141,14 +138,14 @@ func (m *model) handleSkillInvocation() tea.Cmd {
 	}
 	m.skill.PendingArgs = ""
 
-	return m.startLLMStream(nil)
+	return m.sendToAgent(userMsg, nil)
 }
 
 // pasteImageFromClipboard handles pasting image from clipboard.
 func (m *model) pasteImageFromClipboard() (tea.Cmd, bool) {
 	imgData, err := image.ReadImageToProviderData()
 	if err != nil {
-		m.conv.Append(message.ChatMessage{Role: message.RoleNotice, Content: "Image paste error: " + err.Error()})
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Image paste error: " + err.Error()})
 		return tea.Batch(m.commitMessages()...), true
 	}
 	if imgData == nil {
@@ -168,9 +165,7 @@ func (m *model) quitWithCancel() (tea.Cmd, bool) {
 		m.agentSess.stop()
 		m.agentSess = nil
 	}
-	if m.conv.Stream.Cancel != nil {
-		m.conv.Stream.Cancel()
-	}
+	m.conv.Stream.Stop()
 	if m.tool.Cancel != nil {
 		m.tool.Cancel()
 	}

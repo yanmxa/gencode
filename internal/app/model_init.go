@@ -7,11 +7,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/app/agentui"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
-	appcommand "github.com/yanmxa/gencode/internal/ext/command"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appinput "github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/app/mcpui"
@@ -26,21 +23,23 @@ import (
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/cron"
-	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/filecache"
-	"github.com/yanmxa/gencode/internal/tool/fs"
-	"github.com/yanmxa/gencode/internal/tool/web"
-	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/message"
+	appcommand "github.com/yanmxa/gencode/internal/ext/command"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
+	"github.com/yanmxa/gencode/internal/ext/skill"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
+	"github.com/yanmxa/gencode/internal/util/filecache"
+	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/session"
-	"github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/ui/progress"
-	"github.com/yanmxa/gencode/internal/ui/suggest"
+	"github.com/yanmxa/gencode/internal/tool/fs"
+	"github.com/yanmxa/gencode/internal/tool/web"
+	"github.com/yanmxa/gencode/internal/app/progress"
+	"github.com/yanmxa/gencode/internal/app/suggest"
 )
 
 type modelInfra struct {
@@ -136,7 +135,6 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		fileWatcher:       newFileWatcher(infra.hookEngine, nil),
 		asyncHookQueue:    newAsyncHookQueue(),
 		taskNotifications: infra.taskNotifications,
-		asyncOps:          newConversationRuntime(),
 		fileCache:         filecache.New(),
 	}
 }
@@ -248,6 +246,7 @@ func (m *model) reloadPluginBackedState() error {
 	if err := skill.Initialize(m.cwd); err != nil {
 		return fmt.Errorf("failed to reload skill registry: %w", err)
 	}
+	appcommand.SetDynamicInfoProviders(skillCommandInfos)
 	if err := appcommand.Initialize(m.cwd); err != nil {
 		return fmt.Errorf("failed to reload custom commands: %w", err)
 	}
@@ -335,18 +334,17 @@ func (m *model) applyResumeOption(resumeID string, fork bool) error {
 	return nil
 }
 
-
 // buildLLMCompleter wraps a provider into an hooks.LLMCompleter closure.
 // The closure owns client construction and streaming, keeping the hooks
-// engine free from provider/client dependencies.
+// engine free from direct provider dependencies.
 func buildLLMCompleter(p provider.LLMProvider) hooks.LLMCompleter {
 	if p == nil {
 		return nil
 	}
 	return func(ctx context.Context, systemPrompt, userMessage, model string) (string, error) {
-		c := client.NewClient(p, model)
-		resp, err := c.Complete(ctx, systemPrompt, []message.Message{{
-			Role:    message.RoleUser,
+		c := provider.NewLLM(p, model, 0)
+		resp, err := c.Complete(ctx, systemPrompt, []core.Message{{
+			Role:    core.RoleUser,
 			Content: userMessage,
 		}}, 4096)
 		if err != nil {

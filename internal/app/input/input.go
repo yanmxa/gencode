@@ -10,8 +10,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/image"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/util/image"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 const (
@@ -61,7 +61,7 @@ func imageLabel(id int) string {
 }
 
 // AddPendingImage appends a new inline image token and returns its label.
-func (m *Model) AddPendingImage(img message.ImageData) string {
+func (m *Model) AddPendingImage(img core.Image) string {
 	m.Images.NextID++
 	m.Images.Pending = append(m.Images.Pending, PendingImage{
 		ID:   m.Images.NextID,
@@ -189,13 +189,13 @@ func (m *Model) RemoveImageToken(match ImageTokenMatch, cursor int) {
 
 // ExtractInlineImages removes inline image tokens from content and returns the
 // ordered images based on their appearance in the text.
-func (m *Model) ExtractInlineImages(input string) (string, []message.ImageData) {
+func (m *Model) ExtractInlineImages(input string) (string, []core.Image) {
 	matches := m.PendingImageMatchesIn(input)
 	if len(matches) == 0 {
 		return strings.TrimSpace(input), nil
 	}
 
-	var images []message.ImageData
+	var images []core.Image
 	valueRunes := []rune(input)
 	var sb strings.Builder
 	last := 0
@@ -272,13 +272,13 @@ func (m *Model) HistoryDown() {
 // Returns the cleaned text content and any loaded images.
 // Only processes references where the file actually exists on disk;
 // non-existent file references are left in the text as-is.
-func ProcessImageRefs(cwd, input string) (string, []message.ImageData, error) {
+func ProcessImageRefs(cwd, input string) (string, []core.Image, error) {
 	matches := imageRefPattern.FindAllStringSubmatch(input, -1)
 	if len(matches) == 0 {
 		return input, nil, nil
 	}
 
-	var images []message.ImageData
+	var images []core.Image
 	var loadedRefs []string // track which @references were successfully loaded
 	for _, match := range matches {
 		path := match[1]

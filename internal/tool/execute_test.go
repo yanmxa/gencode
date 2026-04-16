@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
@@ -41,7 +41,7 @@ func (e *testMCPExecutor) ExecuteMCP(ctx context.Context, name string, params ma
 func TestPrepareToolCallParsesAndResolvesBuiltInTool(t *testing.T) {
 	Register(&testPermissionAwareTool{})
 
-	prepared, err := PrepareToolCall(message.ToolCall{
+	prepared, err := PrepareToolCall(core.ToolCall{
 		ID:    "tc5",
 		Name:  "TestPermissionAwareTool",
 		Input: `{"path":"x"}`,
@@ -60,7 +60,7 @@ func TestPrepareToolCallParsesAndResolvesBuiltInTool(t *testing.T) {
 func TestPrepareToolCallResolvesMCPTool(t *testing.T) {
 	mcpExec := &testMCPExecutor{}
 
-	prepared, err := PrepareToolCall(message.ToolCall{
+	prepared, err := PrepareToolCall(core.ToolCall{
 		ID:    "tc6",
 		Name:  "mcp__test__tool",
 		Input: `{"query":"ok"}`,

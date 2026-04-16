@@ -65,8 +65,8 @@ func (m *Manager) Get(id string) (BackgroundTask, bool) {
 	return task, ok
 }
 
-// GetBashTask retrieves a bash task by ID (for backward compatibility)
-func (m *Manager) GetBashTask(id string) (*BashTask, bool) {
+// getBashTask retrieves a bash task by ID (for backward compatibility)
+func (m *Manager) getBashTask(id string) (*BashTask, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	task, ok := m.tasks[id]
@@ -150,8 +150,8 @@ func (m *Manager) Remove(id string) {
 	delete(m.tasks, id)
 }
 
-// Cleanup removes all completed tasks older than maxAge
-func (m *Manager) Cleanup(maxAge time.Duration) {
+// cleanup removes all completed tasks older than maxAge
+func (m *Manager) cleanup(maxAge time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

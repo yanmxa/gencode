@@ -1,6 +1,6 @@
 package subagent
 
-import "github.com/yanmxa/gencode/internal/message"
+import "github.com/yanmxa/gencode/internal/core"
 
 // maxForkDepth is the maximum number of nested forks allowed.
 // This is separate from MaxAgentNestingDepth because forked agents carry
@@ -10,7 +10,7 @@ const maxForkDepth = 2
 // countForkDepth estimates fork depth by counting system prompt markers
 // that indicate the conversation was inherited via fork. Each fork
 // appends a system-level note to the conversation.
-func countForkDepth(messages []message.Message) int {
+func countForkDepth(messages []core.Message) int {
 	depth := 0
 	for _, msg := range messages {
 		if msg.Role == "system" && isForkNote(msg.Content) {
@@ -28,13 +28,13 @@ func isForkNote(content string) bool {
 
 // prepareForkedMessages takes parent messages and prepares them for the
 // forked agent. It appends a fork note so nested forks can be detected.
-func prepareForkedMessages(parentMessages []message.Message) []message.Message {
+func prepareForkedMessages(parentMessages []core.Message) []core.Message {
 	if len(parentMessages) == 0 {
 		return nil
 	}
-	forked := make([]message.Message, len(parentMessages), len(parentMessages)+1)
+	forked := make([]core.Message, len(parentMessages), len(parentMessages)+1)
 	copy(forked, parentMessages)
-	forked = append(forked, message.Message{
+	forked = append(forked, core.Message{
 		Role:    "system",
 		Content: forkNote,
 	})

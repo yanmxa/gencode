@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/cron"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 const cronTickInterval = 30 * time.Second
@@ -84,21 +84,21 @@ func (m *model) drainCronQueue() tea.Cmd {
 // injectCronPrompt injects a cron prompt as a user message and starts an LLM stream.
 func (m *model) injectCronPrompt(prompt string) tea.Cmd {
 	if m.provider.LLM == nil {
-		m.conv.Append(message.ChatMessage{
-			Role:    message.RoleNotice,
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleNotice,
 			Content: fmt.Sprintf("Cron fired but no provider connected: %s", prompt),
 		})
 		return tea.Batch(m.commitMessages()...)
 	}
 
-	m.conv.Append(message.ChatMessage{
-		Role:    message.RoleNotice,
+	m.conv.Append(core.ChatMessage{
+		Role:    core.RoleNotice,
 		Content: "Scheduled task fired",
 	})
-	m.conv.Append(message.ChatMessage{
-		Role:    message.RoleUser,
+	m.conv.Append(core.ChatMessage{
+		Role:    core.RoleUser,
 		Content: prompt,
 	})
 
-	return m.startLLMStream(nil)
+	return m.sendToAgent(prompt, nil)
 }

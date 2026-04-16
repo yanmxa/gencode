@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/markdown"
+	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/util/markdown"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"

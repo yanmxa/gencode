@@ -1,36 +1,15 @@
 package conversation
 
-import (
-	"context"
-
-	"github.com/yanmxa/gencode/internal/message"
-)
-
-// StreamState holds all streaming-related state for the TUI model.
+// StreamState holds streaming-related display state for the TUI.
+// The core.Agent owns the actual stream channels and cancellation;
+// the TUI only tracks whether streaming is active for display purposes.
 type StreamState struct {
 	Active       bool
-	Ch           <-chan message.StreamChunk
-	Cancel       context.CancelFunc
 	BuildingTool string
 }
 
-// Stop clears streaming state. Caller responsible for calling Cancel() first if needed.
+// Stop clears streaming state.
 func (s *StreamState) Stop() {
 	s.Active = false
-	s.Ch = nil
-	s.Cancel = nil
 	s.BuildingTool = ""
-}
-
-// ChunkMsg carries a single streaming chunk from the LLM.
-type ChunkMsg struct {
-	Text              string
-	Thinking          string
-	ThinkingSignature string // Anthropic: opaque signature for thinking block replay
-	Done              bool
-	Err               error
-	ToolCalls         []message.ToolCall
-	BuildingToolName  string
-	Usage             *message.Usage
-	StopReason        string // "end_turn", "tool_use", "max_tokens"
 }

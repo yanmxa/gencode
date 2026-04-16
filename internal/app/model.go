@@ -27,13 +27,12 @@ import (
 	"github.com/yanmxa/gencode/internal/app/skillui"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/filecache"
+	"github.com/yanmxa/gencode/internal/util/filecache"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool/tasktools"
-	"github.com/yanmxa/gencode/internal/tracker"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 const (
@@ -79,9 +78,6 @@ type model struct {
 	// Cron scheduler
 	cronQueue []string // queued cron prompts waiting for idle REPL
 
-	// Max-output-tokens recovery counter (reset on new user input)
-	maxOutputRecoveryCount int
-
 	// UI toggles
 	showTasks     bool   // Ctrl+T toggles task list visibility
 	isGit         bool   // cached: whether cwd is a git repository
@@ -94,7 +90,6 @@ type model struct {
 	fileWatcher       *fileWatcher
 	asyncHookQueue    *asyncHookQueue
 	taskNotifications *taskNotificationQueue
-	asyncOps          conversationRuntime
 	promptSuggestion  promptSuggestionState
 	fileCache         *filecache.Cache
 
@@ -104,13 +99,14 @@ type model struct {
 }
 
 // --- Constructor and Init ---
-func newModel(opts config.RunOptions) (model, error) {
+func newModel(opts config.RunOptions) (*model, error) {
 	cwd, _ := os.Getwd()
 	infra, err := initializeModelInfra(cwd)
 	if err != nil {
-		return model{}, err
+		return nil, err
 	}
-	m := newBaseModel(cwd, infra)
+	base := newBaseModel(cwd, infra)
+	m := &base
 	if m.hookEngine != nil && m.asyncHookQueue != nil {
 		queue := m.asyncHookQueue
 		m.hookEngine.SetAsyncHookCallback(func(result hooks.AsyncHookResult) {
@@ -129,29 +125,28 @@ func newModel(opts config.RunOptions) (model, error) {
 	m.ensureMemoryContextLoaded()
 	m.reconfigureAgentTool()
 	if err := m.applyRunOptions(opts); err != nil {
-		return model{}, err
+		return nil, err
 	}
 	m.initTaskStorage()
 
-	// Fire SessionStart hook here (not in Init()) because Init() uses a value
-	// receiver and any mutations (AdditionalContext, InitialUserMessage, WatchPaths)
-	// would be silently lost on the copy.
+	// Fire SessionStart during construction so hook-driven mutations apply
+	// before Bubble Tea starts driving the pointer-backed model.
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(core.Setup, hooks.HookInput{
+		m.hookEngine.ExecuteAsync(hooks.Setup, hooks.HookInput{
 			Trigger: "init",
 		})
 		source := "startup"
 		if m.session.CurrentID != "" {
 			source = "resume"
 		}
-		outcome := m.hookEngine.Execute(context.Background(), core.SessionStart, hooks.HookInput{
+		outcome := m.hookEngine.Execute(context.Background(), hooks.SessionStart, hooks.HookInput{
 			Source: source,
 			Model:  m.getModelID(),
 		})
 		m.applyRuntimeHookOutcome(outcome)
 		if outcome.AdditionalContext != "" {
-			m.conv.Append(message.ChatMessage{
-				Role:    message.RoleUser,
+			m.conv.Append(core.ChatMessage{
+				Role:    core.RoleUser,
 				Content: outcome.AdditionalContext,
 			})
 		}
@@ -160,16 +155,16 @@ func newModel(opts config.RunOptions) (model, error) {
 	return m, nil
 }
 
-// lastAssistantContent returns the text content of the most recent assistant message.
+// lastAssistantContent returns the text content of the most recent assistant core.
 func (m *model) lastAssistantContent() string {
-	return message.LastAssistantChatContent(m.conv.Messages)
+	return core.LastAssistantChatContent(m.conv.Messages)
 }
 
 // fireSessionEnd fires the SessionEnd hook synchronously before quitting.
 // Uses Execute (not ExecuteAsync) to ensure the hook completes before the process exits.
 func (m *model) fireSessionEnd(reason string) {
 	if m.hookEngine != nil {
-		m.hookEngine.Execute(context.Background(), core.SessionEnd, hooks.HookInput{
+		m.hookEngine.Execute(context.Background(), hooks.SessionEnd, hooks.HookInput{
 			Reason: reason,
 		})
 		if m.fileWatcher != nil {
@@ -179,7 +174,7 @@ func (m *model) fireSessionEnd(reason string) {
 	}
 }
 
-func (m model) Init() tea.Cmd {
+func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, mcpui.AutoConnect(), triggerCronTickNow(), startCronTicker(), startAsyncHookTicker(), startTaskNotificationTicker()}
 	if m.initialPrompt != "" {
 		prompt := m.initialPrompt
@@ -206,10 +201,10 @@ func (m *model) commitMessagesWithCheck(checkReady bool) []tea.Cmd {
 		msg := m.conv.Messages[i]
 
 		if checkReady {
-			if i == lastIdx && msg.Role == message.RoleAssistant && m.conv.Stream.Active {
+			if i == lastIdx && msg.Role == core.RoleAssistant && m.conv.Stream.Active {
 				break
 			}
-			if msg.Role == message.RoleAssistant && len(msg.ToolCalls) > 0 && !m.conv.HasAllToolResults(i) {
+			if msg.Role == core.RoleAssistant && len(msg.ToolCalls) > 0 && !m.conv.HasAllToolResults(i) {
 				break
 			}
 		}

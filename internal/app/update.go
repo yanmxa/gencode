@@ -12,13 +12,13 @@ import (
 	"github.com/yanmxa/gencode/internal/app/skillui"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
 // initialPromptMsg is sent from Init() to inject an initial CLI prompt.
 type initialPromptMsg string
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// ── Input & UI chrome ────────────────────────────────────
 	switch msg := msg.(type) {
 	case initialPromptMsg:
@@ -31,10 +31,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		return m, m.handleWindowResize(msg)
 	case spinner.TickMsg:
-		return m, m.handleSpinnerTick(msg)
+		var cmd tea.Cmd
+		m.output.Spinner, cmd = m.output.Spinner.Update(msg)
+		return m, cmd
 	case skillui.InvokeMsg:
 		if sk, ok := skill.DefaultRegistry.Get(msg.SkillName); ok {
-			executeSkillCommand(&m, sk, "")
+			executeSkillCommand(m, sk, "")
 			return m, m.handleSkillInvocation()
 		}
 		return m, nil

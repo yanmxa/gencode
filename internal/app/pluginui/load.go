@@ -39,11 +39,11 @@ func (s *Model) EnterSelect(width, height int) error {
 // refreshCurrentTab refreshes data for the current tab
 func (s *Model) refreshCurrentTab() {
 	switch s.activeTab {
-	case TabInstalled:
+	case tabInstalled:
 		s.refreshInstalledPlugins()
-	case TabDiscover:
+	case tabDiscover:
 		s.refreshDiscoverPlugins()
-	case TabMarketplaces:
+	case tabMarketplaces:
 		s.refreshMarketplaces()
 	}
 	s.updateFilter()
@@ -52,10 +52,10 @@ func (s *Model) refreshCurrentTab() {
 // refreshInstalledPlugins loads installed plugins grouped by scope
 func (s *Model) refreshInstalledPlugins() {
 	plugins := coreplugin.DefaultRegistry.List()
-	s.installedPlugins = make(map[coreplugin.Scope][]PluginItem)
+	s.installedPlugins = make(map[coreplugin.Scope][]pluginItem)
 
 	for _, p := range plugins {
-		item := PluginItem{
+		item := pluginItem{
 			Name:        p.Manifest.Name,
 			FullName:    p.FullName(),
 			Description: p.Manifest.Description,
@@ -98,7 +98,7 @@ func (s *Model) refreshInstalledPlugins() {
 		}
 	}
 
-	s.installedFlatList = []PluginItem{}
+	s.installedFlatList = []pluginItem{}
 	for _, scope := range s.installedScopes {
 		s.installedFlatList = append(s.installedFlatList, s.installedPlugins[scope]...)
 	}
@@ -106,7 +106,7 @@ func (s *Model) refreshInstalledPlugins() {
 
 // refreshDiscoverPlugins loads available plugins from all marketplaces
 func (s *Model) refreshDiscoverPlugins() {
-	s.discoverPlugins = []DiscoverPluginItem{}
+	s.discoverPlugins = []discoverPluginItem{}
 	installedNames := s.getInstalledNames()
 
 	for _, marketplaceID := range s.marketplaceManager.List() {
@@ -132,7 +132,7 @@ func (s *Model) refreshDiscoverPlugins() {
 
 // refreshMarketplaces loads marketplace information
 func (s *Model) refreshMarketplaces() {
-	s.marketplaces = []MarketplaceItem{}
+	s.marketplaces = []marketplaceItem{}
 
 	installedCounts := make(map[string]int)
 	for _, p := range coreplugin.DefaultRegistry.List() {
@@ -148,7 +148,7 @@ func (s *Model) refreshMarketplaces() {
 			continue
 		}
 
-		item := MarketplaceItem{
+		item := marketplaceItem{
 			ID:         id,
 			SourceType: entry.Source.Source,
 			Installed:  installedCounts[id],
@@ -193,10 +193,10 @@ func (s *Model) getInstalledNames() map[string]bool {
 	return names
 }
 
-// newDiscoverItem creates a DiscoverPluginItem with installed status set.
-func (s *Model) newDiscoverItem(name, marketplaceID string, installed map[string]bool) DiscoverPluginItem {
+// newDiscoverItem creates a discoverPluginItem with installed status set.
+func (s *Model) newDiscoverItem(name, marketplaceID string, installed map[string]bool) discoverPluginItem {
 	fullName := name + "@" + marketplaceID
-	return DiscoverPluginItem{
+	return discoverPluginItem{
 		Name:        name,
 		Marketplace: marketplaceID,
 		Installed:   installed[fullName] || installed[name],
@@ -204,7 +204,7 @@ func (s *Model) newDiscoverItem(name, marketplaceID string, installed map[string
 }
 
 // enrichDiscoverItem loads manifest details into an item.
-func (s *Model) enrichDiscoverItem(item *DiscoverPluginItem) {
+func (s *Model) enrichDiscoverItem(item *discoverPluginItem) {
 	fullName := item.Name + "@" + item.Marketplace
 	pluginPath, err := s.marketplaceManager.GetPluginPath(item.Marketplace, item.Name)
 	if err != nil {
@@ -225,7 +225,7 @@ func (s *Model) enrichDiscoverItem(item *DiscoverPluginItem) {
 // refreshAndUpdateView refreshes plugins and updates the detail view if active
 func (s *Model) refreshAndUpdateView() {
 	s.refreshCurrentTab()
-	if s.level == LevelDetail && s.detailPlugin != nil {
+	if s.level == levelDetail && s.detailPlugin != nil {
 		s.refreshDetailView()
 	}
 }
@@ -237,7 +237,7 @@ func (s *Model) refreshDetailView() {
 	}
 	name := s.detailPlugin.FullName
 	for _, item := range s.filteredItems {
-		if p, ok := item.(PluginItem); ok && p.FullName == name {
+		if p, ok := item.(pluginItem); ok && p.FullName == name {
 			s.detailPlugin = &p
 			s.actions = s.buildInstalledActions(p)
 			s.clampActionIdx()
@@ -304,7 +304,7 @@ func (s *Model) addMarketplace() tea.Cmd {
 		return nil
 	}
 
-	s.level = LevelTabList
+	s.level = levelTabList
 	s.addMarketplaceInput = ""
 	s.refreshMarketplaces()
 

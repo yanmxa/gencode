@@ -10,10 +10,9 @@ import (
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 )
@@ -44,7 +43,7 @@ func (m *model) updateApproval(msg tea.Msg) (tea.Cmd, bool) {
 func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
 	// If there's a PermissionRequest hook configured, run it asynchronously
 	// to avoid blocking the Bubble Tea event loop (which freezes the TUI).
-	if m.hookEngine != nil && m.hookEngine.HasHooks(core.PermissionRequest) && msg.Request != nil {
+	if m.hookEngine != nil && m.hookEngine.HasHooks(hooks.PermissionRequest) && msg.Request != nil {
 		return tea.Batch(
 			m.showApprovalModal(msg.Request),
 			m.dispatchPermissionHookAsync(msg.Request),
@@ -68,7 +67,7 @@ func (m *model) dispatchPermissionHookAsync(req *perm.PermissionRequest) tea.Cmd
 	hookInput.PermissionSuggestions = m.buildPermissionSuggestions(req)
 
 	return func() tea.Msg {
-		outcome := hookEngine.Execute(ctx, core.PermissionRequest, hookInput)
+		outcome := hookEngine.Execute(ctx, hooks.PermissionRequest, hookInput)
 
 		blocked := outcome.ShouldBlock
 		allowed := outcome.PermissionAllow
@@ -139,7 +138,7 @@ func (m *model) showApprovalModal(req *perm.PermissionRequest) tea.Cmd {
 
 	// Fire Notification hook when permission prompt is shown
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(core.Notification, hooks.HookInput{
+		m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{
 			Message:          "Permission required for " + req.ToolName,
 			NotificationType: "permission_prompt",
 		})
@@ -155,10 +154,10 @@ func (m *model) abortToolWithError(errorMsg string, retry bool) tea.Cmd {
 		return tea.Batch(m.commitMessages()...)
 	}
 	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
-	m.conv.Append(message.ChatMessage{
-		Role:     message.RoleUser,
+	m.conv.Append(core.ChatMessage{
+		Role:     core.RoleUser,
 		ToolName: tc.Name,
-		ToolResult: &message.ToolResult{
+		ToolResult: &core.ToolResult{
 			ToolCallID: tc.ID,
 			Content:    errorMsg,
 			IsError:    true,
@@ -169,7 +168,7 @@ func (m *model) abortToolWithError(errorMsg string, retry bool) tea.Cmd {
 	m.conv.Stream.Stop()
 	commitCmds := m.commitMessages()
 	if retry {
-		commitCmds = append(commitCmds, m.startContinueStream())
+		commitCmds = append(commitCmds, m.continueOutbox())
 	}
 	return tea.Batch(commitCmds...)
 }
@@ -229,7 +228,7 @@ func (m *model) fullToolInputForHook(req *perm.PermissionRequest) map[string]any
 	if m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls) {
 		tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 		if tc.Name == req.ToolName {
-			if params, err := message.ParseToolInput(tc.Input); err == nil {
+			if params, err := core.ParseToolInput(tc.Input); err == nil {
 				return params
 			}
 		}
@@ -327,7 +326,7 @@ func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
 	if !msg.Approved {
 		retry := false
 		if m.hookEngine != nil && msg.Request != nil {
-			outcome := m.hookEngine.Execute(m.tool.Context(), core.PermissionDenied, hooks.HookInput{
+			outcome := m.hookEngine.Execute(m.tool.Context(), hooks.PermissionDenied, hooks.HookInput{
 				ToolName:  msg.Request.ToolName,
 				ToolInput: m.buildPermissionArgs(msg.Request),
 			})

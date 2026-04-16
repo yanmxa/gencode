@@ -4,17 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/runtime"
+	"github.com/yanmxa/gencode/internal/loop"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -47,10 +46,10 @@ func (r *hookAgentRunner) RunAgentHook(ctx context.Context, userPrompt string, m
 	}
 
 	userInstructions, projectInstructions := prompt.LoadInstructions(r.cwd)
-	loopClient := client.NewClient(r.llmProvider, model)
-	loopClient.ThinkingLevel = provider.ThinkingHigh
+	loopClient := provider.NewLLM(r.llmProvider, model, 0)
+	loopClient.SetThinking(provider.ThinkingHigh)
 
-	loop, err := runtime.NewLoop(runtime.LoopConfig{
+	lp, err := loop.NewLoop(loop.LoopConfig{
 		System: prompt.Build(prompt.Config{
 			ProviderName:        r.llmProvider.Name(),
 			ModelID:             model,
@@ -73,9 +72,9 @@ func (r *hookAgentRunner) RunAgentHook(ctx context.Context, userPrompt string, m
 	if err != nil {
 		return "", err
 	}
-	loop.AddUser(userPrompt, nil)
+	lp.AddUser(userPrompt, nil)
 
-	result, err := loop.Run(ctx, runtime.RunOptions{MaxTurns: 16})
+	result, err := lp.Run(ctx, loop.RunOptions{MaxTurns: 16})
 	if err != nil {
 		return "", err
 	}
@@ -99,14 +98,14 @@ func (r *hookAgentRunner) disabledTools() map[string]bool {
 	return dup
 }
 
-func (r *hookAgentRunner) mcpToolsGetter() func() []message.ToolSchema {
+func (r *hookAgentRunner) mcpToolsGetter() func() []core.ToolSchema {
 	if r.mcpRegistry == nil {
 		return nil
 	}
 	return r.mcpRegistry.GetToolSchemas
 }
 
-func (r *hookAgentRunner) mcpCaller() runtime.MCPCaller {
+func (r *hookAgentRunner) mcpCaller() loop.MCPCaller {
 	if r.mcpRegistry == nil {
 		return nil
 	}

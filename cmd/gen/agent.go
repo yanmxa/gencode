@@ -10,10 +10,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/loop"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -125,10 +124,9 @@ func runHeadlessAgent() error {
 		IsGit: config.IsGitRepo(cwd),
 	})
 
-	loopClient := client.NewClient(llmProvider, modelID)
-	loopClient.MaxTokens = 16384
+	loopClient := provider.NewLLM(llmProvider, modelID, 16384)
 
-	loop, err := runtime.NewLoop(runtime.LoopConfig{
+	lp, err := loop.NewLoop(loop.LoopConfig{
 		System: sys,
 		Client: loopClient,
 		Tool:   toolSet,
@@ -139,7 +137,7 @@ func runHeadlessAgent() error {
 	}
 
 	// Add user prompt
-	loop.AddUser(agentRunOpts.prompt, nil)
+	lp.AddUser(agentRunOpts.prompt, nil)
 
 	// Print status
 	fmt.Printf("Agent: %s\n", agentRunOpts.agentType)
@@ -159,14 +157,14 @@ func runHeadlessAgent() error {
 		}
 
 		// Run one turn
-		result, err := loop.Run(ctx, runtime.RunOptions{
+		result, err := lp.Run(ctx, loop.RunOptions{
 			MaxTurns: 1,
-			OnResponse: func(resp *message.CompletionResponse) {
+			OnResponse: func(resp *core.CompletionResponse) {
 				if resp.Content != "" {
 					fmt.Println(resp.Content)
 				}
 			},
-			OnToolStart: func(tc message.ToolCall) bool {
+			OnToolStart: func(tc core.ToolCall) bool {
 				fmt.Printf("[%s] %s\n", tc.Name, tc.ID)
 				return true
 			},

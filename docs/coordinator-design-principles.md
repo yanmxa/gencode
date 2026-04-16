@@ -14,7 +14,7 @@ high-quality synthesis in the main thread.
 Current GenCode already has strong building blocks:
 
 - reusable subagent execution in `internal/agent`
-- reusable conversation runtime in `internal/runtime`
+- reusable conversation runtime in `internal/core/runtime`
 - background task execution in `internal/task`
 - task/tracker UI in `internal/tool` and `internal/app/render`
 - session persistence and subagent transcript persistence
@@ -285,7 +285,7 @@ react without scraping fragile prose.
 
 The target shape is:
 
-- `internal/runtime`: main and worker loop execution
+- `internal/core/runtime`: main and worker loop execution
 - `internal/agent`: worker configuration, execution, continuation hooks
 - `internal/task`: canonical lifecycle model for background/collaboration tasks
 - `internal/tool`: tools for `Agent`, continuation, output, stop, task metadata

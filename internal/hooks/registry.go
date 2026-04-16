@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
 )
 
 type matchedHook struct {
@@ -77,7 +76,7 @@ func (e *Engine) populateInputFields(input *HookInput, event EventType) {
 	input.HookEventName = string(event)
 
 	switch event {
-	case core.SessionStart, core.SessionEnd, core.Notification, core.SubagentStart, core.PreCompact:
+	case SessionStart, SessionEnd, Notification, SubagentStart, PreCompact:
 	default:
 		input.PermissionMode = e.permissionMode
 	}
@@ -88,7 +87,7 @@ func (e *Engine) matchesIfCondition(cmd config.HookCmd, input HookInput) bool {
 		return true
 	}
 	switch input.HookEventName {
-	case string(core.PreToolUse), string(core.PostToolUse), string(core.PostToolUseFailure), string(core.PermissionRequest), string(core.PermissionDenied):
+	case string(PreToolUse), string(PostToolUse), string(PostToolUseFailure), string(PermissionRequest), string(PermissionDenied):
 		rule := config.BuildRule(input.ToolName, input.ToolInput)
 		if config.MatchesToolPattern(input.ToolName, input.ToolInput, rule, cmd.If) {
 			return true

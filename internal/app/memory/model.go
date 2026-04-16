@@ -9,11 +9,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/core/prompt"
-	"github.com/yanmxa/gencode/internal/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
-// Item represents a memory file option in the selector.
-type Item struct {
+// item represents a memory file option in the selector.
+type item struct {
 	Label       string
 	Description string
 	Path        string
@@ -26,7 +26,7 @@ type Item struct {
 // Model holds the state for the memory selector.
 type Model struct {
 	active      bool
-	items       []Item
+	items       []item
 	selectedIdx int
 	width       int
 	height      int
@@ -43,7 +43,7 @@ type SelectedMsg struct {
 func New() Model {
 	return Model{
 		active:      false,
-		items:       []Item{},
+		items:       []item{},
 		selectedIdx: 0,
 	}
 }
@@ -57,7 +57,7 @@ func (m *Model) EnterSelect(cwd string, width, height int) {
 	m.selectedIdx = 0
 
 	paths := prompt.GetAllMemoryPaths(cwd)
-	m.items = []Item{
+	m.items = []item{
 		m.buildItem("Global", "global", paths.Global, cwd,
 			fmt.Sprintf("Saved in %s", selector.ShortenPath(paths.Global[0])),
 			"Will be created on edit"),
@@ -72,7 +72,7 @@ func (m *Model) EnterSelect(cwd string, width, height int) {
 	}
 }
 
-func (m *Model) buildItem(label, level string, searchPaths []string, cwd, defaultDesc, createHint string) Item {
+func (m *Model) buildItem(label, level string, searchPaths []string, cwd, defaultDesc, createHint string) item {
 	foundPath := prompt.FindMemoryFile(searchPaths)
 	exists := foundPath != ""
 
@@ -86,7 +86,7 @@ func (m *Model) buildItem(label, level string, searchPaths []string, cwd, defaul
 		description = fmt.Sprintf("Checked in at %s", selector.ShortenPathForProject(foundPath, cwd))
 	}
 
-	return Item{
+	return item{
 		Label:       label,
 		Description: description,
 		Path:        path,
@@ -105,7 +105,7 @@ func (m *Model) IsActive() bool {
 // Cancel cancels the selector.
 func (m *Model) Cancel() {
 	m.active = false
-	m.items = []Item{}
+	m.items = []item{}
 	m.selectedIdx = 0
 }
 

@@ -4,7 +4,7 @@ package mcpui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
 // HandleKeypress handles a keypress and returns a command if needed

@@ -15,8 +15,8 @@ import (
 
 	"google.golang.org/genai"
 
-	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
 	streamutil "github.com/yanmxa/gencode/internal/provider/stream"
 )
@@ -43,8 +43,8 @@ func (c *Client) Name() string {
 }
 
 // Stream sends a completion request and returns a channel of streaming chunks
-func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
-	ch := make(chan message.StreamChunk)
+func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan core.StreamChunk {
+	ch := make(chan core.StreamChunk)
 
 	go func() {
 		defer close(ch)
@@ -54,9 +54,9 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		for _, msg := range opts.Messages {
 			var role string
 			switch msg.Role {
-			case message.RoleUser:
+			case core.RoleUser:
 				role = "user"
-			case message.RoleAssistant:
+			case core.RoleAssistant:
 				role = "model"
 			default:
 				role = string(msg.Role)
@@ -103,12 +103,12 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					parts = append(parts, p)
 				}
 			} else if len(msg.Images) > 0 {
-				if contentParts := message.InterleavedContentParts(msg); contentParts != nil {
+				if contentParts := core.InterleavedContentParts(msg); contentParts != nil {
 					for _, cp := range contentParts {
 						switch cp.Type {
-						case message.ContentPartText:
+						case core.ContentPartText:
 							parts = append(parts, &genai.Part{Text: cp.Text})
-						case message.ContentPartImage:
+						case core.ContentPartImage:
 							decoded, err := base64.StdEncoding.DecodeString(cp.Image.Data)
 							if err != nil {
 								log.Logger().Warn("skipping image: base64 decode failed")
@@ -231,7 +231,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 						state.EmitToolStart(ch, fc.ID, fc.Name)
 						state.EmitToolInput(ch, fc.ID, string(argsJSON))
 
-						state.Response.ToolCalls = append(state.Response.ToolCalls, message.ToolCall{
+						state.Response.ToolCalls = append(state.Response.ToolCalls, core.ToolCall{
 							ID:               fc.ID,
 							Name:             fc.Name,
 							Input:            string(argsJSON),

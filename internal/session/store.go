@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/tracker"
-	"github.com/yanmxa/gencode/internal/transcript"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/task/tracker"
+	"github.com/yanmxa/gencode/internal/session/transcript"
 )
 
 type Store struct {
@@ -199,7 +199,7 @@ func (s *Store) PersistToolResult(sessionID, toolCallID, content string) error {
 	return nil
 }
 
-func (s *Store) SaveSubagentConversation(parentSessionID, title, modelID, cwd string, messages []message.Message) (string, string, error) {
+func (s *Store) SaveSubagentConversation(parentSessionID, title, modelID, cwd string, messages []core.Message) (string, string, error) {
 	entries := messagesToEntries(messages)
 	if len(entries) == 0 {
 		return "", "", nil
@@ -226,7 +226,7 @@ func (s *Store) SaveSubagentConversation(parentSessionID, title, modelID, cwd st
 	return sess.Metadata.ID, s.SessionPath(sess.Metadata.ID), nil
 }
 
-func (s *Store) LoadSubagentMessages(agentID string) ([]message.Message, error) {
+func (s *Store) LoadSubagentMessages(agentID string) ([]core.Message, error) {
 	sess, err := s.Load(agentID)
 	if err != nil {
 		return nil, err
