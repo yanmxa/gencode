@@ -13,7 +13,7 @@ import (
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
-	appmode "github.com/yanmxa/gencode/internal/app/mode"
+	appmodal "github.com/yanmxa/gencode/internal/app/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
@@ -49,7 +49,7 @@ type modelInfra struct {
 	llmProvider      llm.Provider
 	currentModel     *llm.CurrentModelInfo
 	settings         *config.Settings
-	hookEngine       *hooks.Engine
+	hookEngine       *hook.Engine
 	sessionStore     *session.Store
 	notifications    *appagent.NotificationQueue
 	initialSessionID string
@@ -84,7 +84,7 @@ func initInfra(cwd string) (modelInfra, error) {
 		transcriptPath = sessionStore.SessionPath(sessionID)
 	}
 	notifications := appagent.NewNotificationQueue()
-	hookEngine := hooks.NewEngine(settings, sessionID, cwd, transcriptPath)
+	hookEngine := hook.NewEngine(settings, sessionID, cwd, transcriptPath)
 	modelID := ""
 	if currentModel != nil {
 		modelID = currentModel.ModelID
@@ -180,11 +180,11 @@ func newMemoryState() appmemory.State {
 	return appmemory.State{Selector: appmemory.New()}
 }
 
-func newModeState() appmode.State {
-	return appmode.State{
-		PlanApproval: appmode.NewPlanPrompt(),
-		PlanEntry:    appmode.NewEnterPlanPrompt(),
-		Question:     appmode.NewQuestionPrompt(),
+func newModeState() appmodal.State {
+	return appmodal.State{
+		PlanApproval: appmodal.NewPlanPrompt(),
+		PlanEntry:    appmodal.NewEnterPlanPrompt(),
+		Question:     appmodal.NewQuestionPrompt(),
 	}
 }
 
@@ -201,7 +201,7 @@ func newPluginState() pluginui.Model {
 }
 
 func newAgentState() agentui.Model {
-	return agentui.New(agent.DefaultRegistry)
+	return agentui.New(subagent.DefaultRegistry)
 }
 
 func newSearchState() searchui.Model {
@@ -252,7 +252,7 @@ func (m *model) reloadPluginBackedState() error {
 	if err := appcommand.Initialize(m.cwd); err != nil {
 		return fmt.Errorf("failed to reload custom commands: %w", err)
 	}
-	if err := agent.Initialize(m.cwd); err != nil {
+	if err := subagent.Initialize(m.cwd); err != nil {
 		return fmt.Errorf("failed to reload agent registry: %w", err)
 	}
 	if err := mcp.Initialize(m.cwd); err != nil {
@@ -335,10 +335,10 @@ func (m *model) applyResumeOption(resumeID string, fork bool) error {
 	return nil
 }
 
-// buildLLMCompleter wraps a provider into an hooks.LLMCompleter closure.
+// buildLLMCompleter wraps a provider into an hook.LLMCompleter closure.
 // The closure owns client construction and streaming, keeping the hooks
 // engine free from direct provider dependencies.
-func buildLLMCompleter(p llm.Provider) hooks.LLMCompleter {
+func buildLLMCompleter(p llm.Provider) hook.LLMCompleter {
 	if p == nil {
 		return nil
 	}

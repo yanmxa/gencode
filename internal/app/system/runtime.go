@@ -3,7 +3,6 @@ package system
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
 )
 
@@ -12,11 +11,11 @@ type Runtime interface {
 	IsInputIdle() bool
 	InjectCronPrompt(prompt string) tea.Cmd
 	InjectAsyncHookContinuation(item AsyncHookRewake) tea.Cmd
-	AppendMessage(msg core.ChatMessage)
+	AppendNotice(text string)
 }
 
 // Update routes Source 3 (system -> agent) messages for the app runtime.
-func Update(rt Runtime, state *State, hookEngine *hooks.Engine, msg tea.Msg) (tea.Cmd, bool) {
+func Update(rt Runtime, state *State, hookEngine *hook.Engine, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg.(type) {
 	case CronTickMsg:
 		return handleCronTick(rt, state), true
@@ -35,12 +34,12 @@ func handleCronTick(rt Runtime, state *State) tea.Cmd {
 		cmds = append(cmds, rt.InjectCronPrompt(result.InjectPrompt))
 	}
 	for _, notice := range result.Notices {
-		rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: notice})
+		rt.AppendNotice(notice)
 	}
 	return tea.Batch(cmds...)
 }
 
-func handleAsyncHookTick(rt Runtime, state *State, hookEngine *hooks.Engine) tea.Cmd {
+func handleAsyncHookTick(rt Runtime, state *State, hookEngine *hook.Engine) tea.Cmd {
 	cmds := []tea.Cmd{StartAsyncHookTicker()}
 
 	item := state.HandleAsyncHookTick(hookEngine, rt.IsInputIdle())

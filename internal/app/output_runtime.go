@@ -1,36 +1,49 @@
-// output.Runtime implementation for the Agent Output path.
-// Handler logic lives in internal/app/output/update.go; this file provides
-// the mutation primitives that those handlers call via the Runtime interface.
-// Permission bridge routing lives in update_output_perm_bridge.go.
+// output.Runtime implementation: mutation primitives that output event
+// handlers call via the Runtime interface.  Also contains compact, session,
+// and permission-bridge logic used by the output path.
 package app
 
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"go.uber.org/zap"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
+	"github.com/yanmxa/gencode/internal/app/kit"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
-	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
+	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/runtime"
+	"github.com/yanmxa/gencode/internal/session"
+	"github.com/yanmxa/gencode/internal/task"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/log"
 )
 
 // --- Dispatcher ---
 
-func (m *model) updateOutput(msg tea.Msg) (tea.Cmd, bool) {
-	return appoutput.Update(m, &m.agentOutput, msg)
+type outputRuntime struct {
+	*model
 }
 
-// Compile-time checks: *model satisfies output.Runtime.
-var _ appoutput.Runtime = (*model)(nil)
+func (m *model) updateOutput(msg tea.Msg) (tea.Cmd, bool) {
+	return appoutput.Update(outputRuntime{m}, &m.agentOutput, msg)
+}
+
+// Compile-time checks: the adapter satisfies output.Runtime.
+var _ appoutput.Runtime = outputRuntime{}
 
 // --- output.Runtime: ConversationMutator ---
 
@@ -56,7 +69,9 @@ func (m *model) ClearWarningSuppressed() { m.conv.Compact.WarningSuppressed = fa
 func (m *model) IncrementTurnCounter()   { m.conv.TurnsSinceLastTaskTool++ }
 func (m *model) ResetTurnCounter()       { m.conv.TurnsSinceLastTaskTool = 0 }
 func (m *model) ClearThinkingOverride()  { m.thinkingOverride = llm.ThinkingOff }
-func (m *model) ContinueOutbox() tea.Cmd { return m.continueOutbox() }
+func (rt outputRuntime) ContinueOutbox() tea.Cmd {
+	return rt.model.outputContinueOutbox()
+}
 
 func (m *model) ApplyToolSideEffects(toolName string, sideEffect any) {
 	m.applyAgentToolSideEffects(toolName, sideEffect)
@@ -78,14 +93,24 @@ func (m *model) TriggerAutoCompact() tea.Cmd { return m.triggerAutoCompact() }
 func (m *model) StartPromptSuggestion() tea.Cmd {
 	return m.startPromptSuggestion()
 }
-func (m *model) DrainInputQueue() tea.Cmd        { return m.drainInputQueueToAgent() }
-func (m *model) DrainCronQueue() tea.Cmd         { return m.drainCronQueueToAgent() }
-func (m *model) DrainAsyncHookQueue() tea.Cmd    { return m.drainAsyncHookQueueToAgent() }
-func (m *model) DrainTaskNotifications() tea.Cmd { return m.drainTaskNotificationsToAgent() }
+func (m *model) DrainTurnQueues() tea.Cmd {
+	for _, drain := range []func() tea.Cmd{
+		m.drainInputQueueToAgent,
+		m.drainCronQueueToAgent,
+		m.drainAsyncHookQueueToAgent,
+		m.drainTaskNotificationsToAgent,
+	} {
+		if cmd := drain(); cmd != nil {
+			return cmd
+		}
+	}
+	return nil
+}
+func (m *model) HasRunningTasks() bool { return tracker.DefaultStore.HasInProgress() }
 
 func (m *model) FireStopFailureHook(err error) {
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.StopFailure, hooks.HookInput{
+		m.hookEngine.ExecuteAsync(hook.StopFailure, hook.HookInput{
 			LastAssistantMessage: m.lastAssistantContent(),
 			Error:                err.Error(),
 			StopHookActive:       m.hookEngine.StopHookActive(),
@@ -125,7 +150,13 @@ func (m *model) ShowPermissionPrompt(req *appoutput.PermBridgeRequest) tea.Cmd {
 	return nil
 }
 
-func (m *model) handlePermBridgeResponse(msg appapproval.ResponseMsg) tea.Cmd {
+type permissionDecision struct {
+	Approved bool
+	AllowAll bool
+	Request  *perm.PermissionRequest
+}
+
+func (m *model) handlePermBridgeDecision(decision permissionDecision) tea.Cmd {
 	if m.agentSess == nil {
 		return nil
 	}
@@ -137,13 +168,13 @@ func (m *model) handlePermBridgeResponse(msg appapproval.ResponseMsg) tea.Cmd {
 	}
 
 	resp := appoutput.PermBridgeResponse{
-		Allow:  msg.Approved,
+		Allow:  decision.Approved,
 		Reason: "user decision",
 	}
 
-	if msg.Approved {
-		if msg.AllowAll && m.sessionPermissions != nil && msg.Request != nil {
-			m.sessionPermissions.AllowTool(msg.Request.ToolName)
+	if decision.Approved {
+		if decision.AllowAll && m.sessionPermissions != nil && decision.Request != nil {
+			m.sessionPermissions.AllowTool(decision.Request.ToolName)
 		}
 		resp.Reason = "user approved"
 	} else {
@@ -227,15 +258,15 @@ func (m *model) fireAgentPostToolHook(tr core.ToolResult, sideEffect any) {
 	if m.hookEngine == nil {
 		return
 	}
-	eventType := hooks.PostToolUse
+	eventType := hook.PostToolUse
 	if tr.IsError {
-		eventType = hooks.PostToolUseFailure
+		eventType = hook.PostToolUseFailure
 	}
 	toolResponse := any(tr.Content)
 	if sideEffect != nil {
 		toolResponse = sideEffect
 	}
-	input := hooks.HookInput{
+	input := hook.HookInput{
 		ToolName:     tr.ToolName,
 		ToolUseID:    tr.ToolCallID,
 		ToolResponse: toolResponse,
@@ -252,8 +283,8 @@ func (m *model) fireIdleHooks() bool {
 	}
 
 	blocked := false
-	if m.hookEngine.HasHooks(hooks.Stop) {
-		outcome := m.hookEngine.Execute(context.Background(), hooks.Stop, hooks.HookInput{
+	if m.hookEngine.HasHooks(hook.Stop) {
+		outcome := m.hookEngine.Execute(context.Background(), hook.Stop, hook.HookInput{
 			LastAssistantMessage: m.lastAssistantContent(),
 			StopHookActive:       m.hookEngine.StopHookActive(),
 		})
@@ -272,7 +303,7 @@ func (m *model) fireIdleHooks() bool {
 		}
 	}
 
-	m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{
+	m.hookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
 		Message:          "Claude is waiting for your input",
 		NotificationType: "idle_prompt",
 	})
@@ -374,6 +405,10 @@ func (m *model) continueOutbox() tea.Cmd {
 	return appoutput.DrainAgentOutbox(m.agentSess.agent.Outbox())
 }
 
+func (m *model) outputContinueOutbox() tea.Cmd {
+	return m.continueOutbox()
+}
+
 // --- Overflow persistence ---
 
 const (
@@ -414,4 +449,263 @@ func getHookResponseString(resp map[string]any, key string) string {
 		return value
 	}
 	return ""
+}
+
+// --- Compact helpers ---
+
+func (m *model) getEffectiveInputLimit() int {
+	return appcompact.GetEffectiveInputLimit(m.providerStore, m.currentModel)
+}
+
+func (m *model) getMaxTokens() int {
+	return appcompact.GetMaxTokens(m.providerStore, m.currentModel, config.DefaultMaxTokens)
+}
+
+func (m *model) getContextUsagePercent() float64 {
+	return appcompact.GetContextUsagePercent(m.inputTokens, m.providerStore, m.currentModel)
+}
+
+func (m *model) shouldAutoCompact() bool {
+	return appcompact.ShouldAutoCompact(m.llmProvider, len(m.conv.Messages), m.inputTokens, m.providerStore, m.currentModel)
+}
+
+func (m *model) triggerAutoCompact() tea.Cmd {
+	m.conv.Compact.Active = true
+	m.conv.Compact.Focus = ""
+	m.conv.Compact.Phase = appcompact.PhaseSummarizing
+	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()))
+	commitCmds := m.commitMessages()
+	commitCmds = append(commitCmds, m.agentOutput.Spinner.Tick, compactCmd(m.buildCompactRequest("", "auto")))
+	return tea.Batch(commitCmds...)
+}
+
+func (m *model) handleCompactResult(msg appcompact.ResultMsg) tea.Cmd {
+	shouldContinue := m.conv.Compact.AutoContinue
+
+	if msg.Error != nil {
+		m.conv.Compact.Complete(fmt.Sprintf("Compaction could not be completed: %v", msg.Error), true)
+		return tea.Batch(m.commitMessages()...)
+	}
+
+	m.conv.Compact.Complete(fmt.Sprintf("Condensed %d earlier messages.", msg.OriginalCount), false)
+
+	scrollbackCmds := m.commitAllMessages()
+
+	boundaryStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
+	boundary := boundaryStyle.Render(fmt.Sprintf("✻ Conversation compacted — %d messages summarized (scroll up for history)", msg.OriginalCount))
+
+	m.resetAfterCompact()
+
+	var restoredFiles []filecache.RestoredFile
+	var restoredContext string
+	if m.fileCache != nil {
+		restoredFiles, _ = m.fileCache.RestoreRecent()
+		if len(restoredFiles) > 0 {
+			restoredContext = filecache.FormatRestoredFiles(restoredFiles)
+		}
+	}
+
+	if m.sessionStore != nil && m.sessionID != "" {
+		_ = m.sessionStore.SaveSessionMemory(m.sessionID, msg.Summary)
+	}
+	m.sessionSummary = msg.Summary
+
+	if m.hookEngine != nil {
+		m.hookEngine.ExecuteAsync(hook.PostCompact, hook.HookInput{
+			Trigger: msg.Trigger,
+		})
+	}
+
+	scrollPart := tea.Sequence(append(scrollbackCmds, tea.Println(boundary), tea.ClearScreen)...)
+	cmds := []tea.Cmd{scrollPart}
+	if shouldContinue {
+		m.conv.Compact.ClearResult()
+		if restoredContext != "" {
+			m.conv.Append(core.ChatMessage{
+				Role:    core.RoleUser,
+				Content: restoredContext,
+			})
+		}
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleUser,
+			Content: runtime.AutoCompactResumePrompt,
+		})
+		cmds = append(cmds, m.sendToAgent(runtime.AutoCompactResumePrompt, nil))
+	} else if restoredContext != "" {
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleUser,
+			Content: restoredContext,
+		})
+		m.conv.AddNotice(fmt.Sprintf("Restored %d recently accessed file(s) for context.", len(restoredFiles)))
+		cmds = append(cmds, m.commitMessages()...)
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m *model) resetAfterCompact() {
+	m.conv.Clear()
+	m.inputTokens = 0
+	m.outputTokens = 0
+}
+
+func (m *model) handleTokenLimitResult(msg appcompact.TokenLimitResultMsg) tea.Cmd {
+	m.provider.FetchingLimits = false
+
+	var content string
+	if msg.Error != nil {
+		content = "Error: " + msg.Error.Error()
+	} else {
+		content = msg.Result
+	}
+	m.conv.AddNotice(content)
+
+	return tea.Batch(m.commitMessages()...)
+}
+
+// --- Session lifecycle ---
+
+func (m *model) ensureSessionStore() error {
+	if m.sessionStore == nil {
+		store, err := session.NewStore(m.cwd)
+		if err != nil {
+			return err
+		}
+		m.sessionStore = store
+	}
+	return nil
+}
+
+func (m *model) saveSession() error {
+	if err := m.ensureSessionStore(); err != nil {
+		return err
+	}
+
+	if len(m.conv.Messages) == 0 {
+		return nil
+	}
+
+	entries := session.ConvertToEntries(m.conv.Messages)
+
+	providerName := ""
+	modelID := ""
+	if m.currentModel != nil {
+		providerName = string(m.currentModel.Provider)
+		modelID = m.currentModel.ModelID
+	}
+
+	sess := &session.Snapshot{
+		Metadata: session.SessionMetadata{
+			ID:         m.sessionID,
+			Provider:   providerName,
+			Model:      modelID,
+			Cwd:        m.cwd,
+			LastPrompt: session.ExtractLastUserText(entries),
+			Summary:    m.sessionSummary,
+			Mode:       m.currentSessionMode(),
+		},
+		Entries: entries,
+		Tasks:   tracker.DefaultStore.Export(),
+	}
+
+	if sess.Metadata.Title == "" || sess.Metadata.ID == "" {
+		sess.Metadata.Title = session.GenerateTitle(sess.Entries)
+	}
+
+	if err := m.sessionStore.Save(sess); err != nil {
+		return err
+	}
+
+	m.sessionID = sess.Metadata.ID
+	m.initTaskStorage()
+
+	if m.hookEngine != nil {
+		m.hookEngine.SetTranscriptPath(m.sessionStore.SessionPath(sess.Metadata.ID))
+	}
+
+	m.reconfigureAgentTool()
+
+	return nil
+}
+
+func (m *model) loadSession(id string) error {
+	if err := m.ensureSessionStore(); err != nil {
+		return err
+	}
+
+	sess, err := m.sessionStore.Load(id)
+	if err != nil {
+		return err
+	}
+
+	tracker.DefaultStore.SetStorageDir("")
+	m.restoreSessionData(sess)
+
+	if len(sess.Tasks) == 0 {
+		tracker.DefaultStore.Reset()
+	}
+	tool.ResetFetched()
+
+	m.inputTokens = 0
+	m.outputTokens = 0
+	m.conv.TurnsSinceLastTaskTool = 0
+
+	return nil
+}
+
+func (m *model) restoreSessionData(sess *session.Snapshot) {
+	m.conv.Messages = session.ConvertFromEntries(sess.Entries)
+	m.sessionID = sess.Metadata.ID
+
+	if sess.Metadata.Summary != "" {
+		m.sessionSummary = sess.Metadata.Summary
+	} else if m.sessionStore != nil {
+		if mem, err := m.sessionStore.LoadSessionMemory(sess.Metadata.ID); err == nil && mem != "" {
+			m.sessionSummary = mem
+		}
+	}
+
+	m.initTaskStorage()
+
+	if len(sess.Tasks) > 0 {
+		tracker.DefaultStore.Import(sess.Tasks)
+	}
+}
+
+func (m *model) initTaskStorage() {
+	if tracker.DefaultStore.GetStorageDir() != "" {
+		return
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Logger().Warn("failed to get home directory for task storage", zap.Error(err))
+		return
+	}
+
+	taskListID := os.Getenv("GEN_TASK_LIST_ID")
+	if taskListID != "" {
+		dir := filepath.Join(homeDir, ".gen", "tasks", taskListID)
+		tracker.DefaultStore.SetStorageDir(dir)
+		_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
+		return
+	}
+
+	if m.sessionID == "" {
+		return
+	}
+	dir := filepath.Join(homeDir, ".gen", "tasks", m.sessionID)
+	tracker.DefaultStore.SetStorageDir(dir)
+	_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
+}
+
+func (m *model) currentSessionMode() string {
+	if m.planEnabled {
+		return "plan"
+	}
+	switch m.operationMode {
+	case config.ModeAutoAccept:
+		return "auto-accept"
+	default:
+		return "normal"
+	}
 }

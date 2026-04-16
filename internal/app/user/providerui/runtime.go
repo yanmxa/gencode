@@ -68,7 +68,7 @@ func handleModelSelected(rt Runtime, state *State, msg ModelSelectedMsg) tea.Cmd
 
 	// Show model name in status bar for 5 seconds
 	state.StatusMessage = msg.ModelID
-	return StatusTimer(5 * time.Second)
+	return kit.StatusTimer(5 * time.Second)
 }
 
 func refreshProviderConnection(rt Runtime, state *State, ctx context.Context, providerName llm.Name, authMethod llm.AuthMethod) {

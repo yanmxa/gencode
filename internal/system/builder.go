@@ -1,4 +1,4 @@
-// Package prompt builds system prompts for GenCode agents.
+// Package system builds system prompts for GenCode agents.
 // It assembles prompts from embedded templates, runtime environment,
 // user/project instructions, and dynamic capabilities.
 package system

@@ -13,8 +13,8 @@ import (
 const DefaultFileWatcherInterval = 500 * time.Millisecond
 
 type FileWatcher struct {
-	engine    *hooks.Engine
-	onOutcome func(hooks.HookOutcome)
+	engine    *hook.Engine
+	onOutcome func(hook.HookOutcome)
 	interval  time.Duration
 
 	mu      sync.Mutex
@@ -30,7 +30,7 @@ type fileSnapshot struct {
 	modTime time.Time
 }
 
-func NewFileWatcher(engine *hooks.Engine, onOutcome func(hooks.HookOutcome)) *FileWatcher {
+func NewFileWatcher(engine *hook.Engine, onOutcome func(hook.HookOutcome)) *FileWatcher {
 	return &FileWatcher{
 		engine:    engine,
 		onOutcome: onOutcome,
@@ -164,7 +164,7 @@ func (w *FileWatcher) poll() {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		outcome := w.engine.Execute(ctx, hooks.FileChanged, hooks.HookInput{
+		outcome := w.engine.Execute(ctx, hook.FileChanged, hook.HookInput{
 			FilePath: change.path,
 			Event:    change.event,
 		})

@@ -1,4 +1,4 @@
-package mode
+package modal
 
 // State holds plan mode modal prompt UI components.
 // Domain state (PlanEnabled, PlanTask, PlanStore, OperationMode, etc.) lives on

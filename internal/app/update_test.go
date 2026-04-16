@@ -8,7 +8,7 @@ import (
 
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
-	appmode "github.com/yanmxa/gencode/internal/app/mode"
+	appmodal "github.com/yanmxa/gencode/internal/app/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
@@ -31,9 +31,9 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 		sessionPermissions: config.NewSessionPermissions(),
 		planEnabled: true,
 		planTask:    "test task",
-		mode: appmode.State{
-			PlanApproval: appmode.NewPlanPrompt(),
-			Question:     appmode.NewQuestionPrompt(),
+		mode: appmodal.State{
+			PlanApproval: appmodal.NewPlanPrompt(),
+			Question:     appmodal.NewQuestionPrompt(),
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
@@ -46,7 +46,7 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 		conv: appconv.New(),
 	}
 
-	msg := appmode.PlanResponseMsg{
+	msg := appmodal.PlanResponseMsg{
 		Request:      &tool.PlanRequest{ID: "plan-1", Plan: "## Original Plan\nDo something"},
 		Approved:     true,
 		ApproveMode:  "modify",
@@ -77,9 +77,9 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 		sessionPermissions: config.NewSessionPermissions(),
 		planEnabled: true,
 		planTask:    "test task",
-		mode: appmode.State{
-			PlanApproval: appmode.NewPlanPrompt(),
-			Question:     appmode.NewQuestionPrompt(),
+		mode: appmodal.State{
+			PlanApproval: appmodal.NewPlanPrompt(),
+			Question:     appmodal.NewQuestionPrompt(),
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
@@ -92,7 +92,7 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 		conv: appconv.New(),
 	}
 
-	msg := appmode.PlanResponseMsg{
+	msg := appmodal.PlanResponseMsg{
 		Request:     &tool.PlanRequest{ID: "plan-1", Plan: "## Plan\nSome plan"},
 		Approved:    true,
 		ApproveMode: "manual",
@@ -120,9 +120,9 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 		sessionPermissions: config.NewSessionPermissions(),
 		planEnabled: true,
 		planTask:    "test task",
-		mode: appmode.State{
-			PlanApproval: appmode.NewPlanPrompt(),
-			Question:     appmode.NewQuestionPrompt(),
+		mode: appmodal.State{
+			PlanApproval: appmodal.NewPlanPrompt(),
+			Question:     appmodal.NewQuestionPrompt(),
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
@@ -135,7 +135,7 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 		conv: appconv.New(),
 	}
 
-	msg := appmode.PlanResponseMsg{
+	msg := appmodal.PlanResponseMsg{
 		Request:     &tool.PlanRequest{ID: "plan-1", Plan: "## Plan\nSome plan"},
 		Approved:    true,
 		ApproveMode: "auto",
@@ -166,9 +166,9 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 		sessionPermissions: config.NewSessionPermissions(),
 		planEnabled: true,
 		planTask:    "test task",
-		mode: appmode.State{
-			PlanApproval: appmode.NewPlanPrompt(),
-			Question:     appmode.NewQuestionPrompt(),
+		mode: appmodal.State{
+			PlanApproval: appmodal.NewPlanPrompt(),
+			Question:     appmodal.NewQuestionPrompt(),
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
@@ -181,7 +181,7 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 		conv: appconv.New(),
 	}
 
-	msg := appmode.PlanResponseMsg{
+	msg := appmodal.PlanResponseMsg{
 		Request:  &tool.PlanRequest{ID: "plan-1", Plan: "## Plan\nSome plan"},
 		Approved: false,
 		Response: &tool.PlanResponse{
@@ -218,8 +218,8 @@ func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 		sessionPermissions:   config.NewSessionPermissions(),
 		pendingQuestion:      &tool.QuestionRequest{ID: "ask-1"},
 		pendingQuestionReply: reply,
-		mode: appmode.State{
-			Question: appmode.NewQuestionPrompt(),
+		mode: appmodal.State{
+			Question: appmodal.NewQuestionPrompt(),
 		},
 	}
 
@@ -229,7 +229,7 @@ func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 			0: {"Patch"},
 		},
 	}
-	cmd := m.handleQuestionResponse(appmode.QuestionResponseMsg{
+	cmd := m.handleQuestionResponse(appmodal.QuestionResponseMsg{
 		Request:  &tool.QuestionRequest{ID: "ask-1"},
 		Response: resp,
 	})
@@ -529,10 +529,10 @@ func TestRenderActiveModalPriority(t *testing.T) {
 	m := &model{
 		operationMode:      config.ModePlan,
 		sessionPermissions: config.NewSessionPermissions(),
-		mode: appmode.State{
-			PlanApproval: appmode.NewPlanPrompt(),
-			Question:     appmode.NewQuestionPrompt(),
-			PlanEntry:    appmode.NewEnterPlanPrompt(),
+		mode: appmodal.State{
+			PlanApproval: appmodal.NewPlanPrompt(),
+			Question:     appmodal.NewQuestionPrompt(),
+			PlanEntry:    appmodal.NewEnterPlanPrompt(),
 		},
 		approval: appapproval.New(),
 	}
@@ -552,10 +552,10 @@ func TestRenderActiveModalPriority(t *testing.T) {
 }
 
 func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
-	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
-	engine.AddSessionFunctionHook(hooks.PermissionRequest, "", hooks.FunctionHook{
-		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
-			return hooks.HookOutput{}, nil
+	engine := hook.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine.AddSessionFunctionHook(hook.PermissionRequest, "", hook.FunctionHook{
+		Callback: func(_ context.Context, _ hook.HookInput) (hook.HookOutput, error) {
+			return hook.HookOutput{}, nil
 		},
 	})
 

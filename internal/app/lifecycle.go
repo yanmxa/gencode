@@ -22,7 +22,7 @@ func (m *model) refreshMemoryContext(loadReason string) {
 			projectParts = append(projectParts, f.Content)
 		}
 		if m.hookEngine != nil {
-			m.hookEngine.ExecuteAsync(hooks.InstructionsLoaded, hooks.HookInput{
+			m.hookEngine.ExecuteAsync(hook.InstructionsLoaded, hook.HookInput{
 				FilePath:   f.Path,
 				MemoryType: memoryTypeForLevel(f.Level),
 				LoadReason: loadReason,
@@ -38,7 +38,7 @@ func (m *model) fireFileChanged(filePath, source string) {
 	if m.hookEngine == nil || filePath == "" {
 		return
 	}
-	outcome := m.hookEngine.Execute(context.Background(), hooks.FileChanged, hooks.HookInput{
+	outcome := m.hookEngine.Execute(context.Background(), hook.FileChanged, hook.HookInput{
 		FilePath: filePath,
 		Source:   source,
 		Event:    "change",
@@ -68,7 +68,7 @@ func (m *model) changeCwd(newCwd string) {
 	if m.hookEngine != nil {
 		m.hookEngine.SetCwd(newCwd)
 		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.llmProvider, m.settings, newCwd, m.isGit, mcp.DefaultRegistry, m.getModelID()))
-		outcome := m.hookEngine.Execute(context.Background(), hooks.CwdChanged, hooks.HookInput{
+		outcome := m.hookEngine.Execute(context.Background(), hook.CwdChanged, hook.HookInput{
 			OldCwd: oldCwd,
 			NewCwd: newCwd,
 		})
@@ -96,7 +96,7 @@ func (m *model) reloadProjectContext(cwd string) {
 	}
 }
 
-func (m *model) applyRuntimeHookOutcome(outcome hooks.HookOutcome) {
+func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
 	if outcome.InitialUserMessage != "" && m.initialPrompt == "" && len(m.conv.Messages) == 0 {
 		m.initialPrompt = outcome.InitialUserMessage
 	}
@@ -105,7 +105,7 @@ func (m *model) applyRuntimeHookOutcome(outcome hooks.HookOutcome) {
 	}
 	if m.fileWatcher == nil {
 		queue := m.systemInput.AsyncHookQueue
-		m.fileWatcher = appsystem.NewFileWatcher(m.hookEngine, func(outcome hooks.HookOutcome) {
+		m.fileWatcher = appsystem.NewFileWatcher(m.hookEngine, func(outcome hook.HookOutcome) {
 			// Route through AsyncHookQueue to avoid mutating model from
 			// the file watcher's background goroutine. The Bubble Tea
 			// tick handler processes these safely in the Update loop.

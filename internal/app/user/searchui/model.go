@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/llm/search"
+	"github.com/yanmxa/gencode/internal/search"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 

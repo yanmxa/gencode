@@ -118,7 +118,7 @@ type LoopConfig struct {
 	Client          *llm.Client       // required: LLM client
 	Tool            *tool.Set            // required: tool registry
 	Permission      permission.Checker   // optional: permission checker (nil = permit all)
-	Hooks           *hooks.Engine        // optional: hook engine
+	Hooks           *hook.Engine        // optional: hook engine
 	MCP             MCPCaller            // optional: routes mcp__*__* tool calls
 	QuestionHandler tool.AskQuestionFunc // optional: interactive question handler
 	Cwd             string               // required: working directory for tool execution
@@ -157,7 +157,7 @@ type Loop struct {
 	Client     *llm.Client
 	Tool       *tool.Set
 	Permission permission.Checker
-	Hooks      *hooks.Engine
+	Hooks      *hook.Engine
 	MCP        MCPCaller // optional: routes mcp__*__* tool calls
 	Cwd        string    // working directory for tool execution
 

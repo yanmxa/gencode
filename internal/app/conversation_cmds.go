@@ -39,7 +39,7 @@ type compactRequest struct {
 	Messages       []core.Message
 	SessionSummary string
 	Focus          string
-	HookEngine     *hooks.Engine
+	HookEngine     *hook.Engine
 	Trigger        string
 }
 
@@ -78,7 +78,7 @@ func compactCmd(req compactRequest) tea.Cmd {
 		ctx := req.Ctx
 		focus := req.Focus
 		if req.HookEngine != nil {
-			outcome := req.HookEngine.Execute(ctx, hooks.PreCompact, hooks.HookInput{
+			outcome := req.HookEngine.Execute(ctx, hook.PreCompact, hook.HookInput{
 				Trigger:            req.Trigger,
 				CustomInstructions: req.Focus,
 			})

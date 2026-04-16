@@ -23,7 +23,7 @@ import (
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
-	appmode "github.com/yanmxa/gencode/internal/app/mode"
+	appmodal "github.com/yanmxa/gencode/internal/app/modal"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	"github.com/yanmxa/gencode/internal/app/user/searchui"
@@ -53,7 +53,7 @@ const (
 type model struct {
 	// Source 1: userInput — textarea, history, images, queue, overlay, modal, mode
 	userInput        appuser.Model
-	mode             appmode.State
+	mode             appmodal.State
 	approval         appapproval.Model
 	promptSuggestion promptSuggestionState
 	showTasks        bool // Ctrl+T toggles task list visibility
@@ -119,7 +119,7 @@ type model struct {
 	isGit         bool
 	initialPrompt string
 	settings      *config.Settings
-	hookEngine    *hooks.Engine
+	hookEngine    *hook.Engine
 	fileWatcher   *appsystem.FileWatcher
 	fileCache     *filecache.Cache
 
@@ -138,7 +138,7 @@ func initModel(opts config.RunOptions) (*model, error) {
 	m := &base
 	if m.hookEngine != nil && m.systemInput.AsyncHookQueue != nil {
 		queue := m.systemInput.AsyncHookQueue
-		m.hookEngine.SetAsyncHookCallback(func(result hooks.AsyncHookResult) {
+		m.hookEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
 			reason := result.BlockReason
 			if reason == "" {
 				reason = "asynchronous hook requested a rewake"
@@ -161,14 +161,14 @@ func initModel(opts config.RunOptions) (*model, error) {
 	// Fire SessionStart during construction so hook-driven mutations apply
 	// before Bubble Tea starts driving the pointer-backed model.
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.Setup, hooks.HookInput{
+		m.hookEngine.ExecuteAsync(hook.Setup, hook.HookInput{
 			Trigger: "init",
 		})
 		source := "startup"
 		if m.sessionID != "" {
 			source = "resume"
 		}
-		outcome := m.hookEngine.Execute(context.Background(), hooks.SessionStart, hooks.HookInput{
+		outcome := m.hookEngine.Execute(context.Background(), hook.SessionStart, hook.HookInput{
 			Source: source,
 			Model:  m.getModelID(),
 		})
@@ -193,7 +193,7 @@ func (m *model) lastAssistantContent() string {
 // Uses Execute (not ExecuteAsync) to ensure the hook completes before the process exits.
 func (m *model) fireSessionEnd(reason string) {
 	if m.hookEngine != nil {
-		m.hookEngine.Execute(context.Background(), hooks.SessionEnd, hooks.HookInput{
+		m.hookEngine.Execute(context.Background(), hook.SessionEnd, hook.HookInput{
 			Reason: reason,
 		})
 		if m.fileWatcher != nil {
@@ -328,7 +328,7 @@ func (m model) getModelID() string {
 	return "claude-sonnet-4-20250514"
 }
 
-func formatAsyncHookContinuationContext(result hooks.AsyncHookResult, reason string) string {
+func formatAsyncHookContinuationContext(result hook.AsyncHookResult, reason string) string {
 	return fmt.Sprintf(
 		"<background-hook-result>\nstatus: blocked\nevent: %s\nhook_type: %s\nhook_source: %s\nhook_name: %s\nreason: %s\ninstruction: Re-evaluate the plan before any further model or tool action.\n</background-hook-result>",
 		result.Event,
@@ -378,8 +378,8 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 	}
 	tools := tool.AdaptToolRegistry(coreSchemas, func() string { return m.cwd })
 
-	// Hooks — wrap hooks.Engine as core.Hooks
-	coreHooks := hooks.AsCoreHooks(m.hookEngine)
+	// Hooks — wrap hook.Engine as core.Hooks
+	coreHooks := hook.AsCoreHooks(m.hookEngine)
 
 	// Permission bridge — blocking PermissionFunc with TUI approval
 	permBridge := appoutput.NewPermissionBridge(

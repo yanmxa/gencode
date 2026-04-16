@@ -1,4 +1,4 @@
-package mode
+package modal
 
 import (
 	"fmt"

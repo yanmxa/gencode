@@ -88,10 +88,10 @@ func (m *model) buildLoopSkillsSection() string {
 }
 
 func (m *model) buildLoopAgentsSection() string {
-	if agent.DefaultRegistry == nil {
+	if subagent.DefaultRegistry == nil {
 		return ""
 	}
-	return agent.DefaultRegistry.GetAgentsSection()
+	return subagent.DefaultRegistry.GetAgentsSection()
 }
 
 func (m *model) buildMCPToolsGetter() func() []core.ToolSchema {
@@ -103,17 +103,17 @@ func (m *model) buildMCPToolsGetter() func() []core.ToolSchema {
 
 // --- Agent tool wiring ---
 
-type agentToolOption func(*agent.Executor)
+type agentToolOption func(*subagent.Executor)
 
-func configureAgentTool(llmProvider llm.Provider, cwd string, modelID string, hookEngine *hooks.Engine, sessionStore *session.Store, parentSessionID string, opts ...agentToolOption) {
-	executor := agent.NewExecutor(llmProvider, cwd, modelID, hookEngine)
+func configureAgentTool(llmProvider llm.Provider, cwd string, modelID string, hookEngine *hook.Engine, sessionStore *session.Store, parentSessionID string, opts ...agentToolOption) {
+	executor := subagent.NewExecutor(llmProvider, cwd, modelID, hookEngine)
 	if sessionStore != nil && parentSessionID != "" {
 		executor.SetSessionStore(sessionStore, parentSessionID)
 	}
 	for _, opt := range opts {
 		opt(executor)
 	}
-	adapter := agent.NewExecutorAdapter(executor)
+	adapter := subagent.NewExecutorAdapter(executor)
 
 	if t, ok := tool.Get(tool.ToolAgent); ok {
 		if agentTool, ok := t.(*toolagent.AgentTool); ok {
@@ -133,13 +133,13 @@ func configureAgentTool(llmProvider llm.Provider, cwd string, modelID string, ho
 }
 
 func withAgentContext(userInstructions, projectInstructions string, isGit bool) agentToolOption {
-	return func(e *agent.Executor) {
+	return func(e *subagent.Executor) {
 		e.SetContext(userInstructions, projectInstructions, isGit)
 	}
 }
 
 func withAgentMCP(getter func() []core.ToolSchema, registry *mcp.Registry) agentToolOption {
-	return func(e *agent.Executor) {
+	return func(e *subagent.Executor) {
 		e.SetMCP(getter, registry)
 	}
 }

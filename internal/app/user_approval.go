@@ -22,7 +22,7 @@ type hookPermissionResultMsg struct {
 	Blocked bool
 	Allowed bool
 	Reason  string
-	Outcome hooks.HookOutcome // full outcome for applying permission updates
+	Outcome hook.HookOutcome // full outcome for applying permission updates
 }
 
 // updateApproval routes permission request messages.
@@ -42,7 +42,7 @@ func (m *model) updateApproval(msg tea.Msg) (tea.Cmd, bool) {
 func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
 	// If there's a PermissionRequest hook configured, run it asynchronously
 	// to avoid blocking the Bubble Tea event loop (which freezes the TUI).
-	if m.hookEngine != nil && m.hookEngine.HasHooks(hooks.PermissionRequest) && msg.Request != nil {
+	if m.hookEngine != nil && m.hookEngine.HasHooks(hook.PermissionRequest) && msg.Request != nil {
 		return tea.Batch(
 			m.showApprovalModal(msg.Request),
 			m.dispatchPermissionHookAsync(msg.Request),
@@ -59,14 +59,14 @@ func (m *model) dispatchPermissionHookAsync(req *perm.PermissionRequest) tea.Cmd
 	hookEngine := m.hookEngine
 	ctx := m.tool.Context()
 
-	hookInput := hooks.HookInput{
+	hookInput := hook.HookInput{
 		ToolName:  req.ToolName,
 		ToolInput: m.fullToolInputForHook(req),
 	}
 	hookInput.PermissionSuggestions = m.buildPermissionSuggestions(req)
 
 	return func() tea.Msg {
-		outcome := hookEngine.Execute(ctx, hooks.PermissionRequest, hookInput)
+		outcome := hookEngine.Execute(ctx, hook.PermissionRequest, hookInput)
 
 		blocked := outcome.ShouldBlock
 		allowed := outcome.PermissionAllow
@@ -137,7 +137,7 @@ func (m *model) showApprovalModal(req *perm.PermissionRequest) tea.Cmd {
 
 	// Fire Notification hook when permission prompt is shown
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{
+		m.hookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
 			Message:          "Permission required for " + req.ToolName,
 			NotificationType: "permission_prompt",
 		})
@@ -174,8 +174,8 @@ func (m *model) abortToolWithError(errorMsg string, retry bool) tea.Cmd {
 
 // buildPermissionSuggestions generates permission suggestions for hook input,
 // matching Claude Code's permission_suggestions field format.
-func (m *model) buildPermissionSuggestions(req *perm.PermissionRequest) []hooks.PermissionSuggestion {
-	var suggestions []hooks.PermissionSuggestion
+func (m *model) buildPermissionSuggestions(req *perm.PermissionRequest) []hook.PermissionSuggestion {
+	var suggestions []hook.PermissionSuggestion
 
 	// Suggest addDirectories if the file is in a recognizable directory
 	if req.FilePath != "" {
@@ -183,7 +183,7 @@ func (m *model) buildPermissionSuggestions(req *perm.PermissionRequest) []hooks.
 		if i := strings.LastIndex(dir, "/"); i > 0 {
 			dir = dir[:i]
 		}
-		suggestions = append(suggestions, hooks.PermissionSuggestion{
+		suggestions = append(suggestions, hook.PermissionSuggestion{
 			Type:        "addDirectories",
 			Directories: []string{dir},
 			Destination: "session",
@@ -192,7 +192,7 @@ func (m *model) buildPermissionSuggestions(req *perm.PermissionRequest) []hooks.
 
 	// Suggest acceptEdits mode for write-type tools
 	if req.ToolName == "Edit" || req.ToolName == "Write" {
-		suggestions = append(suggestions, hooks.PermissionSuggestion{
+		suggestions = append(suggestions, hook.PermissionSuggestion{
 			Type:        "setMode",
 			Mode:        "acceptEdits",
 			Destination: "session",
@@ -237,7 +237,7 @@ func (m *model) fullToolInputForHook(req *perm.PermissionRequest) map[string]any
 
 // applyPermissionUpdates processes structured permission updates from hook responses.
 // Supports setMode, addRules, and addDirectories with session or persistent destination.
-func (m *model) applyPermissionUpdates(updates []hooks.PermissionUpdate) {
+func (m *model) applyPermissionUpdates(updates []hook.PermissionUpdate) {
 	needReload := false
 	for _, pu := range updates {
 		switch pu.Type {
@@ -302,7 +302,7 @@ func (m *model) applyPermissionUpdates(updates []hooks.PermissionUpdate) {
 
 // buildRuleString constructs a permission rule string from a PermissionRule.
 // E.g. {ToolName: "Bash", RuleContent: "git"} → "Bash(git:*)"
-func buildRuleString(rule hooks.PermissionRule) string {
+func buildRuleString(rule hook.PermissionRule) string {
 	if rule.RuleContent != "" && rule.ToolName != "" {
 		return rule.ToolName + "(" + rule.RuleContent + ":*)"
 	}
@@ -317,7 +317,11 @@ func buildRuleString(rule hooks.PermissionRule) string {
 }
 
 func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
-	return m.handlePermBridgeResponse(msg)
+	return m.handlePermBridgeDecision(permissionDecision{
+		Approved: msg.Approved,
+		AllowAll: msg.AllowAll,
+		Request:  msg.Request,
+	})
 }
 
 

@@ -1,7 +1,7 @@
 // Package subagent provides subagent execution for GenCode.
 // Subagents are specialized LLM instances that can be spawned to handle
 // specific tasks with isolated contexts and tool restrictions.
-package agent
+package subagent
 
 import (
 	"strings"

@@ -1,4 +1,4 @@
-package mode
+package modal
 
 import (
 	"github.com/yanmxa/gencode/internal/tool"

@@ -7,21 +7,33 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 )
 
-func (m *model) updateAgentInput(msg tea.Msg) (tea.Cmd, bool) {
-	return appagent.Update(m, &m.agentInput, msg)
+type agentRuntime struct {
+	m *model
 }
 
-func (m *model) StreamActive() bool {
+func (m *model) updateAgentInput(msg tea.Msg) (tea.Cmd, bool) {
+	return appagent.Update(agentRuntime{m: m}, &m.agentInput, msg)
+}
+
+func (m *model) streamActive() bool {
 	return m.conv.Stream.Active
 }
 
 func (m *model) handleTaskNotificationTick() tea.Cmd {
-	cmd, _ := appagent.Update(m, &m.agentInput, appagent.TickMsg{})
+	cmd, _ := appagent.Update(agentRuntime{m: m}, &m.agentInput, appagent.TickMsg{})
 	return cmd
 }
 
-func (m *model) InjectTaskNotificationContinuation(item appagent.Notification) tea.Cmd {
-	return m.injectTaskNotificationContinuation(item)
+func (rt agentRuntime) IsInputIdle() bool {
+	return rt.m.isInputIdle()
+}
+
+func (rt agentRuntime) StreamActive() bool {
+	return rt.m.streamActive()
+}
+
+func (rt agentRuntime) InjectTaskNotificationContinuation(item appagent.Notification) tea.Cmd {
+	return rt.m.injectTaskNotificationContinuation(item)
 }
 
 func (m *model) injectTaskNotificationContinuation(item appagent.Notification) tea.Cmd {

@@ -26,8 +26,8 @@ func TestAgent_ExploreAgent(t *testing.T) {
 		},
 	}
 
-	executor := agent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
-	result, err := executor.Run(context.Background(), agent.AgentRequest{
+	executor := subagent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
+	result, err := executor.Run(context.Background(), subagent.AgentRequest{
 		Agent:       "Explore",
 		Prompt:      "Find all Go files",
 		Description: "explore codebase",
@@ -49,9 +49,9 @@ func TestAgent_ExploreAgent(t *testing.T) {
 
 func TestAgent_UnknownAgent(t *testing.T) {
 	mp := &testutil.MockProvider{}
-	executor := agent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
+	executor := subagent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
 
-	_, err := executor.Run(context.Background(), agent.AgentRequest{
+	_, err := executor.Run(context.Background(), subagent.AgentRequest{
 		Agent:  "NonExistent",
 		Prompt: "do something",
 	})
@@ -71,11 +71,11 @@ func TestAgent_MaxTurnsRespected(t *testing.T) {
 		}
 	}
 
-	executor := agent.NewExecutor(
+	executor := subagent.NewExecutor(
 		&testutil.MockProvider{Responses: responses},
 		t.TempDir(), "fake-model", nil,
 	)
-	result, err := executor.Run(context.Background(), agent.AgentRequest{
+	result, err := executor.Run(context.Background(), subagent.AgentRequest{
 		Agent:    "Explore",
 		Prompt:   "keep going",
 		MaxTurns: 2,
@@ -110,14 +110,14 @@ func TestAgent_ModelResolution(t *testing.T) {
 					{Content: "ok", StopReason: "end_turn"},
 				},
 			}
-			executor := agent.NewExecutor(mp, t.TempDir(), tt.parentModel, nil)
+			executor := subagent.NewExecutor(mp, t.TempDir(), tt.parentModel, nil)
 
 			if tt.parentModel != "" && executor.GetParentModelID() != tt.parentModel {
 				t.Errorf("parent model mismatch: got %q, want %q",
 					executor.GetParentModelID(), tt.parentModel)
 			}
 
-			_, err := executor.Run(context.Background(), agent.AgentRequest{
+			_, err := executor.Run(context.Background(), subagent.AgentRequest{
 				Agent:  "Explore",
 				Prompt: "test",
 				Model:  tt.reqModel,
@@ -176,8 +176,8 @@ func TestAgent_PlanPermissionMode_BlocksWrites(t *testing.T) {
 		},
 	}
 
-	executor := agent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
-	result, err := executor.Run(context.Background(), agent.AgentRequest{
+	executor := subagent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
+	result, err := executor.Run(context.Background(), subagent.AgentRequest{
 		Agent:  "Explore", // built-in, PermissionPlan
 		Prompt: "try to write a file",
 	})
@@ -207,7 +207,7 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 	// Each hook writes to a temp file so we can verify it fired.
 	settings := &config.Settings{
 		Hooks: map[string][]config.Hook{
-			string(hooks.SubagentStart): {
+			string(hook.SubagentStart): {
 				{
 					Matcher: "",
 					Hooks: []config.HookCmd{
@@ -215,7 +215,7 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 					},
 				},
 			},
-			string(hooks.SubagentStop): {
+			string(hook.SubagentStop): {
 				{
 					Matcher: "",
 					Hooks: []config.HookCmd{
@@ -226,7 +226,7 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 		},
 	}
 
-	engine := hooks.NewEngine(settings, "test-session-id", tmpDir, "")
+	engine := hook.NewEngine(settings, "test-session-id", tmpDir, "")
 
 	mp := &testutil.MockProvider{
 		Responses: []core.CompletionResponse{
@@ -238,8 +238,8 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 		},
 	}
 
-	executor := agent.NewExecutor(mp, tmpDir, "fake-model", engine)
-	_, err := executor.Run(context.Background(), agent.AgentRequest{
+	executor := subagent.NewExecutor(mp, tmpDir, "fake-model", engine)
+	_, err := executor.Run(context.Background(), subagent.AgentRequest{
 		Agent:  "Explore",
 		Prompt: "test hooks",
 	})
@@ -275,8 +275,8 @@ func TestAgent_BackgroundExecution(t *testing.T) {
 		},
 	}
 
-	executor := agent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
-	agentTask, err := executor.RunBackground(agent.AgentRequest{
+	executor := subagent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
+	agentTask, err := executor.RunBackground(subagent.AgentRequest{
 		Agent:       "Explore",
 		Prompt:      "background task",
 		Description: "bg test",
@@ -323,9 +323,9 @@ func TestAgent_OnProgressReceivesToolUpdates(t *testing.T) {
 		},
 	}
 
-	executor := agent.NewExecutor(mp, tmpDir, "fake-model", nil)
+	executor := subagent.NewExecutor(mp, tmpDir, "fake-model", nil)
 	var progress []string
-	result, err := executor.Run(context.Background(), agent.AgentRequest{
+	result, err := executor.Run(context.Background(), subagent.AgentRequest{
 		Agent:  "Explore",
 		Prompt: "inspect the readme",
 		OnProgress: func(msg string) {

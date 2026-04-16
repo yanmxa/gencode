@@ -63,14 +63,16 @@ type SessionPersistence interface {
 	StopAgentSession()
 }
 
-// QueueDrainer drains pending work (input, cron, hooks, notifications)
-// and starts prompt suggestions at turn boundaries.
-type QueueDrainer interface {
+// TurnQueueCoordinator coordinates prompt suggestion and Source 1/2/3 queue
+// draining after a turn finishes.
+type TurnQueueCoordinator interface {
 	StartPromptSuggestion() tea.Cmd
-	DrainInputQueue() tea.Cmd
-	DrainCronQueue() tea.Cmd
-	DrainAsyncHookQueue() tea.Cmd
-	DrainTaskNotifications() tea.Cmd
+	DrainTurnQueues() tea.Cmd
+}
+
+// ProgressRuntime coordinates task-progress polling behavior.
+type ProgressRuntime interface {
+	HasRunningTasks() bool
 }
 
 // TurnManager is the composition of all turn-boundary interfaces.
@@ -78,7 +80,7 @@ type TurnManager interface {
 	TurnMetrics
 	TurnHooks
 	SessionPersistence
-	QueueDrainer
+	TurnQueueCoordinator
 }
 
 // CompactHandler handles compaction and token limit result processing.
@@ -101,6 +103,7 @@ type Runtime interface {
 	TurnManager
 	CompactHandler
 	PermBridgeHandler
+	ProgressRuntime
 }
 
 // PermBridgeMsg carries a permission bridge request from the agent to the TUI.
@@ -149,7 +152,7 @@ func Update(rt Runtime, m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	case progress.UpdateMsg:
 		return m.HandleProgress(msg), true
 	case progress.CheckTickMsg:
-		return m.HandleProgressTick(false), true
+		return m.HandleProgressTick(rt.HasRunningTasks()), true
 	default:
 		return nil, false
 	}

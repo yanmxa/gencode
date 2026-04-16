@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	"github.com/yanmxa/gencode/internal/hook"
 )
 
@@ -261,7 +262,7 @@ func (m *model) checkPromptHook(prompt string) (bool, string) {
 	if m.hookEngine == nil {
 		return false, ""
 	}
-	outcome := m.hookEngine.Execute(context.Background(), hooks.UserPromptSubmit, hooks.HookInput{Prompt: prompt})
+	outcome := m.hookEngine.Execute(context.Background(), hook.UserPromptSubmit, hook.HookInput{Prompt: prompt})
 	return outcome.ShouldBlock, outcome.BlockReason
 }
 
@@ -277,4 +278,127 @@ func (m *model) enterQueueSelection() {
 
 func (m *model) saveCurrentQueueEdit() {
 	m.userInput.SaveCurrentQueueEdit()
+}
+
+// --- Prompt suggestion (ghost text) ---
+
+type promptSuggestionMsg struct {
+	text string
+	err  error
+}
+
+type promptSuggestionState struct {
+	text   string
+	cancel context.CancelFunc
+}
+
+func (s *promptSuggestionState) Clear() {
+	s.text = ""
+	if s.cancel != nil {
+		s.cancel()
+		s.cancel = nil
+	}
+}
+
+const suggestionSystemPrompt = `You predict what the user will type next in a coding assistant CLI.
+Reply with ONLY the predicted text (2-12 words). No quotes, no explanation.
+If unsure, reply with nothing.`
+
+const suggestionUserPrompt = `[PREDICTION MODE] Based on this conversation, predict what the user will type next.
+Stay silent if the next step isn't obvious. Match the user's language and style.`
+
+const maxSuggestionMessages = 20
+
+func (m *model) startPromptSuggestion() tea.Cmd {
+	req, ok := m.buildPromptSuggestionRequest()
+	if !ok {
+		return nil
+	}
+
+	m.promptSuggestion.Clear()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.promptSuggestion.cancel = cancel
+	req.Ctx = ctx
+
+	return suggestPromptCmd(req)
+}
+
+func (m *model) handlePromptSuggestion(msg promptSuggestionMsg) {
+	if msg.err != nil {
+		return
+	}
+	if m.userInput.Textarea.Value() != "" {
+		return
+	}
+	if m.conv.Stream.Active {
+		return
+	}
+	if text := suggest.FilterSuggestion(msg.text); text != "" {
+		m.promptSuggestion.text = text
+	}
+}
+
+// --- Window resize ---
+
+func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
+	oldWidth := m.width
+	m.width = msg.Width
+	m.height = msg.Height
+	m.userInput.TerminalHeight = msg.Height
+
+	m.agentOutput.ResizeMDRenderer(msg.Width)
+
+	if m.mode.PlanApproval != nil {
+		m.mode.PlanApproval.SetSize(msg.Width, msg.Height)
+	}
+
+	if !m.ready {
+		m.ready = true
+
+		var cmds []tea.Cmd
+		if len(m.conv.Messages) > 0 {
+			cmds = append(cmds, m.commitAllMessages()...)
+		} else {
+			cmds = append(cmds, tea.Println(m.renderWelcome()))
+		}
+
+		if m.session.PendingSelector {
+			m.session.PendingSelector = false
+			if m.sessionStore != nil {
+				_ = m.session.Selector.EnterSelect(m.width, m.height, m.sessionStore, m.cwd)
+			}
+		}
+
+		m.userInput.Textarea.SetWidth(msg.Width - 4 - 2)
+		if len(cmds) > 0 {
+			return tea.Batch(cmds...)
+		}
+		return nil
+	}
+
+	m.userInput.Textarea.SetWidth(msg.Width - 4 - 2)
+
+	if oldWidth != msg.Width && m.conv.CommittedCount > 0 {
+		return m.reflowScrollback()
+	}
+
+	return nil
+}
+
+func (m *model) reflowScrollback() tea.Cmd {
+	committed := m.conv.CommittedCount
+	m.conv.CommittedCount = 0
+
+	var cmds []tea.Cmd
+	cmds = append(cmds, tea.ClearScreen)
+
+	for i := 0; i < committed; i++ {
+		if rendered := m.renderSingleMessage(i); rendered != "" {
+			cmds = append(cmds, tea.Println(rendered))
+		}
+		m.conv.CommittedCount = i + 1
+	}
+
+	return tea.Sequence(cmds...)
 }

@@ -197,17 +197,10 @@ func handleTurn(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 		commitCmds = append(commitCmds, cmd)
 	}
 
-	// Drain queued inputs in priority order
-	for _, drain := range []func() tea.Cmd{
-		rt.DrainInputQueue,
-		rt.DrainCronQueue,
-		rt.DrainAsyncHookQueue,
-		rt.DrainTaskNotifications,
-	} {
-		if cmd := drain(); cmd != nil {
-			commitCmds = append(commitCmds, cmd)
-			return tea.Batch(commitCmds...)
-		}
+	// Drain queued Source 1/2/3 items through the runtime coordinator.
+	if cmd := rt.DrainTurnQueues(); cmd != nil {
+		commitCmds = append(commitCmds, cmd)
+		return tea.Batch(commitCmds...)
 	}
 
 	// Check for stop reason details (max_turns etc.)

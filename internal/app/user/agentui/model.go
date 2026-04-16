@@ -26,7 +26,7 @@ type item struct {
 
 // Model holds the state for the agent selector.
 type Model struct {
-	registry       *agent.Registry
+	registry       *subagent.Registry
 	active         bool
 	agents         []item
 	filteredAgents []item
@@ -43,7 +43,7 @@ type ToggleMsg struct {
 }
 
 // New creates a new agent selector Model.
-func New(reg *agent.Registry) Model {
+func New(reg *subagent.Registry) Model {
 	return Model{
 		registry: reg,
 		active:   false,
@@ -89,17 +89,17 @@ func (s *Model) EnterSelect(width, height int) error {
 }
 
 // formatPermissionMode converts PermissionMode to display string.
-func formatPermissionMode(mode agent.PermissionMode) string {
+func formatPermissionMode(mode subagent.PermissionMode) string {
 	switch mode {
-	case agent.PermissionPlan:
+	case subagent.PermissionPlan:
 		return "plan"
-	case agent.PermissionAcceptEdits:
+	case subagent.PermissionAcceptEdits:
 		return "acceptEdits"
-	case agent.PermissionDontAsk:
+	case subagent.PermissionDontAsk:
 		return "dontAsk"
-	case agent.PermissionBypassPermissions:
+	case subagent.PermissionBypassPermissions:
 		return "bypass"
-	case agent.PermissionAuto:
+	case subagent.PermissionAuto:
 		return "auto"
 	default:
 		return "default"
@@ -107,7 +107,7 @@ func formatPermissionMode(mode agent.PermissionMode) string {
 }
 
 // formatTools formats a tool list for display.
-func formatTools(tools agent.ToolList) string {
+func formatTools(tools subagent.ToolList) string {
 	if tools == nil {
 		return "all tools"
 	}

@@ -13,11 +13,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
+	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
 	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
-	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	"github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
@@ -26,6 +27,7 @@ import (
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -505,7 +507,7 @@ func handleThinkCommand(ctx context.Context, m *model, args string) (string, tea
 	}
 
 	m.provider.StatusMessage = fmt.Sprintf("thinking: %s", m.thinkingLevel.String())
-	return "", providerui.StatusTimer(3 * time.Second), nil
+	return "", kit.StatusTimer(3 * time.Second), nil
 }
 
 // --- Loop commands: /loop ---
@@ -633,4 +635,76 @@ func renderLoopJobList() string {
 
 func loopUsage() string {
 	return "Usage: /loop [interval] <prompt>\n       /loop once <interval> <prompt>\n       /loop once <prompt> in <interval>\n       /loop list\n       /loop delete <job-id>\n       /loop delete all\nExamples: /loop 5m check the deploy, /loop check the deploy every 20m, /loop once 20m check the deploy"
+}
+
+// --- Compact/TokenLimit commands ---
+
+func handleTokenLimitCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
+	if m.currentModel == nil {
+		return "No model selected. Use /model to select a model first.", nil, nil
+	}
+
+	modelID := m.currentModel.ModelID
+	args = strings.TrimSpace(args)
+
+	if args != "" {
+		return setTokenLimits(m, modelID, args)
+	}
+
+	return showOrFetchTokenLimits(m, modelID)
+}
+
+func setTokenLimits(m *model, modelID, args string) (string, tea.Cmd, error) {
+	var inputLimit, outputLimit int
+	if _, err := fmt.Sscanf(args, "%d %d", &inputLimit, &outputLimit); err != nil {
+		return "Usage:\n  /tokenlimit              - Show or auto-fetch limits\n  /tokenlimit <input> <output> - Set custom limits", nil, nil
+	}
+
+	if inputLimit <= 0 || outputLimit <= 0 {
+		return "Token limits must be positive integers", nil, nil
+	}
+
+	if m.providerStore != nil {
+		if err := m.providerStore.SetTokenLimit(modelID, inputLimit, outputLimit); err != nil {
+			return "", nil, fmt.Errorf("failed to set token limits: %w", err)
+		}
+	}
+
+	return fmt.Sprintf("Set token limits for %s:\n  Input:  %s tokens\n  Output: %s tokens",
+		modelID, render.FormatTokenCount(inputLimit), render.FormatTokenCount(outputLimit)), nil, nil
+}
+
+func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
+	if m.providerStore != nil {
+		if customInput, customOutput, ok := m.providerStore.GetTokenLimit(modelID); ok {
+			return appcompact.FormatTokenLimitDisplay(modelID, customInput, customOutput, true, m.inputTokens), nil, nil
+		}
+	}
+
+	inputLimit, outputLimit := appcompact.GetModelTokenLimits(m.providerStore, m.currentModel)
+	if inputLimit > 0 || outputLimit > 0 {
+		return appcompact.FormatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m.inputTokens), nil, nil
+	}
+
+	m.provider.FetchingLimits = true
+	return "", tea.Batch(m.agentOutput.Spinner.Tick, fetchTokenLimitsCmd(m.buildTokenLimitFetchRequest())), nil
+}
+
+func handleCompactCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
+	if m.llmProvider == nil {
+		return "No provider connected. Use /provider to connect.", nil, nil
+	}
+	if len(m.conv.Messages) == 0 {
+		return "No active LLM session. Send a message first to initialize the client.", nil, nil
+	}
+	if !runtime.CanCompactMessages(len(m.conv.Messages)) {
+		return "Not enough conversation history to compact.", nil, nil
+	}
+	if m.conv.Stream.Active {
+		return "Cannot compact while streaming.", nil, nil
+	}
+	m.conv.Compact.Active = true
+	m.conv.Compact.Focus = strings.TrimSpace(args)
+	m.conv.Compact.Phase = appcompact.PhaseSummarizing
+	return "", tea.Batch(m.agentOutput.Spinner.Tick, compactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
 }

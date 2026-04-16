@@ -173,7 +173,7 @@ func initExt(cwd string) {
 	if err := appcommand.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize custom commands", zap.Error(err))
 	}
-	if err := agent.Initialize(cwd); err != nil {
+	if err := subagent.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize agent registry", zap.Error(err))
 	}
 	if err := mcp.Initialize(cwd); err != nil {

@@ -1,4 +1,4 @@
-package agent
+package subagent
 
 import (
 	"context"
@@ -26,7 +26,7 @@ type Executor struct {
 	provider            llm.Provider
 	cwd                 string
 	parentModelID       string // Parent conversation's model ID (used when inheriting)
-	hooks               *hooks.Engine
+	hooks               *hook.Engine
 	sessionStore        SubagentSessionStore        // Optional: when set, subagent sessions are persisted
 	parentSessionID     string                      // Parent session ID for linking subagent sessions
 	userInstructions    string                      // ~/.gen/GEN.md + rules
@@ -53,7 +53,7 @@ type runConfig struct {
 // NewExecutor creates a new agent executor
 // parentModelID is the model used by the parent conversation (for inheritance)
 // hookEngine is optional — when non-nil, PreToolUse hooks will fire during agent tool calls
-func NewExecutor(llmProvider llm.Provider, cwd string, parentModelID string, hookEngine *hooks.Engine) *Executor {
+func NewExecutor(llmProvider llm.Provider, cwd string, parentModelID string, hookEngine *hook.Engine) *Executor {
 	return &Executor{
 		provider:      llmProvider,
 		cwd:           cwd,
@@ -236,7 +236,7 @@ func (e *Executor) fireSubagentStart(req AgentRequest, agentHookID string) {
 	if e.hooks == nil {
 		return
 	}
-	e.hooks.ExecuteAsync(hooks.SubagentStart, hooks.HookInput{
+	e.hooks.ExecuteAsync(hook.SubagentStart, hook.HookInput{
 		AgentType:   req.Agent,
 		AgentID:     agentHookID,
 		Description: req.Description,
@@ -346,7 +346,7 @@ func (e *Executor) fireSubagentStop(req AgentRequest, agentHookID, agentSessionI
 	if agentSessionID != "" {
 		stopAgentID = agentSessionID
 	}
-	e.hooks.ExecuteAsync(hooks.SubagentStop, hooks.HookInput{
+	e.hooks.ExecuteAsync(hook.SubagentStop, hook.HookInput{
 		AgentType:            req.Agent,
 		AgentID:              stopAgentID,
 		AgentTranscriptPath:  agentTranscriptPath,

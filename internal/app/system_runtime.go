@@ -9,21 +9,43 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 )
 
-func (m *model) updateSystemInput(msg tea.Msg) (tea.Cmd, bool) {
-	return appsystem.Update(m, &m.systemInput, m.hookEngine, msg)
+type systemRuntime struct {
+	m *model
 }
 
-func (m *model) IsInputIdle() bool {
+func (m *model) updateSystemInput(msg tea.Msg) (tea.Cmd, bool) {
+	return appsystem.Update(systemRuntime{m: m}, &m.systemInput, m.hookEngine, msg)
+}
+
+func (m *model) isInputIdle() bool {
 	return !m.conv.Stream.Active && !m.isToolPhaseActive()
 }
 
 func (m *model) handleAsyncHookTick() tea.Cmd {
-	cmd, _ := appsystem.Update(m, &m.systemInput, m.hookEngine, appsystem.AsyncHookTickMsg{})
+	cmd, _ := appsystem.Update(systemRuntime{m: m}, &m.systemInput, m.hookEngine, appsystem.AsyncHookTickMsg{})
 	return cmd
 }
 
-func (m *model) InjectAsyncHookContinuation(item appsystem.AsyncHookRewake) tea.Cmd {
-	return m.injectAsyncHookContinuation(item)
+func (rt systemRuntime) IsInputIdle() bool {
+	return rt.m.isInputIdle()
+}
+
+func (rt systemRuntime) InjectAsyncHookContinuation(item appsystem.AsyncHookRewake) tea.Cmd {
+	return rt.m.injectAsyncHookContinuation(item)
+}
+
+func (rt systemRuntime) InjectCronPrompt(prompt string) tea.Cmd {
+	return rt.m.injectCronPrompt(prompt)
+}
+
+func (rt systemRuntime) AppendNotice(text string) {
+	if text == "" {
+		return
+	}
+	rt.m.conv.Append(core.ChatMessage{
+		Role:    core.RoleNotice,
+		Content: text,
+	})
 }
 
 func (m *model) injectAsyncHookContinuation(item appsystem.AsyncHookRewake) tea.Cmd {
@@ -51,10 +73,6 @@ func (m *model) injectAsyncHookContinuation(item appsystem.AsyncHookRewake) tea.
 		})
 	}
 	return m.sendToAgent(item.ContinuationPrompt, nil)
-}
-
-func (m *model) InjectCronPrompt(prompt string) tea.Cmd {
-	return m.injectCronPrompt(prompt)
 }
 
 func (m *model) injectCronPrompt(prompt string) tea.Cmd {

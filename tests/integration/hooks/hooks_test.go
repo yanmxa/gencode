@@ -27,15 +27,15 @@ func TestHooks_BlockToolCall(t *testing.T) {
 		},
 	}
 
-	engine := hooks.NewEngine(settings, "test-session", t.TempDir(), "")
+	engine := hook.NewEngine(settings, "test-session", t.TempDir(), "")
 
-	input := hooks.HookInput{
+	input := hook.HookInput{
 		ToolName:  "Bash",
 		ToolInput: map[string]any{"command": "ls"},
 		ToolUseID: "tc1",
 	}
 
-	outcome := engine.Execute(context.Background(), hooks.PreToolUse, input)
+	outcome := engine.Execute(context.Background(), hook.PreToolUse, input)
 
 	if !outcome.ShouldBlock {
 		t.Error("expected hook to block execution")
@@ -63,15 +63,15 @@ func TestHooks_ModifyToolInput(t *testing.T) {
 		},
 	}
 
-	engine := hooks.NewEngine(settings, "test-session", t.TempDir(), "")
+	engine := hook.NewEngine(settings, "test-session", t.TempDir(), "")
 
-	input := hooks.HookInput{
+	input := hook.HookInput{
 		ToolName:  "Read",
 		ToolInput: map[string]any{"file_path": "/original"},
 		ToolUseID: "tc1",
 	}
 
-	outcome := engine.Execute(context.Background(), hooks.PreToolUse, input)
+	outcome := engine.Execute(context.Background(), hook.PreToolUse, input)
 
 	if outcome.ShouldBlock {
 		t.Error("should not block")
@@ -86,15 +86,15 @@ func TestHooks_ModifyToolInput(t *testing.T) {
 
 func TestHooks_NoHooks_PassThrough(t *testing.T) {
 	// No hooks configured
-	engine := hooks.NewEngine(&config.Settings{}, "test-session", t.TempDir(), "")
+	engine := hook.NewEngine(&config.Settings{}, "test-session", t.TempDir(), "")
 
-	input := hooks.HookInput{
+	input := hook.HookInput{
 		ToolName:  "Read",
 		ToolInput: map[string]any{"file_path": "/test"},
 		ToolUseID: "tc1",
 	}
 
-	outcome := engine.Execute(context.Background(), hooks.PreToolUse, input)
+	outcome := engine.Execute(context.Background(), hook.PreToolUse, input)
 
 	if outcome.ShouldBlock {
 		t.Error("no hooks should mean no blocking")
@@ -105,13 +105,13 @@ func TestHooks_NoHooks_PassThrough(t *testing.T) {
 }
 
 func TestHooks_NilSettings(t *testing.T) {
-	engine := hooks.NewEngine(nil, "test-session", t.TempDir(), "")
+	engine := hook.NewEngine(nil, "test-session", t.TempDir(), "")
 
-	if engine.HasHooks(hooks.PreToolUse) {
+	if engine.HasHooks(hook.PreToolUse) {
 		t.Error("nil settings should have no hooks")
 	}
 
-	outcome := engine.Execute(context.Background(), hooks.PreToolUse, hooks.HookInput{})
+	outcome := engine.Execute(context.Background(), hook.PreToolUse, hook.HookInput{})
 	if outcome.ShouldBlock {
 		t.Error("nil settings should not block")
 	}
@@ -126,12 +126,12 @@ func TestHooks_HasHooks(t *testing.T) {
 		},
 	}
 
-	engine := hooks.NewEngine(settings, "test-session", t.TempDir(), "")
+	engine := hook.NewEngine(settings, "test-session", t.TempDir(), "")
 
-	if !engine.HasHooks(hooks.PreToolUse) {
+	if !engine.HasHooks(hook.PreToolUse) {
 		t.Error("expected HasHooks=true for PreToolUse")
 	}
-	if engine.HasHooks(hooks.PostToolUse) {
+	if engine.HasHooks(hook.PostToolUse) {
 		t.Error("expected HasHooks=false for PostToolUse")
 	}
 }

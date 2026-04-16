@@ -1,4 +1,4 @@
-package agent
+package subagent
 
 import "github.com/yanmxa/gencode/internal/core"
 

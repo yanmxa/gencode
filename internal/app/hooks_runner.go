@@ -120,10 +120,10 @@ func (r *HookAgentRunner) skillsSection() string {
 }
 
 func (r *HookAgentRunner) agentsSection() string {
-	if agent.DefaultRegistry == nil {
+	if subagent.DefaultRegistry == nil {
 		return ""
 	}
-	return agent.DefaultRegistry.GetAgentsSection()
+	return subagent.DefaultRegistry.GetAgentsSection()
 }
 
-var _ hooks.AgentRunner = (*HookAgentRunner)(nil)
+var _ hook.AgentRunner = (*HookAgentRunner)(nil)
