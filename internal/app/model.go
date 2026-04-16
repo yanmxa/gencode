@@ -125,8 +125,7 @@ type model struct {
 	fileCache     *filecache.Cache
 
 	// Agent session
-	agentSess         *agentSession
-	pendingPermBridge *appoutput.PermBridgeRequest
+	agentSess *agentSession
 }
 
 // --- Constructor and Init ---
@@ -347,9 +346,10 @@ func formatAsyncHookContinuationContext(result hooks.AsyncHookResult, reason str
 
 // agentSession holds the running core.Agent and its supporting infrastructure.
 type agentSession struct {
-	agent      core.Agent
-	permBridge *appoutput.PermissionBridge
-	cancel     context.CancelFunc
+	agent              core.Agent
+	permBridge         *appoutput.PermissionBridge
+	cancel             context.CancelFunc
+	pendingPermRequest *appoutput.PermBridgeRequest
 }
 
 // buildCoreAgent creates a core.Agent and permissionBridge from the model's

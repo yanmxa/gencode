@@ -27,7 +27,9 @@ import (
 // requests) in the TUI update loop.
 func (m *model) updateOutput(msg tea.Msg) (tea.Cmd, bool) {
 	if msg, ok := msg.(agentPermissionMsg); ok {
-		m.pendingPermBridge = msg.Request
+		if m.agentSess != nil {
+			m.agentSess.pendingPermRequest = msg.Request
+		}
 		return m.showPermissionPrompt(msg.Request), true
 	}
 	return appoutput.Update(m, &m.agentOutput, msg)

@@ -26,8 +26,11 @@ func pollPermBridge(pb *appoutput.PermissionBridge) tea.Cmd {
 }
 
 func (m *model) handlePermBridgeResponse(msg appapproval.ResponseMsg) tea.Cmd {
-	req := m.pendingPermBridge
-	m.pendingPermBridge = nil
+	if m.agentSess == nil {
+		return nil
+	}
+	req := m.agentSess.pendingPermRequest
+	m.agentSess.pendingPermRequest = nil
 
 	if req == nil {
 		return nil
