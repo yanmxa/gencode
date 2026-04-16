@@ -266,10 +266,8 @@ internal/app/
 │
 ├── output/                     # agentOutput: handlers + view + rendering
 │   ├── update.go               #   outbox events, OnTurn, permission bridge, side effects
-│   ├── view.go                 #   chat messages, streaming, tool results, tokens
-│   ├── theme/                  #   colors/styles shared by all views
-│   ├── render/                 #   chat message & tool result rendering
-│   └── toolui/                 #   tool selector & execution
+│   |── view.go                 #   chat messages, streaming, tool results, tokens
+│   
 ```
 
 Agent builder（buildCoreAgent, ensureAgentSession, startAgentLoop）belongs in `model.go` — it's Model initialization, not an Update handler.

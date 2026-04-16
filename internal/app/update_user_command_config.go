@@ -12,7 +12,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
-	"github.com/yanmxa/gencode/internal/plugin"
+	"github.com/yanmxa/gencode/internal/extension/plugin"
 )
 
 func handleSearchCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {

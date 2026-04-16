@@ -8,8 +8,8 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/history"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/core"
-	appcommand "github.com/yanmxa/gencode/internal/command"
-	"github.com/yanmxa/gencode/internal/plugin"
+	appcommand "github.com/yanmxa/gencode/internal/extension/command"
+	"github.com/yanmxa/gencode/internal/extension/plugin"
 )
 
 type submitRequest struct {

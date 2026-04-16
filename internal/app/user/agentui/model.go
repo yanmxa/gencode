@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/extension/subagent"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 

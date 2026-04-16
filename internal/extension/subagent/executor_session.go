@@ -3,7 +3,7 @@ package agent
 import (
 	"fmt"
 
-	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/runtime"
 	"go.uber.org/zap"

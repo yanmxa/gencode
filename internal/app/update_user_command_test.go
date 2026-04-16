@@ -9,7 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appcommand "github.com/yanmxa/gencode/internal/command"
+	appcommand "github.com/yanmxa/gencode/internal/extension/command"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
@@ -17,9 +17,9 @@ import (
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/plugin"
+	"github.com/yanmxa/gencode/internal/extension/plugin"
 	"github.com/yanmxa/gencode/internal/session"
-	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/extension/skill"
 )
 
 func TestHandlerRegistryMatchesBuiltinCommands(t *testing.T) {

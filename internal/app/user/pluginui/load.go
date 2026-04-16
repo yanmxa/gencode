@@ -10,7 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	coreplugin "github.com/yanmxa/gencode/internal/plugin"
+	coreplugin "github.com/yanmxa/gencode/internal/extension/plugin"
 )
 
 // EnterSelect enters plugin selection mode

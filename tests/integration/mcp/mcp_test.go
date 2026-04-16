@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/mcp"
-	"github.com/yanmxa/gencode/internal/mcp/transport"
+	"github.com/yanmxa/gencode/internal/extension/mcp"
+	"github.com/yanmxa/gencode/internal/extension/mcp/transport"
 	"github.com/yanmxa/gencode/internal/core"
 )
 

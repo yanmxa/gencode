@@ -10,7 +10,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/extension/skill"
 )
 
 // --- Routing types & helpers ---

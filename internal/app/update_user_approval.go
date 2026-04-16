@@ -10,8 +10,8 @@ import (
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 )

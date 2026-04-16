@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/plugin"
+	"github.com/yanmxa/gencode/internal/extension/plugin"
 )
 
 func TestConfigLoader_SaveAndLoad(t *testing.T) {

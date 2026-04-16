@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	coreplugin "github.com/yanmxa/gencode/internal/plugin"
+	coreplugin "github.com/yanmxa/gencode/internal/extension/plugin"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 

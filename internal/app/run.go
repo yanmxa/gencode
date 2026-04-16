@@ -14,15 +14,15 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	appcommand "github.com/yanmxa/gencode/internal/command"
-	"github.com/yanmxa/gencode/internal/mcp"
-	"github.com/yanmxa/gencode/internal/skill"
-	"github.com/yanmxa/gencode/internal/agent"
+	appcommand "github.com/yanmxa/gencode/internal/extension/command"
+	"github.com/yanmxa/gencode/internal/extension/mcp"
+	"github.com/yanmxa/gencode/internal/extension/skill"
+	"github.com/yanmxa/gencode/internal/extension/subagent"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/plugin"
+	"github.com/yanmxa/gencode/internal/extension/plugin"
 	"github.com/yanmxa/gencode/internal/tool"
 	_ "github.com/yanmxa/gencode/internal/tool/registry"
-	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/util/log"
 )
 
 // Run routes to either print mode or interactive TUI.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	coreplugin "github.com/yanmxa/gencode/internal/plugin"
+	coreplugin "github.com/yanmxa/gencode/internal/extension/plugin"
 )
 
 func TestHandleCommandMarketplaceAddListRemove(t *testing.T) {

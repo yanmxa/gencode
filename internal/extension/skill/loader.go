@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/markdown"
+	"github.com/yanmxa/gencode/internal/util/markdown"
 
 	"gopkg.in/yaml.v3"
 )

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/runtime"
 	"go.uber.org/zap"

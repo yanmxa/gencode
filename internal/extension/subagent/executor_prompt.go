@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/extension/skill"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 

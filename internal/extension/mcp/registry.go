@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/plugin"
+	"github.com/yanmxa/gencode/internal/extension/plugin"
 )
 
 // Registry manages multiple MCP server connections

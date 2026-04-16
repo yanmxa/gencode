@@ -15,7 +15,7 @@ import (
 
 	"google.golang.org/genai"
 
-	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
 	streamutil "github.com/yanmxa/gencode/internal/provider/stream"

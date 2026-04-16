@@ -7,7 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/yanmxa/gencode/internal/mcp/transport"
+	"github.com/yanmxa/gencode/internal/extension/mcp/transport"
 )
 
 const (

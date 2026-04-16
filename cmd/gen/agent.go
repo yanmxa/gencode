@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/extension/subagent"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/core"

@@ -11,7 +11,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/searchui"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/util/log"
 )
 
 // Runtime defines the callbacks the providerui package needs from the parent app model.

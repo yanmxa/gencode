@@ -3,7 +3,7 @@ package runtime
 import (
 	"context"
 
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
 )
 

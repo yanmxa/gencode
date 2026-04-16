@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yanmxa/gencode/internal/markdown"
-	"github.com/yanmxa/gencode/internal/plugin"
+	"github.com/yanmxa/gencode/internal/util/markdown"
+	"github.com/yanmxa/gencode/internal/extension/plugin"
 
 	"gopkg.in/yaml.v3"
 )

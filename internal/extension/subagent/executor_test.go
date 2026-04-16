@@ -11,7 +11,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/extension/skill"
 )
 
 type stubSubagentSessionStore struct {
