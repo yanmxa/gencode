@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 )
 
 func (s *Model) Select() tea.Cmd {
@@ -52,7 +52,7 @@ func (s *Model) selectProvider(item listItem) tea.Cmd {
 
 	if len(p.AuthMethods) == 1 {
 		am := p.AuthMethods[0]
-		if am.Status == coreprovider.StatusConnected {
+		if am.Status == llm.StatusConnected {
 			// Refresh: re-fetch models for this connected provider
 			return s.refreshAuthMethod(am, s.selectedIdx)
 		}
@@ -80,7 +80,7 @@ func (s *Model) selectAuthMethod(item listItem) tea.Cmd {
 	}
 	am := item.AuthMethod
 
-	if am.Status == coreprovider.StatusConnected {
+	if am.Status == llm.StatusConnected {
 		// Refresh: re-fetch models for this connected auth method
 		return s.refreshAuthMethod(*am, s.selectedIdx)
 	}
@@ -90,7 +90,7 @@ func (s *Model) selectAuthMethod(item listItem) tea.Cmd {
 
 // tryConnectOrPromptKey connects if env vars are available, otherwise shows API key input.
 func (s *Model) tryConnectOrPromptKey(am authMethodItem, providerIdx, authIdx int) tea.Cmd {
-	if am.Status == coreprovider.StatusAvailable || isEnvReady(am.EnvVars) {
+	if am.Status == llm.StatusAvailable || isEnvReady(am.EnvVars) {
 		return s.connectAuthMethod(am, s.selectedIdx)
 	}
 

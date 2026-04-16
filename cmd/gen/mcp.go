@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yanmxa/gencode/internal/app/kit"
-	"github.com/yanmxa/gencode/internal/extension/mcp"
+	"github.com/yanmxa/gencode/internal/mcp"
 )
 
 var mcpCmd = &cobra.Command{

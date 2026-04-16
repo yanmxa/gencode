@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	coremcp "github.com/yanmxa/gencode/internal/extension/mcp"
+	coremcp "github.com/yanmxa/gencode/internal/mcp"
 )
 
 // HandleCommand dispatches /mcp subcommands.

@@ -9,8 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/provider/search"
+	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/llm/search"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
@@ -35,7 +35,7 @@ type Model struct {
 	selectedIdx int
 	width       int
 	height      int
-	store       *provider.Store
+	store       *llm.Store
 }
 
 // New creates a new search selector Model.
@@ -44,10 +44,10 @@ func New() Model {
 }
 
 // Enter activates the search kit.
-func (s *Model) Enter(store *provider.Store, width, height int) error {
+func (s *Model) Enter(store *llm.Store, width, height int) error {
 	if store == nil {
 		var err error
-		store, err = provider.NewStore()
+		store, err = llm.NewStore()
 		if err != nil {
 			return fmt.Errorf("failed to open provider store: %w", err)
 		}

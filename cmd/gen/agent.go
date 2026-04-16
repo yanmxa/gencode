@@ -9,11 +9,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yanmxa/gencode/internal/extension/subagent"
+	"github.com/yanmxa/gencode/internal/subagent"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -74,16 +74,16 @@ func runHeadlessAgent() error {
 	}()
 
 	// Initialize provider
-	store, _ := provider.NewStore()
+	store, _ := llm.NewStore()
 	if store == nil {
 		return fmt.Errorf("no provider store available")
 	}
 
 	currentModel := store.GetCurrentModel()
-	var llmProvider provider.Provider
+	var llmProvider llm.Provider
 
 	if currentModel != nil {
-		p, err := provider.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod)
+		p, err := llm.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod)
 		if err != nil {
 			return fmt.Errorf("failed to connect provider: %w", err)
 		}
@@ -124,7 +124,7 @@ func runHeadlessAgent() error {
 		IsGit: config.IsGitRepo(cwd),
 	})
 
-	loopClient := provider.NewClient(llmProvider, modelID, 16384)
+	loopClient := llm.NewClient(llmProvider, modelID, 16384)
 
 	lp, err := runtime.NewLoop(runtime.LoopConfig{
 		System: sys,

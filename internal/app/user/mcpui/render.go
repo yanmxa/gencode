@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	coremcp "github.com/yanmxa/gencode/internal/extension/mcp"
+	coremcp "github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 

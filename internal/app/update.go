@@ -9,7 +9,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
-	"github.com/yanmxa/gencode/internal/extension/skill"
+	"github.com/yanmxa/gencode/internal/skill"
 )
 
 // --- Routing types & helpers ---
@@ -84,11 +84,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) routeFeatureUpdate(msg tea.Msg) (tea.Cmd, bool) {
 	for _, updater := range [...]messageUpdater{
-		(*model).updateOutput, // agent outbox -> TUI output path
+		(*model).updateOutput, // agent outbox, perm bridge, compact results
 		(*model).updateAgentInput,
 		(*model).updateApproval,
 		(*model).updateMode,
-		(*model).updateCompact,
 		(*model).updateProvider,
 		(*model).updateMCP,
 		(*model).updatePlugin,

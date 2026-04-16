@@ -10,7 +10,6 @@ import (
 )
 
 // QueuePreviewItem is the minimal data needed to render a queue item preview.
-// Defined here to avoid importing the user/queue package.
 type QueuePreviewItem struct {
 	Content   string
 	HasImages bool

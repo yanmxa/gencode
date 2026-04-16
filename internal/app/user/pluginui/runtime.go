@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/extension/plugin"
+	"github.com/yanmxa/gencode/internal/plugin"
 )
 
 // Runtime defines the callbacks the pluginui package needs from the parent app model.

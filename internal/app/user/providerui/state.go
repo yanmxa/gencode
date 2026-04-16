@@ -4,6 +4,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // State holds provider UI state for the TUI model.
@@ -20,12 +22,10 @@ func (s *State) SetStatusMessage(msg string) {
 	s.StatusMessage = msg
 }
 
-// StatusExpiredMsg signals that the temporary status message should be cleared.
-type StatusExpiredMsg struct{}
+// StatusExpiredMsg is an alias for kit.StatusExpiredMsg for backward compatibility.
+type StatusExpiredMsg = kit.StatusExpiredMsg
 
-// StatusTimer returns a tea.Cmd that clears the status message after the given duration.
+// StatusTimer delegates to kit.StatusTimer.
 func StatusTimer(d time.Duration) tea.Cmd {
-	return tea.Tick(d, func(time.Time) tea.Msg {
-		return StatusExpiredMsg{}
-	})
+	return kit.StatusTimer(d)
 }

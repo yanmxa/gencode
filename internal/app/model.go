@@ -31,15 +31,15 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/extension/mcp"
+	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/plan"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/tasktools"
-	"github.com/yanmxa/gencode/internal/util/filecache"
+	"github.com/yanmxa/gencode/internal/filecache"
 )
 
 const (
@@ -73,13 +73,13 @@ type model struct {
 	pendingQuestionReply chan *tool.QuestionResponse
 
 	// Provider domain state — LLM connection, model info, token tracking, thinking
-	llmProvider provider.Provider
-	providerStore    *provider.Store
-	currentModel     *provider.CurrentModelInfo
+	llmProvider llm.Provider
+	providerStore    *llm.Store
+	currentModel     *llm.CurrentModelInfo
 	inputTokens      int
 	outputTokens     int
-	thinkingLevel    provider.ThinkingLevel
-	thinkingOverride provider.ThinkingLevel
+	thinkingLevel    llm.ThinkingLevel
+	thinkingOverride llm.ThinkingLevel
 
 	// Cached system prompt instructions (loaded from GEN.md/CLAUDE.md files)
 	cachedUserInstructions    string
@@ -282,7 +282,7 @@ func (m *model) ensureMemoryContextLoaded() {
 }
 
 // effectiveThinkingLevel returns the higher of the persistent level and the per-turn override.
-func (m *model) effectiveThinkingLevel() provider.ThinkingLevel {
+func (m *model) effectiveThinkingLevel() llm.ThinkingLevel {
 	return max(m.thinkingLevel, m.thinkingOverride)
 }
 
@@ -359,7 +359,7 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 	}
 
 	// LLM — wraps the current provider as core.LLM
-	client := provider.NewClient(m.llmProvider, m.getModelID(), m.getMaxTokens())
+	client := llm.NewClient(m.llmProvider, m.getModelID(), m.getMaxTokens())
 	client.SetThinking(m.effectiveThinkingLevel())
 
 	// System prompt — build layered core.System directly
@@ -418,7 +418,7 @@ func (m *model) startAgentLoop(sess *agentSession) tea.Cmd {
 	// Return commands that drain the outbox and poll the permission bridge
 	return tea.Batch(
 		appoutput.DrainAgentOutbox(sess.agent.Outbox()),
-		pollPermBridge(sess.permBridge),
+		appoutput.PollPermBridge(sess.permBridge),
 	)
 }
 

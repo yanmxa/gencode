@@ -10,26 +10,26 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // providerOrder defines the display order for providers.
-var providerOrder = []coreprovider.Name{
-	coreprovider.Anthropic,
-	coreprovider.OpenAI,
-	coreprovider.Google,
-	coreprovider.Moonshot,
-	coreprovider.Alibaba,
+var providerOrder = []llm.Name{
+	llm.Anthropic,
+	llm.OpenAI,
+	llm.Google,
+	llm.Moonshot,
+	llm.Alibaba,
 }
 
 // providerDisplayNames maps provider to human-readable name.
-var providerDisplayNames = map[coreprovider.Name]string{
-	coreprovider.Anthropic: "Anthropic",
-	coreprovider.OpenAI:    "OpenAI",
-	coreprovider.Google:    "Google",
-	coreprovider.Moonshot:  "Moonshot",
-	coreprovider.Alibaba:   "Alibaba",
+var providerDisplayNames = map[llm.Name]string{
+	llm.Anthropic: "Anthropic",
+	llm.OpenAI:    "OpenAI",
+	llm.Google:    "Google",
+	llm.Moonshot:  "Moonshot",
+	llm.Alibaba:   "Alibaba",
 }
 
 // Enter opens the unified model & provider kit.
@@ -55,13 +55,13 @@ func (s *Model) Enter(ctx context.Context, width, height int) (tea.Cmd, error) {
 // loadProviderData refreshes provider and model data from a fresh store.
 // Does NOT reset UI state (tabs, selection, expansion) or call rebuildVisibleItems.
 func (s *Model) loadProviderData() (tea.Cmd, error) {
-	store, err := coreprovider.NewStore()
+	store, err := llm.NewStore()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load store: %w", err)
 	}
 	s.store = store
 
-	providersWithStatus := coreprovider.GetProvidersWithStatus(store)
+	providersWithStatus := llm.GetProvidersWithStatus(store)
 
 	s.connectedProviders = nil
 	s.allProviders = nil
@@ -87,7 +87,7 @@ func (s *Model) loadProviderData() (tea.Cmd, error) {
 				Status:      info.Status,
 				EnvVars:     info.Meta.EnvVars,
 			})
-			if info.Status == coreprovider.StatusConnected {
+			if info.Status == llm.StatusConnected {
 				connected = true
 			}
 		}
@@ -141,13 +141,13 @@ func (s *Model) ensureModelProvidersExist() {
 		}
 		seen[m.ProviderName] = true
 
-		displayName := providerDisplayNames[coreprovider.Name(m.ProviderName)]
+		displayName := providerDisplayNames[llm.Name(m.ProviderName)]
 		if displayName == "" {
 			displayName = m.ProviderName
 		}
 
 		s.connectedProviders = append(s.connectedProviders, providerItem{
-			Provider:    coreprovider.Name(m.ProviderName),
+			Provider:    llm.Name(m.ProviderName),
 			DisplayName: displayName,
 			Connected:   true,
 		})
@@ -156,15 +156,15 @@ func (s *Model) ensureModelProvidersExist() {
 
 // loadModelsAsync returns a tea.Cmd that fetches models from all connected
 // providers concurrently, sending a ModelsLoadedMsg when done.
-func (s *Model) loadModelsAsync(store *coreprovider.Store, currentModelID string) tea.Cmd {
+func (s *Model) loadModelsAsync(store *llm.Store, currentModelID string) tea.Cmd {
 	connections := store.GetConnections()
 	return func() tea.Msg {
 		ctx := context.Background()
 
 		type providerResult struct {
 			providerName string
-			authMethod   coreprovider.AuthMethod
-			models       []coreprovider.ModelInfo
+			authMethod   llm.AuthMethod
+			models       []llm.ModelInfo
 		}
 
 		ch := make(chan providerResult, len(connections))
@@ -172,9 +172,9 @@ func (s *Model) loadModelsAsync(store *coreprovider.Store, currentModelID string
 
 		for name, conn := range connections {
 			wg.Add(1)
-			go func(providerName string, authMethod coreprovider.AuthMethod) {
+			go func(providerName string, authMethod llm.AuthMethod) {
 				defer wg.Done()
-				p, err := coreprovider.GetProvider(ctx, coreprovider.Name(providerName), authMethod)
+				p, err := llm.GetProvider(ctx, llm.Name(providerName), authMethod)
 				if err != nil {
 					return
 				}
@@ -190,7 +190,7 @@ func (s *Model) loadModelsAsync(store *coreprovider.Store, currentModelID string
 
 		var models []modelItem
 		for r := range ch {
-			prov := coreprovider.Name(r.providerName)
+			prov := llm.Name(r.providerName)
 			_ = store.CacheModels(prov, r.authMethod, r.models)
 
 			for _, mdl := range r.models {
@@ -226,14 +226,14 @@ func (s *Model) HandleModelsLoaded(msg ModelsLoadedMsg) {
 }
 
 // loadModelsCached loads models from the store cache.
-func (s *Model) loadModelsCached(allCached map[string][]coreprovider.ModelInfo, currentModelID string) {
+func (s *Model) loadModelsCached(allCached map[string][]llm.ModelInfo, currentModelID string) {
 	for key, models := range allCached {
 		parts := strings.SplitN(key, ":", 2)
 		providerName := key
-		var authMethod coreprovider.AuthMethod
+		var authMethod llm.AuthMethod
 		if len(parts) >= 2 {
 			providerName = parts[0]
-			authMethod = coreprovider.AuthMethod(parts[1])
+			authMethod = llm.AuthMethod(parts[1])
 		}
 
 		for _, mdl := range models {
@@ -410,7 +410,7 @@ func (s *Model) refreshAuthMethod(item authMethodItem, authIdx int) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 
-		llmProvider, err := coreprovider.GetProvider(ctx, item.Provider, item.AuthMethod)
+		llmProvider, err := llm.GetProvider(ctx, item.Provider, item.AuthMethod)
 		if err != nil {
 			return ConnectResultMsg{
 				AuthIdx: authIdx,
@@ -421,7 +421,7 @@ func (s *Model) refreshAuthMethod(item authMethodItem, authIdx int) tea.Cmd {
 
 		models, err := llmProvider.ListModels(ctx)
 
-		store, _ := coreprovider.NewStore()
+		store, _ := llm.NewStore()
 		if store != nil && len(models) > 0 {
 			_ = store.CacheModels(item.Provider, item.AuthMethod, models)
 		}
@@ -431,7 +431,7 @@ func (s *Model) refreshAuthMethod(item authMethodItem, authIdx int) tea.Cmd {
 				AuthIdx:   authIdx,
 				Success:   true,
 				Message:   fmt.Sprintf("⚠ %d models (static)", len(models)),
-				NewStatus: coreprovider.StatusConnected,
+				NewStatus: llm.StatusConnected,
 			}
 		}
 
@@ -439,7 +439,7 @@ func (s *Model) refreshAuthMethod(item authMethodItem, authIdx int) tea.Cmd {
 			AuthIdx:   authIdx,
 			Success:   true,
 			Message:   fmt.Sprintf("✓ Refreshed: %d models", len(models)),
-			NewStatus: coreprovider.StatusConnected,
+			NewStatus: llm.StatusConnected,
 		}
 	}
 }
@@ -453,7 +453,7 @@ func (s *Model) connectAuthMethod(item authMethodItem, authIdx int) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 
-		meta, ok := coreprovider.GetMeta(item.Provider, item.AuthMethod)
+		meta, ok := llm.GetMeta(item.Provider, item.AuthMethod)
 		if !ok {
 			return ConnectResultMsg{
 				AuthIdx: authIdx,
@@ -462,7 +462,7 @@ func (s *Model) connectAuthMethod(item authMethodItem, authIdx int) tea.Cmd {
 			}
 		}
 
-		if !coreprovider.IsReady(meta) {
+		if !llm.IsReady(meta) {
 			return ConnectResultMsg{
 				AuthIdx: authIdx,
 				Success: false,
@@ -470,7 +470,7 @@ func (s *Model) connectAuthMethod(item authMethodItem, authIdx int) tea.Cmd {
 			}
 		}
 
-		llmProvider, err := coreprovider.GetProvider(ctx, item.Provider, item.AuthMethod)
+		llmProvider, err := llm.GetProvider(ctx, item.Provider, item.AuthMethod)
 		if err != nil {
 			return ConnectResultMsg{
 				AuthIdx: authIdx,
@@ -481,7 +481,7 @@ func (s *Model) connectAuthMethod(item authMethodItem, authIdx int) tea.Cmd {
 
 		models, err := llmProvider.ListModels(ctx)
 
-		store, _ := coreprovider.NewStore()
+		store, _ := llm.NewStore()
 		if store != nil {
 			if len(models) > 0 {
 				_ = store.CacheModels(item.Provider, item.AuthMethod, models)
@@ -494,7 +494,7 @@ func (s *Model) connectAuthMethod(item authMethodItem, authIdx int) tea.Cmd {
 				AuthIdx:   authIdx,
 				Success:   true,
 				Message:   fmt.Sprintf("⚠ %d models loaded (static)", len(models)),
-				NewStatus: coreprovider.StatusConnected,
+				NewStatus: llm.StatusConnected,
 			}
 		}
 
@@ -502,7 +502,7 @@ func (s *Model) connectAuthMethod(item authMethodItem, authIdx int) tea.Cmd {
 			AuthIdx:   authIdx,
 			Success:   true,
 			Message:   fmt.Sprintf("✓ %d models loaded", len(models)),
-			NewStatus: coreprovider.StatusConnected,
+			NewStatus: llm.StatusConnected,
 		}
 	}
 }
@@ -524,21 +524,21 @@ func (s *Model) HandleConnectResult(msg ConnectResultMsg) tea.Cmd {
 }
 
 // ConnectProvider connects to a provider and verifies the connection.
-func (s *Model) ConnectProvider(ctx context.Context, p coreprovider.Name, authMethod coreprovider.AuthMethod) (string, error) {
+func (s *Model) ConnectProvider(ctx context.Context, p llm.Name, authMethod llm.AuthMethod) (string, error) {
 	if s.store == nil {
-		store, err := coreprovider.NewStore()
+		store, err := llm.NewStore()
 		if err != nil {
 			return "", fmt.Errorf("failed to load store: %w", err)
 		}
 		s.store = store
 	}
 
-	meta, ok := coreprovider.GetMeta(p, authMethod)
+	meta, ok := llm.GetMeta(p, authMethod)
 	if !ok {
 		return "", fmt.Errorf("provider not found: %s:%s", p, authMethod)
 	}
 
-	if !coreprovider.IsReady(meta) {
+	if !llm.IsReady(meta) {
 		missingVars := []string{}
 		for _, envVar := range meta.EnvVars {
 			if envVar == "" {
@@ -549,7 +549,7 @@ func (s *Model) ConnectProvider(ctx context.Context, p coreprovider.Name, authMe
 		return "", fmt.Errorf("missing required environment variables: %s", strings.Join(missingVars, ", "))
 	}
 
-	llmProvider, err := coreprovider.GetProvider(ctx, p, authMethod)
+	llmProvider, err := llm.GetProvider(ctx, p, authMethod)
 	if err != nil {
 		return "", fmt.Errorf("failed to create provider: %w", err)
 	}
@@ -571,16 +571,16 @@ func (s *Model) ConnectProvider(ctx context.Context, p coreprovider.Name, authMe
 }
 
 // SetModel sets the current model.
-func (s *Model) SetModel(modelID string, providerName string, authMethod coreprovider.AuthMethod) (string, error) {
+func (s *Model) SetModel(modelID string, providerName string, authMethod llm.AuthMethod) (string, error) {
 	if s.store == nil {
-		store, err := coreprovider.NewStore()
+		store, err := llm.NewStore()
 		if err != nil {
 			return "", fmt.Errorf("failed to load store: %w", err)
 		}
 		s.store = store
 	}
 
-	if err := s.store.SetCurrentModel(modelID, coreprovider.Name(providerName), authMethod); err != nil {
+	if err := s.store.SetCurrentModel(modelID, llm.Name(providerName), authMethod); err != nil {
 		return "", fmt.Errorf("failed to set model: %w", err)
 	}
 

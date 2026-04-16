@@ -9,7 +9,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/log"
 )
 
 // LLMCompleter performs a single-turn LLM completion for hook execution.

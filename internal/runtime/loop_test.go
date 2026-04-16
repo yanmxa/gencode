@@ -8,7 +8,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/permission"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 	_ "github.com/yanmxa/gencode/internal/tool/registry"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
@@ -16,13 +16,13 @@ import (
 
 // --- Test helpers ---
 
-// mockProvider implements provider.Provider for testing.
+// mockProvider implements llm.Provider for testing.
 type mockProvider struct {
 	responses []core.CompletionResponse
 	callIdx   int
 }
 
-func (m *mockProvider) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan core.StreamChunk {
+func (m *mockProvider) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan core.StreamChunk {
 	ch := make(chan core.StreamChunk, 1)
 	go func() {
 		defer close(ch)
@@ -40,7 +40,7 @@ func (m *mockProvider) Stream(ctx context.Context, opts provider.CompletionOptio
 	return ch
 }
 
-func (m *mockProvider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
+func (m *mockProvider) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
 	return nil, nil
 }
 
@@ -60,8 +60,8 @@ func (t *hookResponseTestTool) Execute(ctx context.Context, params map[string]an
 }
 
 // newTestLoop creates a Loop with the new struct layout for testing.
-func newTestLoop(mp provider.Provider) *Loop {
-	c := provider.NewClient(mp, "test-model", 8192)
+func newTestLoop(mp llm.Provider) *Loop {
+	c := llm.NewClient(mp, "test-model", 8192)
 	return &Loop{
 		System:     core.NewSystem(core.Layer{Name: "test", Priority: 0, Content: "test"}),
 		Client:     c,
@@ -113,7 +113,7 @@ func TestAddUserWithImages(t *testing.T) {
 }
 
 func TestAddResponse(t *testing.T) {
-	loop := &Loop{Client: provider.NewClient(&mockProvider{}, "test", 0)}
+	loop := &Loop{Client: llm.NewClient(&mockProvider{}, "test", 0)}
 
 	resp := &core.CompletionResponse{
 		Content: "response text",
@@ -638,7 +638,7 @@ type errorThenSuccessProvider struct {
 	callCount   int
 }
 
-func (p *errorThenSuccessProvider) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan core.StreamChunk {
+func (p *errorThenSuccessProvider) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan core.StreamChunk {
 	ch := make(chan core.StreamChunk, 1)
 	go func() {
 		defer close(ch)
@@ -652,7 +652,7 @@ func (p *errorThenSuccessProvider) Stream(ctx context.Context, opts provider.Com
 	return ch
 }
 
-func (p *errorThenSuccessProvider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
+func (p *errorThenSuccessProvider) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
 	return nil, nil
 }
 
@@ -734,7 +734,7 @@ func TestRunCancelled(t *testing.T) {
 }
 
 func TestStaticTools(t *testing.T) {
-	tools := []provider.ToolSchema{
+	tools := []llm.ToolSchema{
 		{Name: "Read", Description: "Read files"},
 		{Name: "Write", Description: "Write files"},
 	}
@@ -746,14 +746,14 @@ func TestStaticTools(t *testing.T) {
 }
 
 func TestLoopClientAccess(t *testing.T) {
-	c := provider.NewClient(&mockProvider{}, "model-a", 0)
+	c := llm.NewClient(&mockProvider{}, "model-a", 0)
 	loop := &Loop{Client: c}
 	if loop.Client.ModelID() != "model-a" {
 		t.Errorf("expected model-a, got %s", loop.Client.ModelID())
 	}
 
 	// Verify client is accessible and returns expected values
-	c2 := provider.NewClient(&mockProvider{}, "model-b", 0)
+	c2 := llm.NewClient(&mockProvider{}, "model-b", 0)
 	loop.Client = c2
 	if loop.Client.ModelID() != "model-b" {
 		t.Errorf("expected model-b, got %s", loop.Client.ModelID())

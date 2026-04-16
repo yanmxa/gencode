@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/kit"
-	coremcp "github.com/yanmxa/gencode/internal/extension/mcp"
+	coremcp "github.com/yanmxa/gencode/internal/mcp"
 )
 
 // selectorLevel represents the navigation level in the MCP selector

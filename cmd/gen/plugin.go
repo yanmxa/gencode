@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/yanmxa/gencode/internal/extension/plugin"
+	"github.com/yanmxa/gencode/internal/plugin"
 )
 
 var pluginCmd = &cobra.Command{

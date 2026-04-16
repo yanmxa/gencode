@@ -17,26 +17,26 @@ import (
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/extension/mcp"
-	"github.com/yanmxa/gencode/internal/extension/skill"
-	"github.com/yanmxa/gencode/internal/extension/subagent"
+	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/subagent"
 	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/orchestration"
-	"github.com/yanmxa/gencode/internal/extension/plugin"
+	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 type testLLMProvider struct{}
 
-func (testLLMProvider) Stream(_ context.Context, _ provider.CompletionOptions) <-chan core.StreamChunk {
+func (testLLMProvider) Stream(_ context.Context, _ llm.CompletionOptions) <-chan core.StreamChunk {
 	ch := make(chan core.StreamChunk)
 	close(ch)
 	return ch
 }
 
-func (testLLMProvider) ListModels(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (testLLMProvider) ListModels(_ context.Context) ([]llm.ModelInfo, error) { return nil, nil }
 
 func (testLLMProvider) Name() string { return "test" }
 

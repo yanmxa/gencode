@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	coreplugin "github.com/yanmxa/gencode/internal/extension/plugin"
+	coreplugin "github.com/yanmxa/gencode/internal/plugin"
 )
 
 // HandleCommand dispatches /plugin subcommands.

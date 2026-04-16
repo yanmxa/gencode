@@ -13,15 +13,15 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	appcommand "github.com/yanmxa/gencode/internal/extension/command"
-	"github.com/yanmxa/gencode/internal/extension/mcp"
-	"github.com/yanmxa/gencode/internal/extension/skill"
-	"github.com/yanmxa/gencode/internal/extension/subagent"
-	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/extension/plugin"
+	appcommand "github.com/yanmxa/gencode/internal/command"
+	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/subagent"
+	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/tool"
 	_ "github.com/yanmxa/gencode/internal/tool/registry"
-	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/log"
 )
 
 // Run routes to either print mode or interactive TUI.
@@ -54,17 +54,17 @@ func Run(opts config.RunOptions) error {
 func runPrint(userMessage string) error {
 	ctx := context.Background()
 
-	store, err := provider.NewStore()
+	store, err := llm.NewStore()
 	if err != nil {
 		return fmt.Errorf("failed to load store: %w", err)
 	}
 
-	var llmProvider provider.Provider
+	var llmProvider llm.Provider
 	var modelID string
 
 	current := store.GetCurrentModel()
 	if current != nil {
-		p, err := provider.GetProvider(ctx, current.Provider, current.AuthMethod)
+		p, err := llm.GetProvider(ctx, current.Provider, current.AuthMethod)
 		if err != nil {
 			return fmt.Errorf("provider %s (%s) not available: %w. Run 'gen' and use /provider to connect",
 				current.Provider, current.AuthMethod, err)
@@ -73,7 +73,7 @@ func runPrint(userMessage string) error {
 		modelID = current.ModelID
 	} else {
 		for providerName, conn := range store.GetConnections() {
-			p, err := provider.GetProvider(ctx, provider.Name(providerName), conn.AuthMethod)
+			p, err := llm.GetProvider(ctx, llm.Name(providerName), conn.AuthMethod)
 			if err == nil {
 				llmProvider = p
 				modelID = config.DefaultModel(providerName, conn.AuthMethod)
@@ -86,7 +86,7 @@ func runPrint(userMessage string) error {
 		return fmt.Errorf("no provider connected. Run 'gen' and use /provider to connect")
 	}
 
-	completionOpts := provider.CompletionOptions{
+	completionOpts := llm.CompletionOptions{
 		Model:        modelID,
 		MaxTokens:    config.DefaultMaxTokens,
 		SystemPrompt: config.DefaultSystemPrompt,
@@ -133,8 +133,8 @@ func initTheme() (done bool, err error) {
 
 // --- Infrastructure initialization ---
 
-func initLLM() (*provider.Store, provider.Provider, *provider.CurrentModelInfo) {
-	store, _ := provider.NewStore()
+func initLLM() (*llm.Store, llm.Provider, *llm.CurrentModelInfo) {
+	store, _ := llm.NewStore()
 	if store == nil {
 		return nil, nil, nil
 	}
@@ -144,14 +144,14 @@ func initLLM() (*provider.Store, provider.Provider, *provider.CurrentModelInfo) 
 
 	// Try to connect to current model's provider first
 	if currentModel != nil {
-		if p, err := provider.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod); err == nil {
+		if p, err := llm.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod); err == nil {
 			return store, p, currentModel
 		}
 	}
 
 	// Fall back to any available provider
 	for providerName, conn := range store.GetConnections() {
-		if p, err := provider.GetProvider(ctx, provider.Name(providerName), conn.AuthMethod); err == nil {
+		if p, err := llm.GetProvider(ctx, llm.Name(providerName), conn.AuthMethod); err == nil {
 			return store, p, currentModel
 		}
 	}

@@ -16,7 +16,7 @@ import (
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/task/tracker"
@@ -511,7 +511,7 @@ func TestDetectThinkingKeywords(t *testing.T) {
 	t.Run("high thinking keywords", func(t *testing.T) {
 		m := &model{}
 		m.detectThinkingKeywords("Please think carefully before answering")
-		if m.thinkingOverride != provider.ThinkingHigh {
+		if m.thinkingOverride != llm.ThinkingHigh {
 			t.Fatalf("expected high thinking override, got %v", m.thinkingOverride)
 		}
 	})
@@ -519,7 +519,7 @@ func TestDetectThinkingKeywords(t *testing.T) {
 	t.Run("ultra keywords win over high", func(t *testing.T) {
 		m := &model{}
 		m.detectThinkingKeywords("Think hard and ultrathink about this")
-		if m.thinkingOverride != provider.ThinkingUltra {
+		if m.thinkingOverride != llm.ThinkingUltra {
 			t.Fatalf("expected ultra thinking override, got %v", m.thinkingOverride)
 		}
 	})

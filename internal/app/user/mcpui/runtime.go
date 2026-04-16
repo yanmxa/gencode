@@ -8,7 +8,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
-	coremcp "github.com/yanmxa/gencode/internal/extension/mcp"
+	coremcp "github.com/yanmxa/gencode/internal/mcp"
 )
 
 // Runtime defines the callbacks the mcpui package needs from the parent app model.

@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	coreskill "github.com/yanmxa/gencode/internal/extension/skill"
+	coreskill "github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 

@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/kit/history"
-	"github.com/yanmxa/gencode/internal/util/image"
+	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/core"
 )
 

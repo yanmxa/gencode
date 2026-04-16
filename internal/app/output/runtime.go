@@ -3,6 +3,7 @@ package output
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/app/output/compact"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
 	"github.com/yanmxa/gencode/internal/core"
 )
@@ -80,13 +81,42 @@ type TurnManager interface {
 	QueueDrainer
 }
 
+// CompactHandler handles compaction and token limit result processing.
+type CompactHandler interface {
+	HandleCompactResult(msg compact.ResultMsg) tea.Cmd
+	HandleTokenLimitResult(msg compact.TokenLimitResultMsg) tea.Cmd
+}
+
+// PermBridgeHandler handles permission bridge events from the agent.
+type PermBridgeHandler interface {
+	StorePendingPermRequest(req *PermBridgeRequest)
+	ShowPermissionPrompt(req *PermBridgeRequest) tea.Cmd
+}
+
 // Runtime is the union of all interfaces needed by the output event handlers.
-// The parent app model satisfies all four sub-interfaces.
 type Runtime interface {
 	ConversationMutator
 	StreamController
 	ToolSideEffects
 	TurnManager
+	CompactHandler
+	PermBridgeHandler
+}
+
+// PermBridgeMsg carries a permission bridge request from the agent to the TUI.
+type PermBridgeMsg struct {
+	Request *PermBridgeRequest
+}
+
+// PollPermBridge blocks until the next permission request arrives.
+func PollPermBridge(pb *PermissionBridge) tea.Cmd {
+	return func() tea.Msg {
+		req, ok := pb.Recv()
+		if !ok {
+			return nil
+		}
+		return PermBridgeMsg{Request: req}
+	}
 }
 
 // DrainAgentOutbox blocks until the next outbox event arrives, then emits an AgentOutboxMsg.
@@ -100,7 +130,8 @@ func DrainAgentOutbox(outbox <-chan core.Event) tea.Cmd {
 	}
 }
 
-// Update routes agent outbox and progress messages for the output path.
+// Update routes all output-path messages: agent outbox, permission bridge,
+// compaction results, and progress updates.
 func Update(rt Runtime, m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case AgentOutboxMsg:
@@ -108,6 +139,13 @@ func Update(rt Runtime, m *Model, msg tea.Msg) (tea.Cmd, bool) {
 			return handleAgentStopped(rt, m, nil), true
 		}
 		return handleAgentEvent(rt, m, msg.Event), true
+	case PermBridgeMsg:
+		rt.StorePendingPermRequest(msg.Request)
+		return rt.ShowPermissionPrompt(msg.Request), true
+	case compact.ResultMsg:
+		return rt.HandleCompactResult(msg), true
+	case compact.TokenLimitResultMsg:
+		return rt.HandleTokenLimitResult(msg), true
 	case progress.UpdateMsg:
 		return m.HandleProgress(msg), true
 	case progress.CheckTickMsg:

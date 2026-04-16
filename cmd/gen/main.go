@@ -11,16 +11,16 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/yanmxa/gencode/internal/app"
-	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/session"
 
 	// Import providers for registration
-	_ "github.com/yanmxa/gencode/internal/provider/alibaba"
-	_ "github.com/yanmxa/gencode/internal/provider/anthropic"
-	_ "github.com/yanmxa/gencode/internal/provider/google"
-	_ "github.com/yanmxa/gencode/internal/provider/moonshot"
-	_ "github.com/yanmxa/gencode/internal/provider/openai"
+	_ "github.com/yanmxa/gencode/internal/llm/alibaba"
+	_ "github.com/yanmxa/gencode/internal/llm/anthropic"
+	_ "github.com/yanmxa/gencode/internal/llm/google"
+	_ "github.com/yanmxa/gencode/internal/llm/moonshot"
+	_ "github.com/yanmxa/gencode/internal/llm/openai"
 )
 
 var version = "1.13.2"

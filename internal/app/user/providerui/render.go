@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
@@ -287,7 +287,7 @@ func (s *Model) renderAuthMethod(item listItem, isSelected bool, itemIdx int) st
 	statusIcon, statusStyle, statusDesc := getStatusDisplay(am.Status)
 
 	envInfo := ""
-	if am.Status != coreprovider.StatusConnected {
+	if am.Status != llm.StatusConnected {
 		envInfo = kit.RenderEnvVarStatus(firstEnvVar(am.EnvVars))
 	}
 	if statusDesc != "" && envInfo == "" {
@@ -363,16 +363,16 @@ func (s *Model) renderConnectResult() string {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-func bestAuthMethodStatus(methods []authMethodItem) coreprovider.Status {
+func bestAuthMethodStatus(methods []authMethodItem) llm.Status {
 	for _, m := range methods {
-		if m.Status == coreprovider.StatusConnected {
-			return coreprovider.StatusConnected
+		if m.Status == llm.StatusConnected {
+			return llm.StatusConnected
 		}
 	}
 	for _, m := range methods {
-		if m.Status == coreprovider.StatusAvailable {
-			return coreprovider.StatusAvailable
+		if m.Status == llm.StatusAvailable {
+			return llm.StatusAvailable
 		}
 	}
-	return coreprovider.StatusNotConfigured
+	return llm.StatusNotConfigured
 }

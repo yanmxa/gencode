@@ -5,7 +5,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 
-	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
@@ -38,7 +38,7 @@ type listItem struct {
 
 // providerItem represents a provider with its auth methods.
 type providerItem struct {
-	Provider    coreprovider.Name
+	Provider    llm.Name
 	DisplayName string
 	AuthMethods []authMethodItem
 	Connected   bool // whether this provider has at least one connected auth method
@@ -46,10 +46,10 @@ type providerItem struct {
 
 // authMethodItem represents an auth method in the second level.
 type authMethodItem struct {
-	Provider    coreprovider.Name
-	AuthMethod  coreprovider.AuthMethod
+	Provider    llm.Name
+	AuthMethod  llm.AuthMethod
 	DisplayName string
-	Status      coreprovider.Status
+	Status      llm.Status
 	EnvVars     []string
 }
 
@@ -59,7 +59,7 @@ type modelItem struct {
 	Name             string
 	DisplayName      string
 	ProviderName     string
-	AuthMethod       coreprovider.AuthMethod
+	AuthMethod       llm.AuthMethod
 	IsCurrent        bool
 	InputTokenLimit  int
 	OutputTokenLimit int
@@ -70,7 +70,7 @@ type Model struct {
 	active bool
 	width  int
 	height int
-	store  *coreprovider.Store
+	store  *llm.Store
 
 	// Tab
 	activeTab tab
@@ -114,13 +114,13 @@ type statusDisplayInfo struct {
 }
 
 // statusDisplayMap maps provider status to display information.
-var statusDisplayMap = map[coreprovider.Status]statusDisplayInfo{
-	coreprovider.StatusConnected: {"●", kit.SelectorStatusConnected(), ""},
-	coreprovider.StatusAvailable: {"○", kit.SelectorStatusReady(), "(available)"},
+var statusDisplayMap = map[llm.Status]statusDisplayInfo{
+	llm.StatusConnected: {"●", kit.SelectorStatusConnected(), ""},
+	llm.StatusAvailable: {"○", kit.SelectorStatusReady(), "(available)"},
 }
 
 // getStatusDisplay returns the icon, style, and description for a provider status.
-func getStatusDisplay(status coreprovider.Status) (icon string, style lipgloss.Style, desc string) {
+func getStatusDisplay(status llm.Status) (icon string, style lipgloss.Style, desc string) {
 	if info, ok := statusDisplayMap[status]; ok {
 		return info.icon, info.style, info.desc
 	}
@@ -139,15 +139,15 @@ func New() Model {
 
 // SelectedMsg is sent when a provider auth method is selected (for connection).
 type SelectedMsg struct {
-	Provider   coreprovider.Name
-	AuthMethod coreprovider.AuthMethod
+	Provider   llm.Name
+	AuthMethod llm.AuthMethod
 }
 
 // ModelSelectedMsg is sent when a model is selected.
 type ModelSelectedMsg struct {
 	ModelID      string
 	ProviderName string
-	AuthMethod   coreprovider.AuthMethod
+	AuthMethod   llm.AuthMethod
 }
 
 // ConnectResultMsg is sent when inline connection completes.
@@ -155,7 +155,7 @@ type ConnectResultMsg struct {
 	AuthIdx   int
 	Success   bool
 	Message   string
-	NewStatus coreprovider.Status
+	NewStatus llm.Status
 }
 
 // ModelsLoadedMsg is sent when async model loading completes.

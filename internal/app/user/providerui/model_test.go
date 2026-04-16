@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
@@ -139,7 +139,7 @@ func TestSelectModelReturnsSelectionMessage(t *testing.T) {
 	model := modelItem{
 		ID:           "gpt-5",
 		ProviderName: "openai",
-		AuthMethod:   coreprovider.AuthAPIKey,
+		AuthMethod:   llm.AuthAPIKey,
 	}
 	m.visibleItems = []listItem{
 		{Kind: itemModel, Model: &model},
@@ -155,7 +155,7 @@ func TestSelectModelReturnsSelectionMessage(t *testing.T) {
 	if !ok {
 		t.Fatalf("selection returned %T, want ModelSelectedMsg", msg)
 	}
-	if selected.ModelID != "gpt-5" || selected.ProviderName != "openai" || selected.AuthMethod != coreprovider.AuthAPIKey {
+	if selected.ModelID != "gpt-5" || selected.ProviderName != "openai" || selected.AuthMethod != llm.AuthAPIKey {
 		t.Fatalf("unexpected selection: %+v", selected)
 	}
 	if m.active {
@@ -163,10 +163,10 @@ func TestSelectModelReturnsSelectionMessage(t *testing.T) {
 	}
 }
 
-func newTestStore(t *testing.T) *coreprovider.Store {
+func newTestStore(t *testing.T) *llm.Store {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
-	store, err := coreprovider.NewStore()
+	store, err := llm.NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
@@ -175,16 +175,16 @@ func newTestStore(t *testing.T) *coreprovider.Store {
 
 func TestEnterLoadsCachedModelsAndPutsCurrentFirst(t *testing.T) {
 	store := newTestStore(t)
-	if err := store.CacheModels(coreprovider.OpenAI, coreprovider.AuthAPIKey, []coreprovider.ModelInfo{
+	if err := store.CacheModels(llm.OpenAI, llm.AuthAPIKey, []llm.ModelInfo{
 		{ID: "gpt-5-mini", DisplayName: "GPT-5 mini", InputTokenLimit: 128000, OutputTokenLimit: 16000},
 		{ID: "gpt-5", DisplayName: "GPT-5", InputTokenLimit: 256000, OutputTokenLimit: 32000},
 	}); err != nil {
 		t.Fatalf("CacheModels() error = %v", err)
 	}
-	if err := store.Connect(coreprovider.OpenAI, coreprovider.AuthAPIKey); err != nil {
+	if err := store.Connect(llm.OpenAI, llm.AuthAPIKey); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	if err := store.SetCurrentModel("gpt-5", coreprovider.OpenAI, coreprovider.AuthAPIKey); err != nil {
+	if err := store.SetCurrentModel("gpt-5", llm.OpenAI, llm.AuthAPIKey); err != nil {
 		t.Fatalf("SetCurrentModel() error = %v", err)
 	}
 
@@ -247,7 +247,7 @@ func TestSetModelPersistsSelection(t *testing.T) {
 	m := New()
 	m.store = store
 
-	result, err := m.SetModel("gpt-5", "openai", coreprovider.AuthAPIKey)
+	result, err := m.SetModel("gpt-5", "openai", llm.AuthAPIKey)
 	if err != nil {
 		t.Fatalf("SetModel() error = %v", err)
 	}
@@ -256,7 +256,7 @@ func TestSetModelPersistsSelection(t *testing.T) {
 	}
 
 	current := store.GetCurrentModel()
-	if current == nil || current.ModelID != "gpt-5" || current.Provider != coreprovider.OpenAI || current.AuthMethod != coreprovider.AuthAPIKey {
+	if current == nil || current.ModelID != "gpt-5" || current.Provider != llm.OpenAI || current.AuthMethod != llm.AuthAPIKey {
 		t.Fatalf("unexpected current model after SetModel: %#v", current)
 	}
 }
@@ -274,7 +274,7 @@ func TestTabSwitchesBetweenTabs(t *testing.T) {
 	m.allProviders = []providerItem{
 		{Provider: "openai", DisplayName: "OpenAI", Connected: true},
 		{Provider: "google", DisplayName: "Google", AuthMethods: []authMethodItem{
-			{DisplayName: "API Key", Status: coreprovider.StatusNotConfigured},
+			{DisplayName: "API Key", Status: llm.StatusNotConfigured},
 		}},
 	}
 	m.rebuildVisibleItems()
@@ -340,8 +340,8 @@ func TestSelectProviderExpandsAuthMethods(t *testing.T) {
 			Provider:    "anthropic",
 			DisplayName: "Anthropic",
 			AuthMethods: []authMethodItem{
-				{DisplayName: "API Key", Status: coreprovider.StatusNotConfigured},
-				{DisplayName: "Bedrock", Status: coreprovider.StatusAvailable},
+				{DisplayName: "API Key", Status: llm.StatusNotConfigured},
+				{DisplayName: "Bedrock", Status: llm.StatusAvailable},
 			},
 		},
 	}

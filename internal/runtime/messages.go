@@ -2,7 +2,7 @@ package runtime
 
 import (
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 )
 
 func (l *Loop) lastAssistantContent() string {
@@ -24,9 +24,9 @@ func (l *Loop) SetMessages(msgs []core.Message) {
 
 // Tokens returns the cumulative token usage tracked by the underlying client.
 // Returns a zero value if no client is attached.
-func (l *Loop) Tokens() provider.TokenUsage {
+func (l *Loop) Tokens() llm.TokenUsage {
 	if l.Client == nil {
-		return provider.TokenUsage{}
+		return llm.TokenUsage{}
 	}
 	return l.Client.Tokens()
 }

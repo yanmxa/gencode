@@ -192,11 +192,3 @@ func (m model) renderActiveContent() string {
 func (m model) isToolPhaseActive() bool {
 	return false
 }
-
-func (m model) getExecutingToolName() string {
-	return m.conv.Stream.BuildingTool
-}
-
-func (m model) buildTaskOwnerMap() map[string]string {
-	return appoutput.BuildTaskOwnerMap()
-}
