@@ -252,3 +252,18 @@ internal/app/
 ```
 
 Agent builder（buildCoreAgent, ensureAgentSession, startAgentLoop）belongs in `model.go` — it's Model initialization, not an Update handler.
+
+## Package Dependencies
+
+```
+cmd/gen/              CLI entrypoint
+internal/app/         TUI layer (this document)
+internal/core/        Agent interface: Inbox/Outbox/Run, Event types, Message
+internal/llm/         LLM providers (Anthropic, OpenAI, Google, ...)
+internal/tool/        Tool registry and execution
+internal/hook/        Event hook system
+internal/config/      Settings and permissions
+internal/...          ...
+```
+
+Dependency direction: `cmd/ → app/ → {core/, provider/, tool/, hooks/, config/, ...}`. Domain packages never import app.
