@@ -10,8 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/session"
 )
 
 // SelectedMsg is sent when a session is selected
@@ -21,17 +21,15 @@ type SelectedMsg struct {
 
 // Model holds the state for the session selector
 type Model struct {
-	active       bool
-	sessions     []*session.SessionMetadata
-	filtered     []*session.SessionMetadata
-	selectedIdx  int
-	searchQuery  string
-	scrollOffset int
-	maxVisible   int
-	width        int
-	height       int
-	store        *session.Store
-	cwd          string
+	active   bool
+	sessions []*session.SessionMetadata
+	filtered []*session.SessionMetadata
+	nav      kit.ListNav
+	width    int
+	height   int
+	store    *session.Store
+	cwd      string
+
 	messageCache map[string]string // Cache for last user messages
 }
 
@@ -39,7 +37,7 @@ type Model struct {
 func New() Model {
 	return Model{
 		active:       false,
-		maxVisible:   6, // Default, will be calculated based on terminal height
+		nav:          kit.ListNav{MaxVisible: 6},
 		messageCache: make(map[string]string),
 	}
 }
@@ -86,12 +84,13 @@ func (s *Model) EnterSelect(width, height int, store *session.Store, cwd string)
 		return fmt.Errorf("no sessions found")
 	}
 
+	maxVis := calculateMaxVisible(height)
 	*s = Model{
 		active:       true,
 		sessions:     sessions,
 		width:        width,
 		height:       height,
-		maxVisible:   calculateMaxVisible(height),
+		nav:          kit.ListNav{MaxVisible: maxVis},
 		store:        store,
 		cwd:          cwd,
 		messageCache: make(map[string]string),
@@ -114,36 +113,10 @@ func (s *Model) Cancel() {
 	*s = New()
 }
 
-// MoveUp moves the selection up
-func (s *Model) MoveUp() {
-	if s.selectedIdx > 0 {
-		s.selectedIdx--
-		s.ensureVisible()
-	}
-}
-
-// MoveDown moves the selection down
-func (s *Model) MoveDown() {
-	if s.selectedIdx < len(s.filtered)-1 {
-		s.selectedIdx++
-		s.ensureVisible()
-	}
-}
-
-// ensureVisible adjusts scrollOffset to keep selectedIdx visible
-func (s *Model) ensureVisible() {
-	if s.selectedIdx < s.scrollOffset {
-		s.scrollOffset = s.selectedIdx
-	}
-	if s.selectedIdx >= s.scrollOffset+s.maxVisible {
-		s.scrollOffset = s.selectedIdx - s.maxVisible + 1
-	}
-}
-
 // updateFilter filters sessions by search query.
 // The store is already project-scoped, so no CWD filtering is needed.
 func (s *Model) updateFilter() {
-	query := strings.ToLower(s.searchQuery)
+	query := strings.ToLower(s.nav.Search)
 	s.filtered = make([]*session.SessionMetadata, 0, len(s.sessions))
 
 	for _, sess := range s.sessions {
@@ -154,17 +127,17 @@ func (s *Model) updateFilter() {
 		s.filtered = append(s.filtered, sess)
 	}
 
-	s.selectedIdx = 0
-	s.scrollOffset = 0
+	s.nav.ResetCursor()
+	s.nav.Total = len(s.filtered)
 }
 
 // Select returns a command when a session is selected
 func (s *Model) Select() tea.Cmd {
-	if len(s.filtered) == 0 || s.selectedIdx >= len(s.filtered) {
+	if len(s.filtered) == 0 || s.nav.Selected >= len(s.filtered) {
 		return nil
 	}
 
-	selected := s.filtered[s.selectedIdx]
+	selected := s.filtered[s.nav.Selected]
 	s.active = false
 
 	return func() tea.Msg {
@@ -174,38 +147,26 @@ func (s *Model) Select() tea.Cmd {
 
 // HandleKeypress handles a keypress and returns a command if selection is made
 func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
-	switch key.Type {
-	case tea.KeyUp, tea.KeyCtrlP:
-		s.MoveUp()
-	case tea.KeyDown, tea.KeyCtrlN:
-		s.MoveDown()
-	case tea.KeyEnter:
+	// Enter selects the session
+	if key.Type == tea.KeyEnter {
 		return s.Select()
-	case tea.KeyEsc:
-		if s.searchQuery != "" {
-			s.searchQuery = ""
-			s.updateFilter()
-			return nil
-		}
-		s.Cancel()
-		return func() tea.Msg { return kit.DismissedMsg{} }
-	case tea.KeyBackspace:
-		if len(s.searchQuery) > 0 {
-			s.searchQuery = s.searchQuery[:len(s.searchQuery)-1]
-			s.updateFilter()
-		}
-	case tea.KeyRunes:
-		if s.searchQuery == "" && (key.String() == "j" || key.String() == "k") {
-			if key.String() == "j" {
-				s.MoveDown()
-			} else {
-				s.MoveUp()
-			}
-			return nil
-		}
-		s.searchQuery += string(key.Runes)
+	}
+
+	// Delegate navigation and search to ListNav
+	searchChanged, consumed := s.nav.HandleKey(key)
+	if searchChanged {
 		s.updateFilter()
 	}
+	if consumed {
+		return nil
+	}
+
+	// Esc with empty search — dismiss
+	if key.Type == tea.KeyEsc {
+		s.Cancel()
+		return func() tea.Msg { return kit.DismissedMsg{} }
+	}
+
 	return nil
 }
 
@@ -258,7 +219,6 @@ func (s *Model) getLastMessage(sess *session.SessionMetadata) string {
 		if entry.Type != session.EntryUser && entry.Type != session.EntryAssistant {
 			continue
 		}
-		// Skip tool_result and tool_use entries.
 		skip := false
 		for _, block := range entry.Message.Content {
 			if block.Type == "tool_result" || block.Type == "tool_use" {
@@ -303,7 +263,6 @@ func (s *Model) getFirstSubstantiveMessage(sess *session.SessionMetadata) string
 		if entry.Type != session.EntryUser || entry.Message == nil {
 			continue
 		}
-		// Skip tool_result entries.
 		isToolResult := false
 		for _, block := range entry.Message.Content {
 			if block.Type == "tool_result" {
@@ -328,20 +287,12 @@ func (s *Model) getFirstSubstantiveMessage(sess *session.SessionMetadata) string
 }
 
 // renderSession renders a single session in compact 2-line format.
-//
-// Title line: if the stored title is too short (≤5 chars, e.g. "hi") and a
-// substantive message exists, the substantive message is used as the display
-// title. Metadata (message count + relative time) is right-aligned.
-//
-// Subtitle line: the last message in the conversation (any role) is shown as
-// a muted preview.
 func (s *Model) renderSession(sess *session.SessionMetadata, isSelected bool, sb *strings.Builder, boxWidth int) {
 	titleStyle, indent := kit.SelectorItemStyle(), "  "
 	if isSelected {
 		titleStyle, indent = kit.SelectorSelectedStyle(), "> "
 	}
 
-	// Determine display title — prefer substantive message over short titles.
 	displayTitle := sess.Title
 	if len([]rune(displayTitle)) < session.MinSubstantiveLength {
 		if subst := s.getFirstSubstantiveMessage(sess); subst != "" {
@@ -350,14 +301,12 @@ func (s *Model) renderSession(sess *session.SessionMetadata, isSelected bool, sb
 	}
 
 	metadata := formatCompactMetadata(sess)
-	// Reserve space for indent + gap + metadata.
 	maxTitleWidth := boxWidth - len(indent) - len(metadata) - 4
 	if maxTitleWidth < 10 {
 		maxTitleWidth = 10
 	}
 	title := kit.TruncateText(displayTitle, maxTitleWidth)
 
-	// Right-align metadata by padding between title and metadata.
 	titleLen := len(indent) + len(title)
 	gap := boxWidth - titleLen - len(metadata) - 2
 	if gap < 2 {
@@ -381,15 +330,13 @@ func (s *Model) Render() string {
 
 	var sb strings.Builder
 
-	// Title with project name and count
 	title := fmt.Sprintf("Resume Session - %s (%d/%d)", filepath.Base(s.cwd), len(s.filtered), len(s.sessions))
 	sb.WriteString(kit.SelectorTitleStyle().Render(title) + "\n")
 
-	// Search input
 	searchLine := "🔍 Type to filter..."
 	searchStyle := kit.SelectorHintStyle()
-	if s.searchQuery != "" {
-		searchLine = "> " + s.searchQuery + "_"
+	if s.nav.Search != "" {
+		searchLine = "> " + s.nav.Search + "_"
 		searchStyle = kit.SelectorBreadcrumbStyle()
 	}
 	sb.WriteString(searchStyle.Render(searchLine) + "\n\n")
@@ -397,11 +344,11 @@ func (s *Model) Render() string {
 	if len(s.filtered) == 0 {
 		sb.WriteString(kit.SelectorHintStyle().Render("  No sessions match the filter") + "\n")
 	} else {
-		endIdx := min(s.scrollOffset+s.maxVisible, len(s.filtered))
-		s.renderScrollIndicator(&sb, s.scrollOffset > 0, "↑ more above")
+		startIdx, endIdx := s.nav.VisibleRange()
+		s.renderScrollIndicator(&sb, startIdx > 0, "↑ more above")
 
-		for i := s.scrollOffset; i < endIdx; i++ {
-			s.renderSession(s.filtered[i], i == s.selectedIdx, &sb, s.width)
+		for i := startIdx; i < endIdx; i++ {
+			s.renderSession(s.filtered[i], i == s.nav.Selected, &sb, s.width)
 		}
 
 		s.renderScrollIndicator(&sb, endIdx < len(s.filtered), "↓ more below")

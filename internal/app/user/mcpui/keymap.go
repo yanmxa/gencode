@@ -68,8 +68,8 @@ func (s *Model) handleListKeypress(key tea.KeyMsg) tea.Cmd {
 		s.Cancel()
 		return func() tea.Msg { return AddServerMsg{} }
 	case tea.KeyCtrlD:
-		if len(s.filteredServers) > 0 && s.selectedIdx < len(s.filteredServers) {
-			name := s.filteredServers[s.selectedIdx].Name
+		if len(s.filteredServers) > 0 && s.nav.Selected < len(s.filteredServers) {
+			name := s.filteredServers[s.nav.Selected].Name
 			return func() tea.Msg { return RemoveMsg{ServerName: name} }
 		}
 		return nil
@@ -77,25 +77,23 @@ func (s *Model) handleListKeypress(key tea.KeyMsg) tea.Cmd {
 		s.enterDetail()
 		return nil
 	case tea.KeyEsc:
-		// First clear search if active
-		if s.searchQuery != "" {
-			s.searchQuery = ""
+		if s.nav.Search != "" {
+			s.nav.Search = ""
 			s.updateFilter()
 			return nil
 		}
-		// Then close the selector
 		s.Cancel()
 		return func() tea.Msg { return kit.DismissedMsg{} }
 	case tea.KeyBackspace:
-		if len(s.searchQuery) > 0 {
-			s.searchQuery = s.searchQuery[:len(s.searchQuery)-1]
+		if len(s.nav.Search) > 0 {
+			s.nav.Search = s.nav.Search[:len(s.nav.Search)-1]
 			s.updateFilter()
 		}
 		return nil
 	case tea.KeyRunes:
 		r := key.String()
 		// vim navigation when not searching
-		if s.searchQuery == "" {
+		if s.nav.Search == "" {
 			switch r {
 			case "j":
 				s.MoveDown()
@@ -108,8 +106,7 @@ func (s *Model) handleListKeypress(key tea.KeyMsg) tea.Cmd {
 				return nil
 			}
 		}
-		// Append to search query
-		s.searchQuery += r
+		s.nav.Search += r
 		s.updateFilter()
 		return nil
 	}

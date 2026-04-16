@@ -8,8 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	coremcp "github.com/yanmxa/gencode/internal/extension/mcp"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	coremcp "github.com/yanmxa/gencode/internal/extension/mcp"
 )
 
 // selectorLevel represents the navigation level in the MCP selector
@@ -43,19 +43,14 @@ type serverItem struct {
 type Model struct {
 	registry *coremcp.Registry
 
-	active       bool
-	servers      []serverItem
-	selectedIdx  int
-	width        int
-	height       int
-	scrollOffset int
-	maxVisible   int
-	connecting   bool   // True when a connection is in progress
-	lastError    string // Last connection error to display
-
-	// Fuzzy search
-	searchQuery     string
+	active          bool
+	servers         []serverItem
 	filteredServers []serverItem
+	nav             kit.ListNav
+	width           int
+	height          int
+	connecting      bool   // True when a connection is in progress
+	lastError       string // Last connection error to display
 
 	// Two-level navigation
 	level        selectorLevel
@@ -105,10 +100,10 @@ type EditServerMsg struct {
 // New creates a new Model with the given MCP registry.
 func New(reg *coremcp.Registry) Model {
 	return Model{
-		registry:   reg,
-		active:     false,
-		servers:    []serverItem{},
-		maxVisible: 10,
+		registry: reg,
+		active:   false,
+		servers:  []serverItem{},
+		nav:      kit.ListNav{MaxVisible: 10},
 	}
 }
 
@@ -120,14 +115,12 @@ func (s *Model) EnterSelect(width, height int) error {
 
 	s.refreshServers()
 	s.active = true
-	s.selectedIdx = 0
-	s.scrollOffset = 0
 	s.width = width
 	s.height = height
 	s.connecting = false
 	s.lastError = ""
-	s.searchQuery = ""
-	s.filteredServers = s.servers
+	s.nav.Reset()
+	s.nav.Total = len(s.filteredServers)
 	s.level = levelList
 	s.parentIdx = 0
 	s.detailServer = nil
@@ -187,10 +180,9 @@ func (s *Model) Cancel() {
 	s.active = false
 	s.servers = []serverItem{}
 	s.filteredServers = nil
-	s.selectedIdx = 0
-	s.scrollOffset = 0
+	s.nav.Reset()
+	s.nav.Total = 0
 	s.connecting = false
-	s.searchQuery = ""
 	s.level = levelList
 	s.detailServer = nil
 	s.actions = nil
@@ -199,10 +191,10 @@ func (s *Model) Cancel() {
 
 // updateFilter filters servers based on search query (fuzzy match)
 func (s *Model) updateFilter() {
-	if s.searchQuery == "" {
+	if s.nav.Search == "" {
 		s.filteredServers = s.servers
 	} else {
-		query := strings.ToLower(s.searchQuery)
+		query := strings.ToLower(s.nav.Search)
 		s.filteredServers = make([]serverItem, 0)
 		for _, srv := range s.servers {
 			if kit.FuzzyMatch(strings.ToLower(srv.Name), query) ||
@@ -211,8 +203,8 @@ func (s *Model) updateFilter() {
 			}
 		}
 	}
-	s.selectedIdx = 0
-	s.scrollOffset = 0
+	s.nav.ResetCursor()
+	s.nav.Total = len(s.filteredServers)
 }
 
 // MoveUp moves the selection up (level-aware)
@@ -223,10 +215,7 @@ func (s *Model) MoveUp() {
 		}
 		return
 	}
-	if s.selectedIdx > 0 {
-		s.selectedIdx--
-		s.ensureVisible()
-	}
+	s.nav.MoveUp()
 }
 
 // MoveDown moves the selection down (level-aware)
@@ -237,29 +226,16 @@ func (s *Model) MoveDown() {
 		}
 		return
 	}
-	if s.selectedIdx < len(s.filteredServers)-1 {
-		s.selectedIdx++
-		s.ensureVisible()
-	}
-}
-
-// ensureVisible adjusts scrollOffset to keep selectedIdx visible
-func (s *Model) ensureVisible() {
-	if s.selectedIdx < s.scrollOffset {
-		s.scrollOffset = s.selectedIdx
-	}
-	if s.selectedIdx >= s.scrollOffset+s.maxVisible {
-		s.scrollOffset = s.selectedIdx - s.maxVisible + 1
-	}
+	s.nav.MoveDown()
 }
 
 // enterDetail enters the detail view for the selected server
 func (s *Model) enterDetail() {
-	if len(s.filteredServers) == 0 || s.selectedIdx >= len(s.filteredServers) {
+	if len(s.filteredServers) == 0 || s.nav.Selected >= len(s.filteredServers) {
 		return
 	}
-	s.parentIdx = s.selectedIdx
-	srv := s.filteredServers[s.selectedIdx]
+	s.parentIdx = s.nav.Selected
+	srv := s.filteredServers[s.nav.Selected]
 	s.detailServer = &srv
 	s.actions = s.buildActions(srv)
 	s.actionIdx = 0
@@ -270,7 +246,7 @@ func (s *Model) enterDetail() {
 func (s *Model) goBack() bool {
 	if s.level == levelDetail {
 		s.level = levelList
-		s.selectedIdx = s.parentIdx
+		s.nav.Selected = s.parentIdx
 		s.detailServer = nil
 		s.actions = nil
 		s.actionIdx = 0
@@ -358,8 +334,6 @@ func (s *Model) HandleDisconnect(name string) {
 }
 
 // HandleReconnect handles a reconnect request.
-// Unlike HandleDisconnect, this does NOT mark the server as disabled,
-// since the user intends to reconnect immediately.
 func (s *Model) HandleReconnect(name string) {
 	if s.registry != nil {
 		s.registry.Disconnect(name)
@@ -388,8 +362,8 @@ func (s *Model) refreshAndUpdateView() {
 
 // clampSelectedIdx ensures selectedIdx is within valid bounds
 func (s *Model) clampSelectedIdx() {
-	if s.selectedIdx >= len(s.filteredServers) && len(s.filteredServers) > 0 {
-		s.selectedIdx = len(s.filteredServers) - 1
+	if s.nav.Selected >= len(s.filteredServers) && len(s.filteredServers) > 0 {
+		s.nav.Selected = len(s.filteredServers) - 1
 	}
 }
 

@@ -84,10 +84,10 @@ func (s *Model) renderList() string {
 
 	// Search input
 	searchPrompt := ">> "
-	if s.searchQuery == "" {
+	if s.nav.Search == "" {
 		sb.WriteString(kit.SelectorHintStyle().Render(searchPrompt + "Type to filter..."))
 	} else {
-		sb.WriteString(kit.SelectorBreadcrumbStyle().Render(searchPrompt + s.searchQuery + "|"))
+		sb.WriteString(kit.SelectorBreadcrumbStyle().Render(searchPrompt + s.nav.Search + "|"))
 	}
 	sb.WriteString("\n\n")
 
@@ -101,14 +101,14 @@ func (s *Model) renderList() string {
 			sb.WriteString("\n")
 		}
 	} else {
-		endIdx := min(s.scrollOffset+s.maxVisible, len(s.filteredServers))
+		endIdx := min(s.nav.Scroll+s.nav.MaxVisible, len(s.filteredServers))
 
-		if s.scrollOffset > 0 {
+		if s.nav.Scroll > 0 {
 			sb.WriteString(kit.SelectorHintStyle().Render("  ^ more above"))
 			sb.WriteString("\n")
 		}
 
-		for i := s.scrollOffset; i < endIdx; i++ {
+		for i := s.nav.Scroll; i < endIdx; i++ {
 			srv := s.filteredServers[i]
 			icon, statusStyle := statusIconAndStyle(srv.Status)
 
@@ -126,7 +126,7 @@ func (s *Model) renderList() string {
 				descStyle.Render(details),
 			)
 
-			if i == s.selectedIdx {
+			if i == s.nav.Selected {
 				sb.WriteString(kit.SelectorSelectedStyle().Render("> " + line))
 			} else {
 				sb.WriteString(kit.SelectorItemStyle().Render("  " + line))

@@ -173,25 +173,11 @@ func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 		return true, cmd
 	}
 
-	switch {
-	case m.provider.Selector.IsActive():
-		return true, m.provider.Selector.HandleKeypress(msg)
-	case m.tool.Selector.IsActive():
-		return true, m.tool.Selector.HandleKeypress(msg)
-	case m.skill.Selector.IsActive():
-		return true, m.skill.Selector.HandleKeypress(msg)
-	case m.agent.IsActive():
-		return true, m.agent.HandleKeypress(msg)
-	case m.mcp.Selector.IsActive():
-		return true, m.mcp.Selector.HandleKeypress(msg)
-	case m.plugin.IsActive():
-		return true, m.plugin.HandleKeypress(msg)
-	case m.session.Selector.IsActive():
-		return true, m.session.Selector.HandleKeypress(msg)
-	case m.memory.Selector.IsActive():
-		return true, m.memory.Selector.HandleKeypress(msg)
-	case m.search.IsActive():
-		return true, m.search.HandleKeypress(msg)
+	// Delegate to overlay selectors via the shared overlaySelectors() list
+	for _, s := range m.overlaySelectors() {
+		if s.IsActive() {
+			return true, s.HandleKeypress(msg)
+		}
 	}
 
 	return false, nil
