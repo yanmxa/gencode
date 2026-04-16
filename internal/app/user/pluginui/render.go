@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	coreplugin "github.com/yanmxa/gencode/internal/extension/plugin"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
@@ -539,7 +538,7 @@ func (s *Model) renderMarketplaceDetail() string {
 		sb.WriteString("\n")
 		sb.WriteString("  " + dimStyle.Render(fmt.Sprintf("Installed (%d):", m.Installed)))
 		sb.WriteString("\n")
-		for _, p := range coreplugin.DefaultRegistry.List() {
+		for _, p := range s.registry.List() {
 			if idx := strings.Index(p.Source, "@"); idx != -1 && p.Source[idx+1:] == m.ID {
 				sb.WriteString("    " + kit.SelectorStatusConnected.Render("●") + " " + p.Name())
 				sb.WriteString("\n")

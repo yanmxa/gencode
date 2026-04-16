@@ -12,42 +12,42 @@ import (
 )
 
 // buildInstalledActions returns actions for an installed plugin.
-func (s *Model) buildInstalledActions(p pluginItem) []Action {
-	actions := []Action{}
+func (s *Model) buildInstalledActions(p pluginItem) []action {
+	actions := []action{}
 	if p.Enabled {
-		actions = append(actions, Action{Label: "Disable plugin", Action: "disable"})
+		actions = append(actions, action{Label: "Disable plugin", Action: "disable"})
 	} else {
-		actions = append(actions, Action{Label: "Enable plugin", Action: "enable"})
+		actions = append(actions, action{Label: "Enable plugin", Action: "enable"})
 	}
 	actions = append(actions,
-		Action{Label: "Uninstall", Action: "uninstall"},
-		Action{Label: "Back to plugin list", Action: "back"},
+		action{Label: "Uninstall", Action: "uninstall"},
+		action{Label: "Back to plugin list", Action: "back"},
 	)
 	return actions
 }
 
 // buildDiscoverActions returns actions for a discoverable plugin.
-func (s *Model) buildDiscoverActions(p discoverPluginItem) []Action {
-	actions := []Action{}
+func (s *Model) buildDiscoverActions(p discoverPluginItem) []action {
+	actions := []action{}
 	if !p.Installed {
 		actions = append(actions,
-			Action{Label: "Install for you (user scope)", Action: "install_user"},
-			Action{Label: "Install for all collaborators (project scope)", Action: "install_project"},
-			Action{Label: "Install for you, in this repo only (local scope)", Action: "install_local"},
+			action{Label: "Install for you (user scope)", Action: "install_user"},
+			action{Label: "Install for all collaborators (project scope)", Action: "install_project"},
+			action{Label: "Install for you, in this repo only (local scope)", Action: "install_local"},
 		)
 	} else {
-		actions = append(actions, Action{Label: "Already installed", Action: "none"})
+		actions = append(actions, action{Label: "Already installed", Action: "none"})
 	}
 	if p.Homepage != "" {
-		actions = append(actions, Action{Label: "Open homepage", Action: "homepage"})
+		actions = append(actions, action{Label: "Open homepage", Action: "homepage"})
 	}
-	actions = append(actions, Action{Label: "Back to plugin list", Action: "back"})
+	actions = append(actions, action{Label: "Back to plugin list", Action: "back"})
 	return actions
 }
 
 // buildMarketplaceActions returns actions for a marketplace.
-func (s *Model) buildMarketplaceActions(m marketplaceItem) []Action {
-	return []Action{
+func (s *Model) buildMarketplaceActions(m marketplaceItem) []action {
+	return []action{
 		{Label: fmt.Sprintf("Browse plugins (%d)", m.Available), Action: "browse"},
 		{Label: "Update marketplace", Action: "update"},
 		{Label: "Remove marketplace", Action: "remove"},
@@ -188,7 +188,7 @@ func (s *Model) toggleSelectedPlugin() tea.Cmd {
 
 // HandleEnable handles enabling a plugin.
 func (s *Model) HandleEnable(name string) {
-	if err := coreplugin.DefaultRegistry.Enable(name, coreplugin.ScopeUser); err != nil {
+	if err := s.registry.Enable(name, coreplugin.ScopeUser); err != nil {
 		s.setError(fmt.Sprintf("Failed to enable: %v", err))
 	} else {
 		s.setSuccess(fmt.Sprintf("Enabled %s", name))
@@ -198,7 +198,7 @@ func (s *Model) HandleEnable(name string) {
 
 // HandleDisable handles disabling a plugin.
 func (s *Model) HandleDisable(name string) {
-	if err := coreplugin.DefaultRegistry.Disable(name, coreplugin.ScopeUser); err != nil {
+	if err := s.registry.Disable(name, coreplugin.ScopeUser); err != nil {
 		s.setError(fmt.Sprintf("Failed to disable: %v", err))
 	} else {
 		s.setSuccess(fmt.Sprintf("Disabled %s", name))

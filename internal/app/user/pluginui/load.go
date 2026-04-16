@@ -51,7 +51,7 @@ func (s *Model) refreshCurrentTab() {
 
 // refreshInstalledPlugins loads installed plugins grouped by scope
 func (s *Model) refreshInstalledPlugins() {
-	plugins := coreplugin.DefaultRegistry.List()
+	plugins := s.registry.List()
 	s.installedPlugins = make(map[coreplugin.Scope][]pluginItem)
 
 	for _, p := range plugins {
@@ -135,7 +135,7 @@ func (s *Model) refreshMarketplaces() {
 	s.marketplaces = []marketplaceItem{}
 
 	installedCounts := make(map[string]int)
-	for _, p := range coreplugin.DefaultRegistry.List() {
+	for _, p := range s.registry.List() {
 		if idx := strings.Index(p.Source, "@"); idx != -1 {
 			marketplace := p.Source[idx+1:]
 			installedCounts[marketplace]++
@@ -186,7 +186,7 @@ func (s *Model) refreshMarketplaces() {
 // getInstalledNames returns a set of installed plugin names for quick lookup.
 func (s *Model) getInstalledNames() map[string]bool {
 	names := make(map[string]bool)
-	for _, p := range coreplugin.DefaultRegistry.List() {
+	for _, p := range s.registry.List() {
 		names[p.FullName()] = true
 		names[p.Name()] = true
 	}

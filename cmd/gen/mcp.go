@@ -166,7 +166,7 @@ var mcpEditCmd = &cobra.Command{
 			return fmt.Errorf("failed to load MCP configs: %w", err)
 		}
 
-		info, err := mcpui.PrepareServerEdit(name)
+		info, err := mcpui.PrepareServerEdit(mcp.DefaultRegistry, name)
 		if err != nil {
 			return err
 		}
@@ -182,7 +182,7 @@ var mcpEditCmd = &cobra.Command{
 			return fmt.Errorf("editor failed: %w", err)
 		}
 
-		if err := mcpui.ApplyServerEdit(info); err != nil {
+		if err := mcpui.ApplyServerEdit(mcp.DefaultRegistry, info); err != nil {
 			return err
 		}
 

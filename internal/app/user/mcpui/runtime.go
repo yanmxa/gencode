@@ -8,8 +8,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/extension/mcp"
-)
+	)
 
 // Runtime defines the callbacks the mcpui package needs from the parent app model.
 type Runtime interface {
@@ -22,19 +21,19 @@ type Runtime interface {
 func Update(rt Runtime, state *State, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case ConnectMsg:
-		if mcp.DefaultRegistry != nil {
-			mcp.DefaultRegistry.SetDisabled(msg.ServerName, false)
-			mcp.DefaultRegistry.SetConnecting(msg.ServerName, true)
+		if state.Selector.registry != nil {
+			state.Selector.registry.SetDisabled(msg.ServerName, false)
+			state.Selector.registry.SetConnecting(msg.ServerName, true)
 		}
-		return StartConnect(msg.ServerName), true
+		return startConnect(state.Selector.registry, msg.ServerName), true
 
 	case ConnectResultMsg:
-		if mcp.DefaultRegistry != nil {
-			mcp.DefaultRegistry.SetConnecting(msg.ServerName, false)
+		if state.Selector.registry != nil {
+			state.Selector.registry.SetConnecting(msg.ServerName, false)
 			if !msg.Success && msg.Error != nil {
-				mcp.DefaultRegistry.SetConnectError(msg.ServerName, msg.Error.Error())
+				state.Selector.registry.SetConnectError(msg.ServerName, msg.Error.Error())
 			} else {
-				mcp.DefaultRegistry.SetConnectError(msg.ServerName, "")
+				state.Selector.registry.SetConnectError(msg.ServerName, "")
 			}
 		}
 		state.Selector.HandleConnectResult(msg)
@@ -51,10 +50,10 @@ func Update(rt Runtime, state *State, msg tea.Msg) (tea.Cmd, bool) {
 
 	case ReconnectMsg:
 		state.Selector.HandleReconnect(msg.ServerName)
-		if mcp.DefaultRegistry != nil {
-			mcp.DefaultRegistry.SetConnecting(msg.ServerName, true)
+		if state.Selector.registry != nil {
+			state.Selector.registry.SetConnecting(msg.ServerName, true)
 		}
-		return StartConnect(msg.ServerName), true
+		return startConnect(state.Selector.registry, msg.ServerName), true
 
 	case RemoveMsg:
 		state.Selector.HandleRemove(msg.ServerName)
@@ -65,7 +64,7 @@ func Update(rt Runtime, state *State, msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 
 	case EditServerMsg:
-		info, err := PrepareServerEdit(msg.ServerName)
+		info, err := PrepareServerEdit(state.Selector.registry, msg.ServerName)
 		if err != nil {
 			rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Error: %v", err)})
 			return tea.Batch(rt.CommitMessages()...), true
@@ -89,7 +88,7 @@ func Update(rt Runtime, state *State, msg tea.Msg) (tea.Cmd, bool) {
 			return tea.Batch(rt.CommitMessages()...), true
 		}
 
-		if err := ApplyServerEdit(info); err != nil {
+		if err := ApplyServerEdit(state.Selector.registry, info); err != nil {
 			rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Failed to apply edit: %v", err)})
 			return tea.Batch(rt.CommitMessages()...), true
 		}

@@ -11,7 +11,7 @@ import (
 )
 
 func TestCancelClearsTransientPluginSelectorState(t *testing.T) {
-	m := New()
+	m := New(coreplugin.NewRegistry())
 	m.active = true
 	m.level = levelDetail
 	m.selectedIdx = 3
@@ -22,7 +22,7 @@ func TestCancelClearsTransientPluginSelectorState(t *testing.T) {
 	m.detailPlugin = &pluginItem{Name: "demo"}
 	m.detailDiscover = &discoverPluginItem{Name: "discover"}
 	m.detailMarketplace = &marketplaceItem{ID: "market"}
-	m.actions = []Action{{Label: "Back", Action: "back"}}
+	m.actions = []action{{Label: "Back", Action: "back"}}
 	m.actionIdx = 1
 	m.addMarketplaceInput = "owner/repo"
 	m.addDialogCursor = 1
@@ -62,7 +62,7 @@ func TestCancelClearsTransientPluginSelectorState(t *testing.T) {
 }
 
 func TestHandleListEscClearsSearchBeforeDismiss(t *testing.T) {
-	m := New()
+	m := New(coreplugin.NewRegistry())
 	m.active = true
 	m.activeTab = tabInstalled
 	m.installedFlatList = []pluginItem{
@@ -89,7 +89,7 @@ func TestHandleListEscClearsSearchBeforeDismiss(t *testing.T) {
 }
 
 func TestHandleListEscDismissesSelector(t *testing.T) {
-	m := New()
+	m := New(coreplugin.NewRegistry())
 	m.active = true
 
 	cmd := m.HandleKeypress(tea.KeyMsg{Type: tea.KeyEsc})
@@ -106,7 +106,7 @@ func TestHandleListEscDismissesSelector(t *testing.T) {
 }
 
 func TestSwitchTabResetsDetailStateAndSearch(t *testing.T) {
-	m := New()
+	m := New(coreplugin.NewRegistry())
 	m.activeTab = tabInstalled
 	m.level = levelDetail
 	m.selectedIdx = 3
@@ -114,7 +114,7 @@ func TestSwitchTabResetsDetailStateAndSearch(t *testing.T) {
 	m.parentIdx = 1
 	m.searchQuery = "demo"
 	m.detailPlugin = &pluginItem{Name: "demo"}
-	m.actions = []Action{{Label: "Back", Action: "back"}}
+	m.actions = []action{{Label: "Back", Action: "back"}}
 	m.marketplaces = []marketplaceItem{{ID: "market"}}
 
 	m.switchTab(tabMarketplaces)
@@ -137,7 +137,7 @@ func TestSwitchTabResetsDetailStateAndSearch(t *testing.T) {
 }
 
 func TestToggleSelectedPluginReturnsDisableMsg(t *testing.T) {
-	m := New()
+	m := New(coreplugin.NewRegistry())
 	m.activeTab = tabInstalled
 	m.level = levelTabList
 	m.filteredItems = []any{
@@ -160,7 +160,7 @@ func TestToggleSelectedPluginReturnsDisableMsg(t *testing.T) {
 }
 
 func TestRenderTabListShowsPluginManagerFrame(t *testing.T) {
-	m := New()
+	m := New(coreplugin.NewRegistry())
 	m.active = true
 	m.width = 100
 	m.height = 30
@@ -177,7 +177,7 @@ func TestRenderTabListShowsPluginManagerFrame(t *testing.T) {
 }
 
 func TestRenderInstalledDetailShowsStructuredSections(t *testing.T) {
-	m := New()
+	m := New(coreplugin.NewRegistry())
 	m.active = true
 	m.width = 100
 	m.height = 30
@@ -192,7 +192,7 @@ func TestRenderInstalledDetailShowsStructuredSections(t *testing.T) {
 		Agents:      2,
 		Hooks:       1,
 	}
-	m.actions = []Action{{Label: "Disable plugin", Action: "disable"}, {Label: "Back", Action: "back"}}
+	m.actions = []action{{Label: "Disable plugin", Action: "disable"}, {Label: "Back", Action: "back"}}
 
 	rendered := m.Render()
 	for _, want := range []string{"Plugin Details", "deploy@corp", "Status:", "Scope:", "Components", "Disable plugin"} {

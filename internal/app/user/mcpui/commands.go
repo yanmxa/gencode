@@ -20,7 +20,7 @@ type EditInfo struct {
 
 // HandleCommand dispatches /mcp subcommands.
 func HandleCommand(ctx context.Context, selector *Model, width, height int, args string) (string, *EditInfo, error) {
-	if coremcp.DefaultRegistry == nil {
+	if selector.registry == nil {
 		return "MCP is not initialized.\n\nAdd MCP servers with:\n  /mcp add <name> -- <command> [args...]", nil, nil
 	}
 
@@ -42,36 +42,36 @@ func HandleCommand(ctx context.Context, selector *Model, width, height int, args
 
 	switch subCmd {
 	case "add":
-		r, err := handleAdd(ctx, parts[1:])
+		r, err := handleAdd(selector.registry, ctx, parts[1:])
 		return r, nil, err
 	case "edit":
-		return handleEdit(serverName)
+		return handleEdit(selector.registry, serverName)
 	case "remove":
-		r, err := handleRemove(serverName)
+		r, err := handleRemove(selector.registry, serverName)
 		return r, nil, err
 	case "get":
-		r, err := handleGet(serverName)
+		r, err := handleGet(selector.registry, serverName)
 		return r, nil, err
 	case "connect":
-		r, err := handleConnect(ctx, serverName)
+		r, err := handleConnect(selector.registry, ctx, serverName)
 		return r, nil, err
 	case "disconnect":
-		r, err := handleDisconnect(serverName)
+		r, err := handleDisconnect(selector.registry, serverName)
 		return r, nil, err
 	case "reconnect":
-		r, err := handleReconnect(ctx, serverName)
+		r, err := handleReconnect(selector.registry, ctx, serverName)
 		return r, nil, err
 	case "list", "status":
-		r, err := handleList()
+		r, err := handleList(selector.registry)
 		return r, nil, err
 	default:
-		r, err := handleConnect(ctx, subCmd)
+		r, err := handleConnect(selector.registry, ctx, subCmd)
 		return r, nil, err
 	}
 }
 
-func handleList() (string, error) {
-	servers := coremcp.DefaultRegistry.List()
+func handleList(reg *coremcp.Registry) (string, error) {
+	servers := reg.List()
 
 	if len(servers) == 0 {
 		return "No MCP servers configured.\n\nAdd servers with:\n  /mcp add <name> -- <command> [args...]\n  /mcp add --transport http <name> <url>", nil
@@ -117,11 +117,11 @@ func handleList() (string, error) {
 	return sb.String(), nil
 }
 
-func handleEdit(name string) (string, *EditInfo, error) {
+func handleEdit(reg *coremcp.Registry, name string) (string, *EditInfo, error) {
 	if name == "" {
 		return "Usage: /mcp edit <server-name>", nil, nil
 	}
-	info, err := PrepareServerEdit(name)
+	info, err := PrepareServerEdit(reg, name)
 	if err != nil {
 		return err.Error(), nil, nil
 	}
@@ -131,8 +131,8 @@ func handleEdit(name string) (string, *EditInfo, error) {
 // PrepareServerEdit extracts a single server's config into a temp file for editing.
 // The caller is responsible for calling ApplyServerEdit after the editor closes
 // and removing the temp file.
-func PrepareServerEdit(name string) (*EditInfo, error) {
-	config, ok := coremcp.DefaultRegistry.GetConfig(name)
+func PrepareServerEdit(reg *coremcp.Registry, name string) (*EditInfo, error) {
+	config, ok := reg.GetConfig(name)
 	if !ok {
 		return nil, fmt.Errorf("server not found: %s\n\nUse /mcp list to see available servers", name)
 	}
@@ -168,7 +168,7 @@ func PrepareServerEdit(name string) (*EditInfo, error) {
 }
 
 // ApplyServerEdit reads the edited temp file and saves the updated config back.
-func ApplyServerEdit(info *EditInfo) error {
+func ApplyServerEdit(reg *coremcp.Registry, info *EditInfo) error {
 	defer func() { _ = os.Remove(info.TempFile) }()
 
 	data, err := os.ReadFile(info.TempFile)
@@ -181,27 +181,27 @@ func ApplyServerEdit(info *EditInfo) error {
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
 
-	if err := coremcp.DefaultRegistry.AddServer(info.ServerName, updated, info.Scope); err != nil {
+	if err := reg.AddServer(info.ServerName, updated, info.Scope); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
 	return nil
 }
 
-func handleConnect(ctx context.Context, name string) (string, error) {
+func handleConnect(reg *coremcp.Registry, ctx context.Context, name string) (string, error) {
 	if name == "" {
 		return "Usage: /mcp connect <server-name>", nil
 	}
 
-	if _, ok := coremcp.DefaultRegistry.GetConfig(name); !ok {
+	if _, ok := reg.GetConfig(name); !ok {
 		return fmt.Sprintf("Server not found: %s\n\nUse /mcp list to see available servers.", name), nil
 	}
 
-	if err := coremcp.DefaultRegistry.Connect(ctx, name); err != nil {
+	if err := reg.Connect(ctx, name); err != nil {
 		return fmt.Sprintf("Failed to connect to %s: %v", name, err), nil
 	}
 
-	if client, ok := coremcp.DefaultRegistry.GetClient(name); ok {
+	if client, ok := reg.GetClient(name); ok {
 		tools := client.GetCachedTools()
 		return fmt.Sprintf("Connected to %s\nTools available: %d", name, len(tools)), nil
 	}
@@ -209,19 +209,19 @@ func handleConnect(ctx context.Context, name string) (string, error) {
 	return fmt.Sprintf("Connected to %s", name), nil
 }
 
-func handleDisconnect(name string) (string, error) {
+func handleDisconnect(reg *coremcp.Registry, name string) (string, error) {
 	if name == "" {
 		return "Usage: /mcp disconnect <server-name>", nil
 	}
 
-	if err := coremcp.DefaultRegistry.Disconnect(name); err != nil {
+	if err := reg.Disconnect(name); err != nil {
 		return fmt.Sprintf("Failed to disconnect from %s: %v", name, err), nil
 	}
 
 	return fmt.Sprintf("Disconnected from %s", name), nil
 }
 
-func handleAdd(ctx context.Context, args []string) (string, error) {
+func handleAdd(reg *coremcp.Registry, ctx context.Context, args []string) (string, error) {
 	if len(args) == 0 {
 		return addUsage(), nil
 	}
@@ -300,44 +300,44 @@ func handleAdd(ctx context.Context, args []string) (string, error) {
 	config.Env = parseKeyValues(envVars, "=")
 
 	mcpScope := parseScope(scope)
-	if err := coremcp.DefaultRegistry.AddServer(name, config, mcpScope); err != nil {
+	if err := reg.AddServer(name, config, mcpScope); err != nil {
 		return fmt.Sprintf("Failed to add server: %v", err), nil
 	}
 
-	if err := coremcp.DefaultRegistry.Connect(ctx, name); err != nil {
+	if err := reg.Connect(ctx, name); err != nil {
 		return fmt.Sprintf("Added '%s' to %s scope, but failed to connect: %v", name, scope, err), nil
 	}
 
 	toolCount := 0
-	if client, ok := coremcp.DefaultRegistry.GetClient(name); ok {
+	if client, ok := reg.GetClient(name); ok {
 		toolCount = len(client.GetCachedTools())
 	}
 
 	return fmt.Sprintf("Added and connected to '%s' (%s, %s scope)\nTools available: %d", name, transport, scope, toolCount), nil
 }
 
-func handleRemove(name string) (string, error) {
+func handleRemove(reg *coremcp.Registry, name string) (string, error) {
 	if name == "" {
 		return "Usage: /mcp remove <server-name>", nil
 	}
 
-	if _, ok := coremcp.DefaultRegistry.GetConfig(name); !ok {
+	if _, ok := reg.GetConfig(name); !ok {
 		return fmt.Sprintf("Server not found: %s\n\nUse /mcp list to see available servers.", name), nil
 	}
 
-	if err := coremcp.DefaultRegistry.RemoveServer(name); err != nil {
+	if err := reg.RemoveServer(name); err != nil {
 		return fmt.Sprintf("Failed to remove %s: %v", name, err), nil
 	}
 
 	return fmt.Sprintf("Removed server '%s'", name), nil
 }
 
-func handleGet(name string) (string, error) {
+func handleGet(reg *coremcp.Registry, name string) (string, error) {
 	if name == "" {
 		return "Usage: /mcp get <server-name>", nil
 	}
 
-	config, ok := coremcp.DefaultRegistry.GetConfig(name)
+	config, ok := reg.GetConfig(name)
 	if !ok {
 		return fmt.Sprintf("Server not found: %s\n\nUse /mcp list to see available servers.", name), nil
 	}
@@ -387,7 +387,7 @@ func handleGet(name string) (string, error) {
 
 	icon, label := mcpStatusDisplay(coremcp.StatusDisconnected)
 	toolCount := 0
-	if client, ok := coremcp.DefaultRegistry.GetClient(name); ok {
+	if client, ok := reg.GetClient(name); ok {
 		srv := client.ToServer()
 		icon, label = mcpStatusDisplay(srv.Status)
 		toolCount = len(srv.Tools)
@@ -404,23 +404,23 @@ func handleGet(name string) (string, error) {
 	return sb.String(), nil
 }
 
-func handleReconnect(ctx context.Context, name string) (string, error) {
+func handleReconnect(reg *coremcp.Registry, ctx context.Context, name string) (string, error) {
 	if name == "" {
 		return "Usage: /mcp reconnect <server-name>", nil
 	}
 
-	if _, ok := coremcp.DefaultRegistry.GetConfig(name); !ok {
+	if _, ok := reg.GetConfig(name); !ok {
 		return fmt.Sprintf("Server not found: %s\n\nUse /mcp list to see available servers.", name), nil
 	}
 
-	_ = coremcp.DefaultRegistry.Disconnect(name)
+	_ = reg.Disconnect(name)
 
-	if err := coremcp.DefaultRegistry.Connect(ctx, name); err != nil {
+	if err := reg.Connect(ctx, name); err != nil {
 		return fmt.Sprintf("Failed to reconnect to %s: %v", name, err), nil
 	}
 
 	toolCount := 0
-	if client, ok := coremcp.DefaultRegistry.GetClient(name); ok {
+	if client, ok := reg.GetClient(name); ok {
 		toolCount = len(client.GetCachedTools())
 	}
 

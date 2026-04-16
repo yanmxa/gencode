@@ -12,7 +12,8 @@ import (
 
 func TestHandleCommandMarketplaceAddListRemove(t *testing.T) {
 	prev := coreplugin.DefaultRegistry
-	coreplugin.DefaultRegistry = coreplugin.NewRegistry()
+	reg := coreplugin.NewRegistry()
+	coreplugin.DefaultRegistry = reg
 	t.Cleanup(func() { coreplugin.DefaultRegistry = prev })
 
 	tmpHome := t.TempDir()
@@ -20,7 +21,7 @@ func TestHandleCommandMarketplaceAddListRemove(t *testing.T) {
 	t.Setenv("HOME", tmpHome)
 
 	marketplaceDir := createTestMarketplace(t)
-	selector := New()
+	selector := New(reg)
 
 	result, err := HandleCommand(context.Background(), &selector, tmpDir, 80, 24, "marketplace add "+marketplaceDir+" openai-codex")
 	if err != nil {
@@ -52,7 +53,8 @@ func TestHandleCommandMarketplaceAddListRemove(t *testing.T) {
 
 func TestHandleCommandInstallFromMarketplace(t *testing.T) {
 	prev := coreplugin.DefaultRegistry
-	coreplugin.DefaultRegistry = coreplugin.NewRegistry()
+	reg := coreplugin.NewRegistry()
+	coreplugin.DefaultRegistry = reg
 	t.Cleanup(func() { coreplugin.DefaultRegistry = prev })
 
 	tmpHome := t.TempDir()
@@ -60,7 +62,7 @@ func TestHandleCommandInstallFromMarketplace(t *testing.T) {
 	t.Setenv("HOME", tmpHome)
 
 	marketplaceDir := createTestMarketplace(t)
-	selector := New()
+	selector := New(reg)
 
 	if _, err := HandleCommand(context.Background(), &selector, tmpDir, 80, 24, "marketplace add "+marketplaceDir+" openai-codex"); err != nil {
 		t.Fatalf("HandleCommand(add) error = %v", err)

@@ -193,11 +193,11 @@ func newToolState() toolui.State {
 }
 
 func newMCPState() mcpui.State {
-	return mcpui.State{Selector: mcpui.New()}
+	return mcpui.State{Selector: mcpui.New(mcp.DefaultRegistry)}
 }
 
 func newPluginState() pluginui.State {
-	return pluginui.State{Selector: pluginui.New()}
+	return pluginui.State{Selector: pluginui.New(plugin.DefaultRegistry)}
 }
 
 func newAgentState() agentui.State {

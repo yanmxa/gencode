@@ -14,11 +14,11 @@ import (
 
 // HandleCommand dispatches /plugin subcommands.
 func HandleCommand(ctx context.Context, selector *Model, cwd string, width, height int, args string) (string, error) {
-	if coreplugin.DefaultRegistry.Count() == 0 {
-		if err := coreplugin.DefaultRegistry.Load(ctx, cwd); err != nil {
+	if selector.registry.Count() == 0 {
+		if err := selector.registry.Load(ctx, cwd); err != nil {
 			return fmt.Sprintf("Failed to load plugins: %v", err), nil
 		}
-		_ = coreplugin.DefaultRegistry.LoadClaudePlugins(ctx)
+		_ = selector.registry.LoadClaudePlugins(ctx)
 	}
 
 	args = strings.TrimSpace(args)
@@ -39,27 +39,27 @@ func HandleCommand(ctx context.Context, selector *Model, cwd string, width, heig
 
 	switch subCmd {
 	case "list":
-		return handleList()
+		return handleList(selector.registry)
 	case "install":
-		return handleInstall(ctx, cwd, parts[1:])
+		return handleInstall(selector.registry, ctx, cwd, parts[1:])
 	case "marketplace":
 		return handleMarketplace(ctx, cwd, parts[1:])
 	case "enable":
-		return handleEnable(ctx, pluginName)
+		return handleEnable(selector.registry, ctx, pluginName)
 	case "disable":
-		return handleDisable(ctx, pluginName)
+		return handleDisable(selector.registry, ctx, pluginName)
 	case "info":
-		return handleInfo(pluginName)
+		return handleInfo(selector.registry, pluginName)
 	case "errors":
-		return handleErrors()
+		return handleErrors(selector.registry)
 	default:
-		return handleInfo(subCmd)
+		return handleInfo(selector.registry, subCmd)
 	}
 }
 
 // handleList shows all installed plugins.
-func handleList() (string, error) {
-	plugins := coreplugin.DefaultRegistry.List()
+func handleList(reg *coreplugin.Registry) (string, error) {
+	plugins := reg.List()
 
 	if len(plugins) == 0 {
 		return "No plugins installed.\n\nInstall with: gen plugin install <plugin>@<marketplace>", nil
@@ -67,8 +67,8 @@ func handleList() (string, error) {
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Plugins (%d installed, %d enabled):\n\n",
-		coreplugin.DefaultRegistry.Count(),
-		coreplugin.DefaultRegistry.EnabledCount())
+		reg.Count(),
+		reg.EnabledCount())
 
 	for _, p := range plugins {
 		writePluginSummary(&sb, p)
@@ -129,12 +129,12 @@ func formatComponentCounts(p *coreplugin.Plugin) []string {
 }
 
 // handleEnable enables a plugin.
-func handleEnable(_ context.Context, name string) (string, error) {
+func handleEnable(reg *coreplugin.Registry, _ context.Context, name string) (string, error) {
 	if name == "" {
 		return "Usage: /plugin enable <plugin-name>", nil
 	}
 
-	if err := coreplugin.DefaultRegistry.Enable(name, coreplugin.ScopeUser); err != nil {
+	if err := reg.Enable(name, coreplugin.ScopeUser); err != nil {
 		return fmt.Sprintf("Failed to enable '%s': %v", name, err), nil
 	}
 
@@ -142,12 +142,12 @@ func handleEnable(_ context.Context, name string) (string, error) {
 }
 
 // handleDisable disables a plugin.
-func handleDisable(_ context.Context, name string) (string, error) {
+func handleDisable(reg *coreplugin.Registry, _ context.Context, name string) (string, error) {
 	if name == "" {
 		return "Usage: /plugin disable <plugin-name>", nil
 	}
 
-	if err := coreplugin.DefaultRegistry.Disable(name, coreplugin.ScopeUser); err != nil {
+	if err := reg.Disable(name, coreplugin.ScopeUser); err != nil {
 		return fmt.Sprintf("Failed to disable '%s': %v", name, err), nil
 	}
 
@@ -155,12 +155,12 @@ func handleDisable(_ context.Context, name string) (string, error) {
 }
 
 // handleInfo shows detailed info for a plugin.
-func handleInfo(name string) (string, error) {
+func handleInfo(reg *coreplugin.Registry, name string) (string, error) {
 	if name == "" {
 		return "Usage: /plugin info <plugin-name>", nil
 	}
 
-	p, ok := coreplugin.DefaultRegistry.Get(name)
+	p, ok := reg.Get(name)
 	if !ok {
 		return fmt.Sprintf("Plugin not found: %s\n\nUse /plugin list to see available plugins.", name), nil
 	}
@@ -211,8 +211,8 @@ func writeComponentCount(sb *strings.Builder, label string, count int) {
 }
 
 // handleErrors shows all plugin errors.
-func handleErrors() (string, error) {
-	plugins := coreplugin.DefaultRegistry.List()
+func handleErrors(reg *coreplugin.Registry) (string, error) {
+	plugins := reg.List()
 
 	var sb strings.Builder
 	hasErrors := false
@@ -236,7 +236,7 @@ func handleErrors() (string, error) {
 }
 
 // handleInstall installs a plugin from a configured marketplace.
-func handleInstall(ctx context.Context, cwd string, args []string) (string, error) {
+func handleInstall(reg *coreplugin.Registry, ctx context.Context, cwd string, args []string) (string, error) {
 	if len(args) == 0 {
 		return "Usage: /plugin install <plugin>@<marketplace> [user|project|local]", nil
 	}
@@ -255,7 +255,7 @@ func handleInstall(ctx context.Context, cwd string, args []string) (string, erro
 		}
 	}
 
-	installer := coreplugin.NewInstaller(coreplugin.DefaultRegistry, cwd)
+	installer := coreplugin.NewInstaller(reg, cwd)
 	if err := installer.LoadMarketplaces(); err != nil {
 		return fmt.Sprintf("Failed to load marketplaces: %v", err), nil
 	}

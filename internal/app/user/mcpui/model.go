@@ -41,6 +41,8 @@ type ServerItem struct {
 
 // Model holds state for the MCP server selector
 type Model struct {
+	registry *coremcp.Registry
+
 	active       bool
 	servers      []ServerItem
 	selectedIdx  int
@@ -100,9 +102,10 @@ type EditServerMsg struct {
 	Scope      string
 }
 
-// New creates a new Model
-func New() Model {
+// New creates a new Model with the given MCP registry.
+func New(reg *coremcp.Registry) Model {
 	return Model{
+		registry:   reg,
 		active:     false,
 		servers:    []ServerItem{},
 		maxVisible: 10,
@@ -111,7 +114,7 @@ func New() Model {
 
 // EnterSelect enters MCP server selection mode
 func (s *Model) EnterSelect(width, height int) error {
-	if coremcp.DefaultRegistry == nil {
+	if s.registry == nil {
 		return fmt.Errorf("MCP is not initialized")
 	}
 
@@ -140,8 +143,8 @@ func (s *Model) AutoReconnect() tea.Cmd {
 	var cmds []tea.Cmd
 	for _, srv := range s.servers {
 		if srv.Status == coremcp.StatusError {
-			coremcp.DefaultRegistry.SetConnecting(srv.Name, true)
-			cmds = append(cmds, StartConnect(srv.Name))
+			s.registry.SetConnecting(srv.Name, true)
+			cmds = append(cmds, startConnect(s.registry, srv.Name))
 		}
 	}
 	if len(cmds) == 0 {
@@ -152,7 +155,7 @@ func (s *Model) AutoReconnect() tea.Cmd {
 
 // refreshServers refreshes the server list from registry
 func (s *Model) refreshServers() {
-	servers := coremcp.DefaultRegistry.List()
+	servers := s.registry.List()
 	s.servers = make([]ServerItem, 0, len(servers))
 
 	for _, srv := range servers {
@@ -347,9 +350,9 @@ func (s *Model) HandleConnectResult(msg ConnectResultMsg) {
 // HandleDisconnect handles a disconnect (disable) request.
 // Marks the server as disabled so it won't auto-connect on restart.
 func (s *Model) HandleDisconnect(name string) {
-	if coremcp.DefaultRegistry != nil {
-		_ = coremcp.DefaultRegistry.Disconnect(name)
-		coremcp.DefaultRegistry.SetDisabled(name, true)
+	if s.registry != nil {
+		_ = s.registry.Disconnect(name)
+		s.registry.SetDisabled(name, true)
 	}
 	s.refreshAndUpdateView()
 }
@@ -358,17 +361,17 @@ func (s *Model) HandleDisconnect(name string) {
 // Unlike HandleDisconnect, this does NOT mark the server as disabled,
 // since the user intends to reconnect immediately.
 func (s *Model) HandleReconnect(name string) {
-	if coremcp.DefaultRegistry != nil {
-		coremcp.DefaultRegistry.Disconnect(name)
+	if s.registry != nil {
+		s.registry.Disconnect(name)
 	}
 	s.refreshAndUpdateView()
 }
 
 // HandleRemove handles a remove request
 func (s *Model) HandleRemove(name string) {
-	if coremcp.DefaultRegistry != nil {
-		coremcp.DefaultRegistry.SetDisabled(name, false)
-		coremcp.DefaultRegistry.RemoveServer(name)
+	if s.registry != nil {
+		s.registry.SetDisabled(name, false)
+		s.registry.RemoveServer(name)
 	}
 	s.refreshServers()
 	s.goBack()
@@ -420,16 +423,16 @@ func (s *Model) clampActionIdx() {
 
 // AutoConnect returns a batch of commands to connect all configured MCP servers,
 // skipping servers that the user has explicitly disabled.
-func AutoConnect() tea.Cmd {
-	if coremcp.DefaultRegistry == nil {
+func (s *Model) AutoConnect() tea.Cmd {
+	if s.registry == nil {
 		return nil
 	}
 	var cmds []tea.Cmd
-	for _, s := range coremcp.DefaultRegistry.List() {
-		name := s.Config.Name
-		if !coremcp.DefaultRegistry.IsDisabled(name) {
-			coremcp.DefaultRegistry.SetConnecting(name, true)
-			cmds = append(cmds, StartConnect(name))
+	for _, srv := range s.registry.List() {
+		name := srv.Config.Name
+		if !s.registry.IsDisabled(name) {
+			s.registry.SetConnecting(name, true)
+			cmds = append(cmds, startConnect(s.registry, name))
 		}
 	}
 	if len(cmds) == 0 {
@@ -438,11 +441,11 @@ func AutoConnect() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// StartConnect returns a tea.Cmd that connects to an MCP server
-func StartConnect(name string) tea.Cmd {
+// startConnect returns a tea.Cmd that connects to an MCP server.
+func startConnect(reg *coremcp.Registry, name string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		if coremcp.DefaultRegistry == nil {
+		if reg == nil {
 			return ConnectResultMsg{
 				ServerName: name,
 				Success:    false,
@@ -450,7 +453,7 @@ func StartConnect(name string) tea.Cmd {
 			}
 		}
 
-		if err := coremcp.DefaultRegistry.Connect(ctx, name); err != nil {
+		if err := reg.Connect(ctx, name); err != nil {
 			return ConnectResultMsg{
 				ServerName: name,
 				Success:    false,
@@ -459,7 +462,7 @@ func StartConnect(name string) tea.Cmd {
 		}
 
 		toolCount := 0
-		if client, ok := coremcp.DefaultRegistry.GetClient(name); ok {
+		if client, ok := reg.GetClient(name); ok {
 			toolCount = len(client.GetCachedTools())
 		}
 

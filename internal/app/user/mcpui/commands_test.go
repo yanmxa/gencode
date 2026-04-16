@@ -19,7 +19,7 @@ func withTestRegistry(t *testing.T, reg *coremcp.Registry) {
 
 func TestHandleCommand_UninitializedRegistryMessage(t *testing.T) {
 	withTestRegistry(t, nil)
-	selector := New()
+	selector := New(coremcp.DefaultRegistry)
 
 	result, editInfo, err := HandleCommand(context.Background(), &selector, 80, 24, "")
 	if err != nil {
@@ -37,7 +37,7 @@ func TestHandleCommand_EmptyArgsOpensSelector(t *testing.T) {
 	withTestRegistry(t, coremcp.NewRegistryForTest(map[string]coremcp.ServerConfig{
 		"demo": {Name: "demo", Command: "echo", Scope: coremcp.ScopeLocal},
 	}))
-	selector := New()
+	selector := New(coremcp.DefaultRegistry)
 
 	result, editInfo, err := HandleCommand(context.Background(), &selector, 80, 24, "")
 	if err != nil {
@@ -71,7 +71,7 @@ func TestPrepareServerEditAndApplyServerEdit_RoundTrip(t *testing.T) {
 		t.Fatalf("AddServer() error = %v", err)
 	}
 
-	info, err := PrepareServerEdit("demo")
+	info, err := PrepareServerEdit(coremcp.DefaultRegistry, "demo")
 	if err != nil {
 		t.Fatalf("PrepareServerEdit() error = %v", err)
 	}
@@ -92,7 +92,7 @@ func TestPrepareServerEditAndApplyServerEdit_RoundTrip(t *testing.T) {
 		t.Fatalf("WriteFile(temp) error = %v", err)
 	}
 
-	if err := ApplyServerEdit(info); err != nil {
+	if err := ApplyServerEdit(coremcp.DefaultRegistry, info); err != nil {
 		t.Fatalf("ApplyServerEdit() error = %v", err)
 	}
 
@@ -122,7 +122,7 @@ func TestHandleGet_MasksSecretsAndShowsDefaults(t *testing.T) {
 		},
 	}))
 
-	result, err := handleGet("api")
+	result, err := handleGet(coremcp.DefaultRegistry, "api")
 	if err != nil {
 		t.Fatalf("handleGet() error = %v", err)
 	}
@@ -165,7 +165,7 @@ func TestApplyServerEdit_InvalidJSONReturnsErrorAndRemovesTempFile(t *testing.T)
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	err := ApplyServerEdit(&EditInfo{
+	err := ApplyServerEdit(nil, &EditInfo{
 		TempFile:   tmpFile,
 		ServerName: "demo",
 		Scope:      coremcp.ScopeLocal,

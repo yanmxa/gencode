@@ -31,7 +31,7 @@ func Update(rt Runtime, state *State, msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 
 	case InstallMsg:
-		return installPlugin(rt.GetCwd(), msg), true
+		return installPlugin(state.Selector.registry, rt.GetCwd(), msg), true
 
 	case InstallResultMsg:
 		state.Selector.HandleInstallResult(msg)
@@ -52,12 +52,12 @@ func Update(rt Runtime, state *State, msg tea.Msg) (tea.Cmd, bool) {
 }
 
 // installPlugin creates a tea.Cmd that installs the requested plugin.
-func installPlugin(cwd string, msg InstallMsg) tea.Cmd {
+func installPlugin(reg *plugin.Registry, cwd string, msg InstallMsg) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 
-		installer := plugin.NewInstaller(plugin.DefaultRegistry, cwd)
+		installer := plugin.NewInstaller(reg, cwd)
 		if err := installer.LoadMarketplaces(); err != nil {
 			return InstallResultMsg{PluginName: msg.PluginName, Success: false, Error: err}
 		}

@@ -27,8 +27,7 @@ const (
 	levelBrowsePlugins
 )
 
-// Action represents an action available in detail view
-type Action struct {
+type action struct {
 	Label  string
 	Action string
 }
@@ -78,6 +77,8 @@ type marketplaceItem struct {
 
 // Model holds state for the plugin selector
 type Model struct {
+	registry *coreplugin.Registry
+
 	active      bool
 	width       int
 	height      int
@@ -106,7 +107,7 @@ type Model struct {
 	detailPlugin      *pluginItem
 	detailDiscover    *discoverPluginItem
 	detailMarketplace *marketplaceItem
-	actions           []Action
+	actions           []action
 	actionIdx         int
 	parentIdx         int
 
@@ -147,15 +148,16 @@ type MarketplaceSyncResultMsg struct {
 }
 
 // New creates a new Model
-func New() Model {
+func New(reg *coreplugin.Registry) Model {
 	cwd, _ := os.Getwd()
 	return Model{
+		registry:           reg,
 		active:             false,
 		maxVisible:         15,
 		activeTab:          tabInstalled,
 		installedPlugins:   make(map[coreplugin.Scope][]pluginItem),
 		marketplaceManager: coreplugin.NewMarketplaceManager(cwd),
-		installer:          coreplugin.NewInstaller(coreplugin.DefaultRegistry, cwd),
+		installer:          coreplugin.NewInstaller(reg, cwd),
 	}
 }
 
