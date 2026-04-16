@@ -3,12 +3,9 @@ package app
 import (
 	"fmt"
 	"sort"
-	"strings"
 
-	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
-	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
@@ -35,85 +32,6 @@ type backgroundTaskLaunch struct {
 	ResumeID    string
 }
 
-func (m *model) syncBackgroundTaskTracker(msg tooluiExecResultLike) {
-	launch, ok := extractBackgroundTaskLaunch(msg)
-	if !ok {
-		return
-	}
-
-	batchKey, batchSize := backgroundBatchSpec(m.tool.PendingCalls)
-	parentID := ""
-	if batchSize > 1 {
-		parentID = ensureBackgroundBatchTracker(batchKey, batchSize)
-	}
-
-	childID := ensureBackgroundWorkerTracker(launch, parentID, batchKey)
-	if childID == "" {
-		return
-	}
-	if parentID != "" {
-		reconcileBackgroundBatch(parentID)
-	}
-	recordBackgroundTaskLaunch(launch, parentID, batchKey, batchSize)
-
-	if bgTask, found := task.DefaultManager.Get(launch.TaskID); found && !bgTask.IsRunning() {
-		updateBackgroundWorkerTracker(bgTask.GetStatus())
-	}
-}
-
-type tooluiExecResultLike struct {
-	ToolName string
-	Result   core.ToolResult
-}
-
-func extractBackgroundTaskLaunch(msg tooluiExecResultLike) (backgroundTaskLaunch, bool) {
-	if !tool.IsAgentToolName(msg.ToolName) {
-		return backgroundTaskLaunch{}, false
-	}
-	resp, ok := msg.Result.HookResponse.(map[string]any)
-	if !ok {
-		return backgroundTaskLaunch{}, false
-	}
-	bg, ok := resp["backgroundTask"].(map[string]any)
-	if !ok {
-		return backgroundTaskLaunch{}, false
-	}
-
-	launch := backgroundTaskLaunch{
-		TaskID:      metadataString(bg, "taskId"),
-		AgentName:   metadataString(bg, "agentName"),
-		AgentType:   metadataString(bg, "agentType"),
-		Description: metadataString(bg, "description"),
-		ResumeID:    metadataString(bg, "resumeId"),
-	}
-	if launch.TaskID == "" {
-		return backgroundTaskLaunch{}, false
-	}
-	return launch, true
-}
-
-func backgroundBatchSpec(calls []core.ToolCall) (string, int) {
-	var ids []string
-	for _, tc := range calls {
-		if !tool.IsAgentToolName(tc.Name) || !toolCallRunsInBackground(tc.Input) {
-			continue
-		}
-		ids = append(ids, tc.ID)
-	}
-	if len(ids) <= 1 {
-		return "", len(ids)
-	}
-	return strings.Join(ids, ","), len(ids)
-}
-
-func toolCallRunsInBackground(input string) bool {
-	params, err := core.ParseToolInput(input)
-	if err != nil {
-		return false
-	}
-	runInBackground, _ := params["run_in_background"].(bool)
-	return runInBackground
-}
 
 func ensureBackgroundBatchTracker(batchKey string, total int) string {
 	if batchKey == "" || total <= 1 {

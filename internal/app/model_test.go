@@ -9,13 +9,11 @@ import (
 	"testing"
 	"time"
 
-	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	"github.com/yanmxa/gencode/internal/app/mcpui"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/providerui"
-	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/ext/skill"
@@ -26,8 +24,6 @@ import (
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/task"
-	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/app/progress"
 )
@@ -172,85 +168,6 @@ func TestFreshSessionInitializesTaskStorageAndOutputDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Dir(outputPath)); err != nil {
 		t.Fatalf("expected outputs directory to exist: %v", err)
-	}
-}
-
-func TestAsyncHookTickDoesNotInjectWhileToolExecutionPending(t *testing.T) {
-	m := &model{
-		asyncHookQueue: &asyncHookQueue{},
-		tool: toolui.State{
-			ExecState: toolui.ExecState{
-				PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "Agent"}},
-				CurrentIdx:   0,
-			},
-		},
-		conv: appconv.New(),
-	}
-
-	m.asyncHookQueue.Push(asyncHookRewake{
-		Notice:             "Async hook blocked: test",
-		Context:            []string{"extra context"},
-		ContinuationPrompt: "continue",
-	})
-
-	cmd := m.handleAsyncHookTick()
-	if cmd == nil {
-		t.Fatal("expected ticker command")
-	}
-	if len(m.conv.Messages) != 0 {
-		t.Fatalf("expected no async hook notice while tool execution is pending, got %#v", m.conv.Messages)
-	}
-}
-
-func TestCronTickDoesNotDrainQueueWhileToolExecutionPending(t *testing.T) {
-	m := &model{
-		cronQueue: []string{"check background task"},
-		tool: toolui.State{
-			ExecState: toolui.ExecState{
-				PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "Agent"}},
-				CurrentIdx:   0,
-			},
-		},
-		conv: appconv.New(),
-	}
-
-	cmd := m.handleCronTick()
-	if cmd == nil {
-		t.Fatal("expected cron tick command")
-	}
-	if len(m.cronQueue) != 1 {
-		t.Fatalf("expected queued cron prompt to remain queued while tool execution is pending, got %d", len(m.cronQueue))
-	}
-	if len(m.conv.Messages) != 0 {
-		t.Fatalf("expected cron not to inject messages while tool execution is pending, got %#v", m.conv.Messages)
-	}
-}
-
-func TestRenderActiveContentDoesNotDuplicatePendingAgentTitle(t *testing.T) {
-	m := newBaseModel(t.TempDir(), modelInfra{})
-	m.width = 100
-
-	tc := core.ToolCall{
-		ID:    "tc-1",
-		Name:  tool.ToolAgent,
-		Input: `{"subagent_type":"Deep","description":"analyze project structure","prompt":"inspect files"}`,
-	}
-	m.conv.Messages = []core.ChatMessage{{
-		Role:      core.RoleAssistant,
-		ToolCalls: []core.ToolCall{tc},
-	}}
-	m.tool.PendingCalls = []core.ToolCall{tc}
-	m.tool.CurrentIdx = 0
-	m.output.TaskProgress = map[int][]string{
-		0: {"Agent: Check session and duplicate packages"},
-	}
-
-	rendered := m.renderActiveContent()
-	if strings.Count(rendered, "Agent: Deep analyze project structure") != 1 {
-		t.Fatalf("expected agent title once, got:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, "Agent: Check session and duplicate packages") {
-		t.Fatalf("expected child task progress, got:\n%s", rendered)
 	}
 }
 
@@ -452,7 +369,7 @@ func TestChangeCwdFiresCwdChanged(t *testing.T) {
 	}
 }
 
-func TestApplyToolResultSideEffectsFiresFileChanged(t *testing.T) {
+func TestApplyAgentToolSideEffectsFiresFileChanged(t *testing.T) {
 	cwd := t.TempDir()
 	filePath := filepath.Join(cwd, "file.txt")
 
@@ -469,14 +386,7 @@ func TestApplyToolResultSideEffectsFiresFileChanged(t *testing.T) {
 		cwd:        cwd,
 		hookEngine: engine,
 	}
-	m.applyToolResultSideEffects(toolui.ExecResultMsg{
-		ToolName: "Write",
-		Result: core.ToolResult{
-			ToolCallID:   "tool-1",
-			Content:      "ok",
-			HookResponse: map[string]any{"filePath": filePath},
-		},
-	})
+	m.applyAgentToolSideEffects("Write", map[string]any{"filePath": filePath})
 
 	select {
 	case input := <-triggered:
@@ -491,7 +401,7 @@ func TestApplyToolResultSideEffectsFiresFileChanged(t *testing.T) {
 	}
 }
 
-func TestApplyToolResultSideEffectsUpdatesCwdFromBash(t *testing.T) {
+func TestApplyAgentToolSideEffectsUpdatesCwdFromBash(t *testing.T) {
 	oldCwd := t.TempDir()
 	newCwd := t.TempDir()
 
@@ -508,14 +418,7 @@ func TestApplyToolResultSideEffectsUpdatesCwdFromBash(t *testing.T) {
 		cwd:        oldCwd,
 		hookEngine: engine,
 	}
-	m.applyToolResultSideEffects(toolui.ExecResultMsg{
-		ToolName: "Bash",
-		Result: core.ToolResult{
-			ToolCallID:   "tool-1",
-			Content:      "ok",
-			HookResponse: map[string]any{"cwd": newCwd},
-		},
-	})
+	m.applyAgentToolSideEffects("Bash", map[string]any{"cwd": newCwd})
 
 	if m.cwd != newCwd {
 		t.Fatalf("expected cwd %q, got %q", newCwd, m.cwd)
@@ -674,57 +577,6 @@ func TestApplyRuntimeHookOutcomeSetsInitialPrompt(t *testing.T) {
 	}
 }
 
-func TestPermissionDeniedRetryAppendsDenialResult(t *testing.T) {
-	cwd := t.TempDir()
-	engine := hooks.NewEngine(config.NewSettings(), "test-session", cwd, "")
-	engine.AddSessionFunctionHook(hooks.PermissionDenied, "", hooks.FunctionHook{
-		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
-			return hooks.HookOutput{
-				HookSpecificOutput: &hooks.HookSpecificOutput{
-					HookEventName: "PermissionDenied",
-					Retry:         true,
-				},
-			}, nil
-		},
-	})
-
-	m := &model{
-		cwd:        cwd,
-		hookEngine: engine,
-		conv:       appconv.New(),
-		tool: toolui.State{
-			ExecState: toolui.ExecState{
-				PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "Write"}},
-				CurrentIdx:   0,
-			},
-		},
-		provider: providerui.State{LLM: testLLMProvider{}},
-		output:   appoutput.New(80, progress.NewHub(10)),
-	}
-
-	cmd := m.handlePermissionResponse(appapproval.ResponseMsg{
-		Approved: false,
-		Request: &perm.PermissionRequest{
-			ToolName: "Write",
-			FilePath: filepath.Join(cwd, "a.txt"),
-		},
-	})
-	if cmd == nil {
-		t.Fatal("expected retry denial to start a follow-up command")
-	}
-
-	foundDeniedResult := false
-	for _, msg := range m.conv.Messages {
-		if msg.ToolResult != nil && msg.ToolResult.IsError && msg.ToolResult.Content == "User denied permission" {
-			foundDeniedResult = true
-			break
-		}
-	}
-	if !foundDeniedResult {
-		t.Fatal("expected denial to append an error tool result before retry")
-	}
-}
-
 func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 	m := &model{
 		cwd:            t.TempDir(),
@@ -860,35 +712,6 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 	}
 	if !strings.Contains(hint, "<should-finalize-summary>true</should-finalize-summary>") {
 		t.Fatalf("expected single completion to allow summary finalization, got %q", hint)
-	}
-}
-
-func TestTaskNotificationTickDoesNotInjectWhileToolExecutionPending(t *testing.T) {
-	m := &model{
-		taskNotifications: newTaskNotificationQueue(),
-		tool: toolui.State{
-			ExecState: toolui.ExecState{
-				PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "Agent"}},
-				CurrentIdx:   0,
-			},
-		},
-		conv: appconv.New(),
-	}
-	m.taskNotifications.Push(taskNotification{
-		Notice:             "Background agent completed",
-		Context:            []string{"background task context"},
-		ContinuationPrompt: "<task-notification></task-notification>",
-	})
-
-	cmd := m.handleTaskNotificationTick()
-	if cmd == nil {
-		t.Fatal("expected ticker command")
-	}
-	if len(m.conv.Messages) != 0 {
-		t.Fatalf("expected no task notification while tool execution is pending, got %#v", m.conv.Messages)
-	}
-	if got := m.taskNotifications.Len(); got != 1 {
-		t.Fatalf("expected queued task notification to remain queued, got %d", got)
 	}
 }
 

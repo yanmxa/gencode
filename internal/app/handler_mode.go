@@ -8,7 +8,6 @@ import (
 
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	"github.com/yanmxa/gencode/internal/app/progress"
-	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/core"
@@ -126,33 +125,21 @@ func (m *model) handleQuestionRequest(msg appmode.QuestionRequestMsg) tea.Cmd {
 func (m *model) handleQuestionResponse(msg appmode.QuestionResponseMsg) tea.Cmd {
 	reply := m.mode.PendingQuestionReply
 	m.mode.PendingQuestionReply = nil
+	defer func() { m.mode.PendingQuestion = nil }()
 
-	if reply != nil {
-		defer func() { m.mode.PendingQuestion = nil }()
-		if msg.Cancelled {
-			reply <- &tool.QuestionResponse{
-				RequestID: msg.Request.ID,
-				Cancelled: true,
-			}
-			return nil
-		}
-		reply <- msg.Response
+	if reply == nil {
 		return nil
 	}
 
 	if msg.Cancelled {
-		m.mode.PendingQuestion = nil
-		return m.abortToolWithError("User cancelled the question prompt", false)
+		reply <- &tool.QuestionResponse{
+			RequestID: msg.Request.ID,
+			Cancelled: true,
+		}
+		return nil
 	}
-
-	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
-		m.mode.PendingQuestion = nil
-		m.tool.Reset()
-		return tea.Batch(m.commitMessages()...)
-	}
-	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
-	m.mode.PendingQuestion = nil
-	return toolui.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
+	reply <- msg.Response
+	return nil
 }
 
 func (m *model) handlePlanRequest(msg appmode.PlanRequestMsg) tea.Cmd {
@@ -176,12 +163,6 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 		m.mode.Operation = config.ModeNormal
 		return m.abortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.", false)
 	}
-
-	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
-		m.tool.Reset()
-		return tea.Batch(m.commitMessages()...)
-	}
-	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 
 	planContent := msg.ModifiedPlan
 	if planContent == "" && msg.Request != nil {
@@ -218,7 +199,7 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 		m.mode.Enabled = true
 	}
 
-	return toolui.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
+	return tea.Batch(m.commitMessages()...)
 }
 
 // handlePlanClearAutoMode handles the "clear-auto" approve mode for plans.
@@ -240,12 +221,6 @@ func (m *model) handleEnterPlanRequest(msg appmode.EnterPlanRequestMsg) tea.Cmd 
 }
 
 func (m *model) handleEnterPlanResponse(msg appmode.EnterPlanResponseMsg) tea.Cmd {
-	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
-		m.tool.Reset()
-		return tea.Batch(m.commitMessages()...)
-	}
-	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
-
 	if msg.Approved {
 		m.mode.Enabled = true
 		m.mode.Operation = config.ModePlan
@@ -255,5 +230,5 @@ func (m *model) handleEnterPlanResponse(msg appmode.EnterPlanResponseMsg) tea.Cm
 		m.ensurePlanStore()
 	}
 
-	return toolui.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
+	return tea.Batch(m.commitMessages()...)
 }

@@ -198,20 +198,11 @@ func (m model) renderAssistantMessage(msg core.ChatMessage, idx int, isLast bool
 		}
 	}
 
-	parallelDone := make(map[int]bool)
-	for k := range m.tool.ParallelResults {
-		parallelDone[k] = true
-	}
-
 	sb.WriteString(render.RenderToolCalls(render.ToolCallsParams{
 		ToolCalls:         msg.ToolCalls,
 		ToolCallsExpanded: msg.ToolCallsExpanded,
 		ResultMap:         resultMap,
-		ParallelMode:      m.tool.Parallel,
-		ParallelResults:   parallelDone,
 		TaskProgress:      m.output.TaskProgress,
-		PendingCalls:      m.tool.PendingCalls,
-		CurrentIdx:        m.tool.CurrentIdx,
 		SpinnerView:       m.output.Spinner.View(),
 		TaskOwnerMap:      m.buildTaskOwnerMap(),
 		MDRenderer:        m.output.MDRenderer,
@@ -237,11 +228,7 @@ func (m model) renderPendingToolSpinner(suppressAgentLabel bool) string {
 
 	return render.RenderPendingToolSpinner(render.PendingToolSpinnerParams{
 		InteractivePromptActive: interactivePromptActive,
-		ParallelMode:            m.tool.Parallel,
-		HasParallelTaskTools:    m.hasParallelTaskTools(),
 		BuildingTool:            m.conv.Stream.BuildingTool,
-		PendingCalls:            m.tool.PendingCalls,
-		CurrentIdx:              m.tool.CurrentIdx,
 		TaskProgress:            m.output.TaskProgress,
 		SpinnerView:             m.output.Spinner.View(),
 		Width:                   m.width,
@@ -249,31 +236,16 @@ func (m model) renderPendingToolSpinner(suppressAgentLabel bool) string {
 	})
 }
 
-// isToolPhaseActive returns true while the tool execution phase is active
-// (tool calls are pending or executing). Used as an idle gate.
+// isToolPhaseActive returns true while the tool execution phase is active.
+// In the agent path, tools execute inside the core.Agent goroutine, so this
+// is always false — idle gating uses conv.Stream.Active instead.
 func (m model) isToolPhaseActive() bool {
-	return m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls)
+	return false
 }
 
 // getExecutingToolName returns the name of the tool currently being executed, or "".
 func (m model) getExecutingToolName() string {
-	if m.conv.Stream.BuildingTool != "" {
-		return m.conv.Stream.BuildingTool
-	}
-	if m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls) {
-		return m.tool.PendingCalls[m.tool.CurrentIdx].Name
-	}
-	return ""
-}
-
-// hasParallelTaskTools returns true if any pending tool call is an Agent tool.
-func (m model) hasParallelTaskTools() bool {
-	for _, tc := range m.tool.PendingCalls {
-		if tool.IsAgentToolName(tc.Name) {
-			return true
-		}
-	}
-	return false
+	return m.conv.Stream.BuildingTool
 }
 
 // buildTaskOwnerMap builds a map of task ID → owner name for TaskGet display.

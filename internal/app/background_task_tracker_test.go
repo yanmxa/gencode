@@ -3,14 +3,12 @@ package app
 import (
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
-	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
-func TestSyncBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
+func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 	tracker.DefaultStore.Reset()
 	orchestration.DefaultStore.Reset()
 	t.Cleanup(func() {
@@ -18,39 +16,38 @@ func TestSyncBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 		orchestration.DefaultStore.Reset()
 	})
 
-	m := newBaseModel(t.TempDir(), modelInfra{})
-	m.tool.PendingCalls = []core.ToolCall{
-		{ID: "call-1", Name: tool.ToolAgent, Input: `{"subagent_type":"Explore","description":"Directory audit","run_in_background":true,"prompt":"inspect"}`},
-		{ID: "call-2", Name: tool.ToolContinueAgent, Input: `{"subagent_type":"Plan","description":"Naming audit","run_in_background":true,"prompt":"continue"}`},
+	// Create a batch with 2 workers using the functions called by agent_events.go
+	batchKey := "call-1,call-2"
+	parentID := ensureBackgroundBatchTracker(batchKey, 2)
+	if parentID == "" {
+		t.Fatal("expected batch tracker to be created")
 	}
 
-	m.syncBackgroundTaskTracker(tooluiExecResultLike{
-		ToolName: tool.ToolAgent,
-		Result: core.ToolResult{
-			HookResponse: map[string]any{
-				"backgroundTask": map[string]any{
-					"taskId":      "bg-1",
-					"agentName":   "dir-audit",
-					"agentType":   "Explore",
-					"description": "Directory structure audit",
-				},
-			},
-		},
-	})
-	m.syncBackgroundTaskTracker(tooluiExecResultLike{
-		ToolName: tool.ToolContinueAgent,
-		Result: core.ToolResult{
-			HookResponse: map[string]any{
-				"backgroundTask": map[string]any{
-					"taskId":      "bg-2",
-					"agentName":   "naming-audit",
-					"agentType":   "Plan",
-					"description": "Package naming audit",
-					"resumeId":    "agent-2",
-				},
-			},
-		},
-	})
+	launch1 := backgroundTaskLaunch{
+		TaskID:      "bg-1",
+		AgentName:   "dir-audit",
+		AgentType:   "Explore",
+		Description: "Directory structure audit",
+	}
+	childID1 := ensureBackgroundWorkerTracker(launch1, parentID, batchKey)
+	if childID1 == "" {
+		t.Fatal("expected worker tracker for bg-1")
+	}
+	recordBackgroundTaskLaunch(launch1, parentID, batchKey, 2)
+
+	launch2 := backgroundTaskLaunch{
+		TaskID:      "bg-2",
+		AgentName:   "naming-audit",
+		AgentType:   "Plan",
+		Description: "Package naming audit",
+		ResumeID:    "agent-2",
+	}
+	childID2 := ensureBackgroundWorkerTracker(launch2, parentID, batchKey)
+	if childID2 == "" {
+		t.Fatal("expected worker tracker for bg-2")
+	}
+	reconcileBackgroundBatch(parentID)
+	recordBackgroundTaskLaunch(launch2, parentID, batchKey, 2)
 
 	tasks := tracker.DefaultStore.List()
 	if len(tasks) != 3 {

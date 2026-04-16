@@ -13,17 +13,14 @@ type State struct {
 }
 
 // ExecState holds tool execution state for the TUI model.
+// In the agent path, PendingCalls is always nil — tools execute inside
+// the core.Agent goroutine. These fields remain for the permission bridge
+// and interrupt/resume flow in handler_input_runtime.go.
 type ExecState struct {
-	PendingCalls    []core.ToolCall
-	CurrentIdx      int
-	Parallel        bool
-	ParallelResults map[int]core.ToolResult
-	ParallelCount   int
-	HookAllowed     map[string]bool // Tool call IDs pre-approved by hooks
-	HookForceAsk    map[string]bool // Tool call IDs forced to prompt by hooks (PreToolUse "ask")
-	HookContext     string          // Deferred AdditionalContext from PreToolUse hooks
-	Ctx             context.Context
-	Cancel          context.CancelFunc
+	PendingCalls []core.ToolCall
+	CurrentIdx   int
+	Ctx          context.Context
+	Cancel       context.CancelFunc
 }
 
 // Begin initializes a fresh execution context for a tool run and returns it.
@@ -50,12 +47,6 @@ func (t *ExecState) Reset() {
 	}
 	t.PendingCalls = nil
 	t.CurrentIdx = 0
-	t.Parallel = false
-	t.ParallelResults = nil
-	t.ParallelCount = 0
-	t.HookAllowed = nil
-	t.HookForceAsk = nil
-	t.HookContext = ""
 	t.Ctx = nil
 	t.Cancel = nil
 }

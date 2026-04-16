@@ -13,7 +13,6 @@ import (
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 )
 
@@ -318,77 +317,9 @@ func buildRuleString(rule hooks.PermissionRule) string {
 }
 
 func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
-	// Route through the permission bridge when core.Agent is driving
-	if m.pendingPermBridge != nil {
-		return m.handlePermBridgeResponse(msg)
-	}
-
-	if !msg.Approved {
-		retry := false
-		if m.hookEngine != nil && msg.Request != nil {
-			outcome := m.hookEngine.Execute(m.tool.Context(), hooks.PermissionDenied, hooks.HookInput{
-				ToolName:  msg.Request.ToolName,
-				ToolInput: m.buildPermissionArgs(msg.Request),
-			})
-			m.applyRuntimeHookOutcome(outcome)
-			retry = outcome.Retry
-		}
-		return m.abortToolWithError("User denied permission", retry)
-	}
-
-	if msg.AllowAll && m.mode.SessionPermissions != nil && msg.Request != nil {
-		m.applyAllowAllPermission(msg.Request.ToolName)
-	}
-
-	if msg.Persist && msg.Request != nil {
-		m.persistAllowRule(msg.Request)
-	}
-
-	if msg.Request != nil && tool.IsAgentToolName(msg.Request.ToolName) {
-		m.output.TaskProgress = nil
-		return tea.Batch(
-			toolui.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd),
-			m.output.HandleProgressTick(true),
-		)
-	}
-
-	return toolui.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
+	return m.handlePermBridgeResponse(msg)
 }
 
-func (m *model) applyAllowAllPermission(toolName string) {
-	switch toolName {
-	case "Edit":
-		m.mode.SessionPermissions.AllowAllEdits = true
-	case "Write":
-		m.mode.SessionPermissions.AllowAllWrites = true
-	case "Bash":
-		m.mode.SessionPermissions.AllowAllBash = true
-	case tool.ToolSkill:
-		m.mode.SessionPermissions.AllowAllSkills = true
-	case tool.ToolAgent, tool.ToolContinueAgent, tool.ToolSendMessage:
-		m.mode.SessionPermissions.AllowAllTasks = true
-	default:
-		m.mode.SessionPermissions.AllowTool(toolName)
-	}
-}
-
-// persistAllowRule writes a permission allow rule to project settings.
-// Uses smart suggested rules (prefix-based) when available instead of exact rules.
-func (m *model) persistAllowRule(req *perm.PermissionRequest) {
-	if len(req.SuggestedRules) > 0 {
-		// Use the best suggestion (prefix-based, reusable)
-		if err := config.AddAllowRuleDirectlyAt(req.SuggestedRules[0], m.cwd); err != nil {
-			log.Logger().Warn("failed to persist allow rule", zap.Error(err))
-		}
-	} else {
-		// Fallback to exact rule
-		if err := config.AddAllowRuleAt(req.ToolName, m.buildPermissionArgs(req), m.cwd); err != nil {
-			log.Logger().Warn("failed to persist allow rule", zap.Error(err))
-		}
-	}
-	// Reload settings so the rule takes effect immediately
-	m.reloadProjectContext(m.cwd)
-}
 
 // applyUpdatedToolInput marshals the hook-provided input and updates the current
 // pending tool call so the executor uses the modified arguments.

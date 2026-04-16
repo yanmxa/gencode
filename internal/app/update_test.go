@@ -214,44 +214,6 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 	}
 }
 
-func TestHasRunningToolExecutionSequentialBash(t *testing.T) {
-	m := &model{
-		tool: toolui.State{
-			ExecState: toolui.ExecState{
-				PendingCalls: []core.ToolCall{
-					{ID: "tc-1", Name: "Bash"},
-				},
-				CurrentIdx: 0,
-			},
-		},
-	}
-
-	if !m.isToolPhaseActive() {
-		t.Fatal("expected sequential bash execution to keep spinner active")
-	}
-}
-
-func TestHasRunningToolExecutionParallelPendingResult(t *testing.T) {
-	m := &model{
-		tool: toolui.State{
-			ExecState: toolui.ExecState{
-				PendingCalls: []core.ToolCall{
-					{ID: "tc-1", Name: "Bash"},
-					{ID: "tc-2", Name: "WebFetch"},
-				},
-				Parallel: true,
-				ParallelResults: map[int]core.ToolResult{
-					0: {ToolCallID: "tc-1", Content: "done"},
-				},
-			},
-		},
-	}
-
-	if !m.isToolPhaseActive() {
-		t.Fatal("expected unfinished parallel tool execution to keep spinner active")
-	}
-}
-
 func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 	reply := make(chan *tool.QuestionResponse, 1)
 	m := &model{
@@ -407,76 +369,6 @@ func TestBuildPromptSuggestionRequest(t *testing.T) {
 	last := req.Messages[len(req.Messages)-1]
 	if last.Role != core.RoleUser || last.Content != suggestionUserPrompt {
 		t.Fatalf("unexpected tail message: %#v", last)
-	}
-}
-
-func TestHandleStartToolExecution_SetsUpToolState(t *testing.T) {
-	base := newBaseModel(t.TempDir(), modelInfra{})
-	m := &base
-	m.output = appoutput.New(80, progress.NewHub(16))
-	m.conv = appconv.Model{
-		Messages: []core.ChatMessage{
-			{Role: core.RoleUser, Content: "check deploy"},
-			{Role: core.RoleAssistant, Content: "", ToolCalls: []core.ToolCall{
-				{ID: "tc-1", Name: "AskUserQuestion", Input: `{"question":"Continue?"}`},
-			}},
-		},
-		CommittedCount: 1,
-	}
-
-	cmd := m.handleStartToolExecution([]core.ToolCall{
-		{ID: "tc-1", Name: "AskUserQuestion", Input: `{"question":"Continue?"}`},
-	})
-	if cmd == nil {
-		t.Fatal("expected tool execution command")
-	}
-	if len(m.tool.PendingCalls) == 0 {
-		t.Fatal("expected pending calls to be set")
-	}
-}
-
-func TestHandleQuestionResponse_CancelledStopsStreamState(t *testing.T) {
-	m := &model{
-		conv: appconv.Model{
-			Messages: []core.ChatMessage{
-				{Role: core.RoleAssistant, Content: "", ToolCalls: []core.ToolCall{{ID: "ask-1", Name: "AskUserQuestion"}}},
-			},
-			Stream: appconv.StreamState{
-				Active:       true,
-				BuildingTool: "AskUserQuestion",
-			},
-		},
-		mode: appmode.State{
-			Question:        appmode.NewQuestionPrompt(),
-			PendingQuestion: &tool.QuestionRequest{ID: "ask-1"},
-		},
-		tool: toolui.State{
-			ExecState: toolui.ExecState{
-				PendingCalls: []core.ToolCall{{ID: "ask-1", Name: "AskUserQuestion"}},
-				CurrentIdx:   0,
-			},
-		},
-	}
-
-	cmd := m.handleQuestionResponse(appmode.QuestionResponseMsg{
-		Request:   &tool.QuestionRequest{ID: "ask-1"},
-		Cancelled: true,
-	})
-	if cmd == nil {
-		t.Fatal("expected cancellation command")
-	}
-	if m.conv.Stream.Active {
-		t.Fatal("expected cancelled question to stop stream")
-	}
-	if m.conv.Stream.BuildingTool != "" {
-		t.Fatalf("expected stream state to be fully cleared, got %#v", m.conv.Stream)
-	}
-	if m.tool.PendingCalls != nil {
-		t.Fatalf("expected pending tool calls to reset, got %#v", m.tool.PendingCalls)
-	}
-	last := m.conv.Messages[len(m.conv.Messages)-1]
-	if last.ToolResult == nil || !last.ToolResult.IsError || last.ToolResult.Content != "User cancelled the question prompt" {
-		t.Fatalf("expected cancellation tool result, got %#v", last)
 	}
 }
 
