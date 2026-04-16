@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appuser "github.com/yanmxa/gencode/internal/app/user"
+	"github.com/yanmxa/gencode/internal/app/user/suggest"
 )
 
 type promptSuggestionMsg struct {
@@ -60,7 +60,7 @@ func (m *model) handlePromptSuggestion(msg promptSuggestionMsg) {
 	if m.conv.Stream.Active {
 		return
 	}
-	if text := appuser.FilterSuggestion(msg.text); text != "" {
+	if text := suggest.FilterSuggestion(msg.text); text != "" {
 		m.promptSuggestion.text = text
 	}
 }

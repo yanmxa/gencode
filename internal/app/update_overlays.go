@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
@@ -70,14 +71,12 @@ func (m *model) SetInputText(text string) { m.userInput.Textarea.SetValue(text) 
 // providerui.Runtime
 func (m *model) SetLLM(p provider.Provider)                    { m.llmProvider = p }
 func (m *model) SetCurrentModel(cm *provider.CurrentModelInfo) { m.currentModel = cm }
-func (m *model) GetLLM() provider.Provider                     { return m.llmProvider }
-func (m *model) SetHookLLMCompleter(p provider.Provider, modelID string) {
+func (m *model) OnProviderChanged() {
 	if m.hookEngine != nil {
-		m.hookEngine.SetLLMCompleter(buildLLMCompleter(p), modelID)
+		m.hookEngine.SetLLMCompleter(buildLLMCompleter(m.llmProvider), m.getModelID())
 	}
+	m.reconfigureAgentTool()
 }
-func (m *model) ReconfigureAgentTool() { m.reconfigureAgentTool() }
-func (m *model) GetModelID() string    { return m.getModelID() }
 
 // sessionui.Runtime
 func (m *model) EnsureSessionStore() error { return m.ensureSessionStore() }
@@ -94,7 +93,7 @@ func (m *model) CommitAllMessages() []tea.Cmd { return m.commitAllMessages() }
 
 // startExternalEditor is a thin wrapper kept for command handler reuse.
 func startExternalEditor(filePath string) tea.Cmd {
-	return appmemory.StartExternalEditor(filePath, func(err error) tea.Msg {
+	return kit.StartExternalEditor(filePath, func(err error) tea.Msg {
 		return appmemory.EditorFinishedMsg{Err: err}
 	})
 }

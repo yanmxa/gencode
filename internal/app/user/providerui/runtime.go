@@ -18,10 +18,7 @@ type Runtime interface {
 	CommitMessages() []tea.Cmd
 	SetLLM(p provider.Provider)
 	SetCurrentModel(m *provider.CurrentModelInfo)
-	SetHookLLMCompleter(p provider.Provider, modelID string)
-	ReconfigureAgentTool()
-	GetModelID() string
-	GetLLM() provider.Provider
+	OnProviderChanged()
 }
 
 // Update routes provider connection and selection messages.
@@ -67,7 +64,7 @@ func handleModelSelected(rt Runtime, state *State, msg ModelSelectedMsg) tea.Cmd
 		Provider:   provider.Name(msg.ProviderName),
 		AuthMethod: msg.AuthMethod,
 	})
-	rt.SetHookLLMCompleter(rt.GetLLM(), msg.ModelID)
+	rt.OnProviderChanged()
 	ctx := context.Background()
 	refreshProviderConnection(rt, state, ctx, provider.Name(msg.ProviderName), msg.AuthMethod)
 
@@ -85,6 +82,5 @@ func refreshProviderConnection(rt Runtime, state *State, ctx context.Context, pr
 		return
 	}
 	rt.SetLLM(p)
-	rt.SetHookLLMCompleter(p, rt.GetModelID())
-	rt.ReconfigureAgentTool()
+	rt.OnProviderChanged()
 }
