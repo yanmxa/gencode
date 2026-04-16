@@ -4,8 +4,6 @@
 package app
 
 import (
-	"fmt"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -38,13 +36,7 @@ func (m *model) updateProvider(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (m *model) updateSearch(msg tea.Msg) (tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case searchui.SelectedMsg:
-		m.search.Cancel()
-		m.provider.SetStatusMessage(fmt.Sprintf("Search engine: %s", msg.Provider))
-		return providerui.StatusTimer(3 * time.Second), true
-	}
-	return nil, false
+	return searchui.Update(m, &m.search, msg)
 }
 
 func (m *model) updateSession(msg tea.Msg) (tea.Cmd, bool) {
@@ -101,3 +93,6 @@ func startExternalEditor(filePath string) tea.Cmd {
 		return appmemory.EditorFinishedMsg{Err: err}
 	})
 }
+
+// searchui.Runtime
+func (m *model) SetProviderStatusMessage(msg string) { m.provider.SetStatusMessage(msg) }

@@ -235,10 +235,10 @@ func (m *model) fireIdleHooks() bool {
 // --- Continuation injection helpers ---
 
 func (m *model) drainInputQueueToAgent() tea.Cmd {
-	if m.inputQueue.Len() == 0 {
+	if m.userInput.Queue.Len() == 0 {
 		return nil
 	}
-	item, ok := m.inputQueue.Dequeue()
+	item, ok := m.userInput.Queue.Dequeue()
 	if !ok {
 		return nil
 	}

@@ -26,7 +26,6 @@ import (
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
-	appqueue "github.com/yanmxa/gencode/internal/app/user/queue"
 	"github.com/yanmxa/gencode/internal/app/user/searchui"
 	"github.com/yanmxa/gencode/internal/app/user/sessionui"
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
@@ -54,10 +53,10 @@ const (
 type model struct {
 	// Source 1: userInput — textarea, history, images, queue, overlay, modal, mode
 	userInput        appuser.Model
-	inputQueue       appqueue.Queue
 	mode             appmode.State
 	approval         appapproval.Model
 	promptSuggestion promptSuggestionState
+	showTasks        bool // Ctrl+T toggles task list visibility
 
 	// Operation mode and permissions — runtime configuration, not UI state
 	operationMode      config.OperationMode

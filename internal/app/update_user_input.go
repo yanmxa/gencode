@@ -53,7 +53,7 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 
 	case tea.KeyCtrlT:
-		m.userInput.ShowTasks = !m.userInput.ShowTasks
+		m.showTasks = !m.showTasks
 		return nil, true
 
 	case tea.KeyCtrlO:
@@ -66,8 +66,8 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return nil, false // let textarea handle it
 
 	case tea.KeyCtrlU:
-		if m.inputQueue.Len() > 0 {
-			m.inputQueue.Clear()
+		if m.userInput.Queue.Len() > 0 {
+			m.userInput.Queue.Clear()
 			m.userInput.QueueSelectIdx = -1
 			m.userInput.QueueTempInput = ""
 			return nil, true
@@ -112,7 +112,7 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	case tea.KeyUp:
 		if m.userInput.Textarea.Line() == 0 {
 			// Queue items are displayed above the input — Up goes there first
-			if m.inputQueue.Len() > 0 {
+			if m.userInput.Queue.Len() > 0 {
 				m.enterQueueSelection()
 				return nil, true
 			}
@@ -268,13 +268,13 @@ func (m *model) checkPromptHook(prompt string) (bool, string) {
 // --- Queue selection (Source 1 overlay) ---
 
 func (m *model) handleQueueSelectKey(msg tea.KeyMsg) (tea.Cmd, bool) {
-	return m.userInput.HandleQueueSelectKey(&m.inputQueue, msg)
+	return m.userInput.HandleQueueSelectKey(msg)
 }
 
 func (m *model) enterQueueSelection() {
-	m.userInput.EnterQueueSelection(&m.inputQueue)
+	m.userInput.EnterQueueSelection()
 }
 
 func (m *model) saveCurrentQueueEdit() {
-	m.userInput.SaveCurrentQueueEdit(&m.inputQueue)
+	m.userInput.SaveCurrentQueueEdit()
 }

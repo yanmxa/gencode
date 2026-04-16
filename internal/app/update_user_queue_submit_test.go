@@ -9,7 +9,7 @@ import (
 func TestDrainInputQueueRestoresQueuedInlineImages(t *testing.T) {
 	m := newBaseModel(t.TempDir(), modelInfra{})
 	label := m.userInput.AddPendingImage(core.Image{FileName: "queued.png"})
-	m.inputQueue.Enqueue(label+" describe this", []core.Image{{FileName: "queued.png"}})
+	m.userInput.Queue.Enqueue(label+" describe this", []core.Image{{FileName: "queued.png"}})
 	m.userInput.ClearImages()
 	m.userInput.Textarea.SetValue("")
 
@@ -18,8 +18,8 @@ func TestDrainInputQueueRestoresQueuedInlineImages(t *testing.T) {
 		t.Fatal("expected drainInputQueue to start submission")
 	}
 
-	if m.inputQueue.Len() != 0 {
-		t.Fatalf("expected queue to be drained, got %d items", m.inputQueue.Len())
+	if m.userInput.Queue.Len() != 0 {
+		t.Fatalf("expected queue to be drained, got %d items", m.userInput.Queue.Len())
 	}
 	if len(m.conv.Messages) == 0 {
 		t.Fatal("expected conversation to include dequeued user message")
@@ -43,13 +43,13 @@ func TestDrainInputQueueRestoresQueuedInlineImages(t *testing.T) {
 func TestSaveCurrentQueueEditPreservesImages(t *testing.T) {
 	m := newBaseModel(t.TempDir(), modelInfra{})
 	images := []core.Image{{FileName: "queued.png"}}
-	m.inputQueue.Enqueue("[Image #1] prompt", images)
+	m.userInput.Queue.Enqueue("[Image #1] prompt", images)
 	m.userInput.QueueSelectIdx = 0
 	m.userInput.Textarea.SetValue("[Image #1] updated prompt")
 
 	m.saveCurrentQueueEdit()
 
-	item, ok := m.inputQueue.At(0)
+	item, ok := m.userInput.Queue.At(0)
 	if !ok {
 		t.Fatal("expected queue item to remain")
 	}

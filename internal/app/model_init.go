@@ -114,6 +114,7 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		agentOutput: appoutput.New(defaultWidth, progressHub),
 		conv:        appconv.New(),
 		cwd:         cwd,
+		showTasks:   true,
 
 		operationMode:      config.ModeNormal,
 		sessionPermissions: config.NewSessionPermissions(),

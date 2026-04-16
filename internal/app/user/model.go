@@ -28,7 +28,7 @@ type Model struct {
 	PastedChunks   []PastedChunk
 	QueueSelectIdx int    // -1 = no selection, 0+ = selected queue item index
 	QueueTempInput string // stashed input when navigating into queue
-	ShowTasks      bool   // Ctrl+T toggles task list visibility
+	Queue          Queue
 }
 
 // PendingImage holds an inline image token and its provider payload.

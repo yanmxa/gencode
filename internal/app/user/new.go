@@ -19,7 +19,6 @@ func New(cwd string, width int, matchFunc suggest.Matcher) Model {
 		HistoryIdx:     -1,
 		Suggestions:    suggestions,
 		QueueSelectIdx: -1,
-		ShowTasks:      true,
 	}
 }
 

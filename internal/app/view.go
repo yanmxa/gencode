@@ -119,7 +119,7 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 // renderTrackerList renders a compact task list above the input area.
 // Returns empty string when task display is toggled off via Ctrl+T.
 func (m model) renderTrackerList() string {
-	if !m.userInput.ShowTasks {
+	if !m.showTasks {
 		return ""
 	}
 	return render.RenderTrackerList(render.TrackerListParams{
@@ -142,12 +142,12 @@ func (m model) renderModeStatus() string {
 		ModelName:     modelName,
 		Width:         m.width,
 		ThinkingLevel: m.effectiveThinkingLevel(),
-		QueueCount:    m.inputQueue.Len(),
+		QueueCount:    m.userInput.Queue.Len(),
 	})
 }
 
 func (m model) renderQueuePreview() string {
-	items := m.inputQueue.Items()
+	items := m.userInput.Queue.Items()
 	if len(items) == 0 {
 		return ""
 	}

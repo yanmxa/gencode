@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/app/kit/history"
 	"github.com/yanmxa/gencode/internal/util/image"
 	"github.com/yanmxa/gencode/internal/core"
 )
@@ -333,4 +334,45 @@ func (m *Model) ClearPaste() {
 // MinTextareaHeight returns the minimum textarea height constant.
 func MinTextareaHeight() int {
 	return minTextareaHeight
+}
+
+func (m *Model) Reset() {
+	m.Textarea.Reset()
+	m.Textarea.SetHeight(minTextareaHeight)
+	m.ClearPaste()
+	m.ClearImages()
+	m.QueueSelectIdx = -1
+	m.QueueTempInput = ""
+}
+
+func (m *Model) RecordSubmission(cwd, input string) {
+	if input == "" {
+		return
+	}
+	m.History = append(m.History, input)
+	m.HistoryIdx = -1
+	m.TempInput = ""
+	history.Save(cwd, m.History)
+}
+
+func (m *Model) RestoreImages(images []core.Image) {
+	m.Images.Pending = nil
+	m.Images.Selection = ImageSelection{}
+	for i, img := range images {
+		id := m.Images.NextID + i + 1
+		m.Images.Pending = append(m.Images.Pending, PendingImage{ID: id, Data: img})
+	}
+	m.Images.NextID += len(images)
+}
+
+func (m *Model) HasContent() bool {
+	return strings.TrimSpace(m.Textarea.Value()) != "" || len(m.Images.Pending) > 0
+}
+
+func (m *Model) PendingImages() []core.Image {
+	images := make([]core.Image, len(m.Images.Pending))
+	for i, p := range m.Images.Pending {
+		images[i] = p.Data
+	}
+	return images
 }

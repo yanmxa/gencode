@@ -5,7 +5,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/kit/history"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/core"
 	appcommand "github.com/yanmxa/gencode/internal/extension/command"
@@ -17,12 +16,7 @@ type submitRequest struct {
 }
 
 func (m *model) resetInputField() {
-	m.userInput.Textarea.Reset()
-	m.userInput.Textarea.SetHeight(appuser.MinTextareaHeight())
-	m.userInput.ClearPaste()
-	m.userInput.ClearImages()
-	m.userInput.QueueSelectIdx = -1
-	m.userInput.QueueTempInput = ""
+	m.userInput.Reset()
 }
 
 func (m *model) handleSubmit() tea.Cmd {
@@ -50,11 +44,7 @@ func (m *model) isTurnActive() bool {
 
 // enqueueCurrentInput captures the current input field content into the queue.
 func (m *model) enqueueCurrentInput(input string) {
-	var images []core.Image
-	for _, p := range m.userInput.Images.Pending {
-		images = append(images, p.Data)
-	}
-	if m.inputQueue.Enqueue(input, images) < 0 {
+	if m.userInput.Queue.Enqueue(input, m.userInput.PendingImages()) < 0 {
 		m.conv.AddNotice("Input queue is full. Please wait for the current turn to complete.")
 		return
 	}
@@ -64,28 +54,15 @@ func (m *model) enqueueCurrentInput(input string) {
 // drainInputQueue dequeues the next pending input and starts a new turn.
 // Returns nil if the queue is empty.
 func (m *model) drainInputQueue() tea.Cmd {
-	item, ok := m.inputQueue.Dequeue()
+	item, ok := m.userInput.Queue.Dequeue()
 	if !ok {
 		return nil
 	}
 
 	m.conv.Compact.ClearResult()
-
-	m.userInput.Textarea.SetValue(item.Content)
-	m.userInput.Textarea.CursorEnd()
-	m.userInput.UpdateHeight()
-	m.userInput.Images.Pending = nil
-	m.userInput.Images.Selection = appuser.ImageSelection{}
+	m.userInput.RestoreImages(item.Images)
 
 	req := submitRequest{Input: item.Content}
-	for i, img := range item.Images {
-		id := m.userInput.Images.NextID + i + 1
-		m.userInput.Images.Pending = append(m.userInput.Images.Pending, appuser.PendingImage{
-			ID:   id,
-			Data: img,
-		})
-	}
-	m.userInput.Images.NextID += len(item.Images)
 
 	return m.executeSubmitRequest(req)
 }
@@ -100,7 +77,7 @@ func (m *model) executeSubmitRequest(req submitRequest) tea.Cmd {
 		return m.blockPromptSubmission(reason)
 	}
 
-	m.recordSubmittedInput(req.Input)
+	m.userInput.RecordSubmission(m.cwd, req.Input)
 
 	if cmd, handled := m.commands().handleSubmit(req.Input); handled {
 		return cmd
@@ -127,15 +104,6 @@ func (m *model) blockPromptSubmission(reason string) tea.Cmd {
 	return tea.Batch(m.commitMessages()...)
 }
 
-func (m *model) recordSubmittedInput(input string) {
-	if input == "" {
-		return
-	}
-	m.userInput.History = append(m.userInput.History, input)
-	m.userInput.HistoryIdx = -1
-	m.userInput.TempInput = ""
-	history.Save(m.cwd, m.userInput.History)
-}
 
 func (m *model) prepareSubmittedUserMessage(input string) (core.ChatMessage, tea.Cmd, bool) {
 	content, fileImages, err := appuser.ProcessImageRefs(m.cwd, input)
