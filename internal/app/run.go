@@ -4,24 +4,14 @@ package app
 import (
 	"context"
 	"fmt"
-	"maps"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"go.uber.org/zap"
 
+	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	appcommand "github.com/yanmxa/gencode/internal/command"
-	"github.com/yanmxa/gencode/internal/mcp"
-	"github.com/yanmxa/gencode/internal/skill"
-	"github.com/yanmxa/gencode/internal/subagent"
-	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/tool"
-	_ "github.com/yanmxa/gencode/internal/tool/registry"
-	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/hook"
 )
 
 // Run routes to either print mode or interactive TUI.
@@ -30,7 +20,7 @@ func Run(opts config.RunOptions) error {
 		return runPrint(opts.Print)
 	}
 
-	if done, err := initTheme(); done || err != nil {
+	if userQuit, err := kit.ResolveTheme(config.LoadTheme(), config.SaveTheme); userQuit || err != nil {
 		return err
 	}
 
@@ -45,217 +35,67 @@ func Run(opts config.RunOptions) error {
 	}
 
 	if fm, ok := finalModel.(*model); ok {
-		printExitMessage(*fm)
+		printExitMessage(fm)
 	}
 	return nil
 }
 
-// runPrint sends a single message and streams the response to stdout.
-func runPrint(userMessage string) error {
-	ctx := context.Background()
-
-	store, err := llm.NewStore()
+func initModel(opts config.RunOptions) (*model, error) {
+	infra, err := initInfra()
 	if err != nil {
-		return fmt.Errorf("failed to load store: %w", err)
+		return nil, err
 	}
-
-	var llmProvider llm.Provider
-	var modelID string
-
-	current := store.GetCurrentModel()
-	if current != nil {
-		p, err := llm.GetProvider(ctx, current.Provider, current.AuthMethod)
-		if err != nil {
-			return fmt.Errorf("provider %s (%s) not available: %w. Run 'gen' and use /provider to connect",
-				current.Provider, current.AuthMethod, err)
-		}
-		llmProvider = p
-		modelID = current.ModelID
-	} else {
-		for providerName, conn := range store.GetConnections() {
-			p, err := llm.GetProvider(ctx, llm.Name(providerName), conn.AuthMethod)
-			if err == nil {
-				llmProvider = p
-				modelID = config.DefaultModel(providerName, conn.AuthMethod)
-				break
+	base := newBaseModel(infra)
+	m := &base
+	if m.hookEngine != nil && m.systemInput.AsyncHookQueue != nil {
+		queue := m.systemInput.AsyncHookQueue
+		m.hookEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
+			reason := result.BlockReason
+			if reason == "" {
+				reason = "asynchronous hook requested a rewake"
 			}
+			queue.Push(appsystem.AsyncHookRewake{
+				Notice:             fmt.Sprintf("Async hook blocked: %s", reason),
+				Context:            []string{formatAsyncHookContinuationContext(result, reason)},
+				ContinuationPrompt: "A background policy hook reported a blocking condition. Re-evaluate the plan and choose a safer next step.",
+			})
+		})
+	}
+
+	m.ensureMemoryContextLoaded()
+	m.reconfigureAgentTool()
+	if err := m.applyRunOptions(opts); err != nil {
+		return nil, err
+	}
+	m.initTaskStorage()
+
+	if m.hookEngine != nil {
+		m.hookEngine.ExecuteAsync(hook.Setup, hook.HookInput{
+			Trigger: "init",
+		})
+		source := "startup"
+		if m.sessionID != "" {
+			source = "resume"
+		}
+		outcome := m.hookEngine.Execute(context.Background(), hook.SessionStart, hook.HookInput{
+			Source: source,
+			Model:  m.getModelID(),
+		})
+		m.applyRuntimeHookOutcome(outcome)
+		if outcome.AdditionalContext != "" {
+			m.conv.Append(core.ChatMessage{
+				Role:    core.RoleUser,
+				Content: outcome.AdditionalContext,
+			})
 		}
 	}
 
-	if llmProvider == nil {
-		return fmt.Errorf("no provider connected. Run 'gen' and use /provider to connect")
-	}
-
-	completionOpts := llm.CompletionOptions{
-		Model:        modelID,
-		MaxTokens:    config.DefaultMaxTokens,
-		SystemPrompt: config.DefaultSystemPrompt,
-		Messages:     []core.Message{core.UserMessage(userMessage, nil)},
-		Tools:        tool.GetToolSchemas(),
-	}
-
-	streamChan := llmProvider.Stream(ctx, completionOpts)
-	for chunk := range streamChan {
-		switch chunk.Type {
-		case core.ChunkTypeText:
-			fmt.Print(chunk.Text)
-		case core.ChunkTypeError:
-			return chunk.Error
-		case core.ChunkTypeDone:
-			fmt.Println()
-		}
-	}
-
-	return nil
+	return m, nil
 }
 
-// initTheme resolves the color theme from config or interactive selector.
-// Returns (true, nil) if the user quit the selector without choosing.
-func initTheme() (done bool, err error) {
-	settings := initSettings("")
-	themeValue := settings.Theme
-	if themeValue == "" {
-		chosen, err := kit.RunThemeSelector()
-		if err != nil {
-			return false, fmt.Errorf("theme selection failed: %w", err)
-		}
-		if chosen == "" {
-			return true, nil
-		}
-		themeValue = chosen
-		if err := config.SaveTheme(themeValue); err != nil {
-			log.Logger().Warn("failed to save theme", zap.Error(err))
-		}
-	}
-	kit.InitTheme(themeValue)
-	return false, nil
-}
-
-// --- Infrastructure initialization ---
-
-func initLLM() (*llm.Store, llm.Provider, *llm.CurrentModelInfo) {
-	store, _ := llm.NewStore()
-	if store == nil {
-		return nil, nil, nil
-	}
-
-	currentModel := store.GetCurrentModel()
-	ctx := context.Background()
-
-	// Try to connect to current model's provider first
-	if currentModel != nil {
-		if p, err := llm.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod); err == nil {
-			return store, p, currentModel
-		}
-	}
-
-	// Fall back to any available provider
-	for providerName, conn := range store.GetConnections() {
-		if p, err := llm.GetProvider(ctx, llm.Name(providerName), conn.AuthMethod); err == nil {
-			return store, p, currentModel
-		}
-	}
-
-	return store, nil, currentModel
-}
-
-// initExt loads all component registries in dependency order.
-func initExt(cwd string) {
-	ctx := context.Background()
-
-	if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
-		log.Logger().Warn("Failed to load plugins", zap.Error(err))
-	}
-	if err := skill.Initialize(cwd); err != nil {
-		log.Logger().Warn("Failed to initialize skill registry", zap.Error(err))
-	}
-	appcommand.SetDynamicInfoProviders(skillCommandInfos)
-	if err := appcommand.Initialize(cwd); err != nil {
-		log.Logger().Warn("Failed to initialize custom commands", zap.Error(err))
-	}
-	if err := subagent.Initialize(cwd); err != nil {
-		log.Logger().Warn("Failed to initialize agent registry", zap.Error(err))
-	}
-	if err := mcp.Initialize(cwd); err != nil {
-		log.Logger().Warn("Failed to initialize MCP registry", zap.Error(err))
-	}
-}
-
-func initSettings(cwd string) *config.Settings {
-	var (
-		settings *config.Settings
-		err      error
-	)
-	if cwd != "" {
-		settings, err = config.LoadForCwd(cwd)
-	} else {
-		settings, err = config.Load()
-	}
-	_ = err
-	if settings == nil {
-		settings = config.Default()
-	}
-	cloned := cloneSettings(settings)
-	plugin.MergePluginHooksIntoSettings(cloned)
-	return cloned
-}
-
-func cloneSettings(src *config.Settings) *config.Settings {
-	if src == nil {
-		return config.Default()
-	}
-	dst := config.NewSettings()
-	dst.Permissions.Allow = append([]string(nil), src.Permissions.Allow...)
-	dst.Permissions.Deny = append([]string(nil), src.Permissions.Deny...)
-	dst.Permissions.Ask = append([]string(nil), src.Permissions.Ask...)
-	dst.Model = src.Model
-	dst.Theme = src.Theme
-	if src.AllowBypass != nil {
-		v := *src.AllowBypass
-		dst.AllowBypass = &v
-	}
-	for k, v := range src.Env {
-		dst.Env[k] = v
-	}
-	for k, v := range src.EnabledPlugins {
-		dst.EnabledPlugins[k] = v
-	}
-	for k, v := range src.DisabledTools {
-		dst.DisabledTools[k] = v
-	}
-	for event, hooks := range src.Hooks {
-		clonedHooks := make([]config.Hook, len(hooks))
-		for i, hook := range hooks {
-			clonedHooks[i].Matcher = hook.Matcher
-			clonedHooks[i].Hooks = make([]config.HookCmd, len(hook.Hooks))
-			for j, cmd := range hook.Hooks {
-				clonedHooks[i].Hooks[j] = config.HookCmd{
-					Type:           cmd.Type,
-					Command:        cmd.Command,
-					Prompt:         cmd.Prompt,
-					URL:            cmd.URL,
-					If:             cmd.If,
-					Shell:          cmd.Shell,
-					Model:          cmd.Model,
-					Async:          cmd.Async,
-					AsyncRewake:    cmd.AsyncRewake,
-					Timeout:        cmd.Timeout,
-					StatusMessage:  cmd.StatusMessage,
-					Once:           cmd.Once,
-					Headers:        maps.Clone(cmd.Headers),
-					AllowedEnvVars: append([]string(nil), cmd.AllowedEnvVars...),
-				}
-			}
-		}
-		dst.Hooks[event] = clonedHooks
-	}
-	return dst
-}
-
-// printExitMessage prints resume command after the TUI exits.
-func printExitMessage(m model) {
+func printExitMessage(m *model) {
 	if m.sessionID != "" {
-		dim := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
+		dim := kit.DimStyle()
 		fmt.Println()
 		fmt.Println(dim.Render("Resume this session with:"))
 		fmt.Println(dim.Render("gen -r " + m.sessionID))

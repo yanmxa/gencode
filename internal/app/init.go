@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"go.uber.org/zap"
@@ -45,6 +46,7 @@ import (
 )
 
 type modelInfra struct {
+	cwd              string
 	store            *llm.Store
 	llmProvider      llm.Provider
 	currentModel     *llm.CurrentModelInfo
@@ -55,7 +57,8 @@ type modelInfra struct {
 	initialSessionID string
 }
 
-func initInfra(cwd string) (modelInfra, error) {
+func initInfra() (modelInfra, error) {
+	cwd, _ := os.Getwd()
 	orchestration.DefaultStore.Reset()
 	cron.DefaultStore.Reset()
 	cron.DefaultStore.SetStoragePath(filepath.Join(cwd, ".gen", "scheduled_tasks.json"))
@@ -95,6 +98,7 @@ func initInfra(cwd string) (modelInfra, error) {
 	installHookBridges(hookEngine, notifications)
 
 	return modelInfra{
+		cwd:              cwd,
 		store:            store,
 		llmProvider:      llmProvider,
 		currentModel:     currentModel,
@@ -106,7 +110,8 @@ func initInfra(cwd string) (modelInfra, error) {
 	}, nil
 }
 
-func newBaseModel(cwd string, infra modelInfra) model {
+func newBaseModel(infra modelInfra) model {
+	cwd := infra.cwd
 	progressHub := progress.NewHub(100)
 
 	return model{
