@@ -1,4 +1,4 @@
-package input
+package user
 
 import (
 	"github.com/charmbracelet/bubbles/textarea"

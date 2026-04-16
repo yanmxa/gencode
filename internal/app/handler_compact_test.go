@@ -26,7 +26,7 @@ func newTokenLimitStore(t *testing.T) *coreprovider.Store {
 func TestHandleTokenLimitCommand_SetAndShowCustomOverride(t *testing.T) {
 	store := newTokenLimitStore(t)
 	m := &model{
-		provider: providerStateForTest(store, "gpt-5", coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey),
+		provider: providerStateForTest(store, "gpt-5", coreprovider.OpenAI, coreprovider.AuthAPIKey),
 	}
 
 	result, cmd, err := handleTokenLimitCommand(context.Background(), m, "200000 32000")
@@ -62,14 +62,14 @@ func TestHandleTokenLimitCommand_SetAndShowCustomOverride(t *testing.T) {
 
 func TestHandleTokenLimitCommand_UsesCachedModelLimitsWhenNoOverride(t *testing.T) {
 	store := newTokenLimitStore(t)
-	if err := store.CacheModels(coreprovider.ProviderAnthropic, coreprovider.AuthAPIKey, []coreprovider.ModelInfo{
+	if err := store.CacheModels(coreprovider.Anthropic, coreprovider.AuthAPIKey, []coreprovider.ModelInfo{
 		{ID: "claude-sonnet", InputTokenLimit: 200000, OutputTokenLimit: 16000},
 	}); err != nil {
 		t.Fatalf("CacheModels() error = %v", err)
 	}
 
 	m := &model{
-		provider: providerStateForTest(store, "claude-sonnet", coreprovider.ProviderAnthropic, coreprovider.AuthAPIKey),
+		provider: providerStateForTest(store, "claude-sonnet", coreprovider.Anthropic, coreprovider.AuthAPIKey),
 	}
 
 	result, cmd, err := handleTokenLimitCommand(context.Background(), m, "")
@@ -91,8 +91,8 @@ func TestHandleTokenLimitCommand_TriggersFetchWhenLimitsUnknown(t *testing.T) {
 	store := newTokenLimitStore(t)
 	m := &model{
 		cwd:      "/repo",
-		output:   appoutput.New(80, nil),
-		provider: providerStateForTest(store, "gpt-unknown", coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey),
+		agentOutput:   appoutput.New(80, nil),
+		provider: providerStateForTest(store, "gpt-unknown", coreprovider.OpenAI, coreprovider.AuthAPIKey),
 	}
 
 	result, cmd, err := handleTokenLimitCommand(context.Background(), m, "")
@@ -122,7 +122,7 @@ func TestHandleTokenLimitCommand_ValidationAndModelFallbacks(t *testing.T) {
 
 	store := newTokenLimitStore(t)
 	m = &model{
-		provider: providerStateForTest(store, "gpt-5", coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey),
+		provider: providerStateForTest(store, "gpt-5", coreprovider.OpenAI, coreprovider.AuthAPIKey),
 	}
 	result, cmd, err = handleTokenLimitCommand(context.Background(), m, "abc 123")
 	if err != nil {
@@ -144,7 +144,7 @@ func TestHandleTokenLimitCommand_ValidationAndModelFallbacks(t *testing.T) {
 	}
 }
 
-func providerStateForTest(store *coreprovider.Store, modelID string, p coreprovider.Provider, auth coreprovider.AuthMethod) providerui.State {
+func providerStateForTest(store *coreprovider.Store, modelID string, p coreprovider.Name, auth coreprovider.AuthMethod) providerui.State {
 	return providerui.State{
 		Store: store,
 		CurrentModel: &coreprovider.CurrentModelInfo{

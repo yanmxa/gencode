@@ -6,9 +6,9 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 	oldWidth := m.width
 	m.width = msg.Width
 	m.height = msg.Height
-	m.input.TerminalHeight = msg.Height
+	m.userInput.TerminalHeight = msg.Height
 
-	m.output.ResizeMDRenderer(msg.Width)
+	m.agentOutput.ResizeMDRenderer(msg.Width)
 
 	if m.mode.PlanApproval != nil {
 		m.mode.PlanApproval.SetSize(msg.Width, msg.Height)
@@ -31,14 +31,14 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 			}
 		}
 
-		m.input.Textarea.SetWidth(msg.Width - 4 - 2)
+		m.userInput.Textarea.SetWidth(msg.Width - 4 - 2)
 		if len(cmds) > 0 {
 			return tea.Batch(cmds...)
 		}
 		return nil
 	}
 
-	m.input.Textarea.SetWidth(msg.Width - 4 - 2)
+	m.userInput.Textarea.SetWidth(msg.Width - 4 - 2)
 
 	if oldWidth != msg.Width && m.conv.CommittedCount > 0 {
 		return m.reflowScrollback()

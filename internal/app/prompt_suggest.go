@@ -60,7 +60,7 @@ func (m *model) handlePromptSuggestion(msg promptSuggestionMsg) {
 		return
 	}
 	// Discard if user already started typing
-	if m.input.Textarea.Value() != "" {
+	if m.userInput.Textarea.Value() != "" {
 		return
 	}
 	// Discard if streaming is active

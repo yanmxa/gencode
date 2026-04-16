@@ -13,7 +13,7 @@ import (
 
 type promptSuggestionRequest struct {
 	Ctx          context.Context
-	Client       *llm.LLM
+	Client       *llm.Client
 	Messages     []core.Message
 	SystemPrompt string
 	UserPrompt   string
@@ -22,7 +22,7 @@ type promptSuggestionRequest struct {
 
 type tokenLimitFetchRequest struct {
 	Ctx          context.Context
-	LLM          llm.LLMProvider
+	LLM          llm.Provider
 	Store        *llm.Store
 	CurrentModel *llm.CurrentModelInfo
 	ModelID      string
@@ -31,7 +31,7 @@ type tokenLimitFetchRequest struct {
 
 type compactRequest struct {
 	Ctx            context.Context
-	Client         *llm.LLM
+	Client         *llm.Client
 	Messages       []core.Message
 	SessionSummary string
 	Focus          string

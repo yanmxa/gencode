@@ -9,24 +9,25 @@ import (
 	"testing"
 	"time"
 
+	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	"github.com/yanmxa/gencode/internal/app/mcpui"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/progress"
 	"github.com/yanmxa/gencode/internal/app/providerui"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/task/tracker"
-	"github.com/yanmxa/gencode/internal/app/progress"
 )
 
 type testLLMProvider struct{}
@@ -580,11 +581,11 @@ func TestApplyRuntimeHookOutcomeSetsInitialPrompt(t *testing.T) {
 
 func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 	m := &model{
-		cwd:            t.TempDir(),
-		conv:           appconv.New(),
+		cwd:         t.TempDir(),
+		conv:        appconv.New(),
 		systemInput: appsystem.New(),
-		provider:       providerui.State{LLM: testLLMProvider{}},
-		output:         appoutput.New(80, progress.NewHub(10)),
+		provider:    providerui.State{LLM: testLLMProvider{}},
+		agentOutput:      appoutput.New(80, progress.NewHub(10)),
 	}
 	m.systemInput.AsyncHookQueue.Push(appsystem.AsyncHookRewake{
 		Notice:             "Async hook blocked: background policy blocked this",
@@ -626,7 +627,7 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	})
 
 	m := &model{
-		hookEngine:     engine,
+		hookEngine:  engine,
 		systemInput: appsystem.New(),
 	}
 
@@ -662,11 +663,11 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 
 func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 	m := &model{
-		cwd:               t.TempDir(),
-		conv:              appconv.New(),
-		taskNotifications: newTaskNotificationQueue(),
-		provider:          providerui.State{LLM: testLLMProvider{}},
-		output:            appoutput.New(80, progress.NewHub(10)),
+		cwd:        t.TempDir(),
+		conv:       appconv.New(),
+		agentInput: appagent.New(),
+		provider:   providerui.State{LLM: testLLMProvider{}},
+		agentOutput:     appoutput.New(80, progress.NewHub(10)),
 	}
 	info := task.TaskInfo{
 		ID:          "a123",
@@ -678,11 +679,15 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 		TokenUsage:  321,
 		Output:      "Architecture looks consistent.",
 	}
-	item, ok := buildTaskNotification(info)
+	item, ok := appagent.BuildTaskNotification(appagent.TaskNotificationInput{
+		Info:    info,
+		Subject: taskSubject(info),
+		Batch:   appagent.SnapshotBackgroundBatchForTask(info.ID),
+	})
 	if !ok {
-		t.Fatal("expected buildTaskNotification to produce an item")
+		t.Fatal("expected BuildTaskNotification to produce an item")
 	}
-	m.taskNotifications.Push(item)
+	m.agentInput.Notifications.Push(item)
 
 	cmd := m.handleTaskNotificationTick()
 	if cmd == nil {
@@ -701,7 +706,7 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 	}
 
 	// Verify coordinator hint is built correctly
-	hint := renderCoordinatorHintXML(item)
+	hint := appagent.RenderCoordinatorHintXML(item)
 	if !strings.Contains(hint, "<phase>single_completion</phase>") {
 		t.Fatalf("expected single completion coordinator hint, got %q", hint)
 	}
@@ -718,11 +723,11 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 
 func TestTaskNotificationTickBatchesDrainsQueue(t *testing.T) {
 	m := &model{
-		cwd:               t.TempDir(),
-		conv:              appconv.New(),
-		taskNotifications: newTaskNotificationQueue(),
-		provider:          providerui.State{LLM: testLLMProvider{}},
-		output:            appoutput.New(80, progress.NewHub(10)),
+		cwd:        t.TempDir(),
+		conv:       appconv.New(),
+		agentInput: appagent.New(),
+		provider:   providerui.State{LLM: testLLMProvider{}},
+		agentOutput:     appoutput.New(80, progress.NewHub(10)),
 	}
 
 	batch := &orchestration.Batch{
@@ -734,13 +739,13 @@ func TestTaskNotificationTickBatchesDrainsQueue(t *testing.T) {
 		Failures:  1,
 	}
 
-	m.taskNotifications.Push(taskNotification{
+	m.agentInput.Notifications.Push(appagent.Notification{
 		Notice:             "dir-audit completed",
 		Context:            []string{"single task context"},
 		ContinuationPrompt: "<task-notification><task-id>bg-1</task-id></task-notification>",
 		Batch:              batch,
 	})
-	m.taskNotifications.Push(taskNotification{
+	m.agentInput.Notifications.Push(appagent.Notification{
 		Notice:             "naming-audit failed",
 		Context:            []string{"single task context"},
 		ContinuationPrompt: "<task-notification><task-id>bg-2</task-id></task-notification>",
@@ -751,7 +756,7 @@ func TestTaskNotificationTickBatchesDrainsQueue(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected task notification tick command")
 	}
-	if got := m.taskNotifications.Len(); got != 0 {
+	if got := m.agentInput.Notifications.Len(); got != 0 {
 		t.Fatalf("expected task notification queue to drain, got %d", got)
 	}
 	if len(m.conv.Messages) < 1 {
@@ -772,7 +777,7 @@ func TestTaskNotificationBatchMergeProducesCorrectXML(t *testing.T) {
 		Failures:  1,
 	}
 
-	items := []taskNotification{
+	items := []appagent.Notification{
 		{
 			Notice:             "dir-audit completed",
 			Context:            []string{"single task context"},
@@ -786,8 +791,8 @@ func TestTaskNotificationBatchMergeProducesCorrectXML(t *testing.T) {
 			Batch:              batch,
 		},
 	}
-	merged := mergeTaskNotifications(items)
-	prompt := buildTaskNotificationContinuationPrompt(merged)
+	merged := appagent.MergeNotifications(items)
+	prompt := appagent.BuildContinuationPrompt(merged)
 
 	if !strings.Contains(prompt, "<coordinator-hint>") {
 		t.Fatalf("expected structured coordinator hint, got %q", prompt)
@@ -828,14 +833,14 @@ func TestTaskNotificationBatchMergeProducesCorrectXML(t *testing.T) {
 		t.Fatalf("expected batched continuation context, got %#v", contexts)
 	}
 
-	policy := buildTaskNotificationCoordinatorPolicy(merged)
+	policy := appagent.BuildCoordinatorPolicy(merged)
 	if !strings.Contains(policy, "Do not assume the batch is finished") {
 		t.Fatalf("expected partial-batch coordinator policy, got %q", policy)
 	}
 }
 
 func TestCoordinatorPolicyForCompletedFailedBatch(t *testing.T) {
-	item := taskNotification{
+	item := appagent.Notification{
 		Notice:             "naming-audit failed",
 		Context:            []string{"background task context"},
 		ContinuationPrompt: "<task-notification><task-id>bg-2</task-id></task-notification>",
@@ -851,7 +856,7 @@ func TestCoordinatorPolicyForCompletedFailedBatch(t *testing.T) {
 		},
 	}
 
-	prompt := buildTaskNotificationContinuationPrompt(item)
+	prompt := appagent.BuildContinuationPrompt(item)
 	if !strings.Contains(prompt, "<coordinator-hint>") {
 		t.Fatalf("expected structured coordinator hint in prompt, got %q", prompt)
 	}
@@ -874,7 +879,7 @@ func TestCoordinatorPolicyForCompletedFailedBatch(t *testing.T) {
 		t.Fatalf("expected completed batch to allow final summary, got %q", prompt)
 	}
 
-	policy := buildTaskNotificationCoordinatorPolicy(item)
+	policy := appagent.BuildCoordinatorPolicy(item)
 	if !strings.Contains(policy, "background batch completed with failures") {
 		t.Fatalf("expected failed-batch coordinator policy, got %q", policy)
 	}

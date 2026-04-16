@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appinput "github.com/yanmxa/gencode/internal/app/input"
+	appuser "github.com/yanmxa/gencode/internal/app/user"
 	appcommand "github.com/yanmxa/gencode/internal/ext/command"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plugin"
@@ -17,10 +17,10 @@ type submitRequest struct {
 }
 
 func (m *model) resetInputField() {
-	m.input.Textarea.Reset()
-	m.input.Textarea.SetHeight(appinput.MinTextareaHeight())
-	m.input.ClearPaste()
-	m.input.ClearImages()
+	m.userInput.Textarea.Reset()
+	m.userInput.Textarea.SetHeight(appuser.MinTextareaHeight())
+	m.userInput.ClearPaste()
+	m.userInput.ClearImages()
 	m.queueSelectIdx = -1
 	m.queueTempInput = ""
 }
@@ -28,8 +28,8 @@ func (m *model) resetInputField() {
 func (m *model) handleSubmit() tea.Cmd {
 	m.promptSuggestion.Clear()
 
-	input := strings.TrimSpace(m.input.FullValue())
-	if input == "" && len(m.input.Images.Pending) == 0 {
+	input := strings.TrimSpace(m.userInput.FullValue())
+	if input == "" && len(m.userInput.Images.Pending) == 0 {
 		return nil
 	}
 
@@ -51,7 +51,7 @@ func (m *model) isTurnActive() bool {
 // enqueueCurrentInput captures the current input field content into the queue.
 func (m *model) enqueueCurrentInput(input string) {
 	var images []core.Image
-	for _, p := range m.input.Images.Pending {
+	for _, p := range m.userInput.Images.Pending {
 		images = append(images, p.Data)
 	}
 	if m.inputQueue.Enqueue(input, images) < 0 {
@@ -71,21 +71,21 @@ func (m *model) drainInputQueue() tea.Cmd {
 
 	m.conv.Compact.ClearResult()
 
-	m.input.Textarea.SetValue(item.Content)
-	m.input.Textarea.CursorEnd()
-	m.input.UpdateHeight()
-	m.input.Images.Pending = nil
-	m.input.Images.Selection = appinput.ImageSelection{}
+	m.userInput.Textarea.SetValue(item.Content)
+	m.userInput.Textarea.CursorEnd()
+	m.userInput.UpdateHeight()
+	m.userInput.Images.Pending = nil
+	m.userInput.Images.Selection = appuser.ImageSelection{}
 
 	req := submitRequest{Input: item.Content}
 	for i, img := range item.Images {
-		id := m.input.Images.NextID + i + 1
-		m.input.Images.Pending = append(m.input.Images.Pending, appinput.PendingImage{
+		id := m.userInput.Images.NextID + i + 1
+		m.userInput.Images.Pending = append(m.userInput.Images.Pending, appuser.PendingImage{
 			ID:   id,
 			Data: img,
 		})
 	}
-	m.input.Images.NextID += len(item.Images)
+	m.userInput.Images.NextID += len(item.Images)
 
 	return m.executeSubmitRequest(req)
 }
@@ -131,21 +131,21 @@ func (m *model) recordSubmittedInput(input string) {
 	if input == "" {
 		return
 	}
-	m.input.History = append(m.input.History, input)
-	m.input.HistoryIdx = -1
-	m.input.TempInput = ""
-	history.Save(m.cwd, m.input.History)
+	m.userInput.History = append(m.userInput.History, input)
+	m.userInput.HistoryIdx = -1
+	m.userInput.TempInput = ""
+	history.Save(m.cwd, m.userInput.History)
 }
 
 func (m *model) prepareSubmittedUserMessage(input string) (core.ChatMessage, tea.Cmd, bool) {
-	content, fileImages, err := appinput.ProcessImageRefs(m.cwd, input)
+	content, fileImages, err := appuser.ProcessImageRefs(m.cwd, input)
 	if err != nil {
 		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Image error: " + err.Error()})
 		return core.ChatMessage{}, tea.Batch(m.commitMessages()...), true
 	}
 
 	displayContent := content
-	content, inlineImages := m.input.ExtractInlineImages(content)
+	content, inlineImages := m.userInput.ExtractInlineImages(content)
 	allImages := make([]core.Image, 0, len(inlineImages)+len(fileImages))
 	allImages = append(allImages, inlineImages...)
 	allImages = append(allImages, fileImages...)

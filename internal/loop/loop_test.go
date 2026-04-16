@@ -16,7 +16,7 @@ import (
 
 // --- Test helpers ---
 
-// mockProvider implements llm.LLMProvider for testing.
+// mockProvider implements llm.Provider for testing.
 type mockProvider struct {
 	responses []core.CompletionResponse
 	callIdx   int
@@ -60,8 +60,8 @@ func (t *hookResponseTestTool) Execute(ctx context.Context, params map[string]an
 }
 
 // newTestLoop creates a Loop with the new struct layout for testing.
-func newTestLoop(mp llm.LLMProvider) *Loop {
-	c := llm.NewLLM(mp, "test-model", 8192)
+func newTestLoop(mp llm.Provider) *Loop {
+	c := llm.NewClient(mp, "test-model", 8192)
 	return &Loop{
 		System:     core.NewSystem(core.Layer{Name: "test", Priority: 0, Content: "test"}),
 		Client:     c,
@@ -113,7 +113,7 @@ func TestAddUserWithImages(t *testing.T) {
 }
 
 func TestAddResponse(t *testing.T) {
-	loop := &Loop{Client: llm.NewLLM(&mockProvider{}, "test", 0)}
+	loop := &Loop{Client: llm.NewClient(&mockProvider{}, "test", 0)}
 
 	resp := &core.CompletionResponse{
 		Content: "response text",
@@ -746,14 +746,14 @@ func TestStaticTools(t *testing.T) {
 }
 
 func TestLoopClientAccess(t *testing.T) {
-	c := llm.NewLLM(&mockProvider{}, "model-a", 0)
+	c := llm.NewClient(&mockProvider{}, "model-a", 0)
 	loop := &Loop{Client: c}
 	if loop.Client.ModelID() != "model-a" {
 		t.Errorf("expected model-a, got %s", loop.Client.ModelID())
 	}
 
 	// Verify client is accessible and returns expected values
-	c2 := llm.NewLLM(&mockProvider{}, "model-b", 0)
+	c2 := llm.NewClient(&mockProvider{}, "model-b", 0)
 	loop.Client = c2
 	if loop.Client.ModelID() != "model-b" {
 		t.Errorf("expected model-b, got %s", loop.Client.ModelID())

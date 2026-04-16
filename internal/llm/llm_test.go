@@ -51,7 +51,7 @@ func TestLLMSend(t *testing.T) {
 			{Content: "hello", StopReason: "end_turn", Usage: core.Usage{InputTokens: 10, OutputTokens: 5}},
 		},
 	}
-	l := &LLM{provider: mp, model: "test-model", maxTokens: 4096}
+	l := &Client{provider: mp, model: "test-model", maxTokens: 4096}
 
 	msgs := []core.Message{{Role: core.RoleUser, Content: "hi"}}
 	resp, err := l.send(context.Background(), msgs, nil, "system prompt")
@@ -69,7 +69,7 @@ func TestLLMStream(t *testing.T) {
 			{Content: "streamed", StopReason: "end_turn"},
 		},
 	}
-	l := &LLM{provider: mp, model: "test-model"}
+	l := &Client{provider: mp, model: "test-model"}
 
 	msgs := []core.Message{{Role: core.RoleUser, Content: "hi"}}
 	ch := l.Stream(context.Background(), msgs, nil, "")
@@ -94,7 +94,7 @@ func TestLLMComplete(t *testing.T) {
 			{Content: "summary", StopReason: "end_turn"},
 		},
 	}
-	l := &LLM{provider: mp, model: "test-model"}
+	l := &Client{provider: mp, model: "test-model"}
 
 	resp, err := l.Complete(context.Background(), "compact", []core.Message{{Role: core.RoleUser, Content: "summarize"}}, 2048)
 	if err != nil {
@@ -106,7 +106,7 @@ func TestLLMComplete(t *testing.T) {
 }
 
 func TestLLMNameAndModelID(t *testing.T) {
-	l := &LLM{provider: &mockLLMProvider{}, model: "claude-3"}
+	l := &Client{provider: &mockLLMProvider{}, model: "claude-3"}
 	if l.Name() != "mock" {
 		t.Errorf("expected 'mock', got '%s'", l.Name())
 	}
@@ -116,7 +116,7 @@ func TestLLMNameAndModelID(t *testing.T) {
 }
 
 func TestResolveMaxTokens_CustomOverride(t *testing.T) {
-	l := &LLM{provider: &mockLLMProvider{}, model: "m", maxTokens: 16384}
+	l := &Client{provider: &mockLLMProvider{}, model: "m", maxTokens: 16384}
 	got := l.ResolveMaxTokens(context.Background())
 	if got != 16384 {
 		t.Errorf("expected 16384, got %d", got)
@@ -130,7 +130,7 @@ func TestResolveMaxTokens_FromProvider(t *testing.T) {
 			{ID: "claude-sonnet", OutputTokenLimit: 64000},
 		},
 	}
-	l := &LLM{provider: mp, model: "claude-sonnet"} // maxTokens = 0
+	l := &Client{provider: mp, model: "claude-sonnet"} // maxTokens = 0
 
 	got := l.ResolveMaxTokens(context.Background())
 	if got != 64000 {
@@ -144,7 +144,7 @@ func TestResolveMaxTokens_Fallback(t *testing.T) {
 			{ID: "other-model", OutputTokenLimit: 32000},
 		},
 	}
-	l := &LLM{provider: mp, model: "unknown-model"} // no match
+	l := &Client{provider: mp, model: "unknown-model"} // no match
 
 	got := l.ResolveMaxTokens(context.Background())
 	if got != defaultMaxTokens {
@@ -153,7 +153,7 @@ func TestResolveMaxTokens_Fallback(t *testing.T) {
 }
 
 func TestCompletionOptsDefaultMaxTokens(t *testing.T) {
-	l := &LLM{provider: &mockLLMProvider{}, model: "m"}
+	l := &Client{provider: &mockLLMProvider{}, model: "m"}
 	opts := l.completionOpts(nil, nil, "")
 	if opts.MaxTokens != defaultMaxTokens {
 		t.Errorf("expected default %d, got %d", defaultMaxTokens, opts.MaxTokens)
@@ -161,7 +161,7 @@ func TestCompletionOptsDefaultMaxTokens(t *testing.T) {
 }
 
 func TestCompletionOptsIncludesThinkingLevel(t *testing.T) {
-	l := &LLM{
+	l := &Client{
 		provider:      &mockLLMProvider{},
 		model:         "m",
 		thinkingLevel: ThinkingHigh,

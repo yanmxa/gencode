@@ -7,52 +7,55 @@ import (
 
 	"go.uber.org/zap"
 
-	appagent "github.com/yanmxa/gencode/internal/app/agentinput"
+	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	"github.com/yanmxa/gencode/internal/app/agentui"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
-	appinput "github.com/yanmxa/gencode/internal/app/input"
+	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/app/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/pluginui"
+	"github.com/yanmxa/gencode/internal/app/progress"
 	"github.com/yanmxa/gencode/internal/app/providerui"
 	"github.com/yanmxa/gencode/internal/app/searchui"
 	"github.com/yanmxa/gencode/internal/app/sessionui"
 	"github.com/yanmxa/gencode/internal/app/skillui"
+	"github.com/yanmxa/gencode/internal/app/suggest"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/cron"
 	appcommand "github.com/yanmxa/gencode/internal/ext/command"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/util/filecache"
 	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/util/log"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/session"
+	"github.com/yanmxa/gencode/internal/tool"
+	toolagent "github.com/yanmxa/gencode/internal/tool/agent"
 	"github.com/yanmxa/gencode/internal/tool/fs"
 	"github.com/yanmxa/gencode/internal/tool/web"
-	"github.com/yanmxa/gencode/internal/app/progress"
-	"github.com/yanmxa/gencode/internal/app/suggest"
+	"github.com/yanmxa/gencode/internal/util/filecache"
+	"github.com/yanmxa/gencode/internal/util/log"
 )
 
 type modelInfra struct {
-	store             *llm.Store
-	llmProvider       llm.LLMProvider
-	currentModel      *llm.CurrentModelInfo
-	settings          *config.Settings
-	hookEngine        *hook.Engine
-	sessionStore      *session.Store
-	notifications *appagent.NotificationQueue
-	initialSessionID  string
+	store            *llm.Store
+	llmProvider      llm.Provider
+	currentModel     *llm.CurrentModelInfo
+	settings         *config.Settings
+	hookEngine       *hook.Engine
+	sessionStore     *session.Store
+	notifications    *appagent.NotificationQueue
+	initialSessionID string
 }
 
 func initializeModelInfra(cwd string) (modelInfra, error) {
@@ -95,14 +98,14 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 	installHookBridges(hookEngine, notifications)
 
 	return modelInfra{
-		store:             store,
-		llmProvider:       llmProvider,
-		currentModel:      currentModel,
-		settings:          settings,
-		hookEngine:        hookEngine,
-		sessionStore:      sessionStore,
-		taskNotifications: taskNotifications,
-		initialSessionID:  sessionID,
+		store:            store,
+		llmProvider:      llmProvider,
+		currentModel:     currentModel,
+		settings:         settings,
+		hookEngine:       hookEngine,
+		sessionStore:     sessionStore,
+		notifications:    notifications,
+		initialSessionID: sessionID,
 	}, nil
 }
 
@@ -110,8 +113,8 @@ func newBaseModel(cwd string, infra modelInfra) model {
 	progressHub := progress.NewHub(100)
 
 	return model{
-		input:  appinput.New(cwd, defaultWidth, commandSuggestionMatcher()),
-		output: appoutput.New(defaultWidth, progressHub),
+		userInput:  appuser.New(cwd, defaultWidth, commandSuggestionMatcher()),
+		agentOutput: appoutput.New(defaultWidth, progressHub),
 		conv:   appconv.New(),
 		cwd:    cwd,
 
@@ -132,12 +135,12 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		showTasks: true,
 		isGit:     config.IsGitRepo(cwd),
 
-		systemInput:       appsystem.New(),
-		settings:          infra.settings,
-		hookEngine:        infra.hookEngine,
-		fileWatcher:       newFileWatcher(infra.hookEngine, nil),
-		taskNotifications: infra.taskNotifications,
-		fileCache:         filecache.New(),
+		systemInput: appsystem.New(),
+		settings:    infra.settings,
+		hookEngine:  infra.hookEngine,
+		fileWatcher: newFileWatcher(infra.hookEngine, nil),
+		agentInput:  appagent.State{Notifications: infra.notifications},
+		fileCache:   filecache.New(),
 	}
 }
 
@@ -339,12 +342,12 @@ func (m *model) applyResumeOption(resumeID string, fork bool) error {
 // buildLLMCompleter wraps a provider into an hook.LLMCompleter closure.
 // The closure owns client construction and streaming, keeping the hooks
 // engine free from direct provider dependencies.
-func buildLLMCompleter(p llm.LLMProvider) hook.LLMCompleter {
+func buildLLMCompleter(p llm.Provider) hook.LLMCompleter {
 	if p == nil {
 		return nil
 	}
 	return func(ctx context.Context, systemPrompt, userMessage, model string) (string, error) {
-		c := llm.NewLLM(p, model, 0)
+		c := llm.NewClient(p, model, 0)
 		resp, err := c.Complete(ctx, systemPrompt, []core.Message{{
 			Role:    core.RoleUser,
 			Content: userMessage,
@@ -353,5 +356,129 @@ func buildLLMCompleter(p llm.LLMProvider) hook.LLMCompleter {
 			return "", err
 		}
 		return resp.Content, nil
+	}
+}
+
+func (m *model) buildLoopClient() *llm.Client {
+	llm := llm.NewClient(m.provider.LLM, m.getModelID(), m.getMaxTokens())
+	llm.SetThinking(m.effectiveThinkingLevel())
+	return llm
+}
+
+func (m *model) buildLoopSystem(extra []string, loopClient *llm.Client) core.System {
+	providerName := ""
+	modelID := ""
+	if loopClient != nil {
+		modelID = loopClient.ModelID()
+		providerName = loopClient.Name()
+	}
+	return prompt.Build(prompt.Config{
+		ProviderName:        providerName,
+		ModelID:             modelID,
+		Cwd:                 m.cwd,
+		IsGit:               m.isGit,
+		PlanMode:            m.mode.Enabled,
+		UserInstructions:    m.memory.CachedUser,
+		ProjectInstructions: m.memory.CachedProject,
+		SessionSummary:      m.buildSessionSummaryBlock(),
+		Skills:              m.buildLoopSkillsSection(),
+		Agents:              m.buildLoopAgentsSection(),
+		DeferredTools:       tool.FormatDeferredToolsPrompt(),
+		Extra:               m.buildLoopExtra(extra),
+	})
+}
+
+func (m *model) buildLoopToolSet() *tool.Set {
+	return &tool.Set{
+		Disabled: m.mode.DisabledTools,
+		PlanMode: m.mode.Enabled,
+		MCP:      m.buildMCPToolsGetter(),
+	}
+}
+
+func (m *model) buildLoopExtra(extra []string) []string {
+	allExtra := append([]string{}, extra...)
+	if coordinator := buildCoordinatorGuidance(); coordinator != "" {
+		allExtra = append(allExtra, coordinator)
+	}
+	if m.skill.ActiveInvocation != "" {
+		allExtra = append(allExtra, m.skill.ActiveInvocation)
+	}
+	if reminder := m.buildTaskReminder(); reminder != "" {
+		allExtra = append(allExtra, reminder)
+	}
+	return allExtra
+}
+
+func buildCoordinatorGuidance() string {
+	return prompt.CoordinatorGuidance()
+}
+
+func (m *model) buildSessionSummaryBlock() string {
+	if m.session.Summary == "" {
+		return ""
+	}
+	return fmt.Sprintf("<session-summary>\n%s\n</session-summary>", m.session.Summary)
+}
+
+func (m *model) buildLoopSkillsSection() string {
+	if skill.DefaultRegistry == nil {
+		return ""
+	}
+	return skill.DefaultRegistry.GetSkillsSection()
+}
+
+func (m *model) buildLoopAgentsSection() string {
+	if subagent.DefaultRegistry == nil {
+		return ""
+	}
+	return subagent.DefaultRegistry.GetAgentsSection()
+}
+
+func (m *model) buildMCPToolsGetter() func() []core.ToolSchema {
+	if m.mcp.Registry == nil {
+		return nil
+	}
+	return m.mcp.Registry.GetToolSchemas
+}
+
+type agentToolOption func(*subagent.Executor)
+
+func configureAgentTool(llmProvider llm.Provider, cwd string, modelID string, hookEngine *hook.Engine, sessionStore *session.Store, parentSessionID string, opts ...agentToolOption) {
+	executor := subagent.NewExecutor(llmProvider, cwd, modelID, hookEngine)
+	if sessionStore != nil && parentSessionID != "" {
+		executor.SetSessionStore(sessionStore, parentSessionID)
+	}
+	for _, opt := range opts {
+		opt(executor)
+	}
+	adapter := subagent.NewExecutorAdapter(executor)
+
+	if t, ok := tool.Get(tool.ToolAgent); ok {
+		if agentTool, ok := t.(*toolagent.AgentTool); ok {
+			agentTool.SetExecutor(adapter)
+		}
+	}
+	if t, ok := tool.Get(tool.ToolContinueAgent); ok {
+		if continueTool, ok := t.(*toolagent.ContinueAgentTool); ok {
+			continueTool.SetExecutor(adapter)
+		}
+	}
+	if t, ok := tool.Get(tool.ToolSendMessage); ok {
+		if sendMessageTool, ok := t.(*toolagent.SendMessageTool); ok {
+			sendMessageTool.SetExecutor(adapter)
+		}
+	}
+}
+
+func withAgentContext(userInstructions, projectInstructions string, isGit bool) agentToolOption {
+	return func(e *subagent.Executor) {
+		e.SetContext(userInstructions, projectInstructions, isGit)
+	}
+}
+
+func withAgentMCP(getter func() []core.ToolSchema, registry *mcp.Registry) agentToolOption {
+	return func(e *subagent.Executor) {
+		e.SetMCP(getter, registry)
 	}
 }

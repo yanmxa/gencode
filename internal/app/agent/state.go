@@ -1,9 +1,6 @@
-// Package agentinput handles Source 2 (agent → agent) inputs:
+// Package agent handles Source 2 (agent → agent) inputs:
 // background agent completion notifications, SendMessage, and self-inject.
-//
-// Named agentinput (not agent) to avoid collision with internal/app/agentui
-// which handles the agent type selector overlay.
-package agentinput
+package agent
 
 import (
 	"sync"

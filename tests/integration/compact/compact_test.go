@@ -11,8 +11,8 @@ import (
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
 
-// newFakeClient creates a *llm.LLM backed by the given responses.
-func newFakeClient(responses ...core.CompletionResponse) (*llm.LLM, *llm.FakeLLM) {
+// newFakeClient creates a *llm.Client backed by the given responses.
+func newFakeClient(responses ...core.CompletionResponse) (*llm.Client, *llm.FakeLLM) {
 	fake := &llm.FakeLLM{Responses: responses}
 	return testutil.NewTestClient(fake), fake
 }

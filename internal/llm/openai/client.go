@@ -18,7 +18,7 @@ import (
 	streamutil "github.com/yanmxa/gencode/internal/llm/stream"
 )
 
-// Client implements the LLMProvider interface using the OpenAI SDK
+// Client implements the Provider interface using the OpenAI SDK
 type Client struct {
 	client openai.Client
 	name   string
@@ -417,5 +417,5 @@ func openaiReasoningEffort(level llm.ThinkingLevel) shared.ReasoningEffort {
 	}
 }
 
-// Ensure Client implements LLMProvider
-var _ llm.LLMProvider = (*Client)(nil)
+// Ensure Client implements Provider
+var _ llm.Provider = (*Client)(nil)

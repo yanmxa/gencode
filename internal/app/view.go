@@ -6,8 +6,12 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	appagent "github.com/yanmxa/gencode/internal/app/agent"
+	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/render"
+	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/theme"
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 var ghostTextStyle = lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
@@ -37,7 +41,7 @@ func (m *model) View() string {
 	inputView := m.renderInputView()
 	chatSection := m.renderChatSection(activeContent, trackerView)
 	statusLine := m.renderModeStatus()
-	suggestions := m.input.Suggestions.Render(m.width)
+	suggestions := m.userInput.Suggestions.Render(m.width)
 	tokenWarning := render.RenderTokenWarning(m.provider.InputTokens, m.getEffectiveInputLimit(), m.conv.Compact.WarningSuppressed)
 	queuePreview := m.renderQueuePreview()
 
@@ -75,11 +79,11 @@ func (m *model) View() string {
 
 func (m model) renderInputView() string {
 	prompt := render.InputPromptStyle.Render("❯ ")
-	if m.promptSuggestion.text != "" && m.input.Textarea.Value() == "" &&
-		!m.conv.Stream.Active && !m.input.Suggestions.IsVisible() {
+	if m.promptSuggestion.text != "" && m.userInput.Textarea.Value() == "" &&
+		!m.conv.Stream.Active && !m.userInput.Suggestions.IsVisible() {
 		return prompt + ghostTextStyle.Render(m.promptSuggestion.text)
 	}
-	return prompt + m.input.RenderTextarea()
+	return prompt + m.userInput.RenderTextarea()
 }
 
 func (m model) renderChatSection(activeContent, trackerView string) string {
@@ -94,13 +98,13 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 	}
 
 	if m.provider.FetchingLimits {
-		spinnerView := render.ThinkingStyle.Render(m.output.Spinner.View() + " Fetching token limits...")
+		spinnerView := render.ThinkingStyle.Render(m.agentOutput.Spinner.View() + " Fetching token limits...")
 		parts = append(parts, spinnerView)
 	}
 
 	if compactView := render.RenderCompactStatus(
 		m.width,
-		m.output.Spinner.View(),
+		m.agentOutput.Spinner.View(),
 		m.conv.Compact.Active,
 		m.conv.Compact.Focus,
 		m.conv.Compact.Phase,
@@ -116,14 +120,7 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 // renderTrackerList renders a compact task list above the input area.
 // Returns empty string when task display is toggled off via Ctrl+T.
 func (m model) renderTrackerList() string {
-	if !m.showTasks {
-		return ""
-	}
-	return render.RenderTrackerList(render.TrackerListParams{
-		StreamActive: m.conv.Stream.Active,
-		Width:        m.width,
-		SpinnerView:  m.output.Spinner.View(),
-	})
+	return appagent.RenderTrackerList(m.showTasks, m.conv.Stream.Active, m.width, m.agentOutput.Spinner.View())
 }
 
 func (m model) renderWelcome() string {
@@ -131,10 +128,7 @@ func (m model) renderWelcome() string {
 }
 
 func (m model) renderModeStatus() string {
-	modelName := m.provider.StatusMessage
-	if m.systemInput.HookStatus != "" {
-		modelName = m.systemInput.HookStatus
-	}
+	modelName := appsystem.RenderHookStatus(m.systemInput.HookStatus, m.provider.StatusMessage)
 	return render.RenderModeStatus(render.OperationModeParams{
 		Mode:          m.mode.Operation,
 		InputTokens:   m.provider.InputTokens,
@@ -152,4 +146,47 @@ func (m model) renderQueuePreview() string {
 		return ""
 	}
 	return strings.TrimSuffix(render.RenderQueuePreview(items, m.queueSelectIdx, m.width), "\n")
+}
+
+// --- Message rendering (thin delegation to output package) ---
+
+func (m model) messageRenderParams() appoutput.MessageRenderParams {
+	return appoutput.MessageRenderParams{
+		Messages:                m.conv.Messages,
+		CommittedCount:          m.conv.CommittedCount,
+		StreamActive:            m.conv.Stream.Active,
+		BuildingTool:            m.conv.Stream.BuildingTool,
+		Width:                   m.width,
+		MDRenderer:              m.agentOutput.MDRenderer,
+		SpinnerView:             m.agentOutput.Spinner.View(),
+		TaskProgress:            m.agentOutput.TaskProgress,
+		InteractivePromptActive: (m.mode.Question != nil && m.mode.Question.IsActive()) || (m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive()),
+	}
+}
+
+func (m model) renderPlanForScrollback(req *tool.PlanRequest) string {
+	if req == nil {
+		return ""
+	}
+	return appoutput.RenderPlanForScrollback(req.Plan, m.agentOutput.MDRenderer)
+}
+
+func (m model) renderSingleMessage(idx int) string {
+	return appoutput.RenderSingleMessage(m.messageRenderParams(), idx)
+}
+
+func (m model) renderActiveContent() string {
+	return appoutput.RenderActiveContent(m.messageRenderParams())
+}
+
+func (m model) isToolPhaseActive() bool {
+	return false
+}
+
+func (m model) getExecutingToolName() string {
+	return m.conv.Stream.BuildingTool
+}
+
+func (m model) buildTaskOwnerMap() map[string]string {
+	return appoutput.BuildTaskOwnerMap()
 }

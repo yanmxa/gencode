@@ -9,8 +9,8 @@ import (
 
 // registryEntry holds a provider's metadata and factory
 type registryEntry struct {
-	meta    ProviderMeta
-	factory ProviderFactory
+	meta    Meta
+	factory Factory
 }
 
 // Registry manages provider registration and discovery
@@ -25,12 +25,12 @@ var globalRegistry = &Registry{
 }
 
 // Register registers a provider with its metadata and factory
-func Register(meta ProviderMeta, factory ProviderFactory) {
+func Register(meta Meta, factory Factory) {
 	globalRegistry.Register(meta, factory)
 }
 
 // Register registers a provider with its metadata and factory
-func (r *Registry) Register(meta ProviderMeta, factory ProviderFactory) {
+func (r *Registry) Register(meta Meta, factory Factory) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.entries[meta.Key()] = registryEntry{
@@ -40,12 +40,12 @@ func (r *Registry) Register(meta ProviderMeta, factory ProviderFactory) {
 }
 
 // GetProvider returns a provider instance for the given provider and auth method
-func GetProvider(ctx context.Context, provider Provider, authMethod AuthMethod) (LLMProvider, error) {
+func GetProvider(ctx context.Context, provider Name, authMethod AuthMethod) (Provider, error) {
 	return globalRegistry.GetProvider(ctx, provider, authMethod)
 }
 
 // GetProvider returns a provider instance for the given provider and auth method
-func (r *Registry) GetProvider(ctx context.Context, provider Provider, authMethod AuthMethod) (LLMProvider, error) {
+func (r *Registry) GetProvider(ctx context.Context, provider Name, authMethod AuthMethod) (Provider, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -58,34 +58,34 @@ func (r *Registry) GetProvider(ctx context.Context, provider Provider, authMetho
 }
 
 // GetMeta returns the metadata for a specific provider configuration
-func GetMeta(provider Provider, authMethod AuthMethod) (ProviderMeta, bool) {
+func GetMeta(provider Name, authMethod AuthMethod) (Meta, bool) {
 	return globalRegistry.GetMeta(provider, authMethod)
 }
 
 // GetMeta returns the metadata for a specific provider configuration
-func (r *Registry) GetMeta(provider Provider, authMethod AuthMethod) (ProviderMeta, bool) {
+func (r *Registry) GetMeta(provider Name, authMethod AuthMethod) (Meta, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	entry, ok := r.entries[makeProviderKey(provider, authMethod)]
 	if !ok {
-		return ProviderMeta{}, false
+		return Meta{}, false
 	}
 	return entry.meta, true
 }
 
 // makeProviderKey creates a unique key for provider and auth method combination
-func makeProviderKey(provider Provider, authMethod AuthMethod) string {
+func makeProviderKey(provider Name, authMethod AuthMethod) string {
 	return string(provider) + ":" + string(authMethod)
 }
 
 // IsReady checks if all required environment variables are set for a provider
-func IsReady(meta ProviderMeta) bool {
+func IsReady(meta Meta) bool {
 	return globalRegistry.IsReady(meta)
 }
 
 // IsReady checks if all required environment variables are set for a provider
-func (r *Registry) IsReady(meta ProviderMeta) bool {
+func (r *Registry) IsReady(meta Meta) bool {
 	for _, envVar := range meta.EnvVars {
 		if os.Getenv(envVar) == "" {
 			return false
@@ -94,35 +94,35 @@ func (r *Registry) IsReady(meta ProviderMeta) bool {
 	return true
 }
 
-// ProviderStatus represents the connection status of a provider
-type ProviderStatus string
+// Status represents the connection status of a provider
+type Status string
 
 const (
-	StatusConnected     ProviderStatus = "connected"
-	StatusAvailable     ProviderStatus = "available"
-	StatusNotConfigured ProviderStatus = "not_configured"
+	StatusConnected     Status = "connected"
+	StatusAvailable     Status = "available"
+	StatusNotConfigured Status = "not_configured"
 )
 
-// ProviderInfo contains provider metadata with its current status
-type ProviderInfo struct {
-	Meta   ProviderMeta
-	Status ProviderStatus
+// Info contains provider metadata with its current status
+type Info struct {
+	Meta   Meta
+	Status Status
 }
 
 // GetProvidersWithStatus returns all providers grouped by provider name with their status
-func GetProvidersWithStatus(store *Store) map[Provider][]ProviderInfo {
+func GetProvidersWithStatus(store *Store) map[Name][]Info {
 	return globalRegistry.GetProvidersWithStatus(store)
 }
 
 // GetProvidersWithStatus returns all providers grouped by provider name with their status
-func (r *Registry) GetProvidersWithStatus(store *Store) map[Provider][]ProviderInfo {
+func (r *Registry) GetProvidersWithStatus(store *Store) map[Name][]Info {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	result := make(map[Provider][]ProviderInfo)
+	result := make(map[Name][]Info)
 
 	for _, entry := range r.entries {
-		var status ProviderStatus
+		var status Status
 		if store.IsConnected(entry.meta.Provider, entry.meta.AuthMethod) {
 			status = StatusConnected
 		} else if r.IsReady(entry.meta) {
@@ -131,7 +131,7 @@ func (r *Registry) GetProvidersWithStatus(store *Store) map[Provider][]ProviderI
 			status = StatusNotConfigured
 		}
 
-		info := ProviderInfo{
+		info := Info{
 			Meta:   entry.meta,
 			Status: status,
 		}

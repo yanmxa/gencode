@@ -12,12 +12,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
+	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	"github.com/yanmxa/gencode/internal/app/progress"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/util/log"
 )
 
 // agentOutboxMsg carries an event from the core.Agent's outbox to the TUI.
@@ -51,9 +52,9 @@ func (m *model) updateAgent(msg tea.Msg) (tea.Cmd, bool) {
 		m.pendingPermBridge = msg.Request
 		return m.showPermissionPrompt(msg.Request), true
 	case progress.UpdateMsg:
-		return m.output.HandleProgress(msg), true
+		return m.agentOutput.HandleProgress(msg), true
 	case progress.CheckTickMsg:
-		return m.output.HandleProgressTick(false), true
+		return m.agentOutput.HandleProgressTick(false), true
 	}
 	return nil, false
 }
@@ -112,7 +113,7 @@ func (m *model) handlePreInfer() tea.Cmd {
 	// Append an empty assistant message that will accumulate streamed text.
 	m.conv.Append(core.ChatMessage{Role: core.RoleAssistant, Content: ""})
 
-	cmds := append(commitCmds, m.output.Spinner.Tick)
+	cmds := append(commitCmds, m.agentOutput.Spinner.Tick)
 	cmds = append(cmds, m.continueOutbox())
 	return tea.Batch(cmds...)
 }
@@ -195,7 +196,7 @@ func (m *model) handlePostTool(ev core.Event) tea.Cmd {
 	// Clean up agent progress display
 	if tool.IsAgentToolName(tr.ToolName) {
 		// Clear progress for this tool (we don't have an index, clear all)
-		m.output.TaskProgress = nil
+		m.agentOutput.TaskProgress = nil
 	}
 
 	// Fire PostToolUse hook asynchronously
@@ -379,21 +380,21 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 	if !ok {
 		return
 	}
-	launch := backgroundTaskLaunch{
-		TaskID:      metadataString(bg, "taskId"),
-		AgentName:   metadataString(bg, "agentName"),
-		AgentType:   metadataString(bg, "agentType"),
-		Description: metadataString(bg, "description"),
-		ResumeID:    metadataString(bg, "resumeId"),
+	launch := appagent.BackgroundTaskLaunch{
+		TaskID:      appagent.MetadataString(bg, "taskId"),
+		AgentName:   appagent.MetadataString(bg, "agentName"),
+		AgentType:   appagent.MetadataString(bg, "agentType"),
+		Description: appagent.MetadataString(bg, "description"),
+		ResumeID:    appagent.MetadataString(bg, "resumeId"),
 	}
 	if launch.TaskID == "" {
 		return
 	}
 	// For agent-managed tool calls, we don't have PendingCalls for batch spec.
 	// Record as a single worker (no batch).
-	childID := ensureBackgroundWorkerTracker(launch, "", "")
+	childID := appagent.EnsureBackgroundWorkerTracker(launch, "", "")
 	if childID != "" {
-		recordBackgroundTaskLaunch(launch, "", "", 0)
+		appagent.RecordBackgroundTaskLaunch(launch, "", "", 0)
 	}
 }
 
@@ -537,48 +538,14 @@ func (m *model) drainAsyncHookQueueToAgent() tea.Cmd {
 
 // drainTaskNotificationsToAgent pops completed task notifications and sends them to the agent.
 func (m *model) drainTaskNotificationsToAgent() tea.Cmd {
-	if m.taskNotifications == nil {
+	if m.agentInput.Notifications == nil {
 		return nil
 	}
-	items := m.taskNotifications.PopBatch(maxTaskNotificationsPerContinuation)
+	items := appagent.PopReadyNotifications(m.agentInput.Notifications, true)
 	if len(items) == 0 {
 		return nil
 	}
-
-	merged := mergeTaskNotifications(items)
-	if merged.Notice != "" {
-		m.conv.Append(core.ChatMessage{
-			Role:    core.RoleNotice,
-			Content: merged.Notice,
-		})
-	}
-	if merged.ContinuationPrompt == "" {
-		return nil
-	}
-
-	// Build the full prompt with context and coordinator hints
-	contexts := taskNotificationContinuationContext(merged)
-	prompt := buildTaskNotificationContinuationPrompt(merged)
-
-	var content string
-	for _, ctx := range contexts {
-		if content != "" {
-			content += "\n"
-		}
-		content += ctx
-	}
-	if prompt != "" {
-		if content != "" {
-			content += "\n"
-		}
-		content += prompt
-	}
-
-	m.conv.Append(core.ChatMessage{
-		Role:    core.RoleUser,
-		Content: content,
-	})
-	return m.sendToAgent(content, nil)
+	return m.injectTaskNotificationContinuation(appagent.MergeNotifications(items))
 }
 
 // --- Permission bridge ---

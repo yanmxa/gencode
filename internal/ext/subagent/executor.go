@@ -23,7 +23,7 @@ import (
 
 // Executor runs agent LLM loops
 type Executor struct {
-	provider            llm.LLMProvider
+	provider            llm.Provider
 	cwd                 string
 	parentModelID       string // Parent conversation's model ID (used when inheriting)
 	hooks               *hook.Engine
@@ -53,7 +53,7 @@ type runConfig struct {
 // NewExecutor creates a new agent executor
 // parentModelID is the model used by the parent conversation (for inheritance)
 // hookEngine is optional — when non-nil, PreToolUse hooks will fire during agent tool calls
-func NewExecutor(llmProvider llm.LLMProvider, cwd string, parentModelID string, hookEngine *hook.Engine) *Executor {
+func NewExecutor(llmProvider llm.Provider, cwd string, parentModelID string, hookEngine *hook.Engine) *Executor {
 	return &Executor{
 		provider:      llmProvider,
 		cwd:           cwd,
@@ -272,7 +272,7 @@ func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string
 			ProjectInstructions: e.projectInstructions,
 			Extra:               []string{rc.agentPrompt},
 		}),
-		Client:     llm.NewLLM(e.provider, rc.modelID, 0),
+		Client:     llm.NewClient(e.provider, rc.modelID, 0),
 		Tool:       newAgentToolSet([]string(rc.config.Tools), []string(rc.config.DisallowedTools), e.mcpGetter),
 		Permission: agentPermission(rc.permMode),
 		Hooks:      e.hooks,

@@ -60,21 +60,21 @@ func (m *model) handleModelSelected(msg providerui.ModelSelectedMsg) tea.Cmd {
 
 	m.provider.CurrentModel = &llm.CurrentModelInfo{
 		ModelID:    msg.ModelID,
-		Provider:   llm.Provider(msg.ProviderName),
+		Provider:   llm.Name(msg.ProviderName),
 		AuthMethod: msg.AuthMethod,
 	}
 	if m.hookEngine != nil {
 		m.hookEngine.SetLLMCompleter(buildLLMCompleter(m.provider.LLM), msg.ModelID)
 	}
 	ctx := context.Background()
-	m.refreshProviderConnection(ctx, llm.Provider(msg.ProviderName), msg.AuthMethod)
+	m.refreshProviderConnection(ctx, llm.Name(msg.ProviderName), msg.AuthMethod)
 
 	// Show model name in status bar for 5 seconds
 	m.provider.StatusMessage = msg.ModelID
 	return providerui.StatusTimer(5 * time.Second)
 }
 
-func (m *model) refreshProviderConnection(ctx context.Context, providerName llm.Provider, authMethod llm.AuthMethod) {
+func (m *model) refreshProviderConnection(ctx context.Context, providerName llm.Name, authMethod llm.AuthMethod) {
 	p, err := llm.GetProvider(ctx, providerName, authMethod)
 	if err != nil {
 		log.Logger().Warn("failed to refresh provider connection",

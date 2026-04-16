@@ -11,10 +11,10 @@ func TestStore_PersistsConnectionsCurrentModelSearchProviderAndTokenLimits(t *te
 		t.Fatalf("NewStore() error = %v", err)
 	}
 
-	if err := store.Connect(ProviderOpenAI, AuthAPIKey); err != nil {
+	if err := store.Connect(OpenAI, AuthAPIKey); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	if err := store.SetCurrentModel("gpt-5", ProviderOpenAI, AuthAPIKey); err != nil {
+	if err := store.SetCurrentModel("gpt-5", OpenAI, AuthAPIKey); err != nil {
 		t.Fatalf("SetCurrentModel() error = %v", err)
 	}
 	if err := store.SetSearchProvider("brave"); err != nil {
@@ -29,11 +29,11 @@ func TestStore_PersistsConnectionsCurrentModelSearchProviderAndTokenLimits(t *te
 		t.Fatalf("NewStore(reload) error = %v", err)
 	}
 
-	if !reloaded.IsConnected(ProviderOpenAI, AuthAPIKey) {
+	if !reloaded.IsConnected(OpenAI, AuthAPIKey) {
 		t.Fatal("expected OpenAI API key connection to persist")
 	}
 	current := reloaded.GetCurrentModel()
-	if current == nil || current.ModelID != "gpt-5" || current.Provider != ProviderOpenAI || current.AuthMethod != AuthAPIKey {
+	if current == nil || current.ModelID != "gpt-5" || current.Provider != OpenAI || current.AuthMethod != AuthAPIKey {
 		t.Fatalf("unexpected current model after reload: %#v", current)
 	}
 	if reloaded.GetSearchProvider() != "brave" {
@@ -58,11 +58,11 @@ func TestStore_SetTokenLimitUpdatesCachedModelCopy(t *testing.T) {
 		{ID: "gpt-5", Name: "GPT-5"},
 		{ID: "gpt-5-mini", Name: "GPT-5 mini"},
 	}
-	if err := store.CacheModels(ProviderOpenAI, AuthAPIKey, models); err != nil {
+	if err := store.CacheModels(OpenAI, AuthAPIKey, models); err != nil {
 		t.Fatalf("CacheModels() error = %v", err)
 	}
 
-	cachedBefore, ok := store.GetCachedModels(ProviderOpenAI, AuthAPIKey)
+	cachedBefore, ok := store.GetCachedModels(OpenAI, AuthAPIKey)
 	if !ok {
 		t.Fatal("expected cached models")
 	}
@@ -71,7 +71,7 @@ func TestStore_SetTokenLimitUpdatesCachedModelCopy(t *testing.T) {
 		t.Fatalf("SetTokenLimit() error = %v", err)
 	}
 
-	cachedAfter, ok := store.GetCachedModels(ProviderOpenAI, AuthAPIKey)
+	cachedAfter, ok := store.GetCachedModels(OpenAI, AuthAPIKey)
 	if !ok {
 		t.Fatal("expected cached models after override")
 	}

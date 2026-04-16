@@ -10,7 +10,7 @@ import (
 
 // State holds all provider-related state for the TUI model.
 type State struct {
-	LLM              llm.LLMProvider
+	LLM              llm.Provider
 	Store            *llm.Store
 	CurrentModel     *llm.CurrentModelInfo
 	InputTokens      int

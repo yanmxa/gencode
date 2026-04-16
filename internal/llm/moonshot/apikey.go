@@ -11,8 +11,8 @@ import (
 )
 
 // APIKeyMeta is the metadata for Moonshot via API Key
-var APIKeyMeta = llm.ProviderMeta{
-	Provider:    llm.ProviderMoonshot,
+var APIKeyMeta = llm.Meta{
+	Provider:    llm.Moonshot,
 	AuthMethod:  llm.AuthAPIKey,
 	EnvVars:     []string{"MOONSHOT_API_KEY"},
 	DisplayName: "Direct API",
@@ -20,7 +20,7 @@ var APIKeyMeta = llm.ProviderMeta{
 
 // NewAPIKeyClient creates a new Moonshot client using API Key authentication.
 // The Moonshot API is OpenAI-compatible, so we use the OpenAI SDK with a custom base URL.
-func NewAPIKeyClient(ctx context.Context) (llm.LLMProvider, error) {
+func NewAPIKeyClient(ctx context.Context) (llm.Provider, error) {
 	baseURL := os.Getenv("MOONSHOT_BASE_URL")
 	if baseURL == "" {
 		baseURL = "https://api.moonshot.cn/v1"

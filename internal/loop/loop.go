@@ -115,7 +115,7 @@ type MCPCaller interface {
 // System, Client, and Tool are required; all other fields are optional.
 type LoopConfig struct {
 	System          core.System          // required: system prompt provider
-	Client          *llm.LLM       // required: LLM client
+	Client          *llm.Client       // required: LLM client
 	Tool            *tool.Set            // required: tool registry
 	Permission      permission.Checker   // optional: permission checker (nil = permit all)
 	Hooks           *hook.Engine        // optional: hook engine
@@ -154,7 +154,7 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 //	Incremental: loop.Stream()/Collect()/AddResponse()/FilterToolCalls()/ExecTool() — for event-driven callers
 type Loop struct {
 	System     core.System
-	Client     *llm.LLM
+	Client     *llm.Client
 	Tool       *tool.Set
 	Permission permission.Checker
 	Hooks      *hook.Engine

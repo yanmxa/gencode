@@ -15,21 +15,21 @@ import (
 )
 
 // providerOrder defines the display order for providers.
-var providerOrder = []coreprovider.Provider{
-	coreprovider.ProviderAnthropic,
-	coreprovider.ProviderOpenAI,
-	coreprovider.ProviderGoogle,
-	coreprovider.ProviderMoonshot,
-	coreprovider.ProviderAlibaba,
+var providerOrder = []coreprovider.Name{
+	coreprovider.Anthropic,
+	coreprovider.OpenAI,
+	coreprovider.Google,
+	coreprovider.Moonshot,
+	coreprovider.Alibaba,
 }
 
 // providerDisplayNames maps provider to human-readable name.
-var providerDisplayNames = map[coreprovider.Provider]string{
-	coreprovider.ProviderAnthropic: "Anthropic",
-	coreprovider.ProviderOpenAI:    "OpenAI",
-	coreprovider.ProviderGoogle:    "Google",
-	coreprovider.ProviderMoonshot:  "Moonshot",
-	coreprovider.ProviderAlibaba:   "Alibaba",
+var providerDisplayNames = map[coreprovider.Name]string{
+	coreprovider.Anthropic: "Anthropic",
+	coreprovider.OpenAI:    "OpenAI",
+	coreprovider.Google:    "Google",
+	coreprovider.Moonshot:  "Moonshot",
+	coreprovider.Alibaba:   "Alibaba",
 }
 
 // Enter opens the unified model & provider selector.
@@ -141,13 +141,13 @@ func (s *Model) ensureModelProvidersExist() {
 		}
 		seen[m.ProviderName] = true
 
-		displayName := providerDisplayNames[coreprovider.Provider(m.ProviderName)]
+		displayName := providerDisplayNames[coreprovider.Name(m.ProviderName)]
 		if displayName == "" {
 			displayName = m.ProviderName
 		}
 
 		s.connectedProviders = append(s.connectedProviders, providerItem{
-			Provider:    coreprovider.Provider(m.ProviderName),
+			Provider:    coreprovider.Name(m.ProviderName),
 			DisplayName: displayName,
 			Connected:   true,
 		})
@@ -174,7 +174,7 @@ func (s *Model) loadModelsAsync(store *coreprovider.Store, currentModelID string
 			wg.Add(1)
 			go func(providerName string, authMethod coreprovider.AuthMethod) {
 				defer wg.Done()
-				p, err := coreprovider.GetProvider(ctx, coreprovider.Provider(providerName), authMethod)
+				p, err := coreprovider.GetProvider(ctx, coreprovider.Name(providerName), authMethod)
 				if err != nil {
 					return
 				}
@@ -190,7 +190,7 @@ func (s *Model) loadModelsAsync(store *coreprovider.Store, currentModelID string
 
 		var models []modelItem
 		for r := range ch {
-			prov := coreprovider.Provider(r.providerName)
+			prov := coreprovider.Name(r.providerName)
 			_ = store.CacheModels(prov, r.authMethod, r.models)
 
 			for _, mdl := range r.models {
@@ -524,7 +524,7 @@ func (s *Model) HandleConnectResult(msg ConnectResultMsg) tea.Cmd {
 }
 
 // ConnectProvider connects to a provider and verifies the connection.
-func (s *Model) ConnectProvider(ctx context.Context, p coreprovider.Provider, authMethod coreprovider.AuthMethod) (string, error) {
+func (s *Model) ConnectProvider(ctx context.Context, p coreprovider.Name, authMethod coreprovider.AuthMethod) (string, error) {
 	if s.store == nil {
 		store, err := coreprovider.NewStore()
 		if err != nil {
@@ -580,7 +580,7 @@ func (s *Model) SetModel(modelID string, providerName string, authMethod corepro
 		s.store = store
 	}
 
-	if err := s.store.SetCurrentModel(modelID, coreprovider.Provider(providerName), authMethod); err != nil {
+	if err := s.store.SetCurrentModel(modelID, coreprovider.Name(providerName), authMethod); err != nil {
 		return "", fmt.Errorf("failed to set model: %w", err)
 	}
 

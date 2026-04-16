@@ -175,16 +175,16 @@ func newTestStore(t *testing.T) *coreprovider.Store {
 
 func TestEnterLoadsCachedModelsAndPutsCurrentFirst(t *testing.T) {
 	store := newTestStore(t)
-	if err := store.CacheModels(coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey, []coreprovider.ModelInfo{
+	if err := store.CacheModels(coreprovider.OpenAI, coreprovider.AuthAPIKey, []coreprovider.ModelInfo{
 		{ID: "gpt-5-mini", DisplayName: "GPT-5 mini", InputTokenLimit: 128000, OutputTokenLimit: 16000},
 		{ID: "gpt-5", DisplayName: "GPT-5", InputTokenLimit: 256000, OutputTokenLimit: 32000},
 	}); err != nil {
 		t.Fatalf("CacheModels() error = %v", err)
 	}
-	if err := store.Connect(coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey); err != nil {
+	if err := store.Connect(coreprovider.OpenAI, coreprovider.AuthAPIKey); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	if err := store.SetCurrentModel("gpt-5", coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey); err != nil {
+	if err := store.SetCurrentModel("gpt-5", coreprovider.OpenAI, coreprovider.AuthAPIKey); err != nil {
 		t.Fatalf("SetCurrentModel() error = %v", err)
 	}
 
@@ -256,7 +256,7 @@ func TestSetModelPersistsSelection(t *testing.T) {
 	}
 
 	current := store.GetCurrentModel()
-	if current == nil || current.ModelID != "gpt-5" || current.Provider != coreprovider.ProviderOpenAI || current.AuthMethod != coreprovider.AuthAPIKey {
+	if current == nil || current.ModelID != "gpt-5" || current.Provider != coreprovider.OpenAI || current.AuthMethod != coreprovider.AuthAPIKey {
 		t.Fatalf("unexpected current model after SetModel: %#v", current)
 	}
 }

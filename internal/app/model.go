@@ -1,21 +1,22 @@
-// Core data types, message commit pipeline, and LLM loop configuration.
+// Core data types, message commit pipeline, agent session management, and LLM loop configuration.
+//
+// Agent builder (buildCoreAgent, ensureAgentSession, startAgentLoop) lives here
+// because it is Model initialization, not an Update handler.
 package app
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"strings"
-
-	appagent "github.com/yanmxa/gencode/internal/app/agentinput"
+	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	"github.com/yanmxa/gencode/internal/app/agentui"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
-	appinput "github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/app/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/memory"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
@@ -28,13 +29,15 @@ import (
 	"github.com/yanmxa/gencode/internal/app/skillui"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/toolui"
+	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/util/filecache"
-	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/tool/tasktools"
 	"github.com/yanmxa/gencode/internal/task/tracker"
+	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/tasktools"
+	"github.com/yanmxa/gencode/internal/util/filecache"
 )
 
 const (
@@ -46,56 +49,50 @@ const (
 )
 
 type model struct {
-	// IO
-	input  appinput.Model
-	output appoutput.Model
+	// Source 1: userInput — textarea, history, images, queue, overlay, modal, mode
+	userInput        appuser.Model
+	inputQueue       appqueue.Queue
+	queueSelectIdx   int    // -1 = no selection, 0+ = selected queue item index
+	queueTempInput   string // stashed input when navigating into queue
+	mode             appmode.State
+	approval         *appapproval.Model
+	promptSuggestion promptSuggestionState
+	showTasks        bool // Ctrl+T toggles task list visibility
 
-	// Terminal
-	width  int
-	height int
-	ready  bool
-	cwd    string
-
-	// Conversation
-	conv appconv.Model
-
-	// Domain — each feature owns all its state
+	// Source 1 overlays — each selector is user-triggered
 	provider providerui.State
 	session  sessionui.State
 	skill    skillui.State
 	memory   appmemory.State
-	mode     appmode.State
 	tool     toolui.State
 	mcp      mcpui.State
 	plugin   pluginui.State
 	agent    agentui.State
 	search   searchui.State
-	approval *appapproval.Model
 
-	// Input queue — buffers user messages submitted while the LLM is busy
-	inputQueue     appqueue.Queue
-	queueSelectIdx int    // -1 = no selection, 0+ = selected queue item index
-	queueTempInput string // stashed input when navigating into queue
-
-	// Agent events — background task notifications (Source 2)
+	// Source 2: agentInput — background agent notifications, batch tracking
 	agentInput appagent.State
 
-	// System events — cron scheduler and async hook rewakes (Source 3)
+	// Source 3: systemInput — cron scheduler and async hook rewakes
 	systemInput appsystem.State
 
-	// UI toggles
-	showTasks     bool   // Ctrl+T toggles task list visibility
-	isGit         bool   // cached: whether cwd is a git repository
-	initialPrompt string // initial prompt from CLI args
+	// Agent Output — conversation, stream, tokens, provider, session, compact
+	conv        appconv.Model
+	agentOutput appoutput.Model
 
-	// Config and Infra
-	settings    *config.Settings
-	hookEngine  *hook.Engine
-	fileWatcher *fileWatcher
-	promptSuggestion  promptSuggestionState
-	fileCache         *filecache.Cache
+	// Config — settings, hookEngine, fileCache, cwd, isGit
+	width         int
+	height        int
+	ready         bool
+	cwd           string
+	isGit         bool
+	initialPrompt string
+	settings      *config.Settings
+	hookEngine    *hook.Engine
+	fileWatcher   *fileWatcher
+	fileCache     *filecache.Cache
 
-	// core.Agent session (Phase 3 migration: TUI → core.Agent)
+	// Agent session
 	agentSess         *agentSession
 	pendingPermBridge *permBridgeRequest
 }
@@ -177,7 +174,7 @@ func (m *model) fireSessionEnd(reason string) {
 }
 
 func (m *model) Init() tea.Cmd {
-	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, mcpui.AutoConnect(), appsystem.TriggerCronTickNow(), appsystem.StartCronTicker(), appsystem.StartAsyncHookTicker(), startTaskNotificationTicker()}
+	cmds := []tea.Cmd{textarea.Blink, m.agentOutput.Spinner.Tick, mcpui.AutoConnect(), appsystem.TriggerCronTickNow(), appsystem.StartCronTicker(), appsystem.StartAsyncHookTicker(), appagent.StartTicker()}
 	if m.initialPrompt != "" {
 		prompt := m.initialPrompt
 		cmds = append(cmds, func() tea.Msg { return initialPromptMsg(prompt) })
@@ -311,3 +308,136 @@ func formatAsyncHookContinuationContext(result hook.AsyncHookResult, reason stri
 		reason,
 	)
 }
+
+// --- Agent session management ---
+// Agent builder (buildCoreAgent, ensureAgentSession, startAgentLoop) lives
+// in model.go because it is Model initialization, not an Update handler.
+
+// agentSession holds the running core.Agent and its supporting infrastructure.
+type agentSession struct {
+	agent      core.Agent
+	permBridge *permissionBridge
+	cancel     context.CancelFunc
+}
+
+// buildCoreAgent creates a core.Agent and permissionBridge from the model's
+// current state. The agent is not started — call startAgentLoop() for that.
+func (m *model) buildCoreAgent() (*agentSession, error) {
+	if m.provider.LLM == nil {
+		return nil, errNoProvider
+	}
+
+	// LLM — wraps the current provider as core.LLM
+	client := llm.NewClient(m.provider.LLM, m.getModelID(), m.getMaxTokens())
+	client.SetThinking(m.effectiveThinkingLevel())
+
+	// System prompt — build layered core.System directly
+	c := m.buildLoopClient()
+	sys := m.buildLoopSystem(nil, c)
+
+	// Tools — adapt legacy tool registry to core.Tools
+	toolSchemas := m.buildLoopToolSet().Tools()
+	coreSchemas := make([]core.ToolSchema, len(toolSchemas))
+	for i, ts := range toolSchemas {
+		coreSchemas[i] = core.ToolSchema{
+			Name:        ts.Name,
+			Description: ts.Description,
+			Parameters:  ts.Parameters,
+		}
+	}
+	tools := tool.AdaptToolRegistry(coreSchemas, func() string { return m.cwd })
+
+	// Hooks — wrap hook.Engine as core.Hooks
+	coreHooks := hook.AsCoreHooks(m.hookEngine)
+
+	// Permission bridge — blocking PermissionFunc with TUI approval
+	permBridge := newPermissionBridge(
+		func() *config.Settings { return m.settings },
+		func() *config.SessionPermissions { return m.mode.SessionPermissions },
+		func() string { return m.cwd },
+	)
+
+	ag := core.NewAgent(core.Config{
+		ID:         "main",
+		LLM:        client,
+		System:     sys,
+		Tools:      tools,
+		Hooks:      coreHooks,
+		Permission: permBridge.PermissionFunc(),
+		CWD:        m.cwd,
+	})
+
+	return &agentSession{
+		agent:      ag,
+		permBridge: permBridge,
+	}, nil
+}
+
+// startAgentLoop starts the core.Agent in a background goroutine and returns
+// tea.Cmds for draining the outbox and polling the permission bridge.
+func (m *model) startAgentLoop(sess *agentSession) tea.Cmd {
+	ctx, cancel := context.WithCancel(context.Background())
+	sess.cancel = cancel
+
+	// Start agent.Run in background
+	go func() {
+		_ = sess.agent.Run(ctx)
+	}()
+
+	// Return commands that drain the outbox and poll the permission bridge
+	return tea.Batch(
+		drainAgentOutbox(sess.agent.Outbox()),
+		sess.permBridge.PollCmd(),
+	)
+}
+
+// stopAgentLoop gracefully stops the running agent.
+func (sess *agentSession) stop() {
+	if sess == nil {
+		return
+	}
+	if sess.cancel != nil {
+		sess.cancel()
+		sess.cancel = nil
+	}
+	if sess.permBridge != nil {
+		sess.permBridge.Close()
+	}
+	// Send stop signal if inbox is still open
+	if sess.agent != nil {
+		select {
+		case sess.agent.Inbox() <- core.Message{Signal: core.SigStop}:
+		default:
+		}
+	}
+}
+
+// ensureAgentSession lazily creates and starts the core.Agent session.
+func (m *model) ensureAgentSession() error {
+	if m.agentSess != nil {
+		return nil
+	}
+	sess, err := m.buildCoreAgent()
+	if err != nil {
+		return err
+	}
+	m.agentSess = sess
+
+	// Restore existing conversation history into the agent
+	if len(m.conv.Messages) > 0 {
+		var coreMessages []core.Message
+		for _, msg := range m.conv.ConvertToProvider() {
+			coreMessages = append(coreMessages, msg)
+		}
+		sess.agent.SetMessages(coreMessages)
+	}
+
+	m.startAgentLoop(sess)
+	return nil
+}
+
+var errNoProvider = providerRequiredError("no LLM provider configured")
+
+type providerRequiredError string
+
+func (e providerRequiredError) Error() string { return string(e) }

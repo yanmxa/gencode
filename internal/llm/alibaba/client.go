@@ -1,4 +1,4 @@
-// Package alibaba implements the LLMProvider interface using the Alibaba Cloud DashScope platform.
+// Package alibaba implements the Provider interface using the Alibaba Cloud DashScope platform.
 // DashScope's API is OpenAI-compatible, so we reuse the openai-go SDK with a custom base URL.
 package alibaba
 
@@ -18,7 +18,7 @@ import (
 	streamutil "github.com/yanmxa/gencode/internal/llm/stream"
 )
 
-// Client implements the LLMProvider interface for Qwen using the OpenAI SDK.
+// Client implements the Provider interface for Qwen using the OpenAI SDK.
 type Client struct {
 	client openai.Client
 	name   string
@@ -182,6 +182,6 @@ func (c *Client) FetchModelLimits(ctx context.Context, modelID string) (inputLim
 	return detail.ExtraInfo.DefaultEnvs.MaxInputTokens, detail.ExtraInfo.DefaultEnvs.MaxOutputTokens, nil
 }
 
-// Ensure Client implements LLMProvider and ModelLimitsFetcher
-var _ llm.LLMProvider = (*Client)(nil)
+// Ensure Client implements Provider and ModelLimitsFetcher
+var _ llm.Provider = (*Client)(nil)
 var _ llm.ModelLimitsFetcher = (*Client)(nil)

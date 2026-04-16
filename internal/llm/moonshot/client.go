@@ -1,4 +1,4 @@
-// Package moonshot implements the LLMProvider interface using the Moonshot AI platform.
+// Package moonshot implements the Provider interface using the Moonshot AI platform.
 // Moonshot's API is OpenAI-compatible, so we reuse the openai-go SDK with a custom base URL.
 package moonshot
 
@@ -17,7 +17,7 @@ import (
 	streamutil "github.com/yanmxa/gencode/internal/llm/stream"
 )
 
-// Client implements the LLMProvider interface for Moonshot AI using the OpenAI SDK.
+// Client implements the Provider interface for Moonshot AI using the OpenAI SDK.
 type Client struct {
 	client openai.Client
 	name   string
@@ -168,5 +168,5 @@ func (c *Client) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
 	return models, nil
 }
 
-// Ensure Client implements LLMProvider
-var _ llm.LLMProvider = (*Client)(nil)
+// Ensure Client implements Provider
+var _ llm.Provider = (*Client)(nil)

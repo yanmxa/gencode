@@ -13,7 +13,7 @@ import (
 //
 // Usage:
 //
-//	fake := &provider.FakeLLM{
+//	fake := &llm.FakeLLM{
 //	    Responses: []core.CompletionResponse{
 //	        {Content: "hello", StopReason: "end_turn"},
 //	    },

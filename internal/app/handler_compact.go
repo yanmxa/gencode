@@ -80,7 +80,7 @@ func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
 	}
 
 	m.provider.FetchingLimits = true
-	return "", tea.Batch(m.output.Spinner.Tick, fetchTokenLimitsCmd(m.buildTokenLimitFetchRequest())), nil
+	return "", tea.Batch(m.agentOutput.Spinner.Tick, fetchTokenLimitsCmd(m.buildTokenLimitFetchRequest())), nil
 }
 
 func handleCompactCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
@@ -99,7 +99,7 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = strings.TrimSpace(args)
 	m.conv.Compact.Phase = appcompact.PhaseSummarizing
-	return "", tea.Batch(m.output.Spinner.Tick, compactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
+	return "", tea.Batch(m.agentOutput.Spinner.Tick, compactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
 }
 
 func (m *model) getEffectiveInputLimit() int {
@@ -124,7 +124,7 @@ func (m *model) triggerAutoCompact() tea.Cmd {
 	m.conv.Compact.Phase = appcompact.PhaseSummarizing
 	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()))
 	commitCmds := m.commitMessages()
-	commitCmds = append(commitCmds, m.output.Spinner.Tick, compactCmd(m.buildCompactRequest("", "auto")))
+	commitCmds = append(commitCmds, m.agentOutput.Spinner.Tick, compactCmd(m.buildCompactRequest("", "auto")))
 	return tea.Batch(commitCmds...)
 }
 

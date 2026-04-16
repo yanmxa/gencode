@@ -495,8 +495,8 @@ func TestHandleCommandSubmit_LoopDeleteAllPreservesLiteralInputAndDeletesJobs(t 
 	base := newBaseModel(tmpDir, modelInfra{})
 	m := &model{
 		cwd:   tmpDir,
-		input: base.input,
-		conv:  appconv.New(),
+		userInput: base.userInput,
+		conv:      appconv.New(),
 	}
 
 	cmd, handled := m.handleCommandSubmit("/loop delete all")
@@ -525,10 +525,10 @@ func TestHandleCommandSubmit_ToolsPreservesLiteralInput(t *testing.T) {
 	base := newBaseModel(tmpDir, modelInfra{})
 	m := &model{
 		cwd:    tmpDir,
-		input:  base.input,
-		conv:   appconv.New(),
-		width:  80,
-		height: 24,
+		userInput: base.userInput,
+		conv:      appconv.New(),
+		width:     80,
+		height:    24,
 	}
 
 	cmd, handled := m.handleCommandSubmit("/tools")
@@ -557,9 +557,9 @@ func TestHandleCommandSubmit_LoopOncePlacesCommandBeforeNotice(t *testing.T) {
 	tmpDir := t.TempDir()
 	base := newBaseModel(tmpDir, modelInfra{})
 	m := &model{
-		cwd:   tmpDir,
-		input: base.input,
-		conv:  appconv.New(),
+		cwd:       tmpDir,
+		userInput: base.userInput,
+		conv:      appconv.New(),
 	}
 
 	cmd, handled := m.handleCommandSubmit("/loop once 20m check the deploy")
@@ -588,9 +588,9 @@ func TestHandleCommandSubmit_LoopRecurringPlacesCommandBeforeNoticeAndPrompt(t *
 	tmpDir := t.TempDir()
 	base := newBaseModel(tmpDir, modelInfra{})
 	m := &model{
-		cwd:   tmpDir,
-		input: base.input,
-		conv:  appconv.New(),
+		cwd:       tmpDir,
+		userInput: base.userInput,
+		conv:      appconv.New(),
 	}
 
 	cmd, handled := m.handleCommandSubmit("/loop 5m check the deploy")

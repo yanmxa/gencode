@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appinput "github.com/yanmxa/gencode/internal/app/input"
+	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/util/image"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
@@ -151,10 +151,10 @@ func (m *model) pasteImageFromClipboard() (tea.Cmd, bool) {
 	if imgData == nil {
 		return nil, false
 	}
-	label := m.input.AddPendingImage(*imgData)
-	m.input.Images.Selection = appinput.ImageSelection{}
-	m.input.Textarea.InsertString(label)
-	m.input.UpdateHeight()
+	label := m.userInput.AddPendingImage(*imgData)
+	m.userInput.Images.Selection = appuser.ImageSelection{}
+	m.userInput.Textarea.InsertString(label)
+	m.userInput.UpdateHeight()
 	return nil, true
 }
 

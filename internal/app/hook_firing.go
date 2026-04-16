@@ -53,9 +53,9 @@ func (m *model) changeCwd(newCwd string) {
 	oldCwd := m.cwd
 	m.cwd = newCwd
 	m.isGit = config.IsGitRepo(newCwd)
-	m.input.Suggestions.SetCwd(newCwd)
-	if m.input.Suggestions.GetSuggestionType() == suggest.TypeFile {
-		m.input.Suggestions.Hide()
+	m.userInput.Suggestions.SetCwd(newCwd)
+	if m.userInput.Suggestions.GetSuggestionType() == suggest.TypeFile {
+		m.userInput.Suggestions.Hide()
 	}
 
 	m.memory.CachedUser = ""

@@ -53,7 +53,7 @@ func (m *model) handleQueueSelectKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 // enterQueueSelection transitions into queue selection mode.
 // Stashes current input and loads the last queue item into the textarea.
 func (m *model) enterQueueSelection() {
-	m.queueTempInput = m.input.Textarea.Value()
+	m.queueTempInput = m.userInput.Textarea.Value()
 	m.queueSelectIdx = m.inputQueue.Len() - 1
 	m.loadQueueItemIntoTextarea()
 }
@@ -61,9 +61,9 @@ func (m *model) enterQueueSelection() {
 // exitQueueSelection leaves queue selection mode and restores stashed input.
 func (m *model) exitQueueSelection() {
 	m.queueSelectIdx = -1
-	m.input.Textarea.SetValue(m.queueTempInput)
-	m.input.Textarea.CursorEnd()
-	m.input.UpdateHeight()
+	m.userInput.Textarea.SetValue(m.queueTempInput)
+	m.userInput.Textarea.CursorEnd()
+	m.userInput.UpdateHeight()
 	m.queueTempInput = ""
 }
 
@@ -74,7 +74,7 @@ func (m *model) saveCurrentQueueEdit() {
 	if m.queueSelectIdx < 0 || m.queueSelectIdx >= m.inputQueue.Len() {
 		return
 	}
-	content := strings.TrimSpace(m.input.Textarea.Value())
+	content := strings.TrimSpace(m.userInput.Textarea.Value())
 	item, ok := m.inputQueue.At(m.queueSelectIdx)
 	if !ok {
 		return
@@ -89,7 +89,7 @@ func (m *model) loadQueueItemIntoTextarea() {
 	if !ok {
 		return
 	}
-	m.input.Textarea.SetValue(item.Content)
-	m.input.Textarea.CursorEnd()
-	m.input.UpdateHeight()
+	m.userInput.Textarea.SetValue(item.Content)
+	m.userInput.Textarea.CursorEnd()
+	m.userInput.UpdateHeight()
 }

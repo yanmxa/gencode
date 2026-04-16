@@ -364,7 +364,7 @@ func (s *Model) renderConnectResult() string {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-func bestAuthMethodStatus(methods []authMethodItem) coreprovider.ProviderStatus {
+func bestAuthMethodStatus(methods []authMethodItem) coreprovider.Status {
 	for _, m := range methods {
 		if m.Status == coreprovider.StatusConnected {
 			return coreprovider.StatusConnected

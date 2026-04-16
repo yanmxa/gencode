@@ -18,7 +18,7 @@ import (
 )
 
 type hookAgentRunner struct {
-	llmProvider  llm.LLMProvider
+	llmProvider  llm.Provider
 	settings     *config.Settings
 	cwd          string
 	isGit        bool
@@ -26,7 +26,7 @@ type hookAgentRunner struct {
 	defaultModel string
 }
 
-func newHookAgentRunner(llmProvider llm.LLMProvider, settings *config.Settings, cwd string, isGit bool, mcpRegistry *mcp.Registry, defaultModel string) *hookAgentRunner {
+func newHookAgentRunner(llmProvider llm.Provider, settings *config.Settings, cwd string, isGit bool, mcpRegistry *mcp.Registry, defaultModel string) *hookAgentRunner {
 	return &hookAgentRunner{
 		llmProvider:  llmProvider,
 		settings:     settings,
@@ -46,7 +46,7 @@ func (r *hookAgentRunner) RunAgentHook(ctx context.Context, userPrompt string, m
 	}
 
 	userInstructions, projectInstructions := prompt.LoadInstructions(r.cwd)
-	loopClient := llm.NewLLM(r.llmProvider, model, 0)
+	loopClient := llm.NewClient(r.llmProvider, model, 0)
 	loopClient.SetThinking(llm.ThinkingHigh)
 
 	lp, err := loop.NewLoop(loop.LoopConfig{

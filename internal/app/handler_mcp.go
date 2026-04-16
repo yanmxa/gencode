@@ -55,7 +55,7 @@ func (m *model) updateMCP(msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 
 	case mcpui.AddServerMsg:
-		m.input.Textarea.SetValue("/mcp add ")
+		m.userInput.Textarea.SetValue("/mcp add ")
 		return nil, true
 
 	case mcpui.EditServerMsg:

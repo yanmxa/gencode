@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
@@ -12,7 +13,7 @@ func TestBuildTaskNotificationIncludesResumableAgentIdentity(t *testing.T) {
 	tracker.DefaultStore.Reset()
 	t.Cleanup(tracker.DefaultStore.Reset)
 
-	item, ok := buildTaskNotification(task.TaskInfo{
+	info := task.TaskInfo{
 		ID:             "task-123",
 		Type:           task.TaskTypeAgent,
 		Description:    "Inspect code",
@@ -24,6 +25,11 @@ func TestBuildTaskNotificationIncludesResumableAgentIdentity(t *testing.T) {
 		AgentSessionID: "agent-session-123",
 		TurnCount:      4,
 		TokenUsage:     120,
+	}
+	item, ok := appagent.BuildTaskNotification(appagent.TaskNotificationInput{
+		Info:    info,
+		Subject: taskSubject(info),
+		Batch:   appagent.SnapshotBackgroundBatchForTask(info.ID),
 	})
 	if !ok {
 		t.Fatal("expected notification")
@@ -48,31 +54,31 @@ func TestBuildTaskNotificationIncludesBatchContext(t *testing.T) {
 	t.Cleanup(tracker.DefaultStore.Reset)
 
 	batch := tracker.DefaultStore.Create("2 background agents launched", "", "", map[string]any{
-		backgroundTrackerKindKey:   backgroundTrackerKindBatch,
-		backgroundTrackerCompleted: 1,
-		backgroundTrackerTotal:     2,
-		backgroundTrackerFailures:  0,
+		appagent.BackgroundTrackerKindKey:   appagent.BackgroundTrackerKindBatch,
+		appagent.BackgroundTrackerCompleted: 1,
+		appagent.BackgroundTrackerTotal:     2,
+		appagent.BackgroundTrackerFailures:  0,
 	})
 	_ = tracker.DefaultStore.Update(batch.ID, tracker.WithStatus(tracker.StatusInProgress))
 
 	child1 := tracker.DefaultStore.Create("dir-audit: Directory structure audit", "", "", map[string]any{
-		backgroundTrackerKindKey:      backgroundTrackerKindWorker,
-		backgroundTrackerParentID:     batch.ID,
-		backgroundTrackerTaskID:       "task-123",
-		backgroundTrackerAgentType:    "Explore",
-		backgroundTrackerStatusDetail: string(task.StatusCompleted),
+		appagent.BackgroundTrackerKindKey:      appagent.BackgroundTrackerKindWorker,
+		appagent.BackgroundTrackerParentID:     batch.ID,
+		appagent.BackgroundTrackerTaskID:       "task-123",
+		appagent.BackgroundTrackerAgentType:    "Explore",
+		appagent.BackgroundTrackerStatusDetail: string(task.StatusCompleted),
 	})
 	_ = tracker.DefaultStore.Update(child1.ID, tracker.WithStatus(tracker.StatusCompleted))
 	child2 := tracker.DefaultStore.Create("naming-audit: Package naming audit", "", "", map[string]any{
-		backgroundTrackerKindKey:      backgroundTrackerKindWorker,
-		backgroundTrackerParentID:     batch.ID,
-		backgroundTrackerTaskID:       "task-456",
-		backgroundTrackerAgentType:    "Plan",
-		backgroundTrackerStatusDetail: string(task.StatusRunning),
+		appagent.BackgroundTrackerKindKey:      appagent.BackgroundTrackerKindWorker,
+		appagent.BackgroundTrackerParentID:     batch.ID,
+		appagent.BackgroundTrackerTaskID:       "task-456",
+		appagent.BackgroundTrackerAgentType:    "Plan",
+		appagent.BackgroundTrackerStatusDetail: string(task.StatusRunning),
 	})
 	_ = tracker.DefaultStore.Update(child2.ID, tracker.WithStatus(tracker.StatusInProgress))
 
-	item, ok := buildTaskNotification(task.TaskInfo{
+	info2 := task.TaskInfo{
 		ID:             "task-123",
 		Type:           task.TaskTypeAgent,
 		Description:    "Inspect code",
@@ -80,6 +86,11 @@ func TestBuildTaskNotificationIncludesBatchContext(t *testing.T) {
 		AgentType:      "Explore",
 		AgentName:      "Audit Worker",
 		AgentSessionID: "agent-session-123",
+	}
+	item, ok := appagent.BuildTaskNotification(appagent.TaskNotificationInput{
+		Info:    info2,
+		Subject: taskSubject(info2),
+		Batch:   appagent.SnapshotBackgroundBatchForTask(info2.ID),
 	})
 	if !ok {
 		t.Fatal("expected notification")

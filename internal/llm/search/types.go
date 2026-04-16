@@ -69,8 +69,8 @@ type Provider interface {
 	Search(ctx context.Context, query string, opts SearchOptions) ([]SearchResult, error)
 }
 
-// ProviderMeta contains metadata about a search provider
-type ProviderMeta struct {
+// Meta contains metadata about a search provider
+type Meta struct {
 	Name           ProviderName
 	DisplayName    string
 	RequiresAPIKey bool
@@ -78,8 +78,8 @@ type ProviderMeta struct {
 }
 
 // AllProviders returns metadata for all search providers
-func AllProviders() []ProviderMeta {
-	return []ProviderMeta{
+func AllProviders() []Meta {
+	return []Meta{
 		{
 			Name:           ProviderExa,
 			DisplayName:    "Exa AI",

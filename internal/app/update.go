@@ -8,11 +8,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/agentui"
-	appinput "github.com/yanmxa/gencode/internal/app/input"
+	appuser "github.com/yanmxa/gencode/internal/app/user"
+	"github.com/yanmxa/gencode/internal/app/selector"
 	"github.com/yanmxa/gencode/internal/app/skillui"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
 // initialPromptMsg is sent from Init() to inject an initial CLI prompt.
@@ -22,7 +22,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// ── Input & UI chrome ────────────────────────────────────
 	switch msg := msg.(type) {
 	case initialPromptMsg:
-		m.input.Textarea.SetValue(string(msg))
+		m.userInput.Textarea.SetValue(string(msg))
 		return m, m.handleSubmit()
 	case tea.KeyMsg:
 		if c, ok := m.handleKeypress(msg); ok {
@@ -32,7 +32,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleWindowResize(msg)
 	case spinner.TickMsg:
 		var cmd tea.Cmd
-		m.output.Spinner, cmd = m.output.Spinner.Update(msg)
+		m.agentOutput.Spinner, cmd = m.agentOutput.Spinner.Update(msg)
 		return m, cmd
 	case skillui.InvokeMsg:
 		if sk, ok := skill.DefaultRegistry.Get(msg.SkillName); ok {
@@ -67,52 +67,44 @@ func (m *model) updateTextarea(msg tea.Msg) tea.Cmd {
 		isPaste = keyMsg.Paste
 	}
 
-	prevValue := m.input.Textarea.Value()
-	m.input.Textarea, cmd = m.input.Textarea.Update(msg)
+	prevValue := m.userInput.Textarea.Value()
+	m.userInput.Textarea, cmd = m.userInput.Textarea.Update(msg)
 	cmds = append(cmds, cmd)
 
 	if isPaste {
-		newValue := m.input.Textarea.Value()
-		pastedText := extractPastedText(prevValue, newValue)
+		newValue := m.userInput.Textarea.Value()
+		pastedText := appuser.ExtractPastedText(prevValue, newValue)
 		lines := strings.Split(pastedText, "\n")
 		if len(lines) > 1 {
-			chunk := appinput.PastedChunk{
+			chunk := appuser.PastedChunk{
 				Text:      pastedText,
 				LineCount: len(lines),
 			}
-			m.input.PastedChunks = append(m.input.PastedChunks, chunk)
-			placeholder := appinput.PastePlaceholder(len(m.input.PastedChunks), chunk.LineCount)
-			m.input.Textarea.SetValue(prevValue)
-			m.input.Textarea.CursorEnd()
-			m.input.Textarea.InsertString(placeholder)
+			m.userInput.PastedChunks = append(m.userInput.PastedChunks, chunk)
+			placeholder := appuser.PastePlaceholder(len(m.userInput.PastedChunks), chunk.LineCount)
+			m.userInput.Textarea.SetValue(prevValue)
+			m.userInput.Textarea.CursorEnd()
+			m.userInput.Textarea.InsertString(placeholder)
 		} else {
 			trimmed := strings.TrimSpace(newValue)
 			if trimmed != newValue {
-				m.input.Textarea.SetValue(trimmed)
-				m.input.Textarea.CursorEnd()
+				m.userInput.Textarea.SetValue(trimmed)
+				m.userInput.Textarea.CursorEnd()
 			}
 		}
 	}
 
-	if m.input.Textarea.Value() != prevValue {
+	if m.userInput.Textarea.Value() != prevValue {
 		m.promptSuggestion.Clear()
-		m.input.UpdateHeight()
-		m.input.Suggestions.UpdateSuggestions(m.input.Textarea.Value())
+		m.userInput.UpdateHeight()
+		m.userInput.Suggestions.UpdateSuggestions(m.userInput.Textarea.Value())
 	}
 
 	if m.conv.Stream.Active || m.provider.FetchingLimits || m.conv.Compact.Active {
-		m.output.Spinner, cmd = m.output.Spinner.Update(msg)
+		m.agentOutput.Spinner, cmd = m.agentOutput.Spinner.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
 	return tea.Batch(cmds...)
 }
 
-// extractPastedText derives the pasted content by comparing the textarea
-// value before and after the paste event.
-func extractPastedText(prevValue, newValue string) string {
-	if strings.HasPrefix(newValue, prevValue) {
-		return strings.TrimSpace(newValue[len(prevValue):])
-	}
-	return strings.TrimSpace(newValue)
-}

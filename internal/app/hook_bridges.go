@@ -3,7 +3,7 @@ package app
 import (
 	"strings"
 
-	appagent "github.com/yanmxa/gencode/internal/app/agentinput"
+	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/plugin"
@@ -36,11 +36,16 @@ func (b taskHookBridge) TaskCompleted(info task.TaskInfo) {
 		})
 	}
 
-	updateBackgroundWorkerTracker(info)
+	appagent.UpdateBackgroundWorkerTracker(info)
 	if b.notifications == nil {
 		return
 	}
-	if item, ok := buildTaskNotification(info); ok {
+	notifInput := appagent.TaskNotificationInput{
+		Info:    info,
+		Subject: taskSubject(info),
+		Batch:   appagent.SnapshotBackgroundBatchForTask(info.ID),
+	}
+	if item, ok := appagent.BuildTaskNotification(notifInput); ok {
 		b.notifications.Push(item)
 	}
 }

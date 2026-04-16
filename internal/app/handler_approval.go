@@ -106,7 +106,7 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 		if m.settings != nil && m.settings.ResolveHookAllow(msg.Request.ToolName, args, m.mode.SessionPermissions) {
 			// Hook allow is valid, skip permission prompt
 			m.approval.Hide()
-			return toolui.ExecuteApproved(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
+			return toolui.ExecuteApproved(m.tool.Context(), m.agentOutput.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
 		}
 		// Safety invariant denied the hook allow — fall through to normal approval modal
 	}

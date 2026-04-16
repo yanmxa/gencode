@@ -6,3 +6,11 @@ package system
 func (s *State) View() string {
 	return ""
 }
+
+// RenderHookStatus returns the hook status string if set, otherwise the default model name.
+func RenderHookStatus(hookStatus, defaultModelName string) string {
+	if hookStatus != "" {
+		return hookStatus
+	}
+	return defaultModelName
+}

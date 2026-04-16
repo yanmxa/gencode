@@ -45,7 +45,7 @@ func (s *toolIDSanitizer) resolve(id string) string {
 	return mapped
 }
 
-// Client implements the LLMProvider interface using the Anthropic SDK
+// Client implements the Provider interface using the Anthropic SDK
 type Client struct {
 	client       anthropic.Client
 	name         string
@@ -458,5 +458,5 @@ func assistantContentBlocks(msg core.Message, thinkingBudget int64) []anthropic.
 	return blocks
 }
 
-// Ensure Client implements LLMProvider
-var _ llm.LLMProvider = (*Client)(nil)
+// Ensure Client implements Provider
+var _ llm.Provider = (*Client)(nil)

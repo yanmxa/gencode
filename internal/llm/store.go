@@ -31,7 +31,7 @@ type modelCache struct {
 // CurrentModelInfo stores the current model with its provider info
 type CurrentModelInfo struct {
 	ModelID    string     `json:"modelId"`
-	Provider   Provider   `json:"provider"`
+	Provider   Name       `json:"provider"`
 	AuthMethod AuthMethod `json:"authMethod"`
 }
 
@@ -135,7 +135,7 @@ func (s *Store) save() error {
 }
 
 // Connect saves a connection for a provider
-func (s *Store) Connect(provider Provider, authMethod AuthMethod) error {
+func (s *Store) Connect(provider Name, authMethod AuthMethod) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -148,7 +148,7 @@ func (s *Store) Connect(provider Provider, authMethod AuthMethod) error {
 }
 
 // IsConnected checks if a provider is connected with the specified auth method
-func (s *Store) IsConnected(provider Provider, authMethod AuthMethod) bool {
+func (s *Store) IsConnected(provider Name, authMethod AuthMethod) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -160,7 +160,7 @@ func (s *Store) IsConnected(provider Provider, authMethod AuthMethod) bool {
 }
 
 // GetConnection returns the connection info for a provider
-func (s *Store) GetConnection(provider Provider) (ConnectionInfo, bool) {
+func (s *Store) GetConnection(provider Name) (ConnectionInfo, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -179,7 +179,7 @@ func (s *Store) GetConnections() map[string]ConnectionInfo {
 }
 
 // CacheModels saves model information for a provider.
-func (s *Store) CacheModels(provider Provider, authMethod AuthMethod, models []ModelInfo) error {
+func (s *Store) CacheModels(provider Name, authMethod AuthMethod, models []ModelInfo) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -193,7 +193,7 @@ func (s *Store) CacheModels(provider Provider, authMethod AuthMethod, models []M
 }
 
 // GetCachedModels returns cached models if they exist and are not expired
-func (s *Store) GetCachedModels(provider Provider, authMethod AuthMethod) ([]ModelInfo, bool) {
+func (s *Store) GetCachedModels(provider Name, authMethod AuthMethod) ([]ModelInfo, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -209,7 +209,7 @@ func (s *Store) GetCachedModels(provider Provider, authMethod AuthMethod) ([]Mod
 }
 
 // makemodelCacheKey creates a cache key for provider and auth method
-func makemodelCacheKey(provider Provider, authMethod AuthMethod) string {
+func makemodelCacheKey(provider Name, authMethod AuthMethod) string {
 	return string(provider) + ":" + string(authMethod)
 }
 
@@ -244,7 +244,7 @@ func (s *Store) GetAllCachedModelsIncludeExpired() map[string][]ModelInfo {
 }
 
 // SetCurrentModel sets the current model with provider info
-func (s *Store) SetCurrentModel(modelID string, provider Provider, authMethod AuthMethod) error {
+func (s *Store) SetCurrentModel(modelID string, provider Name, authMethod AuthMethod) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

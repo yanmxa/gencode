@@ -73,7 +73,7 @@ func runNonInteractive(userMessage string) error {
 		return fmt.Errorf("failed to load store: %w", err)
 	}
 
-	var llmProvider llm.LLMProvider
+	var llmProvider llm.Provider
 	var modelID string
 
 	current := store.GetCurrentModel()
@@ -87,7 +87,7 @@ func runNonInteractive(userMessage string) error {
 		modelID = current.ModelID
 	} else {
 		for providerName, conn := range store.GetConnections() {
-			p, err := llm.GetProvider(ctx, llm.Provider(providerName), conn.AuthMethod)
+			p, err := llm.GetProvider(ctx, llm.Name(providerName), conn.AuthMethod)
 			if err == nil {
 				llmProvider = p
 				modelID = config.DefaultModel(providerName, conn.AuthMethod)
@@ -125,7 +125,7 @@ func runNonInteractive(userMessage string) error {
 
 // --- Infrastructure initialization ---
 
-func initializeProvider() (*llm.Store, llm.LLMProvider, *llm.CurrentModelInfo) {
+func initializeProvider() (*llm.Store, llm.Provider, *llm.CurrentModelInfo) {
 	store, _ := llm.NewStore()
 	if store == nil {
 		return nil, nil, nil
@@ -143,7 +143,7 @@ func initializeProvider() (*llm.Store, llm.LLMProvider, *llm.CurrentModelInfo) {
 
 	// Fall back to any available provider
 	for providerName, conn := range store.GetConnections() {
-		if p, err := llm.GetProvider(ctx, llm.Provider(providerName), conn.AuthMethod); err == nil {
+		if p, err := llm.GetProvider(ctx, llm.Name(providerName), conn.AuthMethod); err == nil {
 			return store, p, currentModel
 		}
 	}

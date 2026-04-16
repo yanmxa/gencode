@@ -176,7 +176,7 @@ func getEffectiveOutputLimit(store *llm.Store, currentModel *llm.CurrentModelInf
 
 // AutoFetchTokenLimitsDeps holds the dependencies needed by AutoFetchTokenLimits.
 type AutoFetchTokenLimitsDeps struct {
-	LLM          llm.LLMProvider
+	LLM          llm.Provider
 	Store        *llm.Store
 	CurrentModel *llm.CurrentModelInfo
 	ModelID      string

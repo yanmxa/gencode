@@ -11,8 +11,8 @@ import (
 
 // ShouldAutoCompact returns true when context usage is high enough to trigger
 // automatic compaction.
-func ShouldAutoCompact(llm llm.LLMProvider, messageCount, inputTokens int, store *llm.Store, currentModel *llm.CurrentModelInfo) bool {
-	if llm == nil || messageCount < 3 {
+func ShouldAutoCompact(p llm.Provider, messageCount, inputTokens int, store *llm.Store, currentModel *llm.CurrentModelInfo) bool {
+	if p == nil || messageCount < 3 {
 		return false
 	}
 	return core.NeedsCompaction(inputTokens, GetEffectiveInputLimit(store, currentModel))
@@ -37,6 +37,6 @@ func GetMaxTokens(store *llm.Store, currentModel *llm.CurrentModelInfo, defaultM
 
 // CompactConversation compacts the message history into a summary.
 // Delegates to runtime.Compact as the canonical implementation.
-func CompactConversation(ctx context.Context, c *llm.LLM, msgs []core.Message, sessionMemory, focus string) (summary string, count int, err error) {
+func CompactConversation(ctx context.Context, c *llm.Client, msgs []core.Message, sessionMemory, focus string) (summary string, count int, err error) {
 	return loop.Compact(ctx, c, msgs, sessionMemory, focus)
 }

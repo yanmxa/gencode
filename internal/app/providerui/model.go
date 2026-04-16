@@ -38,7 +38,7 @@ type listItem struct {
 
 // providerItem represents a provider with its auth methods.
 type providerItem struct {
-	Provider    coreprovider.Provider
+	Provider    coreprovider.Name
 	DisplayName string
 	AuthMethods []authMethodItem
 	Connected   bool // whether this provider has at least one connected auth method
@@ -46,10 +46,10 @@ type providerItem struct {
 
 // authMethodItem represents an auth method in the second level.
 type authMethodItem struct {
-	Provider    coreprovider.Provider
+	Provider    coreprovider.Name
 	AuthMethod  coreprovider.AuthMethod
 	DisplayName string
-	Status      coreprovider.ProviderStatus
+	Status      coreprovider.Status
 	EnvVars     []string
 }
 
@@ -114,13 +114,13 @@ type statusDisplayInfo struct {
 }
 
 // statusDisplayMap maps provider status to display information.
-var statusDisplayMap = map[coreprovider.ProviderStatus]statusDisplayInfo{
+var statusDisplayMap = map[coreprovider.Status]statusDisplayInfo{
 	coreprovider.StatusConnected: {"●", selector.SelectorStatusConnected, ""},
 	coreprovider.StatusAvailable: {"○", selector.SelectorStatusReady, "(available)"},
 }
 
 // getStatusDisplay returns the icon, style, and description for a provider status.
-func getStatusDisplay(status coreprovider.ProviderStatus) (icon string, style lipgloss.Style, desc string) {
+func getStatusDisplay(status coreprovider.Status) (icon string, style lipgloss.Style, desc string) {
 	if info, ok := statusDisplayMap[status]; ok {
 		return info.icon, info.style, info.desc
 	}
@@ -139,7 +139,7 @@ func New() Model {
 
 // SelectedMsg is sent when a provider auth method is selected (for connection).
 type SelectedMsg struct {
-	Provider   coreprovider.Provider
+	Provider   coreprovider.Name
 	AuthMethod coreprovider.AuthMethod
 }
 
@@ -155,7 +155,7 @@ type ConnectResultMsg struct {
 	AuthIdx   int
 	Success   bool
 	Message   string
-	NewStatus coreprovider.ProviderStatus
+	NewStatus coreprovider.Status
 }
 
 // ModelsLoadedMsg is sent when async model loading completes.

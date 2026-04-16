@@ -11,8 +11,8 @@ import (
 )
 
 // VertexMeta is the metadata for Anthropic via Vertex AI
-var VertexMeta = llm.ProviderMeta{
-	Provider:    llm.ProviderAnthropic,
+var VertexMeta = llm.Meta{
+	Provider:    llm.Anthropic,
 	AuthMethod:  llm.AuthVertex,
 	EnvVars:     []string{"CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID"},
 	DisplayName: "Vertex AI",
@@ -117,7 +117,7 @@ func (c *VertexClient) ListModels(ctx context.Context) ([]llm.ModelInfo, error) 
 }
 
 // NewVertexClient creates a new Anthropic client using Vertex AI authentication
-func NewVertexClient(ctx context.Context) (llm.LLMProvider, error) {
+func NewVertexClient(ctx context.Context) (llm.Provider, error) {
 	region := os.Getenv("CLOUD_ML_REGION")
 	if region == "" {
 		region = "us-east5"
@@ -132,8 +132,8 @@ func NewVertexClient(ctx context.Context) (llm.LLMProvider, error) {
 	return &VertexClient{Client: baseClient}, nil
 }
 
-// Ensure VertexClient implements LLMProvider
-var _ llm.LLMProvider = (*VertexClient)(nil)
+// Ensure VertexClient implements Provider
+var _ llm.Provider = (*VertexClient)(nil)
 
 // init registers the Vertex AI provider
 func init() {

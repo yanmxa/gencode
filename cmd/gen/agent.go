@@ -80,7 +80,7 @@ func runHeadlessAgent() error {
 	}
 
 	currentModel := store.GetCurrentModel()
-	var llmProvider llm.LLMProvider
+	var llmProvider llm.Provider
 
 	if currentModel != nil {
 		p, err := llm.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod)
@@ -124,7 +124,7 @@ func runHeadlessAgent() error {
 		IsGit: config.IsGitRepo(cwd),
 	})
 
-	loopClient := llm.NewLLM(llmProvider, modelID, 16384)
+	loopClient := llm.NewClient(llmProvider, modelID, 16384)
 
 	lp, err := loop.NewLoop(loop.LoopConfig{
 		System: sys,

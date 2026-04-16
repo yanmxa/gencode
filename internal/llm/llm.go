@@ -18,34 +18,34 @@ type TokenUsage struct {
 	TotalTokens  int
 }
 
-// LLM adapts a LLMProvider to core.LLM.
+// Client adapts a Provider to core.LLM.
 //
 // It also provides streaming and completion methods for the loop/app layer,
 // plus cumulative token usage tracking.
 //
 // SetThinking can be called while the agent is running.
 // Changes take effect on the next Infer/Stream call.
-type LLM struct {
+type Client struct {
 	mu            sync.RWMutex
-	provider      LLMProvider
+	provider      Provider
 	model         string
 	maxTokens     int
 	thinkingLevel ThinkingLevel
 	tokens        TokenUsage
 }
 
-// NewLLM wraps an existing provider as a core.LLM with streaming and
+// NewClient wraps an existing provider as a core.LLM with streaming and
 // completion support. maxTokens=0 means resolve from provider metadata
 // or fall back to defaultMaxTokens.
-func NewLLM(p LLMProvider, model string, maxTokens int) *LLM {
-	return &LLM{provider: p, model: model, maxTokens: maxTokens}
+func NewClient(p Provider, model string, maxTokens int) *Client {
+	return &Client{provider: p, model: model, maxTokens: maxTokens}
 }
 
 // ---------------------------------------------------------------------------
 // core.LLM interface
 // ---------------------------------------------------------------------------
 
-func (l *LLM) Infer(ctx context.Context, req core.InferRequest) (<-chan core.Chunk, error) {
+func (l *Client) Infer(ctx context.Context, req core.InferRequest) (<-chan core.Chunk, error) {
 	l.mu.RLock()
 	p := l.provider
 	model := l.model
@@ -90,14 +90,14 @@ func (l *LLM) Infer(ctx context.Context, req core.InferRequest) (<-chan core.Chu
 // ---------------------------------------------------------------------------
 
 // SetThinking changes the thinking/reasoning level.
-func (l *LLM) SetThinking(level ThinkingLevel) {
+func (l *Client) SetThinking(level ThinkingLevel) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.thinkingLevel = level
 }
 
 // ThinkingLevel returns the current thinking/reasoning level.
-func (l *LLM) ThinkingLevel() ThinkingLevel {
+func (l *Client) ThinkingLevel() ThinkingLevel {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.thinkingLevel
@@ -108,7 +108,7 @@ func (l *LLM) ThinkingLevel() ThinkingLevel {
 // ---------------------------------------------------------------------------
 
 // Stream starts a streaming completion request and returns a chunk channel.
-func (l *LLM) Stream(ctx context.Context, msgs []core.Message,
+func (l *Client) Stream(ctx context.Context, msgs []core.Message,
 	tools []ToolSchema, sysPrompt string,
 ) <-chan core.StreamChunk {
 	return l.provider.Stream(ctx, l.completionOpts(msgs, tools, sysPrompt))
@@ -116,7 +116,7 @@ func (l *LLM) Stream(ctx context.Context, msgs []core.Message,
 
 // Complete sends a one-shot completion (custom max tokens, no tools).
 // Used for utility calls like conversation compaction.
-func (l *LLM) Complete(ctx context.Context,
+func (l *Client) Complete(ctx context.Context,
 	sysPrompt string, msgs []core.Message, maxTokens int,
 ) (core.CompletionResponse, error) {
 	l.mu.RLock()
@@ -133,7 +133,7 @@ func (l *LLM) Complete(ctx context.Context,
 }
 
 // send sends a non-streaming completion request and returns the full response.
-func (l *LLM) send(ctx context.Context, msgs []core.Message,
+func (l *Client) send(ctx context.Context, msgs []core.Message,
 	tools []ToolSchema, sysPrompt string,
 ) (core.CompletionResponse, error) {
 	return Complete(ctx, l.provider, l.completionOpts(msgs, tools, sysPrompt))
@@ -144,7 +144,7 @@ func (l *LLM) send(ctx context.Context, msgs []core.Message,
 // ---------------------------------------------------------------------------
 
 // AddUsage accumulates token usage from a completion response.
-func (l *LLM) AddUsage(usage core.Usage) {
+func (l *Client) AddUsage(usage core.Usage) {
 	l.mu.Lock()
 	l.tokens.InputTokens += usage.InputTokens
 	l.tokens.OutputTokens += usage.OutputTokens
@@ -153,7 +153,7 @@ func (l *LLM) AddUsage(usage core.Usage) {
 }
 
 // Tokens returns the accumulated token usage.
-func (l *LLM) Tokens() TokenUsage {
+func (l *Client) Tokens() TokenUsage {
 	l.mu.RLock()
 	t := l.tokens
 	l.mu.RUnlock()
@@ -165,7 +165,7 @@ func (l *LLM) Tokens() TokenUsage {
 // ---------------------------------------------------------------------------
 
 // Name returns the provider name (e.g., "anthropic").
-func (l *LLM) Name() string {
+func (l *Client) Name() string {
 	l.mu.RLock()
 	p := l.provider
 	l.mu.RUnlock()
@@ -176,7 +176,7 @@ func (l *LLM) Name() string {
 }
 
 // ModelID returns the model identifier.
-func (l *LLM) ModelID() string {
+func (l *Client) ModelID() string {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.model
@@ -185,9 +185,9 @@ func (l *LLM) ModelID() string {
 // ResolveMaxTokens returns the effective output token limit.
 // Priority: 1. Custom override (maxTokens field)
 //
-//	2. Provider's model metadata (OutputTokenLimit from ListModels)
-//	3. Default (8192)
-func (l *LLM) ResolveMaxTokens(ctx context.Context) int {
+//  2. Provider's model metadata (OutputTokenLimit from ListModels)
+//  3. Default (8192)
+func (l *Client) ResolveMaxTokens(ctx context.Context) int {
 	l.mu.RLock()
 	p := l.provider
 	model := l.model
@@ -207,8 +207,8 @@ func (l *LLM) ResolveMaxTokens(ctx context.Context) int {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-// completionOpts builds CompletionOptions from the LLM's current configuration.
-func (l *LLM) completionOpts(msgs []core.Message, tools []ToolSchema, sysPrompt string) CompletionOptions {
+// completionOpts builds CompletionOptions from the Client's current configuration.
+func (l *Client) completionOpts(msgs []core.Message, tools []ToolSchema, sysPrompt string) CompletionOptions {
 	l.mu.RLock()
 	model := l.model
 	maxTokens := l.maxTokens
@@ -234,7 +234,7 @@ func (l *LLM) completionOpts(msgs []core.Message, tools []ToolSchema, sysPrompt 
 }
 
 // outputLimitFromProvider queries the provider for the model's output token limit.
-func outputLimitFromProvider(p LLMProvider, model string) int {
+func outputLimitFromProvider(p Provider, model string) int {
 	if p == nil {
 		return 0
 	}

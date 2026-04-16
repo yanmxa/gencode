@@ -21,7 +21,7 @@ import (
 	streamutil "github.com/yanmxa/gencode/internal/llm/stream"
 )
 
-// Client implements the LLMProvider interface using the Google GenAI SDK
+// Client implements the Provider interface using the Google GenAI SDK
 type Client struct {
 	client       *genai.Client
 	name         string
@@ -330,7 +330,7 @@ func (c *Client) fetchModels(ctx context.Context) ([]llm.ModelInfo, error) {
 }
 
 // NewAPIKeyClient creates a new Google client using API Key authentication
-func NewAPIKeyClient(ctx context.Context) (llm.LLMProvider, error) {
+func NewAPIKeyClient(ctx context.Context) (llm.Provider, error) {
 	apiKey := os.Getenv("GOOGLE_API_KEY")
 	if apiKey == "" {
 		apiKey = os.Getenv("GEMINI_API_KEY")
@@ -362,5 +362,5 @@ func googleThinkingBudget(level llm.ThinkingLevel) *int32 {
 	return &budget
 }
 
-// Ensure Client implements LLMProvider
-var _ llm.LLMProvider = (*Client)(nil)
+// Ensure Client implements Provider
+var _ llm.Provider = (*Client)(nil)

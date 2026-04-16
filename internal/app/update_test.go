@@ -375,7 +375,7 @@ func TestBuildPromptSuggestionRequest(t *testing.T) {
 func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing.T) {
 	base := newBaseModel(t.TempDir(), modelInfra{})
 	m := &base
-	m.output = appoutput.New(80, progress.NewHub(16))
+	m.agentOutput = appoutput.New(80, progress.NewHub(16))
 	m.conv = appconv.Model{
 		Messages: []core.ChatMessage{
 			{Role: core.RoleUser, Content: "previous request"},

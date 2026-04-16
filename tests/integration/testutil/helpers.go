@@ -42,10 +42,10 @@ func NewTestLoopWithPermission(t *testing.T, checker permission.Checker,
 	return lp, fake
 }
 
-// NewTestClient wraps a FakeLLM in a llm.LLM ready for use in loops
+// NewTestClient wraps a FakeLLM in a llm.Client ready for use in loops
 // or compact calls. This avoids repeating the FakeProvider wiring in every test.
-func NewTestClient(fake *llm.FakeLLM) *llm.LLM {
-	return llm.NewLLM(&FakeProvider{Client: fake}, "fake-model", 8192)
+func NewTestClient(fake *llm.FakeLLM) *llm.Client {
+	return llm.NewClient(&FakeProvider{Client: fake}, "fake-model", 8192)
 }
 
 // ---------------------------------------------------------------------------
@@ -120,8 +120,8 @@ func (f *fakeTool) Execute(_ context.Context, _ map[string]any, _ string) toolre
 // Fake / mock providers
 // ---------------------------------------------------------------------------
 
-// FakeProvider wraps a FakeClient as a llm.LLMProvider.
-// Use this when the code under test expects a llm.LLMProvider and you
+// FakeProvider wraps a FakeClient as a llm.Provider.
+// Use this when the code under test expects a llm.Provider and you
 // want to control responses via FakeClient.
 type FakeProvider struct {
 	Client *llm.FakeLLM
@@ -133,7 +133,7 @@ func (p *FakeProvider) Stream(ctx context.Context, opts llm.CompletionOptions) <
 func (p *FakeProvider) ListModels(_ context.Context) ([]llm.ModelInfo, error) { return nil, nil }
 func (p *FakeProvider) Name() string                                               { return p.Client.Name() }
 
-// MockProvider is a standalone llm.LLMProvider backed by a response queue.
+// MockProvider is a standalone llm.Provider backed by a response queue.
 // Unlike FakeProvider, it does not require a FakeClient — use this when the
 // code under test (e.g., agent.Executor) creates its own client internally.
 type MockProvider struct {

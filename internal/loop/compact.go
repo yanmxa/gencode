@@ -49,7 +49,7 @@ func (l *Loop) compactAndReplace(ctx context.Context, opts RunOptions) bool {
 // the summary text, the original message count, and any error.
 // sessionMemory is the previous compaction summary; if non-empty it is
 // prepended so the new summary incorporates prior context.
-func Compact(ctx context.Context, c *llm.LLM,
+func Compact(ctx context.Context, c *llm.Client,
 	msgs []core.Message, sessionMemory, focus string,
 ) (summary string, count int, err error) {
 	count = len(msgs)
