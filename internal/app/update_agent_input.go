@@ -31,7 +31,7 @@ func (m *model) injectTaskNotificationContinuation(item appagent.Notification) t
 			Content: item.Notice,
 		})
 	}
-	if m.provider.LLM == nil {
+	if m.llmProvider == nil {
 		if item.Notice == "" {
 			m.conv.Append(core.ChatMessage{
 				Role:    core.RoleNotice,

@@ -66,7 +66,7 @@ func (m *model) changeCwd(newCwd string) {
 
 	if m.hookEngine != nil {
 		m.hookEngine.SetCwd(newCwd)
-		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.provider.LLM, m.settings, newCwd, m.isGit, m.mcp.Registry, m.getModelID()))
+		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.llmProvider, m.settings, newCwd, m.isGit, m.mcp.Registry, m.getModelID()))
 		outcome := m.hookEngine.Execute(context.Background(), hooks.CwdChanged, hooks.HookInput{
 			OldCwd: oldCwd,
 			NewCwd: newCwd,

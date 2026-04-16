@@ -11,7 +11,6 @@ import (
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
 	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	"github.com/yanmxa/gencode/internal/app/user/sessionui"
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
@@ -329,7 +328,7 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 
 func TestStartPromptSuggestionGeneratesCommand(t *testing.T) {
 	m := &model{
-		provider: providerui.State{LLM: testLLMProvider{}},
+		llmProvider: testLLMProvider{},
 		conv: appconv.Model{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleAssistant, Content: "first"},
@@ -346,7 +345,7 @@ func TestStartPromptSuggestionGeneratesCommand(t *testing.T) {
 
 func TestBuildPromptSuggestionRequest(t *testing.T) {
 	m := &model{
-		provider: providerui.State{LLM: testLLMProvider{}},
+		llmProvider: testLLMProvider{},
 		conv: appconv.Model{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleUser, Content: "u1"},
@@ -381,9 +380,7 @@ func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing
 			{Role: core.RoleUser, Content: "previous request"},
 		},
 	}
-	m.provider = providerui.State{
-		LLM: testLLMProvider{},
-	}
+	m.llmProvider = testLLMProvider{}
 
 	cmd := m.executeSubmitRequest(submitRequest{Input: "请修复这个 bug"})
 	if cmd == nil {
@@ -520,16 +517,16 @@ func TestDetectThinkingKeywords(t *testing.T) {
 	t.Run("high thinking keywords", func(t *testing.T) {
 		m := &model{}
 		m.detectThinkingKeywords("Please think carefully before answering")
-		if m.provider.ThinkingOverride != provider.ThinkingHigh {
-			t.Fatalf("expected high thinking override, got %v", m.provider.ThinkingOverride)
+		if m.thinkingOverride != provider.ThinkingHigh {
+			t.Fatalf("expected high thinking override, got %v", m.thinkingOverride)
 		}
 	})
 
 	t.Run("ultra keywords win over high", func(t *testing.T) {
 		m := &model{}
 		m.detectThinkingKeywords("Think hard and ultrathink about this")
-		if m.provider.ThinkingOverride != provider.ThinkingUltra {
-			t.Fatalf("expected ultra thinking override, got %v", m.provider.ThinkingOverride)
+		if m.thinkingOverride != provider.ThinkingUltra {
+			t.Fatalf("expected ultra thinking override, got %v", m.thinkingOverride)
 		}
 	})
 }

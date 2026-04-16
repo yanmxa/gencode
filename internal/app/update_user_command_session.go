@@ -27,8 +27,8 @@ func handleClearCommand(ctx context.Context, m *model, args string) (string, tea
 	m.tool.Reset()
 
 	m.conv.Clear()
-	m.provider.InputTokens = 0
-	m.provider.OutputTokens = 0
+	m.inputTokens = 0
+	m.outputTokens = 0
 	tracker.DefaultStore.Reset()
 	tool.ResetFetched()
 	m.systemInput.CronQueue = nil

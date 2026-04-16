@@ -41,9 +41,9 @@ func (m *model) saveSession() error {
 
 	providerName := ""
 	modelID := ""
-	if m.provider.CurrentModel != nil {
-		providerName = string(m.provider.CurrentModel.Provider)
-		modelID = m.provider.CurrentModel.ModelID
+	if m.currentModel != nil {
+		providerName = string(m.currentModel.Provider)
+		modelID = m.currentModel.ModelID
 	}
 
 	sess := &session.Snapshot{
@@ -98,8 +98,8 @@ func (m *model) loadSession(id string) error {
 	}
 	tool.ResetFetched()
 
-	m.provider.InputTokens = 0
-	m.provider.OutputTokens = 0
+	m.inputTokens = 0
+	m.outputTokens = 0
 	m.conv.TurnsSinceLastTaskTool = 0
 
 	return nil

@@ -15,7 +15,6 @@ import (
 	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
-	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
@@ -583,7 +582,7 @@ func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 		cwd:         t.TempDir(),
 		conv:        appconv.New(),
 		systemInput: appsystem.New(),
-		provider:    providerui.State{LLM: testLLMProvider{}},
+		llmProvider: testLLMProvider{},
 		agentOutput:      appoutput.New(80, progress.NewHub(10)),
 	}
 	m.systemInput.AsyncHookQueue.Push(appsystem.AsyncHookRewake{
@@ -665,7 +664,7 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 		cwd:        t.TempDir(),
 		conv:       appconv.New(),
 		agentInput: appagent.New(),
-		provider:   providerui.State{LLM: testLLMProvider{}},
+		llmProvider: testLLMProvider{},
 		agentOutput:     appoutput.New(80, progress.NewHub(10)),
 	}
 	info := task.TaskInfo{
@@ -725,7 +724,7 @@ func TestTaskNotificationTickBatchesDrainsQueue(t *testing.T) {
 		cwd:        t.TempDir(),
 		conv:       appconv.New(),
 		agentInput: appagent.New(),
-		provider:   providerui.State{LLM: testLLMProvider{}},
+		llmProvider: testLLMProvider{},
 		agentOutput:     appoutput.New(80, progress.NewHub(10)),
 	}
 

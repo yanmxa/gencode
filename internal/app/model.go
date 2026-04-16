@@ -56,6 +56,15 @@ type model struct {
 	approval         *appapproval.Model
 	promptSuggestion promptSuggestionState
 
+	// Provider domain state — LLM connection, model info, token tracking, thinking
+	llmProvider      provider.Provider
+	providerStore    *provider.Store
+	currentModel     *provider.CurrentModelInfo
+	inputTokens      int
+	outputTokens     int
+	thinkingLevel    provider.ThinkingLevel
+	thinkingOverride provider.ThinkingLevel
+
 	// Source 1 overlays — each selector is user-triggered
 	provider providerui.State
 	session  sessionui.State
@@ -224,9 +233,9 @@ func (m *model) commitMessagesWithCheck(checkReady bool) []tea.Cmd {
 
 // reconfigureAgentTool updates the agent tool with the current session/provider state.
 func (m *model) reconfigureAgentTool() {
-	if m.provider.LLM != nil {
+	if m.llmProvider != nil {
 		m.ensureMemoryContextLoaded()
-		configureAgentTool(m.provider.LLM, m.cwd, m.getModelID(), m.hookEngine, m.session.Store, m.session.CurrentID,
+		configureAgentTool(m.llmProvider, m.cwd, m.getModelID(), m.hookEngine, m.session.Store, m.session.CurrentID,
 			m.agentToolOpts()...)
 	}
 }
@@ -250,7 +259,7 @@ func (m *model) ensureMemoryContextLoaded() {
 
 // effectiveThinkingLevel returns the higher of the persistent level and the per-turn override.
 func (m *model) effectiveThinkingLevel() provider.ThinkingLevel {
-	return max(m.provider.ThinkingLevel, m.provider.ThinkingOverride)
+	return max(m.thinkingLevel, m.thinkingOverride)
 }
 
 // buildTaskReminder returns a task reminder string if tasks exist and haven't
@@ -289,8 +298,8 @@ func (m *model) buildTaskReminder() string {
 }
 
 func (m model) getModelID() string {
-	if m.provider.CurrentModel != nil {
-		return m.provider.CurrentModel.ModelID
+	if m.currentModel != nil {
+		return m.currentModel.ModelID
 	}
 	return "claude-sonnet-4-20250514"
 }
@@ -320,12 +329,12 @@ type agentSession struct {
 // buildCoreAgent creates a core.Agent and permissionBridge from the model's
 // current state. The agent is not started — call startAgentLoop() for that.
 func (m *model) buildCoreAgent() (*agentSession, error) {
-	if m.provider.LLM == nil {
+	if m.llmProvider == nil {
 		return nil, errNoProvider
 	}
 
 	// LLM — wraps the current provider as core.LLM
-	client := provider.NewClient(m.provider.LLM, m.getModelID(), m.getMaxTokens())
+	client := provider.NewClient(m.llmProvider, m.getModelID(), m.getMaxTokens())
 	client.SetThinking(m.effectiveThinkingLevel())
 
 	// System prompt — build layered core.System directly

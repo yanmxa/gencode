@@ -8,7 +8,6 @@ import (
 	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	"github.com/yanmxa/gencode/internal/core"
 	coreprovider "github.com/yanmxa/gencode/internal/provider"
 )
@@ -25,9 +24,8 @@ func newTokenLimitStore(t *testing.T) *coreprovider.Store {
 
 func TestHandleTokenLimitCommand_SetAndShowCustomOverride(t *testing.T) {
 	store := newTokenLimitStore(t)
-	m := &model{
-		provider: providerStateForTest(store, "gpt-5", coreprovider.OpenAI, coreprovider.AuthAPIKey),
-	}
+	m := &model{}
+	setProviderDomainForTest(m, store, "gpt-5", coreprovider.OpenAI, coreprovider.AuthAPIKey)
 
 	result, cmd, err := handleTokenLimitCommand(context.Background(), m, "200000 32000")
 	if err != nil {
@@ -44,7 +42,7 @@ func TestHandleTokenLimitCommand_SetAndShowCustomOverride(t *testing.T) {
 		t.Fatalf("unexpected persisted override: in=%d out=%d ok=%v", in, out, ok)
 	}
 
-	m.provider.InputTokens = 50000
+	m.inputTokens = 50000
 	result, cmd, err = handleTokenLimitCommand(context.Background(), m, "")
 	if err != nil {
 		t.Fatalf("handleTokenLimitCommand(show) error = %v", err)
@@ -68,9 +66,8 @@ func TestHandleTokenLimitCommand_UsesCachedModelLimitsWhenNoOverride(t *testing.
 		t.Fatalf("CacheModels() error = %v", err)
 	}
 
-	m := &model{
-		provider: providerStateForTest(store, "claude-sonnet", coreprovider.Anthropic, coreprovider.AuthAPIKey),
-	}
+	m := &model{}
+	setProviderDomainForTest(m, store, "claude-sonnet", coreprovider.Anthropic, coreprovider.AuthAPIKey)
 
 	result, cmd, err := handleTokenLimitCommand(context.Background(), m, "")
 	if err != nil {
@@ -90,10 +87,10 @@ func TestHandleTokenLimitCommand_UsesCachedModelLimitsWhenNoOverride(t *testing.
 func TestHandleTokenLimitCommand_TriggersFetchWhenLimitsUnknown(t *testing.T) {
 	store := newTokenLimitStore(t)
 	m := &model{
-		cwd:      "/repo",
-		agentOutput:   appoutput.New(80, nil),
-		provider: providerStateForTest(store, "gpt-unknown", coreprovider.OpenAI, coreprovider.AuthAPIKey),
+		cwd:         "/repo",
+		agentOutput: appoutput.New(80, nil),
 	}
+	setProviderDomainForTest(m, store, "gpt-unknown", coreprovider.OpenAI, coreprovider.AuthAPIKey)
 
 	result, cmd, err := handleTokenLimitCommand(context.Background(), m, "")
 	if err != nil {
@@ -121,9 +118,8 @@ func TestHandleTokenLimitCommand_ValidationAndModelFallbacks(t *testing.T) {
 	}
 
 	store := newTokenLimitStore(t)
-	m = &model{
-		provider: providerStateForTest(store, "gpt-5", coreprovider.OpenAI, coreprovider.AuthAPIKey),
-	}
+	m = &model{}
+	setProviderDomainForTest(m, store, "gpt-5", coreprovider.OpenAI, coreprovider.AuthAPIKey)
 	result, cmd, err = handleTokenLimitCommand(context.Background(), m, "abc 123")
 	if err != nil {
 		t.Fatalf("handleTokenLimitCommand(bad args) error = %v", err)
@@ -137,21 +133,19 @@ func TestHandleTokenLimitCommand_ValidationAndModelFallbacks(t *testing.T) {
 	}
 
 	m = &model{}
-	m.provider.ThinkingLevel = coreprovider.ThinkingNormal
-	m.provider.ThinkingOverride = coreprovider.ThinkingUltra
+	m.thinkingLevel = coreprovider.ThinkingNormal
+	m.thinkingOverride = coreprovider.ThinkingUltra
 	if got := m.effectiveThinkingLevel(); got != coreprovider.ThinkingUltra {
 		t.Fatalf("effectiveThinkingLevel() = %v, want %v", got, coreprovider.ThinkingUltra)
 	}
 }
 
-func providerStateForTest(store *coreprovider.Store, modelID string, p coreprovider.Name, auth coreprovider.AuthMethod) providerui.State {
-	return providerui.State{
-		Store: store,
-		CurrentModel: &coreprovider.CurrentModelInfo{
-			ModelID:    modelID,
-			Provider:   p,
-			AuthMethod: auth,
-		},
+func setProviderDomainForTest(m *model, store *coreprovider.Store, modelID string, p coreprovider.Name, auth coreprovider.AuthMethod) {
+	m.providerStore = store
+	m.currentModel = &coreprovider.CurrentModelInfo{
+		ModelID:    modelID,
+		Provider:   p,
+		AuthMethod: auth,
 	}
 }
 

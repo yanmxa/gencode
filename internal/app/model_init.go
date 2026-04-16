@@ -118,7 +118,11 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		conv:        appconv.New(),
 		cwd:         cwd,
 
-		provider: newProviderState(infra),
+		llmProvider:   infra.llmProvider,
+		providerStore: infra.store,
+		currentModel:  infra.currentModel,
+
+		provider: newProviderState(),
 		session:  newSessionState(infra),
 		skill:    newSkillState(),
 		memory:   newMemoryState(),
@@ -151,12 +155,9 @@ func commandSuggestionMatcher() func(string) []suggest.Suggestion {
 	}
 }
 
-func newProviderState(infra modelInfra) providerui.State {
+func newProviderState() providerui.State {
 	return providerui.State{
-		LLM:          infra.llmProvider,
-		Store:        infra.store,
-		CurrentModel: infra.currentModel,
-		Selector:     providerui.New(),
+		Selector: providerui.New(),
 	}
 }
 
@@ -263,7 +264,7 @@ func (m *model) reloadPluginBackedState() error {
 	m.settings = settings
 	if m.hookEngine != nil {
 		m.hookEngine.SetSettings(settings)
-		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.provider.LLM, settings, m.cwd, m.isGit, m.mcp.Registry, m.getModelID()))
+		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.llmProvider, settings, m.cwd, m.isGit, m.mcp.Registry, m.getModelID()))
 	}
 	m.reconfigureAgentTool()
 
@@ -356,7 +357,7 @@ func buildLLMCompleter(p provider.Provider) hooks.LLMCompleter {
 }
 
 func (m *model) buildLoopClient() *provider.Client {
-	c := provider.NewClient(m.provider.LLM, m.getModelID(), m.getMaxTokens())
+	c := provider.NewClient(m.llmProvider, m.getModelID(), m.getMaxTokens())
 	c.SetThinking(m.effectiveThinkingLevel())
 	return c
 }

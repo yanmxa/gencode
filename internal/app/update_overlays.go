@@ -68,6 +68,9 @@ func (m *model) FireFileChanged(path, tool string)   { m.fireFileChanged(path, t
 func (m *model) SetInputText(text string) { m.userInput.Textarea.SetValue(text) }
 
 // providerui.Runtime
+func (m *model) SetLLM(p provider.Provider)                    { m.llmProvider = p }
+func (m *model) SetCurrentModel(cm *provider.CurrentModelInfo) { m.currentModel = cm }
+func (m *model) GetLLM() provider.Provider                     { return m.llmProvider }
 func (m *model) SetHookLLMCompleter(p provider.Provider, modelID string) {
 	if m.hookEngine != nil {
 		m.hookEngine.SetLLMCompleter(buildLLMCompleter(p), modelID)

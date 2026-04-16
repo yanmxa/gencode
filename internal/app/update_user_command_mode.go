@@ -44,20 +44,20 @@ func handleThinkCommand(ctx context.Context, m *model, args string) (string, tea
 
 	switch args {
 	case "off", "0":
-		m.provider.ThinkingLevel = provider.ThinkingOff
+		m.thinkingLevel = provider.ThinkingOff
 	case "", "toggle":
 		// Cycle to next level
-		m.provider.ThinkingLevel = m.provider.ThinkingLevel.Next()
+		m.thinkingLevel = m.thinkingLevel.Next()
 	case "think", "normal", "1":
-		m.provider.ThinkingLevel = provider.ThinkingNormal
+		m.thinkingLevel = provider.ThinkingNormal
 	case "think+", "high", "2":
-		m.provider.ThinkingLevel = provider.ThinkingHigh
+		m.thinkingLevel = provider.ThinkingHigh
 	case "ultra", "ultrathink", "max", "3":
-		m.provider.ThinkingLevel = provider.ThinkingUltra
+		m.thinkingLevel = provider.ThinkingUltra
 	default:
 		return "Usage: /think [off|think|think+|ultra]\n\nLevels:\n  off        — No extended thinking\n  think      — Moderate thinking budget\n  think+     — Extended thinking budget\n  ultra      — Maximum thinking budget\n\nWithout arguments, cycles to the next level.", nil, nil
 	}
 
-	m.provider.StatusMessage = fmt.Sprintf("thinking: %s", m.provider.ThinkingLevel.String())
+	m.provider.StatusMessage = fmt.Sprintf("thinking: %s", m.thinkingLevel.String())
 	return "", providerui.StatusTimer(3 * time.Second), nil
 }

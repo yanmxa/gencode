@@ -33,11 +33,11 @@ func (m *model) updateCompact(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func handleTokenLimitCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if m.provider.CurrentModel == nil {
+	if m.currentModel == nil {
 		return "No model selected. Use /model to select a model first.", nil, nil
 	}
 
-	modelID := m.provider.CurrentModel.ModelID
+	modelID := m.currentModel.ModelID
 	args = strings.TrimSpace(args)
 
 	if args != "" {
@@ -57,8 +57,8 @@ func setTokenLimits(m *model, modelID, args string) (string, tea.Cmd, error) {
 		return "Token limits must be positive integers", nil, nil
 	}
 
-	if m.provider.Store != nil {
-		if err := m.provider.Store.SetTokenLimit(modelID, inputLimit, outputLimit); err != nil {
+	if m.providerStore != nil {
+		if err := m.providerStore.SetTokenLimit(modelID, inputLimit, outputLimit); err != nil {
 			return "", nil, fmt.Errorf("failed to set token limits: %w", err)
 		}
 	}
@@ -68,15 +68,15 @@ func setTokenLimits(m *model, modelID, args string) (string, tea.Cmd, error) {
 }
 
 func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
-	if m.provider.Store != nil {
-		if customInput, customOutput, ok := m.provider.Store.GetTokenLimit(modelID); ok {
-			return appcompact.FormatTokenLimitDisplay(modelID, customInput, customOutput, true, m.provider.InputTokens), nil, nil
+	if m.providerStore != nil {
+		if customInput, customOutput, ok := m.providerStore.GetTokenLimit(modelID); ok {
+			return appcompact.FormatTokenLimitDisplay(modelID, customInput, customOutput, true, m.inputTokens), nil, nil
 		}
 	}
 
-	inputLimit, outputLimit := appcompact.GetModelTokenLimits(m.provider.Store, m.provider.CurrentModel)
+	inputLimit, outputLimit := appcompact.GetModelTokenLimits(m.providerStore, m.currentModel)
 	if inputLimit > 0 || outputLimit > 0 {
-		return appcompact.FormatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m.provider.InputTokens), nil, nil
+		return appcompact.FormatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m.inputTokens), nil, nil
 	}
 
 	m.provider.FetchingLimits = true
@@ -84,7 +84,7 @@ func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
 }
 
 func handleCompactCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if m.provider.LLM == nil {
+	if m.llmProvider == nil {
 		return "No provider connected. Use /provider to connect.", nil, nil
 	}
 	if len(m.conv.Messages) == 0 {
@@ -103,19 +103,19 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 }
 
 func (m *model) getEffectiveInputLimit() int {
-	return appcompact.GetEffectiveInputLimit(m.provider.Store, m.provider.CurrentModel)
+	return appcompact.GetEffectiveInputLimit(m.providerStore, m.currentModel)
 }
 
 func (m *model) getMaxTokens() int {
-	return appcompact.GetMaxTokens(m.provider.Store, m.provider.CurrentModel, config.DefaultMaxTokens)
+	return appcompact.GetMaxTokens(m.providerStore, m.currentModel, config.DefaultMaxTokens)
 }
 
 func (m *model) getContextUsagePercent() float64 {
-	return appcompact.GetContextUsagePercent(m.provider.InputTokens, m.provider.Store, m.provider.CurrentModel)
+	return appcompact.GetContextUsagePercent(m.inputTokens, m.providerStore, m.currentModel)
 }
 
 func (m *model) shouldAutoCompact() bool {
-	return appcompact.ShouldAutoCompact(m.provider.LLM, len(m.conv.Messages), m.provider.InputTokens, m.provider.Store, m.provider.CurrentModel)
+	return appcompact.ShouldAutoCompact(m.llmProvider, len(m.conv.Messages), m.inputTokens, m.providerStore, m.currentModel)
 }
 
 func (m *model) triggerAutoCompact() tea.Cmd {
@@ -205,8 +205,8 @@ func (m *model) handleCompactResult(msg appcompact.ResultMsg) tea.Cmd {
 // resetAfterCompact clears messages and resets token counters after compaction.
 func (m *model) resetAfterCompact() {
 	m.conv.Clear()
-	m.provider.InputTokens = 0
-	m.provider.OutputTokens = 0
+	m.inputTokens = 0
+	m.outputTokens = 0
 }
 
 // handleTokenLimitResult processes the result of a token limit fetch.

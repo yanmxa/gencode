@@ -41,7 +41,7 @@ func (m *model) View() string {
 	chatSection := m.renderChatSection(activeContent, trackerView)
 	statusLine := m.renderModeStatus()
 	suggestions := m.userInput.Suggestions.Render(m.width)
-	tokenWarning := render.RenderTokenWarning(m.provider.InputTokens, m.getEffectiveInputLimit(), m.conv.Compact.WarningSuppressed)
+	tokenWarning := render.RenderTokenWarning(m.inputTokens, m.getEffectiveInputLimit(), m.conv.Compact.WarningSuppressed)
 	queuePreview := m.renderQueuePreview()
 
 	var view strings.Builder
@@ -137,7 +137,7 @@ func (m model) renderModeStatus() string {
 	modelName := appsystem.RenderHookStatus(m.systemInput.HookStatus, m.provider.StatusMessage)
 	return render.RenderModeStatus(render.OperationModeParams{
 		Mode:          m.mode.Operation,
-		InputTokens:   m.provider.InputTokens,
+		InputTokens:   m.inputTokens,
 		InputLimit:    m.getEffectiveInputLimit(),
 		ModelName:     modelName,
 		Width:         m.width,

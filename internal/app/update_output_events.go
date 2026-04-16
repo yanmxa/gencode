@@ -96,13 +96,13 @@ func (m *model) SetBuildingTool(name string) { m.conv.Stream.BuildingTool = name
 func (m *model) StopStream()                 { m.conv.Stream.Stop() }
 
 func (m *model) SetTokenCounts(in, out int) {
-	m.provider.InputTokens = in
-	m.provider.OutputTokens = out
+	m.inputTokens = in
+	m.outputTokens = out
 }
 func (m *model) ClearWarningSuppressed() { m.conv.Compact.WarningSuppressed = false }
 func (m *model) IncrementTurnCounter()   { m.conv.TurnsSinceLastTaskTool++ }
 func (m *model) ResetTurnCounter()       { m.conv.TurnsSinceLastTaskTool = 0 }
-func (m *model) ClearThinkingOverride()  { m.provider.ThinkingOverride = provider.ThinkingOff }
+func (m *model) ClearThinkingOverride()  { m.thinkingOverride = provider.ThinkingOff }
 func (m *model) ContinueOutbox() tea.Cmd { return m.continueOutbox() }
 
 func (m *model) ApplyToolSideEffects(toolName string, sideEffect any) {

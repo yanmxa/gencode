@@ -36,7 +36,7 @@ func (m *model) injectAsyncHookContinuation(item appsystem.AsyncHookRewake) tea.
 	if len(item.Context) == 0 {
 		return tea.Batch(m.commitMessages()...)
 	}
-	if m.provider.LLM == nil {
+	if m.llmProvider == nil {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleNotice,
 			Content: "Async hook requested a follow-up, but no provider is connected.",
@@ -58,7 +58,7 @@ func (m *model) InjectCronPrompt(prompt string) tea.Cmd {
 }
 
 func (m *model) injectCronPrompt(prompt string) tea.Cmd {
-	if m.provider.LLM == nil {
+	if m.llmProvider == nil {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleNotice,
 			Content: fmt.Sprintf("Cron fired but no provider connected: %s", prompt),

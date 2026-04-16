@@ -98,7 +98,7 @@ func compactCmd(req compactRequest) tea.Cmd {
 // --- Model methods that build requests from state ---
 
 func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
-	if m.provider.LLM == nil {
+	if m.llmProvider == nil {
 		return promptSuggestionRequest{}, false
 	}
 
@@ -134,9 +134,9 @@ func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
 func (m *model) buildTokenLimitFetchRequest() tokenLimitFetchRequest {
 	return tokenLimitFetchRequest{
 		Ctx:          context.Background(),
-		LLM:          m.provider.LLM,
-		Store:        m.provider.Store,
-		CurrentModel: m.provider.CurrentModel,
+		LLM:          m.llmProvider,
+		Store:        m.providerStore,
+		CurrentModel: m.currentModel,
 		ModelID:      m.getModelID(),
 		Cwd:          m.cwd,
 	}

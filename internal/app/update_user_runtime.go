@@ -19,7 +19,7 @@ func (m *model) handleStreamCancel() tea.Cmd {
 	}
 	m.conv.Stream.Stop()
 	// Reset per-turn thinking override so it doesn't leak into subsequent turns
-	m.provider.ThinkingOverride = provider.ThinkingOff
+	m.thinkingOverride = provider.ThinkingOff
 	m.cancelPendingToolCalls()
 	m.conv.MarkLastInterrupted()
 
@@ -103,7 +103,7 @@ func (m *model) detectThinkingKeywords(input string) {
 		strings.Contains(lower, "think really hard") ||
 		strings.Contains(lower, "think super hard") ||
 		strings.Contains(lower, "maximum thinking") {
-		m.provider.ThinkingOverride = provider.ThinkingUltra
+		m.thinkingOverride = provider.ThinkingUltra
 		return
 	}
 
@@ -111,7 +111,7 @@ func (m *model) detectThinkingKeywords(input string) {
 		strings.Contains(lower, "think hard") ||
 		strings.Contains(lower, "think deeply") ||
 		strings.Contains(lower, "think carefully") {
-		m.provider.ThinkingOverride = provider.ThinkingHigh
+		m.thinkingOverride = provider.ThinkingHigh
 		return
 	}
 }
@@ -119,7 +119,7 @@ func (m *model) detectThinkingKeywords(input string) {
 // handleSkillInvocation handles skill command invocation by sending the skill
 // instructions and args to the LLM.
 func (m *model) handleSkillInvocation() tea.Cmd {
-	if m.provider.LLM == nil {
+	if m.llmProvider == nil {
 		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "No provider connected. Use /provider to connect."})
 		m.skill.PendingInstructions = ""
 		m.skill.PendingArgs = ""
