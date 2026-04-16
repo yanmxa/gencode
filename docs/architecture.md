@@ -1,5 +1,7 @@
 # Architecture
 
+GenCode is a terminal AI agent built on [Bubble Tea](https://github.com/charmbracelet/bubbletea). The core design is an **event-based agent**: the Agent communicates through Inbox/Outbox channels, and the TUI observes events via the Bubble Tea MVU (Model-View-Update) loop. This channel-based, loosely-coupled architecture is designed for extensibility — each agent is an independent goroutine with its own Inbox/Outbox, agents interact only through messages with no shared mutable state, making it straightforward to scale from single-agent to multi-agent orchestration.
+
 ## Three-Source MVU
 
 The Agent is the central processing unit. **Three input sources** feed its Inbox. The **Outbox** outputs events that mutate the TUI Model and trigger View. Together, 3 input sources + Agent Output form the four paths that update the Model.
@@ -41,7 +43,7 @@ All three sources converge at the Agent Inbox via `sendToAgent()`. The Outbox fl
    command ──┤           sendMsg ────┤            asyncHook ─────┤
    modalResp ┤           selfInject ─┤            fileChange ────┤
              ▼                       ▼                           ▼
-        on_input.*              on_agent_in.*              on_system.*
+          user/                    agent/                   system/
              │                       │                           │
              └───────────────┬───────┴───────────────────────────┘
                              │ sendToAgent()
@@ -100,7 +102,7 @@ All three sources converge at the Agent Inbox via `sendToAgent()`. The Outbox fl
 **Three input loops**:
 - **Source 1**: User submits → `sendToAgent()` → Inbox. If agent is busy, queued until OnTurn drains.
 - **Source 2**: Background agent completes → task notification → `sendToAgent()` → Inbox. Also: `SendMessage` cross-agent, self-inject when Stop hook blocks.
-- **Source 3**: Timer fires (cron/hook/watcher) → queue → idle gate → `sendToAgent()` → Inbox.
+- **Source 3**: Timer fires (cron/hook/watcher) → `sendToAgent()` → Inbox (buffered channel).
 
 **Output path**: Agent Outbox → TUI observes events for rendering. PermReq bridges back to Source 1 (approval dialog → user decision → unblock agent).
 
