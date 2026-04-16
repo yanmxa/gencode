@@ -86,8 +86,12 @@ func (t *WriteTool) PreparePermission(ctx context.Context, params map[string]any
 func (t *WriteTool) ExecuteApproved(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
 	start := time.Now()
 
-	// Get parameters
-	filePath := tool.GetString(params, "file_path")
+	// Get parameters — validate file_path even after approval, since params
+	// could differ from what PreparePermission validated.
+	filePath, err := tool.RequireString(params, "file_path")
+	if err != nil {
+		return toolresult.NewErrorResult(t.Name(), err.Error())
+	}
 	content, _ := params["content"].(string)
 
 	// Resolve relative path
@@ -102,11 +106,13 @@ func (t *WriteTool) ExecuteApproved(ctx context.Context, params map[string]any, 
 	}
 
 	// Check if file exists (for status message)
-	_, err := os.Stat(filePath)
-	isNewFile := os.IsNotExist(err)
+	_, statErr := os.Stat(filePath)
+	isNewFile := os.IsNotExist(statErr)
 
-	// Get optional mode parameter (default 0644)
-	mode := os.FileMode(tool.GetInt(params, "mode", 0o644))
+	// Get optional mode parameter (default 0644).
+	// Clamp to valid permission bits — JSON numbers are decimal, so an LLM
+	// sending 755 would otherwise become octal 01363 (setgid + wrong perms).
+	mode := os.FileMode(tool.GetInt(params, "mode", 0o644)) & 0o7777
 
 	// Write file
 	if err := os.WriteFile(filePath, []byte(content), mode); err != nil {

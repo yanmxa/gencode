@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,8 +10,6 @@ import (
 	"time"
 
 	session "github.com/yanmxa/gencode/internal/session"
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/transcript"
 )
 
 // newTestStore creates a Store using a temp directory instead of ~/.gen/projects/.
@@ -22,7 +19,11 @@ func newTestStore(t *testing.T) *session.Store {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	return session.NewStoreWithDir(dir)
+	store, err := session.NewStoreWithDir(dir)
+	if err != nil {
+		t.Fatalf("NewStoreWithDir: %v", err)
+	}
+	return store
 }
 
 // makeUserEntry creates a user text entry for testing.
@@ -65,7 +66,7 @@ func getEntryText(e session.Entry) string {
 func TestSession_SaveAndLoad(t *testing.T) {
 	store := newTestStore(t)
 
-	sess := &session.Session{
+	sess := &session.Snapshot{
 		Metadata: session.SessionMetadata{
 			ID:       "test-1",
 			Title:    "Test Session",
@@ -106,7 +107,7 @@ func TestSession_List(t *testing.T) {
 	store := newTestStore(t)
 
 	for i, title := range []string{"First", "Second", "Third"} {
-		sess := &session.Session{
+		sess := &session.Snapshot{
 			Metadata: session.SessionMetadata{
 				ID:        title,
 				Title:     title,
@@ -138,7 +139,7 @@ func TestSession_List(t *testing.T) {
 func TestSession_GetLatest(t *testing.T) {
 	store := newTestStore(t)
 
-	sess1 := &session.Session{
+	sess1 := &session.Snapshot{
 		Metadata: session.SessionMetadata{ID: "old", Title: "Old"},
 	}
 	if err := store.Save(sess1); err != nil {
@@ -147,7 +148,7 @@ func TestSession_GetLatest(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond)
 
-	sess2 := &session.Session{
+	sess2 := &session.Snapshot{
 		Metadata: session.SessionMetadata{ID: "new", Title: "New"},
 	}
 	if err := store.Save(sess2); err != nil {
@@ -167,7 +168,7 @@ func TestSession_GetLatest(t *testing.T) {
 func TestSession_Delete(t *testing.T) {
 	store := newTestStore(t)
 
-	sess := &session.Session{
+	sess := &session.Snapshot{
 		Metadata: session.SessionMetadata{ID: "to-delete", Title: "Delete Me"},
 	}
 	if err := store.Save(sess); err != nil {
@@ -184,65 +185,11 @@ func TestSession_Delete(t *testing.T) {
 	}
 }
 
-func TestSession_Cleanup(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "sessions")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	store := session.NewStoreWithDir(dir)
-
-	// Write old session file directly (bypass Save which overrides UpdatedAt)
-	oldTime := time.Now().AddDate(0, 0, -(session.SessionRetentionDays + 1))
-	txStore, err := transcript.NewFileStore(dir, strings.ReplaceAll(strings.TrimRight(dir, "/"), "/", "-"))
-	if err != nil {
-		t.Fatalf("NewFileStore(): %v", err)
-	}
-	if err := txStore.Start(context.Background(), transcript.StartCommand{
-		TranscriptID: "old-session",
-		ProjectID:    strings.ReplaceAll(strings.TrimRight(dir, "/"), "/", "-"),
-		Cwd:          dir,
-		Time:         oldTime,
-	}); err != nil {
-		t.Fatalf("Start(old): %v", err)
-	}
-	if err := txStore.PatchState(context.Background(), transcript.PatchStateCommand{
-		TranscriptID: "old-session",
-		Time:         oldTime.Add(time.Second),
-		Ops:          []transcript.PatchOp{transcript.PatchTitle("Old")},
-	}); err != nil {
-		t.Fatalf("PatchState(old): %v", err)
-	}
-
-	// Save a recent session normally
-	newSess := &session.Session{
-		Metadata: session.SessionMetadata{ID: "new-session", Title: "New"},
-	}
-	if err := store.Save(newSess); err != nil {
-		t.Fatalf("Save() error: %v", err)
-	}
-
-	if err := store.Cleanup(); err != nil {
-		t.Fatalf("Cleanup() error: %v", err)
-	}
-
-	// Old should be gone
-	_, err = store.Load("old-session")
-	if err == nil {
-		t.Error("expected old session to be cleaned up")
-	}
-
-	// New should remain
-	_, err = store.Load("new-session")
-	if err != nil {
-		t.Errorf("new session should still exist: %v", err)
-	}
-}
-
 func TestSession_AppendBehavior(t *testing.T) {
 	store := newTestStore(t)
 
 	// First save with 1 entry
-	sess := &session.Session{
+	sess := &session.Snapshot{
 		Metadata: session.SessionMetadata{
 			ID:    "append-test",
 			Title: "Append Test",
@@ -280,7 +227,7 @@ func TestSession_AppendBehavior(t *testing.T) {
 func TestSession_MetadataUpdatesOnNewMessage(t *testing.T) {
 	store := newTestStore(t)
 
-	sess := &session.Session{
+	sess := &session.Snapshot{
 		Metadata: session.SessionMetadata{
 			ID:    "metadata-update-test",
 			Title: "Metadata Update Test",
@@ -320,62 +267,11 @@ func TestSession_MetadataUpdatesOnNewMessage(t *testing.T) {
 	}
 }
 
-func TestSession_EntryRoundtrip(t *testing.T) {
-	// Test that MessagesToEntries → EntriesToMessages roundtrips correctly.
-	msgs := []message.Message{
-		{Role: message.RoleUser, Content: "hello"},
-		{Role: message.RoleAssistant, Content: "hi", Thinking: "let me think",
-			ToolCalls: []message.ToolCall{{ID: "tc-1", Name: "Read", Input: `{"file_path":"/tmp/test"}`}}},
-		{Role: message.RoleUser, ToolResult: &message.ToolResult{
-			ToolCallID: "tc-1", ToolName: "Read", Content: "file contents",
-		}},
-		{Role: message.RoleAssistant, Content: "I see the file."},
-	}
-
-	entries := session.MessagesToEntries(msgs)
-	if len(entries) != 4 {
-		t.Fatalf("expected 4 entries, got %d", len(entries))
-	}
-
-	// Verify entry types
-	if entries[0].Type != session.EntryUser {
-		t.Errorf("entry[0] type: want user, got %s", entries[0].Type)
-	}
-	if entries[1].Type != session.EntryAssistant {
-		t.Errorf("entry[1] type: want assistant, got %s", entries[1].Type)
-	}
-	if entries[2].Type != session.EntryUser {
-		t.Errorf("entry[2] type: want user (tool_result), got %s", entries[2].Type)
-	}
-
-	// Round-trip back to messages
-	restored := session.EntriesToMessages(entries)
-	if len(restored) != 4 {
-		t.Fatalf("expected 4 messages after roundtrip, got %d", len(restored))
-	}
-	if restored[0].Content != "hello" {
-		t.Errorf("msg[0].Content: want 'hello', got %q", restored[0].Content)
-	}
-	if restored[1].Thinking != "let me think" {
-		t.Errorf("msg[1].Thinking: want 'let me think', got %q", restored[1].Thinking)
-	}
-	if restored[2].ToolResult == nil {
-		t.Fatal("msg[2].ToolResult should not be nil")
-	}
-	if restored[2].ToolResult.ToolCallID != "tc-1" {
-		t.Errorf("msg[2].ToolResult.ToolCallID: want 'tc-1', got %q", restored[2].ToolResult.ToolCallID)
-	}
-	// Tool name should be resolved from the tool_use block
-	if restored[2].ToolResult.ToolName != "Read" {
-		t.Errorf("msg[2].ToolResult.ToolName: want 'Read', got %q", restored[2].ToolResult.ToolName)
-	}
-}
-
 func TestSession_MessageTypes_PersistRoundTrip(t *testing.T) {
 	store := newTestStore(t)
 
 	toolInput := json.RawMessage(`{"file_path":"/tmp/test.txt"}`)
-	sess := &session.Session{
+	sess := &session.Snapshot{
 		Metadata: session.SessionMetadata{
 			ID:       "message-types-roundtrip",
 			Title:    "Message Types Roundtrip",
@@ -457,7 +353,10 @@ func TestSession_PersistToolResult(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	store := session.NewStoreWithDir(dir)
+	store, err := session.NewStoreWithDir(dir)
+	if err != nil {
+		t.Fatalf("NewStoreWithDir: %v", err)
+	}
 
 	sessionID := "tool-overflow-test"
 	toolCallID := "tc-abc123"
@@ -477,7 +376,7 @@ func TestSession_PersistToolResult(t *testing.T) {
 		t.Errorf("persisted content size = %d, want 200000", len(data))
 	}
 
-	sess := &session.Session{
+	sess := &session.Snapshot{
 		Metadata: session.SessionMetadata{
 			ID:    sessionID,
 			Title: "Overflow",
@@ -580,7 +479,7 @@ func TestSession_MemoryEndToEnd(t *testing.T) {
 	store := newTestStore(t)
 
 	// 1. Create and save a session (simulates a conversation)
-	sess := &session.Session{
+	sess := &session.Snapshot{
 		Metadata: session.SessionMetadata{
 			ID:       "memory-e2e",
 			Title:    "End to End Memory Test",
@@ -635,9 +534,12 @@ func TestSession_MemoryEndToEnd(t *testing.T) {
 // where a malformed entry silently breaks session loading.
 func TestSession_JSONL_Integrity(t *testing.T) {
 	dir := t.TempDir()
-	store := session.NewStoreWithDir(dir)
+	store, err := session.NewStoreWithDir(dir)
+	if err != nil {
+		t.Fatalf("NewStoreWithDir: %v", err)
+	}
 
-	sess := &session.Session{
+	sess := &session.Snapshot{
 		Metadata: session.SessionMetadata{
 			ID:       "jsonl-integrity-test",
 			Title:    "JSONL Integrity Test",
@@ -711,7 +613,7 @@ func TestSession_ContinueRestoresMessages(t *testing.T) {
 		}
 	}
 
-	sess := &session.Session{
+	sess := &session.Snapshot{
 		Metadata: session.SessionMetadata{
 			ID:       "continue-test",
 			Title:    "Continue Test",

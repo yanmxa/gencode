@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -15,7 +16,7 @@ import (
 type Type int
 
 const (
-	TypeCommand Type = iota
+	typeCommand Type = iota
 	TypeFile
 )
 
@@ -26,6 +27,8 @@ type Suggestion struct {
 
 type Matcher func(query string) []Suggestion
 
+var stylesOnce sync.Once
+
 var (
 	suggestionBoxStyle      lipgloss.Style
 	selectedSuggestionStyle lipgloss.Style
@@ -34,27 +37,29 @@ var (
 	commandDescStyle        lipgloss.Style
 )
 
-func init() {
-	suggestionBoxStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(theme.CurrentTheme.Border).
-		Padding(0, 1)
+func initStyles() {
+	stylesOnce.Do(func() {
+		suggestionBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(theme.CurrentTheme.Border).
+			Padding(0, 1)
 
-	selectedSuggestionStyle = lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.TextBright).
-		Bold(true)
+		selectedSuggestionStyle = lipgloss.NewStyle().
+			Foreground(theme.CurrentTheme.TextBright).
+			Bold(true)
 
-	normalSuggestionStyle = lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Muted)
+		normalSuggestionStyle = lipgloss.NewStyle().
+			Foreground(theme.CurrentTheme.Muted)
 
-	commandNameStyle = lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Primary)
+		commandNameStyle = lipgloss.NewStyle().
+			Foreground(theme.CurrentTheme.Primary)
 
-	commandDescStyle = lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Muted)
+		commandDescStyle = lipgloss.NewStyle().
+			Foreground(theme.CurrentTheme.Muted)
+	})
 }
 
-type FileSuggestion struct {
+type fileSuggestion struct {
 	Path        string
 	DisplayName string
 	IsDir       bool
@@ -64,7 +69,7 @@ type State struct {
 	visible         bool
 	suggestionType  Type
 	suggestions     []Suggestion
-	fileSuggestions []FileSuggestion
+	fileSuggestions []fileSuggestion
 	selectedIdx     int
 	cwd             string
 	atQuery         string
@@ -93,13 +98,13 @@ func (s *State) UpdateSuggestions(input string) {
 		query := input[atIdx+1:]
 		if atIdx == len(input)-1 || !strings.ContainsAny(query, " \t\n") {
 			s.atQuery = query
-			s.updateFileSuggestions(query)
+			s.updatefileSuggestions(query)
 			return
 		}
 	}
 
 	if strings.HasPrefix(input, "/") {
-		s.suggestionType = TypeCommand
+		s.suggestionType = typeCommand
 		s.suggestions = s.cmdMatcher(input)
 		s.fileSuggestions = nil
 		s.visible = len(s.suggestions) > 0
@@ -124,7 +129,7 @@ const (
 	fileScanMaxDisplay = 8
 )
 
-func (s *State) updateFileSuggestions(query string) {
+func (s *State) updatefileSuggestions(query string) {
 	s.suggestionType = TypeFile
 	s.suggestions = nil
 	s.fileSuggestions = nil
@@ -152,10 +157,10 @@ var supportedFileExtensions = map[string]bool{
 	".webp": true,
 }
 
-func (s *State) scanMarkdownFiles(query string) []FileSuggestion {
+func (s *State) scanMarkdownFiles(query string) []fileSuggestion {
 	queryLower := strings.ToLower(query)
 	seen := make(map[string]bool)
-	var results []FileSuggestion
+	var results []fileSuggestion
 
 	var walkDir func(dir string, depth int)
 	walkDir = func(dir string, depth int) {
@@ -199,7 +204,7 @@ func (s *State) scanMarkdownFiles(query string) []FileSuggestion {
 				continue
 			}
 
-			results = append(results, FileSuggestion{
+			results = append(results, fileSuggestion{
 				Path:        relPath,
 				DisplayName: relPath,
 				IsDir:       false,
@@ -297,10 +302,6 @@ func (s *State) GetSuggestionType() Type {
 	return s.suggestionType
 }
 
-func (s *State) GetAtQuery() string {
-	return s.atQuery
-}
-
 func (s *State) Hide() {
 	s.visible = false
 }
@@ -316,14 +317,15 @@ func (s *State) Render(width int) string {
 	if !s.IsVisible() {
 		return ""
 	}
+	initStyles()
 
 	if s.suggestionType == TypeFile {
-		return s.renderFileSuggestions(width)
+		return s.renderfileSuggestions(width)
 	}
 	return s.renderCommandSuggestions(width)
 }
 
-func (s *State) renderFileSuggestions(width int) string {
+func (s *State) renderfileSuggestions(width int) string {
 	const maxItems = 8
 	items := s.fileSuggestions
 	if len(items) > maxItems {
@@ -393,21 +395,23 @@ func clampInt(value, minVal, maxVal int) int {
 }
 
 func truncateWithEllipsis(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
 	if maxLen <= 3 {
-		return s[:maxLen]
+		return string(runes[:maxLen])
 	}
-	return s[:maxLen-3] + "..."
+	return string(runes[:maxLen-3]) + "..."
 }
 
 func truncateFromLeft(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
 	if maxLen <= 3 {
-		return s[len(s)-maxLen:]
+		return string(runes[len(runes)-maxLen:])
 	}
-	return "..." + s[len(s)-maxLen+3:]
+	return "..." + string(runes[len(runes)-maxLen+3:])
 }

@@ -72,7 +72,7 @@ func TestProcessNext_RoutesAskUserQuestionToQuestionRequest(t *testing.T) {
 		Input: `{"questions":[{"question":"Choose","header":"Pick","options":[{"label":"A"},{"label":"B"}]}]}`,
 	}
 
-	msg := ProcessNext(context.Background(), nil, []message.ToolCall{tc}, 0, "", settings, nil)()
+	msg := ProcessNext(context.Background(), nil, []message.ToolCall{tc}, 0, "", settings, nil, nil, nil)()
 	reqMsg, ok := msg.(appmode.QuestionRequestMsg)
 	if !ok {
 		t.Fatalf("expected QuestionRequestMsg, got %T", msg)

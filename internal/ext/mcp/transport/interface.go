@@ -62,9 +62,9 @@ type Transport interface {
 // NotificationHandler handles incoming notifications from the MCP server
 type NotificationHandler func(method string, params []byte)
 
-// ParseAndDispatchNotification parses a JSON message and dispatches it to the handler if it's a notification.
+// parseAndDispatchNotification parses a JSON message and dispatches it to the handler if it's a notification.
 // Returns true if it was a notification, false otherwise.
-func ParseAndDispatchNotification(data []byte, handler NotificationHandler) bool {
+func parseAndDispatchNotification(data []byte, handler NotificationHandler) bool {
 	if handler == nil {
 		return false
 	}

@@ -21,12 +21,15 @@ func (m *Model) AddNotice(content string) {
 	m.Messages = append(m.Messages, message.ChatMessage{Role: message.RoleNotice, Content: content})
 }
 
-// AppendToLast appends text and thinking content to the last message.
+// AppendToLast appends text and thinking content to the last assistant message.
 func (m *Model) AppendToLast(text, thinking string) {
 	if len(m.Messages) == 0 {
 		return
 	}
 	idx := len(m.Messages) - 1
+	if m.Messages[idx].Role != message.RoleAssistant {
+		return
+	}
 	if thinking != "" {
 		m.Messages[idx].Thinking += thinking
 	}
@@ -102,6 +105,9 @@ func (m *Model) ToggleMostRecentExpandable() {
 
 // HasAllToolResults checks if all tool calls at the given index have results.
 func (m *Model) HasAllToolResults(idx int) bool {
+	if idx < 0 || idx >= len(m.Messages) {
+		return true
+	}
 	toolCalls := m.Messages[idx].ToolCalls
 	if len(toolCalls) == 0 {
 		return true
@@ -147,6 +153,9 @@ func (m Model) ConvertToProvider() []message.Message {
 func (m Model) ConvertToProviderFrom(startIdx int) []message.Message {
 	if startIdx < 0 {
 		startIdx = 0
+	}
+	if startIdx > len(m.Messages) {
+		startIdx = len(m.Messages)
 	}
 	providerMsgs := make([]message.Message, 0, len(m.Messages)-startIdx)
 	for i := startIdx; i < len(m.Messages); i++ {

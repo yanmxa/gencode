@@ -1,8 +1,8 @@
 package tool
 
-import "github.com/yanmxa/gencode/internal/provider"
+import "github.com/yanmxa/gencode/internal/message"
 
-var readToolSchema = provider.ToolSchema{
+var readToolSchema = message.ToolSchema{
 	Name: "Read",
 	Description: `Reads a file from the local filesystem. You can access any file directly by using this tool.
 Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
@@ -36,7 +36,7 @@ Usage:
 	},
 }
 
-var globToolSchema = provider.ToolSchema{
+var globToolSchema = message.ToolSchema{
 	Name: "Glob",
 	Description: `Fast file pattern matching tool that works with any codebase size.
 - Supports glob patterns like "**/*.go" or "src/**/*.ts"
@@ -59,7 +59,7 @@ var globToolSchema = provider.ToolSchema{
 	},
 }
 
-var grepToolSchema = provider.ToolSchema{
+var grepToolSchema = message.ToolSchema{
 	Name: "Grep",
 	Description: `A powerful search tool built on ripgrep
 
@@ -136,7 +136,7 @@ var grepToolSchema = provider.ToolSchema{
 	},
 }
 
-var webFetchToolSchema = provider.ToolSchema{
+var webFetchToolSchema = message.ToolSchema{
 	Name: "WebFetch",
 	Description: `Fetches content from a specified URL and converts HTML to Markdown for readability.
 
@@ -162,7 +162,7 @@ Usage notes:
 	},
 }
 
-var webSearchToolSchema = provider.ToolSchema{
+var webSearchToolSchema = message.ToolSchema{
 	Name: "WebSearch",
 	Description: `Search the web for up-to-date information. Returns a list of relevant results with titles, URLs, and snippets.
 When searching for current information, always use the present year rather than previous years.`,
@@ -192,7 +192,7 @@ When searching for current information, always use the present year rather than 
 	},
 }
 
-var editToolSchema = provider.ToolSchema{
+var editToolSchema = message.ToolSchema{
 	Name: "Edit",
 	Description: `Performs exact string replacements in files.
 
@@ -228,7 +228,7 @@ Usage:
 	},
 }
 
-var writeToolSchema = provider.ToolSchema{
+var writeToolSchema = message.ToolSchema{
 	Name: "Write",
 	Description: `Writes a file to the local filesystem.
 
@@ -254,7 +254,7 @@ Usage:
 	},
 }
 
-var bashToolSchema = provider.ToolSchema{
+var bashToolSchema = message.ToolSchema{
 	Name: "Bash",
 	Description: `Executes a given bash command and returns its output.
 
@@ -298,7 +298,7 @@ You can use the run_in_background parameter to run the command in the background
 	},
 }
 
-var taskOutputToolSchema = provider.ToolSchema{
+var taskOutputToolSchema = message.ToolSchema{
 	Name:        ToolTaskOutput,
 	Description: "[Deprecated] Inspect final result from a completed background task when the user explicitly asks. Background workers automatically notify you on completion — do not use this to poll or check progress.",
 	Parameters: map[string]any{
@@ -323,7 +323,7 @@ var taskOutputToolSchema = provider.ToolSchema{
 	},
 }
 
-var taskStopToolSchema = provider.ToolSchema{
+var taskStopToolSchema = message.ToolSchema{
 	Name:        ToolTaskStop,
 	Description: "Stops a running background task by its ID. Returns a success or failure status. Use this tool when you need to terminate a long-running background agent or command.",
 	Parameters: map[string]any{
@@ -338,7 +338,7 @@ var taskStopToolSchema = provider.ToolSchema{
 	},
 }
 
-var askUserQuestionToolSchema = provider.ToolSchema{
+var askUserQuestionToolSchema = message.ToolSchema{
 	Name: "AskUserQuestion",
 	Description: `Ask the user questions to gather preferences, clarify requirements, or get decisions on implementation choices. Use when you need user input to proceed.
 
@@ -397,8 +397,8 @@ Plan mode note: In plan mode, use this tool to clarify requirements or choose be
 	},
 }
 
-func baseToolSchemas() []provider.ToolSchema {
-	return []provider.ToolSchema{
+func baseToolSchemas() []message.ToolSchema {
+	return []message.ToolSchema{
 		readToolSchema,
 		globToolSchema,
 		grepToolSchema,

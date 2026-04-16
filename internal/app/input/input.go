@@ -21,8 +21,8 @@ const (
 	maxHeightScreenRatio = 2 // use up to 1/2 of terminal height
 )
 
-// ImageRefPattern matches @path/to/image.ext references (case-insensitive extension).
-var ImageRefPattern = regexp.MustCompile(`(?i)@([^\s]+\.(png|jpg|jpeg|gif|webp))`)
+// imageRefPattern matches @path/to/image.ext references (case-insensitive extension).
+var imageRefPattern = regexp.MustCompile(`(?i)@([^\s]+\.(png|jpg|jpeg|gif|webp))`)
 
 // ImageTokenMatch describes an inline image token found in the textarea value.
 type ImageTokenMatch struct {
@@ -55,8 +55,8 @@ func (m *Model) UpdateHeight() {
 	m.Textarea.SetHeight(newHeight)
 }
 
-// ImageLabel returns the display label for a pending image token.
-func ImageLabel(id int) string {
+// imageLabel returns the display label for a pending image token.
+func imageLabel(id int) string {
 	return fmt.Sprintf("[Image #%d]", id)
 }
 
@@ -67,7 +67,7 @@ func (m *Model) AddPendingImage(img message.ImageData) string {
 		ID:   m.Images.NextID,
 		Data: img,
 	})
-	return ImageLabel(m.Images.NextID)
+	return imageLabel(m.Images.NextID)
 }
 
 // ClearImages resets all inline image state.
@@ -130,7 +130,7 @@ func (m *Model) PendingImageMatchesIn(value string) []ImageTokenMatch {
 	matches := make([]ImageTokenMatch, 0, len(m.Images.Pending))
 
 	for idx, pending := range m.Images.Pending {
-		label := ImageLabel(pending.ID)
+		label := imageLabel(pending.ID)
 		start := indexRunes(valueRunes, label, 0)
 		if start < 0 {
 			continue
@@ -273,7 +273,7 @@ func (m *Model) HistoryDown() {
 // Only processes references where the file actually exists on disk;
 // non-existent file references are left in the text as-is.
 func ProcessImageRefs(cwd, input string) (string, []message.ImageData, error) {
-	matches := ImageRefPattern.FindAllStringSubmatch(input, -1)
+	matches := imageRefPattern.FindAllStringSubmatch(input, -1)
 	if len(matches) == 0 {
 		return input, nil, nil
 	}

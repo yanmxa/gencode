@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/messageconv"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/ui/progress"
 )
@@ -41,9 +43,9 @@ func (m *model) updateTool(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 const (
-	// ToolResultOverflowThreshold is the size in bytes above which tool results
+	// toolResultOverflowThreshold is the size in bytes above which tool results
 	// are persisted to disk and replaced with a truncated preview.
-	ToolResultOverflowThreshold = 100_000 // 100KB
+	toolResultOverflowThreshold = 100_000 // 100KB
 
 	// toolResultPreviewSize is the number of bytes to keep as an inline preview
 	// when a tool result exceeds the overflow threshold.
@@ -70,6 +72,7 @@ func (m *model) handleToolResult(msg toolui.ExecResultMsg) tea.Cmd {
 	r := msg.Result
 	m.appendToolResultMessage(msg.ToolName, &r)
 	if m.shouldReplanAfterCwdChange(prevCwd) {
+		m.cancelRemainingToolCalls(m.tool.CurrentIdx + 1)
 		m.tool.Reset()
 		commitCmds := m.commitMessages()
 		commitCmds = append(commitCmds, m.startContinueStream())
@@ -77,7 +80,7 @@ func (m *model) handleToolResult(msg toolui.ExecResultMsg) tea.Cmd {
 	}
 	m.tool.CurrentIdx++
 	commitCmds := m.commitMessages()
-	nextTool := toolui.ProcessNext(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd, m.settings, m.mode.SessionPermissions)
+	nextTool := toolui.ProcessNext(m.tool.Context(), m.output.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd, m.settings, m.mode.SessionPermissions, m.tool.HookAllowed, m.tool.HookForceAsk)
 	return tea.Batch(append(commitCmds, nextTool)...)
 }
 
@@ -199,7 +202,7 @@ func (m *model) handleStartToolExecution(toolCalls []message.ToolCall) tea.Cmd {
 	// Inject messages getter for fork support in Agent tool
 	execCtx = tool.WithMessagesGetter(execCtx, func() []core.Message {
 		msgs := m.conv.ConvertToProvider()
-		return message.ToCoreSlice(msgs)
+		return messageconv.ToCoreSlice(msgs)
 	})
 	m.tool.Ctx = execCtx
 	m.tool.PendingCalls = m.filterToolCallsWithHooks(execCtx, toolCalls)
@@ -238,7 +241,7 @@ func (m *model) handleAllToolsCompleted() tea.Cmd {
 
 // filterToolCallsWithHooks runs PreToolUse hooks and filters blocked tools.
 func (m *model) filterToolCallsWithHooks(ctx context.Context, toolCalls []message.ToolCall) []message.ToolCall {
-	result := filterToolCallsWithEngine(ctx, m.hookEngine, toolCalls)
+	result := m.hookEngine.FilterToolCalls(ctx, toolCalls, "", "")
 	m.tool.HookAllowed = result.HookAllowed
 	m.tool.HookForceAsk = result.HookForceAsk
 
@@ -279,9 +282,9 @@ func (m *model) firePostToolUseHook(msg toolui.ExecResultMsg) {
 	if m.hookEngine == nil {
 		return
 	}
-	eventType := hooks.PostToolUse
+	eventType := core.PostToolUse
 	if msg.Result.IsError {
-		eventType = hooks.PostToolUseFailure
+		eventType = core.PostToolUseFailure
 	}
 	toolResponse := any(msg.Result.Content)
 	if msg.Result.HookResponse != nil {
@@ -327,21 +330,34 @@ func isTaskTool(name string) bool {
 
 // persistToolResultOverflow checks if a tool result exceeds the overflow threshold
 // and, if so, persists the full content to disk and replaces it with a truncated preview.
+// If persistence fails, the result is still truncated to prevent bloating the context.
 func (m *model) persistToolResultOverflow(result *message.ToolResult) {
-	if len(result.Content) <= ToolResultOverflowThreshold {
+	if len(result.Content) <= toolResultOverflowThreshold {
 		return
 	}
 
-	if err := m.ensureSessionStore(); err != nil {
-		return
+	// Truncate at a valid UTF-8 boundary to avoid producing invalid output.
+	cutoff := toolResultPreviewSize
+	if cutoff > len(result.Content) {
+		cutoff = len(result.Content)
 	}
-	if m.session.CurrentID == "" {
-		return
+	for cutoff > 0 && !utf8.RuneStart(result.Content[cutoff]) {
+		cutoff--
 	}
-	if err := m.session.Store.PersistToolResult(m.session.CurrentID, result.ToolCallID, result.Content); err != nil {
-		return
+	preview := result.Content[:cutoff]
+
+	// Try to persist the full content to disk. If this fails, we still truncate
+	// the result to prevent 100KB+ content from bloating the conversation context.
+	persisted := false
+	if err := m.ensureSessionStore(); err == nil && m.session.CurrentID != "" {
+		if err := m.session.Store.PersistToolResult(m.session.CurrentID, result.ToolCallID, result.Content); err == nil {
+			persisted = true
+		}
 	}
 
-	preview := result.Content[:toolResultPreviewSize]
-	result.Content = fmt.Sprintf("%s\n\n[Full output persisted to blobs/tool-result/%s/%s]", preview, m.session.CurrentID, result.ToolCallID)
+	if persisted {
+		result.Content = fmt.Sprintf("%s\n\n[Full output persisted to blobs/tool-result/%s/%s]", preview, m.session.CurrentID, result.ToolCallID)
+	} else {
+		result.Content = fmt.Sprintf("%s\n\n[Output truncated from %d bytes — full content not persisted]", preview, len(result.Content))
+	}
 }

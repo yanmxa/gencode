@@ -8,10 +8,12 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
-// ParseSkillResultContent extracts skill info from skill-invocation content.
-func ParseSkillResultContent(content string) (skillName string, scriptCount, refCount int) {
+// parseSkillResultContent extracts skill info from skill-invocation content.
+func parseSkillResultContent(content string) (skillName string, scriptCount, refCount int) {
 	skillName = "skill"
 	if idx := strings.Index(content, `<skill-invocation name="`); idx != -1 {
 		start := idx + len(`<skill-invocation name="`)
@@ -49,8 +51,8 @@ func ParseSkillResultContent(content string) (skillName string, scriptCount, ref
 	return skillName, scriptCount, refCount
 }
 
-// ExtractField extracts a field value from content by prefix, returning defaultVal if not found.
-func ExtractField(content, prefix, defaultVal string) string {
+// extractField extracts a field value from content by prefix, returning defaultVal if not found.
+func extractField(content, prefix, defaultVal string) string {
 	idx := strings.Index(content, prefix)
 	if idx == -1 {
 		return defaultVal
@@ -63,9 +65,9 @@ func ExtractField(content, prefix, defaultVal string) string {
 	return content[start : start+end]
 }
 
-// ExtractIntField extracts an integer field value from content by prefix.
-func ExtractIntField(content, prefix string) int {
-	val := ExtractField(content, prefix, "")
+// extractIntField extracts an integer field value from content by prefix.
+func extractIntField(content, prefix string) int {
+	val := extractField(content, prefix, "")
 	if val == "" {
 		return 0
 	}
@@ -80,8 +82,8 @@ func ExtractIntField(content, prefix string) int {
 	return n
 }
 
-// FormatAgentLabel formats an Agent tool call as "Agent: AgentType description".
-func FormatAgentLabel(input string) string {
+// formatAgentLabel formats an Agent tool call as "Agent: AgentType description".
+func formatAgentLabel(input string) string {
 	var params map[string]any
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
 		return "Agent"
@@ -127,8 +129,8 @@ func extractTaskGetDisplay(input string, ownerMap map[string]string) string {
 	return id
 }
 
-// ExtractToolArgs extracts the most relevant argument from a tool call input JSON.
-func ExtractToolArgs(input string) string {
+// extractToolArgs extracts the most relevant argument from a tool call input JSON.
+func extractToolArgs(input string) string {
 	var params map[string]any
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
 		return ""
@@ -173,31 +175,15 @@ func ExtractToolArgs(input string) string {
 	return ""
 }
 
-// FormatToolResultSize returns a human-readable size description for a tool result.
-func FormatToolResultSize(toolName, content string) string {
+// formatToolResultSize returns a human-readable size description for a tool result.
+func formatToolResultSize(toolName, content string) string {
 	switch toolName {
 	case "WebFetch":
-		return formatByteSize(len(content))
+		return toolresult.FormatSize(int64(len(content)))
 	case "Write", "Edit":
 		return extractParenContent(content, "completed")
 	default:
 		return formatLineCount(content)
-	}
-}
-
-// formatByteSize formats a byte count as human-readable size.
-func formatByteSize(size int) string {
-	const (
-		KB = 1024
-		MB = KB * 1024
-	)
-	switch {
-	case size >= MB:
-		return fmt.Sprintf("%.1f MB", float64(size)/MB)
-	case size >= KB:
-		return fmt.Sprintf("%.1f KB", float64(size)/KB)
-	default:
-		return fmt.Sprintf("%d bytes", size)
 	}
 }
 
@@ -230,8 +216,8 @@ func renderToolLine(label string, width int) string {
 }
 
 func renderToolLineWithIcon(label string, width int, iconText string) string {
-	icon := ToolCallStyle.Width(2).Render(iconText)
-	return lipgloss.JoinHorizontal(lipgloss.Top, icon, ToolCallStyle.Render(truncateToolLabel(label, width)))
+	icon := toolCallStyle.Width(2).Render(iconText)
+	return lipgloss.JoinHorizontal(lipgloss.Top, icon, toolCallStyle.Render(truncateToolLabel(label, width)))
 }
 
 func truncateToolLabel(label string, width int) string {
@@ -239,7 +225,7 @@ func truncateToolLabel(label string, width int) string {
 	if lipgloss.Width(label) <= maxWidth {
 		return label
 	}
-	return TruncateText(label, maxWidth)
+	return truncateText(label, maxWidth)
 }
 
 func maxToolLabelWidth(width int) int {

@@ -4,34 +4,37 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
+	"github.com/yanmxa/gencode/internal/ext/skill"
+	"github.com/yanmxa/gencode/internal/ext/subagent"
+	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/core/prompt"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
 type hookAgentRunner struct {
-	llmProvider provider.LLMProvider
-	settings    *config.Settings
-	cwd         string
-	isGit       bool
-	mcpRegistry *mcp.Registry
+	llmProvider  provider.LLMProvider
+	settings     *config.Settings
+	cwd          string
+	isGit        bool
+	mcpRegistry  *mcp.Registry
+	defaultModel string
 }
 
-func newHookAgentRunner(llmProvider provider.LLMProvider, settings *config.Settings, cwd string, isGit bool, mcpRegistry *mcp.Registry) *hookAgentRunner {
+func newHookAgentRunner(llmProvider provider.LLMProvider, settings *config.Settings, cwd string, isGit bool, mcpRegistry *mcp.Registry, defaultModel string) *hookAgentRunner {
 	return &hookAgentRunner{
-		llmProvider: llmProvider,
-		settings:    settings,
-		cwd:         cwd,
-		isGit:       isGit,
-		mcpRegistry: mcpRegistry,
+		llmProvider:  llmProvider,
+		settings:     settings,
+		cwd:          cwd,
+		isGit:        isGit,
+		mcpRegistry:  mcpRegistry,
+		defaultModel: defaultModel,
 	}
 }
 
@@ -40,17 +43,14 @@ func (r *hookAgentRunner) RunAgentHook(ctx context.Context, userPrompt string, m
 		return "", fmt.Errorf("agent hook runner requires an active provider")
 	}
 	if model == "" {
-		model = "claude-sonnet-4-20250514"
+		model = r.defaultModel
 	}
 
 	userInstructions, projectInstructions := prompt.LoadInstructions(r.cwd)
-	loopClient := &client.Client{
-		Provider:      r.llmProvider,
-		Model:         model,
-		ThinkingLevel: provider.ThinkingHigh,
-	}
+	loopClient := client.NewClient(r.llmProvider, model)
+	loopClient.ThinkingLevel = provider.ThinkingHigh
 
-	loop := &runtime.Loop{
+	loop, err := runtime.NewLoop(runtime.LoopConfig{
 		System: prompt.Build(prompt.Config{
 			ProviderName:        r.llmProvider.Name(),
 			ModelID:             model,
@@ -69,6 +69,9 @@ func (r *hookAgentRunner) RunAgentHook(ctx context.Context, userPrompt string, m
 		Permission: permission.BypassPermissions(),
 		MCP:        r.mcpCaller(),
 		Cwd:        r.cwd,
+	})
+	if err != nil {
+		return "", err
 	}
 	loop.AddUser(userPrompt, nil)
 
@@ -96,7 +99,7 @@ func (r *hookAgentRunner) disabledTools() map[string]bool {
 	return dup
 }
 
-func (r *hookAgentRunner) mcpToolsGetter() func() []provider.ToolSchema {
+func (r *hookAgentRunner) mcpToolsGetter() func() []message.ToolSchema {
 	if r.mcpRegistry == nil {
 		return nil
 	}

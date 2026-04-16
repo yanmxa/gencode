@@ -6,6 +6,19 @@ import (
 	"strings"
 )
 
+// safeTools is the allowlist of tools that skip permission checks.
+// This is a local copy to avoid importing the higher-layer tool package.
+// IMPORTANT: keep in sync with tool.safeTools (tool/classification.go) and
+// permission.safeTools (permission/permission.go). The config/permission_test.go
+// TestSafeToolAllowlist test validates a subset of these.
+var safeTools = map[string]bool{
+	"Read": true, "Glob": true, "Grep": true,
+	"WebFetch": true, "WebSearch": true, "LSP": true,
+	"TaskCreate": true, "TaskGet": true, "TaskList": true, "TaskUpdate": true,
+	"AskUserQuestion": true, "EnterPlanMode": true, "ExitPlanMode": true,
+	"CronList": true, "ToolSearch": true,
+}
+
 // PermissionBehavior represents the outcome of a permission check.
 type PermissionBehavior int
 
@@ -40,69 +53,6 @@ func (p PermissionBehavior) String() string {
 	}
 }
 
-// Deprecated: PermissionAllow is an alias for Allow. Use Allow directly.
-const PermissionAllow PermissionBehavior = Allow
-
-// Deprecated: PermissionDeny is an alias for Deny. Use Deny directly.
-const PermissionDeny PermissionBehavior = Deny
-
-// Deprecated: PermissionAsk is an alias for Ask. Use Ask directly.
-const PermissionAsk PermissionBehavior = Ask
-
-// Deprecated: PermissionResult is an alias for PermissionBehavior. Use PermissionBehavior directly.
-type PermissionResult = PermissionBehavior
-
-// ReadOnlyTools is a list of tools that are considered read-only.
-// These tools don't modify any files or state.
-var ReadOnlyTools = map[string]bool{
-	"Read":      true,
-	"Glob":      true,
-	"Grep":      true,
-	"WebFetch":  true,
-	"WebSearch": true,
-	"LSP":       true,
-}
-
-// IsReadOnlyTool returns true if the tool is read-only.
-func IsReadOnlyTool(toolName string) bool {
-	return ReadOnlyTools[toolName]
-}
-
-// SafeTools is the allowlist of tools that can skip permission checks entirely.
-// These tools are inherently safe (read-only, task management, UI).
-// Inspired by Claude Code's auto-mode safe tool allowlist.
-var SafeTools = map[string]bool{
-	// Read-only tools
-	"Read":      true,
-	"Glob":      true,
-	"Grep":      true,
-	"WebFetch":  true,
-	"WebSearch": true,
-	"LSP":       true,
-	// Task management
-	"TaskCreate": true,
-	"TaskGet":    true,
-	"TaskList":   true,
-	"TaskUpdate": true,
-	// UI / plan
-	"AskUserQuestion": true,
-	"EnterPlanMode":   true,
-	"ExitPlanMode":    true,
-	// Team coordination
-	"TeamCreate": true,
-	"TeamDelete": true,
-	// Cron (read-only listing)
-	"CronList": true,
-	// Tool discovery
-	"ToolSearch": true,
-}
-
-// IsSafeTool returns true if the tool is on the safe allowlist and can skip
-// permission checks entirely.
-func IsSafeTool(toolName string) bool {
-	return SafeTools[toolName]
-}
-
 // PermissionDecision carries a permission behavior together with the reason
 // for the decision, enabling callers to log or display why access was
 // granted, denied, or requires confirmation.
@@ -110,9 +60,6 @@ type PermissionDecision struct {
 	Behavior PermissionBehavior
 	Reason   string // e.g. "deny rule: Read(**/.env)", "bypass-immune: .git/ directory"
 }
-
-// Result returns the behavior (backward-compatible helper used by old callers).
-func (d PermissionDecision) Result() PermissionBehavior { return d.Behavior }
 
 // decide is a shorthand for building a PermissionDecision.
 func decide(b PermissionBehavior, reason string) PermissionDecision {
@@ -125,20 +72,20 @@ func decide(b PermissionBehavior, reason string) PermissionDecision {
 //
 // Decision pipeline (inspired by Claude Code's hasPermissionsToUseTool):
 //
-//  1-2. Deny rules + bypass-immune safety checks + ask rules (via checkHardBlocks)
-//       — deny rules cannot be bypassed; safety checks always prompt
-//  3. BypassPermissions mode → allow (everything except steps 1-2)
-//  4. Session permissions (runtime overrides)
-//  5. Allow rules
-//  6. Default (safe tools → allow, others → ask)
-//  7. Mode transforms: DontAsk converts ask → deny
+//  1. Deny rules + bypass-immune safety checks + ask rules (via checkHardBlocks)
+//     — deny rules cannot be bypassed; safety checks always prompt
+//  2. BypassPermissions mode → allow (everything except step 1)
+//  3. Session permissions (runtime overrides)
+//  4. Allow rules
+//  5. Default (safe tools → allow, others → ask)
+//  6. Mode transforms: DontAsk converts ask → deny
 
 // HasPermissionToUseTool is the central permission gate that determines
 // whether a tool invocation should be allowed, denied, or prompted.
 func (s *Settings) HasPermissionToUseTool(toolName string, args map[string]any, session *SessionPermissions) PermissionDecision {
 	rule := BuildRule(toolName, args)
 
-	// ── Steps 1-2: Deny rules + bypass-immune safety checks ──
+	// ── Step 1: Deny rules + bypass-immune safety checks ──
 	if reason := s.checkHardBlocks(toolName, args, rule, session); reason != "" {
 		if s.isDenyRule(reason) {
 			return decide(Deny, reason)
@@ -146,12 +93,12 @@ func (s *Settings) HasPermissionToUseTool(toolName string, args map[string]any, 
 		return decide(Ask, reason)
 	}
 
-	// ── Step 3: BypassPermissions mode ──
+	// ── Step 2: BypassPermissions mode ──
 	if session != nil && session.Mode == ModeBypassPermissions {
 		return decide(Allow, "mode: bypass permissions")
 	}
 
-	// ── Step 4: Session permissions ──
+	// ── Step 3: Session permissions ──
 	if session != nil {
 		if session.IsToolAllowed(toolName) {
 			return decide(Allow, "session: allow all "+toolName)
@@ -163,22 +110,22 @@ func (s *Settings) HasPermissionToUseTool(toolName string, args map[string]any, 
 		}
 	}
 
-	// ── Step 5: Allow rules ──
+	// ── Step 4: Allow rules ──
 	for _, pattern := range s.Permissions.Allow {
 		if MatchesToolPattern(toolName, args, rule, pattern) {
 			return decide(Allow, "allow rule: "+pattern)
 		}
 	}
 
-	// Note: Ask rules are already checked in checkHardBlocks (Steps 1-2).
+	// Note: Ask rules are already checked in checkHardBlocks (Step 1).
 
-	// ── Step 7: Default ──
+	// ── Step 5: Default ──
 	result := decide(Ask, "default: requires confirmation")
-	if IsSafeTool(toolName) {
+	if safeTools[toolName] {
 		result = decide(Allow, "default: safe tool")
 	}
 
-	// ── Step 8: Mode transforms ──
+	// ── Step 6: Mode transforms ──
 	if result.Behavior == Ask && session != nil && session.Mode == ModeDontAsk {
 		return decide(Deny, "mode: don't ask (auto-deny)")
 	}
@@ -201,7 +148,7 @@ func (s *Settings) checkHardBlocks(toolName string, args map[string]any, rule st
 	// Bypass-immune: sensitive paths
 	if toolName == "Edit" || toolName == "Write" {
 		if fp, ok := args["file_path"].(string); ok {
-			if reason := IsSensitivePath(fp); reason != "" {
+			if reason := isSensitivePath(fp); reason != "" {
 				return "bypass-immune: " + reason
 			}
 		}
@@ -210,10 +157,10 @@ func (s *Settings) checkHardBlocks(toolName string, args map[string]any, rule st
 	// Bypass-immune: destructive/dangerous bash
 	if toolName == "Bash" {
 		if cmd, ok := args["command"].(string); ok {
-			if IsDestructiveCommand(cmd) {
+			if isDestructiveCommand(cmd) {
 				return "bypass-immune: destructive command"
 			}
-			if reason := CheckBashSecurity(cmd); reason != "" {
+			if reason := checkBashSecurity(cmd); reason != "" {
 				return "bypass-immune: " + reason
 			}
 		}
@@ -223,7 +170,7 @@ func (s *Settings) checkHardBlocks(toolName string, args map[string]any, rule st
 	if session != nil && len(session.WorkingDirectories) > 0 {
 		if toolName == "Edit" || toolName == "Write" {
 			if fp, ok := args["file_path"].(string); ok {
-				if !IsInWorkingDirectory(fp, session.WorkingDirectories) {
+				if !isInWorkingDirectory(fp, session.WorkingDirectories) {
 					return "outside working directory"
 				}
 			}
@@ -259,10 +206,6 @@ func (s *Settings) CheckPermission(toolName string, args map[string]any, session
 	return s.HasPermissionToUseTool(toolName, args, session).Behavior
 }
 
-// CheckPermissionWithReason is an alias for HasPermissionToUseTool (backward compat).
-func (s *Settings) CheckPermissionWithReason(toolName string, args map[string]any, session *SessionPermissions) PermissionDecision {
-	return s.HasPermissionToUseTool(toolName, args, session)
-}
 
 // BuildRule builds a rule string from a tool name and arguments.
 // Format: "Tool(args)"
@@ -361,7 +304,7 @@ func normalizeBashCommand(cmd string) string {
 	return baseCmd + ":" + parts[1]
 }
 
-func normalizeParsedCommand(cmd ParsedCommand) string {
+func normalizeParsedCommand(cmd parsedCommand) string {
 	if cmd.Name == "" {
 		return ""
 	}
@@ -372,8 +315,8 @@ func normalizeParsedCommand(cmd ParsedCommand) string {
 }
 
 func normalizedBashCommands(cmd string) []string {
-	if file := ParseBashAST(cmd); file != nil {
-		parsed := ExtractCommandsAST(file)
+	if file := parseBashAST(cmd); file != nil {
+		parsed := extractCommandsAST(file)
 		normalized := make([]string, 0, len(parsed))
 		for _, subCmd := range parsed {
 			if n := normalizeParsedCommand(subCmd); n != "" {

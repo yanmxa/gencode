@@ -47,14 +47,21 @@ func NewSTDIOTransport(config STDIOConfig) *STDIOTransport {
 
 // Start spawns the subprocess and establishes communication
 func (t *STDIOTransport) Start(ctx context.Context) error {
+	t.mu.Lock()
+	if t.alive {
+		t.mu.Unlock()
+		return fmt.Errorf("STDIO transport already started")
+	}
+	t.mu.Unlock()
+
 	// Expand environment variables in config
-	command := ExpandEnv(t.config.Command)
-	args := ExpandEnvSlice(t.config.Args)
-	env := ExpandEnvMap(t.config.Env)
+	command := expandEnv(t.config.Command)
+	args := expandEnvSlice(t.config.Args)
+	env := expandEnvMap(t.config.Env)
 
 	// Build command
 	t.cmd = exec.CommandContext(ctx, command, args...)
-	t.cmd.Env = BuildEnv(env)
+	t.cmd.Env = buildEnv(env)
 
 	// Set up process group for clean termination
 	t.cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -107,17 +114,22 @@ func (t *STDIOTransport) readLoop() {
 			continue
 		}
 
+		// Snapshot the handler under lock to avoid racing with SetNotificationHandler.
+		t.mu.Lock()
+		handler := t.notifyHandler
+		t.mu.Unlock()
+
 		// Try to parse as response
 		var resp JSONRPCResponse
 		if err := json.Unmarshal([]byte(line), &resp); err != nil {
 			// Could be a notification or malformed message
-			ParseAndDispatchNotification([]byte(line), t.notifyHandler)
+			parseAndDispatchNotification([]byte(line), handler)
 			continue
 		}
 
 		// Check if this is a notification (no ID)
 		if resp.ID == 0 && resp.Result == nil && resp.Error == nil {
-			ParseAndDispatchNotification([]byte(line), t.notifyHandler)
+			parseAndDispatchNotification([]byte(line), handler)
 			continue
 		}
 
@@ -164,7 +176,7 @@ func (t *STDIOTransport) writeJSON(v any) error {
 
 // Send sends a request and waits for response
 func (t *STDIOTransport) Send(ctx context.Context, req *JSONRPCRequest) (*JSONRPCResponse, error) {
-	if !t.alive {
+	if !t.IsAlive() {
 		return nil, fmt.Errorf("transport is not connected")
 	}
 
@@ -204,7 +216,7 @@ func (t *STDIOTransport) Send(ctx context.Context, req *JSONRPCRequest) (*JSONRP
 
 // SendNotification sends a notification (no response expected)
 func (t *STDIOTransport) SendNotification(ctx context.Context, notif *JSONRPCNotification) error {
-	if !t.alive {
+	if !t.IsAlive() {
 		return fmt.Errorf("transport is not connected")
 	}
 	return t.writeJSON(notif)

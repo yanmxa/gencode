@@ -58,16 +58,14 @@ func (p *QuestionPrompt) Hide() {
 	p.active = false
 	p.request = nil
 	p.showingCustom = false
+	p.selectedOption = make(map[int]int)
+	p.selected = make(map[int][]int)
+	p.customAnswers = make(map[int]string)
 }
 
 // IsActive returns whether the prompt is visible
 func (p *QuestionPrompt) IsActive() bool {
 	return p.active
-}
-
-// GetRequest returns the current question request
-func (p *QuestionPrompt) GetRequest() *tool.QuestionRequest {
-	return p.request
 }
 
 // isAnswered returns whether a question has been answered (via selection or custom input).

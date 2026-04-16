@@ -1,10 +1,12 @@
 package transcript
 
 import (
-	"context"
 	"encoding/json"
 	"time"
 
+	"go.uber.org/zap"
+
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/tracker"
 )
 
@@ -59,20 +61,6 @@ type ListOptions struct {
 	IncludeSidechain bool
 }
 
-type Store interface {
-	Start(ctx context.Context, cmd StartCommand) error
-	AppendMessage(ctx context.Context, cmd AppendMessageCommand) error
-	PatchState(ctx context.Context, cmd PatchStateCommand) error
-	Compact(ctx context.Context, cmd CompactCommand) error
-	Fork(ctx context.Context, cmd ForkCommand) error
-	Replace(ctx context.Context, cmd ReplaceCommand) error
-
-	Load(ctx context.Context, transcriptID string) (*Transcript, error)
-	LoadLatest(ctx context.Context, projectID string) (*Transcript, error)
-	List(ctx context.Context, projectID string, opts ListOptions) ([]ListItem, error)
-	RebuildIndex(ctx context.Context, projectID string) error
-}
-
 func PatchTitle(title string) PatchOp {
 	return mustPatch(PatchPathTitle, title)
 }
@@ -81,11 +69,11 @@ func PatchLastPrompt(prompt string) PatchOp {
 	return mustPatch(PatchPathLastPrompt, prompt)
 }
 
-func PatchTag(tag string) PatchOp {
+func patchTag(tag string) PatchOp {
 	return mustPatch(PatchPathTag, tag)
 }
 
-func PatchMode(mode string) PatchOp {
+func patchMode(mode string) PatchOp {
 	return mustPatch(PatchPathMode, mode)
 }
 
@@ -97,14 +85,17 @@ func PatchTasks(tasks []tracker.Task) PatchOp {
 	return mustPatch(PatchPathTasks, tasks)
 }
 
-func PatchWorktree(worktree *WorktreeState) PatchOp {
+func patchWorktree(worktree *WorktreeState) PatchOp {
 	return mustPatch(PatchPathWorktree, worktree)
 }
 
 func mustPatch(path string, v any) PatchOp {
 	data, err := json.Marshal(v)
 	if err != nil {
-		panic(err)
+		// Log instead of panicking — the marshal input is always controlled
+		// (strings, simple structs), so this should never happen in practice.
+		log.Logger().Error("transcript: mustPatch marshal failed", zap.String("path", path), zap.Error(err))
+		return PatchOp{Path: path, Value: []byte("null")}
 	}
 	return PatchOp{
 		Path:  path,

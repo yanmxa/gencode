@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/markdown"
@@ -20,10 +21,15 @@ type agentSearchPath struct {
 }
 
 // additionalAgentPaths stores plugin agent paths.
-var additionalAgentPaths []agentSearchPath
+var (
+	additionalAgentPaths   []agentSearchPath
+	additionalAgentPathsMu sync.Mutex
+)
 
 // AddPluginAgentPath adds a plugin agent path to be searched.
 func AddPluginAgentPath(path, namespace string) {
+	additionalAgentPathsMu.Lock()
+	defer additionalAgentPathsMu.Unlock()
 	additionalAgentPaths = append(additionalAgentPaths, agentSearchPath{
 		path:      path,
 		namespace: namespace,
@@ -32,6 +38,8 @@ func AddPluginAgentPath(path, namespace string) {
 
 // ClearPluginAgentPaths clears all plugin agent paths.
 func ClearPluginAgentPaths() {
+	additionalAgentPathsMu.Lock()
+	defer additionalAgentPathsMu.Unlock()
 	additionalAgentPaths = nil
 }
 
@@ -55,7 +63,9 @@ func LoadCustomAgents(cwd string) {
 	}
 
 	// Add plugin paths
+	additionalAgentPathsMu.Lock()
 	searchPaths = append(searchPaths, additionalAgentPaths...)
+	additionalAgentPathsMu.Unlock()
 
 	for _, sp := range searchPaths {
 		loadAgentsFromDirWithNamespace(sp.path, sp.namespace)
@@ -144,7 +154,7 @@ func parseAgentFile(filePath string) (*AgentConfig, error) {
 		config.Model = "inherit"
 	}
 	if config.MaxTurns <= 0 {
-		config.MaxTurns = DefaultMaxTurns
+		config.MaxTurns = defaultMaxTurns
 	}
 	if config.PermissionMode == "" {
 		config.PermissionMode = PermissionDefault

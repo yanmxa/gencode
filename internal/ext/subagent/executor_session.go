@@ -40,7 +40,7 @@ func (e *Executor) resumeFromSession(loop *runtime.Loop, agentID, newPrompt stri
 
 	prevMessages, err := e.sessionStore.LoadSubagentMessages(agentID)
 	if err != nil {
-		return err
+		return fmt.Errorf("load subagent messages for %s: %w", agentID, err)
 	}
 
 	// Restore previous conversation and append continuation prompt

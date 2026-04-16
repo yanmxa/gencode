@@ -25,8 +25,9 @@ func escapeEntry(entry string) string {
 }
 
 func unescapeEntry(line string) string {
+	line = strings.ReplaceAll(line, "\\\\", "\x00")
 	line = strings.ReplaceAll(line, "\\n", "\n")
-	return strings.ReplaceAll(line, "\\\\", "\\")
+	return strings.ReplaceAll(line, "\x00", "\\")
 }
 
 func truncate(entries []string) []string {
@@ -45,11 +46,13 @@ func Load(cwd string) []string {
 
 	var history []string
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024) // 256KB max line
 	for scanner.Scan() {
 		if entry := unescapeEntry(scanner.Text()); entry != "" {
 			history = append(history, entry)
 		}
 	}
+	// Partial history is better than none — ignore scanner errors
 	return truncate(history)
 }
 
@@ -58,15 +61,21 @@ func Save(cwd string, history []string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return
 	}
-	f, err := os.Create(path)
+	// Write to temp file + rename for atomic replacement (prevents data loss on crash)
+	tmp := path + ".tmp"
+	f, err := os.Create(tmp)
 	if err != nil {
 		return
 	}
-	defer f.Close()
-
 	w := bufio.NewWriter(f)
 	for _, entry := range truncate(history) {
 		_, _ = fmt.Fprintln(w, escapeEntry(entry))
 	}
-	_ = w.Flush()
+	if err := w.Flush(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return
+	}
+	f.Close()
+	_ = os.Rename(tmp, path)
 }

@@ -116,9 +116,9 @@ func TestManager_Cleanup(t *testing.T) {
 	task := m.CreateBashTask(cmd, "echo test", "Test task", ctx, cancel)
 	task.Complete(0, nil)
 
-	// Set EndTime to past
+	// Set endTime to past
 	task.mu.Lock()
-	task.EndTime = time.Now().Add(-2 * time.Hour)
+	task.endTime = time.Now().Add(-2 * time.Hour)
 	task.mu.Unlock()
 
 	// Cleanup tasks older than 1 hour

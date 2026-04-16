@@ -1,9 +1,10 @@
 package app
 
 import (
+	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/ext/mcp"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -45,7 +46,7 @@ func withAgentContext(userInstructions, projectInstructions string, isGit bool) 
 	}
 }
 
-func withAgentMCP(getter func() []provider.ToolSchema, registry *mcp.Registry) agentToolOption {
+func withAgentMCP(getter func() []message.ToolSchema, registry *mcp.Registry) agentToolOption {
 	return func(e *subagent.Executor) {
 		e.SetMCP(getter, registry)
 	}

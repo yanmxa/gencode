@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 const (
@@ -10,8 +10,8 @@ const (
 )
 
 // DefaultModel returns the default model ID for a given provider and auth method.
-func DefaultModel(providerName string, authMethod provider.AuthMethod) string {
-	if providerName == "anthropic" && authMethod == provider.AuthVertex {
+func DefaultModel(providerName string, authMethod core.AuthMethod) string {
+	if providerName == "anthropic" && authMethod == core.AuthVertex {
 		return "claude-sonnet-4-5@20250929"
 	}
 	switch providerName {
@@ -23,6 +23,8 @@ func DefaultModel(providerName string, authMethod provider.AuthMethod) string {
 		return "gemini-2.0-flash"
 	case "moonshot":
 		return "moonshot-v1-auto"
+	case "alibaba":
+		return "qwen-plus"
 	default:
 		return "claude-sonnet-4-20250514"
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/skillui"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
@@ -289,7 +290,7 @@ func TestHasRunningToolExecutionSequentialBash(t *testing.T) {
 		},
 	}
 
-	if !m.hasRunningToolExecution() {
+	if !m.hasInFlightToolExecution() {
 		t.Fatal("expected sequential bash execution to keep spinner active")
 	}
 }
@@ -310,7 +311,7 @@ func TestHasRunningToolExecutionParallelPendingResult(t *testing.T) {
 		},
 	}
 
-	if !m.hasRunningToolExecution() {
+	if !m.hasInFlightToolExecution() {
 		t.Fatal("expected unfinished parallel tool execution to keep spinner active")
 	}
 }
@@ -431,7 +432,7 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 func TestStartPromptSuggestionUsesRuntimeInterface(t *testing.T) {
 	rt := &fakeConversationRuntime{}
 	m := &model{
-		runtime: rt,
+		asyncOps: rt,
 		provider: providerui.State{LLM: testLLMProvider{}},
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
@@ -453,7 +454,7 @@ func TestStartPromptSuggestionUsesRuntimeInterface(t *testing.T) {
 func TestStartLLMStreamUsesRuntimeInterface(t *testing.T) {
 	rt := &fakeConversationRuntime{}
 	m := &model{
-		runtime: rt,
+		asyncOps: rt,
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
 				{Role: message.RoleUser, Content: "hello"},
@@ -502,7 +503,7 @@ func TestBuildStreamRequestExcludesAssistantPlaceholder(t *testing.T) {
 	close(ch)
 	rt.streamResult.Ch = ch
 	m := &model{
-		runtime: rt,
+		asyncOps: rt,
 		provider: providerui.State{LLM: testLLMProvider{}},
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
@@ -641,7 +642,7 @@ func TestExecuteSubmitRequest_CancelsPendingToolsBeforeNewTurn(t *testing.T) {
 	cancelled := false
 	base := newBaseModel(t.TempDir(), modelInfra{})
 	m := &base
-	m.runtime = rt
+	m.asyncOps = rt
 	m.output = appoutput.New(80, progress.NewHub(16))
 	m.conv = appconv.Model{
 		Messages: []message.ChatMessage{
@@ -704,7 +705,7 @@ func TestHandleToolResultReplansAfterCwdChange(t *testing.T) {
 	rt := &fakeConversationRuntime{}
 	base := newBaseModel(t.TempDir(), modelInfra{})
 	m := &base
-	m.runtime = rt
+	m.asyncOps = rt
 	m.output = appoutput.New(80, progress.NewHub(16))
 	m.conv = appconv.Model{
 		Messages: []message.ChatMessage{
@@ -934,7 +935,7 @@ func TestPlanModeAgentExecutionStartsContinuationWithoutHanging(t *testing.T) {
 
 	m := &model{
 		cwd:     t.TempDir(),
-		runtime: rt,
+		asyncOps: rt,
 		output:  appoutput.New(80, progress.NewHub(16)),
 		conv: appconv.Model{
 			Messages: []message.ChatMessage{
@@ -1047,7 +1048,7 @@ func TestRenderActiveModalPriority(t *testing.T) {
 
 func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
-	engine.AddSessionFunctionHook(hooks.PermissionRequest, "", hooks.FunctionHook{
+	engine.AddSessionFunctionHook(core.PermissionRequest, "", hooks.FunctionHook{
 		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
 			return hooks.HookOutput{}, nil
 		},

@@ -36,7 +36,7 @@ func Init() error {
 
 	// Initialize DEV_DIR for JSON debug output (independent of GEN_DEBUG)
 	if dir := os.Getenv("DEV_DIR"); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("failed to create DEV_DIR: %w", err)
 		}
 		devDir = dir
@@ -100,11 +100,6 @@ func Init() error {
 	return nil
 }
 
-// IsEnabled returns whether debug logging is enabled
-func IsEnabled() bool {
-	return enabled
-}
-
 // Logger returns the underlying zap logger
 func Logger() *zap.Logger {
 	if logger == nil {
@@ -121,25 +116,25 @@ func Sync() error {
 	return nil
 }
 
-// NextTurn increments and returns the turn counter (main loop only)
-func NextTurn() int {
+// nextTurn increments and returns the turn counter (main loop only)
+func nextTurn() int {
 	mu.Lock()
 	defer mu.Unlock()
 	turnCount++
 	return turnCount
 }
 
-// CurrentTurn returns the current turn number (main loop only)
-func CurrentTurn() int {
+// currentTurn returns the current turn number (main loop only)
+func currentTurn() int {
 	mu.Lock()
 	defer mu.Unlock()
 	return turnCount
 }
 
-// GetTurnPrefix returns the turn prefix for file naming (main loop only)
+// getTurnPrefix returns the turn prefix for file naming (main loop only)
 // Format: main-{turn}
 // Example: main-005
-func GetTurnPrefix(turn int) string {
+func getTurnPrefix(turn int) string {
 	return fmt.Sprintf("main-%03d", turn)
 }
 
@@ -179,13 +174,18 @@ func NewAgentTurnTracker(agentName string, parentTracker *AgentTurnTracker) *Age
 	}
 }
 
-// sanitizeAgentName makes agent name safe for filenames
+// sanitizeAgentName makes agent name safe for filenames using an allowlist.
 func sanitizeAgentName(name string) string {
-	// Replace colons and special chars with underscore
-	result := strings.ReplaceAll(name, ":", "_")
-	result = strings.ReplaceAll(result, "/", "_")
-	result = strings.ReplaceAll(result, " ", "_")
-	return result
+	var result strings.Builder
+	result.Grow(len(name))
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			result.WriteRune(r)
+		} else {
+			result.WriteRune('_')
+		}
+	}
+	return result.String()
 }
 
 // NextTurn increments and returns the agent's turn counter
@@ -213,8 +213,8 @@ func (t *AgentTurnTracker) GetTurnPrefix(turn int) string {
 	return fmt.Sprintf("%s:%s-%03d", t.parentPrefix, t.agentName, turn)
 }
 
-// escapeForLog escapes newlines and tabs for single-line log output
-func escapeForLog(s string) string {
+// EscapeForLog escapes newlines and tabs for single-line log output.
+func EscapeForLog(s string) string {
 	s = strings.ReplaceAll(s, "\n", "\\n")
 	s = strings.ReplaceAll(s, "\r", "")
 	s = strings.ReplaceAll(s, "\t", "\\t")

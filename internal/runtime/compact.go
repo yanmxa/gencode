@@ -10,8 +10,8 @@ import (
 	"github.com/yanmxa/gencode/internal/core/prompt"
 )
 
-// IsPromptTooLong checks if an API error indicates the prompt exceeded the context window.
-func IsPromptTooLong(err error) bool {
+// isPromptTooLong checks if an API error indicates the prompt exceeded the context window.
+func isPromptTooLong(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -29,7 +29,7 @@ func CanCompactMessages(messageCount int) bool {
 // ShouldCompactPromptTooLong reports whether a prompt-too-long error should
 // trigger a compaction attempt for the current conversation length.
 func ShouldCompactPromptTooLong(err error, messageCount int) bool {
-	return IsPromptTooLong(err) && CanCompactMessages(messageCount)
+	return isPromptTooLong(err) && CanCompactMessages(messageCount)
 }
 
 // compactAndReplace summarizes the conversation and replaces messages with the summary.
@@ -74,5 +74,10 @@ func Compact(ctx context.Context, c *client.Client,
 		return "", count, fmt.Errorf("failed to generate summary: %w", err)
 	}
 
-	return strings.TrimSpace(response.Content), count, nil
+	summary = strings.TrimSpace(response.Content)
+	if summary == "" {
+		return "", count, fmt.Errorf("compaction produced empty summary")
+	}
+
+	return summary, count, nil
 }

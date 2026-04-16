@@ -5,14 +5,21 @@ import (
 	"net/http"
 	"sync"
 
+	"go.uber.org/zap"
+
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/provider"
 )
 
-// DefaultTimeout is the default timeout for hook commands in seconds.
-const DefaultTimeout = 600
+// LLMCompleter performs a single-turn LLM completion for hook execution.
+// The caller supplies the system prompt, user message, and model identifier;
+// the implementation owns provider construction and streaming details.
+type LLMCompleter func(ctx context.Context, systemPrompt, userMessage, model string) (string, error)
+
+// defaultTimeout is the default timeout for hook commands in seconds.
+const defaultTimeout = 600
 
 // Engine executes hooks from settings, plugins, and runtime/session registration.
 type Engine struct {
@@ -23,16 +30,18 @@ type Engine struct {
 	permissionMode string
 
 	promptCallback PromptCallback
-	llmProvider    provider.LLMProvider
+	llmCompleter   LLMCompleter
 	hookModel      string
 	httpClient     *http.Client
 	agentRunner    AgentRunner
 	asyncCallback  AsyncHookCallback
+	envProvider    func() []string
 
 	mu           sync.RWMutex
-	store        *HookStore
-	status       *StatusTracker
+	store        *hookStore
+	status       *statusTracker
 	handlers     core.Hooks
+	detachedWg   sync.WaitGroup // tracks fire-and-forget goroutines
 }
 
 // NewEngine creates a new hook execution engine.
@@ -44,8 +53,8 @@ func NewEngine(settings *config.Settings, sessionID, cwd, transcriptPath string)
 		transcriptPath: transcriptPath,
 		permissionMode: "default",
 		httpClient:     http.DefaultClient,
-		store:          NewHookStore(),
-		status:         NewStatusTracker(),
+		store:          newHookStore(),
+		status:         newStatusTracker(),
 		handlers:       core.NewHooks(),
 	}
 }
@@ -78,21 +87,13 @@ func (e *Engine) SetCwd(cwd string) {
 	e.cwd = cwd
 }
 
-// SetLLMProvider configures the provider/model used by prompt and agent hooks.
-func (e *Engine) SetLLMProvider(p provider.LLMProvider, model string) {
+// SetLLMCompleter configures the completion function and default model used by
+// prompt and agent hooks.
+func (e *Engine) SetLLMCompleter(fn LLMCompleter, model string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.llmProvider = p
+	e.llmCompleter = fn
 	e.hookModel = model
-}
-
-// SetHTTPClient configures the HTTP client used by http hooks.
-func (e *Engine) SetHTTPClient(client *http.Client) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if client != nil {
-		e.httpClient = client
-	}
 }
 
 // SetAgentRunner configures the multi-turn runner used by agent hooks.
@@ -109,6 +110,14 @@ func (e *Engine) SetAsyncHookCallback(cb AsyncHookCallback) {
 	e.asyncCallback = cb
 }
 
+// SetEnvProvider configures a function that supplies additional environment
+// variables for hook subprocess execution.
+func (e *Engine) SetEnvProvider(fn func() []string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.envProvider = fn
+}
+
 // SetSettings swaps the settings-backed hook source used by the engine.
 func (e *Engine) SetSettings(settings *config.Settings) {
 	e.mu.Lock()
@@ -116,19 +125,9 @@ func (e *Engine) SetSettings(settings *config.Settings) {
 	e.settings = settings
 }
 
-// AddSessionHook registers an in-memory session-scoped hook.
-func (e *Engine) AddSessionHook(event EventType, matcher string, hook config.HookCmd) {
-	e.store.AddSessionHook(event, matcher, hook)
-}
-
 // ClearSessionHooks removes all session-scoped hooks.
 func (e *Engine) ClearSessionHooks() {
 	e.store.ClearSessionHooks()
-}
-
-// AddRuntimeHook registers a process-level runtime hook.
-func (e *Engine) AddRuntimeHook(event EventType, matcher string, hook config.HookCmd) {
-	e.store.AddRuntimeHook(event, matcher, hook)
 }
 
 // AddSessionFunctionHook registers an in-memory function hook scoped to the
@@ -143,16 +142,6 @@ func (e *Engine) AddRuntimeFunctionHook(event EventType, matcher string, hook Fu
 	return e.store.AddRuntimeFunctionHook(event, matcher, hook)
 }
 
-// RemoveSessionFunctionHook removes a session-scoped function hook by ID.
-func (e *Engine) RemoveSessionFunctionHook(event EventType, id string) bool {
-	return e.store.RemoveSessionFunctionHook(event, id)
-}
-
-// RemoveRuntimeFunctionHook removes a process-level function hook by ID.
-func (e *Engine) RemoveRuntimeFunctionHook(event EventType, id string) bool {
-	return e.store.RemoveRuntimeFunctionHook(event, id)
-}
-
 // Execute runs all matching hooks for an event synchronously.
 func (e *Engine) Execute(ctx context.Context, event EventType, input HookInput) HookOutcome {
 	outcome := HookOutcome{ShouldContinue: true}
@@ -164,12 +153,21 @@ func (e *Engine) Execute(ctx context.Context, event EventType, input HookInput) 
 	for _, hook := range hooks {
 		if hook.Command != nil && (hook.Command.Async || hook.Command.AsyncRewake) {
 			hookCopy, inputCopy := hook, input
-			go e.executeDetachedHook(context.Background(), hookCopy, inputCopy)
+			e.detachedWg.Add(1)
+			go func() {
+				defer e.detachedWg.Done()
+				e.executeDetachedHook(context.Background(), hookCopy, inputCopy)
+			}()
 			continue
 		}
 
 		result := e.executeMatchedHook(ctx, hook, input)
 		if result.Error != nil {
+			log.Logger().Warn("hook execution failed",
+				zap.String("event", string(event)),
+				zap.String("source", result.HookSource),
+				zap.Error(result.Error),
+			)
 			continue
 		}
 		if !result.ShouldContinue {
@@ -186,7 +184,11 @@ func (e *Engine) ExecuteAsync(event EventType, input HookInput) {
 	hooks := e.getMatchingHooks(event, &input)
 	for _, hook := range hooks {
 		hookCopy, inputCopy := hook, input
-		go e.executeDetachedHook(context.Background(), hookCopy, inputCopy)
+		e.detachedWg.Add(1)
+		go func() {
+			defer e.detachedWg.Done()
+			e.executeDetachedHook(context.Background(), hookCopy, inputCopy)
+		}()
 	}
 }
 
@@ -200,7 +202,7 @@ func (e *Engine) HasHooks(event EventType) bool {
 
 // StopHookActive returns a *bool indicating whether Stop hooks are configured.
 func (e *Engine) StopHookActive() *bool {
-	active := e.HasHooks(Stop)
+	active := e.HasHooks(core.Stop)
 	return &active
 }
 
@@ -214,6 +216,22 @@ func (e *Engine) getAsyncHookCallback() AsyncHookCallback {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.asyncCallback
+}
+
+// Drain waits for all async hook goroutines to finish, including both
+// core.Hooks goroutines and engine-level detached goroutines.
+func (e *Engine) Drain() {
+	e.handlers.Drain()
+	e.detachedWg.Wait()
+}
+
+// AsCoreHooks returns the Engine as a core.Hooks interface.
+// Engine directly satisfies core.Hooks via Register/Unregister/Fire/Has/Drain.
+func AsCoreHooks(engine *Engine) core.Hooks {
+	if engine == nil {
+		return nil
+	}
+	return engine
 }
 
 // CurrentStatusMessage returns the most recently-started active hook status message.
@@ -257,7 +275,7 @@ func (e *Engine) Has(event core.EventType) bool {
 	}
 	switch event {
 	case core.PostTool:
-		return e.HasHooks(PostToolUse) || e.HasHooks(PostToolUseFailure)
+		return e.HasHooks(core.PostToolUse) || e.HasHooks(core.PostToolUseFailure)
 	default:
 		if engineEvent, ok := coreToEngineEventType(event); ok {
 			return e.HasHooks(engineEvent)
@@ -267,9 +285,9 @@ func (e *Engine) Has(event core.EventType) bool {
 }
 
 var coreToEngineEventMap = map[core.EventType]core.EventType{
-	core.OnStart: SessionStart,
-	core.OnStop:  Stop,
-	core.PreTool: PreToolUse,
+	core.OnStart: core.SessionStart,
+	core.OnStop:  core.Stop,
+	core.PreTool: core.PreToolUse,
 }
 
 func coreToEngineEventType(event core.EventType) (core.EventType, bool) {
@@ -282,10 +300,10 @@ func coreToEngineEvent(event core.Event) (core.EventType, bool) {
 		switch tr := event.Data.(type) {
 		case core.ToolResult:
 			if tr.IsError {
-				return PostToolUseFailure, true
+				return core.PostToolUseFailure, true
 			}
 		}
-		return PostToolUse, true
+		return core.PostToolUse, true
 	}
 	e, ok := coreToEngineEventMap[event.Type]
 	return e, ok

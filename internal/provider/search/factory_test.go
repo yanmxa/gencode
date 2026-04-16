@@ -15,37 +15,6 @@ func TestGetDefaultProviderReturnsExa(t *testing.T) {
 	}
 }
 
-func TestGetAvailableProvidersWithoutAPIKeys(t *testing.T) {
-	t.Setenv(serperEnvKey, "")
-	t.Setenv(braveEnvKey, "")
-
-	providers := GetAvailableProviders()
-	if len(providers) != 1 {
-		t.Fatalf("expected only Exa to be available, got %d providers", len(providers))
-	}
-	if providers[0].Name() != ProviderExa {
-		t.Fatalf("expected only provider %q, got %q", ProviderExa, providers[0].Name())
-	}
-}
-
-func TestGetAvailableProvidersIncludesConfiguredProviders(t *testing.T) {
-	t.Setenv(serperEnvKey, "serper-key")
-	t.Setenv(braveEnvKey, "brave-key")
-
-	providers := GetAvailableProviders()
-	if len(providers) != 3 {
-		t.Fatalf("expected 3 available providers, got %d", len(providers))
-	}
-
-	got := []ProviderName{providers[0].Name(), providers[1].Name(), providers[2].Name()}
-	want := []ProviderName{ProviderExa, ProviderSerper, ProviderBrave}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("expected provider order %v, got %v", want, got)
-		}
-	}
-}
-
 func TestMatchesDomainFilter(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -80,14 +49,6 @@ func TestMatchesDomainFilter(t *testing.T) {
 }
 
 func TestSearchOptionHelpers(t *testing.T) {
-	defaults := DefaultOptions()
-	if defaults.NumResults != 10 {
-		t.Fatalf("expected default num results 10, got %d", defaults.NumResults)
-	}
-	if defaults.Timeout != 30*time.Second {
-		t.Fatalf("expected default timeout 30s, got %s", defaults.Timeout)
-	}
-
 	if got := getTimeout(SearchOptions{}); got != 30*time.Second {
 		t.Fatalf("expected zero timeout to fall back to 30s, got %s", got)
 	}

@@ -6,7 +6,7 @@ import (
 	"github.com/yanmxa/gencode/internal/message"
 )
 
-func TestImageRefPattern(t *testing.T) {
+func Test_imageRefPattern(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected [][]string
@@ -43,7 +43,7 @@ func TestImageRefPattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			matches := ImageRefPattern.FindAllStringSubmatch(tt.input, -1)
+			matches := imageRefPattern.FindAllStringSubmatch(tt.input, -1)
 			if len(matches) != len(tt.expected) {
 				t.Errorf("FindAllStringSubmatch(%q) got %d matches, want %d", tt.input, len(matches), len(tt.expected))
 				return

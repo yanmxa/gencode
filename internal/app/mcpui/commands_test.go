@@ -129,31 +129,31 @@ func TestHandleGet_MasksSecretsAndShowsDefaults(t *testing.T) {
 	if !strings.Contains(result, "Scope:  local") {
 		t.Fatalf("expected default local scope, got %q", result)
 	}
-	if !strings.Contains(result, "API_KEY=supe...") {
+	if !strings.Contains(result, "API_KEY=***") {
 		t.Fatalf("expected masked env value, got %q", result)
 	}
-	if !strings.Contains(result, "Authorization: Bearer s...") {
+	if !strings.Contains(result, "Authorization: ***") {
 		t.Fatalf("expected masked header value, got %q", result)
 	}
 }
 
-func TestParseScopeAndKeyValues(t *testing.T) {
-	if ParseScope("global") != coremcp.ScopeUser {
+func Test_parseScopeAndKeyValues(t *testing.T) {
+	if parseScope("global") != coremcp.ScopeUser {
 		t.Fatal("expected global alias to map to user scope")
 	}
-	if ParseScope("project") != coremcp.ScopeProject {
+	if parseScope("project") != coremcp.ScopeProject {
 		t.Fatal("expected project scope")
 	}
-	if ParseScope("anything-else") != coremcp.ScopeLocal {
+	if parseScope("anything-else") != coremcp.ScopeLocal {
 		t.Fatal("expected unknown scope to default to local")
 	}
 
-	got := ParseKeyValues([]string{"API_KEY = secret ", " BadEntry ", "X-Test: abc "}, "=")
+	got := parseKeyValues([]string{"API_KEY = secret ", " BadEntry ", "X-Test: abc "}, "=")
 	if len(got) != 1 || got["API_KEY"] != "secret" {
 		t.Fatalf("unexpected parsed equals map: %#v", got)
 	}
 
-	got = ParseKeyValues([]string{"Authorization: Bearer token", "InvalidHeader"}, ":")
+	got = parseKeyValues([]string{"Authorization: Bearer token", "InvalidHeader"}, ":")
 	if len(got) != 1 || got["Authorization"] != "Bearer token" {
 		t.Fatalf("unexpected parsed header map: %#v", got)
 	}

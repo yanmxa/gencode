@@ -76,6 +76,6 @@ func appendOutputFile(path string, record outputRecord) {
 	if err != nil {
 		return
 	}
+	defer f.Close()
 	_, _ = f.Write(data)
-	_ = f.Close()
 }

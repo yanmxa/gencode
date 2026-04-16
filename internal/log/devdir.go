@@ -5,82 +5,95 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/provider"
 )
 
-// DevRequest represents the request data saved to JSON file
-type DevRequest struct {
-	Turn         int               `json:"turn"`
-	Timestamp    time.Time         `json:"timestamp"`
-	Provider     string            `json:"provider"`
-	Model        string            `json:"model"`
-	MaxTokens    int               `json:"max_tokens"`
-	Temperature  float64           `json:"temperature"`
-	SystemPrompt string            `json:"system_prompt,omitempty"`
-	Tools        []provider.ToolSchema   `json:"tools,omitempty"`
-	Messages     []message.Message `json:"messages"`
+// devRequest represents the request data saved to JSON file.
+// Domain-typed fields use any so this package avoids domain imports.
+type devRequest struct {
+	Turn         int       `json:"turn"`
+	Timestamp    time.Time `json:"timestamp"`
+	Provider     string    `json:"provider"`
+	Model        string    `json:"model"`
+	MaxTokens    int       `json:"max_tokens"`
+	Temperature  float64   `json:"temperature"`
+	SystemPrompt string    `json:"system_prompt,omitempty"`
+	Tools        any       `json:"tools,omitempty"`
+	Messages     any       `json:"messages"`
 }
 
-// DevResponse represents the response data saved to JSON file
-type DevResponse struct {
-	Turn       int                `json:"turn"`
-	Timestamp  time.Time          `json:"timestamp"`
-	Provider   string             `json:"provider"`
-	StopReason string             `json:"stop_reason"`
-	Content    string             `json:"content,omitempty"`
-	Thinking   string             `json:"thinking,omitempty"`
-	ToolCalls  []message.ToolCall `json:"tool_calls,omitempty"`
-	Usage      message.Usage      `json:"usage"`
+// devResponse represents the response data saved to JSON file.
+// Domain-typed fields use any so this package avoids domain imports.
+type devResponse struct {
+	Turn       int       `json:"turn"`
+	Timestamp  time.Time `json:"timestamp"`
+	Provider   string    `json:"provider"`
+	StopReason string    `json:"stop_reason"`
+	Content    string    `json:"content,omitempty"`
+	Thinking   string    `json:"thinking,omitempty"`
+	ToolCalls  any       `json:"tool_calls,omitempty"`
+	Usage      any       `json:"usage"`
 }
 
-// turnPrefix returns the file prefix for a given tracker and turn.
+// turnFilePrefix returns the file prefix for a given tracker and turn.
 // If tracker is nil, uses the main loop prefix.
-func turnPrefix(tracker *AgentTurnTracker, turn int) string {
+func turnFilePrefix(tracker *AgentTurnTracker, turn int) string {
 	if tracker != nil {
 		return tracker.GetTurnPrefix(turn)
 	}
-	return GetTurnPrefix(turn)
+	return getTurnPrefix(turn)
 }
 
 // writeDevRequest writes request data to JSON file in DEV_DIR.
 // tracker may be nil for main-loop requests.
-func writeDevRequest(tracker *AgentTurnTracker, providerName, model string, opts provider.CompletionOptions, turn int) {
+func writeDevRequest(tracker *AgentTurnTracker, providerName, model string, opts any, turn int) {
 	if !devEnabled {
 		return
 	}
-	req := DevRequest{
-		Turn:         turn,
-		Timestamp:    time.Now().UTC(),
-		Provider:     providerName,
-		Model:        model,
-		MaxTokens:    opts.MaxTokens,
-		Temperature:  opts.Temperature,
-		SystemPrompt: opts.SystemPrompt,
-		Tools:        opts.Tools,
-		Messages:     opts.Messages,
+
+	req := devRequest{
+		Turn:      turn,
+		Timestamp: time.Now().UTC(),
+		Provider:  providerName,
+		Model:     model,
 	}
-	writeJSON(filepath.Join(devDir, turnPrefix(tracker, turn)+"-request.json"), req)
+
+	if rl, ok := opts.(requestLoggable); ok {
+		req.MaxTokens = rl.LogMaxTokens()
+		req.Temperature = rl.LogTemperature()
+		req.SystemPrompt = rl.LogSystemPrompt()
+	}
+	if rd, ok := opts.(requestDevData); ok {
+		req.Tools = rd.LogRawTools()
+		req.Messages = rd.LogRawMessages()
+	}
+
+	writeJSON(filepath.Join(devDir, turnFilePrefix(tracker, turn)+"-request.json"), req)
 }
 
 // writeDevResponse writes response data to JSON file in DEV_DIR.
 // tracker may be nil for main-loop responses.
-func writeDevResponse(tracker *AgentTurnTracker, providerName string, resp message.CompletionResponse, turn int) {
+func writeDevResponse(tracker *AgentTurnTracker, providerName string, resp any, turn int) {
 	if !devEnabled {
 		return
 	}
-	res := DevResponse{
-		Turn:       turn,
-		Timestamp:  time.Now().UTC(),
-		Provider:   providerName,
-		StopReason: resp.StopReason,
-		Content:    resp.Content,
-		Thinking:   resp.Thinking,
-		ToolCalls:  resp.ToolCalls,
-		Usage:      resp.Usage,
+
+	res := devResponse{
+		Turn:      turn,
+		Timestamp: time.Now().UTC(),
+		Provider:  providerName,
 	}
-	writeJSON(filepath.Join(devDir, turnPrefix(tracker, turn)+"-response.json"), res)
+
+	if rl, ok := resp.(responseLoggable); ok {
+		res.StopReason = rl.LogStopReason()
+		res.Content = rl.LogContent()
+		res.Thinking = rl.LogThinking()
+	}
+	if rd, ok := resp.(responseDevData); ok {
+		res.ToolCalls = rd.LogRawToolCalls()
+		res.Usage = rd.LogRawUsage()
+	}
+
+	writeJSON(filepath.Join(devDir, turnFilePrefix(tracker, turn)+"-response.json"), res)
 }
 
 func writeJSON(filename string, data any) {
@@ -88,5 +101,5 @@ func writeJSON(filename string, data any) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(filename, jsonData, 0o644)
+	_ = os.WriteFile(filename, jsonData, 0o600)
 }

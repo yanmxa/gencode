@@ -4,13 +4,12 @@ package app
 
 import (
 	"context"
-	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/render"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -19,7 +18,6 @@ func handleGlobCommand(ctx context.Context, m *model, args string) (string, tea.
 		return "Usage: /glob <pattern> [path]", nil, nil
 	}
 
-	cwd, _ := os.Getwd()
 	params := map[string]any{"pattern": args}
 
 	parts := strings.SplitN(args, " ", 2)
@@ -28,12 +26,12 @@ func handleGlobCommand(ctx context.Context, m *model, args string) (string, tea.
 		params["path"] = parts[1]
 	}
 
-	result := tool.Execute(ctx, "glob", params, cwd)
+	result := tool.Execute(ctx, "glob", params, m.cwd)
 	return render.RenderToolResult(result, m.width), nil, nil
 }
 
 func handleToolCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	var mcpTools func() []provider.ToolSchema
+	var mcpTools func() []message.ToolSchema
 	if m.mcp.Registry != nil {
 		mcpTools = m.mcp.Registry.GetToolSchemas
 	}

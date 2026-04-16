@@ -85,16 +85,6 @@ func (p *PlanPrompt) IsActive() bool {
 	return p.active
 }
 
-// IsEditing returns whether the prompt is in edit mode
-func (p *PlanPrompt) IsEditing() bool {
-	return p.editing
-}
-
-// GetRequest returns the current plan request
-func (p *PlanPrompt) GetRequest() *tool.PlanRequest {
-	return p.request
-}
-
 // HandleKeypress handles keyboard input for the plan prompt.
 // Returns (cmd, response): cmd for UI updates, response when user makes a decision.
 func (p *PlanPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *PlanResponseMsg) {

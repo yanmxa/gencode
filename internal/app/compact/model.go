@@ -1,8 +1,8 @@
 // Package compact provides message types for conversation compaction.
 package compact
 
-// CompactResultMsg is sent when a compaction operation completes.
-type CompactResultMsg struct {
+// ResultMsg is sent when a compaction operation completes.
+type ResultMsg struct {
 	Summary       string
 	OriginalCount int
 	Trigger       string // "manual" or "auto"

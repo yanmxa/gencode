@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 type matchedHook struct {
@@ -17,7 +18,7 @@ type matchedHook struct {
 
 func (e *Engine) getMatchingHooks(event EventType, input *HookInput) []matchedHook {
 	e.populateInputFields(input, event)
-	matchValue := GetMatchValue(event, *input)
+	matchValue := getMatchValue(event, *input)
 
 	e.mu.RLock()
 	settings := e.settings
@@ -25,7 +26,7 @@ func (e *Engine) getMatchingHooks(event EventType, input *HookInput) []matchedHo
 
 	var matched []matchedHook
 	for _, source := range e.store.CollectHooks(event, settings) {
-		if !MatchesEvent(source.Matcher, matchValue) {
+		if !matchesEvent(source.Matcher, matchValue) {
 			continue
 		}
 		for _, cmd := range source.Hooks {
@@ -46,7 +47,7 @@ func (e *Engine) getMatchingHooks(event EventType, input *HookInput) []matchedHo
 		}
 	}
 	for _, source := range e.store.CollectFunctionHooks(event) {
-		if !MatchesEvent(source.Matcher, matchValue) {
+		if !matchesEvent(source.Matcher, matchValue) {
 			continue
 		}
 		for _, fn := range source.Hooks {
@@ -76,7 +77,7 @@ func (e *Engine) populateInputFields(input *HookInput, event EventType) {
 	input.HookEventName = string(event)
 
 	switch event {
-	case SessionStart, SessionEnd, Notification, SubagentStart, PreCompact:
+	case core.SessionStart, core.SessionEnd, core.Notification, core.SubagentStart, core.PreCompact:
 	default:
 		input.PermissionMode = e.permissionMode
 	}
@@ -87,7 +88,7 @@ func (e *Engine) matchesIfCondition(cmd config.HookCmd, input HookInput) bool {
 		return true
 	}
 	switch input.HookEventName {
-	case string(PreToolUse), string(PostToolUse), string(PostToolUseFailure), string(PermissionRequest), string(PermissionDenied):
+	case string(core.PreToolUse), string(core.PostToolUse), string(core.PostToolUseFailure), string(core.PermissionRequest), string(core.PermissionDenied):
 		rule := config.BuildRule(input.ToolName, input.ToolInput)
 		if config.MatchesToolPattern(input.ToolName, input.ToolInput, rule, cmd.If) {
 			return true

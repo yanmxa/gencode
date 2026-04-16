@@ -1,6 +1,6 @@
 package tool
 
-import "github.com/yanmxa/gencode/internal/provider"
+import "github.com/yanmxa/gencode/internal/message"
 
 // Tool name constants used in runtime comparisons across the codebase.
 const (
@@ -35,37 +35,38 @@ func IsAgentToolName(name string) bool {
 	return name == ToolAgent || name == ToolContinueAgent || name == ToolSendMessage
 }
 
-// GetToolSchemas returns provider.ToolSchema definitions for all registered tools
-func GetToolSchemas() []provider.ToolSchema {
+// GetToolSchemas returns message.ToolSchema definitions for all registered tools
+func GetToolSchemas() []message.ToolSchema {
 	return GetToolSchemasWithMCP(nil)
 }
 
 // GetToolSchemasWithMCP returns tool schemas including MCP tools if a getter is provided
-func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.ToolSchema) []provider.ToolSchema {
-	tools := baseToolSchemas()
+func GetToolSchemasWithMCP(mcpToolsGetter func() []message.ToolSchema) []message.ToolSchema {
+	tools := make([]message.ToolSchema, 0, 20)
+	tools = append(tools, baseToolSchemas()...)
 
 	// Add EnterPlanMode to normal mode tools
-	tools = append(tools, EnterPlanModeSchema)
+	tools = append(tools, enterPlanModeSchema)
 
 	// Add Skill tool
-	tools = append(tools, SkillToolSchema)
+	tools = append(tools, skillToolSchema)
 
 	// Add Agent tool
-	tools = append(tools, AgentToolSchema)
-	tools = append(tools, ContinueAgentToolSchema)
-	tools = append(tools, SendMessageToolSchema)
+	tools = append(tools, agentToolSchema)
+	tools = append(tools, continueAgentToolSchema)
+	tools = append(tools, sendMessageToolSchema)
 
 	// Add ToolSearch (always available — enables progressive disclosure)
-	tools = append(tools, ToolSearchSchema)
+	tools = append(tools, toolSearchSchema)
 
 	// Add Tracker tools
-	tools = append(tools, TrackerToolSchemas...)
+	tools = append(tools, trackerToolSchemas...)
 
 	// Add Cron tools
-	tools = append(tools, CronToolSchemas...)
+	tools = append(tools, cronToolSchemas...)
 
 	// Add Worktree tools
-	tools = append(tools, WorktreeToolSchemas...)
+	tools = append(tools, worktreeToolSchemas...)
 
 	// Add MCP tools if getter is provided
 	if mcpToolsGetter != nil {
@@ -75,14 +76,9 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []provider.ToolSchema) []provid
 	return tools
 }
 
-// GetToolSchemasFiltered returns tool schemas excluding disabled tools
-func GetToolSchemasFiltered(disabled map[string]bool) []provider.ToolSchema {
-	return filterSchemas(GetToolSchemas(), disabled)
-}
-
-// GetPlanModeToolSchemas returns only the tools available in plan mode.
+// getPlanModeToolSchemas returns only the tools available in plan mode.
 // Plan mode restricts to read-only tools, the plan-mode Agent tool, plus ExitPlanMode.
-func GetPlanModeToolSchemas() []provider.ToolSchema {
+func getPlanModeToolSchemas() []message.ToolSchema {
 	// Read-only tools allowed in plan mode
 	allowedTools := map[string]bool{
 		"Read":            true,
@@ -95,7 +91,7 @@ func GetPlanModeToolSchemas() []provider.ToolSchema {
 
 	// Filter to allowed read-only tools
 	allTools := GetToolSchemas()
-	tools := make([]provider.ToolSchema, 0, len(allowedTools)+2)
+	tools := make([]message.ToolSchema, 0, len(allowedTools)+2)
 
 	for _, t := range allTools {
 		if allowedTools[t.Name] {
@@ -104,24 +100,24 @@ func GetPlanModeToolSchemas() []provider.ToolSchema {
 	}
 
 	// Add plan-mode Agent schema (no run_in_background, restricted agent types)
-	tools = append(tools, PlanModeAgentSchema)
+	tools = append(tools, planModeAgentSchema)
 
 	// Add ExitPlanMode
-	tools = append(tools, ExitPlanModeSchema)
+	tools = append(tools, exitPlanModeSchema)
 
 	return tools
 }
 
-// GetPlanModeToolSchemasFiltered returns plan mode tools excluding disabled tools
-func GetPlanModeToolSchemasFiltered(disabled map[string]bool) []provider.ToolSchema {
-	return filterSchemas(GetPlanModeToolSchemas(), disabled)
+// getPlanModeToolSchemasFiltered returns plan mode tools excluding disabled tools
+func getPlanModeToolSchemasFiltered(disabled map[string]bool) []message.ToolSchema {
+	return filterSchemas(getPlanModeToolSchemas(), disabled)
 }
 
-func filterSchemas(all []provider.ToolSchema, disabled map[string]bool) []provider.ToolSchema {
+func filterSchemas(all []message.ToolSchema, disabled map[string]bool) []message.ToolSchema {
 	if len(disabled) == 0 {
 		return all
 	}
-	filtered := make([]provider.ToolSchema, 0, len(all))
+	filtered := make([]message.ToolSchema, 0, len(all))
 	for _, t := range all {
 		if !disabled[t.Name] {
 			filtered = append(filtered, t)

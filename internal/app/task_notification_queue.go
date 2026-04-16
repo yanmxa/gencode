@@ -1,6 +1,10 @@
 package app
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/yanmxa/gencode/internal/orchestration"
+)
 
 type taskNotification struct {
 	Notice             string
@@ -10,7 +14,7 @@ type taskNotification struct {
 	TaskID             string
 	Subject            string
 	Status             string
-	Batch              *backgroundBatchSnapshot
+	Batch              *orchestration.Batch
 }
 
 type taskNotificationQueue struct {

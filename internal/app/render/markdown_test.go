@@ -236,10 +236,10 @@ Some **bold** and *italic* text with ` + "`code`" + `.
 	}
 }
 
-func TestRenderMarkdownContent(t *testing.T) {
+func Test_renderMarkdownContent(t *testing.T) {
 	r := NewMDRenderer(80)
 
-	result := RenderMarkdownContent(r, "# Hello\n\nWorld")
+	result := renderMarkdownContent(r, "# Hello\n\nWorld")
 	if !strings.Contains(result, "Hello") {
 		t.Errorf("result should contain 'Hello'")
 	}

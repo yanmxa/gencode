@@ -74,9 +74,3 @@ const (
 	DiffLineHunk                         // Hunk header (@@ ... @@)
 	DiffLineMetadata                     // Metadata line (\ No newline at end of file)
 )
-
-// PermissionResponse represents the user's response to a permission request
-type PermissionResponse struct {
-	RequestID string // ID of the original request
-	Approved  bool   // Whether the action was approved
-}

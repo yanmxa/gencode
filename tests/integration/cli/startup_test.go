@@ -134,10 +134,13 @@ func TestNonInteractivePrintMode(t *testing.T) {
 // source, but saving to the fork does not modify the original.
 func TestSessionFork_IsIndependent(t *testing.T) {
 	dir := t.TempDir()
-	store := session.NewStoreWithDir(dir)
+	store, err := session.NewStoreWithDir(dir)
+	if err != nil {
+		t.Fatalf("NewStoreWithDir: %v", err)
+	}
 
 	// 1. Create and save the original session.
-	original := &session.Session{
+	original := &session.Snapshot{
 		Metadata: session.SessionMetadata{
 			ID:       "source-session",
 			Title:    "Source",

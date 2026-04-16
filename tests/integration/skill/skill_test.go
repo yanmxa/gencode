@@ -40,23 +40,6 @@ func TestSkill_StateTransitions(t *testing.T) {
 	}
 }
 
-func TestSkill_StateIcons(t *testing.T) {
-	tests := []struct {
-		state skill.SkillState
-		icon  string
-	}{
-		{skill.StateDisable, "○"},
-		{skill.StateEnable, "◐"},
-		{skill.StateActive, "●"},
-	}
-
-	for _, tt := range tests {
-		if got := tt.state.Icon(); got != tt.icon {
-			t.Errorf("state %q icon = %q, want %q", tt.state, got, tt.icon)
-		}
-	}
-}
-
 func TestSkill_BooleanHelpers(t *testing.T) {
 	s := &skill.Skill{Name: "test"}
 

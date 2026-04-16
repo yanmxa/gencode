@@ -23,9 +23,16 @@ type Loader struct {
 
 // NewLoader creates a loader with default paths (~/.gen, .gen) and Claude compatibility enabled.
 func NewLoader() *Loader {
-	homeDir, _ := os.UserHomeDir()
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Logger().Warn("failed to determine home directory, user-level settings will be unavailable", zap.Error(err))
+	}
+	userDir := ""
+	if homeDir != "" {
+		userDir = filepath.Join(homeDir, ".gen")
+	}
 	return &Loader{
-		userDir:      filepath.Join(homeDir, ".gen"),
+		userDir:      userDir,
 		projectDir:   ".gen",
 		projectRoot:  ".",
 		claudeCompat: true,
@@ -44,9 +51,16 @@ func NewLoaderWithOptions(userDir, projectDir string, claudeCompat bool) *Loader
 
 // NewLoaderForCwd creates a loader rooted at the provided working directory.
 func NewLoaderForCwd(cwd string) *Loader {
-	homeDir, _ := os.UserHomeDir()
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Logger().Warn("failed to determine home directory, user-level settings will be unavailable", zap.Error(err))
+	}
+	userDir := ""
+	if homeDir != "" {
+		userDir = filepath.Join(homeDir, ".gen")
+	}
 	return &Loader{
-		userDir:      filepath.Join(homeDir, ".gen"),
+		userDir:      userDir,
 		projectDir:   filepath.Join(cwd, ".gen"),
 		projectRoot:  cwd,
 		claudeCompat: true,
@@ -74,10 +88,12 @@ func (l *Loader) Load() (*Settings, error) {
 	}
 
 	var sources []source
-	if l.claudeCompat {
+	if l.claudeCompat && homeDir != "" {
 		sources = append(sources, source{filepath.Join(homeDir, ".claude", "settings.json"), true})
 	}
-	sources = append(sources, source{filepath.Join(l.userDir, "settings.json"), false})
+	if l.userDir != "" {
+		sources = append(sources, source{filepath.Join(l.userDir, "settings.json"), false})
+	}
 	if l.claudeCompat {
 		sources = append(sources, source{filepath.Join(l.projectRoot, ".claude", "settings.json"), true})
 	}
@@ -108,7 +124,7 @@ func (l *Loader) Load() (*Settings, error) {
 		// Extract hooks before merging — we'll merge hooks manually
 		srcHooks := s.Hooks
 		s.Hooks = nil
-		settings = MergeSettings(settings, &s)
+		settings = mergeSettings(settings, &s)
 
 		// Accumulate hooks by source type.
 		// Native hooks: higher-priority sources replace lower-priority per event.
@@ -179,7 +195,7 @@ func (l *Loader) saveToFile(path string, settings *Settings) error {
 	if data, err := os.ReadFile(path); err == nil {
 		existing := NewSettings()
 		if err := json.Unmarshal(data, existing); err == nil {
-			toSave = MergeSettings(existing, settings)
+			toSave = mergeSettings(existing, settings)
 		}
 	}
 
@@ -187,7 +203,15 @@ func (l *Loader) saveToFile(path string, settings *Settings) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 var (
@@ -213,9 +237,13 @@ func Load() (*Settings, error) {
 // Reload clears the settings cache and reloads from disk.
 func Reload() (*Settings, error) {
 	loadedSettingsMu.Lock()
-	loadedSettings = nil
-	loadedSettingsMu.Unlock()
-	return Load()
+	defer loadedSettingsMu.Unlock()
+	s, err := NewLoader().Load()
+	if err != nil {
+		return nil, err
+	}
+	loadedSettings = s
+	return s, nil
 }
 
 // LoadForCwd loads settings for the provided working directory without using
@@ -227,11 +255,6 @@ func LoadForCwd(cwd string) (*Settings, error) {
 // Default returns default settings without loading from disk.
 func Default() *Settings {
 	return NewSettings()
-}
-
-// UpdateDisabledTools updates disabled tools in project-level settings.
-func UpdateDisabledTools(disabledTools map[string]bool) error {
-	return UpdateDisabledToolsAt(disabledTools, false)
 }
 
 // UpdateDisabledToolsAt updates disabled tools at user level (true) or project level (false).
@@ -256,12 +279,15 @@ func UpdateDisabledToolsAt(disabledTools map[string]bool, userLevel bool) error 
 }
 
 // GetDisabledTools returns the merged disabled tools map from loaded settings.
+// Returns a copy so callers cannot mutate the cached settings.
 func GetDisabledTools() map[string]bool {
 	s, err := Load()
 	if err != nil || s.DisabledTools == nil {
 		return make(map[string]bool)
 	}
-	return s.DisabledTools
+	result := make(map[string]bool, len(s.DisabledTools))
+	maps.Copy(result, s.DisabledTools)
+	return result
 }
 
 // GetDisabledToolsAt returns disabled tools from a single settings file (not merged).
@@ -281,23 +307,10 @@ func GetDisabledToolsAt(userLevel bool) map[string]bool {
 	return result
 }
 
-// AddAllowRule appends a permission allow rule to project-level settings.
-// The rule is built from the tool name and arguments (e.g., "Bash(git:*)").
-func AddAllowRule(toolName string, args map[string]any) error {
-	return AddAllowRuleDirectly(BuildRule(toolName, args))
-}
-
 // AddAllowRuleAt appends a permission allow rule to project settings rooted at
 // the provided cwd.
 func AddAllowRuleAt(toolName string, args map[string]any, cwd string) error {
 	return AddAllowRuleDirectlyAt(BuildRule(toolName, args), cwd)
-}
-
-// AddAllowRuleDirectly appends a pre-built permission allow rule string
-// to project-level settings. Unlike AddAllowRule, it does not build the rule
-// from tool name + args — the caller provides the final rule string.
-func AddAllowRuleDirectly(rule string) error {
-	return AddAllowRuleDirectlyAt(rule, "")
 }
 
 // AddAllowRuleDirectlyAt appends a pre-built allow rule string to the project

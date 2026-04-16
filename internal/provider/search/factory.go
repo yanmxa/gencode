@@ -26,23 +26,6 @@ func GetDefaultProvider() Provider {
 	return NewExaProvider()
 }
 
-// GetAvailableProviders returns all providers that are currently available
-func GetAvailableProviders() []Provider {
-	providers := []Provider{
-		NewExaProvider(),
-		NewSerperProvider(),
-		NewBraveProvider(),
-	}
-
-	available := make([]Provider, 0, len(providers))
-	for _, p := range providers {
-		if p.IsAvailable() {
-			available = append(available, p)
-		}
-	}
-	return available
-}
-
 // matchesDomainFilter checks if a URL matches the domain filter criteria
 func matchesDomainFilter(urlStr string, allowedDomains, blockedDomains []string) bool {
 	if len(allowedDomains) == 0 && len(blockedDomains) == 0 {

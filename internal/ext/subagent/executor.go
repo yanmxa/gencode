@@ -2,9 +2,13 @@ package subagent
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/yanmxa/gencode/internal/client"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
@@ -30,7 +34,7 @@ type Executor struct {
 	userInstructions    string                       // ~/.gen/GEN.md + rules
 	projectInstructions string                       // .gen/GEN.md + rules + local
 	isGit               bool                         // whether cwd is a git repository
-	mcpGetter           func() []provider.ToolSchema // MCP tool schemas from parent
+	mcpGetter           func() []message.ToolSchema // MCP tool schemas from parent
 	mcpRegistry         *mcp.Registry                // MCP registry for tool execution
 }
 
@@ -70,7 +74,7 @@ func (e *Executor) SetContext(userInstructions, projectInstructions string, isGi
 
 // SetMCP provides the parent's MCP tool getter and registry so subagents
 // can access MCP tools (schemas via getter, execution via registry).
-func (e *Executor) SetMCP(getter func() []provider.ToolSchema, registry *mcp.Registry) {
+func (e *Executor) SetMCP(getter func() []message.ToolSchema, registry *mcp.Registry) {
 	e.mcpGetter = getter
 	e.mcpRegistry = registry
 }
@@ -128,7 +132,7 @@ func (e *Executor) RunBackground(req AgentRequest) (*task.AgentTask, error) {
 
 	// Create agent task
 	agentTask := task.NewAgentTask(
-		task.GenerateID(),
+		generateShortID(),
 		displayName,
 		req.Description,
 		ctx,
@@ -178,6 +182,9 @@ func (e *Executor) RunBackground(req AgentRequest) (*task.AgentTask, error) {
 }
 
 func (e *Executor) validateRequest(req AgentRequest) error {
+	if strings.TrimSpace(req.Prompt) == "" {
+		return fmt.Errorf("agent prompt cannot be empty")
+	}
 	if req.TeamName != "" {
 		return fmt.Errorf("team spawning is not yet supported (team: %s)", req.TeamName)
 	}
@@ -214,7 +221,7 @@ func (e *Executor) prepareRunConfig(req AgentRequest) (*runConfig, error) {
 		maxTurns = req.MaxTurns
 	}
 	if maxTurns <= 0 {
-		maxTurns = DefaultMaxTurns
+		maxTurns = defaultMaxTurns
 	}
 
 	return &runConfig{
@@ -231,7 +238,7 @@ func (e *Executor) fireSubagentStart(req AgentRequest, agentHookID string) {
 	if e.hooks == nil {
 		return
 	}
-	e.hooks.ExecuteAsync(hooks.SubagentStart, hooks.HookInput{
+	e.hooks.ExecuteAsync(core.SubagentStart, hooks.HookInput{
 		AgentType:   req.Agent,
 		AgentID:     agentHookID,
 		Description: req.Description,
@@ -251,8 +258,12 @@ func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string
 		}
 	}
 
-	c := &client.Client{Provider: e.provider, Model: rc.modelID}
-	loop := &runtime.Loop{
+	var mcpCaller runtime.MCPCaller
+	if e.mcpRegistry != nil {
+		mcpCaller = mcp.NewCaller(e.mcpRegistry)
+	}
+
+	loop, err := runtime.NewLoop(runtime.LoopConfig{
 		System: prompt.Build(prompt.Config{
 			ProviderName:        e.provider.Name(),
 			ModelID:             rc.modelID,
@@ -263,15 +274,16 @@ func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string
 			ProjectInstructions: e.projectInstructions,
 			Extra:               []string{rc.agentPrompt},
 		}),
-		Client:     c,
-		Tool:       &tool.Set{Allow: []string(rc.config.Tools), Disallow: []string(rc.config.DisallowedTools), MCP: e.mcpGetter, IsAgent: true},
+		Client:     client.NewClient(e.provider, rc.modelID),
+		Tool:       newAgentToolSet([]string(rc.config.Tools), []string(rc.config.DisallowedTools), e.mcpGetter),
 		Permission: agentPermission(rc.permMode),
 		Hooks:      e.hooks,
+		MCP:        mcpCaller,
 		Cwd:        agentCwd,
-	}
-
-	if e.mcpRegistry != nil {
-		loop.MCP = mcp.NewCaller(e.mcpRegistry)
+	})
+	if err != nil {
+		cleanup()
+		return nil, cleanup, err
 	}
 
 	return loop, cleanup, nil
@@ -281,10 +293,10 @@ func (e *Executor) loadConversation(loop *runtime.Loop, req AgentRequest) error 
 	// Fork: inherit parent conversation context
 	if len(req.ParentMessages) > 0 {
 		// Guard against recursive forking
-		if depth := CountForkDepth(req.ParentMessages); depth >= MaxForkDepth {
-			return fmt.Errorf("maximum fork depth (%d) exceeded — forked agents cannot fork more than %d levels deep", MaxForkDepth, MaxForkDepth)
+		if depth := countForkDepth(req.ParentMessages); depth >= maxForkDepth {
+			return fmt.Errorf("maximum fork depth (%d) exceeded — forked agents cannot fork more than %d levels deep", maxForkDepth, maxForkDepth)
 		}
-		loop.SetMessages(PrepareForkedMessages(req.ParentMessages))
+		loop.SetMessages(prepareForkedMessages(req.ParentMessages))
 		loop.AddUser(req.Prompt, nil)
 		return nil
 	}
@@ -336,7 +348,7 @@ func (e *Executor) fireSubagentStop(req AgentRequest, agentHookID, agentSessionI
 	if agentSessionID != "" {
 		stopAgentID = agentSessionID
 	}
-	e.hooks.ExecuteAsync(hooks.SubagentStop, hooks.HookInput{
+	e.hooks.ExecuteAsync(core.SubagentStop, hooks.HookInput{
 		AgentType:            req.Agent,
 		AgentID:              stopAgentID,
 		AgentTranscriptPath:  agentTranscriptPath,
@@ -350,10 +362,7 @@ func (e *Executor) fireSubagentStop(req AgentRequest, agentHookID, agentSessionI
 // 2. Parent conversation model (inherited)
 func (e *Executor) resolveModelID(requestModel string) string {
 	if requestModel != "" {
-		return ResolveModelAlias(requestModel)
-	}
-	if e.parentModelID != "" {
-		return e.parentModelID
+		return resolveModelAlias(requestModel)
 	}
 	return e.parentModelID
 }
@@ -370,4 +379,20 @@ func agentPermission(mode PermissionMode) permission.Checker {
 	default:
 		return permission.PermitAll()
 	}
+}
+
+// newAgentToolSet creates a tool.Set for subagents with the disallow set eagerly initialized.
+func newAgentToolSet(allow, disallow []string, mcpGetter func() []message.ToolSchema) *tool.Set {
+	s := &tool.Set{Allow: allow, Disallow: disallow, MCP: mcpGetter, IsAgent: true}
+	s.InitDisallowSet()
+	return s
+}
+
+// generateShortID creates a short random hex ID for background tasks.
+func generateShortID() string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
+	return hex.EncodeToString(b)
 }

@@ -165,7 +165,7 @@ func applyStatePatch(state *State, patch *StateRecord) error {
 			if err := json.Unmarshal(op.Value, &tasks); err != nil {
 				return fmt.Errorf("patch %s: %w", op.Path, err)
 			}
-			state.Tasks = convertTasks(tasks)
+			state.Tasks = TrackerTaskViewsFromTasks(tasks)
 		case PatchPathWorktree:
 			if string(op.Value) == "null" {
 				state.Worktree = nil
@@ -205,7 +205,9 @@ func materializeActiveChain(messageMap map[string]Node, order []string, boundary
 		}
 	}
 	if leafID == "" {
-		return nil
+		// All messages have children — likely a corrupted transcript with cycles.
+		// Fall back to the last message in insertion order to avoid silent data loss.
+		leafID = order[len(order)-1]
 	}
 
 	reversed := make([]Node, 0, len(order))
@@ -236,22 +238,3 @@ func materializeActiveChain(messageMap map[string]Node, order []string, boundary
 	return out
 }
 
-func convertTasks(tasks []tracker.Task) []TrackerTaskView {
-	out := make([]TrackerTaskView, 0, len(tasks))
-	for _, task := range tasks {
-		out = append(out, TrackerTaskView{
-			ID:              task.ID,
-			Subject:         task.Subject,
-			Description:     task.Description,
-			ActiveForm:      task.ActiveForm,
-			Status:          task.Status,
-			Owner:           task.Owner,
-			Blocks:          append([]string(nil), task.Blocks...),
-			BlockedBy:       append([]string(nil), task.BlockedBy...),
-			CreatedAt:       task.CreatedAt,
-			UpdatedAt:       task.UpdatedAt,
-			StatusChangedAt: task.StatusChangedAt,
-		})
-	}
-	return out
-}

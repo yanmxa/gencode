@@ -5,6 +5,7 @@ package subagent
 
 import (
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yanmxa/gencode/internal/client"
@@ -124,29 +125,23 @@ type AgentConfig struct {
 	// SourceFile is the file path if loaded from AGENT.md (internal use)
 	SourceFile string `yaml:"-" json:"-"`
 
-	// systemPromptLoaded indicates if the full system prompt has been loaded
-	systemPromptLoaded bool `yaml:"-" json:"-"`
+	// systemPromptOnce ensures the system prompt is loaded exactly once.
+	// AgentConfig must not be copied after first use — always use *AgentConfig pointers.
+	systemPromptOnce sync.Once `yaml:"-" json:"-"`
 }
 
 // GetSystemPrompt returns the system prompt, loading it lazily if needed.
 // For file-based agents, the prompt is loaded from SourceFile on first access.
+// Safe for concurrent use.
 func (c *AgentConfig) GetSystemPrompt() string {
-	if c.systemPromptLoaded || c.SourceFile == "" {
-		return c.SystemPrompt
-	}
-	c.loadSystemPromptFromFile()
+	c.systemPromptOnce.Do(func() {
+		if c.SourceFile != "" {
+			if prompt := LoadAgentSystemPrompt(c.SourceFile); prompt != "" {
+				c.SystemPrompt = prompt
+			}
+		}
+	})
 	return c.SystemPrompt
-}
-
-// loadSystemPromptFromFile loads the full system prompt from the source file.
-func (c *AgentConfig) loadSystemPromptFromFile() {
-	if c.SourceFile == "" || c.systemPromptLoaded {
-		return
-	}
-	c.systemPromptLoaded = true
-	if prompt := LoadAgentSystemPrompt(c.SourceFile); prompt != "" {
-		c.SystemPrompt = prompt
-	}
 }
 
 // ProgressCallback is called when the agent makes progress
@@ -246,8 +241,8 @@ type AgentResult struct {
 	Error string
 }
 
-// DefaultMaxTurns is the default maximum number of conversation turns
-const DefaultMaxTurns = 100
+// defaultMaxTurns is the default maximum number of conversation turns
+const defaultMaxTurns = 100
 
 // modelAliases maps short model aliases to full Vertex AI model IDs.
 var modelAliases = map[string]string{
@@ -256,9 +251,9 @@ var modelAliases = map[string]string{
 	"haiku":  "claude-haiku-4-5-20251001",
 }
 
-// ResolveModelAlias returns the full model ID for a known alias,
+// resolveModelAlias returns the full model ID for a known alias,
 // or the input unchanged if it is not an alias.
-func ResolveModelAlias(model string) string {
+func resolveModelAlias(model string) string {
 	if full, ok := modelAliases[model]; ok {
 		return full
 	}

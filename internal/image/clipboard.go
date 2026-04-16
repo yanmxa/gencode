@@ -1,10 +1,10 @@
 package image
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -12,9 +12,9 @@ import (
 	"github.com/yanmxa/gencode/internal/message"
 )
 
-// ReadImageFromClipboard reads an image from the clipboard.
+// readImageFromClipboard reads an image from the clipboard.
 // Returns nil, nil if no image is available (not an error).
-func ReadImageFromClipboard() (*ImageInfo, error) {
+func readImageFromClipboard() (*ImageInfo, error) {
 	switch runtime.GOOS {
 	case "darwin":
 		return readClipboardMacOS()
@@ -31,8 +31,8 @@ func newClipboardImageInfo(data []byte) (*ImageInfo, error) {
 	if len(data) == 0 {
 		return nil, nil
 	}
-	if len(data) > MaxImageSize {
-		return nil, fmt.Errorf("clipboard image too large: %d bytes (max %d)", len(data), MaxImageSize)
+	if len(data) > maxImageSize {
+		return nil, fmt.Errorf("clipboard image too large: %d bytes (max %d)", len(data), maxImageSize)
 	}
 	return &ImageInfo{
 		MediaType: "image/png",
@@ -44,7 +44,12 @@ func newClipboardImageInfo(data []byte) (*ImageInfo, error) {
 
 // readClipboardMacOS reads image from macOS clipboard using osascript.
 func readClipboardMacOS() (*ImageInfo, error) {
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("clipboard_%d.png", time.Now().UnixNano()))
+	tmp, err := os.CreateTemp("", "clipboard_*.png")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpFile := tmp.Name()
+	_ = tmp.Close()
 	defer func() { _ = os.Remove(tmpFile) }()
 
 	script := fmt.Sprintf(`
@@ -60,7 +65,9 @@ func readClipboardMacOS() (*ImageInfo, error) {
 		end try
 	`, tmpFile)
 
-	cmd := exec.Command("osascript", "-e", script)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read clipboard: %w", err)
@@ -94,7 +101,7 @@ func readClipboardLinux() (*ImageInfo, error) {
 
 // ReadImageToProviderData reads clipboard image directly to message.ImageData
 func ReadImageToProviderData() (*message.ImageData, error) {
-	info, err := ReadImageFromClipboard()
+	info, err := readImageFromClipboard()
 	if err != nil {
 		return nil, err
 	}

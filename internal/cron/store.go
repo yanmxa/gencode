@@ -11,17 +11,21 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/yanmxa/gencode/internal/log"
 )
 
 const (
-	// DefaultExpiry is the auto-expiry duration for recurring jobs.
-	DefaultExpiry = 7 * 24 * time.Hour
+	// defaultExpiry is the auto-expiry duration for recurring jobs.
+	defaultExpiry = 7 * 24 * time.Hour
 
-	// MaxJobs is the maximum number of concurrent cron jobs.
-	MaxJobs = 50
+	// maxJobs is the maximum number of concurrent cron jobs.
+	maxJobs = 50
 
-	// MaxRecurringJitter bounds recurring schedule spread.
-	MaxRecurringJitter = 15 * time.Minute
+	// maxRecurringJitter bounds recurring schedule spread.
+	maxRecurringJitter = 15 * time.Minute
 )
 
 // Job represents a scheduled cron job.
@@ -37,7 +41,7 @@ type Job struct {
 	LastFired  time.Time `json:"lastFired"`  // last time this job fired
 	FiredCount int       `json:"firedCount"` // total times fired
 
-	expr *Expression // parsed expression (not serialized)
+	expr *expression // parsed expression (not serialized)
 }
 
 // Store manages cron jobs with thread-safe access.
@@ -61,7 +65,7 @@ func NewStore() *Store {
 
 // Create adds a new cron job and returns it.
 func (s *Store) Create(cronExpr, prompt string, recurring, durable bool) (*Job, error) {
-	expr, err := Parse(cronExpr)
+	expr, err := parse(cronExpr)
 	if err != nil {
 		return nil, err
 	}
@@ -71,13 +75,13 @@ func (s *Store) Create(cronExpr, prompt string, recurring, durable bool) (*Job, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if len(s.jobs) >= MaxJobs {
-		return nil, fmt.Errorf("cron: maximum number of jobs (%d) reached", MaxJobs)
+	if len(s.jobs) >= maxJobs {
+		return nil, fmt.Errorf("cron: maximum number of jobs (%d) reached", maxJobs)
 	}
 
 	expiresAt := time.Time{}
 	if recurring {
-		expiresAt = now.Add(DefaultExpiry)
+		expiresAt = now.Add(defaultExpiry)
 	}
 
 	job := &Job{
@@ -122,14 +126,15 @@ func (s *Store) Delete(id string) error {
 	return nil
 }
 
-// List returns all active jobs sorted by next fire time.
+// List returns copies of all active jobs sorted by next fire time.
 func (s *Store) List() []*Job {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	jobs := make([]*Job, 0, len(s.jobs))
 	for _, j := range s.jobs {
-		jobs = append(jobs, j)
+		cp := *j
+		jobs = append(jobs, &cp)
 	}
 
 	sort.Slice(jobs, func(i, k int) bool {
@@ -186,8 +191,12 @@ func (s *Store) Tick() []FiredJob {
 			toDelete = append(toDelete, job.ID)
 		} else {
 			if job.expr == nil {
-				if expr, err := Parse(job.Cron); err == nil {
+				if expr, err := parse(job.Cron); err == nil {
 					job.expr = expr
+				} else {
+					// Can't compute next fire — delete to prevent infinite fire loop
+					toDelete = append(toDelete, job.ID)
+					continue
 				}
 			}
 			if job.expr != nil {
@@ -257,7 +266,7 @@ func (s *Store) LoadDurable() error {
 			continue
 		}
 		// Re-parse expression
-		expr, err := Parse(job.Cron)
+		expr, err := parse(job.Cron)
 		if err != nil {
 			continue
 		}
@@ -285,8 +294,8 @@ func (s *Store) LoadDurable() error {
 	return nil
 }
 
-func computeNextFire(expr *Expression, from time.Time, jobID string, recurring bool) time.Time {
-	base := expr.NextAfter(from)
+func computeNextFire(expr *expression, from time.Time, jobID string, recurring bool) time.Time {
+	base := expr.nextAfter(from)
 	if base.IsZero() {
 		return time.Time{}
 	}
@@ -298,15 +307,15 @@ func computeNextFire(expr *Expression, from time.Time, jobID string, recurring b
 	return base.Add(jitter)
 }
 
-func computeRecurringJitter(expr *Expression, base time.Time, jobID string) time.Duration {
+func computeRecurringJitter(expr *expression, base time.Time, jobID string) time.Duration {
 	period := estimateRecurringPeriod(expr, base)
 	if period <= 0 {
 		return 0
 	}
 
 	maxJitter := period / 10
-	if maxJitter > MaxRecurringJitter {
-		maxJitter = MaxRecurringJitter
+	if maxJitter > maxRecurringJitter {
+		maxJitter = maxRecurringJitter
 	}
 	if maxJitter <= 0 {
 		return 0
@@ -322,9 +331,9 @@ func computeRecurringJitter(expr *Expression, base time.Time, jobID string) time
 	return time.Duration(h.Sum64() % uint64(maxJitter))
 }
 
-func estimateRecurringPeriod(expr *Expression, base time.Time) time.Duration {
+func estimateRecurringPeriod(expr *expression, base time.Time) time.Duration {
 	// Ask for the next matching base time after the current base minute.
-	next := expr.NextAfter(base)
+	next := expr.nextAfter(base)
 	if next.IsZero() {
 		return 0
 	}
@@ -347,16 +356,28 @@ func (s *Store) saveDurableLocked() {
 
 	data, err := json.MarshalIndent(durable, "", "  ")
 	if err != nil {
+		log.Logger().Error("cron: failed to marshal durable jobs", zap.Error(err))
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(s.storagePath), 0o755); err != nil {
+		log.Logger().Error("cron: failed to create storage directory", zap.Error(err))
 		return
 	}
-	_ = os.WriteFile(s.storagePath, data, 0o644)
+	tmp := s.storagePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		log.Logger().Error("cron: failed to write durable jobs", zap.Error(err))
+		return
+	}
+	if err := os.Rename(tmp, s.storagePath); err != nil {
+		os.Remove(tmp)
+		log.Logger().Error("cron: failed to rename durable jobs file", zap.Error(err))
+	}
 }
 
 func generateID() string {
 	b := make([]byte, 4)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand.Read failed: " + err.Error())
+	}
 	return hex.EncodeToString(b)
 }

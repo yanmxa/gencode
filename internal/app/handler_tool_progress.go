@@ -15,7 +15,10 @@ func (m *model) handleTaskProgressTick() tea.Cmd {
 	return m.output.HandleProgressTick(m.hasRunningTaskTools())
 }
 
-func (m *model) hasRunningToolExecution() bool {
+// hasInFlightToolExecution returns true if any tool call goroutines are still
+// running. Unlike isToolPhaseActive, this checks actual goroutine liveness
+// (including parallel execution state), not just whether the phase is pending.
+func (m *model) hasInFlightToolExecution() bool {
 	if m.tool.PendingCalls == nil {
 		return false
 	}

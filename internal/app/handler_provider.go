@@ -5,8 +5,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/app/providerui"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 )
@@ -62,7 +64,7 @@ func (m *model) handleModelSelected(msg providerui.ModelSelectedMsg) tea.Cmd {
 		AuthMethod: msg.AuthMethod,
 	}
 	if m.hookEngine != nil {
-		m.hookEngine.SetLLMProvider(m.provider.LLM, msg.ModelID)
+		m.hookEngine.SetLLMCompleter(buildLLMCompleter(m.provider.LLM), msg.ModelID)
 	}
 	ctx := context.Background()
 	m.refreshProviderConnection(ctx, provider.Provider(msg.ProviderName), msg.AuthMethod)
@@ -75,11 +77,14 @@ func (m *model) handleModelSelected(msg providerui.ModelSelectedMsg) tea.Cmd {
 func (m *model) refreshProviderConnection(ctx context.Context, providerName provider.Provider, authMethod provider.AuthMethod) {
 	p, err := provider.GetProvider(ctx, providerName, authMethod)
 	if err != nil {
+		log.Logger().Warn("failed to refresh provider connection",
+			zap.String("provider", string(providerName)),
+			zap.Error(err))
 		return
 	}
 	m.provider.LLM = p
 	if m.hookEngine != nil {
-		m.hookEngine.SetLLMProvider(p, m.getModelID())
+		m.hookEngine.SetLLMCompleter(buildLLMCompleter(p), m.getModelID())
 	}
 	m.reconfigureAgentTool()
 }

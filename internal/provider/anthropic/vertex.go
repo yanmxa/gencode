@@ -2,7 +2,6 @@ package anthropic
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -99,21 +98,22 @@ type VertexClient struct {
 
 // ListModels tries the Anthropic Models API first, falling back to a static
 // list with a warning error when the API is unavailable (e.g. 404 on Vertex AI).
+// A failed fetch does not permanently cache the fallback — subsequent calls retry.
 func (c *VertexClient) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
-	if len(c.cachedModels) > 0 {
+	c.modelsMu.Lock()
+	defer c.modelsMu.Unlock()
+
+	if c.cachedModels != nil {
 		return c.cachedModels, nil
 	}
 
-	// Try dynamic fetching first
 	models, err := c.fetchModels(ctx)
 	if err == nil {
 		c.cachedModels = models
-		return models, nil
+		return c.cachedModels, nil
 	}
-
-	// Fall back to static model list with warning
-	c.cachedModels = vertexModels
-	return vertexModels, fmt.Errorf("using static models")
+	// Return static fallback but don't cache it so we retry next time
+	return vertexModels, nil
 }
 
 // NewVertexClient creates a new Anthropic client using Vertex AI authentication

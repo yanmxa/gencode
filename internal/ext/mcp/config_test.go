@@ -158,7 +158,7 @@ func TestServerConfig_GetType(t *testing.T) {
 	}
 }
 
-func TestParseMCPToolName(t *testing.T) {
+func Test_parseMCPToolName(t *testing.T) {
 	tests := []struct {
 		name       string
 		input      string
@@ -199,16 +199,16 @@ func TestParseMCPToolName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server, tool, ok := ParseMCPToolName(tt.input)
+			server, tool, ok := parseMCPToolName(tt.input)
 			if ok != tt.wantOk {
-				t.Errorf("ParseMCPToolName() ok = %v, want %v", ok, tt.wantOk)
+				t.Errorf("parseMCPToolName() ok = %v, want %v", ok, tt.wantOk)
 			}
 			if ok {
 				if server != tt.wantServer {
-					t.Errorf("ParseMCPToolName() server = %v, want %v", server, tt.wantServer)
+					t.Errorf("parseMCPToolName() server = %v, want %v", server, tt.wantServer)
 				}
 				if tool != tt.wantTool {
-					t.Errorf("ParseMCPToolName() tool = %v, want %v", tool, tt.wantTool)
+					t.Errorf("parseMCPToolName() tool = %v, want %v", tool, tt.wantTool)
 				}
 			}
 		})

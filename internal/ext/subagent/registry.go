@@ -219,20 +219,6 @@ func (r *Registry) isDisabledInternal(name string) bool {
 	return false
 }
 
-// ListEnabled returns only enabled agent configurations
-func (r *Registry) ListEnabled() []*AgentConfig {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	configs := make([]*AgentConfig, 0, len(r.agents))
-	for name, config := range r.agents {
-		if !r.isDisabledInternal(name) {
-			configs = append(configs, config)
-		}
-	}
-	return configs
-}
-
 // GetAgentsSection returns a formatted string describing available agents.
 // This is used to inform the LLM about what agents are available.
 // Only includes enabled agents.

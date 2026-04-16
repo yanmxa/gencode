@@ -5,9 +5,11 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/app/sessionui"
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -97,6 +99,8 @@ func (m *model) loadSession(id string) error {
 		return err
 	}
 
+	// Reset task storage dir before restoring so initTaskStorage picks up the new session
+	tracker.DefaultStore.SetStorageDir("")
 	m.restoreSessionData(sess)
 
 	// Reset tasks if none in session (switching sessions at runtime).
@@ -151,6 +155,7 @@ func (m *model) initTaskStorage() {
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
+		log.Logger().Warn("failed to get home directory for task storage", zap.Error(err))
 		return
 	}
 

@@ -13,45 +13,40 @@ import (
 )
 
 const (
-	// DefaultMaxVisibleLines is the default number of lines to show when collapsed
-	DefaultMaxVisibleLines = 20
+	// defaultMaxVisibleLines is the default number of lines to show when collapsed
+	defaultMaxVisibleLines = 20
 )
 
-// DiffPreview renders a diff preview with expand/collapse functionality
-type DiffPreview struct {
+// diffPreview renders a diff preview with expand/collapse functionality
+type diffPreview struct {
 	diffMeta   *perm.DiffMetadata
 	filePath   string
 	expanded   bool
 	maxVisible int
 }
 
-// NewDiffPreview creates a new DiffPreview instance
-func NewDiffPreview(diffMeta *perm.DiffMetadata, filePath string) *DiffPreview {
-	return &DiffPreview{
+// NewdiffPreview creates a new diffPreview instance
+func newDiffPreview(diffMeta *perm.DiffMetadata, filePath string) *diffPreview {
+	return &diffPreview{
 		diffMeta:   diffMeta,
 		filePath:   filePath,
 		expanded:   false,
-		maxVisible: DefaultMaxVisibleLines,
+		maxVisible: defaultMaxVisibleLines,
 	}
 }
 
-// ToggleExpand toggles between expanded and collapsed view
-func (d *DiffPreview) ToggleExpand() {
+// toggleExpand toggles between expanded and collapsed view
+func (d *diffPreview) toggleExpand() {
 	d.expanded = !d.expanded
 }
 
-// IsExpanded returns whether the preview is expanded
-func (d *DiffPreview) IsExpanded() bool {
+// isExpanded returns whether the preview is expanded
+func (d *diffPreview) isExpanded() bool {
 	return d.expanded
 }
 
-// DiffMeta returns the diff metadata
-func (d *DiffPreview) DiffMeta() *perm.DiffMetadata {
-	return d.diffMeta
-}
-
-// SetMaxVisible sets the maximum visible lines when collapsed
-func (d *DiffPreview) SetMaxVisible(n int) {
+// setMaxVisible sets the maximum visible lines when collapsed
+func (d *diffPreview) setMaxVisible(n int) {
 	d.maxVisible = n
 }
 
@@ -91,8 +86,8 @@ func getDiffHeaderStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
 }
 
-// Render renders the diff preview
-func (d *DiffPreview) Render(width int) string {
+// render renders the diff preview
+func (d *diffPreview) render(width int) string {
 	if d.diffMeta == nil || len(d.diffMeta.Lines) == 0 {
 		return getDiffContextStyle().Render("  (no changes)")
 	}
@@ -107,7 +102,7 @@ func (d *DiffPreview) Render(width int) string {
 }
 
 // renderFileHeader renders a file path header with summary info
-func (d *DiffPreview) renderFileHeader(label string) string {
+func (d *diffPreview) renderFileHeader(label string) string {
 	name := d.filePath
 	if name != "" {
 		name = filepath.Base(name)
@@ -119,7 +114,7 @@ func (d *DiffPreview) renderFileHeader(label string) string {
 }
 
 // renderNewFilePreview renders a new file in simple single-column format
-func (d *DiffPreview) renderNewFilePreview(width int) string {
+func (d *diffPreview) renderNewFilePreview(width int) string {
 	var sb strings.Builder
 
 	// File header
@@ -165,7 +160,7 @@ func (d *DiffPreview) renderNewFilePreview(width int) string {
 // Removed lines shown with " - " indicator and red/error background.
 // Added lines shown with " + " indicator and green/success background.
 // Context lines shown with dim text, no background.
-func (d *DiffPreview) renderUnifiedDiff(width int) string {
+func (d *diffPreview) renderUnifiedDiff(width int) string {
 	var sb strings.Builder
 
 	// File header with summary

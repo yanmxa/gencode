@@ -28,12 +28,12 @@ func (c *Caller) CallTool(ctx context.Context, fullName string, arguments map[st
 		return "", false, err
 	}
 
-	content := extractContent(result.Content)
+	content := ExtractContent(result.Content)
 	return content, result.IsError, nil
 }
 
-// extractContent extracts text content from MCP tool result.
-func extractContent(contents []ToolResultContent) string {
+// ExtractContent extracts text content from MCP tool result.
+func ExtractContent(contents []ToolResultContent) string {
 	var parts []string
 	for _, c := range contents {
 		if c.Text != "" {

@@ -13,7 +13,7 @@ func ConvertToEntries(messages []message.ChatMessage) []Entry {
 			continue
 		}
 
-		uuid := GenerateShortID()
+		uuid := generateShortID()
 
 		var parentUuid *string
 		if prevUUID != "" {
@@ -24,7 +24,7 @@ func ConvertToEntries(messages []message.ChatMessage) []Entry {
 		entry := Entry{
 			UUID:       uuid,
 			ParentUuid: parentUuid,
-			Version:    AppVersion,
+			Version:    GetAppVersion(),
 		}
 
 		switch msg.Role {
@@ -33,12 +33,12 @@ func ConvertToEntries(messages []message.ChatMessage) []Entry {
 			if msg.ToolResult != nil {
 				entry.Message = &EntryMessage{
 					Role:    "user",
-					Content: ToolResultToBlocks(msg.ToolResult),
+					Content: toolResultToBlocks(msg.ToolResult),
 				}
 			} else {
 				entry.Message = &EntryMessage{
 					Role:    "user",
-					Content: UserContentToBlocks(msg.Content, msg.DisplayContent, msg.Images),
+					Content: userContentToBlocks(msg.Content, msg.DisplayContent, msg.Images),
 				}
 			}
 
@@ -46,7 +46,7 @@ func ConvertToEntries(messages []message.ChatMessage) []Entry {
 			entry.Type = EntryAssistant
 			entry.Message = &EntryMessage{
 				Role:    "assistant",
-				Content: AssistantContentToBlocks(msg.Content, msg.Thinking, msg.ThinkingSignature, msg.ToolCalls),
+				Content: assistantContentToBlocks(msg.Content, msg.Thinking, msg.ThinkingSignature, msg.ToolCalls),
 			}
 
 		case message.RoleToolResult:
@@ -54,7 +54,7 @@ func ConvertToEntries(messages []message.ChatMessage) []Entry {
 			if msg.ToolResult != nil {
 				entry.Message = &EntryMessage{
 					Role:    "user",
-					Content: ToolResultToBlocks(msg.ToolResult),
+					Content: toolResultToBlocks(msg.ToolResult),
 				}
 			}
 

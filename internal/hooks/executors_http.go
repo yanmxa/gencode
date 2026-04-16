@@ -52,7 +52,8 @@ func (e *Engine) executeHTTPHook(ctx context.Context, hookCmd config.HookCmd, in
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	const maxHookResponseSize = 10 * 1024 * 1024 // 10MB
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxHookResponseSize))
 	if err != nil {
 		outcome.Error = err
 		return outcome

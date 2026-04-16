@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/yanmxa/gencode/internal/message"
 )
 
 func TestToolIDSanitizer_ValidIDPassthrough(t *testing.T) {
@@ -134,5 +135,84 @@ func TestMergeConsecutiveMessages_Single(t *testing.T) {
 	merged := mergeConsecutiveMessages(msgs)
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(merged))
+	}
+}
+
+func TestSanitizeToolResults_OrphanedToolResult(t *testing.T) {
+	msgs := []message.Message{
+		{Role: message.RoleAssistant, Content: "hi", ToolCalls: []message.ToolCall{{ID: "tc_1", Name: "Read"}}},
+		{Role: message.RoleUser, ToolResult: &message.ToolResult{ToolCallID: "tc_1", Content: "ok"}},
+		{Role: message.RoleUser, ToolResult: &message.ToolResult{ToolCallID: "tc_stale", Content: "stale"}},
+	}
+
+	result := sanitizeToolResults(msgs)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(result))
+	}
+}
+
+func TestSanitizeToolResults_OrphanedToolUse(t *testing.T) {
+	// Assistant has 3 tool_use blocks, but only 2 have matching tool_results.
+	// The orphaned tool_use should be stripped from the assistant message.
+	msgs := []message.Message{
+		{Role: message.RoleAssistant, Content: "running tools", ToolCalls: []message.ToolCall{
+			{ID: "tc_1", Name: "Read"},
+			{ID: "tc_2", Name: "Write"},
+			{ID: "tc_3", Name: "Bash"},
+		}},
+		{Role: message.RoleUser, ToolResult: &message.ToolResult{ToolCallID: "tc_1", Content: "ok"}},
+		{Role: message.RoleUser, ToolResult: &message.ToolResult{ToolCallID: "tc_2", Content: "ok"}},
+		// tc_3 has no result
+	}
+
+	result := sanitizeToolResults(msgs)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(result))
+	}
+	// The assistant message should only have 2 tool_calls now
+	if len(result[0].ToolCalls) != 2 {
+		t.Fatalf("expected 2 tool_calls after sanitization, got %d", len(result[0].ToolCalls))
+	}
+	if result[0].ToolCalls[0].ID != "tc_1" || result[0].ToolCalls[1].ID != "tc_2" {
+		t.Fatalf("unexpected tool call IDs: %v", result[0].ToolCalls)
+	}
+}
+
+func TestSanitizeToolResults_AllPaired(t *testing.T) {
+	msgs := []message.Message{
+		{Role: message.RoleUser, Content: "hello"},
+		{Role: message.RoleAssistant, Content: "let me check", ToolCalls: []message.ToolCall{
+			{ID: "tc_1", Name: "Read"},
+		}},
+		{Role: message.RoleUser, ToolResult: &message.ToolResult{ToolCallID: "tc_1", Content: "file content"}},
+		{Role: message.RoleAssistant, Content: "done"},
+	}
+
+	result := sanitizeToolResults(msgs)
+	if len(result) != 4 {
+		t.Fatalf("expected 4 messages (no change), got %d", len(result))
+	}
+	if len(result[1].ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool_call preserved, got %d", len(result[1].ToolCalls))
+	}
+}
+
+func TestSanitizeToolResults_AllToolUsesOrphaned(t *testing.T) {
+	// Assistant message with tool_uses but no tool_results at all.
+	msgs := []message.Message{
+		{Role: message.RoleAssistant, Content: "running", ToolCalls: []message.ToolCall{
+			{ID: "tc_1", Name: "Read"},
+			{ID: "tc_2", Name: "Write"},
+		}},
+		{Role: message.RoleUser, Content: "user interrupted"},
+	}
+
+	result := sanitizeToolResults(msgs)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(result))
+	}
+	// All tool_calls should be stripped
+	if len(result[0].ToolCalls) != 0 {
+		t.Fatalf("expected 0 tool_calls after sanitization, got %d", len(result[0].ToolCalls))
 	}
 }

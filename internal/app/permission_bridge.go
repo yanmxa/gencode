@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -12,9 +11,9 @@ import (
 	"github.com/yanmxa/gencode/internal/tool/perm"
 )
 
-// PermBridgeRequest holds a pending permission request from the core.Agent
+// permBridgeRequest holds a pending permission request from the core.Agent
 // goroutine, along with a channel to send the response back.
-type PermBridgeRequest struct {
+type permBridgeRequest struct {
 	ToolCall core.ToolCall
 	Request  *perm.PermissionRequest
 	Response chan permBridgeResponse
@@ -25,25 +24,25 @@ type permBridgeResponse struct {
 	Reason string
 }
 
-// PermissionBridge connects the core.Agent's synchronous PermissionFunc
+// permissionBridge connects the core.Agent's synchronous PermissionFunc
 // with the TUI's asynchronous approval dialog. The agent goroutine blocks
 // on the response channel while the TUI shows the approval prompt.
-type PermissionBridge struct {
-	mu        sync.Mutex
-	pending   *PermBridgeRequest
+type permissionBridge struct {
+	requests   chan *permBridgeRequest
 	settingsFn func() *config.Settings
 	sessionFn  func() *config.SessionPermissions
 	cwdFn      func() string
 }
 
-// NewPermissionBridge creates a PermissionBridge that checks permissions using
+// newPermissionBridge creates a permissionBridge that checks permissions using
 // the provided accessor functions.
-func NewPermissionBridge(
+func newPermissionBridge(
 	settingsFn func() *config.Settings,
 	sessionFn func() *config.SessionPermissions,
 	cwdFn func() string,
-) *PermissionBridge {
-	return &PermissionBridge{
+) *permissionBridge {
+	return &permissionBridge{
+		requests:   make(chan *permBridgeRequest, 1),
 		settingsFn: settingsFn,
 		sessionFn:  sessionFn,
 		cwdFn:      cwdFn,
@@ -52,7 +51,7 @@ func NewPermissionBridge(
 
 // PermissionFunc returns a core.PermissionFunc that blocks the agent goroutine
 // when user confirmation is needed. Allow and Deny decisions return immediately.
-func (pb *PermissionBridge) PermissionFunc() core.PermissionFunc {
+func (pb *permissionBridge) PermissionFunc() core.PermissionFunc {
 	return func(ctx context.Context, tc core.ToolCall) (bool, string) {
 		settings := pb.settingsFn()
 		if settings == nil {
@@ -69,7 +68,7 @@ func (pb *PermissionBridge) PermissionFunc() core.PermissionFunc {
 		}
 
 		// Ask — block the agent goroutine and wait for TUI response
-		req := &PermBridgeRequest{
+		req := &permBridgeRequest{
 			ToolCall: tc,
 			Request: &perm.PermissionRequest{
 				ToolName:    tc.Name,
@@ -78,9 +77,11 @@ func (pb *PermissionBridge) PermissionFunc() core.PermissionFunc {
 			Response: make(chan permBridgeResponse, 1),
 		}
 
-		pb.mu.Lock()
-		pb.pending = req
-		pb.mu.Unlock()
+		select {
+		case pb.requests <- req:
+		case <-ctx.Done():
+			return false, "cancelled"
+		}
 
 		select {
 		case <-ctx.Done():
@@ -91,25 +92,27 @@ func (pb *PermissionBridge) PermissionFunc() core.PermissionFunc {
 	}
 }
 
-// PollCmd returns a tea.Cmd that polls for pending permission requests
-// and emits them as agentPermissionMsg for the TUI to handle.
-func (pb *PermissionBridge) PollCmd() tea.Cmd {
+// PollCmd returns a tea.Cmd that blocks until a permission request arrives
+// from the agent goroutine, then emits it as an agentPermissionMsg.
+// Each successful delivery re-schedules itself to handle subsequent requests.
+func (pb *permissionBridge) PollCmd() tea.Cmd {
 	return func() tea.Msg {
-		pb.mu.Lock()
-		req := pb.pending
-		pb.pending = nil
-		pb.mu.Unlock()
-
-		if req != nil {
-			return agentPermissionMsg{Request: req}
+		req, ok := <-pb.requests
+		if !ok {
+			return nil // bridge closed
 		}
-		return nil
+		return agentPermissionMsg{Request: req}
 	}
+}
+
+// Close shuts down the bridge, unblocking any pending PollCmd.
+func (pb *permissionBridge) Close() {
+	close(pb.requests)
 }
 
 // agentPermissionMsg carries a permission request from the bridge to the TUI.
 type agentPermissionMsg struct {
-	Request *PermBridgeRequest
+	Request *permBridgeRequest
 }
 
 // handlePermBridgeResponse sends the user's approval response back to the
@@ -142,9 +145,6 @@ func (m *model) handlePermBridgeResponse(msg appapproval.ResponseMsg) tea.Cmd {
 	default:
 	}
 
-	if msg.Approved {
-		// Resume polling for more permission requests
-		return m.agentSess.permBridge.PollCmd()
-	}
-	return nil
+	// Always resume polling for subsequent permission requests
+	return m.agentSess.permBridge.PollCmd()
 }

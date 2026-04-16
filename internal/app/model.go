@@ -27,11 +27,11 @@ import (
 	"github.com/yanmxa/gencode/internal/app/skillui"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/tool/tasktools"
 	"github.com/yanmxa/gencode/internal/tracker"
 )
@@ -94,14 +94,13 @@ type model struct {
 	fileWatcher       *fileWatcher
 	asyncHookQueue    *asyncHookQueue
 	taskNotifications *taskNotificationQueue
-	loop              *runtime.Loop
-	runtime           conversationRuntime
+	asyncOps          conversationRuntime
 	promptSuggestion  promptSuggestionState
 	fileCache         *filecache.Cache
 
 	// core.Agent session (Phase 3 migration: TUI → core.Agent)
 	agentSess         *agentSession
-	pendingPermBridge *PermBridgeRequest
+	pendingPermBridge *permBridgeRequest
 }
 
 // --- Constructor and Init ---
@@ -132,8 +131,31 @@ func newModel(opts config.RunOptions) (model, error) {
 	if err := m.applyRunOptions(opts); err != nil {
 		return model{}, err
 	}
-	m.initializeTaskStorageFromEnv()
 	m.initTaskStorage()
+
+	// Fire SessionStart hook here (not in Init()) because Init() uses a value
+	// receiver and any mutations (AdditionalContext, InitialUserMessage, WatchPaths)
+	// would be silently lost on the copy.
+	if m.hookEngine != nil {
+		m.hookEngine.ExecuteAsync(core.Setup, hooks.HookInput{
+			Trigger: "init",
+		})
+		source := "startup"
+		if m.session.CurrentID != "" {
+			source = "resume"
+		}
+		outcome := m.hookEngine.Execute(context.Background(), core.SessionStart, hooks.HookInput{
+			Source: source,
+			Model:  m.getModelID(),
+		})
+		m.applyRuntimeHookOutcome(outcome)
+		if outcome.AdditionalContext != "" {
+			m.conv.Append(message.ChatMessage{
+				Role:    message.RoleUser,
+				Content: outcome.AdditionalContext,
+			})
+		}
+	}
 
 	return m, nil
 }
@@ -147,7 +169,7 @@ func (m *model) lastAssistantContent() string {
 // Uses Execute (not ExecuteAsync) to ensure the hook completes before the process exits.
 func (m *model) fireSessionEnd(reason string) {
 	if m.hookEngine != nil {
-		m.hookEngine.Execute(context.Background(), hooks.SessionEnd, hooks.HookInput{
+		m.hookEngine.Execute(context.Background(), core.SessionEnd, hooks.HookInput{
 			Reason: reason,
 		})
 		if m.fileWatcher != nil {
@@ -158,31 +180,9 @@ func (m *model) fireSessionEnd(reason string) {
 }
 
 func (m model) Init() tea.Cmd {
-	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.Setup, hooks.HookInput{
-			Trigger: "init",
-		})
-		source := "startup"
-		if m.session.CurrentID != "" {
-			source = "resume"
-		}
-		outcome := m.hookEngine.Execute(context.Background(), hooks.SessionStart, hooks.HookInput{
-			Source: source,
-			Model:  m.getModelID(),
-		})
-		m.applyRuntimeHookOutcome(outcome)
-		if outcome.AdditionalContext != "" {
-			m.conv.Append(message.ChatMessage{
-				Role:    message.RoleUser,
-				Content: outcome.AdditionalContext,
-			})
-		}
-	}
-
 	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, mcpui.AutoConnect(), triggerCronTickNow(), startCronTicker(), startAsyncHookTicker(), startTaskNotificationTicker()}
 	if m.initialPrompt != "" {
 		prompt := m.initialPrompt
-		m.initialPrompt = ""
 		cmds = append(cmds, func() tea.Msg { return initialPromptMsg(prompt) })
 	}
 	return tea.Batch(cmds...)
@@ -248,16 +248,6 @@ func (m *model) agentToolOpts() []agentToolOption {
 		opts = append(opts, withAgentMCP(m.mcp.Registry.GetToolSchemas, m.mcp.Registry))
 	}
 	return opts
-}
-
-func (m *model) configureLoop(extra []string) {
-	m.ensureMemoryContextLoaded()
-	m.loop.Client = m.buildLoopClient()
-	m.loop.System = m.buildLoopSystem(extra, m.loop.Client)
-	m.loop.Tool = m.buildLoopToolSet()
-	m.loop.Permission = nil
-	m.loop.Hooks = m.hookEngine
-	m.loop.Cwd = m.cwd
 }
 
 func (m *model) ensureMemoryContextLoaded() {

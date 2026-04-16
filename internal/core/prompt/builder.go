@@ -17,9 +17,10 @@ import (
 var promptFS embed.FS
 
 var (
-	cachedBase     string
-	cachedTools    string
-	cachedPlanMode string
+	cachedBase        string
+	cachedTools       string
+	cachedPlanMode    string
+	cachedCoordinator string
 )
 
 func init() {
@@ -31,6 +32,12 @@ func init() {
 		load("tools-tasks.txt"),
 	})
 	cachedPlanMode = load("planmode.txt")
+	cachedCoordinator = load("coordinator.txt")
+}
+
+// CoordinatorGuidance returns the coordinator prompt for the main session.
+func CoordinatorGuidance() string {
+	return cachedCoordinator
 }
 
 // Config holds all inputs needed to build a layered core.System.
@@ -167,7 +174,7 @@ func providerOrGeneric(provider string) string {
 }
 
 func join(parts []string) string {
-	var filtered []string
+	filtered := make([]string, 0, len(parts))
 	for _, p := range parts {
 		if strings.TrimSpace(p) != "" {
 			filtered = append(filtered, p)

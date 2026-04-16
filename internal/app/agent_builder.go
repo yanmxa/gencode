@@ -13,6 +13,7 @@ import (
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/messageconv"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -20,11 +21,11 @@ import (
 // agentSession holds the running core.Agent and its supporting infrastructure.
 type agentSession struct {
 	agent      core.Agent
-	permBridge *PermissionBridge
+	permBridge *permissionBridge
 	cancel     context.CancelFunc
 }
 
-// buildCoreAgent creates a core.Agent and PermissionBridge from the model's
+// buildCoreAgent creates a core.Agent and permissionBridge from the model's
 // current state. The agent is not started — call startAgentLoop() for that.
 func (m *model) buildCoreAgent() (*agentSession, error) {
 	if m.provider.LLM == nil {
@@ -55,7 +56,7 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 	coreHooks := hooks.AsCoreHooks(m.hookEngine)
 
 	// Permission bridge — blocking PermissionFunc with TUI approval
-	permBridge := NewPermissionBridge(
+	permBridge := newPermissionBridge(
 		func() *config.Settings { return m.settings },
 		func() *config.SessionPermissions { return m.mode.SessionPermissions },
 		func() string { return m.cwd },
@@ -104,6 +105,9 @@ func (sess *agentSession) stop() {
 		sess.cancel()
 		sess.cancel = nil
 	}
+	if sess.permBridge != nil {
+		sess.permBridge.Close()
+	}
 	// Send stop signal if inbox is still open
 	if sess.agent != nil {
 		select {
@@ -135,7 +139,7 @@ func (m *model) ensureAgentSession() error {
 	if len(m.conv.Messages) > 0 {
 		var coreMessages []core.Message
 		for _, msg := range m.conv.ConvertToProvider() {
-			coreMessages = append(coreMessages, legacyMessageToCore(msg))
+			coreMessages = append(coreMessages, messageconv.ToCore(msg))
 		}
 		sess.agent.SetMessages(coreMessages)
 	}

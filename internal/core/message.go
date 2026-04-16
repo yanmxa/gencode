@@ -4,11 +4,9 @@ package core
 type Role string
 
 const (
-	RoleUser       Role = "user"
-	RoleAssistant  Role = "assistant"
-	RoleTool       Role = "tool"
-	RoleToolResult Role = "tool_result"
-	RoleNotice     Role = "notice"
+	RoleUser      Role = "user"
+	RoleAssistant Role = "assistant"
+	RoleTool      Role = "tool"
 )
 
 // ToolCall is the LLM's request to execute a tool.
@@ -47,9 +45,7 @@ type Message struct {
 type Signal string
 
 const (
-	SigStop   Signal = "stop"
-	SigPause  Signal = "pause"
-	SigResume Signal = "resume"
+	SigStop Signal = "stop"
 )
 
 // Image represents an image attachment.

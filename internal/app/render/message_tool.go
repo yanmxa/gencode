@@ -45,7 +45,7 @@ func RenderToolCalls(params ToolCallsParams) string {
 			continue
 		}
 		if tool.IsAgentToolName(tc.Name) {
-			label := FormatAgentLabel(tc.Input)
+			label := formatAgentLabel(tc.Input)
 			_, hasResult := params.ResultMap[tc.ID]
 			if hasResult {
 				sb.WriteString(renderToolLine(label, params.Width) + "\n")
@@ -67,10 +67,10 @@ func RenderToolCalls(params ToolCallsParams) string {
 				for k, v := range p {
 					if s, ok := v.(string); ok {
 						if len(s) > 80 {
-							sb.WriteString(ToolResultExpandedStyle.Render(fmt.Sprintf("%s:", k)) + "\n")
-							sb.WriteString(ToolResultExpandedStyle.Render(s) + "\n")
+							sb.WriteString(toolResultExpandedStyle.Render(fmt.Sprintf("%s:", k)) + "\n")
+							sb.WriteString(toolResultExpandedStyle.Render(s) + "\n")
 						} else {
-							sb.WriteString(ToolResultExpandedStyle.Render(fmt.Sprintf("%s: %s", k, s)) + "\n")
+							sb.WriteString(toolResultExpandedStyle.Render(fmt.Sprintf("%s: %s", k, s)) + "\n")
 						}
 					}
 				}
@@ -81,7 +81,7 @@ func RenderToolCalls(params ToolCallsParams) string {
 				args := extractTaskGetDisplay(tc.Input, params.TaskOwnerMap)
 				sb.WriteString(renderToolLineWithIcon(fmt.Sprintf("%s(%s)", tc.Name, args), params.Width, icon) + "\n")
 			} else {
-				args := ExtractToolArgs(tc.Input)
+				args := extractToolArgs(tc.Input)
 				sb.WriteString(renderToolLineWithIcon(fmt.Sprintf("%s(%s)", tc.Name, args), params.Width, icon) + "\n")
 			}
 		}
@@ -90,7 +90,7 @@ func RenderToolCalls(params ToolCallsParams) string {
 			resultData.ToolInput = tc.Input
 			sb.WriteString(RenderToolResultInline(resultData, params.MDRenderer))
 		} else if params.ParallelMode && tool.IsAgentToolName(tc.Name) {
-			sb.WriteString(RenderTaskProgressInline(tc, params.PendingCalls, params.ParallelResults, params.TaskProgress))
+			sb.WriteString(renderTaskProgressInline(tc, params.PendingCalls, params.ParallelResults, params.TaskProgress))
 		}
 	}
 

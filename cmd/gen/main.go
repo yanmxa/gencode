@@ -44,7 +44,7 @@ func init() {
 	_ = log.Init()
 
 	// Set app version for session entries.
-	session.AppVersion = version
+	session.SetAppVersion(version)
 
 	// Register flags
 	rootCmd.Flags().StringVarP(&cliOpts.print, "print", "p", "", "Non-interactive print mode with prompt")

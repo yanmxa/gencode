@@ -42,11 +42,6 @@ func (p *EnterPlanPrompt) IsActive() bool {
 	return p.active
 }
 
-// GetRequest returns the current request
-func (p *EnterPlanPrompt) GetRequest() *tool.EnterPlanRequest {
-	return p.request
-}
-
 // HandleKeypress handles keyboard input.
 // Returns (cmd, response): cmd for UI updates, response when user makes a decision.
 func (p *EnterPlanPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *EnterPlanResponseMsg) {
@@ -137,7 +132,3 @@ func (p *EnterPlanPrompt) Render() string {
 	return sb.String()
 }
 
-// SetWidth updates the prompt width
-func (p *EnterPlanPrompt) SetWidth(width int) {
-	p.width = width
-}

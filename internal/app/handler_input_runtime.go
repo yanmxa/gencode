@@ -21,6 +21,8 @@ func (m *model) handleStreamCancel() tea.Cmd {
 		m.conv.Stream.Cancel()
 	}
 	m.conv.Stream.Stop()
+	// Reset per-turn thinking override so it doesn't leak into subsequent turns
+	m.provider.ThinkingOverride = provider.ThinkingOff
 	m.cancelPendingToolCalls()
 	m.conv.MarkLastInterrupted()
 
@@ -42,7 +44,7 @@ func (m *model) cancelPendingToolCalls() {
 		m.tool.Cancel()
 	}
 
-	if m.tool.PendingCalls != nil {
+	if m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls) {
 		toolCalls = m.tool.PendingCalls[m.tool.CurrentIdx:]
 		m.tool.Reset()
 	} else if len(m.conv.Messages) > 0 {
@@ -59,6 +61,27 @@ func (m *model) cancelPendingToolCalls() {
 			ToolResult: &message.ToolResult{
 				ToolCallID: tc.ID,
 				Content:    pendingToolCancellationContent(tc),
+				IsError:    true,
+			},
+		})
+	}
+}
+
+// cancelRemainingToolCalls adds cancellation tool_result messages for pending
+// tool calls starting at startIdx. This ensures every tool_use block in the
+// assistant message has a corresponding tool_result so the API doesn't reject
+// the request with "tool_use ids were found without tool_result blocks".
+func (m *model) cancelRemainingToolCalls(startIdx int) {
+	if m.tool.PendingCalls == nil || startIdx >= len(m.tool.PendingCalls) {
+		return
+	}
+	for _, tc := range m.tool.PendingCalls[startIdx:] {
+		m.conv.Append(message.ChatMessage{
+			Role:     message.RoleUser,
+			ToolName: tc.Name,
+			ToolResult: &message.ToolResult{
+				ToolCallID: tc.ID,
+				Content:    "Tool execution skipped.",
 				IsError:    true,
 			},
 		})

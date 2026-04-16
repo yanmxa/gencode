@@ -6,14 +6,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/provider/search"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
-// WebSearchTool searches the web for information
-type WebSearchTool struct{}
+// WebSearchTool searches the web for information.
+// SearchProviderGetter returns the configured search provider name at runtime.
+// If nil or returns empty, the default provider is used.
+type WebSearchTool struct {
+	SearchProviderGetter func() string
+}
 
 func (t *WebSearchTool) Name() string        { return "WebSearch" }
 func (t *WebSearchTool) Description() string { return "Search the web for up-to-date information" }
@@ -46,17 +49,13 @@ func (t *WebSearchTool) Execute(ctx context.Context, params map[string]any, cwd 
 		}
 	}
 
-	// Get the configured search provider from store
+	// Get the configured search provider
 	var searchProvider search.Provider
-	store, err := provider.NewStore()
-	if err == nil {
-		providerName := store.GetSearchProvider()
-		if providerName != "" {
-			searchProvider = search.CreateProvider(search.ProviderName(providerName))
+	if t.SearchProviderGetter != nil {
+		if name := t.SearchProviderGetter(); name != "" {
+			searchProvider = search.CreateProvider(search.ProviderName(name))
 		}
 	}
-
-	// Use default provider if none configured
 	if searchProvider == nil {
 		searchProvider = search.GetDefaultProvider()
 	}
@@ -100,6 +99,17 @@ func (t *WebSearchTool) Execute(ctx context.Context, params map[string]any, cwd 
 			ItemCount: len(results),
 			Duration:  duration,
 		},
+	}
+}
+
+// SetSearchProviderGetter configures the provider name getter on the registered
+// WebSearchTool instance. Call this from the app layer after the provider store
+// is available.
+func SetSearchProviderGetter(getter func() string) {
+	if t, ok := tool.Get("WebSearch"); ok {
+		if wst, ok := t.(*WebSearchTool); ok {
+			wst.SearchProviderGetter = getter
+		}
 	}
 }
 

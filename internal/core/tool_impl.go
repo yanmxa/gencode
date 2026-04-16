@@ -1,6 +1,9 @@
 package core
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
 
 // toolSet is the default Tools implementation.
 //
@@ -37,6 +40,7 @@ func (s *toolSet) All() []Tool {
 	for _, t := range s.tools {
 		out = append(out, t)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
 	return out
 }
 
@@ -59,23 +63,30 @@ func (s *toolSet) Remove(name string) {
 func (s *toolSet) Schemas() []ToolSchema {
 	s.mu.RLock()
 	if !s.dirty && s.cache != nil {
-		defer s.mu.RUnlock()
-		return s.cache
+		out := make([]ToolSchema, len(s.cache))
+		copy(out, s.cache)
+		s.mu.RUnlock()
+		return out
 	}
 	s.mu.RUnlock()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.dirty && s.cache != nil {
-		return s.cache
+		out := make([]ToolSchema, len(s.cache))
+		copy(out, s.cache)
+		return out
 	}
 	schemas := make([]ToolSchema, 0, len(s.tools))
 	for _, t := range s.tools {
 		schemas = append(schemas, t.Schema())
 	}
+	sort.Slice(schemas, func(i, j int) bool { return schemas[i].Name < schemas[j].Name })
 	s.cache = schemas
 	s.dirty = false
-	return schemas
+	out := make([]ToolSchema, len(schemas))
+	copy(out, schemas)
+	return out
 }
 
 // TODO: Deferred tools — lazy-load rarely used tools (cron, worktree)

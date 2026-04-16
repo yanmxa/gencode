@@ -96,7 +96,15 @@ func (m *MarketplaceManager) Save() error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // Get returns a marketplace by ID.

@@ -26,7 +26,7 @@ func (m *model) buildInternalContinuationRequest(extra []string, prompt string) 
 }
 
 func (m *model) startConversationStream(req streamRequest) tea.Cmd {
-	started := m.runtime.StartStream(req)
+	started := m.asyncOps.StartStream(req)
 	m.conv.Stream.Cancel = started.Cancel
 	m.conv.Stream.Active = true
 	m.conv.Stream.Ch = started.Ch

@@ -10,17 +10,20 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
+	"github.com/yanmxa/gencode/internal/app/render"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
 // updateCompact routes compaction and token limit messages.
 func (m *model) updateCompact(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case appcompact.CompactResultMsg:
+	case appcompact.ResultMsg:
 		c := m.handleCompactResult(msg)
 		return c, true
 	case appcompact.TokenLimitResultMsg:
@@ -62,7 +65,7 @@ func setTokenLimits(m *model, modelID, args string) (string, tea.Cmd, error) {
 	}
 
 	return fmt.Sprintf("Set token limits for %s:\n  Input:  %s tokens\n  Output: %s tokens",
-		modelID, appcompact.FormatTokenCount(inputLimit), appcompact.FormatTokenCount(outputLimit)), nil, nil
+		modelID, render.FormatTokenCount(inputLimit), render.FormatTokenCount(outputLimit)), nil, nil
 }
 
 func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
@@ -78,7 +81,7 @@ func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
 	}
 
 	m.provider.FetchingLimits = true
-	return "", tea.Batch(m.output.Spinner.Tick, m.runtime.FetchTokenLimitsCmd(m.buildTokenLimitFetchRequest())), nil
+	return "", tea.Batch(m.output.Spinner.Tick, m.asyncOps.FetchTokenLimitsCmd(m.buildTokenLimitFetchRequest())), nil
 }
 
 func handleCompactCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
@@ -88,7 +91,7 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	if len(m.conv.Messages) == 0 {
 		return "No active LLM session. Send a message first to initialize the client.", nil, nil
 	}
-	if !canCompactMessages(len(m.conv.Messages)) {
+	if !runtime.CanCompactMessages(len(m.conv.Messages)) {
 		return "Not enough conversation history to compact.", nil, nil
 	}
 	if m.conv.Stream.Active {
@@ -97,7 +100,7 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = strings.TrimSpace(args)
 	m.conv.Compact.Phase = appcompact.PhaseSummarizing
-	return "", tea.Batch(m.output.Spinner.Tick, m.runtime.CompactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
+	return "", tea.Batch(m.output.Spinner.Tick, m.asyncOps.CompactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
 }
 
 func (m *model) getEffectiveInputLimit() int {
@@ -122,12 +125,12 @@ func (m *model) triggerAutoCompact() tea.Cmd {
 	m.conv.Compact.Phase = appcompact.PhaseSummarizing
 	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()))
 	commitCmds := m.commitMessages()
-	commitCmds = append(commitCmds, m.output.Spinner.Tick, m.runtime.CompactCmd(m.buildCompactRequest("", "auto")))
+	commitCmds = append(commitCmds, m.output.Spinner.Tick, m.asyncOps.CompactCmd(m.buildCompactRequest("", "auto")))
 	return tea.Batch(commitCmds...)
 }
 
 // handleCompactResult processes the result of a compaction operation.
-func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
+func (m *model) handleCompactResult(msg appcompact.ResultMsg) tea.Cmd {
 	shouldContinue := m.conv.Compact.AutoContinue
 
 	if msg.Error != nil {
@@ -144,7 +147,6 @@ func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 	// Add a visual boundary marker to scrollback
 	boundaryStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
 	boundary := boundaryStyle.Render(fmt.Sprintf("✻ Conversation compacted — %d messages summarized (scroll up for history)", msg.OriginalCount))
-	scrollbackCmds = append(scrollbackCmds, tea.Println(boundary))
 
 	// Clear messages — the summary lives in transcript state, not in the message list.
 	m.resetAfterCompact()
@@ -167,12 +169,16 @@ func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 
 	// Fire PostCompact hook (fire-and-forget; no blocking semantics)
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.PostCompact, hooks.HookInput{
+		m.hookEngine.ExecuteAsync(core.PostCompact, hooks.HookInput{
 			Trigger: msg.Trigger,
 		})
 	}
 
-	cmds := append(scrollbackCmds, tea.ClearScreen)
+	// Use tea.Sequence for scrollback+boundary+clear to guarantee ordering.
+	// tea.Batch would run them concurrently, potentially clearing the screen
+	// before scrollback commits finish.
+	scrollPart := tea.Sequence(append(scrollbackCmds, tea.Println(boundary), tea.ClearScreen)...)
+	cmds := []tea.Cmd{scrollPart}
 	if shouldContinue {
 		m.conv.Compact.ClearResult()
 		var extra []string
@@ -181,7 +187,7 @@ func (m *model) handleCompactResult(msg appcompact.CompactResultMsg) tea.Cmd {
 		}
 		m.conv.Append(message.ChatMessage{
 			Role:    message.RoleUser,
-			Content: autoCompactResumePrompt,
+			Content: runtime.AutoCompactResumePrompt,
 		})
 		cmds = append(cmds, m.startLLMStream(extra))
 	} else if restoredContext != "" {

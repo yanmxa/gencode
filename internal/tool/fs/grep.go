@@ -13,8 +13,6 @@ import (
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
-const rgBinary = "/usr/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg"
-
 // GrepTool searches for patterns in files using ripgrep.
 type GrepTool struct{}
 
@@ -172,11 +170,8 @@ func (t *GrepTool) Execute(ctx context.Context, params map[string]any, cwd strin
 	}
 }
 
-// findRG returns the path to the rg binary, preferring the bundled vendor binary.
+// findRG returns the path to the rg binary, preferring PATH over the bundled vendor binary.
 func findRG() string {
-	if _, err := exec.LookPath(rgBinary); err == nil {
-		return rgBinary
-	}
 	if path, err := exec.LookPath("rg"); err == nil {
 		return path
 	}

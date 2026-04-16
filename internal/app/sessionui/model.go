@@ -356,7 +356,7 @@ func (s *Model) renderSession(sess *session.SessionMetadata, isSelected bool, sb
 	if maxTitleWidth < 10 {
 		maxTitleWidth = 10
 	}
-	title := selector.TruncateWithEllipsis(displayTitle, maxTitleWidth)
+	title := selector.TruncateText(displayTitle, maxTitleWidth)
 
 	// Right-align metadata by padding between title and metadata.
 	titleLen := len(indent) + len(title)

@@ -12,57 +12,42 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
-// Colors derived from the active theme.
-var (
-	colorError  = theme.CurrentTheme.Error
-	colorMuted   = theme.CurrentTheme.Muted
-	colorAccent  = theme.CurrentTheme.Primary
-	colorWarn    = theme.CurrentTheme.Warning
-	colorMatch   = theme.CurrentTheme.Warning
-	colorBorder  = theme.CurrentTheme.Border
-)
-
-// Lipgloss styles for tool result rendering.
+// Lipgloss styles for tool result rendering, referencing theme directly.
 var (
 	headerStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(colorBorder).
+			BorderForeground(theme.CurrentTheme.Border).
 			Padding(0, 1)
 
 	headerTitleStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(colorAccent)
+				Foreground(theme.CurrentTheme.Primary)
 
 	headerSubtitleStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.Text)
 
 	headerMetaStyle = lipgloss.NewStyle().
-			Foreground(colorMuted)
+			Foreground(theme.CurrentTheme.Muted)
 
 	lineNumberStyle = lipgloss.NewStyle().
-			Foreground(colorMuted).
+			Foreground(theme.CurrentTheme.Muted).
 			Width(5).
 			Align(lipgloss.Right)
 
 	matchStyle = lipgloss.NewStyle().
-			Foreground(colorMatch).
+			Foreground(theme.CurrentTheme.Warning).
 			Bold(true)
 
 	filePathStyle = lipgloss.NewStyle().
-			Foreground(colorAccent)
+			Foreground(theme.CurrentTheme.Primary)
 
 	truncatedStyle = lipgloss.NewStyle().
-			Foreground(colorMuted).
+			Foreground(theme.CurrentTheme.Muted).
 			Italic(true)
 
 	errorStyle = lipgloss.NewStyle().
-			Foreground(colorError)
+			Foreground(theme.CurrentTheme.Error)
 
-	spinnerStyle = lipgloss.NewStyle().
-			Foreground(colorWarn)
-
-	progressMsgStyle = lipgloss.NewStyle().
-				Foreground(colorMuted)
 )
 
 // RenderToolResult renders a complete tool result with header and content.
@@ -113,28 +98,13 @@ func RenderToolResult(result toolresult.ToolResult, width int) string {
 	return sb.String()
 }
 
-// RenderCompactToolResult renders a compact single-line result.
-func RenderCompactToolResult(result toolresult.ToolResult) string {
-	if !result.Success {
-		return toolresult.IconError + " " + errorStyle.Render(result.Error)
-	}
-	return renderCompactHeader(result.Metadata)
-}
-
-// RenderToolProgress renders an in-progress state.
-func RenderToolProgress(spinnerFrame string, message string) string {
-	return fmt.Sprintf("%s %s",
-		spinnerStyle.Render(spinnerFrame),
-		progressMsgStyle.Render(message))
-}
-
 // --- Header rendering ---
 
 func renderHeader(meta toolresult.ResultMetadata, width int) string {
 	title := headerTitleStyle.Render(meta.Title)
 	subtitle := fmt.Sprintf("%s %s", meta.Icon, headerSubtitleStyle.Render(meta.Subtitle))
 
-	metaParts := []string{}
+	metaParts := make([]string, 0, 6)
 	if meta.Size > 0 {
 		metaParts = append(metaParts, toolresult.FormatSize(meta.Size))
 	}
@@ -176,38 +146,11 @@ func renderErrorHeader(toolName, errorMsg string, width int) string {
 
 	errorBoxStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(colorError).
+		BorderForeground(theme.CurrentTheme.Error).
 		Padding(0, 1)
 
 	box := errorBoxStyle.Width(capBoxWidth(width) - 4).Render(content)
 	return box
-}
-
-func renderCompactHeader(meta toolresult.ResultMetadata) string {
-	metaParts := []string{}
-	if meta.Size > 0 {
-		metaParts = append(metaParts, toolresult.FormatSize(meta.Size))
-	}
-	if meta.LineCount > 0 {
-		metaParts = append(metaParts, fmt.Sprintf("%d lines", meta.LineCount))
-	}
-	if meta.ItemCount > 0 {
-		metaParts = append(metaParts, fmt.Sprintf("%d items", meta.ItemCount))
-	}
-	if meta.Duration > 0 {
-		metaParts = append(metaParts, toolresult.FormatDuration(meta.Duration))
-	}
-
-	metaStr := ""
-	if len(metaParts) > 0 {
-		metaStr = headerMetaStyle.Render(fmt.Sprintf(" (%s)", strings.Join(metaParts, " · ")))
-	}
-
-	return fmt.Sprintf("%s %s: %s%s",
-		meta.Icon,
-		headerTitleStyle.Render(meta.Title),
-		headerSubtitleStyle.Render(meta.Subtitle),
-		metaStr)
 }
 
 func capBoxWidth(width int) int {

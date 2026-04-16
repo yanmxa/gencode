@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // agent is the default Agent implementation.
@@ -149,8 +152,11 @@ func (a *agent) thinkAct(ctx context.Context) error {
 			break
 		}
 		if action.Inject != "" {
+			// Fixed name so each turn's injection replaces the previous one.
+			// Hook-injected context is ephemeral — it applies to the next
+			// LLM call only, not accumulated across turns.
 			a.system.Set(Layer{
-				Name: fmt.Sprintf("hook-inject-%d", turns), Priority: 650, Content: action.Inject, Source: Dynamic,
+				Name: "hook-inject", Priority: 650, Content: action.Inject, Source: Dynamic,
 			})
 		}
 
@@ -167,6 +173,7 @@ func (a *agent) thinkAct(ctx context.Context) error {
 		a.append(Message{
 			Role: RoleAssistant, From: a.id,
 			Content: resp.Content, Thinking: resp.Thinking,
+			ThinkingSignature: resp.ThinkingSignature,
 			ToolCalls: resp.ToolCalls,
 		})
 
@@ -246,14 +253,28 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 	}
 	results := make([]output, len(tasks))
 	if len(tasks) == 1 {
-		content, err := tasks[0].tool.Execute(ctx, tasks[0].call.Input)
-		results[0] = output{content, err}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("core/agent: tool %s panicked: %v\n%s", tasks[0].call.Name, r, debug.Stack())
+					results[0] = output{"", fmt.Errorf("tool %s panicked: %v", tasks[0].call.Name, r)}
+				}
+			}()
+			content, err := tasks[0].tool.Execute(ctx, tasks[0].call.Input)
+			results[0] = output{content, err}
+		}()
 	} else {
 		var wg sync.WaitGroup
 		for i, t := range tasks {
 			wg.Add(1)
 			go func(i int, t task) {
 				defer wg.Done()
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("core/agent: tool %s panicked: %v\n%s", t.call.Name, r, debug.Stack())
+						results[i] = output{"", fmt.Errorf("tool %s panicked: %v", t.call.Name, r)}
+					}
+				}()
 				content, err := t.tool.Execute(ctx, t.call.Input)
 				results[i] = output{content, err}
 			}(i, t)
@@ -295,21 +316,28 @@ func (a *agent) streamInfer(ctx context.Context) (*InferResponse, error) {
 	}
 
 	var resp *InferResponse
-	for chunk := range chunks {
-		if chunk.Err != nil {
-			return nil, fmt.Errorf("infer: %w", chunk.Err)
-		}
-		if chunk.Text != "" || chunk.Thinking != "" {
-			a.emit(ctx, ChunkEvent(a.id, chunk))
-		}
-		if chunk.Done {
-			resp = chunk.Response
+	for {
+		select {
+		case chunk, ok := <-chunks:
+			if !ok {
+				if resp == nil {
+					return nil, fmt.Errorf("infer: stream closed without response")
+				}
+				return resp, nil
+			}
+			if chunk.Err != nil {
+				return nil, fmt.Errorf("infer: %w", chunk.Err)
+			}
+			if chunk.Text != "" || chunk.Thinking != "" {
+				a.emit(ctx, ChunkEvent(a.id, chunk))
+			}
+			if chunk.Done {
+				resp = chunk.Response
+			}
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
-	if resp == nil {
-		return nil, fmt.Errorf("infer: stream closed without response")
-	}
-	return resp, nil
 }
 
 // emit sends an event to the outbox for external observation.
@@ -326,14 +354,17 @@ func (a *agent) emit(ctx context.Context, event Event) {
 
 // emitFinal sends a critical event that must be delivered even on ctx cancellation.
 // Used for StopEvent — consumers rely on it for cleanup/session saving.
+// Blocks up to 5 seconds; logs a warning if delivery fails.
 func (a *agent) emitFinal(event Event) {
 	if a.closed.Load() {
 		return
 	}
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
 	select {
 	case a.outbox <- event:
-	default:
-		// outbox full — drop rather than block indefinitely
+	case <-timer.C:
+		log.Printf("core/agent: failed to deliver %s event (outbox full for 5s)", event.Type)
 	}
 }
 
@@ -347,6 +378,7 @@ func (a *agent) fire(ctx context.Context, event Event) Action {
 	}
 	action, err := a.hooks.Fire(ctx, event)
 	if err != nil {
+		log.Printf("core/agent: hook error on %s: %v (treating as block)", event.Type, err)
 		action.Block = true
 		if action.Reason == "" {
 			action.Reason = err.Error()

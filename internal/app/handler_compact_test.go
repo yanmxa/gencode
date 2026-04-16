@@ -71,7 +71,7 @@ func TestHandleTokenLimitCommand_SetAndShowCustomOverride(t *testing.T) {
 	if !strings.Contains(result, "(custom override)") {
 		t.Fatalf("expected custom override marker, got %q", result)
 	}
-	if !strings.Contains(result, "Current usage: 50K tokens (25.0%)") {
+	if !strings.Contains(result, "Current usage: 50.0k tokens (25.0%)") {
 		t.Fatalf("expected usage summary, got %q", result)
 	}
 }
@@ -95,7 +95,7 @@ func TestHandleTokenLimitCommand_UsesCachedModelLimitsWhenNoOverride(t *testing.
 	if cmd != nil {
 		t.Fatal("did not expect fetch cmd when cached limits exist")
 	}
-	if !strings.Contains(result, "Input:  200K tokens") || !strings.Contains(result, "Output: 16K tokens") {
+	if !strings.Contains(result, "Input:  200.0k tokens") || !strings.Contains(result, "Output: 16.0k tokens") {
 		t.Fatalf("unexpected cached limit display: %q", result)
 	}
 	if strings.Contains(result, "custom override") {
@@ -109,7 +109,7 @@ func TestHandleTokenLimitCommand_TriggersFetchWhenLimitsUnknown(t *testing.T) {
 	m := &model{
 		cwd:      "/repo",
 		output:   appoutput.New(80, nil),
-		runtime:  rt,
+		asyncOps:  rt,
 		provider: providerStateForTest(store, "gpt-unknown", coreprovider.ProviderOpenAI, coreprovider.AuthAPIKey),
 	}
 
@@ -192,7 +192,7 @@ func TestHandleCompactResultStoresVisibleSuccessState(t *testing.T) {
 		},
 	}
 
-	cmd := m.handleCompactResult(appcompact.CompactResultMsg{
+	cmd := m.handleCompactResult(appcompact.ResultMsg{
 		Summary:       "summary",
 		OriginalCount: 2,
 		Trigger:       "manual",
@@ -221,7 +221,7 @@ func TestHandleCompactResultStoresVisibleErrorState(t *testing.T) {
 		},
 	}
 
-	cmd := m.handleCompactResult(appcompact.CompactResultMsg{
+	cmd := m.handleCompactResult(appcompact.ResultMsg{
 		Error: context.DeadlineExceeded,
 	})
 	_ = cmd

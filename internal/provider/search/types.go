@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+const maxSearchResponseSize = 2 * 1024 * 1024 // 2MB limit for search API responses
+
 // ProviderName identifies a search provider
 type ProviderName string
 
@@ -29,20 +31,13 @@ type SearchOptions struct {
 	Timeout        time.Duration
 }
 
-// DefaultOptions returns default search options
-func DefaultOptions() SearchOptions {
-	return SearchOptions{
-		NumResults: 10,
-		Timeout:    30 * time.Second,
-	}
-}
-
-// truncateSnippet truncates a snippet to maxLength characters
+// truncateSnippet truncates a snippet to maxLength runes
 func truncateSnippet(s string, maxLength int) string {
-	if len(s) <= maxLength {
+	runes := []rune(s)
+	if len(runes) <= maxLength {
 		return s
 	}
-	return s[:maxLength] + "..."
+	return string(runes[:maxLength]) + "..."
 }
 
 // getTimeout returns the timeout or default if not set

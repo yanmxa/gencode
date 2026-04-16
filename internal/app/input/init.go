@@ -14,15 +14,15 @@ func New(cwd string, width int, matchFunc suggest.Matcher) Model {
 	suggestions := suggest.NewState(matchFunc)
 	suggestions.SetCwd(cwd)
 	return Model{
-		Textarea:    NewTextarea(width),
+		Textarea:    newTextarea(width),
 		History:     history.Load(cwd),
 		HistoryIdx:  -1,
 		Suggestions: suggestions,
 	}
 }
 
-// NewTextarea creates a configured textarea with sensible defaults.
-func NewTextarea(width int) textarea.Model {
+// newTextarea creates a configured textarea with sensible defaults.
+func newTextarea(width int) textarea.Model {
 	ta := textarea.New()
 	ta.Placeholder = ""
 	ta.Focus()

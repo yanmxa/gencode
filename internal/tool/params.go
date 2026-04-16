@@ -53,17 +53,13 @@ func GetBool(params map[string]any, key string) bool {
 
 // GetFloat64 extracts a numeric parameter that may arrive as float64 or int
 // (JSON numbers unmarshal to float64; some callers pass int directly).
-// Returns defaultVal if the key is absent or zero.
+// Returns defaultVal if the key is absent.
 func GetFloat64(params map[string]any, key string, defaultVal float64) float64 {
 	switch v := params[key].(type) {
 	case float64:
-		if v > 0 {
-			return v
-		}
+		return v
 	case int:
-		if v > 0 {
-			return float64(v)
-		}
+		return float64(v)
 	}
 	return defaultVal
 }
@@ -72,13 +68,9 @@ func GetFloat64(params map[string]any, key string, defaultVal float64) float64 {
 func GetInt(params map[string]any, key string, defaultVal int) int {
 	switch v := params[key].(type) {
 	case float64:
-		if v > 0 {
-			return int(v)
-		}
+		return int(v)
 	case int:
-		if v > 0 {
-			return v
-		}
+		return v
 	}
 	return defaultVal
 }

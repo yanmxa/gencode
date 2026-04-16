@@ -3,7 +3,7 @@ package tool
 import "testing"
 
 func TestTaskOutputIsNotDeferredOrSearchable(t *testing.T) {
-	if DeferredToolNames[ToolTaskOutput] {
+	if deferredToolNames[ToolTaskOutput] {
 		t.Fatalf("did not expect %s to remain deferred once disabled", ToolTaskOutput)
 	}
 

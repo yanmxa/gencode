@@ -2,6 +2,8 @@ package subagent
 
 import (
 	"encoding/json"
+	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -64,30 +66,28 @@ func (s *AgentStore) load() {
 	}
 }
 
-// save writes disabled agents to disk
-func (s *AgentStore) save() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	// Build disabled list
-	disabled := make([]string, 0, len(s.disabled))
-	for name := range s.disabled {
-		disabled = append(disabled, name)
-	}
-
-	storeData := AgentStoreData{Disabled: disabled}
-	data, err := json.MarshalIndent(storeData, "", "  ")
+// persistDisabled writes the disabled agent list to disk. Lock-free — operates
+// only on the provided snapshot.
+func persistDisabled(path string, disabled []string) error {
+	data, err := json.MarshalIndent(AgentStoreData{Disabled: disabled}, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal agent store: %w", err)
 	}
 
-	// Ensure directory exists
-	dir := filepath.Dir(s.path)
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+		return fmt.Errorf("create agent store directory %s: %w", dir, err)
 	}
 
-	return os.WriteFile(s.path, data, 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("write agent store %s: %w", path, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("rename agent store %s: %w", path, err)
+	}
+	return nil
 }
 
 // IsDisabled returns whether an agent is disabled
@@ -97,7 +97,7 @@ func (s *AgentStore) IsDisabled(name string) bool {
 	return s.disabled[name]
 }
 
-// SetDisabled sets the disabled state for an agent
+// SetDisabled sets the disabled state for an agent and persists to disk.
 func (s *AgentStore) SetDisabled(name string, disabled bool) error {
 	s.mu.Lock()
 	if disabled {
@@ -105,9 +105,16 @@ func (s *AgentStore) SetDisabled(name string, disabled bool) error {
 	} else {
 		delete(s.disabled, name)
 	}
+	// Snapshot while still holding the write lock so no concurrent
+	// modification can slip in before we read the state to persist.
+	snapshot := make([]string, 0, len(s.disabled))
+	for n := range s.disabled {
+		snapshot = append(snapshot, n)
+	}
+	path := s.path
 	s.mu.Unlock()
 
-	return s.save()
+	return persistDisabled(path, snapshot)
 }
 
 // GetDisabled returns a copy of the disabled agents map
@@ -116,8 +123,6 @@ func (s *AgentStore) GetDisabled() map[string]bool {
 	defer s.mu.RUnlock()
 
 	result := make(map[string]bool, len(s.disabled))
-	for k, v := range s.disabled {
-		result[k] = v
-	}
+	maps.Copy(result, s.disabled)
 	return result
 }

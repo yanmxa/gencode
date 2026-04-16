@@ -1,6 +1,10 @@
 package app
 
-import "github.com/yanmxa/gencode/internal/message"
+import (
+	"context"
+
+	"github.com/yanmxa/gencode/internal/message"
+)
 
 func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
 	if m.provider.LLM == nil {
@@ -38,6 +42,7 @@ func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
 
 func (m *model) buildTokenLimitFetchRequest() tokenLimitFetchRequest {
 	return tokenLimitFetchRequest{
+		Ctx:          context.Background(),
 		LLM:          m.provider.LLM,
 		Store:        m.provider.Store,
 		CurrentModel: m.provider.CurrentModel,
@@ -48,6 +53,7 @@ func (m *model) buildTokenLimitFetchRequest() tokenLimitFetchRequest {
 
 func (m *model) buildCompactRequest(focus, trigger string) compactRequest {
 	return compactRequest{
+		Ctx:            context.Background(),
 		Client:         m.buildLoopClient(),
 		Messages:       m.conv.ConvertToProvider(),
 		SessionSummary: m.session.Summary,

@@ -18,8 +18,8 @@ import (
 type Model struct {
 	active       bool
 	request      *perm.PermissionRequest
-	diffPreview  *DiffPreview
-	bashPreview  *BashPreview
+	diffPreview  *diffPreview
+	bashPreview  *bashPreview
 	skillPreview *skillui.Preview
 	agentPreview *agentui.Preview
 	width        int
@@ -40,13 +40,13 @@ func (p *Model) setRequest(req *perm.PermissionRequest, width int) {
 	p.selectedIdx = 0 // Reset to "Yes"
 
 	if req.DiffMeta != nil {
-		p.diffPreview = NewDiffPreview(req.DiffMeta, req.FilePath)
+		p.diffPreview = newDiffPreview(req.DiffMeta, req.FilePath)
 	} else {
 		p.diffPreview = nil
 	}
 
 	if req.BashMeta != nil {
-		p.bashPreview = NewBashPreview(req.BashMeta)
+		p.bashPreview = newBashPreview(req.BashMeta)
 	} else {
 		p.bashPreview = nil
 	}
@@ -87,10 +87,10 @@ func (p *Model) IsActive() bool {
 // TogglePreview toggles the expand state of diff/bash previews.
 func (p *Model) TogglePreview() {
 	if p.diffPreview != nil {
-		p.diffPreview.ToggleExpand()
+		p.diffPreview.toggleExpand()
 	}
 	if p.bashPreview != nil {
-		p.bashPreview.ToggleExpand()
+		p.bashPreview.toggleExpand()
 	}
 }
 
@@ -144,10 +144,10 @@ func (p *Model) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *ResponseMsg) {
 
 	case tea.KeyCtrlO:
 		if p.diffPreview != nil {
-			p.diffPreview.ToggleExpand()
+			p.diffPreview.toggleExpand()
 		}
 		if p.bashPreview != nil {
-			p.bashPreview.ToggleExpand()
+			p.bashPreview.toggleExpand()
 		}
 		return nil, nil
 
@@ -221,8 +221,8 @@ func getTitleStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
 }
 
-// RenderInline renders the permission prompt inline with Claude Code style
-func (p *Model) RenderInline() string {
+// renderInline renders the permission prompt inline with Claude Code style
+func (p *Model) renderInline() string {
 	if !p.active || p.request == nil {
 		return ""
 	}
@@ -243,9 +243,9 @@ func (p *Model) RenderInline() string {
 
 	// Diff preview, Bash preview, Skill preview, Agent preview, or content preview (no dotted separators)
 	if p.diffPreview != nil {
-		sb.WriteString(p.diffPreview.Render(contentWidth))
+		sb.WriteString(p.diffPreview.render(contentWidth))
 	} else if p.bashPreview != nil {
-		sb.WriteString(p.bashPreview.Render(contentWidth))
+		sb.WriteString(p.bashPreview.render(contentWidth))
 	} else if p.skillPreview != nil {
 		sb.WriteString(p.skillPreview.Render(contentWidth))
 	} else if p.agentPreview != nil {
@@ -265,8 +265,8 @@ func (p *Model) RenderInline() string {
 
 	// Simplified footer
 	footer := " Esc to cancel"
-	hasExpandableContent := (p.diffPreview != nil && len(p.diffPreview.DiffMeta().Lines) > DefaultMaxVisibleLines) ||
-		(p.bashPreview != nil && p.bashPreview.NeedsExpand())
+	hasExpandableContent := (p.diffPreview != nil && len(p.diffPreview.diffMeta.Lines) > defaultMaxVisibleLines) ||
+		(p.bashPreview != nil && p.bashPreview.needsExpand())
 	if hasExpandableContent {
 		footer += " · Ctrl+O expand"
 	}
@@ -361,7 +361,7 @@ func (p *Model) renderMenu() string {
 	return sb.String()
 }
 
-// Render renders the permission prompt (calls RenderInline)
+// Render renders the permission prompt (calls renderInline)
 func (p *Model) Render() string {
-	return p.RenderInline()
+	return p.renderInline()
 }

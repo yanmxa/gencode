@@ -16,25 +16,25 @@ func RenderToolResultInline(data ToolResultData, mdRenderer *MDRenderer) string 
 
 	switch toolName {
 	case tool.ToolSkill:
-		return RenderSkillResultInline(data)
+		return renderSkillResultInline(data)
 	case tool.ToolAgent, tool.ToolContinueAgent, tool.ToolSendMessage:
-		return RenderTaskResultInline(data, mdRenderer)
+		return renderTaskResultInline(data, mdRenderer)
 	case tool.ToolTaskOutput:
-		return RenderTaskOutputResultInline(data)
+		return renderTaskOutputResultInline(data)
 	case tool.ToolAskUserQuestion:
 		return renderAskUserResultInline(data)
 	}
 
-	sizeInfo := FormatToolResultSize(toolName, data.Content)
+	sizeInfo := formatToolResultSize(toolName, data.Content)
 	icon := toolResultIcon(data.IsError)
 
 	var sb strings.Builder
-	summary := ToolResultStyle.Render(fmt.Sprintf("  %s  %s → %s", icon, toolName, sizeInfo))
+	summary := toolResultStyle.Render(fmt.Sprintf("  %s  %s → %s", icon, toolName, sizeInfo))
 	sb.WriteString(summary + "\n")
 
 	if data.Expanded || data.IsError {
 		for line := range strings.SplitSeq(data.Content, "\n") {
-			sb.WriteString(ToolResultExpandedStyle.Render(line) + "\n")
+			sb.WriteString(toolResultExpandedStyle.Render(line) + "\n")
 		}
 	}
 
@@ -46,11 +46,11 @@ func renderAskUserResultInline(data ToolResultData) string {
 	icon := toolResultIcon(data.IsError)
 
 	if data.IsError {
-		return ToolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, data.Content)) + "\n"
+		return toolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, data.Content)) + "\n"
 	}
 
 	if strings.Contains(data.Content, "User cancelled") {
-		return ToolResultStyle.Render(fmt.Sprintf("  %s  Cancelled", icon)) + "\n"
+		return toolResultStyle.Render(fmt.Sprintf("  %s  Cancelled", icon)) + "\n"
 	}
 
 	var answers []string
@@ -59,33 +59,36 @@ func renderAskUserResultInline(data ToolResultData) string {
 		if line == "" || line == "User responses:" {
 			continue
 		}
+		if answers == nil {
+			answers = make([]string, 0, 4)
+		}
 		answers = append(answers, line)
 	}
 
 	if len(answers) == 0 {
-		return ToolResultStyle.Render(fmt.Sprintf("  %s  Answered", icon)) + "\n"
+		return toolResultStyle.Render(fmt.Sprintf("  %s  Answered", icon)) + "\n"
 	}
 
 	var sb strings.Builder
 	for _, a := range answers {
-		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, a)) + "\n")
+		sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, a)) + "\n")
 	}
 	return sb.String()
 }
 
-// RenderSkillResultInline renders a skill result with clean formatting.
-func RenderSkillResultInline(data ToolResultData) string {
+// renderSkillResultInline renders a skill result with clean formatting.
+func renderSkillResultInline(data ToolResultData) string {
 	icon := toolResultIcon(data.IsError)
 
 	var sb strings.Builder
 	if data.IsError {
-		summary := ToolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, data.Content))
+		summary := toolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, data.Content))
 		sb.WriteString(summary + "\n")
 		return sb.String()
 	}
 
-	skillName, scriptCount, refCount := ParseSkillResultContent(data.Content)
-	var resources []string
+	skillName, scriptCount, refCount := parseSkillResultContent(data.Content)
+	resources := make([]string, 0, 2)
 	if scriptCount > 0 {
 		if scriptCount == 1 {
 			resources = append(resources, "1 script")
@@ -106,12 +109,12 @@ func RenderSkillResultInline(data ToolResultData) string {
 		result += fmt.Sprintf(" [%s]", strings.Join(resources, ", "))
 	}
 
-	summary := ToolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, result))
+	summary := toolResultStyle.Render(fmt.Sprintf("  %s  %s", icon, result))
 	sb.WriteString(summary + "\n")
 
 	if data.Expanded {
 		for line := range strings.SplitSeq(data.Content, "\n") {
-			sb.WriteString(ToolResultExpandedStyle.Render(line) + "\n")
+			sb.WriteString(toolResultExpandedStyle.Render(line) + "\n")
 		}
 	}
 

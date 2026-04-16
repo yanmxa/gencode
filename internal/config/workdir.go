@@ -7,13 +7,13 @@ import (
 	"strings"
 )
 
-// IsInWorkingDirectory checks if a file path is within any of the allowed
+// isInWorkingDirectory checks if a file path is within any of the allowed
 // working directories. It checks both original and symlink-resolved forms
 // to prevent symlink-based escapes.
 //
 // Returns true if the path is within at least one working directory.
 // Returns true if workingDirs is empty (no constraint).
-func IsInWorkingDirectory(filePath string, workingDirs []string) bool {
+func isInWorkingDirectory(filePath string, workingDirs []string) bool {
 	if len(workingDirs) == 0 {
 		return true
 	}

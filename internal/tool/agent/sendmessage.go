@@ -16,7 +16,7 @@ import (
 // Running workers do not yet support live injection, so messages are queued
 // and delivered on the next resume.
 type SendMessageTool struct {
-	Executor tool.AgentExecutor
+	executor tool.AgentExecutor
 }
 
 func NewSendMessageTool() *SendMessageTool {
@@ -31,7 +31,7 @@ func (t *SendMessageTool) Icon() string             { return tool.IconAgent }
 func (t *SendMessageTool) RequiresPermission() bool { return true }
 
 func (t *SendMessageTool) SetExecutor(executor tool.AgentExecutor) {
-	t.Executor = executor
+	t.executor = executor
 }
 
 func (t *SendMessageTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*perm.PermissionRequest, error) {
@@ -40,7 +40,7 @@ func (t *SendMessageTool) PreparePermission(ctx context.Context, params map[stri
 	if err != nil {
 		return nil, err
 	}
-	if t.Executor == nil {
+	if t.executor == nil {
 		return nil, fmt.Errorf("agent executor not configured")
 	}
 
@@ -54,7 +54,7 @@ func (t *SendMessageTool) PreparePermission(ctx context.Context, params map[stri
 		}
 	}
 
-	config, ok := t.Executor.GetAgentConfig(target.agentType)
+	config, ok := t.executor.GetAgentConfig(target.agentType)
 	if !ok {
 		return nil, fmt.Errorf("unknown agent type: %s", target.agentType)
 	}
@@ -67,7 +67,7 @@ func (t *SendMessageTool) PreparePermission(ctx context.Context, params map[stri
 	runBackground := tool.GetBool(normalized, "run_in_background")
 	effectiveModel := tool.GetString(normalized, "model")
 	if effectiveModel == "" {
-		effectiveModel = t.Executor.GetParentModelID()
+		effectiveModel = t.executor.GetParentModelID()
 	}
 	if effectiveModel == "" {
 		effectiveModel = "claude-sonnet-4-20250514"
@@ -117,7 +117,7 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 	}
 	ctx = tool.WithAgentDepth(ctx, currentDepth+1)
 
-	if t.Executor == nil {
+	if t.executor == nil {
 		return toolresult.NewErrorResult(t.Name(), "agent executor not configured")
 	}
 
@@ -194,7 +194,7 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 	}
 
 	if req.Background {
-		taskInfo, err := t.Executor.RunBackground(req)
+		taskInfo, err := t.executor.RunBackground(req)
 		if err != nil {
 			return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("failed to send background message to agent: %v", err))
 		}
@@ -223,7 +223,7 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 		}
 	}
 
-	result, err := t.Executor.Run(ctx, req)
+	result, err := t.executor.Run(ctx, req)
 	if err != nil {
 		return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("agent message failed: %v", err))
 	}

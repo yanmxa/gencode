@@ -25,7 +25,7 @@ type functionHookSource struct {
 	Source  string
 }
 
-type HookStore struct {
+type hookStore struct {
 	mu            sync.RWMutex
 	sessionHooks  map[EventType][]config.Hook
 	runtimeHooks  map[EventType][]config.Hook
@@ -35,8 +35,8 @@ type HookStore struct {
 	functionSeqNo atomic.Uint64
 }
 
-func NewHookStore() *HookStore {
-	return &HookStore{
+func newHookStore() *hookStore {
+	return &hookStore{
 		sessionHooks: make(map[EventType][]config.Hook),
 		runtimeHooks: make(map[EventType][]config.Hook),
 		sessionFuncs: make(map[EventType][]functionHookRegistration),
@@ -45,7 +45,7 @@ func NewHookStore() *HookStore {
 	}
 }
 
-func (s *HookStore) AddSessionHook(event EventType, matcher string, hook config.HookCmd) {
+func (s *hookStore) AddSessionHook(event EventType, matcher string, hook config.HookCmd) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessionHooks[event] = append(s.sessionHooks[event], config.Hook{
@@ -54,7 +54,7 @@ func (s *HookStore) AddSessionHook(event EventType, matcher string, hook config.
 	})
 }
 
-func (s *HookStore) AddRuntimeHook(event EventType, matcher string, hook config.HookCmd) {
+func (s *hookStore) AddRuntimeHook(event EventType, matcher string, hook config.HookCmd) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.runtimeHooks[event] = append(s.runtimeHooks[event], config.Hook{
@@ -63,7 +63,7 @@ func (s *HookStore) AddRuntimeHook(event EventType, matcher string, hook config.
 	})
 }
 
-func (s *HookStore) AddSessionFunctionHook(event EventType, matcher string, hook FunctionHook) string {
+func (s *hookStore) AddSessionFunctionHook(event EventType, matcher string, hook FunctionHook) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	hook.ID = s.ensureFunctionHookIDLocked("session", event, hook.ID)
@@ -74,7 +74,7 @@ func (s *HookStore) AddSessionFunctionHook(event EventType, matcher string, hook
 	return hook.ID
 }
 
-func (s *HookStore) AddRuntimeFunctionHook(event EventType, matcher string, hook FunctionHook) string {
+func (s *hookStore) AddRuntimeFunctionHook(event EventType, matcher string, hook FunctionHook) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	hook.ID = s.ensureFunctionHookIDLocked("runtime", event, hook.ID)
@@ -85,26 +85,27 @@ func (s *HookStore) AddRuntimeFunctionHook(event EventType, matcher string, hook
 	return hook.ID
 }
 
-func (s *HookStore) RemoveSessionFunctionHook(event EventType, id string) bool {
+func (s *hookStore) RemoveSessionFunctionHook(event EventType, id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return removeFunctionHookByID(s.sessionFuncs, event, id)
 }
 
-func (s *HookStore) RemoveRuntimeFunctionHook(event EventType, id string) bool {
+func (s *hookStore) RemoveRuntimeFunctionHook(event EventType, id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return removeFunctionHookByID(s.runtimeFuncs, event, id)
 }
 
-func (s *HookStore) ClearSessionHooks() {
+func (s *hookStore) ClearSessionHooks() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessionHooks = make(map[EventType][]config.Hook)
 	s.sessionFuncs = make(map[EventType][]functionHookRegistration)
+	s.executedOnce = make(map[string]struct{})
 }
 
-func (s *HookStore) CollectHooks(event EventType, settings *config.Settings) []hookSource {
+func (s *hookStore) CollectHooks(event EventType, settings *config.Settings) []hookSource {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -135,7 +136,7 @@ func (s *HookStore) CollectHooks(event EventType, settings *config.Settings) []h
 	return hooks
 }
 
-func (s *HookStore) CollectFunctionHooks(event EventType) []functionHookSource {
+func (s *hookStore) CollectFunctionHooks(event EventType) []functionHookSource {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -159,7 +160,7 @@ func (s *HookStore) CollectFunctionHooks(event EventType) []functionHookSource {
 	return hooks
 }
 
-func (s *HookStore) CheckOnce(key string) bool {
+func (s *hookStore) CheckOnce(key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.executedOnce[key]; ok {
@@ -169,7 +170,7 @@ func (s *HookStore) CheckOnce(key string) bool {
 	return true
 }
 
-func (s *HookStore) HasHooks(event EventType, settings *config.Settings) bool {
+func (s *hookStore) HasHooks(event EventType, settings *config.Settings) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -180,7 +181,7 @@ func (s *HookStore) HasHooks(event EventType, settings *config.Settings) bool {
 		len(s.sessionFuncs[event]) > 0 || len(s.runtimeFuncs[event]) > 0
 }
 
-func (s *HookStore) ensureFunctionHookIDLocked(scope string, event EventType, current string) string {
+func (s *hookStore) ensureFunctionHookIDLocked(scope string, event EventType, current string) string {
 	if current != "" {
 		return current
 	}

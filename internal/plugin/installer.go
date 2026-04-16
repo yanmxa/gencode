@@ -303,7 +303,15 @@ func (i *Installer) addToInstalledV2(scope Scope, pluginKey string, info PluginI
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(installedFile, data, 0o644)
+	tmp := installedFile + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, installedFile); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // loadInstalledPluginsV2 loads the installed plugins in v2 format.
@@ -374,7 +382,15 @@ func (i *Installer) removeFromInstalled(scope Scope, source string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(installedFile, data, 0o644)
+	tmp := installedFile + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, installedFile); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // copyDir copies a directory recursively.
@@ -397,6 +413,11 @@ func copyDir(src, dst string) error {
 	}
 
 	for _, entry := range entries {
+		// Skip symlinks to prevent symlink escape attacks
+		if entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+
 		srcPath := filepath.Join(src, entry.Name())
 		dstPath := filepath.Join(dst, entry.Name())
 
@@ -430,22 +451,24 @@ func copyFile(src, dst string) error {
 }
 
 // ListInstalled returns all installed plugins for a scope.
+// Handles both v1 (JSON array) and v2 (versioned object) formats.
 func (i *Installer) ListInstalled(scope Scope) ([]InstalledPlugin, error) {
 	installedFile := GetInstalledPluginsFile(i.cwd, scope)
 
-	data, err := os.ReadFile(installedFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
+	v2 := loadInstalledPluginsV2(installedFile)
 
 	var installed []InstalledPlugin
-	if err := json.Unmarshal(data, &installed); err != nil {
-		return nil, err
+	for source, entries := range v2.Plugins {
+		for _, info := range entries {
+			installed = append(installed, InstalledPlugin{
+				Name:        source,
+				Source:      source,
+				Path:        info.InstallPath,
+				Version:     info.Version,
+				InstalledAt: info.InstalledAt,
+			})
+		}
 	}
-
 	return installed, nil
 }
 
@@ -470,17 +493,19 @@ func (i *Installer) AddMarketplace(source MarketplaceSource) error {
 	}
 
 	// Check if already exists
+	found := false
 	for idx, m := range km.Marketplaces {
 		if m.Name == source.Name {
 			km.Marketplaces[idx] = source
-			data, _ := json.MarshalIndent(km, "", "  ")
-			return os.WriteFile(path, data, 0o644)
+			found = true
+			break
 		}
 	}
 
-	// Add new
-	km.Marketplaces = append(km.Marketplaces, source)
-	i.marketplaces[source.Name] = source
+	if !found {
+		km.Marketplaces = append(km.Marketplaces, source)
+		i.marketplaces[source.Name] = source
+	}
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -491,5 +516,14 @@ func (i *Installer) AddMarketplace(source MarketplaceSource) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	// Use atomic tmp+rename to prevent corruption on crash
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }

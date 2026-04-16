@@ -10,6 +10,7 @@ import (
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
@@ -43,7 +44,7 @@ func (m *model) updateApproval(msg tea.Msg) (tea.Cmd, bool) {
 func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
 	// If there's a PermissionRequest hook configured, run it asynchronously
 	// to avoid blocking the Bubble Tea event loop (which freezes the TUI).
-	if m.hookEngine != nil && m.hookEngine.HasHooks(hooks.PermissionRequest) && msg.Request != nil {
+	if m.hookEngine != nil && m.hookEngine.HasHooks(core.PermissionRequest) && msg.Request != nil {
 		return tea.Batch(
 			m.showApprovalModal(msg.Request),
 			m.dispatchPermissionHookAsync(msg.Request),
@@ -67,7 +68,7 @@ func (m *model) dispatchPermissionHookAsync(req *perm.PermissionRequest) tea.Cmd
 	hookInput.PermissionSuggestions = m.buildPermissionSuggestions(req)
 
 	return func() tea.Msg {
-		outcome := hookEngine.Execute(ctx, hooks.PermissionRequest, hookInput)
+		outcome := hookEngine.Execute(ctx, core.PermissionRequest, hookInput)
 
 		blocked := outcome.ShouldBlock
 		allowed := outcome.PermissionAllow
@@ -138,7 +139,7 @@ func (m *model) showApprovalModal(req *perm.PermissionRequest) tea.Cmd {
 
 	// Fire Notification hook when permission prompt is shown
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{
+		m.hookEngine.ExecuteAsync(core.Notification, hooks.HookInput{
 			Message:          "Permission required for " + req.ToolName,
 			NotificationType: "permission_prompt",
 		})
@@ -148,6 +149,11 @@ func (m *model) showApprovalModal(req *perm.PermissionRequest) tea.Cmd {
 }
 
 func (m *model) abortToolWithError(errorMsg string, retry bool) tea.Cmd {
+	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
+		m.tool.Reset()
+		m.conv.Stream.Stop()
+		return tea.Batch(m.commitMessages()...)
+	}
 	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 	m.conv.Append(message.ChatMessage{
 		Role:     message.RoleUser,
@@ -158,6 +164,7 @@ func (m *model) abortToolWithError(errorMsg string, retry bool) tea.Cmd {
 			IsError:    true,
 		},
 	})
+	m.cancelRemainingToolCalls(m.tool.CurrentIdx + 1)
 	m.tool.Reset()
 	m.conv.Stream.Stop()
 	commitCmds := m.commitMessages()
@@ -240,8 +247,8 @@ func (m *model) applyPermissionUpdates(updates []hooks.PermissionUpdate) {
 			if m.mode.SessionPermissions != nil {
 				switch pu.Mode {
 				case "bypassPermissions":
-					m.mode.SessionPermissions.Mode = config.ModeBypassPermissions
-					m.mode.Operation = config.ModeBypassPermissions
+					// Hooks cannot escalate to bypassPermissions — ignore
+					log.Logger().Warn("hook attempted to set bypassPermissions mode, denied")
 				case "acceptEdits":
 					m.mode.SessionPermissions.Mode = config.ModeAutoAccept
 					m.mode.Operation = config.ModeAutoAccept
@@ -260,6 +267,15 @@ func (m *model) applyPermissionUpdates(updates []hooks.PermissionUpdate) {
 			for _, rule := range pu.Rules {
 				ruleStr := buildRuleString(rule)
 				if ruleStr == "" {
+					continue
+				}
+				// Block catch-all patterns in persistent rules to prevent privilege escalation
+				if strings.Contains(ruleStr, "(**)") {
+					if pu.Destination == "persistent" {
+						log.Logger().Warn("hook attempted to persist catch-all rule, denied", zap.String("rule", ruleStr))
+					} else {
+						log.Logger().Warn("hook attempted session-scoped catch-all rule, denied", zap.String("rule", ruleStr))
+					}
 					continue
 				}
 				if pu.Destination == "persistent" {
@@ -311,7 +327,7 @@ func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
 	if !msg.Approved {
 		retry := false
 		if m.hookEngine != nil && msg.Request != nil {
-			outcome := m.hookEngine.Execute(m.tool.Context(), hooks.PermissionDenied, hooks.HookInput{
+			outcome := m.hookEngine.Execute(m.tool.Context(), core.PermissionDenied, hooks.HookInput{
 				ToolName:  msg.Request.ToolName,
 				ToolInput: m.buildPermissionArgs(msg.Request),
 			})

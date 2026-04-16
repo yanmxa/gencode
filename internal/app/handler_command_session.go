@@ -15,20 +15,34 @@ import (
 )
 
 func handleClearCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
+	// Cancel any active stream and tool execution before clearing state
+	if m.agentSess != nil && m.agentSess.cancel != nil {
+		m.agentSess.stop()
+		m.agentSess = nil
+	}
+	if m.conv.Stream.Cancel != nil {
+		m.conv.Stream.Cancel()
+	}
+	m.conv.Stream.Stop()
+	if m.tool.Cancel != nil {
+		m.tool.Cancel()
+	}
+	m.tool.Reset()
+
 	m.conv.Clear()
 	m.provider.InputTokens = 0
 	m.provider.OutputTokens = 0
 	tracker.DefaultStore.Reset()
 	tool.ResetFetched()
 	m.cronQueue = nil
-	if tty, err := os.OpenFile("/dev/tty", os.O_WRONLY, 0); err == nil {
-		_, _ = tty.WriteString("\033[2J\033[3J\033[H")
-		_ = tty.Close()
-	}
+	cmds := []tea.Cmd{tea.ClearScreen}
 	if os.Getenv("TMUX") != "" {
-		_ = exec.Command("tmux", "clear-history").Run()
+		cmds = append(cmds, func() tea.Msg {
+			_ = exec.Command("tmux", "clear-history").Run()
+			return nil
+		})
 	}
-	return "", tea.ClearScreen, nil
+	return "", tea.Batch(cmds...), nil
 }
 
 func handleForkCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {

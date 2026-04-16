@@ -1,5 +1,5 @@
-// handler_command.go contains the core command dispatch logic: the CommandHandler
-// type, the builtin handler registry, ExecuteCommand, and the /help command.
+// handler_command.go contains the core command dispatch logic: the commandHandler
+// type, the builtin handler registry, executeCommand, and the /help command.
 //
 // Individual command handlers are split into focused files:
 //   - handler_command_session.go  — /clear, /fork, /resume
@@ -22,9 +22,9 @@ import (
 	"github.com/yanmxa/gencode/internal/ext/skill"
 )
 
-type CommandHandler func(ctx context.Context, m *model, args string) (string, tea.Cmd, error)
+type commandHandler func(ctx context.Context, m *model, args string) (string, tea.Cmd, error)
 
-var builtinCommandHandlers = map[string]CommandHandler{
+var builtinCommandHandlers = map[string]commandHandler{
 	"model":          handleModelCommand,
 	"clear":          handleClearCommand,
 	"fork":           handleForkCommand,
@@ -49,11 +49,11 @@ var builtinCommandHandlers = map[string]CommandHandler{
 
 // handlerRegistry maps command names to their handler functions.
 // The set of names must match command.BuiltinNames().
-func handlerRegistry() map[string]CommandHandler {
+func handlerRegistry() map[string]commandHandler {
 	return builtinCommandHandlers
 }
 
-func ExecuteCommand(ctx context.Context, m *model, input string) (string, tea.Cmd, bool) {
+func executeCommand(ctx context.Context, m *model, input string) (string, tea.Cmd, bool) {
 	cmd, args, isCmd := command.ParseCommand(input)
 	if !isCmd {
 		return "", nil, false

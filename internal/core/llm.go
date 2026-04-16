@@ -2,6 +2,15 @@ package core
 
 import "context"
 
+// AuthMethod represents an authentication method for an LLM provider.
+type AuthMethod string
+
+const (
+	AuthAPIKey  AuthMethod = "api_key"
+	AuthVertex  AuthMethod = "vertex"
+	AuthBedrock AuthMethod = "bedrock"
+)
+
 // StopReason describes why the LLM stopped generating.
 type StopReason string
 
@@ -20,12 +29,13 @@ type InferRequest struct {
 
 // InferResponse is the final aggregated response from one LLM call.
 type InferResponse struct {
-	Content    string     // text output
-	Thinking   string     // chain-of-thought (extended thinking)
-	ToolCalls  []ToolCall // tool execution requests
-	StopReason StopReason
-	TokensIn   int
-	TokensOut  int
+	Content           string     // text output
+	Thinking          string     // chain-of-thought (extended thinking)
+	ThinkingSignature string     // signature for replaying thinking blocks
+	ToolCalls         []ToolCall // tool execution requests
+	StopReason        StopReason
+	TokensIn          int
+	TokensOut         int
 }
 
 // Chunk is one piece of a streaming LLM response.

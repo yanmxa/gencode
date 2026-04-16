@@ -205,14 +205,14 @@ func TestExecToolPreservesHookResponse(t *testing.T) {
 
 func TestExecToolRoutesAskUserQuestionThroughQuestionHandler(t *testing.T) {
 	loop := newTestLoop(&mockProvider{})
-	loop.QuestionHandler = func(ctx context.Context, req *tool.QuestionRequest) (*tool.QuestionResponse, error) {
+	loop.SetQuestionHandler(func(ctx context.Context, req *tool.QuestionRequest) (*tool.QuestionResponse, error) {
 		return &tool.QuestionResponse{
 			RequestID: req.ID,
 			Answers: map[int][]string{
 				0: {"Patch"},
 			},
 		}, nil
-	}
+	})
 
 	result := loop.ExecTool(context.Background(), message.ToolCall{
 		ID:    "tc-question",
@@ -350,14 +350,14 @@ func TestShouldCompactPromptTooLong(t *testing.T) {
 	}
 }
 
-func TestIsPromptTooLong(t *testing.T) {
-	if !IsPromptTooLong(errors.New("prompt is too long for this model")) {
+func Test_isPromptTooLong(t *testing.T) {
+	if !isPromptTooLong(errors.New("prompt is too long for this model")) {
 		t.Fatal("expected natural language prompt-too-long error to match")
 	}
-	if !IsPromptTooLong(errors.New("provider returned prompt_too_long")) {
+	if !isPromptTooLong(errors.New("provider returned prompt_too_long")) {
 		t.Fatal("expected provider prompt_too_long error to match")
 	}
-	if IsPromptTooLong(errors.New("rate limit exceeded")) {
+	if isPromptTooLong(errors.New("rate limit exceeded")) {
 		t.Fatal("expected unrelated error not to match")
 	}
 }
@@ -544,13 +544,13 @@ func TestRunMaxOutputRecovery(t *testing.T) {
 		t.Errorf("expected content 'done', got %q", result.Content)
 	}
 	recoveryCount := 0
-	for _, tr := range result.Transitions {
-		if tr == TransitionMaxOutputRecovery {
+	for _, tr := range result.transitions {
+		if tr == transitionMaxOutputRecovery {
 			recoveryCount++
 		}
 	}
 	if recoveryCount != 2 {
-		t.Errorf("expected 2 recovery transitions, got %d (transitions: %v)", recoveryCount, result.Transitions)
+		t.Errorf("expected 2 recovery transitions, got %d (transitions: %v)", recoveryCount, result.transitions)
 	}
 }
 
@@ -596,13 +596,13 @@ func TestRunPromptTooLongRecovery(t *testing.T) {
 	}
 	// Should have a prompt-too-long transition
 	found := false
-	for _, tr := range result.Transitions {
-		if tr == TransitionPromptTooLong {
+	for _, tr := range result.transitions {
+		if tr == transitionPromptTooLong {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected TransitionPromptTooLong in transitions: %v", result.Transitions)
+		t.Errorf("expected transitionPromptTooLong in transitions: %v", result.transitions)
 	}
 }
 
@@ -622,14 +622,14 @@ func TestRunTransitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
-	if len(result.Transitions) != 2 {
-		t.Errorf("expected 2 transitions, got %d: %v", len(result.Transitions), result.Transitions)
+	if len(result.transitions) != 2 {
+		t.Errorf("expected 2 transitions, got %d: %v", len(result.transitions), result.transitions)
 	}
-	if result.Transitions[0] != TransitionNextTurn {
-		t.Errorf("expected first transition 'next_turn', got %q", result.Transitions[0])
+	if result.transitions[0] != transitionNextTurn {
+		t.Errorf("expected first transition 'next_turn', got %q", result.transitions[0])
 	}
-	if result.Transitions[1] != TransitionNextTurn {
-		t.Errorf("expected second transition 'next_turn', got %q", result.Transitions[1])
+	if result.transitions[1] != transitionNextTurn {
+		t.Errorf("expected second transition 'next_turn', got %q", result.transitions[1])
 	}
 }
 

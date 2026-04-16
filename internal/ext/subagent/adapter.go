@@ -3,7 +3,7 @@ package subagent
 import (
 	"context"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/messageconv"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -34,7 +34,7 @@ func (a *ExecutorAdapter) Run(ctx context.Context, req tool.AgentExecRequest) (*
 		ResumeID:       req.ResumeID,
 		Isolation:      req.Isolation,
 		TeamName:       req.TeamName,
-		ParentMessages: message.FromCoreSlice(req.ParentMessages),
+		ParentMessages: messageconv.FromCoreSlice(req.ParentMessages),
 		OnQuestion:     req.OnQuestion,
 	}
 
@@ -77,7 +77,7 @@ func (a *ExecutorAdapter) RunBackground(req tool.AgentExecRequest) (tool.AgentTa
 		ResumeID:       req.ResumeID,
 		Isolation:      req.Isolation,
 		TeamName:       req.TeamName,
-		ParentMessages: message.FromCoreSlice(req.ParentMessages),
+		ParentMessages: messageconv.FromCoreSlice(req.ParentMessages),
 	}
 
 	agentTask, err := a.Executor.RunBackground(agentReq)
@@ -88,7 +88,7 @@ func (a *ExecutorAdapter) RunBackground(req tool.AgentExecRequest) (tool.AgentTa
 	return tool.AgentTaskInfo{
 		TaskID:    agentTask.GetID(),
 		AgentName: agentTask.AgentName,
-		OutputFile: agentTask.OutputFile,
+		OutputFile: agentTask.GetOutputFile(),
 	}, nil
 }
 

@@ -30,30 +30,34 @@ func (r *Registry) LoadClaudePlugins(ctx context.Context) error {
 	// Load enabled plugins from Claude settings
 	claudeEnabled := loadClaudeEnabledPlugins(homeDir)
 
+	// Collect all Claude plugins first, then merge under a single lock
+	// to prevent concurrent callers from seeing partially-loaded state.
+	collected := make(map[string]*Plugin)
 	for _, dir := range claudeDirs {
 		plugins, err := LoadPluginsFromDir(dir, ScopeUser, "claude")
 		if err != nil {
 			continue
 		}
 		for _, p := range plugins {
-			// Convert Claude plugin to GenCode format
 			convertClaudePlugin(p)
 
 			key := p.FullName()
-			// Check if enabled in Claude settings
 			if enabled, ok := claudeEnabled[key]; ok {
 				p.Enabled = enabled
 			} else if enabled, ok := claudeEnabled[p.Name()]; ok {
 				p.Enabled = enabled
 			} else {
-				p.Enabled = true // Default enabled if in cache
+				p.Enabled = true
 			}
-
-			r.mu.Lock()
-			r.plugins[key] = p
-			r.mu.Unlock()
+			collected[key] = p
 		}
 	}
+
+	r.mu.Lock()
+	for key, p := range collected {
+		r.plugins[key] = p
+	}
+	r.mu.Unlock()
 
 	return nil
 }

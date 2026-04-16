@@ -141,10 +141,10 @@ var staticModels = []provider.ModelInfo{
 func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 	page, err := c.client.Models.List(ctx)
 	if err != nil {
-		return staticModels, err
+		return staticModels, nil // graceful fallback to static list
 	}
 
-	models := make([]provider.ModelInfo, 0)
+	models := make([]provider.ModelInfo, 0, len(page.Data))
 	for _, m := range page.Data {
 		id := m.ID
 		info := provider.ModelInfo{ID: id, Name: id, DisplayName: id}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/yanmxa/gencode/internal/markdown"
 	"github.com/yanmxa/gencode/internal/plugin"
@@ -197,16 +198,18 @@ func (cc *CustomCommand) GetInstructions() string {
 }
 
 // commandCwd stores the working directory for resolving project-level commands.
-var commandCwd string
-
-// cachedCustomCommands holds the result of loadAllCustomCommands.
-// Invalidated on Initialize to avoid repeated disk I/O on every keystroke.
-var cachedCustomCommands []CustomCommand
+var (
+	commandMu            sync.RWMutex
+	commandCwd           string
+	cachedCustomCommands []CustomCommand
+)
 
 // Initialize sets the working directory for resolving project-level commands
 // and invalidates the cached command list.
 // Sources: ~/.gen/commands/, .gen/commands/, and plugin command paths.
 func Initialize(cwd string) error {
+	commandMu.Lock()
+	defer commandMu.Unlock()
 	commandCwd = cwd
 	cachedCustomCommands = nil
 	return nil
@@ -239,6 +242,15 @@ func IsCustomCommand(cmd string) (*CustomCommand, bool) {
 // loadAllCustomCommands returns custom commands from all sources, using cache
 // when available. The cache is invalidated by Initialize.
 func loadAllCustomCommands() []CustomCommand {
+	commandMu.RLock()
+	if cachedCustomCommands != nil {
+		defer commandMu.RUnlock()
+		return cachedCustomCommands
+	}
+	commandMu.RUnlock()
+
+	commandMu.Lock()
+	defer commandMu.Unlock()
 	if cachedCustomCommands != nil {
 		return cachedCustomCommands
 	}

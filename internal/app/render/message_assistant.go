@@ -25,24 +25,24 @@ func RenderUserMessage(content, displayContent string, images []message.ImageDat
 		sb.WriteString(lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			prompt,
-			UserMsgStyle.Render(styleInlineImageTokens(displayContent)),
+			userMsgStyle.Render(styleInlineImageTokens(displayContent)),
 		) + "\n")
 		return sb.String()
 	}
 
 	if len(images) > 0 {
-		var imgParts []string
+		imgParts := make([]string, 0, len(images))
 		for i := range images {
 			imgParts = append(imgParts, PendingImageStyle.Render(fmt.Sprintf("[Image #%d]", i+1)))
 		}
 		imageLabel := strings.Join(imgParts, " ")
 		if content != "" {
-			sb.WriteString(prompt + imageLabel + " " + UserMsgStyle.Render(content) + "\n")
+			sb.WriteString(prompt + imageLabel + " " + userMsgStyle.Render(content) + "\n")
 		} else {
 			sb.WriteString(prompt + imageLabel + "\n")
 		}
 	} else if content != "" {
-		sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, prompt, UserMsgStyle.Render(content)) + "\n")
+		sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, prompt, userMsgStyle.Render(content)) + "\n")
 	}
 
 	return sb.String()
@@ -52,32 +52,6 @@ func styleInlineImageTokens(content string) string {
 	return inlineImageTokenPattern.ReplaceAllStringFunc(content, func(token string) string {
 		return PendingImageStyle.Render(token)
 	})
-}
-
-// PendingImagesParams holds the parameters for rendering pending images.
-type PendingImagesParams struct {
-	Pending     []message.ImageData
-	SelectMode  bool
-	SelectedIdx int
-}
-
-// RenderPendingImages renders indicator for clipboard images waiting to be sent.
-func RenderPendingImages(params PendingImagesParams) string {
-	if len(params.Pending) == 0 {
-		return ""
-	}
-
-	var parts []string
-	for i := range params.Pending {
-		label := fmt.Sprintf("[Image #%d]", i+1)
-		if params.SelectMode && i == params.SelectedIdx {
-			parts = append(parts, SelectedImageStyle.Render(label))
-		} else {
-			parts = append(parts, PendingImageStyle.Render(label))
-		}
-	}
-
-	return strings.Join(parts, " ")
 }
 
 // AssistantParams holds the parameters for rendering an assistant message.
@@ -97,17 +71,20 @@ type AssistantParams struct {
 // RenderAssistantMessage renders an assistant message with thinking, content, and tool calls.
 func RenderAssistantMessage(params AssistantParams) string {
 	var sb strings.Builder
-	aiIcon := AIPromptStyle.Render("● ")
+	aiIcon := aiPromptStyle.Render("● ")
 	if params.StreamActive && params.IsLast {
-		aiIcon = AIPromptStyle.Render(params.SpinnerView + " ")
+		aiIcon = aiPromptStyle.Render(params.SpinnerView + " ")
 	}
 
 	if params.Thinking != "" {
-		wrapWidth := max(params.Width-2, MinWrapWidth)
+		wrapWidth := max(params.Width-2, minWrapWidth)
 		wrapped := lipgloss.NewStyle().Width(wrapWidth).Render(params.Thinking)
 		var lines []string
 		for _, line := range strings.Split(wrapped, "\n") {
 			if strings.TrimSpace(line) != "" {
+				if lines == nil {
+					lines = make([]string, 0, 8)
+				}
 				lines = append(lines, ThinkingStyle.Render(line))
 			}
 		}
@@ -115,7 +92,7 @@ func RenderAssistantMessage(params AssistantParams) string {
 		sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, thinkingIcon, strings.Join(lines, "\n")) + "\n\n")
 	}
 
-	content := FormatAssistantContent(params)
+	content := formatAssistantContent(params)
 	if content != "" {
 		sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, aiIcon, content) + "\n")
 	}
@@ -123,17 +100,17 @@ func RenderAssistantMessage(params AssistantParams) string {
 	return sb.String()
 }
 
-// FormatAssistantContent formats the assistant message content based on streaming state.
-func FormatAssistantContent(params AssistantParams) string {
+// formatAssistantContent formats the assistant message content based on streaming state.
+func formatAssistantContent(params AssistantParams) string {
 	if params.Content == "" && len(params.ToolCalls) == 0 && params.StreamActive && params.Thinking == "" {
 		if params.ExecutingTool != "" {
-			return ThinkingStyle.Render(GetToolExecutionDesc(params.ExecutingTool))
+			return ThinkingStyle.Render(getToolExecutionDesc(params.ExecutingTool))
 		}
 		return ThinkingStyle.Render("Thinking...")
 	}
 
 	if params.StreamActive && params.IsLast && len(params.ToolCalls) == 0 {
-		return AssistantMsgStyle.Render(params.Content + "▌")
+		return assistantMsgStyle.Render(params.Content + "▌")
 	}
 
 	if params.Content == "" {
@@ -141,14 +118,14 @@ func FormatAssistantContent(params AssistantParams) string {
 	}
 
 	if params.MDRenderer != nil {
-		return RenderMarkdownContent(params.MDRenderer, params.Content)
+		return renderMarkdownContent(params.MDRenderer, params.Content)
 	}
 
 	return params.Content
 }
 
-// RenderMarkdownContent renders content through the markdown renderer.
-func RenderMarkdownContent(mdRenderer *MDRenderer, content string) string {
+// renderMarkdownContent renders content through the markdown renderer.
+func renderMarkdownContent(mdRenderer *MDRenderer, content string) string {
 	rendered, err := mdRenderer.Render(content)
 	if err != nil {
 		return content
@@ -156,8 +133,8 @@ func RenderMarkdownContent(mdRenderer *MDRenderer, content string) string {
 	return strings.TrimSpace(rendered)
 }
 
-// GetToolExecutionDesc returns a human-readable description for a tool being executed.
-func GetToolExecutionDesc(toolName string) string {
+// getToolExecutionDesc returns a human-readable description for a tool being executed.
+func getToolExecutionDesc(toolName string) string {
 	switch toolName {
 	case tool.ToolExitPlanMode:
 		return "Preparing implementation plan..."
@@ -188,5 +165,5 @@ func GetToolExecutionDesc(toolName string) string {
 
 // RenderSystemMessage renders a system/notice message.
 func RenderSystemMessage(content string) string {
-	return SystemMsgStyle.Render(content) + "\n"
+	return systemMsgStyle.Render(content) + "\n"
 }

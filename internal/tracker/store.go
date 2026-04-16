@@ -126,10 +126,19 @@ func (s *Store) persistTask(task *Task) {
 	}
 	data, err := json.MarshalIndent(task, "", "  ")
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "tracker: failed to marshal task %s: %v\n", task.ID, err)
 		return
 	}
 	path := filepath.Join(s.storageDir, task.ID+".json")
-	os.WriteFile(path, data, 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "tracker: failed to write task %s: %v\n", task.ID, err)
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		fmt.Fprintf(os.Stderr, "tracker: failed to rename task %s: %v\n", task.ID, err)
+	}
 }
 
 // removeTaskFile deletes a task file from disk. Must be called with s.mu held.
@@ -168,7 +177,7 @@ func (s *Store) Create(subject, description, activeForm string, metadata map[str
 	return task
 }
 
-// Get retrieves a task by ID
+// Get retrieves a copy of a task by ID.
 func (s *Store) Get(id string) (*Task, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -177,7 +186,8 @@ func (s *Store) Get(id string) (*Task, bool) {
 	if !ok || task.Status == StatusDeleted {
 		return nil, false
 	}
-	return task, true
+	cp := *task
+	return &cp, true
 }
 
 // Update modifies an existing task. Returns error if task not found.
@@ -199,7 +209,7 @@ func (s *Store) Update(id string, opts ...UpdateOption) error {
 	return nil
 }
 
-// List returns all non-deleted tasks sorted by ID
+// List returns copies of all non-deleted tasks sorted by ID.
 func (s *Store) List() []*Task {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -207,7 +217,8 @@ func (s *Store) List() []*Task {
 	tasks := make([]*Task, 0, len(s.tasks))
 	for _, task := range s.tasks {
 		if task.Status != StatusDeleted {
-			tasks = append(tasks, task)
+			cp := *task
+			tasks = append(tasks, &cp)
 		}
 	}
 
@@ -284,6 +295,25 @@ func (s *Store) HasInProgress() bool {
 		}
 	}
 	return false
+}
+
+// AllDone reports whether the store has tasks and every one of them is completed.
+func (s *Store) AllDone() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(s.tasks) == 0 {
+		return false
+	}
+	for _, t := range s.tasks {
+		if t.Status == StatusDeleted {
+			continue
+		}
+		if t.Status != StatusCompleted {
+			return false
+		}
+	}
+	return true
 }
 
 // Reset clears all tasks (for new sessions)
@@ -467,7 +497,7 @@ func normalizeTaskSlices(t *Task) {
 	}
 }
 
-// FindByMetadata returns the first non-deleted task whose metadata[key] equals want.
+// FindByMetadata returns a copy of the first non-deleted task whose metadata[key] equals want.
 // Returns nil if no match is found.
 func (s *Store) FindByMetadata(key, want string) *Task {
 	if want == "" {
@@ -485,7 +515,8 @@ func (s *Store) FindByMetadata(key, want string) *Task {
 		}
 		if v, ok := t.Metadata[key]; ok {
 			if str, ok := v.(string); ok && str == want {
-				return t
+				cp := *t
+				return &cp
 			}
 		}
 	}

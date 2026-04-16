@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
+	"sync"
 
 	"github.com/anthropics/anthropic-sdk-go"
 
@@ -47,6 +49,7 @@ func (s *toolIDSanitizer) resolve(id string) string {
 type Client struct {
 	client       anthropic.Client
 	name         string
+	modelsMu     sync.Mutex
 	cachedModels []provider.ModelInfo
 }
 
@@ -195,7 +198,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 		// Track tool calls
 		var currentToolID string
 		var currentToolName string
-		var currentToolInput string
+		var currentToolInput strings.Builder
 
 		// Read stream events
 		for stream.Next() {
@@ -208,7 +211,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				if block.ContentBlock.Type == "tool_use" {
 					currentToolID = block.ContentBlock.ID
 					currentToolName = block.ContentBlock.Name
-					currentToolInput = ""
+					currentToolInput.Reset()
 					state.EmitToolStart(ch, currentToolID, currentToolName)
 				}
 
@@ -225,7 +228,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					}
 				case "input_json_delta":
 					state.EmitToolInput(ch, currentToolID, delta.Delta.PartialJSON)
-					currentToolInput += delta.Delta.PartialJSON
+					currentToolInput.WriteString(delta.Delta.PartialJSON)
 				}
 
 			case "content_block_stop":
@@ -234,11 +237,11 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 					state.Response.ToolCalls = append(state.Response.ToolCalls, message.ToolCall{
 						ID:    currentToolID,
 						Name:  currentToolName,
-						Input: currentToolInput,
+						Input: currentToolInput.String(),
 					})
 					currentToolID = ""
 					currentToolName = ""
-					currentToolInput = ""
+					currentToolInput.Reset()
 				}
 
 			case "message_delta":
@@ -280,16 +283,20 @@ var defaultModels = []provider.ModelInfo{
 
 // ListModels returns available models using the Anthropic Models API,
 // falling back to a static list if the API call fails.
+// Unlike sync.Once, a failed fetch (e.g. due to a cancelled context) does not
+// permanently cache the fallback — subsequent calls will retry the API.
 func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
-	if len(c.cachedModels) > 0 {
+	c.modelsMu.Lock()
+	defer c.modelsMu.Unlock()
+
+	if c.cachedModels != nil {
 		return c.cachedModels, nil
 	}
 
 	models, err := c.fetchModels(ctx)
 	if err != nil {
-		// Fall back to static model list
-		c.cachedModels = defaultModels
-		return c.cachedModels, nil
+		// Return static fallback but don't cache it so we retry next time
+		return defaultModels, nil
 	}
 	c.cachedModels = models
 	return c.cachedModels, nil
@@ -318,18 +325,44 @@ func (c *Client) fetchModels(ctx context.Context) ([]provider.ModelInfo, error) 
 	return models, nil
 }
 
-// sanitizeToolResults removes tool_result messages whose tool_use_id doesn't
-// match any tool_use in the nearest preceding assistant message. This prevents
-// "unexpected tool_use_id" API errors caused by stale results from cancelled
-// tool executions or session restore artifacts.
+// sanitizeToolResults ensures tool_use/tool_result consistency:
+//  1. Removes orphaned tool_result messages whose tool_use_id doesn't match
+//     any tool_use in the nearest preceding assistant message.
+//  2. Strips tool_use blocks from assistant messages when no corresponding
+//     tool_result exists in the immediately following messages.
+//
+// This prevents API errors ("unexpected tool_use_id" and "tool_use ids were
+// found without tool_result blocks") caused by stale results from cancelled
+// tool executions, session restore artifacts, or interrupted tool dispatch.
 func sanitizeToolResults(msgs []message.Message) []message.Message {
-	// Track the set of valid tool_use IDs from the most recent assistant message.
+	// First pass: collect all tool_result IDs for forward-reference checking.
+	allResultIDs := make(map[string]bool, len(msgs))
+	for _, msg := range msgs {
+		if msg.Role == message.RoleUser && msg.ToolResult != nil {
+			allResultIDs[msg.ToolResult.ToolCallID] = true
+		}
+	}
+
+	// Second pass: filter orphaned tool_results and strip orphaned tool_uses.
 	var currentToolIDs map[string]bool
 	result := make([]message.Message, 0, len(msgs))
 
 	for _, msg := range msgs {
 		switch {
 		case msg.Role == message.RoleAssistant:
+			// Strip tool_use blocks that have no matching tool_result anywhere.
+			if len(msg.ToolCalls) > 0 {
+				filtered := make([]message.ToolCall, 0, len(msg.ToolCalls))
+				for _, tc := range msg.ToolCalls {
+					if allResultIDs[tc.ID] {
+						filtered = append(filtered, tc)
+					}
+				}
+				if len(filtered) != len(msg.ToolCalls) {
+					msg.ToolCalls = filtered
+				}
+			}
+
 			currentToolIDs = make(map[string]bool, len(msg.ToolCalls))
 			for _, tc := range msg.ToolCalls {
 				currentToolIDs[tc.ID] = true

@@ -10,9 +10,75 @@ import (
 	"time"
 
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/message"
 )
+
+// FilterToolCallsResult holds the results from PreToolUse hook filtering.
+type FilterToolCallsResult struct {
+	Allowed           []message.ToolCall
+	Blocked           []message.ToolResult
+	HookAllowed       map[string]bool // tool call IDs pre-approved by hooks
+	HookForceAsk      map[string]bool // tool call IDs forced to prompt by hooks
+	AdditionalContext string
+}
+
+// FilterToolCalls runs PreToolUse hooks on each tool call and returns which
+// calls are allowed, which are blocked, and any context/permission flags.
+// The optional agentID/agentType are set when called from a subagent context.
+func (e *Engine) FilterToolCalls(ctx context.Context, calls []message.ToolCall, agentID, agentType string) FilterToolCallsResult {
+	r := FilterToolCallsResult{
+		HookAllowed:  make(map[string]bool),
+		HookForceAsk: make(map[string]bool),
+	}
+	if e == nil {
+		r.Allowed = calls
+		return r
+	}
+
+	for _, tc := range calls {
+		params, _ := message.ParseToolInput(tc.Input)
+		hookInput := HookInput{
+			ToolName:  tc.Name,
+			ToolInput: params,
+			ToolUseID: tc.ID,
+		}
+		if agentID != "" {
+			hookInput.AgentID = agentID
+			hookInput.AgentType = agentType
+		}
+		outcome := e.Execute(ctx, core.PreToolUse, hookInput)
+
+		if outcome.ShouldBlock {
+			r.Blocked = append(r.Blocked, *message.ErrorResult(tc, "Blocked by hook: "+outcome.BlockReason))
+			continue
+		}
+
+		if outcome.UpdatedInput != nil {
+			if updated, err := json.Marshal(outcome.UpdatedInput); err == nil {
+				tc.Input = string(updated)
+			}
+		}
+
+		if outcome.AdditionalContext != "" {
+			if r.AdditionalContext == "" {
+				r.AdditionalContext = outcome.AdditionalContext
+			} else {
+				r.AdditionalContext += "\n" + outcome.AdditionalContext
+			}
+		}
+
+		if outcome.PermissionAllow {
+			r.HookAllowed[tc.ID] = true
+		}
+		if outcome.ForceAsk {
+			r.HookForceAsk[tc.ID] = true
+		}
+
+		r.Allowed = append(r.Allowed, tc)
+	}
+	return r
+}
 
 func (e *Engine) executeMatchedHook(ctx context.Context, hook matchedHook, input HookInput) HookOutcome {
 	statusID := e.status.Start(matchedHookStatusMessage(hook))
@@ -107,7 +173,9 @@ func (e *Engine) buildEnv(input HookInput) []string {
 	if input.ToolName != "" {
 		result = append(result, config.EnvPair("TOOL_NAME", input.ToolName)...)
 	}
-	result = append(result, plugin.PluginEnv()...)
+	if fn := e.envProvider; fn != nil {
+		result = append(result, fn()...)
+	}
 	return result
 }
 
@@ -161,7 +229,7 @@ func (e *Engine) executeFunctionHook(ctx context.Context, hook FunctionHook, inp
 		}
 	}
 
-	timeout := DefaultTimeout
+	timeout := defaultTimeout
 	if hook.Timeout > 0 {
 		timeout = hook.Timeout
 	}
@@ -310,21 +378,31 @@ func getString(m map[string]any, key string) string {
 	return ""
 }
 
+func (e *Engine) getCwd() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.cwd
+}
+
 func (e *Engine) getPromptCallback() PromptCallback {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.promptCallback
 }
 
-func (e *Engine) getLLMConfig(cmd config.HookCmd) (provider.LLMProvider, string) {
+func (e *Engine) getLLMCompleter() LLMCompleter {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
+	return e.llmCompleter
+}
 
-	model := e.hookModel
+func (e *Engine) resolveModel(cmd config.HookCmd) string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	if cmd.Model != "" {
-		model = cmd.Model
+		return cmd.Model
 	}
-	return e.llmProvider, model
+	return e.hookModel
 }
 
 func buildHookPrompt(template string, inputJSON string) string {

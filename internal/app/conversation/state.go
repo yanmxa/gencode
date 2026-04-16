@@ -34,8 +34,3 @@ type ChunkMsg struct {
 	Usage             *message.Usage
 	StopReason        string // "end_turn", "tool_use", "max_tokens"
 }
-
-// ContinueMsg requests a follow-up LLM call with the given messages.
-type ContinueMsg struct {
-	Messages []message.Message
-}

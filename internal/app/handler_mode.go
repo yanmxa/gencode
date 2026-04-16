@@ -4,14 +4,28 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"go.uber.org/zap"
 
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/tool"
 )
+
+// ensurePlanStore lazily initializes the plan store if not yet created.
+func (m *model) ensurePlanStore() {
+	if m.mode.Store != nil {
+		return
+	}
+	store, err := plan.NewStore()
+	if err != nil {
+		log.Logger().Warn("failed to initialize plan store", zap.Error(err))
+	}
+	m.mode.Store = store
+}
 
 func (m *model) cycleOperationMode() {
 	m.mode.Operation = m.mode.Operation.NextWithBypass(m.settings != nil && m.settings.AllowBypass != nil && *m.settings.AllowBypass)
@@ -19,8 +33,8 @@ func (m *model) cycleOperationMode() {
 	m.mode.Enabled = m.mode.Operation == config.ModePlan
 
 	// Ensure plan store is initialized when entering plan mode via shift+tab.
-	if m.mode.Enabled && m.mode.Store == nil {
-		m.mode.Store, _ = plan.NewStore()
+	if m.mode.Enabled {
+		m.ensurePlanStore()
 	}
 
 	if m.hookEngine != nil {
@@ -124,6 +138,11 @@ func (m *model) handleQuestionResponse(msg appmode.QuestionResponseMsg) tea.Cmd 
 		return m.abortToolWithError("User cancelled the question prompt", false)
 	}
 
+	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
+		m.mode.PendingQuestion = nil
+		m.tool.Reset()
+		return tea.Batch(m.commitMessages()...)
+	}
 	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 	m.mode.PendingQuestion = nil
 	return toolui.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)
@@ -151,6 +170,10 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 		return m.abortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.", false)
 	}
 
+	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
+		m.tool.Reset()
+		return tea.Batch(m.commitMessages()...)
+	}
 	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 
 	planContent := msg.ModifiedPlan
@@ -159,9 +182,7 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 	}
 
 	if msg.ApproveMode != "modify" {
-		if m.mode.Store == nil {
-			m.mode.Store, _ = plan.NewStore()
-		}
+		m.ensurePlanStore()
 		if m.mode.Store != nil {
 			savedPlan := &plan.Plan{
 				Task:    m.mode.Task,
@@ -212,6 +233,10 @@ func (m *model) handleEnterPlanRequest(msg appmode.EnterPlanRequestMsg) tea.Cmd 
 }
 
 func (m *model) handleEnterPlanResponse(msg appmode.EnterPlanResponseMsg) tea.Cmd {
+	if m.tool.PendingCalls == nil || m.tool.CurrentIdx >= len(m.tool.PendingCalls) {
+		m.tool.Reset()
+		return tea.Batch(m.commitMessages()...)
+	}
 	tc := m.tool.PendingCalls[m.tool.CurrentIdx]
 
 	if msg.Approved {
@@ -220,9 +245,7 @@ func (m *model) handleEnterPlanResponse(msg appmode.EnterPlanResponseMsg) tea.Cm
 		if msg.Request != nil && msg.Request.Message != "" {
 			m.mode.Task = msg.Request.Message
 		}
-		if m.mode.Store == nil {
-			m.mode.Store, _ = plan.NewStore()
-		}
+		m.ensurePlanStore()
 	}
 
 	return toolui.ExecuteInteractive(m.tool.Context(), tc, msg.Response, m.cwd)

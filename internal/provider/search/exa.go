@@ -136,8 +136,8 @@ func (p *ExaProvider) Search(ctx context.Context, query string, opts SearchOptio
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
 	}
 
-	// Read response
-	respBody, err := io.ReadAll(resp.Body)
+	// Read response with size limit
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchResponseSize))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}

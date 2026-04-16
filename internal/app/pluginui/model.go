@@ -138,9 +138,7 @@ type InstallResultMsg struct {
 	Error      error
 }
 
-type MarketplaceAddMsg struct{ Source string }
 type MarketplaceRemoveMsg struct{ ID string }
-type MarketplaceSyncMsg struct{ ID string }
 
 type MarketplaceSyncResultMsg struct {
 	ID      string

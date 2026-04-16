@@ -34,20 +34,6 @@ func (s SkillState) NextState() SkillState {
 	}
 }
 
-// StateIcon returns the display icon for the state.
-func (s SkillState) Icon() string {
-	switch s {
-	case StateDisable:
-		return "○"
-	case StateEnable:
-		return "◐"
-	case StateActive:
-		return "●"
-	default:
-		return "○"
-	}
-}
-
 // SkillScope represents where a skill was loaded from.
 // Higher values have higher priority.
 type SkillScope int
@@ -139,30 +125,6 @@ func (s *Skill) GetInstructions() string {
 	}
 	instructions, _ := loadInstructions(s.FilePath)
 	return instructions
-}
-
-// GetScriptPath returns the full path to a script file.
-func (s *Skill) GetScriptPath(name string) string {
-	if s.SkillDir == "" {
-		return ""
-	}
-	return s.SkillDir + "/scripts/" + name
-}
-
-// GetReferencePath returns the full path to a reference file.
-func (s *Skill) GetReferencePath(name string) string {
-	if s.SkillDir == "" {
-		return ""
-	}
-	return s.SkillDir + "/references/" + name
-}
-
-// GetAssetPath returns the full path to an asset file.
-func (s *Skill) GetAssetPath(name string) string {
-	if s.SkillDir == "" {
-		return ""
-	}
-	return s.SkillDir + "/assets/" + name
 }
 
 // HasResources returns true if the skill has any bundled resources.

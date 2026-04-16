@@ -59,7 +59,7 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 		defer close(ch)
 
 		// Convert messages to Responses API input items
-		var inputItems responses.ResponseInputParam
+		var inputItems responses.ResponseInputParam = make([]responses.ResponseInputItemUnionParam, 0, len(opts.Messages)+1)
 
 		for _, msg := range opts.Messages {
 			switch msg.Role {
@@ -232,6 +232,13 @@ func (c *Client) streamResponses(ctx context.Context, opts provider.CompletionOp
 					}
 				case responses.ResponseStatusIncomplete:
 					state.Response.StopReason = "max_tokens"
+				case responses.ResponseStatusFailed:
+					errMsg := "response failed"
+					if resp.Error.Message != "" {
+						errMsg = resp.Error.Message
+					}
+					state.Fail(ch, fmt.Errorf("responses API failed: %s", errMsg))
+					return
 				default:
 					state.Response.StopReason = string(resp.Status)
 				}
@@ -361,7 +368,7 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 		return nil, err
 	}
 
-	models := make([]provider.ModelInfo, 0)
+	models := make([]provider.ModelInfo, 0, len(page.Data))
 
 	for _, m := range page.Data {
 		id := m.ID

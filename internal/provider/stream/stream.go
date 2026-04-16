@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/yanmxa/gencode/internal/log"
@@ -16,6 +17,9 @@ type State struct {
 	Start        time.Time
 	ChunkCount   int
 	Response     message.CompletionResponse
+
+	contentBuf  strings.Builder
+	thinkingBuf strings.Builder
 }
 
 // NewState creates a new stream state for a provider.
@@ -40,7 +44,7 @@ func (s *State) EmitText(ch chan<- message.StreamChunk, text string) {
 		Type: message.ChunkTypeText,
 		Text: text,
 	}
-	s.Response.Content += text
+	s.contentBuf.WriteString(text)
 }
 
 // EmitThinking forwards a thinking delta and accumulates it into the response.
@@ -52,7 +56,7 @@ func (s *State) EmitThinking(ch chan<- message.StreamChunk, text string) {
 		Type: message.ChunkTypeThinking,
 		Text: text,
 	}
-	s.Response.Thinking += text
+	s.thinkingBuf.WriteString(text)
 }
 
 // EmitToolStart forwards a tool start event.
@@ -127,11 +131,16 @@ func (s *State) Fail(ch chan<- message.StreamChunk, err error) {
 }
 
 // Finish logs stream completion, logs the final response, and emits the done chunk.
+// It copies the response so the receiver does not retain a pointer into State,
+// allowing the State (and its string builders) to be GC'd.
 func (s *State) Finish(ctx context.Context, ch chan<- message.StreamChunk) {
+	s.Response.Content = s.contentBuf.String()
+	s.Response.Thinking = s.thinkingBuf.String()
 	log.LogStreamDone(s.ProviderName, time.Since(s.Start), s.ChunkCount)
 	log.LogResponseCtx(ctx, s.ProviderName, s.Response)
+	resp := s.Response // shallow copy — breaks the pointer into State
 	ch <- message.StreamChunk{
 		Type:     message.ChunkTypeDone,
-		Response: &s.Response,
+		Response: &resp,
 	}
 }

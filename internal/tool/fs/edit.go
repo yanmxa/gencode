@@ -2,6 +2,7 @@ package fs
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -121,19 +122,38 @@ func (t *EditTool) ExecuteApproved(ctx context.Context, params map[string]any, c
 
 	replaceAll := tool.GetBool(params, "replace_all")
 
+	// Verify old_string still exists (file may have changed since approval)
+	occurrences := strings.Count(oldContent, oldString)
+	if occurrences == 0 {
+		return toolresult.NewErrorResult(t.Name(), "old_string not found in file (file may have been modified since approval)")
+	}
+
+	// When not replacing all, verify the string is still unique to avoid
+	// applying the edit to a different location than what the user approved.
+	if !replaceAll && occurrences > 1 {
+		return toolresult.NewErrorResult(t.Name(),
+			fmt.Sprintf("old_string is no longer unique in file (%d occurrences found — file may have been modified since approval)", occurrences))
+	}
+
 	// Perform replacement
 	var newContent string
 	var replaceCount int
 	if replaceAll {
-		replaceCount = strings.Count(oldContent, oldString)
+		replaceCount = occurrences
 		newContent = strings.ReplaceAll(oldContent, oldString, newString)
 	} else {
 		replaceCount = 1
 		newContent = strings.Replace(oldContent, oldString, newString, 1)
 	}
 
+	// Preserve original file permissions
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(filePath); err == nil {
+		mode = info.Mode()
+	}
+
 	// Write back to file
-	if err := os.WriteFile(filePath, []byte(newContent), 0o644); err != nil {
+	if err := os.WriteFile(filePath, []byte(newContent), mode); err != nil {
 		return toolresult.NewErrorResult(t.Name(), "failed to write file: "+err.Error())
 	}
 

@@ -94,42 +94,6 @@ func (r *Registry) IsReady(meta ProviderMeta) bool {
 	return true
 }
 
-// GetAllMetas returns all registered provider metadata
-func GetAllMetas() []ProviderMeta {
-	return globalRegistry.GetAllMetas()
-}
-
-// GetAllMetas returns all registered provider metadata
-func (r *Registry) GetAllMetas() []ProviderMeta {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	metas := make([]ProviderMeta, 0, len(r.entries))
-	for _, entry := range r.entries {
-		metas = append(metas, entry.meta)
-	}
-	return metas
-}
-
-// GetReadyProviders returns all providers that have their required env vars configured
-func GetReadyProviders() []ProviderMeta {
-	return globalRegistry.GetReadyProviders()
-}
-
-// GetReadyProviders returns all providers that have their required env vars configured
-func (r *Registry) GetReadyProviders() []ProviderMeta {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	ready := make([]ProviderMeta, 0)
-	for _, entry := range r.entries {
-		if r.IsReady(entry.meta) {
-			ready = append(ready, entry.meta)
-		}
-	}
-	return ready
-}
-
 // ProviderStatus represents the connection status of a provider
 type ProviderStatus string
 

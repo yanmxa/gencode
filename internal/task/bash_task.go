@@ -12,22 +12,25 @@ import (
 // BashTask represents a background bash command task
 // It implements the BackgroundTask interface
 type BashTask struct {
-	ID          string             // Unique task ID
-	Command     string             // The command being executed
-	Description string             // Brief description
-	Status      TaskStatus         // Current status
-	PID         int                // Process ID
-	StartTime   time.Time          // When the task started
-	EndTime     time.Time          // When the task ended (if completed)
-	ExitCode    int                // Exit code (if completed)
-	OutputFile  string             // Stable output file path when available
-	Error       string             // Error message (if failed)
-	Cmd         *exec.Cmd          // The running command
-	Ctx         context.Context    // Task context
-	Cancel      context.CancelFunc // Cancel function
+	ID          string          // Unique task ID
+	Command     string          // The command being executed
+	Description string          // Brief description
+	PID         int             // Process ID
+	StartTime   time.Time       // When the task started
+	OutputFile  string          // Stable output file path when available
+	cmd         *exec.Cmd       // The running command
+	ctx         context.Context // Task context
 
-	mu     sync.RWMutex // Protects output buffer and status
-	output bytes.Buffer // Collected stdout/stderr
+	cancel context.CancelFunc // Cancel function
+
+	mu       sync.RWMutex // Protects mutable fields below
+	status   TaskStatus   // Current status
+	endTime  time.Time    // When the task ended (if completed)
+	exitCode int          // Exit code (if completed)
+	errMsg   string       // Error message (if failed)
+	output   bytes.Buffer // Collected stdout/stderr
+	done     chan struct{} // Closed when task completes
+	doneOnce sync.Once    // Guards done channel close
 }
 
 // Verify BashTask implements BackgroundTask
@@ -39,13 +42,14 @@ func NewBashTask(id, command, description string, cmd *exec.Cmd, ctx context.Con
 		ID:          id,
 		Command:     command,
 		Description: description,
-		Status:      StatusRunning,
+		status:      StatusRunning,
 		PID:         cmd.Process.Pid,
 		StartTime:   time.Now(),
 		OutputFile:  initOutputFile(id),
-		Cmd:         cmd,
-		Ctx:         ctx,
-		Cancel:      cancel,
+		cmd:         cmd,
+		ctx:         ctx,
+		cancel:      cancel,
+		done:        make(chan struct{}),
 	}
 	appendOutputFile(task.OutputFile, outputRecord{
 		Event:       "task.started",
@@ -77,9 +81,11 @@ func (t *BashTask) GetDescription() string {
 // AppendOutput appends data to the output buffer
 func (t *BashTask) AppendOutput(data []byte) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	t.output.Write(data)
-	appendOutputFile(t.OutputFile, outputRecord{
+	outputFile := t.OutputFile
+	t.mu.Unlock()
+
+	appendOutputFile(outputFile, outputRecord{
 		Event:   "task.output",
 		Content: string(data),
 	})
@@ -95,77 +101,79 @@ func (t *BashTask) GetOutput() string {
 // Complete marks the task as completed
 func (t *BashTask) Complete(exitCode int, err error) {
 	t.mu.Lock()
-	t.EndTime = time.Now()
-	t.ExitCode = exitCode
+	if t.status != StatusRunning {
+		t.mu.Unlock()
+		return
+	}
+	t.endTime = time.Now()
+	t.exitCode = exitCode
 
 	if err != nil {
-		t.Status = StatusFailed
-		t.Error = err.Error()
+		t.status = StatusFailed
+		t.errMsg = err.Error()
 	} else if exitCode != 0 {
-		t.Status = StatusFailed
+		t.status = StatusFailed
 	} else {
-		t.Status = StatusCompleted
+		t.status = StatusCompleted
 	}
-	appendOutputFile(t.OutputFile, outputRecord{
+	outputFile := t.OutputFile
+	status := string(t.status)
+	exitCodeCopy := t.exitCode
+	errCopy := t.errMsg
+	t.mu.Unlock()
+
+	appendOutputFile(outputFile, outputRecord{
 		Event:  "task.completed",
-		Status: string(t.Status),
+		Status: status,
 		Metadata: map[string]any{
-			"exit_code": t.ExitCode,
-			"error":     t.Error,
+			"exit_code": exitCodeCopy,
+			"error":     errCopy,
 		},
 	})
-	t.mu.Unlock()
+	t.doneOnce.Do(func() { close(t.done) })
 	notifyTaskCompleted(t.GetStatus())
 }
 
-// MarkKilled marks the task as killed (internal use)
+// MarkKilled marks the task as killed (internal use).
+// Closes the done channel so WaitForCompletion unblocks.
 func (t *BashTask) MarkKilled() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.status = StatusKilled
+	t.endTime = time.Now()
+	outputFile := t.OutputFile
+	t.mu.Unlock()
 
-	t.Status = StatusKilled
-	t.EndTime = time.Now()
-	appendOutputFile(t.OutputFile, outputRecord{
+	appendOutputFile(outputFile, outputRecord{
 		Event:  "task.completed",
 		Status: string(StatusKilled),
 	})
+
+	t.doneOnce.Do(func() { close(t.done) })
 }
 
 // IsRunning returns true if the task is still running
 func (t *BashTask) IsRunning() bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return t.Status == StatusRunning
+	return t.status == StatusRunning
 }
 
-// WaitForCompletion waits until the task completes or timeout
-// Returns true if completed, false if timeout
+// WaitForCompletion waits until the task completes or timeout.
+// Returns true if completed, false if timeout.
 func (t *BashTask) WaitForCompletion(timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-
-	for {
-		t.mu.RLock()
-		status := t.Status
-		t.mu.RUnlock()
-
-		if status != StatusRunning {
-			return true // completed
-		}
-
-		if time.Now().After(deadline) {
-			return false // timeout
-		}
-
-		// Poll with small sleep
-		time.Sleep(100 * time.Millisecond)
+	select {
+	case <-t.done:
+		return true
+	case <-time.After(timeout):
+		return false
 	}
 }
 
 // Stop gracefully stops the task (SIGTERM)
 func (t *BashTask) Stop() error {
 	// Cancel the context first
-	if t.Cancel != nil {
-		t.Cancel()
+	if t.cancel != nil {
+		t.cancel()
 	}
 
 	// Send SIGTERM to process group
@@ -184,8 +192,8 @@ func (t *BashTask) Stop() error {
 // Kill forcefully terminates the task (SIGKILL)
 func (t *BashTask) Kill() error {
 	// Cancel the context
-	if t.Cancel != nil {
-		t.Cancel()
+	if t.cancel != nil {
+		t.cancel()
 	}
 
 	// Send SIGKILL to process group
@@ -212,13 +220,13 @@ func (t *BashTask) GetStatus() TaskInfo {
 		Type:        TaskTypeBash,
 		Command:     t.Command,
 		Description: t.Description,
-		Status:      t.Status,
+		Status:      t.status,
 		PID:         t.PID,
 		StartTime:   t.StartTime,
-		EndTime:     t.EndTime,
-		ExitCode:    t.ExitCode,
+		EndTime:     t.endTime,
+		ExitCode:    t.exitCode,
 		OutputFile:  t.OutputFile,
-		Error:       t.Error,
+		Error:       t.errMsg,
 		Output:      t.output.String(),
 	}
 }

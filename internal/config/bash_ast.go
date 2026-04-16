@@ -7,8 +7,8 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
-// ParsedCommand represents a single command extracted from an AST.
-type ParsedCommand struct {
+// parsedCommand represents a single command extracted from an AST.
+type parsedCommand struct {
 	Name       string   // Base command name (path-stripped)
 	Args       []string // Command arguments
 	HasPipe    bool     // Part of a pipeline
@@ -17,7 +17,7 @@ type ParsedCommand struct {
 }
 
 // String returns the reconstructed command string.
-func (p ParsedCommand) String() string {
+func (p parsedCommand) String() string {
 	if len(p.Args) == 0 {
 		return p.Name
 	}
@@ -31,13 +31,11 @@ var safeWrapperCommands = map[string]bool{
 	"nice":    true,
 	"nohup":   true,
 	"ionice":  true,
-	"strace":  true,
-	"ltrace":  true,
 }
 
-// ParseBashAST parses a bash command string into an AST.
+// parseBashAST parses a bash command string into an AST.
 // Returns nil on parse failure (caller should fall back to regex).
-func ParseBashAST(cmd string) *syntax.File {
+func parseBashAST(cmd string) *syntax.File {
 	reader := strings.NewReader(cmd)
 	parser := syntax.NewParser(syntax.KeepComments(false), syntax.Variant(syntax.LangBash))
 	file, err := parser.Parse(reader, "")
@@ -47,10 +45,10 @@ func ParseBashAST(cmd string) *syntax.File {
 	return file
 }
 
-// ExtractCommandsAST walks the AST and extracts individual simple commands.
+// extractCommandsAST walks the AST and extracts individual simple commands.
 // Handles &&, ||, ;, |, subshells, and command substitution.
-func ExtractCommandsAST(file *syntax.File) []ParsedCommand {
-	var commands []ParsedCommand
+func extractCommandsAST(file *syntax.File) []parsedCommand {
+	var commands []parsedCommand
 
 	for _, stmt := range file.Stmts {
 		commands = append(commands, extractFromStmt(stmt, false, false)...)
@@ -59,8 +57,8 @@ func ExtractCommandsAST(file *syntax.File) []ParsedCommand {
 	return commands
 }
 
-func extractFromStmt(stmt *syntax.Stmt, inPipe, inSubshell bool) []ParsedCommand {
-	var commands []ParsedCommand
+func extractFromStmt(stmt *syntax.Stmt, inPipe, inSubshell bool) []parsedCommand {
+	var commands []parsedCommand
 
 	// Collect redirections
 	var redirPaths []string
@@ -102,16 +100,12 @@ func extractFromStmt(stmt *syntax.Stmt, inPipe, inSubshell bool) []ParsedCommand
 		}
 
 	case *syntax.IfClause:
-		for _, s := range cmd.Then {
-			commands = append(commands, extractFromStmt(s, false, inSubshell)...)
-		}
-		if cmd.Else != nil {
-			for _, s := range cmd.Else.Then {
-				commands = append(commands, extractFromStmt(s, false, inSubshell)...)
-			}
-		}
+		commands = append(commands, extractFromIfClause(cmd, inSubshell)...)
 
 	case *syntax.WhileClause:
+		for _, s := range cmd.Cond {
+			commands = append(commands, extractFromStmt(s, false, inSubshell)...)
+		}
 		for _, s := range cmd.Do {
 			commands = append(commands, extractFromStmt(s, false, inSubshell)...)
 		}
@@ -120,15 +114,78 @@ func extractFromStmt(stmt *syntax.Stmt, inPipe, inSubshell bool) []ParsedCommand
 		for _, s := range cmd.Do {
 			commands = append(commands, extractFromStmt(s, false, inSubshell)...)
 		}
+
+	case *syntax.CaseClause:
+		for _, item := range cmd.Items {
+			for _, s := range item.Stmts {
+				commands = append(commands, extractFromStmt(s, false, inSubshell)...)
+			}
+		}
+
+	case *syntax.FuncDecl:
+		if cmd.Body != nil {
+			commands = append(commands, extractFromStmt(cmd.Body, false, inSubshell)...)
+		}
+
+	case *syntax.TimeClause:
+		if cmd.Stmt != nil {
+			commands = append(commands, extractFromStmt(cmd.Stmt, false, inSubshell)...)
+		}
+
+	case *syntax.CoprocClause:
+		// coproc runs arbitrary commands as a coprocess — must be walked
+		if cmd.Stmt != nil {
+			commands = append(commands, extractFromStmt(cmd.Stmt, false, inSubshell)...)
+		}
+
+	case *syntax.DeclClause:
+		// declare, local, export, readonly, typeset, nameref
+		name := ""
+		if cmd.Variant != nil {
+			name = cmd.Variant.Value
+		}
+		if name != "" {
+			commands = append(commands, parsedCommand{
+				Name:       name,
+				HasPipe:    inPipe,
+				InSubshell: inSubshell,
+				RedirPaths: redirPaths,
+			})
+		}
+
+	case *syntax.TestDecl:
+		// Bats test declaration — walk the body
+		if cmd.Body != nil {
+			commands = append(commands, extractFromStmt(cmd.Body, false, inSubshell)...)
+		}
+
+		// ArithmCmd, TestClause, LetClause: pure arithmetic/test expressions,
+		// no command execution — nothing to extract.
 	}
 
 	return commands
 }
 
-func extractFromCall(call *syntax.CallExpr, inPipe, inSubshell bool) ParsedCommand {
+// extractFromIfClause recursively walks if/elif/else chains, extracting
+// commands from both conditions and bodies.
+func extractFromIfClause(ic *syntax.IfClause, inSubshell bool) []parsedCommand {
+	var commands []parsedCommand
+	for ic != nil {
+		for _, s := range ic.Cond {
+			commands = append(commands, extractFromStmt(s, false, inSubshell)...)
+		}
+		for _, s := range ic.Then {
+			commands = append(commands, extractFromStmt(s, false, inSubshell)...)
+		}
+		ic = ic.Else
+	}
+	return commands
+}
+
+func extractFromCall(call *syntax.CallExpr, inPipe, inSubshell bool) parsedCommand {
 	if len(call.Args) == 0 {
 		// Pure assignment (e.g., FOO=bar with no command)
-		return ParsedCommand{}
+		return parsedCommand{}
 	}
 
 	// Collect words (assignments are already separated into call.Assigns by the parser)
@@ -138,7 +195,7 @@ func extractFromCall(call *syntax.CallExpr, inPipe, inSubshell bool) ParsedComma
 	}
 
 	if len(words) == 0 {
-		return ParsedCommand{}
+		return parsedCommand{}
 	}
 
 	// Strip path prefix from command name
@@ -160,7 +217,7 @@ func extractFromCall(call *syntax.CallExpr, inPipe, inSubshell bool) ParsedComma
 		}
 	}
 
-	return ParsedCommand{
+	return parsedCommand{
 		Name:       name,
 		Args:       args,
 		HasPipe:    inPipe,
@@ -168,8 +225,8 @@ func extractFromCall(call *syntax.CallExpr, inPipe, inSubshell bool) ParsedComma
 	}
 }
 
-func extractFromBinary(bin *syntax.BinaryCmd, inSubshell bool) []ParsedCommand {
-	var commands []ParsedCommand
+func extractFromBinary(bin *syntax.BinaryCmd, inSubshell bool) []parsedCommand {
+	var commands []parsedCommand
 
 	isPipe := bin.Op == syntax.Pipe || bin.Op == syntax.PipeAll
 
@@ -216,7 +273,7 @@ func partToString(part syntax.WordPart, sb *strings.Builder) {
 }
 
 // sensitiveRedirectPrefixes are path prefixes that should never be targets
-// of output redirection. This complements IsSensitivePath which checks for
+// of output redirection. This complements isSensitivePath which checks for
 // specific config directories/files.
 var sensitiveRedirectPrefixes = []string{
 	"/etc/",
@@ -309,10 +366,10 @@ var readOnlyGitSubcommands = map[string]bool{
 	"symbolic-ref": true,
 }
 
-// CheckASTSecurity performs security checks on the parsed AST.
+// checkASTSecurity performs security checks on the parsed AST.
 // Returns a reason string if dangerous, empty string if safe.
-func CheckASTSecurity(file *syntax.File) string {
-	commands := ExtractCommandsAST(file)
+func checkASTSecurity(file *syntax.File) string {
+	commands := extractCommandsAST(file)
 
 	// Check 1: Excessive subcommand count (prevent explosion attacks)
 	if len(commands) > 50 {
@@ -341,7 +398,7 @@ func CheckASTSecurity(file *syntax.File) string {
 	// Check 4: Redirect targets to sensitive paths
 	for _, cmd := range commands {
 		for _, path := range cmd.RedirPaths {
-			if reason := IsSensitivePath(path); reason != "" {
+			if reason := isSensitivePath(path); reason != "" {
 				return "redirect to sensitive path: " + path
 			}
 			if isSensitiveRedirectTarget(path) {
@@ -358,7 +415,7 @@ func CheckASTSecurity(file *syntax.File) string {
 	return ""
 }
 
-func isLiteralCdCommand(cmd ParsedCommand) bool {
+func isLiteralCdCommand(cmd parsedCommand) bool {
 	if len(cmd.Args) != 1 {
 		return false
 	}
@@ -371,7 +428,7 @@ func isLiteralCdCommand(cmd ParsedCommand) bool {
 	return !strings.ContainsAny(target, "$`;&|<>(){}")
 }
 
-func isReadOnlyGitCommand(cmd ParsedCommand) bool {
+func isReadOnlyGitCommand(cmd parsedCommand) bool {
 	subcommand, rest := gitSubcommandAndArgs(cmd.Args)
 	if readOnlyGitSubcommands[subcommand] {
 		return true
@@ -389,15 +446,7 @@ func isReadOnlyGitCommand(cmd ParsedCommand) bool {
 	}
 }
 
-func gitSubcommand(args []string) string {
-	subcommand, _ := gitSubcommandAndArgs(args)
-	return subcommand
-}
-
 func gitSubcommandAndArgs(args []string) (string, []string) {
-	for _, arg := range args {
-		_ = arg
-	}
 	idx := gitSubcommandIndex(args)
 	if idx == -1 {
 		return "", nil
@@ -449,7 +498,11 @@ func isReadOnlyGitBranch(args []string) bool {
 		switch {
 		case arg == "" || arg == "-a" || arg == "-r" || arg == "-vv" || arg == "-v" || arg == "--show-current":
 			continue
-		case arg == "--list" || strings.HasPrefix(arg, "--format=") || strings.HasPrefix(arg, "--sort=") || arg == "--column" || strings.HasPrefix(arg, "--column="):
+		case arg == "--list" || strings.HasPrefix(arg, "--format=") || strings.HasPrefix(arg, "--sort=") ||
+			arg == "--column" || strings.HasPrefix(arg, "--column=") ||
+			strings.HasPrefix(arg, "--contains") || strings.HasPrefix(arg, "--no-contains") ||
+			strings.HasPrefix(arg, "--merged") || strings.HasPrefix(arg, "--no-merged") ||
+			strings.HasPrefix(arg, "--points-at"):
 			listMode = true
 		case strings.HasPrefix(arg, "-"):
 			return false

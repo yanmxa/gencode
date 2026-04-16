@@ -11,6 +11,7 @@ import (
 )
 
 const cronTickInterval = 30 * time.Second
+const maxCronQueueSize = 100
 
 // cronTickMsg is sent periodically to check for due cron jobs.
 type cronTickMsg struct{}
@@ -45,18 +46,23 @@ func (m *model) handleCronTick() tea.Cmd {
 	fired := cron.DefaultStore.Tick()
 
 	cmds := []tea.Cmd{startCronTicker()}
-	idle := !m.conv.Stream.Active && !m.hasPendingToolExecution()
+	idle := !m.conv.Stream.Active && !m.isToolPhaseActive()
+	injected := false
 
-	for _, f := range fired {
-		if !idle {
-			m.cronQueue = append(m.cronQueue, f.Prompt)
+	for i, f := range fired {
+		if !idle || i > 0 {
+			// Queue if busy, or if another cron prompt already started a stream this tick
+			if len(m.cronQueue) < maxCronQueueSize {
+				m.cronQueue = append(m.cronQueue, f.Prompt)
+			}
 		} else {
 			cmds = append(cmds, m.injectCronPrompt(f.Prompt))
+			injected = true
 		}
 	}
 
-	// Drain one queued prompt if idle
-	if idle {
+	// Drain one queued prompt if idle and no prompt was already injected this tick
+	if idle && !injected {
 		if cmd := m.drainCronQueue(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}

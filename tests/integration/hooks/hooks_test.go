@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 )
 
@@ -35,7 +36,7 @@ func TestHooks_BlockToolCall(t *testing.T) {
 		ToolUseID: "tc1",
 	}
 
-	outcome := engine.Execute(context.Background(), hooks.PreToolUse, input)
+	outcome := engine.Execute(context.Background(), core.PreToolUse, input)
 
 	if !outcome.ShouldBlock {
 		t.Error("expected hook to block execution")
@@ -71,7 +72,7 @@ func TestHooks_ModifyToolInput(t *testing.T) {
 		ToolUseID: "tc1",
 	}
 
-	outcome := engine.Execute(context.Background(), hooks.PreToolUse, input)
+	outcome := engine.Execute(context.Background(), core.PreToolUse, input)
 
 	if outcome.ShouldBlock {
 		t.Error("should not block")
@@ -94,7 +95,7 @@ func TestHooks_NoHooks_PassThrough(t *testing.T) {
 		ToolUseID: "tc1",
 	}
 
-	outcome := engine.Execute(context.Background(), hooks.PreToolUse, input)
+	outcome := engine.Execute(context.Background(), core.PreToolUse, input)
 
 	if outcome.ShouldBlock {
 		t.Error("no hooks should mean no blocking")
@@ -107,11 +108,11 @@ func TestHooks_NoHooks_PassThrough(t *testing.T) {
 func TestHooks_NilSettings(t *testing.T) {
 	engine := hooks.NewEngine(nil, "test-session", t.TempDir(), "")
 
-	if engine.HasHooks(hooks.PreToolUse) {
+	if engine.HasHooks(core.PreToolUse) {
 		t.Error("nil settings should have no hooks")
 	}
 
-	outcome := engine.Execute(context.Background(), hooks.PreToolUse, hooks.HookInput{})
+	outcome := engine.Execute(context.Background(), core.PreToolUse, hooks.HookInput{})
 	if outcome.ShouldBlock {
 		t.Error("nil settings should not block")
 	}
@@ -128,10 +129,10 @@ func TestHooks_HasHooks(t *testing.T) {
 
 	engine := hooks.NewEngine(settings, "test-session", t.TempDir(), "")
 
-	if !engine.HasHooks(hooks.PreToolUse) {
+	if !engine.HasHooks(core.PreToolUse) {
 		t.Error("expected HasHooks=true for PreToolUse")
 	}
-	if engine.HasHooks(hooks.PostToolUse) {
+	if engine.HasHooks(core.PostToolUse) {
 		t.Error("expected HasHooks=false for PostToolUse")
 	}
 }

@@ -53,11 +53,6 @@ func NewHub(buffer int) *Hub {
 	}
 }
 
-// Send enqueues a progress message for the default agent index.
-func (h *Hub) Send(msg string) {
-	h.SendForAgent(0, msg)
-}
-
 // SendForAgent enqueues a progress message for a specific agent index.
 func (h *Hub) SendForAgent(index int, msg string) {
 	select {

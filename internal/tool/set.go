@@ -3,7 +3,7 @@ package tool
 import (
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/message"
 )
 
 // parentOnlyTools are tools that only the parent conversation can use.
@@ -19,17 +19,18 @@ var parentOnlyTools = map[string]bool{
 // If Static is non-nil, it is returned directly (for custom agents).
 // Otherwise, tools are resolved dynamically using the config fields.
 type Set struct {
-	Static    []provider.ToolSchema        // fixed tool list (overrides dynamic)
+	Static    []message.ToolSchema        // fixed tool list (overrides dynamic)
 	Disabled  map[string]bool              // excluded tools
 	PlanMode  bool                         // plan mode filter
-	MCP       func() []provider.ToolSchema // MCP tools getter
+	MCP       func() []message.ToolSchema // MCP tools getter
 	Allow     []string                     // agent allow list (nil = all tools, non-nil = only these)
-	Disallow  []string                     // agent deny list (excluded after allow filtering)
-	IsAgent   bool                         // true for subagent tool sets (excludes parent-only tools)
+	Disallow     []string                  // agent deny list (excluded after allow filtering)
+	IsAgent      bool                      // true for subagent tool sets (excludes parent-only tools)
+	disallowSet  map[string]bool           // eagerly-initialized normalized lookup cache for Disallow
 }
 
 // Tools returns the resolved tool set for a turn.
-func (s *Set) Tools() []provider.ToolSchema {
+func (s *Set) Tools() []message.ToolSchema {
 	// Static tools override everything
 	if s.Static != nil {
 		return s.Static
@@ -50,14 +51,14 @@ func (s *Set) Tools() []provider.ToolSchema {
 }
 
 // defaultTools returns the full tool set filtered by disabled/plan/deferred mode.
-func (s *Set) defaultTools() []provider.ToolSchema {
+func (s *Set) defaultTools() []message.ToolSchema {
 	if s.PlanMode {
-		return GetPlanModeToolSchemasFiltered(s.Disabled)
+		return getPlanModeToolSchemasFiltered(s.Disabled)
 	}
 
 	tools := GetToolSchemasWithMCP(s.MCP)
 
-	filtered := make([]provider.ToolSchema, 0, len(tools))
+	filtered := make([]message.ToolSchema, 0, len(tools))
 	for _, t := range tools {
 		if s.Disabled[t.Name] {
 			continue
@@ -73,9 +74,9 @@ func (s *Set) defaultTools() []provider.ToolSchema {
 
 // agentAllTools returns all tools except parent-only and disallowed tools.
 // Used for agents with nil Allow (= all tools).
-func (s *Set) agentAllTools() []provider.ToolSchema {
+func (s *Set) agentAllTools() []message.ToolSchema {
 	allTools := GetToolSchemasWithMCP(s.MCP)
-	filtered := make([]provider.ToolSchema, 0, len(allTools))
+	filtered := make([]message.ToolSchema, 0, len(allTools))
 	for _, t := range allTools {
 		if !parentOnlyTools[t.Name] && !s.isDisallowed(t.Name) {
 			filtered = append(filtered, t)
@@ -87,7 +88,7 @@ func (s *Set) agentAllTools() []provider.ToolSchema {
 // agentTools returns tools filtered by the allow list.
 // Only tools in the Allow list are included. MCP tools matching
 // the allow list (e.g. "mcp__server__tool") are also included.
-func (s *Set) agentTools() []provider.ToolSchema {
+func (s *Set) agentTools() []message.ToolSchema {
 	allTools := GetToolSchemas()
 
 	// Build allow set for fast lookup
@@ -96,7 +97,7 @@ func (s *Set) agentTools() []provider.ToolSchema {
 		allowSet[strings.ToLower(name)] = true
 	}
 
-	filtered := make([]provider.ToolSchema, 0, len(s.Allow))
+	filtered := make([]message.ToolSchema, 0, len(s.Allow))
 	for _, t := range allTools {
 		if allowSet[strings.ToLower(t.Name)] && !s.isDisallowed(t.Name) {
 			filtered = append(filtered, t)
@@ -115,13 +116,22 @@ func (s *Set) agentTools() []provider.ToolSchema {
 	return filtered
 }
 
+// InitDisallowSet builds the normalized lookup cache for Disallow.
+// Must be called before concurrent access to Tools().
+func (s *Set) InitDisallowSet() {
+	if len(s.Disallow) == 0 {
+		return
+	}
+	s.disallowSet = make(map[string]bool, len(s.Disallow))
+	for _, d := range s.Disallow {
+		s.disallowSet[strings.ToLower(d)] = true
+	}
+}
+
 // isDisallowed checks if a tool name is in the Disallow list.
 func (s *Set) isDisallowed(name string) bool {
-	lower := strings.ToLower(name)
-	for _, d := range s.Disallow {
-		if strings.ToLower(d) == lower {
-			return true
-		}
+	if len(s.disallowSet) == 0 {
+		return false
 	}
-	return false
+	return s.disallowSet[strings.ToLower(name)]
 }

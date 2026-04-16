@@ -7,33 +7,22 @@ import (
 	"strings"
 )
 
-// CommonDenyPatterns contains commonly denied patterns for security.
-var CommonDenyPatterns = []string{
-	"Read(**/.env)",
-	"Read(**/.env.*)",
-	"Read(**/secrets/**)",
-	"Read(**/*credentials*)",
-	"Read(**/*password*)",
-	"Read(**/.aws/**)",
-	"Read(**/.ssh/**)",
-	"Edit(**/.env)",
-	"Edit(**/.env.*)",
-	"Write(**/.env)",
-	"Write(**/.env.*)",
-}
-
-// DestructiveCommands are patterns that should always require user confirmation,
+// destructiveCommands are patterns that should always require user confirmation,
 // even when session permissions like AllowAllBash are enabled.
 // These commands can cause irreversible data loss or system damage.
-var DestructiveCommands = []string{
+var destructiveCommands = []string{
 	"rm:-rf",
 	"rm:-fr",
 	"rm:-r",
 	"git:reset --hard",
 	"git:clean -fd",
 	"git:clean -f",
-	"git:push --force",
 	"git:push -f",
+	"git:checkout --",
+	"git:stash drop",
+	"git:stash clear",
+	"git:branch -D",
+	"git:branch -d -f",
 	"chmod:777",
 	"chmod:-R 777",
 	":(){ :|:& };:", // fork bomb
@@ -43,14 +32,32 @@ var DestructiveCommands = []string{
 	"fdisk",         // disk partitioning
 }
 
-// IsDestructiveCommand checks if a bash command matches any destructive pattern.
+// isDestructiveCommand checks if a bash command matches any destructive pattern.
 // Returns true if the command should always require user confirmation.
-func IsDestructiveCommand(cmd string) bool {
+func isDestructiveCommand(cmd string) bool {
 	for _, normalized := range normalizedBashCommands(cmd) {
-		for _, pattern := range DestructiveCommands {
+		for _, pattern := range destructiveCommands {
 			if strings.Contains(normalized, pattern) {
 				return true
 			}
+		}
+		if isGitPushForce(normalized) {
+			return true
+		}
+	}
+	return false
+}
+
+// isGitPushForce detects "git push --force" without false-positiving on
+// "--force-with-lease" or "--force-if-includes".
+func isGitPushForce(normalized string) bool {
+	if !strings.HasPrefix(normalized, "git:push ") {
+		return false
+	}
+	args := strings.Fields(normalized[len("git:push "):])
+	for _, arg := range args {
+		if arg == "--force" {
+			return true
 		}
 	}
 	return false
@@ -111,10 +118,10 @@ var sensitiveFiles = map[string]string{
 	".docker/config.json": "Docker credentials",
 }
 
-// IsSensitivePath checks if a file path points to a sensitive location that
+// isSensitivePath checks if a file path points to a sensitive location that
 // should always require user confirmation (bypass-immune).
 // Returns a human-readable reason if sensitive, or empty string if safe.
-func IsSensitivePath(filePath string) string {
+func isSensitivePath(filePath string) string {
 	// Resolve symlinks to prevent bypass via symlink chains
 	resolved, err := filepath.EvalSymlinks(filepath.Dir(filePath))
 	if err == nil {
@@ -195,13 +202,13 @@ var bashSecurityPatterns = []struct {
 	{hasSuspiciousRedirection, "suspicious redirection"},
 }
 
-// CheckBashSecurity performs security analysis on a bash command beyond simple
+// checkBashSecurity performs security analysis on a bash command beyond simple
 // destructive pattern matching. Returns a reason string if the command is
 // suspicious, or empty string if it appears safe.
-func CheckBashSecurity(cmd string) string {
+func checkBashSecurity(cmd string) string {
 	// AST-based checks first (more accurate, structural analysis)
-	if file := ParseBashAST(cmd); file != nil {
-		if reason := CheckASTSecurity(file); reason != "" {
+	if file := parseBashAST(cmd); file != nil {
+		if reason := checkASTSecurity(file); reason != "" {
 			return reason
 		}
 	}
@@ -275,14 +282,18 @@ func hasIFSInjection(cmd string) bool {
 }
 
 func hasZshDangerousCommand(cmd string) bool {
-	// Split on all separators: &&, ;, and |
+	// Split on &&, ;, then split each result on | for pipe segments
 	segments := extractBashCommands(cmd)
-	// extractBashCommands handles && and ; but not pipes — add pipe segments
-	for _, seg := range strings.Split(cmd, "|") {
-		segments = append(segments, strings.TrimSpace(seg))
+	var expanded []string
+	for _, seg := range segments {
+		for _, pipePart := range strings.Split(seg, "|") {
+			if s := strings.TrimSpace(pipePart); s != "" {
+				expanded = append(expanded, s)
+			}
+		}
 	}
 
-	for _, c := range segments {
+	for _, c := range expanded {
 		parts := strings.Fields(c)
 		if len(parts) == 0 {
 			continue
@@ -323,9 +334,9 @@ func hasSuspiciousRedirection(cmd string) bool {
 // classifier or rule misconfiguration.
 // ---------------------------------------------------------------------------
 
-// DenialLimits configures when the system falls back to prompting the user
+// denialLimits configures when the system falls back to prompting the user
 // instead of auto-denying.
-var DenialLimits = struct {
+var denialLimits = struct {
 	MaxConsecutive int // Fall back to prompting after N consecutive denials
 	MaxTotal       int // Fall back to prompting after N total denials in session
 }{
@@ -354,6 +365,6 @@ func (d *DenialTracking) RecordSuccess() {
 
 // ShouldFallbackToPrompting returns true if denial limits are exceeded.
 func (d *DenialTracking) ShouldFallbackToPrompting() bool {
-	return d.ConsecutiveDenials >= DenialLimits.MaxConsecutive ||
-		d.TotalDenials >= DenialLimits.MaxTotal
+	return d.ConsecutiveDenials >= denialLimits.MaxConsecutive ||
+		d.TotalDenials >= denialLimits.MaxTotal
 }

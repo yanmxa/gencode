@@ -11,23 +11,23 @@ type activeHookStatus struct {
 	Seq     uint64
 }
 
-// StatusTracker tracks active hook status messages for display.
-type StatusTracker struct {
+// statusTracker tracks active hook status messages for display (internal to hooks package).
+type statusTracker struct {
 	mu     sync.RWMutex
 	seq    atomic.Uint64
 	active map[string]activeHookStatus
 }
 
-// NewStatusTracker creates a new StatusTracker.
-func NewStatusTracker() *StatusTracker {
-	return &StatusTracker{
+// newStatusTracker creates a new statusTracker.
+func newStatusTracker() *statusTracker {
+	return &statusTracker{
 		active: make(map[string]activeHookStatus),
 	}
 }
 
 // Start begins tracking a status message and returns a key for later removal.
 // Returns empty string if message is empty.
-func (s *StatusTracker) Start(message string) string {
+func (s *statusTracker) Start(message string) string {
 	if message == "" {
 		return ""
 	}
@@ -43,7 +43,7 @@ func (s *StatusTracker) Start(message string) string {
 }
 
 // End stops tracking a status message. No-op if id is empty.
-func (s *StatusTracker) End(id string) {
+func (s *statusTracker) End(id string) {
 	if id == "" {
 		return
 	}
@@ -53,7 +53,7 @@ func (s *StatusTracker) End(id string) {
 }
 
 // CurrentMessage returns the highest-sequence active status message.
-func (s *StatusTracker) CurrentMessage() string {
+func (s *statusTracker) CurrentMessage() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

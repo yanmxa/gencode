@@ -1,11 +1,14 @@
 package sessionui
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/yanmxa/gencode/internal/session"
 )
@@ -50,7 +53,15 @@ func TestGetGitBranch(t *testing.T) {
 	run("add", "README.md")
 	run("commit", "-m", "init")
 
-	if got := session.GetGitBranch(dir); got != "main" {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git rev-parse failed: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != "main" {
 		t.Fatalf("GetGitBranch() = %q, want %q", got, "main")
 	}
 }

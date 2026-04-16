@@ -3,7 +3,7 @@ package orchestration
 import "testing"
 
 func TestSnapshotBuildsDecisionFromBatchState(t *testing.T) {
-	store := NewStore()
+	store := newStore()
 	store.RecordLaunch(Launch{
 		TaskID:       "task-1",
 		AgentID:      "agent-1",

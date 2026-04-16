@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	MaxTitleLength       = 60
+	maxTitleLength       = 60
 	MinSubstantiveLength = 6
 )
 
@@ -32,12 +32,12 @@ func GenerateTitle(entries []Entry) string {
 
 func truncateTitle(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if utf8.RuneCountInString(s) <= MaxTitleLength {
+	if utf8.RuneCountInString(s) <= maxTitleLength {
 		return s
 	}
 	runes := []rune(s)
-	truncated := string(runes[:MaxTitleLength])
-	if lastSpace := strings.LastIndex(truncated, " "); lastSpace > MaxTitleLength/2 {
+	truncated := string(runes[:maxTitleLength])
+	if lastSpace := strings.LastIndex(truncated, " "); lastSpace > maxTitleLength/2 {
 		truncated = truncated[:lastSpace]
 	}
 	return strings.TrimSpace(truncated) + "..."

@@ -18,9 +18,11 @@ import (
 	"github.com/yanmxa/gencode/internal/app/providerui"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/ext/skill"
@@ -45,7 +47,7 @@ func (testLLMProvider) Name() string { return "test" }
 
 func TestFireSessionEndClearsSessionHooks(t *testing.T) {
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
-	engine.AddSessionFunctionHook(hooks.Stop, "", hooks.FunctionHook{
+	engine.AddSessionFunctionHook(core.Stop, "", hooks.FunctionHook{
 		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
 			return hooks.HookOutput{}, nil
 		},
@@ -54,7 +56,7 @@ func TestFireSessionEndClearsSessionHooks(t *testing.T) {
 	m := &model{hookEngine: engine}
 	m.fireSessionEnd("other")
 
-	if engine.HasHooks(hooks.Stop) {
+	if engine.HasHooks(core.Stop) {
 		t.Fatal("expected session-scoped hooks to be cleared after SessionEnd")
 	}
 }
@@ -62,18 +64,17 @@ func TestFireSessionEndClearsSessionHooks(t *testing.T) {
 func TestInitFiresSetupHook(t *testing.T) {
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
 	triggered := make(chan string, 1)
-	engine.AddSessionFunctionHook(hooks.Setup, "init", hooks.FunctionHook{
+	engine.AddSessionFunctionHook(core.Setup, "init", hooks.FunctionHook{
 		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input.Trigger
 			return hooks.HookOutput{}, nil
 		},
 	})
 
+	// Hook firing now happens during model construction (not Init()) to
+	// avoid value-receiver mutation loss. Simulate the newModel() path.
 	m := model{hookEngine: engine}
-	cmd := m.Init()
-	if cmd == nil {
-		t.Fatal("expected init command batch")
-	}
+	m.hookEngine.ExecuteAsync(core.Setup, hooks.HookInput{Trigger: "init"})
 
 	select {
 	case trigger := <-triggered:
@@ -353,7 +354,7 @@ You are a verifier.`), 0o644); err != nil {
 	if len(m.settings.Hooks["SessionStart"]) == 0 {
 		t.Fatal("expected plugin hooks to be merged into settings after --plugin-dir load")
 	}
-	if !m.hookEngine.HasHooks(hooks.SessionStart) {
+	if !m.hookEngine.HasHooks(core.SessionStart) {
 		t.Fatal("expected hook engine to see plugin hooks after --plugin-dir load")
 	}
 	if m.mcp.Registry == nil {
@@ -387,7 +388,7 @@ func TestRefreshMemoryContextFiresInstructionsLoaded(t *testing.T) {
 
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", tmpDir, "")
 	triggered := make(chan hooks.HookInput, 1)
-	engine.AddSessionFunctionHook(hooks.InstructionsLoaded, projectFile, hooks.FunctionHook{
+	engine.AddSessionFunctionHook(core.InstructionsLoaded, projectFile, hooks.FunctionHook{
 		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
 			return hooks.HookOutput{}, nil
@@ -419,7 +420,7 @@ func TestChangeCwdFiresCwdChanged(t *testing.T) {
 
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", oldCwd, "")
 	triggered := make(chan hooks.HookInput, 1)
-	engine.AddSessionFunctionHook(hooks.CwdChanged, newCwd, hooks.FunctionHook{
+	engine.AddSessionFunctionHook(core.CwdChanged, newCwd, hooks.FunctionHook{
 		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
 			return hooks.HookOutput{}, nil
@@ -458,7 +459,7 @@ func TestApplyToolResultSideEffectsFiresFileChanged(t *testing.T) {
 
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", cwd, "")
 	triggered := make(chan hooks.HookInput, 1)
-	engine.AddSessionFunctionHook(hooks.FileChanged, filePath, hooks.FunctionHook{
+	engine.AddSessionFunctionHook(core.FileChanged, filePath, hooks.FunctionHook{
 		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
 			return hooks.HookOutput{}, nil
@@ -497,7 +498,7 @@ func TestApplyToolResultSideEffectsUpdatesCwdFromBash(t *testing.T) {
 
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", oldCwd, "")
 	triggered := make(chan hooks.HookInput, 1)
-	engine.AddSessionFunctionHook(hooks.CwdChanged, newCwd, hooks.FunctionHook{
+	engine.AddSessionFunctionHook(core.CwdChanged, newCwd, hooks.FunctionHook{
 		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
 			return hooks.HookOutput{}, nil
@@ -592,7 +593,7 @@ func TestChangeCwdReloadsProjectScopedSettings(t *testing.T) {
 func TestInitRegistersWatchPathsFromSessionStart(t *testing.T) {
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
 	watchPath := filepath.Join(t.TempDir(), ".env")
-	engine.AddSessionFunctionHook(hooks.SessionStart, "", hooks.FunctionHook{
+	engine.AddSessionFunctionHook(core.SessionStart, "", hooks.FunctionHook{
 		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
 			return hooks.HookOutput{
 				HookSpecificOutput: &hooks.HookSpecificOutput{
@@ -603,18 +604,13 @@ func TestInitRegistersWatchPathsFromSessionStart(t *testing.T) {
 		},
 	})
 
-	m := model{
-		hookEngine:  engine,
-		fileWatcher: newFileWatcher(engine, nil),
-	}
-	m.fileWatcher.onOutcome = func(outcome hooks.HookOutcome) {
-		m.applyRuntimeHookOutcome(outcome)
-	}
-
-	cmd := m.Init()
-	if cmd == nil {
-		t.Fatal("expected init command batch")
-	}
+	// Hook firing now happens during model construction (not Init()).
+	// Simulate the newModel() path: fire SessionStart and apply outcome.
+	m := model{hookEngine: engine}
+	outcome := engine.Execute(context.Background(), core.SessionStart, hooks.HookInput{
+		Source: "startup",
+	})
+	m.applyRuntimeHookOutcome(outcome)
 
 	paths := m.fileWatcher.CurrentPaths()
 	if len(paths) != 1 || paths[0] != watchPath {
@@ -632,7 +628,7 @@ func TestFileWatcherFiresFileChangedForWatchedPath(t *testing.T) {
 
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", cwd, "")
 	triggered := make(chan hooks.HookInput, 1)
-	engine.AddSessionFunctionHook(hooks.FileChanged, filePath, hooks.FunctionHook{
+	engine.AddSessionFunctionHook(core.FileChanged, filePath, hooks.FunctionHook{
 		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
 			return hooks.HookOutput{}, nil
@@ -682,7 +678,7 @@ func TestApplyRuntimeHookOutcomeSetsInitialPrompt(t *testing.T) {
 func TestPermissionDeniedRetryContinuesStream(t *testing.T) {
 	cwd := t.TempDir()
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", cwd, "")
-	engine.AddSessionFunctionHook(hooks.PermissionDenied, "", hooks.FunctionHook{
+	engine.AddSessionFunctionHook(core.PermissionDenied, "", hooks.FunctionHook{
 		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
 			return hooks.HookOutput{
 				HookSpecificOutput: &hooks.HookSpecificOutput{
@@ -697,7 +693,7 @@ func TestPermissionDeniedRetryContinuesStream(t *testing.T) {
 	m := &model{
 		cwd:        cwd,
 		hookEngine: engine,
-		runtime:    rt,
+		asyncOps:    rt,
 		conv:       appconv.New(),
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
@@ -740,7 +736,7 @@ func TestAsyncHookTickRewakesModel(t *testing.T) {
 	rt := &fakeConversationRuntime{}
 	m := &model{
 		cwd:            t.TempDir(),
-		runtime:        rt,
+		asyncOps:        rt,
 		conv:           appconv.New(),
 		asyncHookQueue: newAsyncHookQueue(),
 		provider:       providerui.State{LLM: testLLMProvider{}},
@@ -785,7 +781,7 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
-	engine.AddSessionFunctionHook(hooks.Notification, "", hooks.FunctionHook{
+	engine.AddSessionFunctionHook(core.Notification, "", hooks.FunctionHook{
 		StatusMessage: "hook is running",
 		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
 			started <- struct{}{}
@@ -802,7 +798,7 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		engine.Execute(context.Background(), hooks.Notification, hooks.HookInput{NotificationType: "idle_prompt"})
+		engine.Execute(context.Background(), core.Notification, hooks.HookInput{NotificationType: "idle_prompt"})
 	}()
 
 	select {
@@ -833,7 +829,7 @@ func TestTaskNotificationTickRewakesModel(t *testing.T) {
 	rt := &fakeConversationRuntime{}
 	m := &model{
 		cwd:               t.TempDir(),
-		runtime:           rt,
+		asyncOps:           rt,
 		conv:              appconv.New(),
 		taskNotifications: newTaskNotificationQueue(),
 		provider:          providerui.State{LLM: testLLMProvider{}},
@@ -930,15 +926,15 @@ func TestTaskNotificationTickBatchesQueuedNotifications(t *testing.T) {
 	rt := &fakeConversationRuntime{}
 	m := &model{
 		cwd:               t.TempDir(),
-		runtime:           rt,
+		asyncOps:           rt,
 		conv:              appconv.New(),
 		taskNotifications: newTaskNotificationQueue(),
 		provider:          providerui.State{LLM: testLLMProvider{}},
 		output:            appoutput.New(80, progress.NewHub(10)),
 	}
 
-	batch := &backgroundBatchSnapshot{
-		BatchID:   "batch-1",
+	batch := &orchestration.Batch{
+		ID:        "batch-1",
 		Subject:   "2 background agents launched",
 		Status:    tracker.StatusInProgress,
 		Completed: 1,
@@ -1014,7 +1010,7 @@ func TestTaskNotificationTickAddsCoordinatorPolicyForCompletedFailedBatch(t *tes
 	rt := &fakeConversationRuntime{}
 	m := &model{
 		cwd:               t.TempDir(),
-		runtime:           rt,
+		asyncOps:           rt,
 		conv:              appconv.New(),
 		taskNotifications: newTaskNotificationQueue(),
 		provider:          providerui.State{LLM: testLLMProvider{}},
@@ -1025,8 +1021,8 @@ func TestTaskNotificationTickAddsCoordinatorPolicyForCompletedFailedBatch(t *tes
 		Notice:             "naming-audit failed",
 		Context:            []string{"background task context"},
 		ContinuationPrompt: "<task-notification><task-id>bg-2</task-id></task-notification>",
-		Batch: &backgroundBatchSnapshot{
-			BatchID:   "batch-2",
+		Batch: &orchestration.Batch{
+			ID:        "batch-2",
 			Subject:   "2 background agents launched",
 			Status:    tracker.StatusCompleted,
 			Completed: 2,

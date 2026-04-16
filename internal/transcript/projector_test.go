@@ -65,8 +65,8 @@ func TestProjectStartAndAppendMessages(t *testing.T) {
 func TestProjectStatePatchLastWins(t *testing.T) {
 	transcript, err := Project([]Record{
 		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStarted},
-		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStatePatched, State: &StateRecord{Ops: []PatchOp{PatchTitle("A"), PatchMode("normal")}}},
-		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStatePatched, State: &StateRecord{Ops: []PatchOp{PatchTitle("B"), PatchMode("plan")}}},
+		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStatePatched, State: &StateRecord{Ops: []PatchOp{PatchTitle("A"), patchMode("normal")}}},
+		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStatePatched, State: &StateRecord{Ops: []PatchOp{PatchTitle("B"), patchMode("plan")}}},
 	}, nil)
 	if err != nil {
 		t.Fatalf("Project(): %v", err)
@@ -89,7 +89,7 @@ func TestProjectTasksAndWorktreePatches(t *testing.T) {
 	wt := &WorktreeState{OriginalCwd: "/repo", WorktreePath: "/repo/.wt/1", WorktreeName: "fix-1"}
 	transcript, err := Project([]Record{
 		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStarted},
-		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStatePatched, State: &StateRecord{Ops: []PatchOp{PatchTasks([]tracker.Task{task}), PatchWorktree(wt)}}},
+		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStatePatched, State: &StateRecord{Ops: []PatchOp{PatchTasks([]tracker.Task{task}), patchWorktree(wt)}}},
 	}, nil)
 	if err != nil {
 		t.Fatalf("Project(): %v", err)
@@ -105,8 +105,8 @@ func TestProjectTasksAndWorktreePatches(t *testing.T) {
 func TestProjectWorktreeNullClears(t *testing.T) {
 	transcript, err := Project([]Record{
 		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStarted},
-		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStatePatched, State: &StateRecord{Ops: []PatchOp{PatchWorktree(&WorktreeState{WorktreeName: "a"})}}},
-		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStatePatched, State: &StateRecord{Ops: []PatchOp{PatchWorktree(nil)}}},
+		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStatePatched, State: &StateRecord{Ops: []PatchOp{patchWorktree(&WorktreeState{WorktreeName: "a"})}}},
+		{TranscriptID: "tx-1", Time: time.Now(), Type: RecordStatePatched, State: &StateRecord{Ops: []PatchOp{patchWorktree(nil)}}},
 	}, nil)
 	if err != nil {
 		t.Fatalf("Project(): %v", err)

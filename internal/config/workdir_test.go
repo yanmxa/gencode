@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestIsInWorkingDirectory(t *testing.T) {
+func Test_isInWorkingDirectory(t *testing.T) {
 	tests := []struct {
 		name        string
 		filePath    string
@@ -46,9 +46,9 @@ func TestIsInWorkingDirectory(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := IsInWorkingDirectory(tt.filePath, tt.workingDirs)
+			got := isInWorkingDirectory(tt.filePath, tt.workingDirs)
 			if got != tt.want {
-				t.Errorf("IsInWorkingDirectory(%q, %v) = %v, want %v", tt.filePath, tt.workingDirs, got, tt.want)
+				t.Errorf("isInWorkingDirectory(%q, %v) = %v, want %v", tt.filePath, tt.workingDirs, got, tt.want)
 			}
 		})
 	}

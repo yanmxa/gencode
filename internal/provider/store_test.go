@@ -86,32 +86,4 @@ func TestStore_SetTokenLimitUpdatesCachedModelCopy(t *testing.T) {
 	}
 }
 
-func TestStore_ClearTokenLimitAndSearchProvider(t *testing.T) {
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
 
-	store, err := NewStore()
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-
-	if err := store.SetSearchProvider("exa"); err != nil {
-		t.Fatalf("SetSearchProvider() error = %v", err)
-	}
-	if err := store.SetTokenLimit("claude", 200000, 16000); err != nil {
-		t.Fatalf("SetTokenLimit() error = %v", err)
-	}
-	if err := store.ClearSearchProvider(); err != nil {
-		t.Fatalf("ClearSearchProvider() error = %v", err)
-	}
-	if err := store.ClearTokenLimit("claude"); err != nil {
-		t.Fatalf("ClearTokenLimit() error = %v", err)
-	}
-
-	if got := store.GetSearchProvider(); got != "" {
-		t.Fatalf("search provider = %q, want empty", got)
-	}
-	if _, _, ok := store.GetTokenLimit("claude"); ok {
-		t.Fatal("expected token limit override to be cleared")
-	}
-}

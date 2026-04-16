@@ -13,12 +13,12 @@ import (
 )
 
 const (
-	// MaxImageSize is the maximum allowed image size (5MB)
-	MaxImageSize = 5 * 1024 * 1024
+	// maxImageSize is the maximum allowed image size (5MB)
+	maxImageSize = 5 * 1024 * 1024
 )
 
-// SupportedTypes maps file extensions to MIME types
-var SupportedTypes = map[string]string{
+// supportedTypes maps file extensions to MIME types
+var supportedTypes = map[string]string{
 	".png":  "image/png",
 	".jpg":  "image/jpeg",
 	".jpeg": "image/jpeg",
@@ -53,13 +53,13 @@ func Load(path string) (*ImageInfo, error) {
 	}
 
 	// Check file size
-	if info.Size() > MaxImageSize {
-		return nil, fmt.Errorf("image too large: %d bytes (max %d)", info.Size(), MaxImageSize)
+	if info.Size() > maxImageSize {
+		return nil, fmt.Errorf("image too large: %d bytes (max %d)", info.Size(), maxImageSize)
 	}
 
 	// Check extension
 	ext := strings.ToLower(filepath.Ext(absPath))
-	mediaType, ok := SupportedTypes[ext]
+	mediaType, ok := supportedTypes[ext]
 	if !ok {
 		return nil, fmt.Errorf("unsupported image format: %s", ext)
 	}
@@ -85,13 +85,6 @@ func Load(path string) (*ImageInfo, error) {
 	}, nil
 }
 
-// IsImageFile returns true if the file extension indicates a supported image format
-func IsImageFile(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	_, ok := SupportedTypes[ext]
-	return ok
-}
-
 // ToBase64 returns the image data as a base64 encoded string
 func (i *ImageInfo) ToBase64() string {
 	return base64.StdEncoding.EncodeToString(i.Data)
@@ -107,16 +100,3 @@ func (i *ImageInfo) ToProviderData() message.ImageData {
 	}
 }
 
-// FormatBytes formats byte size as human-readable string
-func FormatBytes(bytes int) string {
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := unit, 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}

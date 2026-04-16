@@ -4,7 +4,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/message"
 )
 
 // agentOutboxMsg carries an event from the core.Agent's outbox to the TUI.
@@ -23,11 +22,6 @@ func drainAgentOutbox(outbox <-chan core.Event) tea.Cmd {
 		}
 		return agentOutboxMsg{Event: ev}
 	}
-}
-
-// legacyMessageToCore converts a legacy message.Message to core.Message.
-func legacyMessageToCore(m message.Message) core.Message {
-	return message.ToCore(m)
 }
 
 // updateAgent handles core.Agent events (outbox events and permission bridge
@@ -68,7 +62,7 @@ func (m *model) handleAgentEvent(ev core.Event) tea.Cmd {
 }
 
 // showPermissionPrompt shows the TUI permission approval dialog for a bridge request.
-func (m *model) showPermissionPrompt(req *PermBridgeRequest) tea.Cmd {
+func (m *model) showPermissionPrompt(req *permBridgeRequest) tea.Cmd {
 	if req == nil || req.Request == nil {
 		return nil
 	}
@@ -81,13 +75,14 @@ func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {
 	if m.agentSess == nil || m.agentSess.agent == nil {
 		return nil
 	}
+	inbox := m.agentSess.agent.Inbox()
 	msg := core.Message{
 		Role:    core.RoleUser,
 		Content: content,
 		Images:  images,
 	}
 	return func() tea.Msg {
-		m.agentSess.agent.Inbox() <- msg
+		inbox <- msg
 		return nil
 	}
 }

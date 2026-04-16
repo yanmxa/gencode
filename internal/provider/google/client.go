@@ -1,15 +1,17 @@
 package google
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	stdlog "log"
 	"os"
-	"cmp"
 	"slices"
 	"strings"
+	"sync"
 
 	"google.golang.org/genai"
 
@@ -21,8 +23,10 @@ import (
 
 // Client implements the LLMProvider interface using the Google GenAI SDK
 type Client struct {
-	client *genai.Client
-	name   string
+	client       *genai.Client
+	name         string
+	modelsMu     sync.Mutex
+	cachedModels []provider.ModelInfo
 }
 
 // NewClient creates a new Google client with the given SDK client
@@ -58,7 +62,7 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 				role = string(msg.Role)
 			}
 
-			parts := make([]*genai.Part, 0)
+			parts := make([]*genai.Part, 0, 2)
 
 			if msg.ToolResult != nil {
 				// Tool result as function response
@@ -106,27 +110,31 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 							parts = append(parts, &genai.Part{Text: cp.Text})
 						case message.ContentPartImage:
 							decoded, err := base64.StdEncoding.DecodeString(cp.Image.Data)
-							if err == nil {
-								parts = append(parts, &genai.Part{
-									InlineData: &genai.Blob{
-										MIMEType: cp.Image.MediaType,
-										Data:     decoded,
-									},
-								})
+							if err != nil {
+								log.Logger().Warn("skipping image: base64 decode failed")
+								continue
 							}
+							parts = append(parts, &genai.Part{
+								InlineData: &genai.Blob{
+									MIMEType: cp.Image.MediaType,
+									Data:     decoded,
+								},
+							})
 						}
 					}
 				} else {
 					for _, img := range msg.Images {
 						decoded, err := base64.StdEncoding.DecodeString(img.Data)
-						if err == nil {
-							parts = append(parts, &genai.Part{
-								InlineData: &genai.Blob{
-									MIMEType: img.MediaType,
-									Data:     decoded,
-								},
-							})
+						if err != nil {
+							log.Logger().Warn("skipping image: base64 decode failed")
+							continue
 						}
+						parts = append(parts, &genai.Part{
+							InlineData: &genai.Blob{
+								MIMEType: img.MediaType,
+								Data:     decoded,
+							},
+						})
 					}
 					if msg.Content != "" {
 						parts = append(parts, &genai.Part{Text: msg.Content})
@@ -258,10 +266,28 @@ func (c *Client) Stream(ctx context.Context, opts provider.CompletionOptions) <-
 	return ch
 }
 
-// ListModels returns the available models for Google using the API
+// ListModels returns the available models for Google using the API.
+// Results are cached after a successful fetch; a failed fetch (e.g. cancelled
+// context) is not cached so subsequent calls can retry.
 func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
-	// Use Google API to dynamically fetch models
-	models := make([]provider.ModelInfo, 0)
+	c.modelsMu.Lock()
+	defer c.modelsMu.Unlock()
+
+	if c.cachedModels != nil {
+		return c.cachedModels, nil
+	}
+
+	models, err := c.fetchModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.cachedModels = models
+	return c.cachedModels, nil
+}
+
+// fetchModels fetches available Gemini models from the Google API.
+func (c *Client) fetchModels(ctx context.Context) ([]provider.ModelInfo, error) {
+	models := make([]provider.ModelInfo, 0, 16)
 
 	for m, err := range c.client.Models.All(ctx) {
 		if err != nil {
@@ -292,6 +318,10 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 				OutputTokenLimit: int(m.OutputTokenLimit),
 			})
 		}
+	}
+
+	if len(models) == 0 {
+		return nil, fmt.Errorf("no Gemini models found from API")
 	}
 
 	slices.SortFunc(models, func(a, b provider.ModelInfo) int { return cmp.Compare(a.ID, b.ID) })

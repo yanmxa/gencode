@@ -3,9 +3,11 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
+	"go.uber.org/zap"
+
+	"github.com/yanmxa/gencode/internal/client"
 	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/app/agentui"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
@@ -24,18 +26,19 @@ import (
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/cron"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/filecache"
+	"github.com/yanmxa/gencode/internal/tool/fs"
+	"github.com/yanmxa/gencode/internal/tool/web"
 	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/task"
-	"github.com/yanmxa/gencode/internal/tracker"
 	"github.com/yanmxa/gencode/internal/ui/progress"
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
@@ -52,8 +55,8 @@ type modelInfra struct {
 }
 
 func initializeModelInfra(cwd string) (modelInfra, error) {
-	cron.DefaultStore = cron.NewStore()
 	orchestration.DefaultStore.Reset()
+	cron.DefaultStore.Reset()
 	cron.DefaultStore.SetStoragePath(filepath.Join(cwd, ".gen", "scheduled_tasks.json"))
 	if err := cron.DefaultStore.LoadDurable(); err != nil {
 		return modelInfra{}, fmt.Errorf("failed to load scheduled tasks: %w", err)
@@ -63,10 +66,19 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 	initializeRegistries(cwd)
 	settings := loadSettingsForCwd(cwd)
 
+	// Wire injected dependencies so tool layer doesn't import upper layers
+	if store != nil {
+		web.SetSearchProviderGetter(store.GetSearchProvider)
+	}
+	fs.SetBashEnvProvider(plugin.PluginEnv)
+
 	sessionID := session.NewSessionID()
 
 	var transcriptPath string
-	sessionStore, _ := session.NewStore(cwd)
+	sessionStore, err := session.NewStore(cwd)
+	if err != nil {
+		log.Logger().Warn("session store initialization failed, sessions will not be persisted", zap.Error(err))
+	}
 	if sessionStore != nil {
 		transcriptPath = sessionStore.SessionPath(sessionID)
 	}
@@ -76,8 +88,9 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 	if currentModel != nil {
 		modelID = currentModel.ModelID
 	}
-	hookEngine.SetLLMProvider(llmProvider, modelID)
-	hookEngine.SetAgentRunner(newHookAgentRunner(llmProvider, settings, cwd, config.IsGitRepo(cwd), mcp.DefaultRegistry))
+	hookEngine.SetLLMCompleter(buildLLMCompleter(llmProvider), modelID)
+	hookEngine.SetAgentRunner(newHookAgentRunner(llmProvider, settings, cwd, config.IsGitRepo(cwd), mcp.DefaultRegistry, modelID))
+	hookEngine.SetEnvProvider(plugin.PluginEnv)
 	installHookBridges(hookEngine, taskNotifications)
 
 	return modelInfra{
@@ -123,8 +136,7 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		fileWatcher:       newFileWatcher(infra.hookEngine, nil),
 		asyncHookQueue:    newAsyncHookQueue(),
 		taskNotifications: infra.taskNotifications,
-		loop:              &runtime.Loop{},
-		runtime:           newConversationRuntime(),
+		asyncOps:          newConversationRuntime(),
 		fileCache:         filecache.New(),
 	}
 }
@@ -251,7 +263,7 @@ func (m *model) reloadPluginBackedState() error {
 	m.settings = settings
 	if m.hookEngine != nil {
 		m.hookEngine.SetSettings(settings)
-		m.hookEngine.SetAgentRunner(newHookAgentRunner(m.provider.LLM, settings, m.cwd, m.isGit, m.mcp.Registry))
+		m.hookEngine.SetAgentRunner(newHookAgentRunner(m.provider.LLM, settings, m.cwd, m.isGit, m.mcp.Registry, m.getModelID()))
 	}
 	m.reconfigureAgentTool()
 
@@ -323,13 +335,23 @@ func (m *model) applyResumeOption(resumeID string, fork bool) error {
 	return nil
 }
 
-func (m *model) initializeTaskStorageFromEnv() {
-	if taskListID := os.Getenv("GEN_TASK_LIST_ID"); taskListID != "" {
-		homeDir, _ := os.UserHomeDir()
-		if homeDir != "" {
-			dir := filepath.Join(homeDir, ".gen", "tasks", taskListID)
-			tracker.DefaultStore.SetStorageDir(dir)
-			_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
+
+// buildLLMCompleter wraps a provider into an hooks.LLMCompleter closure.
+// The closure owns client construction and streaming, keeping the hooks
+// engine free from provider/client dependencies.
+func buildLLMCompleter(p provider.LLMProvider) hooks.LLMCompleter {
+	if p == nil {
+		return nil
+	}
+	return func(ctx context.Context, systemPrompt, userMessage, model string) (string, error) {
+		c := client.NewClient(p, model)
+		resp, err := c.Complete(ctx, systemPrompt, []message.Message{{
+			Role:    message.RoleUser,
+			Content: userMessage,
+		}}, 4096)
+		if err != nil {
+			return "", err
 		}
+		return resp.Content, nil
 	}
 }

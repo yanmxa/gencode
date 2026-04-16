@@ -13,8 +13,8 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
-// MaxVisibleTasks is the maximum number of tasks shown before collapsing.
-const MaxVisibleTasks = 8
+// maxVisibleTasks is the maximum number of tasks shown before collapsing.
+const maxVisibleTasks = 8
 
 // TrackerListParams holds the parameters for rendering a tracker list.
 type TrackerListParams struct {
@@ -24,10 +24,20 @@ type TrackerListParams struct {
 }
 
 // RenderTrackerList renders a compact task list above the input area.
-// Shows all tasks including completed ones. Resets store when all done and idle.
+// Shows all tasks including completed ones. Returns empty string when
+// there are no tasks or when all tasks are completed and the LLM is idle.
+//
+// Note: this function is pure — it does not mutate tracker state.
+// The caller is responsible for resetting the store when appropriate
+// (see tracker.DefaultStore.AllDone).
 func RenderTrackerList(params TrackerListParams) string {
 	tasks := tracker.DefaultStore.List()
 	if len(tasks) == 0 {
+		return ""
+	}
+
+	// Hide the list once every task is done and the LLM is idle.
+	if tracker.DefaultStore.AllDone() && !params.StreamActive {
 		return ""
 	}
 
@@ -37,13 +47,6 @@ func RenderTrackerList(params TrackerListParams) string {
 			completed++
 		}
 	}
-
-	// Reset store when all tasks completed and LLM is idle.
-	if completed == len(tasks) && !params.StreamActive {
-		tracker.DefaultStore.Reset()
-		return ""
-	}
-
 	total := len(tasks)
 
 	var sb strings.Builder
@@ -76,21 +79,21 @@ func renderTasksHierarchical(tasks []*tracker.Task, width int, spinnerView strin
 		if childIDs[t.ID] {
 			continue
 		}
-		if renderedRoots >= MaxVisibleTasks && t.Status != tracker.StatusInProgress {
+		if renderedRoots >= maxVisibleTasks && t.Status != tracker.StatusInProgress {
 			continue
 		}
 		if isBackgroundBatchTask(t) {
 			sb.WriteString(renderBackgroundBatchTask(t, childrenByParent[t.ID], width, spinnerView))
 		} else {
-			sb.WriteString(RenderTrackerTask(t, width, spinnerView))
+			sb.WriteString(renderTrackerTask(t, width, spinnerView))
 		}
 		renderedRoots++
 	}
 	return sb.String()
 }
 
-// RenderTrackerTask renders a single task line.
-func RenderTrackerTask(t *tracker.Task, width int, spinnerView string) string {
+// renderTrackerTask renders a single task line.
+func renderTrackerTask(t *tracker.Task, width int, spinnerView string) string {
 	return renderTrackerTaskIndented(t, width, spinnerView, "")
 }
 
@@ -99,7 +102,7 @@ func renderTrackerTaskIndented(t *tracker.Task, width int, spinnerView string, e
 	indent := extraIndent + "  "
 	idTag := fmt.Sprintf("#%s ", t.ID)
 	maxTextLen := width - len(indent) - len(idTag) - 6 // icon + spaces + margin
-	subject := TruncateText(t.Subject, maxTextLen)
+	subject := truncateText(t.Subject, maxTextLen)
 	worker := backgroundWorkerSnapshot(t)
 
 	mutedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
@@ -119,14 +122,14 @@ func renderTrackerTaskIndented(t *tracker.Task, width int, spinnerView string, e
 			failedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error)
 			return indent + failedStyle.Render("!") + " " + idStr + failedStyle.Render(subject) + queueSuffix + " " + mutedStyle.Render("["+statusDetail+"]") + "\n"
 		}
-		return indent + TrackerCompletedStyle.Render("✓") + " " + idStr + TrackerCompletedStyle.Render(subject) + queueSuffix + "\n"
+		return indent + trackerCompletedStyle.Render("✓") + " " + idStr + trackerCompletedStyle.Render(subject) + queueSuffix + "\n"
 
 	case tracker.StatusInProgress:
 		displayText := subject
 		if t.ActiveForm != "" {
-			displayText = TruncateText(t.ActiveForm, maxTextLen)
+			displayText = truncateText(t.ActiveForm, maxTextLen)
 		}
-		line := indent + TrackerInProgressStyle.Render(spinnerView) + " " + idStr + TrackerInProgressStyle.Render(displayText) + queueSuffix
+		line := indent + trackerInProgressStyle.Render(spinnerView) + " " + idStr + trackerInProgressStyle.Render(displayText) + queueSuffix
 		if elapsed := formatElapsedTime(t.StatusChangedAt); elapsed != "" {
 			line += " " + mutedStyle.Render(elapsed)
 		}
@@ -140,9 +143,9 @@ func renderTrackerTaskIndented(t *tracker.Task, width int, spinnerView string, e
 			}
 			blockedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error)
 			suffix := " " + blockedStyle.Render("← "+strings.Join(blockerRefs, ", "))
-			return indent + TrackerPendingStyle.Render("○") + " " + idStr + TrackerPendingStyle.Render(subject) + suffix + "\n"
+			return indent + trackerPendingStyle.Render("○") + " " + idStr + trackerPendingStyle.Render(subject) + suffix + "\n"
 		}
-		return indent + TrackerPendingStyle.Render("○") + " " + idStr + TrackerPendingStyle.Render(subject) + "\n"
+		return indent + trackerPendingStyle.Render("○") + " " + idStr + trackerPendingStyle.Render(subject) + "\n"
 	}
 }
 
@@ -182,19 +185,19 @@ func renderBatchHeader(t *tracker.Task, children []*tracker.Task, width int, spi
 	}
 
 	maxTextLen := width - len(indent) - len(idTag) - 10
-	subject = TruncateText(subject, maxTextLen)
+	subject = truncateText(subject, maxTextLen)
 
 	switch t.Status {
 	case tracker.StatusCompleted:
-		return indent + TrackerCompletedStyle.Render("✓") + " " + idStr + TrackerCompletedStyle.Render(subject) + countSuffix + "\n"
+		return indent + trackerCompletedStyle.Render("✓") + " " + idStr + trackerCompletedStyle.Render(subject) + countSuffix + "\n"
 	case tracker.StatusInProgress:
-		line := indent + TrackerInProgressStyle.Render(spinnerView) + " " + idStr + TrackerInProgressStyle.Render(subject) + countSuffix
+		line := indent + trackerInProgressStyle.Render(spinnerView) + " " + idStr + trackerInProgressStyle.Render(subject) + countSuffix
 		if elapsed := formatElapsedTime(t.StatusChangedAt); elapsed != "" {
 			line += " " + mutedStyle.Render(elapsed)
 		}
 		return line + "\n"
 	default:
-		return indent + TrackerPendingStyle.Render("○") + " " + idStr + TrackerPendingStyle.Render(subject) + countSuffix + "\n"
+		return indent + trackerPendingStyle.Render("○") + " " + idStr + trackerPendingStyle.Render(subject) + countSuffix + "\n"
 	}
 }
 
@@ -272,13 +275,14 @@ func formatElapsedTime(since time.Time) string {
 	return fmt.Sprintf("%ds", seconds)
 }
 
-// TruncateText shortens text to maxLen with ellipsis if needed.
-func TruncateText(text string, maxLen int) string {
-	if maxLen <= 0 || len(text) <= maxLen {
+// truncateText shortens text to maxLen runes with ellipsis if needed.
+func truncateText(text string, maxLen int) string {
+	runes := []rune(text)
+	if maxLen <= 0 || len(runes) <= maxLen {
 		return text
 	}
 	if maxLen <= 3 {
-		return text[:maxLen]
+		return string(runes[:maxLen])
 	}
-	return text[:maxLen-3] + "..."
+	return string(runes[:maxLen-3]) + "..."
 }

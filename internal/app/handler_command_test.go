@@ -40,7 +40,7 @@ func TestHandlerRegistryMatchesBuiltinCommands(t *testing.T) {
 func TestExecuteCommandExit(t *testing.T) {
 	m := &model{}
 
-	result, cmd, handled := ExecuteCommand(context.Background(), m, "/exit")
+	result, cmd, handled := executeCommand(context.Background(), m, "/exit")
 	if !handled {
 		t.Fatal("expected /exit to be handled")
 	}
@@ -58,7 +58,7 @@ func TestExecuteCommandExit(t *testing.T) {
 func TestExecuteCommandUnknown(t *testing.T) {
 	m := &model{}
 
-	result, cmd, handled := ExecuteCommand(context.Background(), m, "/definitely-unknown")
+	result, cmd, handled := executeCommand(context.Background(), m, "/definitely-unknown")
 	if !handled {
 		t.Fatal("expected unknown command to be handled")
 	}
@@ -74,7 +74,7 @@ func TestExecuteCommandPlanUsageAndState(t *testing.T) {
 	t.Run("usage shown when task missing", func(t *testing.T) {
 		m := &model{}
 
-		result, cmd, handled := ExecuteCommand(context.Background(), m, "/plan")
+		result, cmd, handled := executeCommand(context.Background(), m, "/plan")
 		if !handled {
 			t.Fatal("expected /plan to be handled")
 		}
@@ -93,7 +93,7 @@ func TestExecuteCommandPlanUsageAndState(t *testing.T) {
 			},
 		}
 
-		result, cmd, handled := ExecuteCommand(context.Background(), m, "/plan audit regression coverage")
+		result, cmd, handled := executeCommand(context.Background(), m, "/plan audit regression coverage")
 		if !handled {
 			t.Fatal("expected /plan to be handled")
 		}
@@ -122,7 +122,7 @@ func TestExecuteCommandOpenSelectors(t *testing.T) {
 	t.Run("tools opens selector", func(t *testing.T) {
 		m := &model{width: 80, height: 24}
 
-		result, cmd, handled := ExecuteCommand(context.Background(), m, "/tools")
+		result, cmd, handled := executeCommand(context.Background(), m, "/tools")
 		if !handled {
 			t.Fatal("expected /tools to be handled")
 		}
@@ -171,7 +171,7 @@ func TestExecuteCommandOpenSelectors(t *testing.T) {
 			session: sessionui.State{Store: store},
 		}
 
-		result, cmd, handled := ExecuteCommand(context.Background(), m, "/resume")
+		result, cmd, handled := executeCommand(context.Background(), m, "/resume")
 		if !handled {
 			t.Fatal("expected /resume to be handled")
 		}
@@ -195,7 +195,7 @@ func TestExecuteCommandReloadPlugins(t *testing.T) {
 
 	m := &model{cwd: tmpDir}
 
-	result, cmd, handled := ExecuteCommand(context.Background(), m, "/reload-plugins")
+	result, cmd, handled := executeCommand(context.Background(), m, "/reload-plugins")
 	if !handled {
 		t.Fatal("expected /reload-plugins to be handled")
 	}
@@ -223,7 +223,7 @@ func TestExecuteCommandLoopSchedulesRecurringPrompt(t *testing.T) {
 		conv: appconv.New(),
 	}
 
-	result, cmd, handled := ExecuteCommand(context.Background(), m, "/loop 5m check the deploy")
+	result, cmd, handled := executeCommand(context.Background(), m, "/loop 5m check the deploy")
 	if !handled {
 		t.Fatal("expected /loop to be handled")
 	}
@@ -264,7 +264,7 @@ func TestExecuteCommandLoopParsesTrailingEveryClause(t *testing.T) {
 
 	m := &model{conv: appconv.New()}
 
-	result, cmd, handled := ExecuteCommand(context.Background(), m, "/loop check the deploy every 20m")
+	result, cmd, handled := executeCommand(context.Background(), m, "/loop check the deploy every 20m")
 	if !handled {
 		t.Fatal("expected /loop to be handled")
 	}
@@ -294,7 +294,7 @@ func TestExecuteCommandLoopOnceSchedulesOneShot(t *testing.T) {
 
 	m := &model{conv: appconv.New()}
 
-	result, cmd, handled := ExecuteCommand(context.Background(), m, "/loop once 20m check the deploy")
+	result, cmd, handled := executeCommand(context.Background(), m, "/loop once 20m check the deploy")
 	if !handled {
 		t.Fatal("expected /loop once to be handled")
 	}
@@ -374,7 +374,7 @@ func TestExecuteCommandLoopListAndDelete(t *testing.T) {
 
 	m := &model{conv: appconv.New()}
 
-	result, cmd, handled := ExecuteCommand(context.Background(), m, "/loop list")
+	result, cmd, handled := executeCommand(context.Background(), m, "/loop list")
 	if !handled {
 		t.Fatal("expected /loop list to be handled")
 	}
@@ -385,7 +385,7 @@ func TestExecuteCommandLoopListAndDelete(t *testing.T) {
 		t.Fatalf("unexpected list output %q", result)
 	}
 
-	result, cmd, handled = ExecuteCommand(context.Background(), m, "/loop delete "+job.ID)
+	result, cmd, handled = executeCommand(context.Background(), m, "/loop delete "+job.ID)
 	if !handled {
 		t.Fatal("expected /loop delete to be handled")
 	}
@@ -414,7 +414,7 @@ func TestExecuteCommandLoopDeleteAll(t *testing.T) {
 
 	m := &model{conv: appconv.New()}
 
-	result, cmd, handled := ExecuteCommand(context.Background(), m, "/loop delete all")
+	result, cmd, handled := executeCommand(context.Background(), m, "/loop delete all")
 	if !handled {
 		t.Fatal("expected /loop delete all to be handled")
 	}

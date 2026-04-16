@@ -126,7 +126,7 @@ func TestCheckPermission(t *testing.T) {
 		toolName string
 		args     map[string]any
 		session  *SessionPermissions
-		want     PermissionResult
+		want     PermissionBehavior
 	}{
 		// Allow rules
 		{
@@ -134,28 +134,28 @@ func TestCheckPermission(t *testing.T) {
 			"Bash",
 			map[string]any{"command": "git status"},
 			nil,
-			PermissionAllow,
+			Allow,
 		},
 		{
 			"git subcommand allowed after cd",
 			"Bash",
 			map[string]any{"command": "cd /path/to/repo && git status"},
 			nil,
-			PermissionAllow,
+			Allow,
 		},
 		{
 			"npm command allowed",
 			"Bash",
 			map[string]any{"command": "npm install"},
 			nil,
-			PermissionAllow,
+			Allow,
 		},
 		{
 			"read go file allowed",
 			"Read",
 			map[string]any{"file_path": "/path/to/file.go"},
 			nil,
-			PermissionAllow,
+			Allow,
 		},
 
 		// Deny rules
@@ -164,14 +164,14 @@ func TestCheckPermission(t *testing.T) {
 			"Read",
 			map[string]any{"file_path": "/path/to/.env"},
 			nil,
-			PermissionDeny,
+			Deny,
 		},
 		{
 			"read .env.local denied",
 			"Read",
 			map[string]any{"file_path": "/path/to/.env.local"},
 			nil,
-			PermissionDeny,
+			Deny,
 		},
 
 		// Ask rules
@@ -180,7 +180,7 @@ func TestCheckPermission(t *testing.T) {
 			"Bash",
 			map[string]any{"command": "rm -rf /tmp/test"},
 			nil,
-			PermissionAsk,
+			Ask,
 		},
 
 		// Default behavior - read-only allowed
@@ -189,7 +189,7 @@ func TestCheckPermission(t *testing.T) {
 			"Glob",
 			map[string]any{"pattern": "*.txt"},
 			nil,
-			PermissionAllow,
+			Allow,
 		},
 
 		// Default behavior - write needs ask
@@ -198,7 +198,7 @@ func TestCheckPermission(t *testing.T) {
 			"Edit",
 			map[string]any{"file_path": "/path/to/file.txt"},
 			nil,
-			PermissionAsk,
+			Ask,
 		},
 
 		// Session permissions
@@ -207,7 +207,7 @@ func TestCheckPermission(t *testing.T) {
 			"Edit",
 			map[string]any{"file_path": "/path/to/file.txt"},
 			&SessionPermissions{AllowAllEdits: true},
-			PermissionAllow,
+			Allow,
 		},
 	}
 
@@ -233,7 +233,7 @@ func TestLoaderLoad(t *testing.T) {
 	// Just verify it loads without error - actual values depend on environment
 }
 
-func TestIsDestructiveCommand(t *testing.T) {
+func Test_isDestructiveCommand(t *testing.T) {
 	tests := []struct {
 		name    string
 		command string
@@ -247,6 +247,10 @@ func TestIsDestructiveCommand(t *testing.T) {
 		{"git clean -fd", "git clean -fd", true},
 		{"git push --force", "git push --force origin main", true},
 		{"git push -f", "git push -f", true},
+		{"git checkout --", "git checkout -- .", true},
+		{"git stash drop", "git stash drop", true},
+		{"git stash clear", "git stash clear", true},
+		{"git branch -D", "git branch -D feature", true},
 		{"chmod 777", "chmod 777 /tmp/file", true},
 
 		// Path-qualified commands (should normalize to base command)
@@ -258,6 +262,8 @@ func TestIsDestructiveCommand(t *testing.T) {
 		{"rm single file", "rm /tmp/file.txt", false},
 		{"git status", "git status", false},
 		{"git push", "git push origin main", false},
+		{"git push force-with-lease", "git push --force-with-lease origin main", false},
+		{"git push force-if-includes", "git push --force-if-includes origin main", false},
 		{"git commit", "git commit -m 'msg'", false},
 		{"chmod 644", "chmod 644 /tmp/file", false},
 		{"ls", "ls -la", false},
@@ -266,9 +272,9 @@ func TestIsDestructiveCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := IsDestructiveCommand(tt.command)
+			got := isDestructiveCommand(tt.command)
 			if got != tt.want {
-				t.Errorf("IsDestructiveCommand(%q) = %v, want %v", tt.command, got, tt.want)
+				t.Errorf("isDestructiveCommand(%q) = %v, want %v", tt.command, got, tt.want)
 			}
 		})
 	}
@@ -294,19 +300,19 @@ func TestDenyRulesPriorityOverSession(t *testing.T) {
 		name     string
 		toolName string
 		args     map[string]any
-		want     PermissionResult
+		want     PermissionBehavior
 	}{
 		{
 			"deny rule blocks even with session allow",
 			"Read",
 			map[string]any{"file_path": "/path/to/.env"},
-			PermissionDeny,
+			Deny,
 		},
 		{
 			"normal bash allowed with session",
 			"Bash",
 			map[string]any{"command": "ls -la"},
-			PermissionAllow,
+			Allow,
 		},
 	}
 
@@ -335,13 +341,13 @@ func TestDestructiveCommandsRequireConfirmation(t *testing.T) {
 	tests := []struct {
 		name    string
 		command string
-		want    PermissionResult
+		want    PermissionBehavior
 	}{
-		{"rm -rf requires ask", "rm -rf /tmp/test", PermissionAsk},
-		{"git reset --hard requires ask", "git reset --hard HEAD", PermissionAsk},
-		{"git push --force requires ask", "git push --force", PermissionAsk},
-		{"normal git allowed", "git status", PermissionAllow},
-		{"normal ls allowed", "ls -la", PermissionAllow},
+		{"rm -rf requires ask", "rm -rf /tmp/test", Ask},
+		{"git reset --hard requires ask", "git reset --hard HEAD", Ask},
+		{"git push --force requires ask", "git push --force", Ask},
+		{"normal git allowed", "git status", Allow},
+		{"normal ls allowed", "ls -la", Allow},
 	}
 
 	for _, tt := range tests {
@@ -355,7 +361,7 @@ func TestDestructiveCommandsRequireConfirmation(t *testing.T) {
 	}
 }
 
-func TestIsSensitivePath(t *testing.T) {
+func Test_isSensitivePath(t *testing.T) {
 	tests := []struct {
 		name     string
 		path     string
@@ -387,10 +393,10 @@ func TestIsSensitivePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reason := IsSensitivePath(tt.path)
+			reason := isSensitivePath(tt.path)
 			isSafe := reason == ""
 			if isSafe != tt.wantSafe {
-				t.Errorf("IsSensitivePath(%q) returned %q, wantSafe=%v", tt.path, reason, tt.wantSafe)
+				t.Errorf("isSensitivePath(%q) returned %q, wantSafe=%v", tt.path, reason, tt.wantSafe)
 			}
 		})
 	}
@@ -412,31 +418,31 @@ func TestSensitivePathsBypassImmune(t *testing.T) {
 		name     string
 		toolName string
 		args     map[string]any
-		want     PermissionResult
+		want     PermissionBehavior
 	}{
 		{
 			"edit .git/hooks blocked even with AllowAllEdits",
 			"Edit",
 			map[string]any{"file_path": "/repo/.git/hooks/pre-commit"},
-			PermissionAsk,
+			Ask,
 		},
 		{
 			"edit .claude/settings blocked even with allow rule",
 			"Edit",
 			map[string]any{"file_path": "/repo/.claude/settings.json"},
-			PermissionAsk,
+			Ask,
 		},
 		{
 			"write .bashrc blocked even with AllowAllWrites",
 			"Write",
 			map[string]any{"file_path": "/home/user/.bashrc"},
-			PermissionAsk,
+			Ask,
 		},
 		{
 			"edit normal file allowed with session",
 			"Edit",
 			map[string]any{"file_path": "/repo/internal/main.go"},
-			PermissionAllow,
+			Allow,
 		},
 	}
 
@@ -450,7 +456,7 @@ func TestSensitivePathsBypassImmune(t *testing.T) {
 	}
 }
 
-func TestCheckBashSecurity(t *testing.T) {
+func Test_checkBashSecurity(t *testing.T) {
 	tests := []struct {
 		name     string
 		command  string
@@ -492,10 +498,10 @@ func TestCheckBashSecurity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reason := CheckBashSecurity(tt.command)
+			reason := checkBashSecurity(tt.command)
 			isSafe := reason == ""
 			if isSafe != tt.wantSafe {
-				t.Errorf("CheckBashSecurity(%q) = %q, wantSafe=%v", tt.command, reason, tt.wantSafe)
+				t.Errorf("checkBashSecurity(%q) = %q, wantSafe=%v", tt.command, reason, tt.wantSafe)
 			}
 		})
 	}
@@ -513,12 +519,12 @@ func TestBashSecurityBypassImmune(t *testing.T) {
 	tests := []struct {
 		name    string
 		command string
-		want    PermissionResult
+		want    PermissionBehavior
 	}{
-		{"zmodload blocked", "zmodload zsh/system", PermissionAsk},
-		{"proc environ blocked", "cat /proc/self/environ", PermissionAsk},
-		{"IFS injection blocked", "IFS=/ cat /etc/passwd", PermissionAsk},
-		{"normal ls allowed", "ls -la", PermissionAllow},
+		{"zmodload blocked", "zmodload zsh/system", Ask},
+		{"proc environ blocked", "cat /proc/self/environ", Ask},
+		{"IFS injection blocked", "IFS=/ cat /etc/passwd", Ask},
+		{"normal ls allowed", "ls -la", Allow},
 	}
 
 	for _, tt := range tests {
@@ -544,33 +550,33 @@ func TestCheckPermissionWithReason(t *testing.T) {
 		name       string
 		toolName   string
 		args       map[string]any
-		wantResult PermissionResult
+		wantResult PermissionBehavior
 		wantReason string
 	}{
 		{
 			"deny rule includes pattern",
 			"Read", map[string]any{"file_path": "/repo/.env"},
-			PermissionDeny, "deny rule: Read(**/.env)",
+			Deny, "deny rule: Read(**/.env)",
 		},
 		{
 			"allow rule includes pattern",
 			"Bash", map[string]any{"command": "git status"},
-			PermissionAllow, "allow rule: Bash(git:*)",
+			Allow, "allow rule: Bash(git:*)",
 		},
 		{
 			"allow rule includes chained bash subcommand pattern",
 			"Bash", map[string]any{"command": "cd /repo && git describe --tags --abbrev=0"},
-			PermissionAllow, "allow rule: Bash(git:*)",
+			Allow, "allow rule: Bash(git:*)",
 		},
 		{
 			"sensitive path has reason",
 			"Edit", map[string]any{"file_path": "/repo/.git/hooks/pre-commit"},
-			PermissionAsk, "bypass-immune: .git/ directory",
+			Ask, "bypass-immune: .git/ directory",
 		},
 		{
 			"destructive has reason",
 			"Bash", map[string]any{"command": "rm -rf /"},
-			PermissionAsk, "bypass-immune: destructive command",
+			Ask, "bypass-immune: destructive command",
 		},
 	}
 
@@ -822,19 +828,27 @@ func TestWorkingDirectoryConstraint(t *testing.T) {
 func TestSafeToolAllowlist(t *testing.T) {
 	settings := &Settings{}
 
-	safeTools := []string{
+	// All safe tools, including read-only ones.
+	// Keep in sync with config/permission.go safeTools.
+	allSafeTools := []string{
+		"Read", "Glob", "Grep", "WebFetch", "WebSearch", "LSP",
 		"TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
 		"AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
-		"TeamCreate", "CronList", "ToolSearch",
+		"CronList", "ToolSearch",
 	}
 
-	for _, tool := range safeTools {
+	for _, tool := range allSafeTools {
 		t.Run(tool, func(t *testing.T) {
 			got := settings.CheckPermission(tool, nil, nil)
 			if got != Allow {
 				t.Errorf("safe tool %q = %v, want Allow", tool, got)
 			}
 		})
+	}
+
+	// Verify the test list matches the actual safeTools map.
+	if len(allSafeTools) != len(safeTools) {
+		t.Errorf("test lists %d safe tools but safeTools map has %d entries — update the test", len(allSafeTools), len(safeTools))
 	}
 }
 

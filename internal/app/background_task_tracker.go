@@ -35,23 +35,6 @@ type backgroundTaskLaunch struct {
 	ResumeID    string
 }
 
-type backgroundBatchSnapshot struct {
-	BatchID   string
-	Subject   string
-	Status    string
-	Completed int
-	Total     int
-	Failures  int
-	Siblings  []backgroundBatchTaskSnapshot
-}
-
-type backgroundBatchTaskSnapshot struct {
-	TaskID    string
-	Subject   string
-	Status    string
-	AgentType string
-}
-
 func (m *model) syncBackgroundTaskTracker(msg tooluiExecResultLike) {
 	launch, ok := extractBackgroundTaskLaunch(msg)
 	if !ok {
@@ -97,11 +80,11 @@ func extractBackgroundTaskLaunch(msg tooluiExecResultLike) (backgroundTaskLaunch
 	}
 
 	launch := backgroundTaskLaunch{
-		TaskID:      mapString(bg, "taskId"),
-		AgentName:   mapString(bg, "agentName"),
-		AgentType:   mapString(bg, "agentType"),
-		Description: mapString(bg, "description"),
-		ResumeID:    mapString(bg, "resumeId"),
+		TaskID:      metadataString(bg, "taskId"),
+		AgentName:   metadataString(bg, "agentName"),
+		AgentType:   metadataString(bg, "agentType"),
+		Description: metadataString(bg, "description"),
+		ResumeID:    metadataString(bg, "resumeId"),
 	}
 	if launch.TaskID == "" {
 		return backgroundTaskLaunch{}, false
@@ -136,7 +119,7 @@ func ensureBackgroundBatchTracker(batchKey string, total int) string {
 	if batchKey == "" || total <= 1 {
 		return ""
 	}
-	if existing := findTrackerByMetadata(backgroundTrackerBatchKey, batchKey); existing != nil {
+	if existing := findBatchTracker(batchKey); existing != nil {
 		_ = tracker.DefaultStore.Update(existing.ID,
 			tracker.WithStatus(tracker.StatusInProgress),
 			tracker.WithMetadata(map[string]any{
@@ -157,7 +140,7 @@ func ensureBackgroundBatchTracker(batchKey string, total int) string {
 		return existing.ID
 	}
 
-	task := tracker.DefaultStore.Create(
+	batch := tracker.DefaultStore.Create(
 		fmt.Sprintf("%d background agents launched", total),
 		"Coordinator background worker batch",
 		"",
@@ -169,17 +152,17 @@ func ensureBackgroundBatchTracker(batchKey string, total int) string {
 			backgroundTrackerFailures:  0,
 		},
 	)
-	_ = tracker.DefaultStore.Update(task.ID, tracker.WithStatus(tracker.StatusInProgress))
+	_ = tracker.DefaultStore.Update(batch.ID, tracker.WithStatus(tracker.StatusInProgress))
 	orchestration.DefaultStore.UpdateBatch(orchestration.Batch{
-		ID:        task.ID,
+		ID:        batch.ID,
 		Key:       batchKey,
-		Subject:   task.Subject,
+		Subject:   batch.Subject,
 		Status:    tracker.StatusInProgress,
 		Completed: 0,
 		Total:     total,
 		Failures:  0,
 	})
-	return task.ID
+	return batch.ID
 }
 
 func ensureBackgroundWorkerTracker(launch backgroundTaskLaunch, parentID, batchKey string) string {
@@ -356,6 +339,19 @@ func findTrackerByMetadata(key, want string) *tracker.Task {
 	return tracker.DefaultStore.FindByMetadata(key, want)
 }
 
+// findBatchTracker finds a batch tracker entry by its batch key.
+// Unlike findTrackerByMetadata, this also verifies the entry is a batch (not a worker),
+// since both batch and worker entries share the same batchKey metadata.
+func findBatchTracker(batchKey string) *tracker.Task {
+	for _, t := range tracker.DefaultStore.List() {
+		if metadataString(t.Metadata, backgroundTrackerKindKey) == backgroundTrackerKindBatch &&
+			metadataString(t.Metadata, backgroundTrackerBatchKey) == batchKey {
+			return t
+		}
+	}
+	return nil
+}
+
 func childTrackers(parentID string) []*tracker.Task {
 	var children []*tracker.Task
 	for _, t := range tracker.DefaultStore.List() {
@@ -369,26 +365,9 @@ func childTrackers(parentID string) []*tracker.Task {
 	return children
 }
 
-func snapshotBackgroundBatchForTask(taskID string) *backgroundBatchSnapshot {
+func snapshotBackgroundBatchForTask(taskID string) *orchestration.Batch {
 	if batch, ok := orchestration.DefaultStore.SnapshotBatchForTask(taskID); ok {
-		siblings := make([]backgroundBatchTaskSnapshot, 0, len(batch.Workers))
-		for _, worker := range batch.Workers {
-			siblings = append(siblings, backgroundBatchTaskSnapshot{
-				TaskID:    worker.TaskID,
-				Subject:   worker.Subject,
-				Status:    worker.Status,
-				AgentType: worker.AgentType,
-			})
-		}
-		return &backgroundBatchSnapshot{
-			BatchID:   batch.ID,
-			Subject:   batch.Subject,
-			Status:    batch.Status,
-			Completed: batch.Completed,
-			Total:     batch.Total,
-			Failures:  batch.Failures,
-			Siblings:  siblings,
-		}
+		return batch
 	}
 
 	child := findTrackerByMetadata(backgroundTrackerTaskID, taskID)
@@ -406,13 +385,13 @@ func snapshotBackgroundBatchForTask(taskID string) *backgroundBatchSnapshot {
 	}
 
 	children := childTrackers(parentID)
-	siblings := make([]backgroundBatchTaskSnapshot, 0, len(children))
+	workers := make([]orchestration.BatchWorker, 0, len(children))
 	for _, c := range children {
 		status := metadataString(c.Metadata, backgroundTrackerStatusDetail)
 		if status == "" {
 			status = c.Status
 		}
-		siblings = append(siblings, backgroundBatchTaskSnapshot{
+		workers = append(workers, orchestration.BatchWorker{
 			TaskID:    metadataString(c.Metadata, backgroundTrackerTaskID),
 			Subject:   c.Subject,
 			Status:    status,
@@ -425,14 +404,14 @@ func snapshotBackgroundBatchForTask(taskID string) *backgroundBatchSnapshot {
 		status = tracker.StatusPending
 	}
 
-	return &backgroundBatchSnapshot{
-		BatchID:   parent.ID,
+	return &orchestration.Batch{
+		ID:        parent.ID,
 		Subject:   parent.Subject,
 		Status:    status,
 		Completed: metadataInt(parent.Metadata, backgroundTrackerCompleted),
 		Total:     metadataInt(parent.Metadata, backgroundTrackerTotal),
 		Failures:  metadataInt(parent.Metadata, backgroundTrackerFailures),
-		Siblings:  siblings,
+		Workers:   workers,
 	}
 }
 
@@ -510,16 +489,3 @@ func metadataInt(metadata map[string]any, key string) int {
 	}
 }
 
-func mapString(values map[string]any, key string) string {
-	if values == nil {
-		return ""
-	}
-	value, ok := values[key]
-	if !ok || value == nil {
-		return ""
-	}
-	if s, ok := value.(string); ok {
-		return s
-	}
-	return fmt.Sprint(value)
-}

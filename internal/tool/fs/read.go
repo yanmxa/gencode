@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
@@ -79,11 +80,14 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any, cwd strin
 		}
 	}
 	// Reset file position to beginning
-	file.Seek(0, 0)
+	if _, err := file.Seek(0, 0); err != nil {
+		return toolresult.NewErrorResult(t.Name(), "failed to seek file: "+err.Error())
+	}
 
-	// Read lines
+	// Read lines — use a larger buffer to handle files with very long lines.
 	var lines []toolresult.ContentLine
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), 1024*1024)
 	lineNo := 0
 	readCount := 0
 	truncated := false
@@ -104,9 +108,10 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any, cwd strin
 
 		text := scanner.Text()
 
-		// Truncate long lines
-		if len(text) > maxLineLength {
-			text = text[:maxLineLength] + "..."
+		// Truncate long lines (rune-aware to avoid splitting multi-byte characters)
+		if utf8.RuneCountInString(text) > maxLineLength {
+			runes := []rune(text)
+			text = string(runes[:maxLineLength]) + "..."
 		}
 
 		lines = append(lines, toolresult.ContentLine{

@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/yanmxa/gencode/internal/core"
 )
 
 // ChatMessage represents a UI-layer chat message with display state.
@@ -245,11 +243,14 @@ func InterleavedContentParts(msg Message) []ContentPart {
 		return nil
 	}
 
-	idToIdx := buildImageIDMap(msg.DisplayContent, len(msg.Images))
+	idToIdx := BuildImageIDMap(msg.DisplayContent, len(msg.Images))
 
 	var parts []ContentPart
 	last := 0
 	matches := inlineImageTokenRe.FindAllStringSubmatchIndex(msg.DisplayContent, -1)
+	if len(matches) > 0 {
+		parts = make([]ContentPart, 0, len(matches)*2+1)
+	}
 	for _, match := range matches {
 		start, end := match[0], match[1]
 		idStart, idEnd := match[2], match[3]
@@ -279,8 +280,10 @@ func InterleavedContentParts(msg Message) []ContentPart {
 	return parts
 }
 
-func buildImageIDMap(displayContent string, imageCount int) map[int]int {
-	m := make(map[int]int)
+// BuildImageIDMap parses [Image #N] tokens from displayContent and returns a map
+// from token ID to sequential index (0-based). imageCount caps the number of entries.
+func BuildImageIDMap(displayContent string, imageCount int) map[int]int {
+	m := make(map[int]int, imageCount)
 	matches := inlineImageTokenRe.FindAllStringSubmatch(displayContent, -1)
 	idx := 0
 	for _, match := range matches {
@@ -293,140 +296,5 @@ func buildImageIDMap(displayContent string, imageCount int) map[int]int {
 	return m
 }
 
-func ToCore(m Message) core.Message {
-	msg := core.Message{
-		Content:           m.Content,
-		DisplayContent:    m.DisplayContent,
-		Thinking:          m.Thinking,
-		ThinkingSignature: m.ThinkingSignature,
-	}
-	switch m.Role {
-	case RoleUser:
-		msg.Role = core.RoleUser
-		msg.Images = imagesToCore(m.Images)
-	case RoleAssistant:
-		msg.Role = core.RoleAssistant
-		msg.ToolCalls = toolCallsToCore(m.ToolCalls)
-	case RoleToolResult:
-		msg.Role = core.RoleTool
-		if m.ToolResult != nil {
-			msg.ToolResult = &core.ToolResult{
-				ToolCallID: m.ToolResult.ToolCallID,
-				ToolName:   m.ToolResult.ToolName,
-				Content:    m.ToolResult.Content,
-				IsError:    m.ToolResult.IsError,
-			}
-			msg.Content = m.ToolResult.Content
-		}
-	}
-	return msg
-}
-
-func ToCoreSlice(msgs []Message) []core.Message {
-	out := make([]core.Message, len(msgs))
-	for i, m := range msgs {
-		out[i] = ToCore(m)
-	}
-	return out
-}
-
-func FromCore(m core.Message) Message {
-	msg := Message{
-		Content:  m.Content,
-		Thinking: m.Thinking,
-	}
-	switch m.Role {
-	case core.RoleUser:
-		msg.Role = RoleUser
-		msg.Images = imagesFromCore(m.Images)
-	case core.RoleAssistant:
-		msg.Role = RoleAssistant
-		msg.ToolCalls = toolCallsFromCore(m.ToolCalls)
-	case core.RoleTool:
-		msg.Role = RoleToolResult
-		if m.ToolResult != nil {
-			msg.ToolResult = &ToolResult{
-				ToolCallID: m.ToolResult.ToolCallID,
-				ToolName:   m.ToolResult.ToolName,
-				Content:    m.ToolResult.Content,
-				IsError:    m.ToolResult.IsError,
-			}
-		}
-	}
-	return msg
-}
-
-func FromCoreSlice(msgs []core.Message) []Message {
-	out := make([]Message, len(msgs))
-	for i, m := range msgs {
-		out[i] = FromCore(m)
-	}
-	return out
-}
-
-func toolCallsToCore(calls []ToolCall) []core.ToolCall {
-	if len(calls) == 0 {
-		return nil
-	}
-	out := make([]core.ToolCall, len(calls))
-	for i, tc := range calls {
-		input := make(map[string]any)
-		_ = json.Unmarshal([]byte(tc.Input), &input)
-		out[i] = core.ToolCall{
-			ID:    tc.ID,
-			Name:  tc.Name,
-			Input: input,
-		}
-	}
-	return out
-}
-
-func toolCallsFromCore(calls []core.ToolCall) []ToolCall {
-	if len(calls) == 0 {
-		return nil
-	}
-	out := make([]ToolCall, len(calls))
-	for i, tc := range calls {
-		inputJSON, _ := json.Marshal(tc.Input)
-		out[i] = ToolCall{
-			ID:    tc.ID,
-			Name:  tc.Name,
-			Input: string(inputJSON),
-		}
-	}
-	return out
-}
-
-func imagesToCore(imgs []ImageData) []core.Image {
-	if len(imgs) == 0 {
-		return nil
-	}
-	out := make([]core.Image, len(imgs))
-	for i, img := range imgs {
-		out[i] = core.Image{
-			MediaType: img.MediaType,
-			Data:      img.Data,
-			FileName:  img.FileName,
-			Size:      img.Size,
-		}
-	}
-	return out
-}
-
-func imagesFromCore(imgs []core.Image) []ImageData {
-	if len(imgs) == 0 {
-		return nil
-	}
-	out := make([]ImageData, len(imgs))
-	for i, img := range imgs {
-		out[i] = ImageData{
-			MediaType: img.MediaType,
-			Data:      img.Data,
-			FileName:  img.FileName,
-			Size:      img.Size,
-		}
-	}
-	return out
-}
 
 

@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/message"
 	coretool "github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/ui/selector"
 	"github.com/yanmxa/gencode/internal/ui/theme"
@@ -70,7 +70,7 @@ func New() Model {
 }
 
 // EnterSelect enters tool selection mode
-func (s *Model) EnterSelect(width, height int, disabledTools map[string]bool, mcpTools func() []provider.ToolSchema) error {
+func (s *Model) EnterSelect(width, height int, disabledTools map[string]bool, mcpTools func() []message.ToolSchema) error {
 	// Get all tool schemas including MCP tools
 	allTools := coretool.GetToolSchemasWithMCP(mcpTools)
 

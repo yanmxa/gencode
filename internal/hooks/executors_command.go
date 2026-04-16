@@ -21,7 +21,7 @@ func (e *Engine) executeCommand(ctx context.Context, hookCmd config.HookCmd, inp
 		return outcome
 	}
 
-	timeout := DefaultTimeout
+	timeout := defaultTimeout
 	if hookCmd.Timeout > 0 {
 		timeout = hookCmd.Timeout
 	}
@@ -34,7 +34,8 @@ func (e *Engine) executeCommand(ctx context.Context, hookCmd config.HookCmd, inp
 		return outcome
 	}
 
-	cmd := buildShellCommand(ctx, hookCmd, e.cwd)
+	cwd := e.getCwd()
+	cmd := buildShellCommand(ctx, hookCmd, cwd)
 	cmd.Stdin = bytes.NewReader(inputJSON)
 	cmd.Env = e.buildEnv(input)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -70,7 +71,7 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd config
 		return outcome
 	}
 
-	timeout := DefaultTimeout
+	timeout := defaultTimeout
 	if hookCmd.Timeout > 0 {
 		timeout = hookCmd.Timeout
 	}
@@ -88,7 +89,8 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd config
 		return outcome
 	}
 
-	cmd := buildShellCommand(ctx, hookCmd, e.cwd)
+	cwd := e.getCwd()
+	cmd := buildShellCommand(ctx, hookCmd, cwd)
 	cmd.Env = e.buildEnv(input)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {

@@ -17,13 +17,7 @@ func TestStateEmitsAndAccumulatesChunks(t *testing.T) {
 	state.EmitToolStart(ch, "tool-1", "Read")
 	state.EmitToolInput(ch, "tool-1", `{"path":"a.go"}`)
 
-	if got := state.Response.Content; got != "hello" {
-		t.Fatalf("expected content to accumulate, got %q", got)
-	}
-	if got := state.Response.Thinking; got != "thinking" {
-		t.Fatalf("expected thinking to accumulate, got %q", got)
-	}
-
+	// Verify streaming chunks emitted in order
 	msgs := []message.StreamChunk{<-ch, <-ch, <-ch, <-ch}
 	if msgs[0].Type != message.ChunkTypeText || msgs[0].Text != "hello" {
 		t.Fatalf("unexpected text chunk: %#v", msgs[0])
@@ -36,6 +30,16 @@ func TestStateEmitsAndAccumulatesChunks(t *testing.T) {
 	}
 	if msgs[3].Type != message.ChunkTypeToolInput || msgs[3].ToolID != "tool-1" || msgs[3].Text != `{"path":"a.go"}` {
 		t.Fatalf("unexpected tool input chunk: %#v", msgs[3])
+	}
+
+	// Content and thinking accumulate in internal buffers and flush on Finish.
+	state.Finish(context.Background(), ch)
+	doneChunk := <-ch
+	if got := doneChunk.Response.Content; got != "hello" {
+		t.Fatalf("expected content to accumulate, got %q", got)
+	}
+	if got := doneChunk.Response.Thinking; got != "thinking" {
+		t.Fatalf("expected thinking to accumulate, got %q", got)
 	}
 }
 
@@ -88,7 +92,10 @@ func TestStateEnsureToolUseStopReason(t *testing.T) {
 func TestStateFailAndFinishEmitTerminalChunks(t *testing.T) {
 	ch := make(chan message.StreamChunk, 4)
 	state := NewState("test")
-	state.Response.Content = "done"
+
+	// Accumulate content via EmitText (content flushes in Finish)
+	state.EmitText(ch, "done")
+	<-ch // drain the text chunk
 
 	state.Fail(ch, errors.New("boom"))
 	errChunk := <-ch

@@ -6,8 +6,8 @@ import (
 	"github.com/yanmxa/gencode/internal/message"
 )
 
-// MaxSize is the maximum number of items the queue will hold.
-const MaxSize = 50
+// maxSize is the maximum number of items the queue will hold.
+const maxSize = 50
 
 // Item represents a queued user input waiting to be processed.
 type Item struct {
@@ -25,7 +25,7 @@ type Queue struct {
 // Enqueue adds a new input to the end of the queue and returns its ID.
 // Returns -1 if the queue is full.
 func (q *Queue) Enqueue(content string, images []message.ImageData) int {
-	if len(q.items) >= MaxSize {
+	if len(q.items) >= maxSize {
 		return -1
 	}
 	q.nextID++
@@ -67,9 +67,12 @@ func (q *Queue) Remove(id int) bool {
 	return false
 }
 
-// Items returns the internal slice directly. Callers must not modify it.
+// Items returns a copy of the queued items. Safe for iteration
+// without risk of mutating the queue's internal state.
 func (q *Queue) Items() []Item {
-	return q.items
+	out := make([]Item, len(q.items))
+	copy(out, q.items)
+	return out
 }
 
 // Len returns the number of queued items.

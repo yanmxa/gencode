@@ -105,23 +105,27 @@ func handleInitRules(cwd string, isClaude bool) (string, error) {
 }
 
 // AddToGitignore adds an entry to .gitignore in the given directory if not already present.
+// Creates the file if it doesn't exist.
 func AddToGitignore(cwd, entry string) {
 	gitignorePath := filepath.Join(cwd, ".gitignore")
 	data, err := os.ReadFile(gitignorePath)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return
 	}
 
 	content := string(data)
-	if strings.Contains(content, entry) {
-		return
+	// Check line-by-line to avoid substring false positives
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == entry {
+			return
+		}
 	}
 
-	if !strings.HasSuffix(content, "\n") {
+	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
 	content += entry + "\n"
-	os.WriteFile(gitignorePath, []byte(content), 0o644)
+	_ = os.WriteFile(gitignorePath, []byte(content), 0o644)
 }
 
 // HandleMemoryCommand handles the /memory command.

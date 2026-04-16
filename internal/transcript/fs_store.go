@@ -158,8 +158,14 @@ func (s *FileStore) Compact(ctx context.Context, cmd CompactCommand) error {
 	system := &SystemRecord{BoundaryID: cmd.BoundaryID}
 	if cmd.Summary != "" {
 		blobID := fmt.Sprintf("%s-%d", cmd.TranscriptID, cmd.Time.UnixNano())
-		if err := os.WriteFile(s.summaryBlobPath(blobID), []byte(cmd.Summary), 0o644); err != nil {
+		blobPath := s.summaryBlobPath(blobID)
+		tmp := blobPath + ".tmp"
+		if err := os.WriteFile(tmp, []byte(cmd.Summary), 0o644); err != nil {
 			return fmt.Errorf("write summary blob: %w", err)
+		}
+		if err := os.Rename(tmp, blobPath); err != nil {
+			os.Remove(tmp)
+			return fmt.Errorf("finalize summary blob: %w", err)
 		}
 		system.SummaryBlobID = blobID
 	}
@@ -195,7 +201,8 @@ func (s *FileStore) Fork(ctx context.Context, cmd ForkCommand) error {
 	}
 
 	destPath := s.transcriptPath(cmd.NewTranscriptID)
-	f, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	tmpPath := destPath + ".tmp"
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return fmt.Errorf("open fork transcript: %w", err)
 	}
@@ -206,6 +213,7 @@ func (s *FileStore) Fork(ctx context.Context, cmd ForkCommand) error {
 		rec.Time = cmd.Time
 		if err := enc.Encode(rec); err != nil {
 			_ = f.Close()
+			_ = os.Remove(tmpPath)
 			return fmt.Errorf("write fork record: %w", err)
 		}
 	}
@@ -220,10 +228,16 @@ func (s *FileStore) Fork(ctx context.Context, cmd ForkCommand) error {
 	}
 	if err := enc.Encode(forkRec); err != nil {
 		_ = f.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("write fork marker: %w", err)
 	}
 	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("close fork transcript: %w", err)
+	}
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("rename fork transcript: %w", err)
 	}
 	return s.refreshIndexLocked(cmd.NewTranscriptID)
 }
@@ -250,7 +264,8 @@ func (s *FileStore) Replace(ctx context.Context, cmd ReplaceCommand) error {
 		return fmt.Errorf("create transcript dir: %w", err)
 	}
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	tmpPath := path + ".tmp"
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return fmt.Errorf("open transcript file: %w", err)
 	}
@@ -259,11 +274,17 @@ func (s *FileStore) Replace(ctx context.Context, cmd ReplaceCommand) error {
 	for _, rec := range records {
 		if err := enc.Encode(rec); err != nil {
 			_ = f.Close()
+			_ = os.Remove(tmpPath)
 			return fmt.Errorf("write transcript record: %w", err)
 		}
 	}
 	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("close transcript file: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("rename transcript file: %w", err)
 	}
 	return s.refreshIndexLocked(tx.ID)
 }
@@ -283,21 +304,7 @@ func (s *FileStore) Load(ctx context.Context, transcriptID string) (*Transcript,
 	return Project(records, fileBlobReader{s: s})
 }
 
-func (s *FileStore) LoadLatest(ctx context.Context, projectID string) (*Transcript, error) {
-	items, err := s.List(ctx, projectID, ListOptions{Limit: 1})
-	if err != nil {
-		return nil, err
-	}
-	if len(items) == 0 {
-		return nil, fmt.Errorf("no transcripts found")
-	}
-	return s.Load(ctx, items[0].TranscriptID)
-}
-
 func (s *FileStore) List(ctx context.Context, projectID string, opts ListOptions) ([]ListItem, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -305,19 +312,14 @@ func (s *FileStore) List(ctx context.Context, projectID string, opts ListOptions
 		return []ListItem{}, nil
 	}
 
-	index, err := s.loadIndexLocked()
+	// Try read-only path first; upgrade to write lock only for index rebuild.
+	entries, err := s.listIndexEntries()
 	if err != nil {
-		if err := s.rebuildIndexLocked(); err != nil {
-			return nil, err
-		}
-		index, err = s.loadIndexLocked()
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 
-	items := make([]ListItem, 0, len(index.Entries))
-	for _, entry := range index.Entries {
+	items := make([]ListItem, 0, len(entries))
+	for _, entry := range entries {
 		if !opts.IncludeSidechain && entry.IsSidechain {
 			continue
 		}
@@ -344,17 +346,35 @@ func (s *FileStore) List(ctx context.Context, projectID string, opts ListOptions
 	return items, nil
 }
 
-func (s *FileStore) RebuildIndex(ctx context.Context, projectID string) error {
+// listIndexEntries returns a snapshot of the index entries, safely holding
+// the lock during the copy to prevent data races with concurrent writers.
+func (s *FileStore) listIndexEntries() ([]fileIndexEntry, error) {
+	s.mu.RLock()
+	index, err := s.loadIndexLocked()
+	if err == nil {
+		entries := make([]fileIndexEntry, len(index.Entries))
+		copy(entries, index.Entries)
+		s.mu.RUnlock()
+		return entries, nil
+	}
+	s.mu.RUnlock()
+
+	// Upgrade to write lock for index rebuild.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	if err := ctx.Err(); err != nil {
-		return err
+	index, err = s.loadIndexLocked()
+	if err != nil {
+		if rbErr := s.rebuildIndexLocked(); rbErr != nil {
+			return nil, rbErr
+		}
+		index, err = s.loadIndexLocked()
 	}
-	if projectID != "" && s.projectID != "" && projectID != s.projectID {
-		return nil
+	if err != nil {
+		return nil, err
 	}
-	return s.rebuildIndexLocked()
+	entries := make([]fileIndexEntry, len(index.Entries))
+	copy(entries, index.Entries)
+	return entries, nil
 }
 
 func (s *FileStore) Delete(ctx context.Context, transcriptID string) error {
@@ -419,12 +439,19 @@ func (s *FileStore) appendRecord(path string, rec Record) error {
 	if err != nil {
 		return fmt.Errorf("open transcript file: %w", err)
 	}
-	defer f.Close()
 
 	enc := json.NewEncoder(f)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(rec); err != nil {
+		f.Close()
 		return fmt.Errorf("append transcript record: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("sync transcript file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close transcript file: %w", err)
 	}
 	return nil
 }
@@ -482,15 +509,15 @@ func recordsForTranscript(tx Transcript) ([]Record, error) {
 	ops := []PatchOp{
 		PatchTitle(tx.State.Title),
 		PatchLastPrompt(tx.State.LastPrompt),
-		PatchTag(tx.State.Tag),
-		PatchMode(tx.State.Mode),
+		patchTag(tx.State.Tag),
+		patchMode(tx.State.Mode),
 		PatchSummary(tx.State.Summary),
 	}
 	if len(tx.State.Tasks) > 0 {
 		ops = append(ops, PatchTasks(TrackerTasksFromView(tx.State.Tasks)))
 	}
 	if tx.State.Worktree != nil {
-		ops = append(ops, PatchWorktree(tx.State.Worktree))
+		ops = append(ops, patchWorktree(tx.State.Worktree))
 	}
 	records = append(records, Record{
 		ID:           fmt.Sprintf("%s:state:%d", tx.ID, updatedAt.UnixNano()),
@@ -535,7 +562,7 @@ func (s *FileStore) loadRecordsLocked(path string) ([]Record, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("open transcript file: %w", err)
+			return nil, fmt.Errorf("transcript file not found: %w", err)
 		}
 		return nil, fmt.Errorf("open transcript file: %w", err)
 	}
@@ -578,8 +605,14 @@ func (s *FileStore) saveIndexLocked(index *fileIndex) error {
 	if err != nil {
 		return fmt.Errorf("marshal transcript index: %w", err)
 	}
-	if err := os.WriteFile(s.indexPath(), data, 0o644); err != nil {
+	idxPath := s.indexPath()
+	tmp := idxPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return fmt.Errorf("write transcript index: %w", err)
+	}
+	if err := os.Rename(tmp, idxPath); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("finalize transcript index: %w", err)
 	}
 	return nil
 }

@@ -2,10 +2,17 @@ package plan
 
 import (
 	"os"
+	"regexp"
 	"testing"
 )
 
-func TestValidatePlanID(t *testing.T) {
+var planIDPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)+$`)
+
+func validatePlanID(id string) bool {
+	return planIDPattern.MatchString(id)
+}
+
+func Test_validatePlanID(t *testing.T) {
 	tests := []struct {
 		id    string
 		valid bool
@@ -31,9 +38,9 @@ func TestValidatePlanID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.id, func(t *testing.T) {
-			got := ValidatePlanID(tt.id)
+			got := validatePlanID(tt.id)
 			if got != tt.valid {
-				t.Errorf("ValidatePlanID(%q) = %v, want %v", tt.id, got, tt.valid)
+				t.Errorf("validatePlanID(%q) = %v, want %v", tt.id, got, tt.valid)
 			}
 		})
 	}
@@ -51,7 +58,7 @@ func TestPlanSaveAndLoad(t *testing.T) {
 	plan := &Plan{
 		ID:      "20260209-test-plan",
 		Task:    "Test plan saving",
-		Status:  StatusDraft,
+		Status:  statusDraft,
 		Content: "## Summary\nThis is a test plan.\n\n## Steps\n1. Do something",
 	}
 
@@ -64,7 +71,7 @@ func TestPlanSaveAndLoad(t *testing.T) {
 	}
 
 	// Load it back
-	loaded, err := store.Load("20260209-test-plan")
+	loaded, err := store.load("20260209-test-plan")
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
@@ -104,7 +111,7 @@ func TestPlanSaveWithSpecialChars(t *testing.T) {
 		t.Fatalf("Save failed: %v", err)
 	}
 
-	loaded, err := store.Load("20260209-special-chars")
+	loaded, err := store.load("20260209-special-chars")
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
@@ -140,8 +147,8 @@ func TestGeneratePlanName(t *testing.T) {
 			}
 		}
 		// Should be valid ID
-		if !ValidatePlanID(name) {
-			t.Errorf("GeneratePlanName(%q) = %q, not valid per ValidatePlanID", tt.task, name)
+		if !validatePlanID(name) {
+			t.Errorf("GeneratePlanName(%q) = %q, not valid per validatePlanID", tt.task, name)
 		}
 	}
 }
@@ -156,13 +163,13 @@ func TestPlanList(t *testing.T) {
 	store := &Store{baseDir: tmpDir}
 
 	// Save two plans
-	p1 := &Plan{ID: "20260209-plan-one", Task: "Plan one", Status: StatusDraft, Content: "Content one"}
+	p1 := &Plan{ID: "20260209-plan-one", Task: "Plan one", Status: statusDraft, Content: "Content one"}
 	p2 := &Plan{ID: "20260209-plan-two", Task: "Plan two", Status: StatusApproved, Content: "Content two"}
 
 	store.Save(p1)
 	store.Save(p2)
 
-	plans, err := store.List()
+	plans, err := store.list()
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}

@@ -7,24 +7,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/yanmxa/gencode/internal/app/render"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
-// FormatTokenCount formats a token count for display (e.g. "200K", "1.0M").
-func FormatTokenCount(count int) string {
-	if count >= 1000000 {
-		return fmt.Sprintf("%.1fM", float64(count)/1000000)
-	}
-	if count >= 1000 {
-		return fmt.Sprintf("%dK", count/1000)
-	}
-	return fmt.Sprintf("%d", count)
-}
-
-// BuildTokenLimitAgentPrompt returns the system prompt for the token-limit agent.
-func BuildTokenLimitAgentPrompt(modelID, providerName, authMethod string) string {
+// buildTokenLimitAgentPrompt returns the system prompt for the token-limit agent.
+func buildTokenLimitAgentPrompt(modelID, providerName, authMethod string) string {
 	return fmt.Sprintf(`You are a helpful assistant that finds token limits for AI models.
 
 Your task is to find the maximum input tokens (context window) and maximum output tokens for this model:
@@ -45,8 +35,8 @@ NOT_FOUND
 Do not include any other text in your final response.`, modelID, providerName, authMethod)
 }
 
-// GetTokenLimitAgentTools returns the tool definitions used by the token-limit agent.
-func GetTokenLimitAgentTools() []provider.ToolSchema {
+// getTokenLimitAgentTools returns the tool definitions used by the token-limit agent.
+func getTokenLimitAgentTools() []provider.ToolSchema {
 	return []provider.ToolSchema{
 		{
 			Name:        "WebSearch",
@@ -73,8 +63,8 @@ func GetTokenLimitAgentTools() []provider.ToolSchema {
 	}
 }
 
-// AppendToolCallMessages executes tool calls and appends the results as messages.
-func AppendToolCallMessages(ctx context.Context, messages []message.Message, toolCalls []message.ToolCall, cwd string) []message.Message {
+// appendToolCallMessages executes tool calls and appends the results as messages.
+func appendToolCallMessages(ctx context.Context, messages []message.Message, toolCalls []message.ToolCall, cwd string) []message.Message {
 	messages = append(messages, message.AssistantMessage("", "", toolCalls))
 
 	for _, tc := range toolCalls {
@@ -94,15 +84,15 @@ func AppendToolCallMessages(ctx context.Context, messages []message.Message, too
 	return messages
 }
 
-// TokenLimitNotFoundMessage returns the user-facing message for unfound limits.
-func TokenLimitNotFoundMessage(modelID string) string {
+// tokenLimitNotFoundMessage returns the user-facing message for unfound limits.
+func tokenLimitNotFoundMessage(modelID string) string {
 	return fmt.Sprintf("Could not find token limits for %s.\n\nSet manually with: /tokenlimit <input> <output>", modelID)
 }
 
-// ParseTokenLimitResponse parses the agent response for FOUND/NOT_FOUND results.
+// parseTokenLimitResponse parses the agent response for FOUND/NOT_FOUND results.
 // It returns the display string and whether processing is done.
 // When limits are found and a store is provided, the limits are persisted.
-func ParseTokenLimitResponse(content, modelID string, store *provider.Store) (string, bool) {
+func parseTokenLimitResponse(content, modelID string, store *provider.Store) (string, bool) {
 	if strings.HasPrefix(content, "FOUND:") {
 		var inputLimit, outputLimit int
 		if _, err := fmt.Sscanf(content, "FOUND: %d %d", &inputLimit, &outputLimit); err == nil && inputLimit > 0 {
@@ -110,12 +100,12 @@ func ParseTokenLimitResponse(content, modelID string, store *provider.Store) (st
 				_ = store.SetTokenLimit(modelID, inputLimit, outputLimit)
 			}
 			return fmt.Sprintf("Found and saved token limits for %s:\n  Input:  %s tokens\n  Output: %s tokens",
-				modelID, FormatTokenCount(inputLimit), FormatTokenCount(outputLimit)), true
+				modelID, render.FormatTokenCount(inputLimit), render.FormatTokenCount(outputLimit)), true
 		}
 	}
 
 	if strings.Contains(content, "NOT_FOUND") {
-		return TokenLimitNotFoundMessage(modelID), true
+		return tokenLimitNotFoundMessage(modelID), true
 	}
 
 	return "", false
@@ -124,7 +114,7 @@ func ParseTokenLimitResponse(content, modelID string, store *provider.Store) (st
 // FormatTokenLimitDisplay formats a token limit display string.
 func FormatTokenLimitDisplay(modelID string, inputLimit, outputLimit int, isCustom bool, currentInputTokens int) string {
 	result := fmt.Sprintf("Token Limits for %s:\n\n  Input:  %s tokens\n  Output: %s tokens",
-		modelID, FormatTokenCount(inputLimit), FormatTokenCount(outputLimit))
+		modelID, render.FormatTokenCount(inputLimit), render.FormatTokenCount(outputLimit))
 
 	if isCustom {
 		result += "\n\n(custom override)"
@@ -132,7 +122,7 @@ func FormatTokenLimitDisplay(modelID string, inputLimit, outputLimit int, isCust
 
 	if currentInputTokens > 0 && inputLimit > 0 {
 		percent := float64(currentInputTokens) / float64(inputLimit) * 100
-		result += fmt.Sprintf("\n\nCurrent usage: %s tokens (%.1f%%)", FormatTokenCount(currentInputTokens), percent)
+		result += fmt.Sprintf("\n\nCurrent usage: %s tokens (%.1f%%)", render.FormatTokenCount(currentInputTokens), percent)
 	}
 
 	return result
@@ -157,8 +147,8 @@ func GetModelTokenLimits(store *provider.Store, currentModel *provider.CurrentMo
 	return 0, 0
 }
 
-// GetEffectiveTokenLimits returns custom limits if set, otherwise cached model limits.
-func GetEffectiveTokenLimits(store *provider.Store, currentModel *provider.CurrentModelInfo) (inputLimit, outputLimit int) {
+// getEffectiveTokenLimits returns custom limits if set, otherwise cached model limits.
+func getEffectiveTokenLimits(store *provider.Store, currentModel *provider.CurrentModelInfo) (inputLimit, outputLimit int) {
 	if currentModel == nil {
 		return 0, 0
 	}
@@ -174,13 +164,13 @@ func GetEffectiveTokenLimits(store *provider.Store, currentModel *provider.Curre
 
 // GetEffectiveInputLimit returns only the effective input token limit.
 func GetEffectiveInputLimit(store *provider.Store, currentModel *provider.CurrentModelInfo) int {
-	input, _ := GetEffectiveTokenLimits(store, currentModel)
+	input, _ := getEffectiveTokenLimits(store, currentModel)
 	return input
 }
 
-// GetEffectiveOutputLimit returns only the effective output token limit.
-func GetEffectiveOutputLimit(store *provider.Store, currentModel *provider.CurrentModelInfo) int {
-	_, output := GetEffectiveTokenLimits(store, currentModel)
+// getEffectiveOutputLimit returns only the effective output token limit.
+func getEffectiveOutputLimit(store *provider.Store, currentModel *provider.CurrentModelInfo) int {
+	_, output := getEffectiveTokenLimits(store, currentModel)
 	return output
 }
 
@@ -215,7 +205,7 @@ func AutoFetchTokenLimits(ctx context.Context, deps AutoFetchTokenLimitsDeps) (s
 		}
 	}
 
-	systemPrompt := BuildTokenLimitAgentPrompt(modelID, providerName, string(deps.CurrentModel.AuthMethod))
+	systemPrompt := buildTokenLimitAgentPrompt(modelID, providerName, string(deps.CurrentModel.AuthMethod))
 	messages := []message.Message{
 		message.UserMessage(fmt.Sprintf("Find the token limits for model: %s (provider: %s)", modelID, providerName), nil),
 	}
@@ -227,7 +217,7 @@ func AutoFetchTokenLimits(ctx context.Context, deps AutoFetchTokenLimitsDeps) (s
 			Model:        deps.ModelID,
 			SystemPrompt: systemPrompt,
 			Messages:     messages,
-			Tools:        GetTokenLimitAgentTools(),
+			Tools:        getTokenLimitAgentTools(),
 			MaxTokens:    1024,
 		})
 		if err != nil {
@@ -235,12 +225,12 @@ func AutoFetchTokenLimits(ctx context.Context, deps AutoFetchTokenLimitsDeps) (s
 		}
 
 		if len(response.ToolCalls) > 0 {
-			messages = AppendToolCallMessages(ctx, messages, response.ToolCalls, deps.Cwd)
+			messages = appendToolCallMessages(ctx, messages, response.ToolCalls, deps.Cwd)
 			continue
 		}
 
 		content := strings.TrimSpace(response.Content)
-		if result, done := ParseTokenLimitResponse(content, modelID, deps.Store); done {
+		if result, done := parseTokenLimitResponse(content, modelID, deps.Store); done {
 			return result, nil
 		}
 
@@ -249,5 +239,5 @@ func AutoFetchTokenLimits(ctx context.Context, deps AutoFetchTokenLimitsDeps) (s
 			message.UserMessage("Please continue searching or respond with FOUND or NOT_FOUND.", nil))
 	}
 
-	return TokenLimitNotFoundMessage(modelID), nil
+	return tokenLimitNotFoundMessage(modelID), nil
 }

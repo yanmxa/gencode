@@ -5,7 +5,6 @@ package runtime
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -15,6 +14,7 @@ import (
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/messageconv"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
@@ -45,21 +45,21 @@ const (
 	StopMaxOutputRecoveryExhausted = "max_output_recovery_exhausted"
 )
 
-// TransitionReason describes why the loop moved to its current state.
-type TransitionReason string
+// transitionReason describes why the loop moved to its current state.
+type transitionReason string
 
 const (
-	TransitionNextTurn          TransitionReason = "next_turn"
-	TransitionMaxOutputRecovery TransitionReason = "max_output_tokens_recovery"
-	TransitionPromptTooLong     TransitionReason = "prompt_too_long_compact"
-	TransitionStopHookBlocking  TransitionReason = "stop_hook_blocking"
+	transitionNextTurn          transitionReason = "next_turn"
+	transitionMaxOutputRecovery transitionReason = "max_output_tokens_recovery"
+	transitionPromptTooLong     transitionReason = "prompt_too_long_compact"
+	transitionStopHookBlocking  transitionReason = "stop_hook_blocking"
 )
 
 // loopState holds the explicit state of the agent loop per iteration.
 type loopState struct {
 	turnCount                    int
 	maxOutputTokensRecoveryCount int
-	transition                   TransitionReason
+	transition                   transitionReason
 }
 
 // CompletionAction describes what the runtime should do after receiving a completed response.
@@ -102,7 +102,7 @@ type Result struct {
 	ToolUses    int
 	Tokens      client.TokenUsage
 	StopReason  string
-	Transitions []TransitionReason
+	transitions []transitionReason
 	StopDetail  string
 }
 
@@ -117,27 +117,76 @@ type MCPCaller interface {
 	IsMCPTool(name string) bool
 }
 
+// LoopConfig holds the configuration for creating a Loop.
+// System, Client, and Tool are required; all other fields are optional.
+type LoopConfig struct {
+	System          core.System        // required: system prompt provider
+	Client          *client.Client     // required: LLM client
+	Tool            *tool.Set          // required: tool registry
+	Permission      permission.Checker // optional: permission checker (nil = permit all)
+	Hooks           *hooks.Engine      // optional: hook engine
+	MCP             MCPCaller          // optional: routes mcp__*__* tool calls
+	QuestionHandler tool.AskQuestionFunc // optional: interactive question handler
+	Cwd             string             // required: working directory for tool execution
+}
+
+// NewLoop creates a Loop from config, validating required fields.
+func NewLoop(cfg LoopConfig) (*Loop, error) {
+	if cfg.System == nil {
+		return nil, fmt.Errorf("runtime.NewLoop: System is required")
+	}
+	if cfg.Client == nil {
+		return nil, fmt.Errorf("runtime.NewLoop: Client is required")
+	}
+	if cfg.Tool == nil {
+		return nil, fmt.Errorf("runtime.NewLoop: Tool is required")
+	}
+	return &Loop{
+		System:          cfg.System,
+		Client:          cfg.Client,
+		Tool:            cfg.Tool,
+		Permission:      cfg.Permission,
+		Hooks:           cfg.Hooks,
+		MCP:             cfg.MCP,
+		questionHandler: cfg.QuestionHandler,
+		Cwd:             cfg.Cwd,
+	}, nil
+}
+
 // Loop is a reusable agent runtime that manages conversation state
 // and orchestrates LLM interactions. It supports two execution models:
 //
 //	Synchronous: loop.Run(ctx, opts) — drives the full turn loop
 //	Incremental: loop.Stream()/Collect()/AddResponse()/FilterToolCalls()/ExecTool() — for event-driven callers
 type Loop struct {
-	System          core.System
-	Client          *client.Client
-	Tool            *tool.Set
-	Permission      permission.Checker
-	Hooks           *hooks.Engine
-	MCP             MCPCaller // optional: routes mcp__*__* tool calls
-	QuestionHandler tool.AskQuestionFunc
-	Cwd             string // working directory for tool execution
+	System     core.System
+	Client     *client.Client
+	Tool       *tool.Set
+	Permission permission.Checker
+	Hooks      *hooks.Engine
+	MCP        MCPCaller // optional: routes mcp__*__* tool calls
+	Cwd        string    // working directory for tool execution
+
+	questionHandler tool.AskQuestionFunc
 
 	// Agent context: when set, tool hook events include agent_id/agent_type (subagent mode)
-	AgentID   string
-	AgentType string
+	agentID   string
+	agentType string
 
 	// State (managed by the loop)
 	messages []message.Message
+}
+
+// SetAgentContext sets the agent identity used in hook events (subagent mode).
+func (l *Loop) SetAgentContext(agentID, agentType string) {
+	l.agentID = agentID
+	l.agentType = agentType
+}
+
+// SetQuestionHandler sets the interactive question handler for tools that
+// require user interaction (e.g., AskUserQuestion).
+func (l *Loop) SetQuestionHandler(handler tool.AskQuestionFunc) {
+	l.questionHandler = handler
 }
 
 // --- High-level: synchronous agent loop ---
@@ -157,10 +206,10 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 
 	state := loopState{
 		turnCount:  1,
-		transition: TransitionNextTurn,
+		transition: transitionNextTurn,
 	}
 	var toolUses int
-	var transitions []TransitionReason
+	var transitions []transitionReason
 
 	terminate := func(reason string) *Result {
 		return l.buildResult(reason, state.turnCount, toolUses, transitions)
@@ -190,7 +239,7 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 			tokens := l.Client.Tokens()
 			if message.NeedsCompaction(tokens.InputTokens, opts.InputLimit) && CanCompactMessages(len(l.messages)) {
 				if l.compactAndReplace(ctx, opts) {
-					state.transition = TransitionPromptTooLong
+					state.transition = transitionPromptTooLong
 					continue
 				}
 			}
@@ -201,7 +250,7 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 		if err != nil {
 			if ShouldCompactPromptTooLong(err, len(l.messages)) {
 				if l.compactAndReplace(ctx, opts) {
-					state.transition = TransitionPromptTooLong
+					state.transition = transitionPromptTooLong
 					continue
 				}
 			}
@@ -218,12 +267,10 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 
 		// --- 3a. Max-output-tokens recovery ---
 		if decision.Action == CompletionRecoverMaxTokens {
-			if state.maxOutputTokensRecoveryCount < maxRecovery {
-				l.AddUser(MaxOutputRecoveryPrompt, nil)
-				state.maxOutputTokensRecoveryCount++
-				state.transition = TransitionMaxOutputRecovery
-				continue
-			}
+			l.AddUser(MaxOutputRecoveryPrompt, nil)
+			state.maxOutputTokensRecoveryCount++
+			state.transition = transitionMaxOutputRecovery
+			continue
 		}
 		if decision.Action == CompletionStopMaxOutputRecovery {
 			return terminate(StopMaxOutputRecoveryExhausted), nil
@@ -231,16 +278,16 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 
 		// --- 4. No tool calls → fire stop hooks, then end ---
 		if decision.Action == CompletionEndTurn {
-			if l.Hooks != nil && l.Hooks.HasHooks(hooks.Stop) {
+			if l.Hooks != nil && l.Hooks.HasHooks(core.Stop) {
 				stopInput := hooks.HookInput{
 					LastAssistantMessage: l.lastAssistantContent(),
 					StopHookActive:       l.Hooks.StopHookActive(),
 				}
-				outcome := l.Hooks.Execute(ctx, hooks.Stop, stopInput)
+				outcome := l.Hooks.Execute(ctx, core.Stop, stopInput)
 				if outcome.ShouldBlock {
 					r := terminate(StopHook)
 					r.StopDetail = "Stop hook blocked: " + outcome.BlockReason
-					r.Transitions = append(r.Transitions, TransitionStopHookBlocking)
+					r.transitions = append(r.transitions, transitionStopHookBlocking)
 					return r, nil
 				}
 			}
@@ -286,20 +333,22 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 		state = loopState{
 			turnCount:                    state.turnCount + 1,
 			maxOutputTokensRecoveryCount: state.maxOutputTokensRecoveryCount,
-			transition:                   TransitionNextTurn,
+			transition:                   transitionNextTurn,
 		}
 	}
 }
 
-func (l *Loop) buildResult(reason string, turns, toolUses int, transitions []TransitionReason) *Result {
+func (l *Loop) buildResult(reason string, turns, toolUses int, transitions []transitionReason) *Result {
+	msgs := make([]message.Message, len(l.messages))
+	copy(msgs, l.messages)
 	return &Result{
 		Content:     l.lastAssistantContent(),
-		Messages:    l.messages,
+		Messages:    msgs,
 		Turns:       turns,
 		ToolUses:    toolUses,
 		Tokens:      l.Client.Tokens(),
 		StopReason:  reason,
-		Transitions: transitions,
+		transitions: transitions,
 	}
 }
 
@@ -307,19 +356,30 @@ func (l *Loop) buildResult(reason string, turns, toolUses int, transitions []Tra
 
 // Stream starts an LLM stream and returns the chunk channel.
 // It builds the system prompt and tool set from the loop's fields.
+// The message slice is snapshotted to avoid a data race when the TUI
+// goroutine appends messages while the streaming goroutine reads them.
 func (l *Loop) Stream(ctx context.Context) <-chan message.StreamChunk {
 	sysPrompt := l.System.Prompt()
 	tools := l.Tool.Tools()
-	return l.Client.Stream(ctx, l.messages, tools, sysPrompt)
+	msgs := make([]message.Message, len(l.messages))
+	copy(msgs, l.messages)
+	return l.Client.Stream(ctx, msgs, tools, sysPrompt)
 }
 
 // --- Message management ---
 
-// Messages returns the current conversation history (read-only; do not mutate).
-func (l *Loop) Messages() []message.Message { return l.messages }
+// Messages returns a copy of the current conversation history.
+func (l *Loop) Messages() []message.Message {
+	cp := make([]message.Message, len(l.messages))
+	copy(cp, l.messages)
+	return cp
+}
 
 // SetMessages replaces the conversation history. Used for session restore and forking.
-func (l *Loop) SetMessages(msgs []message.Message) { l.messages = msgs }
+// Makes a defensive copy so the caller cannot mutate the loop's internal state.
+func (l *Loop) SetMessages(msgs []message.Message) {
+	l.messages = append([]message.Message(nil), msgs...)
+}
 
 // Tokens returns the cumulative token usage tracked by the underlying client.
 // Returns a zero value if no client is attached.
@@ -353,14 +413,8 @@ func (l *Loop) AddToolResult(r message.ToolResult) {
 
 // --- Tool dispatch ---
 
-// FilterToolCallsResult holds the results from PreToolUse hook filtering.
-type FilterToolCallsResult struct {
-	Allowed           []message.ToolCall
-	Blocked           []message.ToolResult
-	HookAllowed       map[string]bool // tool call IDs pre-approved by hooks
-	HookForceAsk      map[string]bool // tool call IDs forced to prompt by hooks ("ask")
-	AdditionalContext string
-}
+// FilterToolCallsResult is an alias for hooks.FilterToolCallsResult.
+type FilterToolCallsResult = hooks.FilterToolCallsResult
 
 // FilterToolCalls runs PreToolUse hooks. Convenience wrapper for backward compat.
 func (l *Loop) FilterToolCalls(ctx context.Context, calls []message.ToolCall) (
@@ -371,61 +425,11 @@ func (l *Loop) FilterToolCalls(ctx context.Context, calls []message.ToolCall) (
 }
 
 // FilterToolCallsEx runs PreToolUse hooks, returning full results including ForceAsk.
-//
-// PreToolUse hooks can grant/deny/force-ask permissions, but cannot inject
-// updatedPermissions (setMode, addRules, etc.) — that's PermissionRequest-only (matches CC).
 func (l *Loop) FilterToolCallsEx(ctx context.Context, calls []message.ToolCall) FilterToolCallsResult {
-	r := FilterToolCallsResult{
-		HookAllowed:  make(map[string]bool),
-		HookForceAsk: make(map[string]bool),
-	}
 	if l.Hooks == nil {
-		r.Allowed = calls
-		return r
+		return FilterToolCallsResult{Allowed: calls}
 	}
-
-	for _, tc := range calls {
-		params, _ := message.ParseToolInput(tc.Input)
-		hookInput := hooks.HookInput{
-			ToolName:  tc.Name,
-			ToolInput: params,
-			ToolUseID: tc.ID,
-		}
-		if l.AgentID != "" {
-			hookInput.AgentID = l.AgentID
-			hookInput.AgentType = l.AgentType
-		}
-		outcome := l.Hooks.Execute(ctx, hooks.PreToolUse, hookInput)
-
-		if outcome.ShouldBlock {
-			r.Blocked = append(r.Blocked, *message.ErrorResult(tc, "Blocked by hook: "+outcome.BlockReason))
-			continue
-		}
-
-		if outcome.UpdatedInput != nil {
-			if updated, err := json.Marshal(outcome.UpdatedInput); err == nil {
-				tc.Input = string(updated)
-			}
-		}
-
-		if outcome.AdditionalContext != "" {
-			if r.AdditionalContext == "" {
-				r.AdditionalContext = outcome.AdditionalContext
-			} else {
-				r.AdditionalContext += "\n" + outcome.AdditionalContext
-			}
-		}
-
-		if outcome.PermissionAllow {
-			r.HookAllowed[tc.ID] = true
-		}
-		if outcome.ForceAsk {
-			r.HookForceAsk[tc.ID] = true
-		}
-
-		r.Allowed = append(r.Allowed, tc)
-	}
-	return r
+	return l.Hooks.FilterToolCalls(ctx, calls, l.agentID, l.agentType)
 }
 
 // firePostToolHook fires PostToolUse or PostToolUseFailure hooks after tool execution.
@@ -435,9 +439,9 @@ func (l *Loop) firePostToolHook(ctx context.Context, tc message.ToolCall, result
 	}
 
 	params, _ := message.ParseToolInput(tc.Input)
-	event := hooks.PostToolUse
+	event := core.PostToolUse
 	if result.IsError {
-		event = hooks.PostToolUseFailure
+		event = core.PostToolUseFailure
 	}
 
 	toolResponse := any(result.Content)
@@ -450,9 +454,9 @@ func (l *Loop) firePostToolHook(ctx context.Context, tc message.ToolCall, result
 		ToolUseID:    tc.ID,
 		ToolResponse: toolResponse,
 	}
-	if l.AgentID != "" {
-		input.AgentID = l.AgentID
-		input.AgentType = l.AgentType
+	if l.agentID != "" {
+		input.AgentID = l.agentID
+		input.AgentType = l.agentType
 	}
 	if result.IsError {
 		input.Error = result.Content
@@ -469,10 +473,14 @@ func (l *Loop) ExecTool(ctx context.Context, tc message.ToolCall) *message.ToolR
 		return message.ErrorResult(tc, fmt.Sprintf("Error parsing tool input: %v", err))
 	}
 
-	// Inject parent messages getter for fork support in Agent tools
+	// Inject parent messages getter for fork support in Agent tools.
+	// Snapshot the slice to avoid a data race: the getter may be called
+	// from a subagent goroutine while the TUI goroutine appends messages.
 	if tool.IsAgentToolName(prepared.Call.Name) {
+		snapshot := make([]message.Message, len(l.messages))
+		copy(snapshot, l.messages)
 		prepared.Params["_messagesGetter"] = tool.MessagesGetter(func() []core.Message {
-			return message.ToCoreSlice(l.messages)
+			return messageconv.ToCoreSlice(snapshot)
 		})
 	}
 
@@ -503,11 +511,11 @@ func (l *Loop) runTool(ctx context.Context, prepared *tool.PreparedToolCall) *me
 		if !ok {
 			return message.ErrorResult(prepared.Call, fmt.Sprintf("interactive tool %s is not supported in this runtime", prepared.Call.Name))
 		}
-		if l.QuestionHandler == nil {
+		if l.questionHandler == nil {
 			return message.ErrorResult(prepared.Call, fmt.Sprintf("interactive tool %s requires a question handler in this runtime", prepared.Call.Name))
 		}
 
-		resp, err := l.QuestionHandler(ctx, questionReq)
+		resp, err := l.questionHandler(ctx, questionReq)
 		if err != nil {
 			return message.ErrorResult(prepared.Call, fmt.Sprintf("Question prompt failed: %v", err))
 		}

@@ -12,9 +12,23 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/theme"
 )
 
+// mcpStatusDisplay returns icon and label for an MCP server status.
+func mcpStatusDisplay(status coremcp.ServerStatus) (icon, label string) {
+	switch status {
+	case coremcp.StatusConnected:
+		return "●", "connected"
+	case coremcp.StatusConnecting:
+		return "◌", "connecting"
+	case coremcp.StatusError:
+		return "✗", "error"
+	default:
+		return "○", "disconnected"
+	}
+}
+
 // statusIconAndStyle returns the status icon and style for an MCP server status
 func statusIconAndStyle(status coremcp.ServerStatus) (string, lipgloss.Style) {
-	icon, _ := selector.MCPStatusDisplay(status)
+	icon, _ := mcpStatusDisplay(status)
 	switch status {
 	case coremcp.StatusConnected:
 		return icon, selector.SelectorStatusConnected
@@ -155,7 +169,7 @@ func (s *Model) renderDetail() string {
 
 	// Status
 	icon, statusStyle := statusIconAndStyle(srv.Status)
-	_, statusLabel := selector.MCPStatusDisplay(srv.Status)
+	_, statusLabel := mcpStatusDisplay(srv.Status)
 	fmt.Fprintf(&sb, "  %s  %s\n",
 		labelStyle.Render("Status:"),
 		statusStyle.Render(icon+" "+statusLabel),

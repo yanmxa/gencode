@@ -125,15 +125,17 @@ func runHeadlessAgent() error {
 		IsGit: config.IsGitRepo(cwd),
 	})
 
-	loop := &runtime.Loop{
-		Client: &client.Client{
-			Provider:  llmProvider,
-			Model:     modelID,
-			MaxTokens: 16384,
-		},
+	loopClient := client.NewClient(llmProvider, modelID)
+	loopClient.MaxTokens = 16384
+
+	loop, err := runtime.NewLoop(runtime.LoopConfig{
 		System: sys,
+		Client: loopClient,
 		Tool:   toolSet,
 		Cwd:    cwd,
+	})
+	if err != nil {
+		return err
 	}
 
 	// Add user prompt

@@ -87,10 +87,16 @@ func NewSessionPermissions() *SessionPermissions {
 }
 
 func (sp *SessionPermissions) AllowTool(toolName string) {
+	if sp.AllowedTools == nil {
+		sp.AllowedTools = make(map[string]bool)
+	}
 	sp.AllowedTools[toolName] = true
 }
 
 func (sp *SessionPermissions) AllowPattern(pattern string) {
+	if sp.AllowedPatterns == nil {
+		sp.AllowedPatterns = make(map[string]bool)
+	}
 	sp.AllowedPatterns[pattern] = true
 }
 
@@ -111,10 +117,6 @@ func (sp *SessionPermissions) IsToolAllowed(toolName string) bool {
 		return sp.AllowAllTasks
 	}
 	return false
-}
-
-func (sp *SessionPermissions) IsPatternAllowed(pattern string) bool {
-	return sp.AllowedPatterns[pattern]
 }
 
 // AddWorkingDirectory adds a directory to the allowed working directories list.

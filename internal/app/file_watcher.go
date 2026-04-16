@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 )
 
@@ -20,6 +21,7 @@ type fileWatcher struct {
 	mu      sync.Mutex
 	started bool
 	stopCh  chan struct{}
+	done    chan struct{} // closed when loop() returns
 	paths   map[string]fileSnapshot
 }
 
@@ -56,13 +58,18 @@ func (w *fileWatcher) SetPaths(paths []string) {
 	w.mu.Lock()
 	w.paths = normalized
 	shouldStart := len(normalized) > 0 && !w.started
+	var stopCh chan struct{}
+	var done chan struct{}
 	if shouldStart {
 		w.started = true
+		w.done = make(chan struct{})
+		stopCh = w.stopCh
+		done = w.done
 	}
 	w.mu.Unlock()
 
 	if shouldStart {
-		go w.loop()
+		go w.loop(stopCh, done)
 	}
 }
 
@@ -91,13 +98,21 @@ func (w *fileWatcher) Stop() {
 		return
 	}
 	stopCh := w.stopCh
+	done := w.done
 	w.started = false
 	w.stopCh = make(chan struct{})
 	w.mu.Unlock()
 	close(stopCh)
+	if done != nil {
+		<-done // wait for loop goroutine to exit
+	}
 }
 
-func (w *fileWatcher) loop() {
+func (w *fileWatcher) loop(stopCh, done chan struct{}) {
+	if done != nil {
+		defer close(done)
+	}
+
 	ticker := time.NewTicker(w.interval)
 	defer ticker.Stop()
 
@@ -105,7 +120,7 @@ func (w *fileWatcher) loop() {
 		select {
 		case <-ticker.C:
 			w.poll()
-		case <-w.stopCh:
+		case <-stopCh:
 			return
 		}
 	}
@@ -149,10 +164,12 @@ func (w *fileWatcher) poll() {
 		if w.engine == nil {
 			return
 		}
-		outcome := w.engine.Execute(context.Background(), hooks.FileChanged, hooks.HookInput{
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		outcome := w.engine.Execute(ctx, core.FileChanged, hooks.HookInput{
 			FilePath: change.path,
 			Event:    change.event,
 		})
+		cancel()
 		if len(outcome.WatchPaths) > 0 {
 			w.SetPaths(outcome.WatchPaths)
 		}

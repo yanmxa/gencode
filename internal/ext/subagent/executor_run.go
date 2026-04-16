@@ -2,7 +2,6 @@ package subagent
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/yanmxa/gencode/internal/log"
@@ -48,7 +47,7 @@ func (e *Executor) prepareRun(req AgentRequest) (*preparedRun, error) {
 		cfg:              cfg,
 		cwd:              agentCwd,
 		startedAt:        time.Now(),
-		hookID:           fmt.Sprintf("a%016x", time.Now().UnixNano()),
+		hookID:           "a" + generateShortID(),
 		progress:         make([]string, 0, 16),
 		cleanupWorkspace: cleanupWorkspace,
 	}, nil
@@ -74,13 +73,12 @@ func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*r
 	}
 	defer cleanupLoop()
 
-	loop.AgentID = run.hookID
-	loop.AgentType = run.req.Agent
+	loop.SetAgentContext(run.hookID, run.req.Agent)
 
 	if err := e.loadConversation(loop, run.req); err != nil {
 		return nil, err
 	}
-	loop.QuestionHandler = run.req.OnQuestion
+	loop.SetQuestionHandler(run.req.OnQuestion)
 
 	onToolStart := e.buildOnToolStart(run.req, &run.progress)
 	return loop.Run(ctx, runtime.RunOptions{

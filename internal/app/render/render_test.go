@@ -7,7 +7,7 @@ import (
 	"github.com/yanmxa/gencode/internal/message"
 )
 
-func TestExtractIntField(t *testing.T) {
+func Test_extractIntField(t *testing.T) {
 	tests := []struct {
 		name     string
 		content  string
@@ -72,19 +72,19 @@ func TestExtractIntField(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ExtractIntField(tt.content, tt.prefix)
+			result := extractIntField(tt.content, tt.prefix)
 			if result != tt.expected {
-				t.Errorf("ExtractIntField(%q, %q) = %d, want %d", tt.content, tt.prefix, result, tt.expected)
+				t.Errorf("extractIntField(%q, %q) = %d, want %d", tt.content, tt.prefix, result, tt.expected)
 			}
 		})
 	}
 }
 
-func TestExtractToolArgsPreservesFullCommand(t *testing.T) {
+func Test_extractToolArgsPreservesFullCommand(t *testing.T) {
 	input := `{"command":"cd /Users/myan/Workspace/ideas/gencode && git describe --tags --abbrev=0 2>/dev/null"}`
-	got := ExtractToolArgs(input)
+	got := extractToolArgs(input)
 	if !strings.Contains(got, "git describe --tags --abbrev=0") {
-		t.Fatalf("ExtractToolArgs() = %q, want full command", got)
+		t.Fatalf("extractToolArgs() = %q, want full command", got)
 	}
 }
 
@@ -159,9 +159,9 @@ func TestRenderToolCallsShowsGapForPendingAgent(t *testing.T) {
 	}
 }
 
-func TestFormatToolResultSizeUsesNoOutputForEmptyContent(t *testing.T) {
-	if got := FormatToolResultSize("Bash", ""); got != "no output" {
-		t.Fatalf("FormatToolResultSize() = %q, want %q", got, "no output")
+func Test_formatToolResultSizeUsesNoOutputForEmptyContent(t *testing.T) {
+	if got := formatToolResultSize("Bash", ""); got != "no output" {
+		t.Fatalf("formatToolResultSize() = %q, want %q", got, "no output")
 	}
 }
 
@@ -176,8 +176,8 @@ func TestRenderPlanForScrollbackDoesNotInjectTitle(t *testing.T) {
 	}
 }
 
-func TestRenderTaskOutputResultInlineShowsErrorText(t *testing.T) {
-	rendered := RenderTaskOutputResultInline(ToolResultData{
+func Test_renderTaskOutputResultInlineShowsErrorText(t *testing.T) {
+	rendered := renderTaskOutputResultInline(ToolResultData{
 		ToolName: "TaskOutput",
 		IsError:  true,
 		Error:    "task not found: 10f7b381",

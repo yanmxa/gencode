@@ -8,36 +8,8 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 )
 
-// EventType is an alias for core.EventType for backward compatibility.
+// EventType is an alias for core.EventType.
 type EventType = core.EventType
-
-// Re-export core event constants for backward compatibility.
-const (
-	SessionStart       = core.SessionStart
-	UserPromptSubmit   = core.UserPromptSubmit
-	PreToolUse         = core.PreToolUse
-	PermissionRequest  = core.PermissionRequest
-	PostToolUse        = core.PostToolUse
-	PostToolUseFailure = core.PostToolUseFailure
-	Notification       = core.Notification
-	SubagentStart      = core.SubagentStart
-	SubagentStop       = core.SubagentStop
-	Stop               = core.Stop
-	StopFailure        = core.StopFailure
-	PermissionDenied   = core.PermissionDenied
-	Setup              = core.Setup
-	TaskCreated        = core.TaskCreated
-	TaskCompleted      = core.TaskCompleted
-	ConfigChange       = core.ConfigChange
-	InstructionsLoaded = core.InstructionsLoaded
-	CwdChanged         = core.CwdChanged
-	FileChanged        = core.FileChanged
-	PreCompact         = core.PreCompact
-	PostCompact        = core.PostCompact
-	WorktreeCreate     = core.WorktreeCreate
-	WorktreeRemove     = core.WorktreeRemove
-	SessionEnd         = core.SessionEnd
-)
 
 // HookInput is the JSON input passed to hook commands via stdin.
 type HookInput struct {

@@ -2,6 +2,8 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -10,8 +12,8 @@ import (
 )
 
 const (
-	// ModelCacheTTL is the time-to-live for cached models
-	ModelCacheTTL = 24 * time.Hour
+	// modelCacheTTL is the time-to-live for cached models
+	modelCacheTTL = 24 * time.Hour
 )
 
 // ConnectionInfo stores connection information for a provider
@@ -20,8 +22,8 @@ type ConnectionInfo struct {
 	ConnectedAt time.Time  `json:"connectedAt"`
 }
 
-// ModelCache stores cached model information
-type ModelCache struct {
+// modelCache stores cached model information
+type modelCache struct {
 	CachedAt time.Time   `json:"cachedAt"`
 	Models   []ModelInfo `json:"models"`
 }
@@ -33,26 +35,26 @@ type CurrentModelInfo struct {
 	AuthMethod AuthMethod `json:"authMethod"`
 }
 
-// TokenLimitOverride stores custom token limits for a model
-type TokenLimitOverride struct {
+// tokenLimitOverride stores custom token limits for a model
+type tokenLimitOverride struct {
 	InputTokenLimit  int `json:"inputTokenLimit"`
 	OutputTokenLimit int `json:"outputTokenLimit"`
 }
 
-// StoreData is the persisted data structure
-type StoreData struct {
+// storeData is the persisted data structure
+type storeData struct {
 	Connections    map[string]ConnectionInfo     `json:"connections"`              // key: provider
-	Models         map[string]ModelCache         `json:"models"`                   // key: provider:authMethod
+	Models         map[string]modelCache         `json:"models"`                   // key: provider:authMethod
 	Current        *CurrentModelInfo             `json:"current"`                  // current model with provider info
 	SearchProvider *string                       `json:"searchProvider,omitempty"` // search provider name (exa, serper, brave)
-	TokenLimits    map[string]TokenLimitOverride `json:"tokenLimits,omitempty"`    // key: modelID
+	TokenLimits    map[string]tokenLimitOverride `json:"tokenLimits,omitempty"`    // key: modelID
 }
 
 // Store manages provider configuration persistence
 type Store struct {
 	mu   sync.RWMutex
 	path string
-	data StoreData
+	data storeData
 }
 
 // NewStore creates a new Store instance
@@ -69,14 +71,14 @@ func NewStore() (*Store, error) {
 
 	store := &Store{
 		path: filepath.Join(configDir, "providers.json"),
-		data: StoreData{
+		data: storeData{
 			Connections: make(map[string]ConnectionInfo),
-			Models:      make(map[string]ModelCache),
+			Models:      make(map[string]modelCache),
 		},
 	}
 
 	// Load existing data if available
-	if err := store.load(); err != nil && !os.IsNotExist(err) {
+	if err := store.load(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
 
@@ -90,11 +92,11 @@ func (s *Store) load() error {
 
 	data, err := os.ReadFile(s.path)
 	if err != nil {
-		return err
+		return fmt.Errorf("read provider store %s: %w", s.path, err)
 	}
 
 	if err := json.Unmarshal(data, &s.data); err != nil {
-		return err
+		return fmt.Errorf("parse provider store: %w", err)
 	}
 
 	// Initialize maps if nil
@@ -108,10 +110,10 @@ func (s *Store) ensureMapsInitialized() {
 		s.data.Connections = make(map[string]ConnectionInfo)
 	}
 	if s.data.Models == nil {
-		s.data.Models = make(map[string]ModelCache)
+		s.data.Models = make(map[string]modelCache)
 	}
 	if s.data.TokenLimits == nil {
-		s.data.TokenLimits = make(map[string]TokenLimitOverride)
+		s.data.TokenLimits = make(map[string]tokenLimitOverride)
 	}
 }
 
@@ -119,9 +121,17 @@ func (s *Store) ensureMapsInitialized() {
 func (s *Store) save() error {
 	data, err := json.MarshalIndent(s.data, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal provider store: %w", err)
 	}
-	return os.WriteFile(s.path, data, 0o644)
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("write provider store %s: %w", s.path, err)
+	}
+	if err := os.Rename(tmp, s.path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("rename provider store %s: %w", s.path, err)
+	}
+	return nil
 }
 
 // Connect saves a connection for a provider
@@ -134,15 +144,6 @@ func (s *Store) Connect(provider Provider, authMethod AuthMethod) error {
 		ConnectedAt: time.Now(),
 	}
 
-	return s.save()
-}
-
-// Disconnect removes a connection for a provider
-func (s *Store) Disconnect(provider Provider) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	delete(s.data.Connections, string(provider))
 	return s.save()
 }
 
@@ -182,8 +183,8 @@ func (s *Store) CacheModels(provider Provider, authMethod AuthMethod, models []M
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := makeModelCacheKey(provider, authMethod)
-	s.data.Models[key] = ModelCache{
+	key := makemodelCacheKey(provider, authMethod)
+	s.data.Models[key] = modelCache{
 		CachedAt: time.Now(),
 		Models:   models,
 	}
@@ -196,19 +197,19 @@ func (s *Store) GetCachedModels(provider Provider, authMethod AuthMethod) ([]Mod
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	cache, ok := s.data.Models[makeModelCacheKey(provider, authMethod)]
+	cache, ok := s.data.Models[makemodelCacheKey(provider, authMethod)]
 	if !ok {
 		return nil, false
 	}
-	if time.Since(cache.CachedAt) > ModelCacheTTL {
+	if time.Since(cache.CachedAt) > modelCacheTTL {
 		return nil, false
 	}
 
 	return cache.Models, true
 }
 
-// makeModelCacheKey creates a cache key for provider and auth method
-func makeModelCacheKey(provider Provider, authMethod AuthMethod) string {
+// makemodelCacheKey creates a cache key for provider and auth method
+func makemodelCacheKey(provider Provider, authMethod AuthMethod) string {
 	return string(provider) + ":" + string(authMethod)
 }
 
@@ -219,7 +220,7 @@ func (s *Store) GetAllCachedModels() map[string][]ModelInfo {
 
 	result := make(map[string][]ModelInfo)
 	for key, cache := range s.data.Models {
-		if time.Since(cache.CachedAt) > ModelCacheTTL {
+		if time.Since(cache.CachedAt) > modelCacheTTL {
 			continue
 		}
 		result[key] = cache.Models
@@ -263,14 +264,6 @@ func (s *Store) GetCurrentModel() *CurrentModelInfo {
 	return s.data.Current
 }
 
-// ClearModelCache clears all cached models
-func (s *Store) ClearModelCache() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.data.Models = make(map[string]ModelCache)
-	return s.save()
-}
 
 // GetSearchProvider returns the current search provider name
 func (s *Store) GetSearchProvider() string {
@@ -292,15 +285,6 @@ func (s *Store) SetSearchProvider(name string) error {
 	return s.save()
 }
 
-// ClearSearchProvider clears the search provider (use default)
-func (s *Store) ClearSearchProvider() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.data.SearchProvider = nil
-	return s.save()
-}
-
 // SetTokenLimit sets custom token limits for a model.
 // It also updates the model cache so subsequent model listings reflect these limits.
 func (s *Store) SetTokenLimit(modelID string, inputLimit, outputLimit int) error {
@@ -308,7 +292,7 @@ func (s *Store) SetTokenLimit(modelID string, inputLimit, outputLimit int) error
 	defer s.mu.Unlock()
 
 	s.ensureMapsInitialized()
-	s.data.TokenLimits[modelID] = TokenLimitOverride{
+	s.data.TokenLimits[modelID] = tokenLimitOverride{
 		InputTokenLimit:  inputLimit,
 		OutputTokenLimit: outputLimit,
 	}
@@ -354,13 +338,3 @@ func (s *Store) GetTokenLimit(modelID string) (inputLimit, outputLimit int, ok b
 	return override.InputTokenLimit, override.OutputTokenLimit, true
 }
 
-// ClearTokenLimit removes custom token limits for a model
-func (s *Store) ClearTokenLimit(modelID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.data.TokenLimits != nil {
-		delete(s.data.TokenLimits, modelID)
-	}
-	return s.save()
-}

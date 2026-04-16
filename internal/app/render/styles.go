@@ -7,14 +7,14 @@ import (
 )
 
 var (
-	UserMsgStyle      = lipgloss.NewStyle()
-	AssistantMsgStyle = lipgloss.NewStyle()
+	userMsgStyle      = lipgloss.NewStyle()
+	assistantMsgStyle = lipgloss.NewStyle()
 
 	InputPromptStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.Primary).
 				Bold(true)
 
-	AIPromptStyle = lipgloss.NewStyle().
+	aiPromptStyle = lipgloss.NewStyle().
 			Foreground(theme.CurrentTheme.AI).
 			Bold(true)
 
@@ -24,37 +24,37 @@ var (
 	ThinkingStyle = lipgloss.NewStyle().
 			Foreground(theme.CurrentTheme.Muted)
 
-	SystemMsgStyle = lipgloss.NewStyle().
+	systemMsgStyle = lipgloss.NewStyle().
 			Foreground(theme.CurrentTheme.TextDim).
 			PaddingLeft(2)
 
-	ToolCallStyle = lipgloss.NewStyle().
+	toolCallStyle = lipgloss.NewStyle().
 			Foreground(theme.CurrentTheme.Text)
 
-	ToolResultStyle = ToolCallStyle
+	toolResultStyle = toolCallStyle
 
-	ToolResultExpandedStyle = lipgloss.NewStyle().
+	toolResultExpandedStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.TextDim).
 				PaddingLeft(4)
 
-	AgentLabelStyle = lipgloss.NewStyle().
+	agentLabelStyle = lipgloss.NewStyle().
 			Foreground(theme.CurrentTheme.Success)
 
-	TrackerPendingStyle = lipgloss.NewStyle().
+	trackerPendingStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.Muted)
 
-	TrackerInProgressStyle = lipgloss.NewStyle().
+	trackerInProgressStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.Primary).
 				Bold(true)
 
-	TrackerCompletedStyle = lipgloss.NewStyle().
+	trackerCompletedStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.TextDisabled).
 				Strikethrough(true)
 
 	PendingImageStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.Primary)
 
-	PendingImageHintStyle = lipgloss.NewStyle().
+	pendingImageHintStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.Muted)
 
 	SelectedImageStyle = lipgloss.NewStyle().

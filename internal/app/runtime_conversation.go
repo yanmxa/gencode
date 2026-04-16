@@ -7,6 +7,7 @@ import (
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
 	"github.com/yanmxa/gencode/internal/client"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
@@ -31,6 +32,7 @@ type promptSuggestionRequest struct {
 }
 
 type tokenLimitFetchRequest struct {
+	Ctx          context.Context
 	LLM          provider.LLMProvider
 	Store        *provider.Store
 	CurrentModel *provider.CurrentModelInfo
@@ -39,6 +41,7 @@ type tokenLimitFetchRequest struct {
 }
 
 type compactRequest struct {
+	Ctx            context.Context
 	Client         *client.Client
 	Messages       []message.Message
 	SessionSummary string
@@ -50,7 +53,7 @@ type compactRequest struct {
 type streamRequest struct {
 	Client   *client.Client
 	Messages []message.Message
-	Tools    []provider.ToolSchema
+	Tools    []message.ToolSchema
 	System   string
 }
 
@@ -85,8 +88,8 @@ func (defaultConversationRuntime) FetchTokenLimitsCmd(req tokenLimitFetchRequest
 		ModelID:      req.ModelID,
 		Cwd:          req.Cwd,
 	}
+	ctx := req.Ctx
 	return func() tea.Msg {
-		ctx := context.Background()
 		result, err := appcompact.AutoFetchTokenLimits(ctx, deps)
 		return appcompact.TokenLimitResultMsg{Result: result, Error: err}
 	}
@@ -94,10 +97,10 @@ func (defaultConversationRuntime) FetchTokenLimitsCmd(req tokenLimitFetchRequest
 
 func (defaultConversationRuntime) CompactCmd(req compactRequest) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
+		ctx := req.Ctx
 		focus := req.Focus
 		if req.HookEngine != nil {
-			outcome := req.HookEngine.Execute(ctx, hooks.PreCompact, hooks.HookInput{
+			outcome := req.HookEngine.Execute(ctx, core.PreCompact, hooks.HookInput{
 				Trigger:            req.Trigger,
 				CustomInstructions: req.Focus,
 			})
@@ -110,7 +113,7 @@ func (defaultConversationRuntime) CompactCmd(req compactRequest) tea.Cmd {
 			}
 		}
 		summary, count, err := appcompact.CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
-		return appcompact.CompactResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
+		return appcompact.ResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
 	}
 }
 

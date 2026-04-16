@@ -135,9 +135,9 @@ func TestAt(t *testing.T) {
 	}
 }
 
-func TestMaxSize(t *testing.T) {
+func Test_maxSize(t *testing.T) {
 	var q Queue
-	for i := 0; i < MaxSize; i++ {
+	for i := 0; i < maxSize; i++ {
 		if id := q.Enqueue("x", nil); id < 0 {
 			t.Fatalf("expected successful enqueue at %d", i)
 		}
@@ -145,8 +145,8 @@ func TestMaxSize(t *testing.T) {
 	if id := q.Enqueue("overflow", nil); id != -1 {
 		t.Fatal("expected -1 when queue is full")
 	}
-	if q.Len() != MaxSize {
-		t.Fatalf("expected %d items, got %d", MaxSize, q.Len())
+	if q.Len() != maxSize {
+		t.Fatalf("expected %d items, got %d", maxSize, q.Len())
 	}
 }
 

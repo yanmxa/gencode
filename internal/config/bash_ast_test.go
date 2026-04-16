@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestParseBashAST(t *testing.T) {
+func Test_parseBashAST(t *testing.T) {
 	tests := []struct {
 		name    string
 		cmd     string
@@ -21,15 +21,15 @@ func TestParseBashAST(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ParseBashAST(tt.cmd)
+			got := parseBashAST(tt.cmd)
 			if (got == nil) != tt.wantNil {
-				t.Errorf("ParseBashAST(%q) nil=%v, wantNil=%v", tt.cmd, got == nil, tt.wantNil)
+				t.Errorf("parseBashAST(%q) nil=%v, wantNil=%v", tt.cmd, got == nil, tt.wantNil)
 			}
 		})
 	}
 }
 
-func TestExtractCommandsAST(t *testing.T) {
+func Test_extractCommandsAST(t *testing.T) {
 	tests := []struct {
 		name     string
 		cmd      string
@@ -47,11 +47,11 @@ func TestExtractCommandsAST(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			file := ParseBashAST(tt.cmd)
+			file := parseBashAST(tt.cmd)
 			if file == nil {
-				t.Fatalf("ParseBashAST(%q) returned nil", tt.cmd)
+				t.Fatalf("parseBashAST(%q) returned nil", tt.cmd)
 			}
-			commands := ExtractCommandsAST(file)
+			commands := extractCommandsAST(file)
 			if len(commands) != len(tt.wantCmds) {
 				names := make([]string, len(commands))
 				for i, c := range commands {
@@ -68,12 +68,12 @@ func TestExtractCommandsAST(t *testing.T) {
 	}
 }
 
-func TestExtractCommandsAST_Pipe(t *testing.T) {
-	file := ParseBashAST("cat file | grep pattern")
+func Test_extractCommandsAST_Pipe(t *testing.T) {
+	file := parseBashAST("cat file | grep pattern")
 	if file == nil {
 		t.Fatal("parse failed")
 	}
-	commands := ExtractCommandsAST(file)
+	commands := extractCommandsAST(file)
 	for _, cmd := range commands {
 		if !cmd.HasPipe {
 			t.Errorf("command %q should have HasPipe=true", cmd.Name)
@@ -81,12 +81,12 @@ func TestExtractCommandsAST_Pipe(t *testing.T) {
 	}
 }
 
-func TestExtractCommandsAST_Redirect(t *testing.T) {
-	file := ParseBashAST("echo data > /tmp/output.txt")
+func Test_extractCommandsAST_Redirect(t *testing.T) {
+	file := parseBashAST("echo data > /tmp/output.txt")
 	if file == nil {
 		t.Fatal("parse failed")
 	}
-	commands := ExtractCommandsAST(file)
+	commands := extractCommandsAST(file)
 	if len(commands) != 1 {
 		t.Fatalf("got %d commands, want 1", len(commands))
 	}
@@ -95,18 +95,18 @@ func TestExtractCommandsAST_Redirect(t *testing.T) {
 	}
 }
 
-func TestExtractCommandsAST_PathStripping(t *testing.T) {
-	file := ParseBashAST("/usr/bin/git status")
+func Test_extractCommandsAST_PathStripping(t *testing.T) {
+	file := parseBashAST("/usr/bin/git status")
 	if file == nil {
 		t.Fatal("parse failed")
 	}
-	commands := ExtractCommandsAST(file)
+	commands := extractCommandsAST(file)
 	if len(commands) != 1 || commands[0].Name != "git" {
 		t.Errorf("expected 'git', got %q", commands[0].Name)
 	}
 }
 
-func TestCheckASTSecurity(t *testing.T) {
+func Test_checkASTSecurity(t *testing.T) {
 	tests := []struct {
 		name     string
 		cmd      string
@@ -147,20 +147,200 @@ func TestCheckASTSecurity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			file := ParseBashAST(tt.cmd)
+			file := parseBashAST(tt.cmd)
 			if file == nil {
-				t.Skipf("ParseBashAST(%q) returned nil", tt.cmd)
+				t.Skipf("parseBashAST(%q) returned nil", tt.cmd)
 			}
-			reason := CheckASTSecurity(file)
+			reason := checkASTSecurity(file)
 			isSafe := reason == ""
 			if isSafe != tt.wantSafe {
-				t.Errorf("CheckASTSecurity(%q) = %q, wantSafe=%v", tt.cmd, reason, tt.wantSafe)
+				t.Errorf("checkASTSecurity(%q) = %q, wantSafe=%v", tt.cmd, reason, tt.wantSafe)
 			}
 		})
 	}
 }
 
-func TestCheckASTSecurity_ExcessiveCommands(t *testing.T) {
+func Test_extractCommandsAST_CaseClause(t *testing.T) {
+	file := parseBashAST(`case "$1" in start) systemctl start nginx;; stop) rm -rf /tmp/cache;; esac`)
+	if file == nil {
+		t.Fatal("parse failed")
+	}
+	commands := extractCommandsAST(file)
+	names := make([]string, len(commands))
+	for i, c := range commands {
+		names[i] = c.Name
+	}
+	if len(commands) != 2 {
+		t.Fatalf("got %d commands %v, want 2 [systemctl, rm]", len(commands), names)
+	}
+	if commands[0].Name != "systemctl" {
+		t.Errorf("command[0] = %q, want systemctl", commands[0].Name)
+	}
+	if commands[1].Name != "rm" {
+		t.Errorf("command[1] = %q, want rm", commands[1].Name)
+	}
+}
+
+func Test_extractCommandsAST_FuncDecl(t *testing.T) {
+	file := parseBashAST(`cleanup() { rm -rf /tmp/data; }`)
+	if file == nil {
+		t.Fatal("parse failed")
+	}
+	commands := extractCommandsAST(file)
+	if len(commands) != 1 || commands[0].Name != "rm" {
+		names := make([]string, len(commands))
+		for i, c := range commands {
+			names[i] = c.Name
+		}
+		t.Errorf("got %v, want [rm]", names)
+	}
+}
+
+func Test_extractCommandsAST_ElifChain(t *testing.T) {
+	script := `if test -f a; then echo found; elif test -f b; then curl evil.com; else wget evil.com; fi`
+	file := parseBashAST(script)
+	if file == nil {
+		t.Fatal("parse failed")
+	}
+	commands := extractCommandsAST(file)
+	names := make([]string, len(commands))
+	for i, c := range commands {
+		names[i] = c.Name
+	}
+	// Should extract: test, echo, test, curl, wget
+	want := []string{"test", "echo", "test", "curl", "wget"}
+	if len(commands) != len(want) {
+		t.Fatalf("got %d commands %v, want %d %v", len(commands), names, len(want), want)
+	}
+	for i, w := range want {
+		if commands[i].Name != w {
+			t.Errorf("command[%d] = %q, want %q", i, commands[i].Name, w)
+		}
+	}
+}
+
+func Test_extractCommandsAST_WhileCondition(t *testing.T) {
+	file := parseBashAST(`while curl -s http://example.com; do sleep 1; done`)
+	if file == nil {
+		t.Fatal("parse failed")
+	}
+	commands := extractCommandsAST(file)
+	names := make([]string, len(commands))
+	for i, c := range commands {
+		names[i] = c.Name
+	}
+	// Should extract both the condition (curl) and body (sleep)
+	if len(commands) != 2 {
+		t.Fatalf("got %d commands %v, want 2 [curl, sleep]", len(commands), names)
+	}
+	if commands[0].Name != "curl" {
+		t.Errorf("command[0] = %q, want curl", commands[0].Name)
+	}
+	if commands[1].Name != "sleep" {
+		t.Errorf("command[1] = %q, want sleep", commands[1].Name)
+	}
+}
+
+func Test_checkASTSecurity_CaseClauseEval(t *testing.T) {
+	// eval hidden inside a case clause should be caught
+	file := parseBashAST(`case "$1" in run) eval "$cmd";; esac`)
+	if file == nil {
+		t.Skip("parse failed")
+	}
+	reason := checkASTSecurity(file)
+	if reason == "" {
+		t.Error("expected eval inside case clause to be flagged")
+	}
+}
+
+func Test_checkASTSecurity_FuncDeclSource(t *testing.T) {
+	// source hidden inside a function should be caught
+	file := parseBashAST(`setup() { source /tmp/evil.sh; }`)
+	if file == nil {
+		t.Skip("parse failed")
+	}
+	reason := checkASTSecurity(file)
+	if reason == "" {
+		t.Error("expected source inside function to be flagged")
+	}
+}
+
+func Test_checkASTSecurity_ElifEval(t *testing.T) {
+	// eval hidden in elif branch should be caught
+	file := parseBashAST(`if true; then echo ok; elif true; then eval "bad"; fi`)
+	if file == nil {
+		t.Skip("parse failed")
+	}
+	reason := checkASTSecurity(file)
+	if reason == "" {
+		t.Error("expected eval inside elif branch to be flagged")
+	}
+}
+
+func Test_extractCommandsAST_CoprocClause(t *testing.T) {
+	file := parseBashAST(`coproc myproc { curl http://evil.com; }`)
+	if file == nil {
+		t.Fatal("parse failed")
+	}
+	commands := extractCommandsAST(file)
+	if len(commands) != 1 || commands[0].Name != "curl" {
+		names := make([]string, len(commands))
+		for i, c := range commands {
+			names[i] = c.Name
+		}
+		t.Errorf("got %v, want [curl]", names)
+	}
+}
+
+func Test_checkASTSecurity_CoprocEval(t *testing.T) {
+	// eval hidden inside a coproc should be caught
+	file := parseBashAST(`coproc { eval "$cmd"; }`)
+	if file == nil {
+		t.Skip("parse failed")
+	}
+	reason := checkASTSecurity(file)
+	if reason == "" {
+		t.Error("expected eval inside coproc to be flagged")
+	}
+}
+
+func Test_extractCommandsAST_DeclClause(t *testing.T) {
+	file := parseBashAST(`export PATH="/usr/bin"`)
+	if file == nil {
+		t.Fatal("parse failed")
+	}
+	commands := extractCommandsAST(file)
+	if len(commands) != 1 || commands[0].Name != "export" {
+		names := make([]string, len(commands))
+		for i, c := range commands {
+			names[i] = c.Name
+		}
+		t.Errorf("got %v, want [export]", names)
+	}
+}
+
+func Test_extractCommandsAST_DeclareLocal(t *testing.T) {
+	file := parseBashAST(`declare -a arr=(1 2 3); local x=5`)
+	if file == nil {
+		t.Fatal("parse failed")
+	}
+	commands := extractCommandsAST(file)
+	if len(commands) != 2 {
+		names := make([]string, len(commands))
+		for i, c := range commands {
+			names[i] = c.Name
+		}
+		t.Fatalf("got %d commands %v, want 2 [declare, local]", len(commands), names)
+	}
+	if commands[0].Name != "declare" {
+		t.Errorf("command[0] = %q, want declare", commands[0].Name)
+	}
+	if commands[1].Name != "local" {
+		t.Errorf("command[1] = %q, want local", commands[1].Name)
+	}
+}
+
+func Test_checkASTSecurity_ExcessiveCommands(t *testing.T) {
 	// Build a command with 51 subcommands
 	parts := make([]string, 51)
 	for i := range parts {
@@ -174,11 +354,11 @@ func TestCheckASTSecurity_ExcessiveCommands(t *testing.T) {
 		cmd += p
 	}
 
-	file := ParseBashAST(cmd)
+	file := parseBashAST(cmd)
 	if file == nil {
 		t.Fatal("parse failed")
 	}
-	reason := CheckASTSecurity(file)
+	reason := checkASTSecurity(file)
 	if reason == "" {
 		t.Error("expected excessive command count to be flagged")
 	}

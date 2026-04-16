@@ -11,8 +11,8 @@ import (
 
 // LLM adapts a LLMProvider to core.LLM.
 //
-// All fields are hot-swappable: SetProvider, SetModel, SetThinking, SetMaxTokens
-// can be called while the agent is running. Changes take effect on the next Infer call.
+// SetThinking can be called while the agent is running.
+// Changes take effect on the next Infer call.
 type LLM struct {
 	mu            sync.RWMutex
 	provider      LLMProvider
@@ -26,32 +26,11 @@ func NewLLM(p LLMProvider, model string, maxTokens int) *LLM {
 	return &LLM{provider: p, model: model, maxTokens: maxTokens}
 }
 
-// SetProvider replaces the underlying provider (e.g. switching from Anthropic to OpenAI).
-func (l *LLM) SetProvider(p LLMProvider) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.provider = p
-}
-
-// SetModel changes the model ID (e.g. switching from sonnet to opus).
-func (l *LLM) SetModel(model string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.model = model
-}
-
 // SetThinking changes the thinking/reasoning level.
 func (l *LLM) SetThinking(level ThinkingLevel) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.thinkingLevel = level
-}
-
-// SetMaxTokens changes the output token limit.
-func (l *LLM) SetMaxTokens(n int) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.maxTokens = n
 }
 
 func (l *LLM) Infer(ctx context.Context, req core.InferRequest) (<-chan core.Chunk, error) {
@@ -108,10 +87,11 @@ func toProviderMessages(msgs []core.Message) []message.Message {
 			})
 		case core.RoleAssistant:
 			out = append(out, message.Message{
-				Role:      message.RoleAssistant,
-				Content:   m.Content,
-				Thinking:  m.Thinking,
-				ToolCalls: toProviderToolCalls(m.ToolCalls),
+				Role:              message.RoleAssistant,
+				Content:           m.Content,
+				Thinking:          m.Thinking,
+				ThinkingSignature: m.ThinkingSignature,
+				ToolCalls:         toProviderToolCalls(m.ToolCalls),
 			})
 		case core.RoleTool:
 			if m.ToolResult != nil {
@@ -184,12 +164,13 @@ func toInferResponse(r *message.CompletionResponse) *core.InferResponse {
 		return nil
 	}
 	return &core.InferResponse{
-		Content:    r.Content,
-		Thinking:   r.Thinking,
-		ToolCalls:  toCoreToolCalls(r.ToolCalls),
-		StopReason: core.StopReason(r.StopReason),
-		TokensIn:   r.Usage.InputTokens,
-		TokensOut:  r.Usage.OutputTokens,
+		Content:           r.Content,
+		Thinking:          r.Thinking,
+		ThinkingSignature: r.ThinkingSignature,
+		ToolCalls:         toCoreToolCalls(r.ToolCalls),
+		StopReason:        core.StopReason(r.StopReason),
+		TokensIn:          r.Usage.InputTokens,
+		TokensOut:         r.Usage.OutputTokens,
 	}
 }
 
@@ -200,7 +181,11 @@ func toCoreToolCalls(calls []message.ToolCall) []core.ToolCall {
 	out := make([]core.ToolCall, len(calls))
 	for i, tc := range calls {
 		input := make(map[string]any)
-		_ = json.Unmarshal([]byte(tc.Input), &input)
+		if tc.Input != "" {
+			if err := json.Unmarshal([]byte(tc.Input), &input); err != nil {
+				input = map[string]any{"_raw": tc.Input}
+			}
+		}
 		out[i] = core.ToolCall{
 			ID:    tc.ID,
 			Name:  tc.Name,

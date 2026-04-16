@@ -251,7 +251,12 @@ func (r *Registry) saveEnabledState(name string, enabled bool, scope Scope) erro
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
+	tmp := settingsPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, settingsPath); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	notifyConfigChanged(scopeConfigSource(scope), settingsPath)

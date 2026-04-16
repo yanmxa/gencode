@@ -1,9 +1,9 @@
 package tool
 
-import "github.com/yanmxa/gencode/internal/provider"
+import "github.com/yanmxa/gencode/internal/message"
 
-// TrackerToolSchemas defines the schemas for task management tools
-var TrackerToolSchemas = []provider.ToolSchema{
+// trackerToolSchemas defines the schemas for task management tools.
+var trackerToolSchemas = []message.ToolSchema{
 	{
 		Name: "TaskCreate",
 		Description: `Create a task to track progress on multi-step work.
@@ -147,8 +147,8 @@ Prefer working on tasks in ID order (lowest first).`,
 	},
 }
 
-// CronToolSchemas defines the schemas for cron/scheduler tools.
-var CronToolSchemas = []provider.ToolSchema{
+// cronToolSchemas defines the schemas for cron/scheduler tools.
+var cronToolSchemas = []message.ToolSchema{
 	{
 		Name: "CronCreate",
 		Description: `Schedule a prompt on a cron schedule. Uses standard 5-field cron: minute hour day-of-month month day-of-week.
@@ -201,8 +201,8 @@ Jobs only fire while the REPL is idle. Returns a job ID for CronDelete.`,
 	},
 }
 
-// WorktreeToolSchemas defines the schemas for git worktree tools.
-var WorktreeToolSchemas = []provider.ToolSchema{
+// worktreeToolSchemas defines the schemas for git worktree tools.
+var worktreeToolSchemas = []message.ToolSchema{
 	{
 		Name: "EnterWorktree",
 		Description: `Switch the current conversation into a git worktree for safe experimentation.

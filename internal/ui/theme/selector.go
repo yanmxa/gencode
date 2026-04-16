@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// ThemeSelectedMsg is emitted when the user confirms a theme choice.
-type ThemeSelectedMsg struct {
+// themeSelectedMsg is emitted when the user confirms a theme choice.
+type themeSelectedMsg struct {
 	Theme string // "light" or "dark"
 }
 
@@ -31,7 +31,7 @@ var choices = []struct {
 
 type selectorModel struct{ cursor int }
 
-func NewSelector() selectorModel { return selectorModel{} }
+func newSelector() selectorModel { return selectorModel{} }
 
 func (m selectorModel) Init() tea.Cmd { return nil }
 
@@ -51,7 +51,7 @@ func (m selectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor++
 		}
 	case "enter", " ":
-		return m, func() tea.Msg { return ThemeSelectedMsg{Theme: choices[m.cursor].value} }
+		return m, func() tea.Msg { return themeSelectedMsg{Theme: choices[m.cursor].value} }
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	}
@@ -76,7 +76,7 @@ func (m selectorModel) View() string {
 	return s.String()
 }
 
-// capture wraps model to intercept ThemeSelectedMsg and quit the program.
+// capture wraps model to intercept themeSelectedMsg and quit the program.
 type capture struct {
 	inner    selectorModel
 	selected string
@@ -85,7 +85,7 @@ type capture struct {
 func (c capture) Init() tea.Cmd { return c.inner.Init() }
 
 func (c capture) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if sel, ok := msg.(ThemeSelectedMsg); ok {
+	if sel, ok := msg.(themeSelectedMsg); ok {
 		c.selected = sel.Theme
 		return c, tea.Quit
 	}
@@ -99,7 +99,7 @@ func (c capture) View() string { return c.inner.View() }
 // Run opens the theme selector and returns the chosen theme ("light" or "dark").
 // Returns an empty string if the user quit without selecting.
 func RunSelector() (string, error) {
-	p := tea.NewProgram(capture{inner: NewSelector()})
+	p := tea.NewProgram(capture{inner: newSelector()})
 	final, err := p.Run()
 	if err != nil {
 		return "", err

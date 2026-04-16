@@ -6,37 +6,6 @@ import (
 	"github.com/yanmxa/gencode/internal/config"
 )
 
-func TestPermission_DontAskMode_DeniesAllPrompts(t *testing.T) {
-	checker := DontAsk()
-
-	// Read-only tools should be permitted
-	readTools := []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"}
-	for _, name := range readTools {
-		d := checker.Check(name, nil)
-		if d != Permit {
-			t.Errorf("DontAsk: expected Permit for read-only tool %q, got %v", name, d)
-		}
-	}
-
-	// Safe tools should be permitted
-	safeTools := []string{"AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "TaskCreate", "TaskList"}
-	for _, name := range safeTools {
-		d := checker.Check(name, nil)
-		if d != Permit {
-			t.Errorf("DontAsk: expected Permit for safe tool %q, got %v", name, d)
-		}
-	}
-
-	// Write/Edit/Bash should be rejected (no prompting)
-	writeTools := []string{"Write", "Edit", "Bash"}
-	for _, name := range writeTools {
-		d := checker.Check(name, nil)
-		if d != Reject {
-			t.Errorf("DontAsk: expected Reject (no prompt) for tool %q, got %v", name, d)
-		}
-	}
-}
-
 func TestPermission_GlobPattern_MatchesCorrectly(t *testing.T) {
 	settings := &config.Settings{
 		Permissions: config.PermissionSettings{
@@ -98,42 +67,35 @@ func TestPermission_GlobPattern_MatchesCorrectly(t *testing.T) {
 	}
 }
 
-func TestIsReadOnlyToolMatchesConfig(t *testing.T) {
-	tools := []string{
-		"Read",
-		"Glob",
-		"Grep",
-		"WebFetch",
-		"WebSearch",
-		"LSP",
-		"Bash",
-		"Write",
+func TestIsReadOnlyTool(t *testing.T) {
+	readOnly := []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch", "LSP"}
+	for _, name := range readOnly {
+		if !IsReadOnlyTool(name) {
+			t.Errorf("IsReadOnlyTool(%q) = false, want true", name)
+		}
 	}
 
-	for _, name := range tools {
-		if got, want := IsReadOnlyTool(name), config.IsReadOnlyTool(name); got != want {
-			t.Fatalf("IsReadOnlyTool(%q) = %v, want %v", name, got, want)
+	notReadOnly := []string{"Bash", "Write", "Edit", "Agent"}
+	for _, name := range notReadOnly {
+		if IsReadOnlyTool(name) {
+			t.Errorf("IsReadOnlyTool(%q) = true, want false", name)
 		}
 	}
 }
 
-func TestIsSafeToolMatchesConfig(t *testing.T) {
-	tools := []string{
-		"TaskCreate",
-		"TaskGet",
-		"TaskList",
-		"TaskUpdate",
-		"AskUserQuestion",
-		"EnterPlanMode",
-		"ExitPlanMode",
-		"ToolSearch",
-		"LSP",
-		"Edit",
+func TestIsSafeTool(t *testing.T) {
+	safe := []string{"TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
+		"AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "ToolSearch", "LSP"}
+	for _, name := range safe {
+		if !IsSafeTool(name) {
+			t.Errorf("IsSafeTool(%q) = false, want true", name)
+		}
 	}
 
-	for _, name := range tools {
-		if got, want := IsSafeTool(name), config.IsSafeTool(name); got != want {
-			t.Fatalf("IsSafeTool(%q) = %v, want %v", name, got, want)
+	notSafe := []string{"Edit", "Bash", "Write", "Agent"}
+	for _, name := range notSafe {
+		if IsSafeTool(name) {
+			t.Errorf("IsSafeTool(%q) = true, want false", name)
 		}
 	}
 }

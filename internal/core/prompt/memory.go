@@ -155,20 +155,36 @@ func loadRulesDirectory(dir string, level string, seen map[string]bool) []Memory
 	return files
 }
 
+// importRe matches @import directives in memory files (e.g., @file.md).
+var importRe = regexp.MustCompile(`(?m)^@([^\s@]+\.md)\s*$`)
+
 func resolveImports(content string, basePath string, depth int, seen map[string]bool) string {
 	if depth >= maxImportDepth {
 		return content
 	}
-	importRe := regexp.MustCompile(`(?m)^@([^\s@]+\.md)\s*$`)
 	return importRe.ReplaceAllStringFunc(content, func(match string) string {
 		importPath := strings.TrimPrefix(strings.TrimSpace(match), "@")
-		var fullPath string
-		if strings.HasPrefix(importPath, "./") || strings.HasPrefix(importPath, "../") {
-			fullPath = filepath.Join(basePath, importPath)
-		} else {
-			fullPath = filepath.Join(basePath, importPath)
+		fullPath := filepath.Clean(filepath.Join(basePath, importPath))
+
+		// Path traversal guard: resolved path must stay under basePath.
+		// Use trailing separator to prevent prefix collisions (e.g., /tmp/project vs /tmp/projectile).
+		baseWithSep := basePath + string(filepath.Separator)
+		if fullPath != basePath && !strings.HasPrefix(fullPath, baseWithSep) {
+			return fmt.Sprintf("<!-- Import blocked (outside base): @%s -->", importPath)
 		}
-		fullPath = filepath.Clean(fullPath)
+
+		// Symlink guard: resolve symlinks and re-check to prevent escapes
+		// via symlinks that point outside the base directory.
+		if realPath, err := filepath.EvalSymlinks(fullPath); err == nil {
+			realBase, _ := filepath.EvalSymlinks(basePath)
+			if realBase != "" {
+				realBaseWithSep := realBase + string(filepath.Separator)
+				if realPath != realBase && !strings.HasPrefix(realPath, realBaseWithSep) {
+					return fmt.Sprintf("<!-- Import blocked (symlink escape): @%s -->", importPath)
+				}
+			}
+		}
+
 		if seen[fullPath] {
 			return fmt.Sprintf("<!-- Skipped (cycle): @%s -->", importPath)
 		}
@@ -196,12 +212,6 @@ type MemoryPaths struct {
 	Project      []string
 	ProjectRules string
 	Local        []string
-}
-
-// GetMemoryPaths returns user-level and project-level paths separately.
-func GetMemoryPaths(cwd string) (userPaths, projectPaths []string) {
-	paths := GetAllMemoryPaths(cwd)
-	return paths.Global, paths.Project
 }
 
 // GetAllMemoryPaths returns all memory paths organized by category.

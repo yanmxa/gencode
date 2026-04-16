@@ -16,7 +16,7 @@ func EntriesToNodes(entries []Entry, sessionID, defaultCwd string, createdAt tim
 			continue
 		}
 		if entry.UUID == "" {
-			entry.UUID = GenerateShortID()
+			entry.UUID = generateShortID()
 		}
 		parentID := derefString(entry.ParentUuid)
 		if parentID == "" && prevID != "" {

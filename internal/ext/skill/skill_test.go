@@ -25,24 +25,6 @@ func TestSkillStateNextState(t *testing.T) {
 	}
 }
 
-func TestSkillStateIcon(t *testing.T) {
-	tests := []struct {
-		state    SkillState
-		expected string
-	}{
-		{StateDisable, "○"},
-		{StateEnable, "◐"},
-		{StateActive, "●"},
-	}
-
-	for _, tc := range tests {
-		result := tc.state.Icon()
-		if result != tc.expected {
-			t.Errorf("Icon(%s) = %s, want %s", tc.state, result, tc.expected)
-		}
-	}
-}
-
 func TestSkillFullName(t *testing.T) {
 	tests := []struct {
 		name      string

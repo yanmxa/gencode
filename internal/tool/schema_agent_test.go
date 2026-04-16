@@ -6,7 +6,7 @@ import (
 )
 
 func TestEnterPlanModeSchemaDescriptionIsRestrictive(t *testing.T) {
-	desc := EnterPlanModeSchema.Description
+	desc := enterPlanModeSchema.Description
 
 	for _, want := range []string{
 		"architecture is still unknown after direct reading/search",
@@ -14,7 +14,7 @@ func TestEnterPlanModeSchemaDescriptionIsRestrictive(t *testing.T) {
 		"Tasks that are large only because they touch several files",
 	} {
 		if !strings.Contains(desc, want) {
-			t.Fatalf("EnterPlanModeSchema.Description missing %q", want)
+			t.Fatalf("enterPlanModeSchema.Description missing %q", want)
 		}
 	}
 }

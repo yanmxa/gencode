@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"github.com/yanmxa/gencode/internal/ext/mcp"
 )
 
 func FuzzyMatch(str, pattern string) bool {
@@ -31,14 +29,16 @@ func CalculateToolBoxWidth(screenWidth int) int {
 
 // TruncateText shortens text to maxLen with ellipsis if needed.
 // Returns the original text if maxLen <= 0 or if text fits within maxLen.
+// Uses rune-based slicing to avoid breaking multi-byte characters.
 func TruncateText(text string, maxLen int) string {
-	if maxLen <= 0 || len(text) <= maxLen {
+	runes := []rune(text)
+	if maxLen <= 0 || len(runes) <= maxLen {
 		return text
 	}
 	if maxLen <= 3 {
-		return text[:maxLen]
+		return string(runes[:maxLen])
 	}
-	return text[:maxLen-3] + "..."
+	return string(runes[:maxLen-3]) + "..."
 }
 
 func ShortenPath(path string) string {
@@ -61,11 +61,6 @@ func ShortenPathForProject(path, cwd string) string {
 		}
 	}
 	return ShortenPath(path)
-}
-
-// TruncateWithEllipsis is an alias for TruncateText for backward compatibility.
-func TruncateWithEllipsis(s string, maxLen int) string {
-	return TruncateText(s, maxLen)
 }
 
 // RenderSelectableRow renders a row with "> " or "  " prefix.
@@ -97,15 +92,3 @@ func RenderEnvVarStatus(envVar string) string {
 	return SelectorStatusNone.Render(envVar + " ✗")
 }
 
-func MCPStatusDisplay(status mcp.ServerStatus) (icon, label string) {
-	switch status {
-	case mcp.StatusConnected:
-		return "●", "connected"
-	case mcp.StatusConnecting:
-		return "◌", "connecting"
-	case mcp.StatusError:
-		return "✗", "error"
-	default:
-		return "○", "disconnected"
-	}
-}

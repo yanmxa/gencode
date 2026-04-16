@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appinput "github.com/yanmxa/gencode/internal/app/input"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/ui/suggest"
 )
@@ -370,6 +371,6 @@ func (m *model) checkPromptHook(prompt string) (bool, string) {
 	if m.hookEngine == nil {
 		return false, ""
 	}
-	outcome := m.hookEngine.Execute(context.Background(), hooks.UserPromptSubmit, hooks.HookInput{Prompt: prompt})
+	outcome := m.hookEngine.Execute(context.Background(), core.UserPromptSubmit, hooks.HookInput{Prompt: prompt})
 	return outcome.ShouldBlock, outcome.BlockReason
 }

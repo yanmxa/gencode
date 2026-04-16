@@ -55,7 +55,7 @@ type Store struct {
 	batchKeyToID map[string]string
 }
 
-func NewStore() *Store {
+func newStore() *Store {
 	return &Store{
 		workers:      make(map[string]*Worker),
 		agentToTask:  make(map[string]string),
@@ -64,7 +64,7 @@ func NewStore() *Store {
 	}
 }
 
-var DefaultStore = NewStore()
+var DefaultStore = newStore()
 
 func (s *Store) Reset() {
 	s.mu.Lock()
@@ -114,7 +114,7 @@ func (s *Store) RecordLaunch(launch Launch) {
 		}
 		batch.Key = nonEmpty(launch.BatchKey, batch.Key)
 		batch.Subject = nonEmpty(launch.BatchSubject, batch.Subject)
-		batch.Total = maxInt(launch.BatchTotal, batch.Total)
+		batch.Total = max(launch.BatchTotal, batch.Total)
 		if launch.BatchKey != "" {
 			s.batchKeyToID[launch.BatchKey] = batchID
 		}
@@ -246,9 +246,3 @@ func nonEmpty(next, current string) string {
 	return current
 }
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}

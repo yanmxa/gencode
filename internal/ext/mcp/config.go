@@ -125,7 +125,12 @@ func (l *ConfigLoader) SaveServer(name string, config ServerConfig, scope Scope)
 		return err
 	}
 
-	if err := os.WriteFile(filePath, data, 0o644); err != nil {
+	tmp := filePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, filePath); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	notifyConfigChanged(scopeConfigSource(scope), filePath)
@@ -158,7 +163,12 @@ func (l *ConfigLoader) RemoveServer(name string, scope Scope) error {
 		return err
 	}
 
-	if err := os.WriteFile(filePath, data, 0o644); err != nil {
+	tmp := filePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, filePath); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	notifyConfigChanged(scopeConfigSource(scope), filePath)
@@ -195,9 +205,15 @@ func (l *ConfigLoader) removeServerFromFile(filePath, name string) {
 	if err != nil {
 		return
 	}
-	if err := os.WriteFile(filePath, data, 0o644); err == nil {
-		notifyConfigChanged(configSourceFromFilePath(filePath), filePath)
+	tmp := filePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return
 	}
+	if err := os.Rename(tmp, filePath); err != nil {
+		os.Remove(tmp)
+		return
+	}
+	notifyConfigChanged(configSourceFromFilePath(filePath), filePath)
 }
 
 func configSourceFromFilePath(filePath string) string {

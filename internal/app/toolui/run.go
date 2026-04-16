@@ -37,14 +37,9 @@ func (defaultMCPExecutor) ExecuteMCP(ctx context.Context, name string, params ma
 
 	return toolresult.ToolResult{
 		Success:  !result.IsError,
-		Output:   extractMCPContent(result.Content),
+		Output:   mcp.ExtractContent(result.Content),
 		Metadata: toolresult.ResultMetadata{Title: name, Icon: "🔌"},
 	}, nil
-}
-
-// ExecStartMsg signals the parent to begin executing tool calls.
-type ExecStartMsg struct {
-	ToolCalls []message.ToolCall
 }
 
 // ExecDoneMsg signals that all tool calls have completed.
@@ -87,12 +82,12 @@ func ExecuteParallel(ctx context.Context, hub *progress.Hub, toolCalls []message
 		if !RequiresUserInteraction(toolCalls[0], settings, sessionPerms, planMode, hookAllowed, hookForceAsk) {
 			return executeToolAsync(ctx, hub, toolCalls[0], 0, cwd, settings, sessionPerms)
 		}
-		return ProcessNext(ctx, hub, toolCalls, 0, cwd, settings, sessionPerms)
+		return ProcessNext(ctx, hub, toolCalls, 0, cwd, settings, sessionPerms, hookAllowed, hookForceAsk)
 	}
 
 	for _, tc := range toolCalls {
 		if RequiresUserInteraction(tc, settings, sessionPerms, planMode, hookAllowed, hookForceAsk) {
-			return ProcessNext(ctx, hub, toolCalls, 0, cwd, settings, sessionPerms)
+			return ProcessNext(ctx, hub, toolCalls, 0, cwd, settings, sessionPerms, hookAllowed, hookForceAsk)
 		}
 	}
 
@@ -155,7 +150,8 @@ func executeAndLog(prepared *coretool.PreparedToolCall, index int, fn func() too
 }
 
 // ProcessNext executes the next tool call in sequence.
-func ProcessNext(ctx context.Context, hub *progress.Hub, toolCalls []message.ToolCall, idx int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions) tea.Cmd {
+// hookAllowed/hookForceAsk are maps of pre-approved or force-ask tool call IDs from hooks (may be nil).
+func ProcessNext(ctx context.Context, hub *progress.Hub, toolCalls []message.ToolCall, idx int, cwd string, settings *config.Settings, sessionPerms *config.SessionPermissions, hookAllowed, hookForceAsk map[string]bool) tea.Cmd {
 	if idx >= len(toolCalls) {
 		return func() tea.Msg { return ExecDoneMsg{} }
 	}
@@ -326,7 +322,7 @@ func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, ses
 		return false
 	}
 
-	params, err := parseToolInput(tc.Input)
+	params, err := message.ParseToolInput(tc.Input)
 	if err != nil {
 		return true
 	}
@@ -375,16 +371,9 @@ func RequiresUserInteraction(tc message.ToolCall, settings *config.Settings, ses
 		return true
 	}
 
-	if it, ok := t.(coretool.InteractiveTool); ok && it.RequiresInteraction() {
-		return true
-	}
-
 	return false
 }
 
-func parseToolInput(input string) (map[string]any, error) {
-	return message.ParseToolInput(input)
-}
 
 func formatPrepareError(err error) string {
 	if err == nil {
@@ -410,12 +399,3 @@ func sendAgentProgress(hub *progress.Hub, index int, msg string) {
 	hub.SendForAgent(index, msg)
 }
 
-func extractMCPContent(contents []mcp.ToolResultContent) string {
-	var parts []string
-	for _, c := range contents {
-		if c.Text != "" {
-			parts = append(parts, c.Text)
-		}
-	}
-	return strings.Join(parts, "\n")
-}

@@ -4,6 +4,7 @@
 package render
 
 import (
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -28,7 +29,7 @@ type MDRenderer struct {
 // subtracts aiIndentWidth internally so glamour wraps exactly at the
 // visible boundary after the "● " prompt icon + indent are applied.
 func NewMDRenderer(width int) *MDRenderer {
-	w := max(width-4, MinWrapWidth)
+	w := max(width-4, minWrapWidth)
 	dark := theme.IsDarkBackground()
 	r := buildGlamourRenderer(w, dark)
 	return &MDRenderer{renderer: r, width: w, darkBg: dark}
@@ -381,11 +382,10 @@ func customizeStyle(s *ansi.StyleConfig, width int) {
 
 func boolPtr(b bool) *bool { return &b }
 
+var reTripleNewlines = regexp.MustCompile(`\n{3,}`)
+
 func collapseBlankLines(s string) string {
-	for strings.Contains(s, "\n\n\n") {
-		s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
-	}
-	return s
+	return reTripleNewlines.ReplaceAllString(s, "\n\n")
 }
 func uintPtr(u uint) *uint       { return &u }
 func stringPtr(s string) *string { return &s }

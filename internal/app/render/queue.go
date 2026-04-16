@@ -11,21 +11,21 @@ import (
 )
 
 var (
-	QueueBadgeStyle = lipgloss.NewStyle().
+	queueBadgeStyle = lipgloss.NewStyle().
 			Foreground(theme.CurrentTheme.Accent).
 			Bold(true)
 
-	QueueContentStyle = lipgloss.NewStyle().
+	queueContentStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.TextDim)
 
-	QueueSelectedBadgeStyle = lipgloss.NewStyle().
+	queueSelectedBadgeStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.TextBright).
 				Bold(true)
 
-	QueueSelectedContentStyle = lipgloss.NewStyle().
+	queueSelectedContentStyle = lipgloss.NewStyle().
 					Foreground(theme.CurrentTheme.Text)
 
-	QueueOverflowStyle = lipgloss.NewStyle().
+	queueOverflowStyle = lipgloss.NewStyle().
 				Foreground(theme.CurrentTheme.Muted).
 				Italic(true)
 )
@@ -56,22 +56,22 @@ func RenderQueuePreview(items []appqueue.Item, selectedIdx, width int) string {
 		}
 
 		if isSelected {
-			badge := QueueSelectedBadgeStyle.Render(fmt.Sprintf("▸ %d.", i+1))
-			preview := QueueSelectedContentStyle.Render(content)
+			badge := queueSelectedBadgeStyle.Render(fmt.Sprintf("▸ %d.", i+1))
+			preview := queueSelectedContentStyle.Render(content)
 			fmt.Fprintf(&sb, " %s %s\n", badge, preview)
 		} else {
-			badge := QueueBadgeStyle.Render(fmt.Sprintf("  %d.", i+1))
-			preview := QueueContentStyle.Render(content)
+			badge := queueBadgeStyle.Render(fmt.Sprintf("  %d.", i+1))
+			preview := queueContentStyle.Render(content)
 			fmt.Fprintf(&sb, " %s %s\n", badge, preview)
 		}
 	}
 
 	if len(items) > maxVisible {
 		if endIdx < len(items) {
-			sb.WriteString(QueueOverflowStyle.Render(fmt.Sprintf("     +%d more below", len(items)-endIdx)) + "\n")
+			sb.WriteString(queueOverflowStyle.Render(fmt.Sprintf("     +%d more below", len(items)-endIdx)) + "\n")
 		}
 		if startIdx > 0 {
-			above := QueueOverflowStyle.Render(fmt.Sprintf("     +%d more above", startIdx)) + "\n"
+			above := queueOverflowStyle.Render(fmt.Sprintf("     +%d more above", startIdx)) + "\n"
 			return above + sb.String()
 		}
 	}
@@ -79,12 +79,12 @@ func RenderQueuePreview(items []appqueue.Item, selectedIdx, width int) string {
 	return sb.String()
 }
 
-// RenderQueueBadge renders a compact badge for the status bar.
-func RenderQueueBadge(count int) string {
+// renderQueueBadge renders a compact badge for the status bar.
+func renderQueueBadge(count int) string {
 	if count == 0 {
 		return ""
 	}
-	return QueueBadgeStyle.Render(fmt.Sprintf(" [%d queued]", count))
+	return queueBadgeStyle.Render(fmt.Sprintf(" [%d queued]", count))
 }
 
 func truncateQueueContent(s string, maxLen int) string {

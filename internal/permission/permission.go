@@ -1,8 +1,6 @@
 // Package permission provides tool execution permission checking.
 package permission
 
-import "github.com/yanmxa/gencode/internal/config"
-
 // Checker decides whether a tool call is permitted.
 type Checker interface {
 	Check(name string, params map[string]any) Decision
@@ -18,9 +16,6 @@ const (
 	Reject
 	// Prompt delegates to the caller for interactive approval.
 	Prompt
-	// Defer means the checker has no opinion — defer to the next layer.
-	// This maps to Claude Code's "passthrough" behavior.
-	Defer Decision = 99
 )
 
 // --- Convenience constructors ---
@@ -69,21 +64,6 @@ func AcceptEdits() Checker { return acceptEdits{} }
 // by config.HasPermissionToUseTool, not by this Checker.
 func BypassPermissions() Checker { return permitAll{} }
 
-// DontAsk returns a Checker that converts prompts to rejections (never prompts).
-func DontAsk() Checker { return dontAsk{} }
-
-type dontAsk struct{}
-
-func (dontAsk) Check(name string, _ map[string]any) Decision {
-	if IsReadOnlyTool(name) || IsSafeTool(name) {
-		return Permit
-	}
-	return Reject
-}
-
-// Auto returns a Checker equivalent to PermitAll (auto-determines best level).
-func Auto() Checker { return permitAll{} }
-
 // isEditTool checks if a tool is a file editing tool.
 func isEditTool(name string) bool {
 	switch name {
@@ -93,12 +73,41 @@ func isEditTool(name string) bool {
 	return false
 }
 
+// readOnlyTools lists tools that don't modify any files or state.
+var readOnlyTools = map[string]bool{
+	"Read":      true,
+	"Glob":      true,
+	"Grep":      true,
+	"WebFetch":  true,
+	"WebSearch": true,
+	"LSP":       true,
+}
+
 // IsReadOnlyTool checks if a tool is read-only.
 func IsReadOnlyTool(name string) bool {
-	return config.IsReadOnlyTool(name)
+	return readOnlyTools[name]
 }
+
+// safeTools is the allowlist of tools that can skip permission checks entirely.
+var safeTools = func() map[string]bool {
+	m := map[string]bool{
+		"TaskCreate":      true,
+		"TaskGet":         true,
+		"TaskList":        true,
+		"TaskUpdate":      true,
+		"AskUserQuestion": true,
+		"EnterPlanMode":   true,
+		"ExitPlanMode":    true,
+		"CronList":        true,
+		"ToolSearch":      true,
+	}
+	for name := range readOnlyTools {
+		m[name] = true
+	}
+	return m
+}()
 
 // IsSafeTool returns true if the tool is on the safe allowlist.
 func IsSafeTool(name string) bool {
-	return config.IsSafeTool(name)
+	return safeTools[name]
 }

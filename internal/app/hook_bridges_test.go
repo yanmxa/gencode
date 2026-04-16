@@ -96,7 +96,7 @@ func TestBuildTaskNotificationIncludesBatchContext(t *testing.T) {
 			t.Fatalf("ContinuationPrompt missing %q:\n%s", want, item.ContinuationPrompt)
 		}
 	}
-	if item.Batch == nil || item.Batch.BatchID != batch.ID {
+	if item.Batch == nil || item.Batch.ID != batch.ID {
 		t.Fatalf("expected batch snapshot for %s, got %#v", batch.ID, item.Batch)
 	}
 }

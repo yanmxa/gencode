@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/message"
 )
 
@@ -17,13 +19,15 @@ const (
 	ProviderAlibaba   Provider = "alibaba"
 )
 
-// AuthMethod represents an authentication method
-type AuthMethod string
+// AuthMethod is an alias for core.AuthMethod so that existing consumers
+// of the provider package continue to compile without changes.
+type AuthMethod = core.AuthMethod
 
+// Auth method constants re-exported from core.
 const (
-	AuthAPIKey  AuthMethod = "api_key"
-	AuthVertex  AuthMethod = "vertex"
-	AuthBedrock AuthMethod = "bedrock"
+	AuthAPIKey  = core.AuthAPIKey
+	AuthVertex  = core.AuthVertex
+	AuthBedrock = core.AuthBedrock
 )
 
 // ProviderMeta contains static metadata about a provider
@@ -134,6 +138,7 @@ func Complete(ctx context.Context, provider LLMProvider, opts CompletionOptions)
 
 	streamChan := provider.Stream(ctx, opts)
 
+	gotDone := false
 	for chunk := range streamChan {
 		switch chunk.Type {
 		case message.ChunkTypeText:
@@ -144,11 +149,14 @@ func Complete(ctx context.Context, provider LLMProvider, opts CompletionOptions)
 			if chunk.Response != nil {
 				return *chunk.Response, nil
 			}
-			return response, nil
+			gotDone = true
 		case message.ChunkTypeError:
 			return response, chunk.Error
 		}
 	}
 
+	if !gotDone {
+		return response, fmt.Errorf("stream closed without completion")
+	}
 	return response, nil
 }

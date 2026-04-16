@@ -107,9 +107,14 @@ func (t *AskUserQuestionTool) ExecuteWithResponse(ctx context.Context, params ma
 	sb.WriteString("User responses:\n")
 
 	// Get original questions for context
-	questionsJSON, _ := json.Marshal(params["questions"])
+	questionsJSON, err := json.Marshal(params["questions"])
+	if err != nil {
+		return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("failed to marshal questions: %v", err))
+	}
 	var questions []tool.Question
-	json.Unmarshal(questionsJSON, &questions)
+	if err := json.Unmarshal(questionsJSON, &questions); err != nil {
+		return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("failed to unmarshal questions: %v", err))
+	}
 
 	for i, q := range questions {
 		answers := resp.Answers[i]

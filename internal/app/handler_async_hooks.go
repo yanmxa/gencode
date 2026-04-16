@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,7 +32,7 @@ func (m *model) handleAsyncHookTick() tea.Cmd {
 	} else {
 		m.hookStatus = ""
 	}
-	if m.conv.Stream.Active || m.hasPendingToolExecution() {
+	if m.conv.Stream.Active || m.isToolPhaseActive() {
 		return tea.Batch(cmds...)
 	}
 
@@ -59,7 +58,7 @@ func (m *model) injectAsyncHookContinuation(item asyncHookRewake) tea.Cmd {
 	if m.provider.LLM == nil {
 		m.conv.Append(message.ChatMessage{
 			Role:    message.RoleNotice,
-			Content: fmt.Sprintf("Async hook requested a follow-up, but no provider is connected."),
+			Content: "Async hook requested a follow-up, but no provider is connected.",
 		})
 		return tea.Batch(m.commitMessages()...)
 	}

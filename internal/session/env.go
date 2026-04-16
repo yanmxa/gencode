@@ -1,16 +1,16 @@
 package session
 
 import (
+	"context"
 	"os/exec"
 	"strings"
+	"time"
 )
 
-func GetGitBranch(dir string) string {
-	return getGitBranch(dir)
-}
-
 func getGitBranch(dir string) string {
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	coremcp "github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/ui/selector"
 )
 
 // EditInfo carries the temp file, server name and scope for editing a single server config.
@@ -82,7 +81,7 @@ func handleList() (string, error) {
 	sb.WriteString("MCP Servers:\n\n")
 
 	for _, srv := range servers {
-		icon, label := selector.MCPStatusDisplay(srv.Status)
+		icon, label := mcpStatusDisplay(srv.Status)
 		scope := string(srv.Config.Scope)
 		if scope == "" {
 			scope = "local"
@@ -292,15 +291,15 @@ func handleAdd(ctx context.Context, args []string) (string, error) {
 			return fmt.Sprintf("%s transport requires a URL: /mcp add --transport %s <name> <url>", transport, transport), nil
 		}
 		config.URL = positional[1]
-		config.Headers = ParseKeyValues(headers, ":")
+		config.Headers = parseKeyValues(headers, ":")
 
 	default:
 		return fmt.Sprintf("Unsupported transport type: %s (use stdio, http, or sse)", transport), nil
 	}
 
-	config.Env = ParseKeyValues(envVars, "=")
+	config.Env = parseKeyValues(envVars, "=")
 
-	mcpScope := ParseScope(scope)
+	mcpScope := parseScope(scope)
 	if err := coremcp.DefaultRegistry.AddServer(name, config, mcpScope); err != nil {
 		return fmt.Sprintf("Failed to add server: %v", err), nil
 	}
@@ -367,9 +366,9 @@ func handleGet(name string) (string, error) {
 	if len(config.Env) > 0 {
 		sb.WriteString("Env:\n")
 		for k, v := range config.Env {
-			masked := v
-			if len(masked) > 4 {
-				masked = masked[:4] + "..."
+			masked := "***"
+			if v == "" {
+				masked = "(empty)"
 			}
 			fmt.Fprintf(&sb, "  %s=%s\n", k, masked)
 		}
@@ -378,19 +377,19 @@ func handleGet(name string) (string, error) {
 	if len(config.Headers) > 0 {
 		sb.WriteString("Headers:\n")
 		for k, v := range config.Headers {
-			masked := v
-			if len(masked) > 8 {
-				masked = masked[:8] + "..."
+			masked := "***"
+			if v == "" {
+				masked = "(empty)"
 			}
 			fmt.Fprintf(&sb, "  %s: %s\n", k, masked)
 		}
 	}
 
-	icon, label := selector.MCPStatusDisplay(coremcp.StatusDisconnected)
+	icon, label := mcpStatusDisplay(coremcp.StatusDisconnected)
 	toolCount := 0
 	if client, ok := coremcp.DefaultRegistry.GetClient(name); ok {
 		srv := client.ToServer()
-		icon, label = selector.MCPStatusDisplay(srv.Status)
+		icon, label = mcpStatusDisplay(srv.Status)
 		toolCount = len(srv.Tools)
 
 		if srv.Error != "" {
@@ -428,8 +427,8 @@ func handleReconnect(ctx context.Context, name string) (string, error) {
 	return fmt.Sprintf("Reconnected to %s\nTools available: %d", name, toolCount), nil
 }
 
-// ParseScope converts a string scope name to the MCP scope constant.
-func ParseScope(s string) coremcp.Scope {
+// parseScope converts a string scope name to the MCP scope constant.
+func parseScope(s string) coremcp.Scope {
 	switch strings.ToLower(s) {
 	case "user", "global":
 		return coremcp.ScopeUser
@@ -440,8 +439,8 @@ func ParseScope(s string) coremcp.Scope {
 	}
 }
 
-// ParseKeyValues parses key=value or key:value pairs.
-func ParseKeyValues(items []string, sep string) map[string]string {
+// parseKeyValues parses key=value or key:value pairs.
+func parseKeyValues(items []string, sep string) map[string]string {
 	if len(items) == 0 {
 		return nil
 	}

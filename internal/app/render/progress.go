@@ -28,14 +28,14 @@ func renderAgentProgress(progress []string) string {
 
 	var sb strings.Builder
 	for _, p := range visible {
-		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  ⎿  %s", p)) + "\n")
+		sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  ⎿  %s", p)) + "\n")
 	}
 	return sb.String()
 }
 
-// RenderTaskProgressInline renders live progress for a parallel Agent tool call.
+// renderTaskProgressInline renders live progress for a parallel Agent tool call.
 // Spinner is on the header line; this only renders progress lines below it.
-func RenderTaskProgressInline(tc message.ToolCall, pendingCalls []message.ToolCall, parallelResults map[int]bool, taskProgress map[int][]string) string {
+func renderTaskProgressInline(tc message.ToolCall, pendingCalls []message.ToolCall, parallelResults map[int]bool, taskProgress map[int][]string) string {
 	idx := -1
 	for i, pending := range pendingCalls {
 		if pending.ID == tc.ID {
@@ -109,7 +109,7 @@ func RenderPendingToolSpinner(params PendingToolSpinnerParams) string {
 		// Show Agent label so it remains visible after the assistant message scrolls off.
 		if !params.SuppressAgentLabel && params.PendingCalls != nil && params.CurrentIdx < len(params.PendingCalls) {
 			tc := params.PendingCalls[params.CurrentIdx]
-			label := FormatAgentLabel(tc.Input)
+			label := formatAgentLabel(tc.Input)
 			sb.WriteString(renderToolLineWithIcon(label, params.Width, params.SpinnerView) + "\n")
 		}
 		sb.WriteString(renderAgentProgress(params.TaskProgress[params.CurrentIdx]))

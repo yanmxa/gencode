@@ -65,9 +65,9 @@ func GenerateSuggestions(toolName string, args map[string]any, maxSuggestions in
 // Never suggests dangerous prefixes.
 func suggestBashRules(cmd string, maxSuggestions int) []string {
 	// Try AST-based extraction first
-	var subCmds []ParsedCommand
-	if file := ParseBashAST(cmd); file != nil {
-		subCmds = ExtractCommandsAST(file)
+	var subCmds []parsedCommand
+	if file := parseBashAST(cmd); file != nil {
+		subCmds = extractCommandsAST(file)
 	}
 
 	if len(subCmds) > 0 {
@@ -78,7 +78,7 @@ func suggestBashRules(cmd string, maxSuggestions int) []string {
 	return suggestFromStringCommands(cmd, maxSuggestions)
 }
 
-func suggestFromParsedCommands(commands []ParsedCommand, max int) []string {
+func suggestFromParsedCommands(commands []parsedCommand, max int) []string {
 	seen := make(map[string]bool)
 	var suggestions []string
 	hasMultiple := len(commands) > 1

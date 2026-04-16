@@ -144,7 +144,7 @@ func (m model) renderModeStatus() string {
 		modelName = m.hookStatus
 	}
 	return render.RenderModeStatus(render.OperationModeParams{
-		Mode:          int(m.mode.Operation),
+		Mode:          m.mode.Operation,
 		InputTokens:   m.provider.InputTokens,
 		InputLimit:    m.getEffectiveInputLimit(),
 		ModelName:     modelName,
@@ -411,7 +411,9 @@ func (m model) renderPendingToolSpinner(suppressAgentLabel bool) string {
 	})
 }
 
-func (m model) hasPendingToolExecution() bool {
+// isToolPhaseActive returns true while the tool execution phase is active
+// (tool calls are pending or executing). Used as an idle gate.
+func (m model) isToolPhaseActive() bool {
 	return m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls)
 }
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -13,7 +13,7 @@ import (
 type PlanStatus string
 
 const (
-	StatusDraft    PlanStatus = "draft"
+	statusDraft    PlanStatus = "draft"
 	StatusApproved PlanStatus = "approved"
 )
 
@@ -26,8 +26,10 @@ type Plan struct {
 	Content   string     `yaml:"-"` // markdown body (not in frontmatter)
 }
 
-// Store manages plan file storage
+// Store manages plan file storage.
+// Safe for concurrent use.
 type Store struct {
+	mu      sync.RWMutex
 	baseDir string
 }
 
@@ -47,8 +49,13 @@ func NewStore() (*Store, error) {
 	return &Store{baseDir: baseDir}, nil
 }
 
-// Save saves a plan to disk and returns the file path
+// Save saves a plan to disk and returns the file path.
 func (s *Store) Save(plan *Plan) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := validatePlanPath(plan.ID); plan.ID != "" && err != nil {
+		return "", err
+	}
 	if plan.ID == "" {
 		plan.ID = GeneratePlanName(plan.Task)
 	}
@@ -56,7 +63,7 @@ func (s *Store) Save(plan *Plan) (string, error) {
 		plan.CreatedAt = time.Now()
 	}
 	if plan.Status == "" {
-		plan.Status = StatusDraft
+		plan.Status = statusDraft
 	}
 
 	filePath := filepath.Join(s.baseDir, plan.ID+".md")
@@ -71,15 +78,30 @@ func (s *Store) Save(plan *Plan) (string, error) {
 	sb.WriteString("---\n\n")
 	sb.WriteString(plan.Content)
 
-	if err := os.WriteFile(filePath, []byte(sb.String()), 0o644); err != nil {
+	tmp := filePath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(sb.String()), 0o644); err != nil {
 		return "", fmt.Errorf("failed to write plan file: %w", err)
+	}
+	if err := os.Rename(tmp, filePath); err != nil {
+		os.Remove(tmp)
+		return "", fmt.Errorf("failed to finalize plan file: %w", err)
 	}
 
 	return filePath, nil
 }
 
-// Load loads a plan from disk by ID
-func (s *Store) Load(id string) (*Plan, error) {
+// load loads a plan from disk by ID.
+func (s *Store) load(id string) (*Plan, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.loadLocked(id)
+}
+
+// loadLocked loads a plan without acquiring the lock. Caller must hold s.mu.
+func (s *Store) loadLocked(id string) (*Plan, error) {
+	if err := validatePlanPath(id); err != nil {
+		return nil, err
+	}
 	filePath := filepath.Join(s.baseDir, id+".md")
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -89,8 +111,10 @@ func (s *Store) Load(id string) (*Plan, error) {
 	return parsePlanFile(string(data))
 }
 
-// List returns all saved plans
-func (s *Store) List() ([]*Plan, error) {
+// list returns all saved plans.
+func (s *Store) list() ([]*Plan, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	entries, err := os.ReadDir(s.baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read plans directory: %w", err)
@@ -103,7 +127,7 @@ func (s *Store) List() ([]*Plan, error) {
 		}
 
 		id := strings.TrimSuffix(entry.Name(), ".md")
-		plan, err := s.Load(id)
+		plan, err := s.loadLocked(id)
 		if err != nil {
 			continue // Skip invalid plan files
 		}
@@ -113,15 +137,29 @@ func (s *Store) List() ([]*Plan, error) {
 	return plans, nil
 }
 
-// Delete removes a plan file
-func (s *Store) Delete(id string) error {
+// delete removes a plan file.
+func (s *Store) delete(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := validatePlanPath(id); err != nil {
+		return err
+	}
 	filePath := filepath.Join(s.baseDir, id+".md")
 	return os.Remove(filePath)
 }
 
-// GetPath returns the full path for a plan ID
+// GetPath returns the full path for a plan ID.
 func (s *Store) GetPath(id string) string {
 	return filepath.Join(s.baseDir, id+".md")
+}
+
+// validatePlanPath rejects plan IDs that contain path separators or ".."
+// to prevent path traversal attacks.
+func validatePlanPath(id string) error {
+	if strings.ContainsAny(id, "/\\") || strings.Contains(id, "..") {
+		return fmt.Errorf("invalid plan ID: must not contain path separators or '..'")
+	}
+	return nil
 }
 
 // parsePlanFile parses a plan file with YAML frontmatter
@@ -205,15 +243,12 @@ func unescapeYAML(s string) string {
 	}
 
 	s = s[1 : len(s)-1]
+	// Reverse the escapeYAML order: unescape backslashes first to avoid
+	// misinterpreting \\n (literal backslash + n) as a newline.
+	s = strings.ReplaceAll(s, "\\\\", "\x00")
 	s = strings.ReplaceAll(s, "\\n", "\n")
 	s = strings.ReplaceAll(s, "\\\"", "\"")
-	s = strings.ReplaceAll(s, "\\\\", "\\")
+	s = strings.ReplaceAll(s, "\x00", "\\")
 	return s
 }
 
-// ValidatePlanID checks if a plan ID is valid
-func ValidatePlanID(id string) bool {
-	// Must match pattern: YYYYMMDD-keyword-keyword... or keyword-keyword-keyword
-	pattern := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)+$`)
-	return pattern.MatchString(id)
-}

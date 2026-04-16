@@ -1,12 +1,18 @@
 package app
 
 import (
+	"context"
+
 	tea "github.com/charmbracelet/bubbletea"
+	"go.uber.org/zap"
 
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/runtime"
 )
 
 // updateStream routes LLM streaming messages.
@@ -20,6 +26,13 @@ func (m *model) updateStream(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (m *model) handleStreamChunk(msg appconv.ChunkMsg) tea.Cmd {
+	// Discard stale chunks from a cancelled stream — the waitForChunk closure
+	// captured the old channel and may still deliver a final Done/Error after
+	// handleStreamCancel already called Stream.Stop().
+	if !m.conv.Stream.Active {
+		return nil
+	}
+
 	if msg.BuildingToolName != "" {
 		m.conv.Stream.BuildingTool = msg.BuildingToolName
 	}
@@ -40,7 +53,7 @@ func (m *model) handleStreamChunk(msg appconv.ChunkMsg) tea.Cmd {
 // handleStreamDone processes a completed stream.
 func (m *model) handleStreamDone(msg appconv.ChunkMsg) tea.Cmd {
 	m.applyCompletedStreamState(msg)
-	decision := decideCompletion(msg.StopReason, msg.ToolCalls, m.maxOutputRecoveryCount, defaultMaxOutputRecovery)
+	decision := runtime.DecideCompletion(msg.StopReason, msg.ToolCalls, m.maxOutputRecoveryCount, runtime.DefaultMaxOutputRecovery)
 	return m.handleCompletionDecision(decision)
 }
 
@@ -55,11 +68,11 @@ func (m *model) applyCompletedStreamState(msg appconv.ChunkMsg) {
 	m.conv.SetLastThinkingSignature(msg.ThinkingSignature)
 }
 
-func (m *model) handleCompletionDecision(decision completionDecision) tea.Cmd {
+func (m *model) handleCompletionDecision(decision runtime.CompletionDecision) tea.Cmd {
 	switch decision.Action {
-	case completionRecoverMaxTokens:
+	case runtime.CompletionRecoverMaxTokens:
 		return m.recoverMaxOutputStream()
-	case completionRunTools:
+	case runtime.CompletionRunTools:
 		return m.handleCompletionToolCalls(decision.ToolCalls)
 	default:
 		return m.finalizeCompletedTurn()
@@ -70,7 +83,7 @@ func (m *model) recoverMaxOutputStream() tea.Cmd {
 	m.maxOutputRecoveryCount++
 	m.conv.Append(message.ChatMessage{
 		Role:    message.RoleUser,
-		Content: maxOutputRecoveryPrompt,
+		Content: runtime.MaxOutputRecoveryPrompt,
 	})
 	return m.startContinueStream()
 }
@@ -92,8 +105,14 @@ func (m *model) finalizeCompletedTurn() tea.Cmd {
 	m.stopCompletedStreamPhase()
 
 	commitCmds := m.commitMessages()
-	m.fireIdleHooks()
-	_ = m.saveSession()
+	if m.fireIdleHooks() {
+		// Stop hook blocked — continue the conversation instead of idling
+		commitCmds = append(commitCmds, m.startContinueStream())
+		return tea.Batch(commitCmds...)
+	}
+	if err := m.saveSession(); err != nil {
+		log.Logger().Warn("failed to save session", zap.Error(err))
+	}
 
 	if m.shouldAutoCompact() {
 		commitCmds = append(commitCmds, m.triggerAutoCompact())
@@ -123,24 +142,40 @@ func (m *model) stopCompletedStreamPhase() {
 	m.provider.ThinkingOverride = provider.ThinkingOff
 }
 
-func (m *model) fireIdleHooks() {
+// fireIdleHooks fires Stop hooks synchronously (honoring block decisions)
+// and Notification hooks asynchronously. Returns true if a Stop hook blocked.
+func (m *model) fireIdleHooks() bool {
 	if m.hookEngine == nil {
-		return
+		return false
 	}
-	m.hookEngine.ExecuteAsync(hooks.Stop, hooks.HookInput{
-		LastAssistantMessage: m.lastAssistantContent(),
-		StopHookActive:       m.hookEngine.StopHookActive(),
-	})
-	m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{
+
+	blocked := false
+	if m.hookEngine.HasHooks(core.Stop) {
+		outcome := m.hookEngine.Execute(context.Background(), core.Stop, hooks.HookInput{
+			LastAssistantMessage: m.lastAssistantContent(),
+			StopHookActive:       m.hookEngine.StopHookActive(),
+		})
+		if outcome.ShouldBlock {
+			// Inject block reason as context and continue the conversation
+			m.conv.Append(message.ChatMessage{
+				Role:    message.RoleUser,
+				Content: "Stop hook blocked: " + outcome.BlockReason,
+			})
+			blocked = true
+		}
+	}
+
+	m.hookEngine.ExecuteAsync(core.Notification, hooks.HookInput{
 		Message:          "Claude is waiting for your input",
 		NotificationType: "idle_prompt",
 	})
+	return blocked
 }
 
 // handleStreamError processes a stream error.
 func (m *model) handleStreamError(err error) tea.Cmd {
 	// If "prompt too long", trigger auto-compact and retry
-	if shouldCompactPromptTooLong(err, len(m.conv.Messages)) {
+	if runtime.ShouldCompactPromptTooLong(err, len(m.conv.Messages)) {
 		m.conv.RemoveEmptyLastAssistant()
 		m.conv.Stream.Stop()
 		m.conv.Compact.AutoContinue = true // Auto-continue after compaction
@@ -152,7 +187,7 @@ func (m *model) handleStreamError(err error) tea.Cmd {
 	m.provider.ThinkingOverride = provider.ThinkingOff
 
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.StopFailure, hooks.HookInput{
+		m.hookEngine.ExecuteAsync(core.StopFailure, hooks.HookInput{
 			LastAssistantMessage: m.lastAssistantContent(),
 			Error:                err.Error(),
 			StopHookActive:       m.hookEngine.StopHookActive(),
@@ -169,7 +204,7 @@ func (m *model) startContinueStream() tea.Cmd {
 
 func (m *model) handleSpinnerTick(msg tea.Msg) tea.Cmd {
 	interactiveActive := m.mode.Question.IsActive() || (m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive())
-	return m.output.HandleTick(msg, m.conv.Stream.Active, m.provider.FetchingLimits, m.conv.Compact.Active, interactiveActive, m.hasRunningToolExecution())
+	return m.output.HandleTick(msg, m.conv.Stream.Active, m.provider.FetchingLimits, m.conv.Compact.Active, interactiveActive, m.hasInFlightToolExecution())
 }
 
 // startLLMStream sets up and starts an LLM streaming request with optional extra prompt content.
@@ -179,12 +214,13 @@ func (m *model) startLLMStream(extra []string) tea.Cmd {
 	return m.startConversationStream(m.buildStreamRequest(extra))
 }
 
-func (m model) waitForChunk() tea.Cmd {
+func (m *model) waitForChunk() tea.Cmd {
+	ch := m.conv.Stream.Ch
 	return func() tea.Msg {
-		if m.conv.Stream.Ch == nil {
+		if ch == nil {
 			return appconv.ChunkMsg{Done: true}
 		}
-		chunk, ok := <-m.conv.Stream.Ch
+		chunk, ok := <-ch
 		if !ok {
 			return appconv.ChunkMsg{Done: true}
 		}

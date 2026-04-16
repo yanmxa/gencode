@@ -11,7 +11,14 @@ import (
 )
 
 // DefaultRegistry is the global skill registry instance.
-var DefaultRegistry *Registry
+var DefaultRegistry = NewRegistry()
+
+// NewRegistry creates an empty skill registry.
+func NewRegistry() *Registry {
+	return &Registry{
+		skills: make(map[string]*Skill),
+	}
+}
 
 // Registry manages loaded skills and their states.
 type Registry struct {
@@ -94,7 +101,15 @@ func (s *Store) save() error {
 		return err
 	}
 
-	return os.WriteFile(s.path, data, 0o644)
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, s.path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // GetState returns the persisted state for a skill.
@@ -267,12 +282,19 @@ func (r *Registry) SetState(name string, state SkillState, userLevel bool) error
 	return r.projectStore.SetState(skill.FullName(), state)
 }
 
-// GetStatesAt returns skill states from the specified level.
+// GetStatesAt returns a copy of skill states from the specified level.
 func (r *Registry) GetStatesAt(userLevel bool) map[string]SkillState {
+	var src map[string]SkillState
 	if userLevel {
-		return r.userStore.states
+		src = r.userStore.states
+	} else {
+		src = r.projectStore.states
 	}
-	return r.projectStore.states
+	result := make(map[string]SkillState, len(src))
+	for k, v := range src {
+		result[k] = v
+	}
+	return result
 }
 
 // GetSkillsSection generates the available skills section for the system prompt.

@@ -50,7 +50,7 @@ func (m *model) handleSubmit() tea.Cmd {
 
 // isTurnActive returns true when the LLM is streaming or tools are executing.
 func (m *model) isTurnActive() bool {
-	return m.conv.Stream.Active || m.hasPendingToolExecution()
+	return m.conv.Stream.Active || m.isToolPhaseActive()
 }
 
 // enqueueCurrentInput captures the current input field content into the queue.
@@ -59,7 +59,10 @@ func (m *model) enqueueCurrentInput(input string) {
 	for _, p := range m.input.Images.Pending {
 		images = append(images, p.Data)
 	}
-	m.inputQueue.Enqueue(input, images)
+	if m.inputQueue.Enqueue(input, images) < 0 {
+		m.conv.AddNotice("Input queue is full. Please wait for the current turn to complete.")
+		return
+	}
 	m.resetInputField()
 }
 
@@ -82,16 +85,14 @@ func (m *model) drainInputQueue() tea.Cmd {
 
 	req := submitRequest{Input: item.Content}
 	// Restore images into the input model so prepareSubmittedUserMessage can process them
-	maxID := 0
 	for i, img := range item.Images {
-		id := i + 1
+		id := m.input.Images.NextID + i + 1
 		m.input.Images.Pending = append(m.input.Images.Pending, appinput.PendingImage{
 			ID:   id,
 			Data: img,
 		})
-		maxID = id
 	}
-	m.input.Images.NextID = maxID
+	m.input.Images.NextID += len(item.Images)
 
 	return m.executeSubmitRequest(req)
 }
@@ -109,7 +110,7 @@ func (m *model) executeSubmitRequest(req submitRequest) tea.Cmd {
 	// If the user submits a new turn while tools are still running, cancel the
 	// unfinished tool calls first and append synthetic tool_result messages so
 	// the next provider request does not contain orphaned tool_use blocks.
-	if m.hasPendingToolExecution() {
+	if m.isToolPhaseActive() {
 		m.cancelPendingToolCalls()
 	}
 
@@ -163,7 +164,7 @@ func (m *model) handleCommandSubmit(input string) (tea.Cmd, bool) {
 	}
 
 	insertAt := len(m.conv.Messages)
-	result, cmd, isCmd := ExecuteCommand(context.Background(), m, input)
+	result, cmd, isCmd := executeCommand(context.Background(), m, input)
 	if !isCmd {
 		if preAppended && len(m.conv.Messages) > 0 {
 			m.conv.Messages = m.conv.Messages[:len(m.conv.Messages)-1]
@@ -245,7 +246,9 @@ func (m *model) prepareSubmittedUserMessage(input string) (message.ChatMessage, 
 
 	displayContent := content
 	content, inlineImages := m.input.ExtractInlineImages(content)
-	allImages := append(inlineImages, fileImages...)
+	allImages := make([]message.ImageData, 0, len(inlineImages)+len(fileImages))
+	allImages = append(allImages, inlineImages...)
+	allImages = append(allImages, fileImages...)
 
 	return message.ChatMessage{
 		Role:           message.RoleUser,

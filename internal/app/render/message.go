@@ -13,14 +13,14 @@ import (
 )
 
 const (
-	// MinWrapWidth is the minimum markdown wrap width.
-	MinWrapWidth = 40
+	// minWrapWidth is the minimum markdown wrap width.
+	minWrapWidth = 40
 
-	// AutoCompactThreshold is the percentage of context usage that triggers auto-compact.
-	AutoCompactThreshold = 95
+	// autoCompactThreshold is the percentage of context usage that triggers auto-compact.
+	autoCompactThreshold = 95
 
 	// agentContentIndent is the extra indent for agent prompt/response content
-	// beyond ToolResultExpandedStyle's PaddingLeft(4). Total indent = 4 + 4 = 8 chars.
+	// beyond toolResultExpandedStyle's PaddingLeft(4). Total indent = 4 + 4 = 8 chars.
 	agentContentIndent = "    "
 )
 
@@ -41,7 +41,7 @@ func RenderWelcome() string {
 
 // OperationModeParams holds the parameters needed for rendering mode status.
 type OperationModeParams struct {
-	Mode          int
+	Mode          config.OperationMode
 	InputTokens   int
 	InputLimit    int
 	ModelName     string
@@ -52,7 +52,7 @@ type OperationModeParams struct {
 
 // RenderModeStatus renders the combined mode status line.
 func RenderModeStatus(params OperationModeParams) string {
-	var parts []string
+	parts := make([]string, 0, 4)
 
 	if modeStatus := RenderOperationModeIndicator(params.Mode); modeStatus != "" {
 		parts = append(parts, modeStatus)
@@ -66,7 +66,7 @@ func RenderModeStatus(params OperationModeParams) string {
 		parts = append(parts, tokenUsage)
 	}
 
-	if queueBadge := RenderQueueBadge(params.QueueCount); queueBadge != "" {
+	if queueBadge := renderQueueBadge(params.QueueCount); queueBadge != "" {
 		parts = append(parts, queueBadge)
 	}
 
@@ -83,11 +83,11 @@ func RenderModeStatus(params OperationModeParams) string {
 }
 
 // RenderOperationModeIndicator returns the mode status indicator for auto-accept or plan mode.
-func RenderOperationModeIndicator(mode int) string {
+func RenderOperationModeIndicator(mode config.OperationMode) string {
 	var icon, label string
 	var color lipgloss.TerminalColor
 
-	switch config.OperationMode(mode) {
+	switch mode {
 	case config.ModeAutoAccept:
 		icon = "⏵⏵"
 		label = " accept edits on"
@@ -146,7 +146,7 @@ func RenderTokenUsage(inputTokens, inputLimit int) string {
 		return ""
 	}
 
-	color, hint := TokenUsageColorAndHint(percent)
+	color, hint := tokenUsageColorAndHint(percent)
 	style := lipgloss.NewStyle().Foreground(color)
 
 	used := FormatTokenCount(inputTokens)
@@ -166,13 +166,13 @@ func toolResultIcon(isError bool) string {
 	return "⎿"
 }
 
-// TokenUsageColorAndHint returns the color and hint text for token usage percentage.
-func TokenUsageColorAndHint(percent float64) (lipgloss.TerminalColor, string) {
-	if percent >= AutoCompactThreshold {
+// tokenUsageColorAndHint returns the color and hint text for token usage percentage.
+func tokenUsageColorAndHint(percent float64) (lipgloss.TerminalColor, string) {
+	if percent >= autoCompactThreshold {
 		return theme.CurrentTheme.Error, " ⚠ auto-compact"
 	}
 	if percent >= 85 {
-		return theme.CurrentTheme.Warning, fmt.Sprintf(" (compact at %d%%)", AutoCompactThreshold)
+		return theme.CurrentTheme.Warning, fmt.Sprintf(" (compact at %d%%)", autoCompactThreshold)
 	}
 	if percent >= 70 {
 		return theme.CurrentTheme.Accent, ""
@@ -192,9 +192,9 @@ func RenderTokenWarning(inputTokens, inputLimit int, compactSuppressed bool) str
 		return ""
 	}
 
-	untilCompact := max(int(AutoCompactThreshold-percent), 0)
+	untilCompact := max(int(autoCompactThreshold-percent), 0)
 
-	if percent >= AutoCompactThreshold {
+	if percent >= autoCompactThreshold {
 		style := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error)
 		return "  " + style.Render(fmt.Sprintf("⚠ Context nearly full (%d%% used) — auto-compact imminent", int(percent)))
 	}

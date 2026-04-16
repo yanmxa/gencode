@@ -21,11 +21,11 @@ func TestHandleProgressWithoutHubDoesNotPanic(t *testing.T) {
 	}
 }
 
-func TestDrainProgressWithoutHubIsNoop(t *testing.T) {
+func Test_drainProgressWithoutHubIsNoop(t *testing.T) {
 	m := New(80, nil)
-	m.TaskProgress = map[int][]string{2: []string{"existing"}}
+	m.TaskProgress = map[int][]string{2: {"existing"}}
 
-	m.DrainProgress()
+	m.drainProgress()
 
 	if len(m.TaskProgress[2]) != 1 || m.TaskProgress[2][0] != "existing" {
 		t.Fatalf("unexpected progress state after drain: %#v", m.TaskProgress)

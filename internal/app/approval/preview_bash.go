@@ -11,38 +11,38 @@ import (
 )
 
 const (
-	// DefaultMaxCommandLines is the default number of lines to show when collapsed
-	DefaultMaxCommandLines = 20
+	// defaultMaxCommandLines is the default number of lines to show when collapsed
+	defaultMaxCommandLines = 20
 )
 
-// BashPreview renders a bash command preview with expand/collapse functionality
-type BashPreview struct {
+// bashPreview renders a bash command preview with expand/collapse functionality
+type bashPreview struct {
 	bashMeta   *perm.BashMetadata
 	expanded   bool
 	maxVisible int
 }
 
-// NewBashPreview creates a new BashPreview instance
-func NewBashPreview(meta *perm.BashMetadata) *BashPreview {
-	return &BashPreview{
+// newBashPreview creates a new bashPreview instance
+func newBashPreview(meta *perm.BashMetadata) *bashPreview {
+	return &bashPreview{
 		bashMeta:   meta,
 		expanded:   false,
-		maxVisible: DefaultMaxCommandLines,
+		maxVisible: defaultMaxCommandLines,
 	}
 }
 
-// ToggleExpand toggles between expanded and collapsed view
-func (b *BashPreview) ToggleExpand() {
+// toggleExpand toggles between expanded and collapsed view
+func (b *bashPreview) toggleExpand() {
 	b.expanded = !b.expanded
 }
 
-// IsExpanded returns whether the preview is expanded
-func (b *BashPreview) IsExpanded() bool {
+// isExpanded returns whether the preview is expanded
+func (b *bashPreview) isExpanded() bool {
 	return b.expanded
 }
 
-// SetMaxVisible sets the maximum visible lines when collapsed
-func (b *BashPreview) SetMaxVisible(n int) {
+// setMaxVisible sets the maximum visible lines when collapsed
+func (b *bashPreview) setMaxVisible(n int) {
 	b.maxVisible = n
 }
 
@@ -60,7 +60,7 @@ func getBashDescStyle() lipgloss.Style {
 }
 
 // Render renders the bash command preview with simplified format (3-space indent, no line numbers)
-func (b *BashPreview) Render(width int) string {
+func (b *bashPreview) render(width int) string {
 	if b.bashMeta == nil || b.bashMeta.Command == "" {
 		return getBashCommandStyle().Render("   (no command)")
 	}
@@ -114,8 +114,8 @@ func (b *BashPreview) Render(width int) string {
 	return sb.String()
 }
 
-// NeedsExpand returns true if the command has more lines than the default visible count
-func (b *BashPreview) NeedsExpand() bool {
+// needsExpand returns true if the command has more lines than the default visible count
+func (b *bashPreview) needsExpand() bool {
 	if b.bashMeta == nil {
 		return false
 	}

@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"sync"
 
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/provider"
@@ -40,6 +41,9 @@ type FakeClient struct {
 	// ErrorValue is the error to inject when ErrorAt triggers.
 	ErrorValue error
 
+	// mu protects mutable state (callCount, Responses, Calls).
+	mu sync.Mutex
+
 	// callCount tracks total calls across Send/Stream/Complete.
 	callCount int
 }
@@ -48,27 +52,31 @@ type FakeClient struct {
 func (f *FakeClient) Send(_ context.Context, msgs []message.Message,
 	tools []provider.ToolSchema, sysPrompt string,
 ) (message.CompletionResponse, error) {
-	f.recordCall(msgs, tools, sysPrompt)
-	if f.shouldInjectError() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.recordCallLocked(msgs, tools, sysPrompt)
+	if f.shouldInjectErrorLocked() {
 		return message.CompletionResponse{}, f.ErrorValue
 	}
-	return f.next(), nil
+	return f.nextLocked(), nil
 }
 
 // Stream returns the next response as a single-chunk stream.
 func (f *FakeClient) Stream(_ context.Context, msgs []message.Message,
 	tools []provider.ToolSchema, sysPrompt string,
 ) <-chan message.StreamChunk {
-	f.recordCall(msgs, tools, sysPrompt)
+	f.mu.Lock()
+	f.recordCallLocked(msgs, tools, sysPrompt)
 	ch := make(chan message.StreamChunk, 1)
 
 	var chunk message.StreamChunk
-	if f.shouldInjectError() {
+	if f.shouldInjectErrorLocked() {
 		chunk = message.StreamChunk{Type: message.ChunkTypeError, Error: f.ErrorValue}
 	} else {
-		resp := f.next()
+		resp := f.nextLocked()
 		chunk = message.StreamChunk{Type: message.ChunkTypeDone, Response: &resp}
 	}
+	f.mu.Unlock()
 
 	go func() {
 		ch <- chunk
@@ -81,16 +89,18 @@ func (f *FakeClient) Stream(_ context.Context, msgs []message.Message,
 func (f *FakeClient) Complete(_ context.Context,
 	sysPrompt string, msgs []message.Message, maxTokens int,
 ) (message.CompletionResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, provider.CompletionOptions{
 		Model:        f.modelID(),
 		SystemPrompt: sysPrompt,
 		Messages:     msgs,
 		MaxTokens:    maxTokens,
 	})
-	if f.shouldInjectError() {
+	if f.shouldInjectErrorLocked() {
 		return message.CompletionResponse{}, f.ErrorValue
 	}
-	return f.next(), nil
+	return f.nextLocked(), nil
 }
 
 // Name returns the provider name.
@@ -111,15 +121,14 @@ func (f *FakeClient) ResolveMaxTokens(_ context.Context) int {
 	return defaultMaxTokens
 }
 
-// --- helpers ---
+// --- helpers (must be called with f.mu held) ---
 
-// shouldInjectError increments callCount and returns true when ErrorAt matches.
-func (f *FakeClient) shouldInjectError() bool {
+func (f *FakeClient) shouldInjectErrorLocked() bool {
 	f.callCount++
 	return f.ErrorAt > 0 && f.callCount == f.ErrorAt
 }
 
-func (f *FakeClient) next() message.CompletionResponse {
+func (f *FakeClient) nextLocked() message.CompletionResponse {
 	if len(f.Responses) == 0 {
 		return message.CompletionResponse{
 			Content:    "no more responses",
@@ -138,7 +147,7 @@ func (f *FakeClient) modelID() string {
 	return "fake-model"
 }
 
-func (f *FakeClient) recordCall(msgs []message.Message, tools []provider.ToolSchema, sysPrompt string) {
+func (f *FakeClient) recordCallLocked(msgs []message.Message, tools []provider.ToolSchema, sysPrompt string) {
 	f.Calls = append(f.Calls, provider.CompletionOptions{
 		Model:        f.modelID(),
 		Messages:     msgs,

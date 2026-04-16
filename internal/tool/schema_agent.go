@@ -1,9 +1,9 @@
 package tool
 
-import "github.com/yanmxa/gencode/internal/provider"
+import "github.com/yanmxa/gencode/internal/message"
 
-// AgentToolSchema returns the schema for the Agent tool
-var AgentToolSchema = provider.ToolSchema{
+// agentToolSchema is the schema for the Agent tool.
+var agentToolSchema = message.ToolSchema{
 	Name: "Agent",
 	Description: `Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to it.
 
@@ -83,7 +83,7 @@ Usage notes:
 	},
 }
 
-var ContinueAgentToolSchema = provider.ToolSchema{
+var continueAgentToolSchema = message.ToolSchema{
 	Name: "ContinueAgent",
 	Description: `Continue a previously spawned subagent using its saved conversation state.
 
@@ -154,7 +154,7 @@ Usage notes:
 	},
 }
 
-var SendMessageToolSchema = provider.ToolSchema{
+var sendMessageToolSchema = message.ToolSchema{
 	Name: "SendMessage",
 	Description: `Send a follow-up message to an existing subagent worker.
 
@@ -228,8 +228,8 @@ Usage notes:
 	},
 }
 
-// SkillToolSchema returns the schema for the Skill tool
-var SkillToolSchema = provider.ToolSchema{
+// skillToolSchema is the schema for the Skill tool.
+var skillToolSchema = message.ToolSchema{
 	Name: "Skill",
 	Description: `Execute a skill within the main conversation.
 
@@ -270,8 +270,8 @@ Important:
 	},
 }
 
-// EnterPlanModeSchema returns the schema for EnterPlanMode tool
-var EnterPlanModeSchema = provider.ToolSchema{
+// enterPlanModeSchema is the schema for EnterPlanMode tool.
+var enterPlanModeSchema = message.ToolSchema{
 	Name: "EnterPlanMode",
 	Description: `Request to enter plan mode for tasks that need exploration before implementation. The user must approve entering plan mode.
 
@@ -301,8 +301,8 @@ When NOT to use:
 	},
 }
 
-// ExitPlanModeSchema returns the schema for ExitPlanMode tool
-var ExitPlanModeSchema = provider.ToolSchema{
+// exitPlanModeSchema is the schema for ExitPlanMode tool.
+var exitPlanModeSchema = message.ToolSchema{
 	Name:        "ExitPlanMode",
 	Description: "Exit plan mode and submit your implementation plan for user approval. Call this when you have finished exploring the codebase and created a complete implementation plan.",
 	Parameters: map[string]any{
@@ -317,8 +317,8 @@ var ExitPlanModeSchema = provider.ToolSchema{
 	},
 }
 
-// ToolSearchSchema defines the schema for the ToolSearch tool.
-var ToolSearchSchema = provider.ToolSchema{
+// toolSearchSchema defines the schema for the ToolSearch tool.
+var toolSearchSchema = message.ToolSchema{
 	Name: "ToolSearch",
 	Description: `Fetches full schema definitions for deferred tools so they can be called.
 
@@ -347,9 +347,9 @@ Query forms:
 	},
 }
 
-// PlanModeAgentSchema is an Agent tool schema for plan mode.
+// planModeAgentSchema is an Agent tool schema for plan mode.
 // It omits run_in_background (foreground-only) and restricts to read-only agents.
-var PlanModeAgentSchema = provider.ToolSchema{
+var planModeAgentSchema = message.ToolSchema{
 	Name: "Agent",
 	Description: `Launch a subagent to research the codebase.
 

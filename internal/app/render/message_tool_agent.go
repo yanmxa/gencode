@@ -6,30 +6,30 @@ import (
 	"strings"
 )
 
-// RenderTaskResultInline renders a Task tool result with agent-specific formatting.
-func RenderTaskResultInline(data ToolResultData, mdRenderer *MDRenderer) string {
+// renderTaskResultInline renders a Task tool result with agent-specific formatting.
+func renderTaskResultInline(data ToolResultData, mdRenderer *MDRenderer) string {
 	icon := toolResultIcon(data.IsError)
 
 	var sb strings.Builder
 	content := data.Content
 
 	if data.IsError {
-		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  Agent → Error", icon)) + "\n")
-		sb.WriteString(ToolResultExpandedStyle.Render("    "+content) + "\n")
+		sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  Agent → Error", icon)) + "\n")
+		sb.WriteString(toolResultExpandedStyle.Render("    "+content) + "\n")
 		return sb.String()
 	}
 
-	taskID := ExtractField(content, "Task ID: ", "")
+	taskID := extractField(content, "Task ID: ", "")
 	isBackground := strings.Contains(content, "started in background")
 	if isBackground && taskID != "" {
-		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  → background (Task ID: %s)", icon, taskID)) + "\n")
+		sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  → background (Task ID: %s)", icon, taskID)) + "\n")
 		return sb.String()
 	}
 
-	toolUses := ExtractIntField(content, "ToolUses: ")
-	tokens := ExtractIntField(content, "Tokens: ")
-	duration := ExtractField(content, "Duration: ", "")
-	resultModel := ExtractField(content, "Model: ", "\n")
+	toolUses := extractIntField(content, "ToolUses: ")
+	tokens := extractIntField(content, "Tokens: ")
+	duration := extractField(content, "Duration: ", "")
+	resultModel := extractField(content, "Model: ", "\n")
 	doneStats := buildDoneStats(toolUses, tokens, duration, resultModel)
 
 	if !data.Expanded {
@@ -37,7 +37,7 @@ func RenderTaskResultInline(data ToolResultData, mdRenderer *MDRenderer) string 
 		if doneStats != "" {
 			resultLine += " (" + doneStats + ")"
 		}
-		sb.WriteString(ToolResultStyle.Render(resultLine))
+		sb.WriteString(toolResultStyle.Render(resultLine))
 		sb.WriteString(ThinkingStyle.Render("  (ctrl+o to expand)") + "\n")
 		return sb.String()
 	}
@@ -50,17 +50,17 @@ func RenderTaskResultInline(data ToolResultData, mdRenderer *MDRenderer) string 
 	if _, rest, found := strings.Cut(content, "\n\n"); found {
 		body = rest
 	}
-	processCount := ExtractIntField(content, "Process: ")
+	processCount := extractIntField(content, "Process: ")
 	process, response := splitByProcessCount(body, processCount)
 
 	if process != "" {
 		for line := range strings.SplitSeq(process, "\n") {
-			sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  ⎿  %s", line)) + "\n")
+			sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  ⎿  %s", line)) + "\n")
 		}
 	}
 
 	if response != "" {
-		sb.WriteString(AgentLabelStyle.Render("  ⎿  Response:") + "\n")
+		sb.WriteString(agentLabelStyle.Render("  ⎿  Response:") + "\n")
 		rendered := response
 		if mdRenderer != nil {
 			narrowRenderer := NewMDRenderer(mdRenderer.width - len(agentContentIndent))
@@ -69,7 +69,7 @@ func RenderTaskResultInline(data ToolResultData, mdRenderer *MDRenderer) string 
 			}
 		}
 		for line := range strings.SplitSeq(rendered, "\n") {
-			sb.WriteString(ToolResultExpandedStyle.Render(agentContentIndent+line) + "\n")
+			sb.WriteString(toolResultExpandedStyle.Render(agentContentIndent+line) + "\n")
 		}
 	}
 
@@ -77,12 +77,12 @@ func RenderTaskResultInline(data ToolResultData, mdRenderer *MDRenderer) string 
 	if doneStats != "" {
 		resultLine += " (" + doneStats + ")"
 	}
-	sb.WriteString(ToolResultStyle.Render(resultLine) + "\n")
+	sb.WriteString(toolResultStyle.Render(resultLine) + "\n")
 	return sb.String()
 }
 
-// RenderTaskOutputResultInline renders a TaskOutput result with task-specific formatting.
-func RenderTaskOutputResultInline(data ToolResultData) string {
+// renderTaskOutputResultInline renders a TaskOutput result with task-specific formatting.
+func renderTaskOutputResultInline(data ToolResultData) string {
 	icon := toolResultIcon(data.IsError)
 
 	var sb strings.Builder
@@ -93,19 +93,20 @@ func RenderTaskOutputResultInline(data ToolResultData) string {
 	}
 
 	if data.IsError {
-		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  TaskOutput → Error", icon)) + "\n")
+		sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  TaskOutput → Error", icon)) + "\n")
 		if errorText != "" {
-			sb.WriteString(ToolResultExpandedStyle.Render("    "+errorText) + "\n")
+			sb.WriteString(toolResultExpandedStyle.Render("    "+errorText) + "\n")
 		}
 		return sb.String()
 	}
 
-	agentName := ExtractField(content, "Agent: ", "")
-	status := ExtractField(content, "Status: ", "")
-	turns := ExtractIntField(content, "Turns: ")
+	agentName := extractField(content, "Agent: ", "")
+	status := extractField(content, "Status: ", "")
+	turns := extractIntField(content, "Turns: ")
 
 	var info []string
 	if agentName != "" {
+		info = make([]string, 0, 3)
 		info = append(info, agentName)
 	}
 	if status != "" {
@@ -120,7 +121,7 @@ func RenderTaskOutputResultInline(data ToolResultData) string {
 		summaryText = strings.Join(info, ", ")
 	}
 
-	sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  %s  TaskOutput → %s", icon, summaryText)) + "\n")
+	sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  %s  TaskOutput → %s", icon, summaryText)) + "\n")
 
 	if _, outputContent, found := strings.Cut(content, "Output:\n"); found {
 		outputLines := strings.Split(outputContent, "\n")
@@ -131,10 +132,10 @@ func RenderTaskOutputResultInline(data ToolResultData) string {
 
 		for i, line := range outputLines {
 			if i >= maxLines {
-				sb.WriteString(ToolResultExpandedStyle.Render("    ...") + "\n")
+				sb.WriteString(toolResultExpandedStyle.Render("    ...") + "\n")
 				break
 			}
-			sb.WriteString(ToolResultExpandedStyle.Render("    "+stripMarkdownHeading(line)) + "\n")
+			sb.WriteString(toolResultExpandedStyle.Render("    "+stripMarkdownHeading(line)) + "\n")
 		}
 	}
 
@@ -167,7 +168,7 @@ func formatAgentDefinition(input string) string {
 	}
 
 	var sb strings.Builder
-	var meta []string
+	meta := make([]string, 0, 2)
 	if mode, ok := params["mode"].(string); ok && mode != "" {
 		meta = append(meta, fmt.Sprintf("mode=%s", mode))
 	}
@@ -175,13 +176,13 @@ func formatAgentDefinition(input string) string {
 		meta = append(meta, "background")
 	}
 	if len(meta) > 0 {
-		sb.WriteString(ToolResultStyle.Render(fmt.Sprintf("  ⎿  [%s]", strings.Join(meta, ", "))) + "\n")
+		sb.WriteString(toolResultStyle.Render(fmt.Sprintf("  ⎿  [%s]", strings.Join(meta, ", "))) + "\n")
 	}
 
 	if prompt, ok := params["prompt"].(string); ok && prompt != "" {
-		sb.WriteString(AgentLabelStyle.Render("  ⎿  Prompt:") + "\n")
+		sb.WriteString(agentLabelStyle.Render("  ⎿  Prompt:") + "\n")
 		for line := range strings.SplitSeq(prompt, "\n") {
-			sb.WriteString(ToolResultExpandedStyle.Render(agentContentIndent+line) + "\n")
+			sb.WriteString(toolResultExpandedStyle.Render(agentContentIndent+line) + "\n")
 		}
 	}
 
@@ -190,7 +191,7 @@ func formatAgentDefinition(input string) string {
 
 // buildDoneStats builds the stats string for the Done line.
 func buildDoneStats(toolUses, tokens int, duration, model string) string {
-	var stats []string
+	stats := make([]string, 0, 4)
 	if toolUses == 1 {
 		stats = append(stats, "1 tool use")
 	} else if toolUses > 1 {

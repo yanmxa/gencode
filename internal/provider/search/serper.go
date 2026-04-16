@@ -88,12 +88,12 @@ func (p *SerperProvider) Search(ctx context.Context, query string, opts SearchOp
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxSearchResponseSize))
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	// Read response
-	respBody, err := io.ReadAll(resp.Body)
+	// Read response with size limit
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchResponseSize))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}

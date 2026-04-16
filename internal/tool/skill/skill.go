@@ -68,6 +68,7 @@ func (t *SkillTool) PreparePermission(ctx context.Context, params map[string]any
 	}
 
 	return &perm.PermissionRequest{
+		ID:          tool.GenerateRequestID(),
 		ToolName:    t.Name(),
 		Description: desc,
 		SkillMeta: &perm.SkillMetadata{

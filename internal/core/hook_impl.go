@@ -6,12 +6,15 @@ import (
 	"log"
 	"regexp"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // entry wraps a Hook with pre-compiled matcher.
 type entry struct {
 	Hook
 	match func(string) bool // pre-compiled source matcher
+	fired atomic.Bool        // ensures Once hooks fire at most once
 }
 
 // hooks is the default Hooks implementation.
@@ -74,25 +77,24 @@ func (h *hooks) Fire(ctx context.Context, event Event) (Action, error) {
 	}
 	h.mu.RUnlock()
 
-	// Remove Once hooks atomically before execution to prevent double-fire.
-	var onceIDs []string
-	for _, e := range snapshot {
-		if e.Once {
-			onceIDs = append(onceIDs, e.ID)
-		}
-	}
-	if len(onceIDs) > 0 {
-		h.mu.Lock()
-		for _, id := range onceIDs {
-			h.remove(id)
-		}
-		h.mu.Unlock()
-	}
-
 	var merged Action
 	for _, e := range snapshot {
+		// Once hooks: use atomic CAS to guarantee at-most-once execution
+		// even under concurrent Fire calls. The entry stays in the slice
+		// with fired=true; subsequent snapshots skip it via the CAS check.
+		// This avoids a deferred removal goroutine that could race with
+		// re-registration of the same hook ID.
+		if e.Once {
+			if !e.fired.CompareAndSwap(false, true) {
+				continue // another goroutine already fired this hook
+			}
+		}
 		if e.Async {
 			h.wg.Add(1)
+			// Use a detached context so async hooks are not cancelled when the
+			// caller's context expires (e.g., during agent shutdown). Drain()
+			// provides the shutdown boundary for async hooks.
+			asyncCtx := context.WithoutCancel(ctx)
 			go func(handler Handler) {
 				defer h.wg.Done()
 				defer func() {
@@ -100,7 +102,7 @@ func (h *hooks) Fire(ctx context.Context, event Event) (Action, error) {
 						log.Printf("core/hooks: async hook panicked: %v", r)
 					}
 				}()
-				handler(ctx, event)
+				handler(asyncCtx, event)
 			}(e.Handle)
 			continue
 		}
@@ -123,10 +125,18 @@ func (h *hooks) Has(event EventType) bool {
 	return len(h.byEvent[event]) > 0
 }
 
-// Drain blocks until all async hook goroutines have completed.
-// Call this during shutdown before closing channels that hooks may write to.
+// Drain blocks until all async hook goroutines have completed or the timeout
+// expires. Call this during shutdown before closing channels that hooks may
+// write to. A 10-second timeout prevents indefinite hangs from misbehaving
+// async hooks that ignore context cancellation.
 func (h *hooks) Drain() {
-	h.wg.Wait()
+	done := make(chan struct{})
+	go func() { h.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		log.Printf("core/hooks: Drain timed out after 10s, some async hooks still running")
+	}
 }
 
 // compileMatcher returns a match function for the given pattern.

@@ -2,9 +2,9 @@ package config
 
 import "maps"
 
-// MergeSettings merges two Settings, with overlay taking precedence over base.
+// mergeSettings merges two Settings, with overlay taking precedence over base.
 // Slices (permission rules) are deduplicated unions. Maps are merged with overlay winning on conflicts.
-func MergeSettings(base, overlay *Settings) *Settings {
+func mergeSettings(base, overlay *Settings) *Settings {
 	if base == nil {
 		return overlay
 	}

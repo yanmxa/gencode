@@ -1,61 +1,86 @@
 package hooks
 
-import "regexp"
+import (
+	"regexp"
+	"sync"
 
-// MatchesEvent checks if a matcher pattern matches the given value.
+	"github.com/yanmxa/gencode/internal/core"
+)
+
+// matcherCache caches compiled regexes for matcher patterns.
+// Matchers come from settings.json and are reused across many hook dispatches.
+var matcherCache sync.Map // map[string]*regexp.Regexp (nil value = compile error)
+
+// compileCached returns a cached compiled regex for the given matcher pattern,
+// or nil if the pattern is invalid.
+func compileCached(matcher string) *regexp.Regexp {
+	if v, ok := matcherCache.Load(matcher); ok {
+		re, _ := v.(*regexp.Regexp)
+		return re
+	}
+	re, err := regexp.Compile("^(" + matcher + ")$")
+	if err != nil {
+		matcherCache.Store(matcher, (*regexp.Regexp)(nil))
+		return nil
+	}
+	matcherCache.Store(matcher, re)
+	return re
+}
+
+// matchesEvent checks if a matcher pattern matches the given value.
 // Empty or "*" matches everything. Matcher is regex-anchored at both ends.
-func MatchesEvent(matcher, matchValue string) bool {
+func matchesEvent(matcher, matchValue string) bool {
 	switch matcher {
 	case "", "*":
 		return true
 	default:
-		if re, err := regexp.Compile("^(" + matcher + ")$"); err == nil {
+		if re := compileCached(matcher); re != nil {
 			return re.MatchString(matchValue)
 		}
 		return matcher == matchValue
 	}
 }
 
-// GetMatchValue extracts the value to match against based on event type.
-func GetMatchValue(event EventType, input HookInput) string {
+// getMatchValue extracts the value to match against based on event type.
+func getMatchValue(event EventType, input HookInput) string {
 	switch event {
-	case PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, PermissionDenied:
+	case core.PreToolUse, core.PostToolUse, core.PostToolUseFailure, core.PermissionRequest, core.PermissionDenied:
 		return input.ToolName
-	case SessionStart:
+	case core.SessionStart:
 		return input.Source
-	case SessionEnd:
+	case core.SessionEnd:
 		return input.Reason
-	case Notification:
+	case core.Notification:
 		return input.NotificationType
-	case Setup:
+	case core.Setup:
 		return input.Trigger
-	case SubagentStart, SubagentStop:
+	case core.SubagentStart, core.SubagentStop:
 		return input.AgentType
-	case TaskCreated, TaskCompleted:
+	case core.TaskCreated, core.TaskCompleted:
 		return input.TaskSubject
-	case ConfigChange:
+	case core.ConfigChange:
 		return input.Source
-	case InstructionsLoaded:
+	case core.InstructionsLoaded:
 		return input.FilePath
-	case CwdChanged:
+	case core.CwdChanged:
 		return input.NewCwd
-	case FileChanged:
+	case core.FileChanged:
 		return input.FilePath
-	case PreCompact, PostCompact:
+	case core.PreCompact, core.PostCompact:
 		return input.Trigger
-	case WorktreeCreate:
+	case core.WorktreeCreate:
 		return input.Name
-	case WorktreeRemove:
+	case core.WorktreeRemove:
 		return input.WorktreePath
 	default:
 		return ""
 	}
 }
 
-// EventSupportsMatcher returns true if the event type supports matcher filtering.
-func EventSupportsMatcher(event EventType) bool {
+// eventSupportsMatcher returns true if the event type supports matcher filtering.
+func eventSupportsMatcher(event EventType) bool {
 	switch event {
-	case UserPromptSubmit, Stop, StopFailure:
+	case core.UserPromptSubmit, core.Stop, core.StopFailure:
 		return false
 	default:
 		return true

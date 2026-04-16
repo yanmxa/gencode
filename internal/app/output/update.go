@@ -8,8 +8,8 @@ import (
 	"github.com/yanmxa/gencode/internal/ui/progress"
 )
 
-// DrainProgress drains all pending task progress messages from the channel.
-func (m *Model) DrainProgress() {
+// drainProgress drains all pending task progress messages from the channel.
+func (m *Model) drainProgress() {
 	if m.ProgressHub == nil {
 		return
 	}
@@ -22,6 +22,10 @@ func (m *Model) HandleProgress(msg progress.UpdateMsg) tea.Cmd {
 		m.TaskProgress = make(map[int][]string)
 	}
 	m.TaskProgress[msg.Index] = append(m.TaskProgress[msg.Index], msg.Message)
+	// Cap progress entries per agent to prevent unbounded growth
+	if len(m.TaskProgress[msg.Index]) > 5 {
+		m.TaskProgress[msg.Index] = m.TaskProgress[msg.Index][len(m.TaskProgress[msg.Index])-5:]
+	}
 
 	if m.ProgressHub == nil {
 		return m.Spinner.Tick
@@ -65,7 +69,7 @@ func (m *Model) HandleTick(msg tea.Msg, active, fetching, compacting, interactiv
 
 	// Check for Task progress updates (drains all pending messages)
 	if hasRunningTasks {
-		m.DrainProgress()
+		m.drainProgress()
 	}
 
 	return cmd

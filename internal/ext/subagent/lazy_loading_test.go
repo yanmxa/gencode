@@ -49,9 +49,6 @@ It contains detailed instructions for the agent.
 	if config.SystemPrompt != "" {
 		t.Errorf("SystemPrompt should be empty at parse time, got: %q", config.SystemPrompt)
 	}
-	if config.systemPromptLoaded {
-		t.Error("systemPromptLoaded should be false at parse time")
-	}
 
 	// Now call GetSystemPrompt() to trigger lazy loading
 	prompt := config.GetSystemPrompt()
@@ -59,9 +56,6 @@ It contains detailed instructions for the agent.
 	// Verify the full content is now loaded
 	if prompt == "" {
 		t.Error("GetSystemPrompt() should return the full content")
-	}
-	if !config.systemPromptLoaded {
-		t.Error("systemPromptLoaded should be true after GetSystemPrompt()")
 	}
 	if config.SystemPrompt == "" {
 		t.Error("SystemPrompt should be populated after GetSystemPrompt()")

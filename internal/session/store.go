@@ -2,19 +2,17 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/tracker"
 	"github.com/yanmxa/gencode/internal/transcript"
 )
-
-const SessionRetentionDays = 30
 
 type Store struct {
 	mu              sync.RWMutex
@@ -29,8 +27,6 @@ type Snapshot struct {
 	Entries  []Entry
 	Tasks    []tracker.Task
 }
-
-type Session = Snapshot
 
 func NewStore(cwd string) (*Store, error) {
 	homeDir, err := os.UserHomeDir()
@@ -57,15 +53,20 @@ func NewStore(cwd string) (*Store, error) {
 	}, nil
 }
 
-func NewStoreWithDir(dir string) *Store {
-	_ = os.MkdirAll(dir, 0o755)
-	txStore, _ := transcript.NewFileStore(dir, encodePath(dir))
+func NewStoreWithDir(dir string) (*Store, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create session dir: %w", err)
+	}
+	txStore, err := transcript.NewFileStore(dir, encodePath(dir))
+	if err != nil {
+		return nil, fmt.Errorf("create transcript store: %w", err)
+	}
 	return &Store{
 		cwd:             dir,
 		projectID:       encodePath(dir),
 		projectDir:      dir,
 		transcriptStore: txStore,
-	}
+	}, nil
 }
 
 func (s *Store) SessionPath(sessionID string) string {
@@ -93,14 +94,18 @@ func (s *Store) List() ([]*SessionMetadata, error) {
 }
 
 func (s *Store) GetLatest() (*Snapshot, error) {
-	items, err := s.List()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	items, err := s.transcriptStore.List(context.Background(), s.projectID, transcript.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 	if len(items) == 0 {
 		return nil, fmt.Errorf("no sessions found")
 	}
-	return s.Load(items[0].ID)
+	meta := transcript.MetadataFromListItem(items[0], s.cwd)
+	return s.loadSnapshot(context.Background(), meta.ID)
 }
 
 func (s *Store) Delete(id string) error {
@@ -114,51 +119,34 @@ func (s *Store) Delete(id string) error {
 	return nil
 }
 
-func (s *Store) Cleanup() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	items, err := s.transcriptStore.List(context.Background(), s.projectID, transcript.ListOptions{IncludeSidechain: true})
-	if err != nil {
-		return err
-	}
-
-	cutoff := time.Now().AddDate(0, 0, -SessionRetentionDays)
-	for _, item := range items {
-		if item.UpdatedAt.Before(cutoff) {
-			_ = s.transcriptStore.Delete(context.Background(), item.TranscriptID)
-			_ = os.RemoveAll(s.toolResultsDir(item.TranscriptID))
-		}
-	}
-	return nil
-}
-
 func (s *Store) Load(id string) (*Snapshot, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	sess := s.loadSnapshot(context.Background(), id)
-	if sess == nil {
-		return nil, fmt.Errorf("session not found: %s", id)
+	sess, err := s.loadSnapshot(context.Background(), id)
+	if err != nil {
+		return nil, err
 	}
 	return sess, nil
 }
 
 func (s *Store) Save(sess *Snapshot) error {
+	if sess == nil {
+		return fmt.Errorf("session is nil")
+	}
+
+	// Shell out before acquiring the lock to avoid blocking other store ops.
+	gitBranch := getGitBranch(s.cwd)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.transcriptStore == nil {
 		return fmt.Errorf("transcript store not configured")
 	}
-	if sess == nil {
-		return fmt.Errorf("session is nil")
-	}
 
 	now := time.Now()
 	NormalizeMetadata(&sess.Metadata, sess.Entries, s.cwd, now)
-
-	gitBranch := getGitBranch(s.cwd)
 	nodes := EntriesToNodes(sess.Entries, sess.Metadata.ID, sess.Metadata.Cwd, sess.Metadata.CreatedAt, gitBranch)
 
 	return s.transcriptStore.Replace(context.Background(), transcript.ReplaceCommand{
@@ -178,27 +166,41 @@ func (s *Store) Fork(sourceID string) (*Snapshot, error) {
 	}); err != nil {
 		return nil, err
 	}
-	forked := s.loadSnapshot(context.Background(), newID)
-	if forked == nil {
-		return nil, fmt.Errorf("failed to load forked session: %s", newID)
+	forked, err := s.loadSnapshot(context.Background(), newID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load forked session: %w", err)
 	}
 	return forked, nil
 }
 
 func (s *Store) PersistToolResult(sessionID, toolCallID, content string) error {
-	dir := s.toolResultsDir(sessionID)
+	// Sanitize both sessionID and toolCallID to prevent path traversal
+	safeSessionID := filepath.Base(sessionID)
+	if safeSessionID == "." || safeSessionID == "/" || safeSessionID == "" {
+		return fmt.Errorf("invalid session ID: %q", sessionID)
+	}
+	safeName := filepath.Base(toolCallID)
+	if safeName == "." || safeName == "/" || safeName == "" {
+		return fmt.Errorf("invalid tool call ID: %q", toolCallID)
+	}
+	dir := s.toolResultsDir(safeSessionID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create tool result dir: %w", err)
 	}
-	filePath := filepath.Join(dir, toolCallID)
-	if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+	filePath := filepath.Join(dir, safeName)
+	tmp := filePath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("failed to write tool result: %w", err)
+	}
+	if err := os.Rename(tmp, filePath); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("failed to finalize tool result: %w", err)
 	}
 	return nil
 }
 
 func (s *Store) SaveSubagentConversation(parentSessionID, title, modelID, cwd string, messages []message.Message) (string, string, error) {
-	entries := MessagesToEntries(messages)
+	entries := messagesToEntries(messages)
 	if len(entries) == 0 {
 		return "", "", nil
 	}
@@ -236,18 +238,6 @@ func (s *Store) LoadSubagentMessages(agentID string) ([]message.Message, error) 
 	return msgs, nil
 }
 
-func (s *Store) SaveSubagentCoreMessages(parentSessionID, title, modelID, cwd string, messages []core.Message) (string, string, error) {
-	return s.SaveSubagentConversation(parentSessionID, title, modelID, cwd, message.FromCoreSlice(messages))
-}
-
-func (s *Store) LoadSubagentCoreMessages(agentID string) ([]core.Message, error) {
-	msgs, err := s.LoadSubagentMessages(agentID)
-	if err != nil {
-		return nil, err
-	}
-	return message.ToCoreSlice(msgs), nil
-}
-
 func (s *Store) SaveSessionMemory(sessionID, summary string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -265,7 +255,10 @@ func (s *Store) LoadSessionMemory(sessionID string) (string, error) {
 
 	transcript, err := s.transcriptStore.Load(context.Background(), sessionID)
 	if err != nil {
-		return "", nil
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
 	}
 	return transcript.State.Summary, nil
 }
@@ -274,13 +267,16 @@ func (s *Store) toolResultsDir(sessionID string) string {
 	return filepath.Join(s.projectDir, "blobs", "tool-result", sessionID)
 }
 
-func (s *Store) loadSnapshot(ctx context.Context, sessionID string) *Snapshot {
+func (s *Store) loadSnapshot(ctx context.Context, sessionID string) (*Snapshot, error) {
 	if s.transcriptStore == nil || sessionID == "" {
-		return nil
+		return nil, fmt.Errorf("session not found: %s", sessionID)
 	}
 	tx, err := s.transcriptStore.Load(ctx, sessionID)
-	if err != nil || tx == nil {
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("load transcript %s: %w", sessionID, err)
+	}
+	if tx == nil {
+		return nil, fmt.Errorf("session not found: %s", sessionID)
 	}
 	transcript.HydrateToolResultNodes(tx.ID, tx.Messages, func(toolCallID string) (string, error) {
 		data, err := os.ReadFile(filepath.Join(s.toolResultsDir(tx.ID), toolCallID))
@@ -301,5 +297,5 @@ func (s *Store) loadSnapshot(ctx context.Context, sessionID string) *Snapshot {
 	if sess.Metadata.LastPrompt == "" {
 		sess.Metadata.LastPrompt = ExtractLastUserText(sess.Entries)
 	}
-	return sess
+	return sess, nil
 }

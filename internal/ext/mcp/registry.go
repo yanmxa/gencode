@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/yanmxa/gencode/internal/message"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // Registry manages multiple MCP server connections
@@ -34,8 +34,19 @@ type mcpState struct {
 	Disabled []string `json:"disabled,omitempty"`
 }
 
-// DefaultRegistry is the global MCP registry
-var DefaultRegistry *Registry
+// DefaultRegistry is the global MCP registry. Initialized eagerly to avoid
+// nil checks at every call site; replaced by Initialize() during app startup.
+var DefaultRegistry = newEmptyRegistry()
+
+func newEmptyRegistry() *Registry {
+	return &Registry{
+		clients:    make(map[string]*Client),
+		configs:    make(map[string]ServerConfig),
+		disabled:   make(map[string]bool),
+		connecting: make(map[string]bool),
+		connectErr: make(map[string]string),
+	}
+}
 
 // Initialize initializes the global MCP registry with the given working directory
 func Initialize(cwd string) error {
@@ -81,7 +92,9 @@ func NewRegistry(cwd string) (*Registry, error) {
 	return reg, nil
 }
 
-// Reload reloads configurations from disk
+// Reload reloads configurations from disk.
+// Clients whose server config no longer exists are disconnected to avoid
+// orphaned connections.
 func (r *Registry) Reload() error {
 	configs, err := r.loader.LoadAll()
 	if err != nil {
@@ -90,8 +103,17 @@ func (r *Registry) Reload() error {
 	configs = mergePluginMCPConfigs(configs)
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	// Disconnect clients whose config was removed.
+	for name, client := range r.clients {
+		if _, ok := configs[name]; !ok {
+			_ = client.Disconnect()
+			delete(r.clients, name)
+			delete(r.connecting, name)
+			delete(r.connectErr, name)
+		}
+	}
 	r.configs = configs
+	r.mu.Unlock()
 	return nil
 }
 
@@ -295,19 +317,19 @@ var emptySchema = map[string]any{
 	"properties": map[string]any{},
 }
 
-// GetToolSchemas returns provider.ToolSchema schemas for all connected MCP servers
-func (r *Registry) GetToolSchemas() []provider.ToolSchema {
+// GetToolSchemas returns message.ToolSchema schemas for all connected MCP servers
+func (r *Registry) GetToolSchemas() []message.ToolSchema {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var tools []provider.ToolSchema
+	var tools []message.ToolSchema
 	for serverName, client := range r.clients {
 		if !client.IsConnected() {
 			continue
 		}
 
 		for _, mcpTool := range client.GetCachedTools() {
-			tools = append(tools, provider.ToolSchema{
+			tools = append(tools, message.ToolSchema{
 				Name:        fmt.Sprintf("mcp__%s__%s", serverName, mcpTool.Name),
 				Description: mcpTool.Description,
 				Parameters:  parseInputSchema(mcpTool.InputSchema),
@@ -333,7 +355,7 @@ func parseInputSchema(raw json.RawMessage) any {
 // CallTool calls a tool on an MCP server
 // The tool name should be in the format: mcp__<server>__<tool>
 func (r *Registry) CallTool(ctx context.Context, fullName string, arguments map[string]any) (*ToolResult, error) {
-	serverName, toolName, ok := ParseMCPToolName(fullName)
+	serverName, toolName, ok := parseMCPToolName(fullName)
 	if !ok {
 		return nil, fmt.Errorf("invalid MCP tool name: %s", fullName)
 	}
@@ -363,8 +385,8 @@ func (r *Registry) notifyToolsChanged() {
 	}
 }
 
-// ParseMCPToolName parses a tool name in the format mcp__<server>__<tool>
-func ParseMCPToolName(name string) (serverName, toolName string, ok bool) {
+// parseMCPToolName parses a tool name in the format mcp__<server>__<tool>
+func parseMCPToolName(name string) (serverName, toolName string, ok bool) {
 	rest, found := strings.CutPrefix(name, "mcp__")
 	if !found {
 		return "", "", false
@@ -380,7 +402,7 @@ func ParseMCPToolName(name string) (serverName, toolName string, ok bool) {
 
 // IsMCPTool returns true if the tool name is an MCP tool
 func IsMCPTool(name string) bool {
-	_, _, ok := ParseMCPToolName(name)
+	_, _, ok := parseMCPToolName(name)
 	return ok
 }
 
@@ -476,5 +498,11 @@ func (r *Registry) saveState() {
 	if err != nil {
 		return
 	}
-	os.WriteFile(path, data, 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+	}
 }

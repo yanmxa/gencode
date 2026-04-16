@@ -1,15 +1,21 @@
-// Package client wraps an LLM provider with model and token configuration.
+// Package client wraps an LLM provider with model selection, token limits,
+// and cumulative token usage tracking. It is the "configured LLM session" that
+// binds a provider to a specific model and settings.
 package client
 
 import (
 	"context"
+	"sync"
 
 	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/provider"
 )
 
-const defaultMaxTokens = config.DefaultMaxTokens
+// defaultMaxTokens is the fallback max output tokens when neither the caller
+// nor the provider specifies a limit. Inlined here (rather than referencing
+// config.DefaultMaxTokens) to avoid pulling the config package — and its
+// transitive deps — into this low-level client layer.
+const defaultMaxTokens = 8192
 
 // TokenUsage tracks token consumption for a conversation.
 type TokenUsage struct {
@@ -18,25 +24,38 @@ type TokenUsage struct {
 	TotalTokens  int
 }
 
-// Client wraps an LLM provider with model and token configuration.
+// Client wraps an LLM provider with model selection, token limits,
+// and cumulative token usage tracking.
 type Client struct {
 	Provider      provider.LLMProvider
 	Model         string
 	MaxTokens     int // custom override; 0 means resolve from provider
 	ThinkingLevel provider.ThinkingLevel
-	tokens        TokenUsage
+
+	mu     sync.Mutex // protects tokens
+	tokens TokenUsage
+}
+
+// NewClient creates a Client bound to the given provider and model.
+func NewClient(p provider.LLMProvider, model string) *Client {
+	return &Client{Provider: p, Model: model}
 }
 
 // AddUsage accumulates token usage from a completion response.
 func (c *Client) AddUsage(usage message.Usage) {
+	c.mu.Lock()
 	c.tokens.InputTokens += usage.InputTokens
 	c.tokens.OutputTokens += usage.OutputTokens
 	c.tokens.TotalTokens = c.tokens.InputTokens + c.tokens.OutputTokens
+	c.mu.Unlock()
 }
 
 // Tokens returns the accumulated token usage.
 func (c *Client) Tokens() TokenUsage {
-	return c.tokens
+	c.mu.Lock()
+	t := c.tokens
+	c.mu.Unlock()
+	return t
 }
 
 // Send sends a non-streaming completion request and returns the full response.
@@ -110,10 +129,16 @@ func (c *Client) providerOutputLimit(ctx context.Context) int {
 }
 
 // opts builds CompletionOptions from the client's configuration.
+// It resolves the output token limit using the same priority as
+// ResolveMaxTokens: custom override → provider metadata → default.
 func (c *Client) opts(msgs []message.Message, tools []provider.ToolSchema, sysPrompt string) provider.CompletionOptions {
 	maxTokens := c.MaxTokens
 	if maxTokens <= 0 {
-		maxTokens = defaultMaxTokens
+		if limit := c.providerOutputLimit(context.TODO()); limit > 0 {
+			maxTokens = limit
+		} else {
+			maxTokens = defaultMaxTokens
+		}
 	}
 	return provider.CompletionOptions{
 		Model:         c.Model,
