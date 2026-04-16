@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/user/history"
+	"github.com/yanmxa/gencode/internal/app/kit/history"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/core"
 	appcommand "github.com/yanmxa/gencode/internal/extension/command"

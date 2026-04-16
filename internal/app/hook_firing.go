@@ -8,7 +8,7 @@ import (
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/extension/mcp"
 	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/app/user/suggest"
+	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 )
 
 func (m *model) refreshMemoryContext(loadReason string) {

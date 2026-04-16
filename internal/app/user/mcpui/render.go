@@ -46,7 +46,7 @@ func (s *Model) Render() string {
 		return ""
 	}
 
-	if s.level == LevelDetail {
+	if s.level == levelDetail {
 		return s.renderDetail()
 	}
 	return s.renderList()
@@ -241,7 +241,7 @@ func (s *Model) renderDetail() string {
 }
 
 // serverDetails returns the details string for a server item
-func (s *Model) serverDetails(srv ServerItem) string {
+func (s *Model) serverDetails(srv serverItem) string {
 	if srv.Status == coremcp.StatusConnected {
 		return fmt.Sprintf("Tools: %d", srv.ToolCount)
 	}

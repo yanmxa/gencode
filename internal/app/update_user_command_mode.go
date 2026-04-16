@@ -22,8 +22,8 @@ func handlePlanCommand(ctx context.Context, m *model, args string) (string, tea.
 	}
 
 	m.operationMode = config.ModePlan
-	m.mode.Enabled = true
-	m.mode.Task = args
+	m.planEnabled = true
+	m.planTask = args
 
 	m.sessionPermissions.AllowAllEdits = false
 	m.sessionPermissions.AllowAllWrites = false
@@ -34,7 +34,7 @@ func handlePlanCommand(ctx context.Context, m *model, args string) (string, tea.
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to initialize plan store: %w", err)
 	}
-	m.mode.Store = store
+	m.planStore = store
 
 	return fmt.Sprintf("Entering plan mode for: %s\n\nI will explore the codebase and create an implementation plan. Only read-only tools are available until the plan is approved.", args), nil, nil
 }

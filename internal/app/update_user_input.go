@@ -184,8 +184,8 @@ func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 		return true, m.agent.HandleKeypress(msg)
 	case m.mcp.Selector.IsActive():
 		return true, m.mcp.Selector.HandleKeypress(msg)
-	case m.plugin.Selector.IsActive():
-		return true, m.plugin.Selector.HandleKeypress(msg)
+	case m.plugin.IsActive():
+		return true, m.plugin.HandleKeypress(msg)
 	case m.session.Selector.IsActive():
 		return true, m.session.Selector.HandleKeypress(msg)
 	case m.memory.Selector.IsActive():

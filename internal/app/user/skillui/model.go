@@ -30,16 +30,16 @@ func (s *item) FullName() string {
 	return s.Name
 }
 
-// SaveLevel represents where to save skill settings.
-type SaveLevel int
+// saveLevel represents where to save skill settings.
+type saveLevel int
 
 const (
-	saveLevelProject SaveLevel = iota // Save to .gen/skills.json
+	saveLevelProject saveLevel = iota // Save to .gen/skills.json
 	saveLevelUser                     // Save to ~/.gen/skills.json
 )
 
 // String returns the display name for the save level.
-func (l SaveLevel) String() string {
+func (l saveLevel) String() string {
 	if l == saveLevelUser {
 		return "User"
 	}
@@ -58,7 +58,7 @@ type Model struct {
 	searchQuery    string
 	scrollOffset   int
 	maxVisible     int
-	saveLevel      SaveLevel // Where to save settings (project or user)
+	saveLevel      saveLevel // Where to save settings (project or user)
 }
 
 // CycleMsg is sent when a skill's state is cycled.

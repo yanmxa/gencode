@@ -252,7 +252,6 @@ func (p *Model) renderInline() string {
 	sb.WriteString("\n")
 
 	// Question
-	// Question
 	sb.WriteString(" ")
 	sb.WriteString(getQuestionStyle().Render("Do you want to proceed?"))
 	sb.WriteString("\n")

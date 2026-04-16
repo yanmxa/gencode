@@ -12,22 +12,22 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
-// SelectorLevel represents the navigation level in the MCP selector
-type SelectorLevel int
+// selectorLevel represents the navigation level in the MCP selector
+type selectorLevel int
 
 const (
-	LevelList   SelectorLevel = iota // Server list view
-	LevelDetail                      // Server detail + actions view
+	levelList   selectorLevel = iota // Server list view
+	levelDetail                      // Server detail + actions view
 )
 
-// Action represents an action available for a server in detail view
-type Action struct {
+// action represents an action available for a server in detail view.
+type action struct {
 	Label  string
 	Action string // "edit", "connect", "disconnect", "reconnect", "remove"
 }
 
-// ServerItem represents an MCP server in the selector
-type ServerItem struct {
+// serverItem represents an MCP server in the selector
+type serverItem struct {
 	Name      string
 	Type      string // stdio, http, sse
 	Status    coremcp.ServerStatus
@@ -44,7 +44,7 @@ type Model struct {
 	registry *coremcp.Registry
 
 	active       bool
-	servers      []ServerItem
+	servers      []serverItem
 	selectedIdx  int
 	width        int
 	height       int
@@ -55,13 +55,13 @@ type Model struct {
 
 	// Fuzzy search
 	searchQuery     string
-	filteredServers []ServerItem
+	filteredServers []serverItem
 
 	// Two-level navigation
-	level        SelectorLevel
+	level        selectorLevel
 	parentIdx    int         // selected index when entering detail
-	detailServer *ServerItem // server shown in detail view
-	actions      []Action    // context-sensitive action menu
+	detailServer *serverItem // server shown in detail view
+	actions      []action    // context-sensitive action menu
 	actionIdx    int         // selected action
 }
 
@@ -107,7 +107,7 @@ func New(reg *coremcp.Registry) Model {
 	return Model{
 		registry:   reg,
 		active:     false,
-		servers:    []ServerItem{},
+		servers:    []serverItem{},
 		maxVisible: 10,
 	}
 }
@@ -128,7 +128,7 @@ func (s *Model) EnterSelect(width, height int) error {
 	s.lastError = ""
 	s.searchQuery = ""
 	s.filteredServers = s.servers
-	s.level = LevelList
+	s.level = levelList
 	s.parentIdx = 0
 	s.detailServer = nil
 	s.actions = nil
@@ -156,10 +156,10 @@ func (s *Model) AutoReconnect() tea.Cmd {
 // refreshServers refreshes the server list from registry
 func (s *Model) refreshServers() {
 	servers := s.registry.List()
-	s.servers = make([]ServerItem, 0, len(servers))
+	s.servers = make([]serverItem, 0, len(servers))
 
 	for _, srv := range servers {
-		item := ServerItem{
+		item := serverItem{
 			Name:    srv.Config.Name,
 			Type:    string(srv.Config.GetType()),
 			Status:  srv.Status,
@@ -185,13 +185,13 @@ func (s *Model) IsActive() bool {
 // Cancel cancels the selector
 func (s *Model) Cancel() {
 	s.active = false
-	s.servers = []ServerItem{}
+	s.servers = []serverItem{}
 	s.filteredServers = nil
 	s.selectedIdx = 0
 	s.scrollOffset = 0
 	s.connecting = false
 	s.searchQuery = ""
-	s.level = LevelList
+	s.level = levelList
 	s.detailServer = nil
 	s.actions = nil
 	s.actionIdx = 0
@@ -203,7 +203,7 @@ func (s *Model) updateFilter() {
 		s.filteredServers = s.servers
 	} else {
 		query := strings.ToLower(s.searchQuery)
-		s.filteredServers = make([]ServerItem, 0)
+		s.filteredServers = make([]serverItem, 0)
 		for _, srv := range s.servers {
 			if kit.FuzzyMatch(strings.ToLower(srv.Name), query) ||
 				kit.FuzzyMatch(strings.ToLower(srv.Type), query) {
@@ -217,7 +217,7 @@ func (s *Model) updateFilter() {
 
 // MoveUp moves the selection up (level-aware)
 func (s *Model) MoveUp() {
-	if s.level == LevelDetail {
+	if s.level == levelDetail {
 		if s.actionIdx > 0 {
 			s.actionIdx--
 		}
@@ -231,7 +231,7 @@ func (s *Model) MoveUp() {
 
 // MoveDown moves the selection down (level-aware)
 func (s *Model) MoveDown() {
-	if s.level == LevelDetail {
+	if s.level == levelDetail {
 		if s.actionIdx < len(s.actions)-1 {
 			s.actionIdx++
 		}
@@ -263,13 +263,13 @@ func (s *Model) enterDetail() {
 	s.detailServer = &srv
 	s.actions = s.buildActions(srv)
 	s.actionIdx = 0
-	s.level = LevelDetail
+	s.level = levelDetail
 }
 
 // goBack returns to the list view from detail view
 func (s *Model) goBack() bool {
-	if s.level == LevelDetail {
-		s.level = LevelList
+	if s.level == levelDetail {
+		s.level = levelList
 		s.selectedIdx = s.parentIdx
 		s.detailServer = nil
 		s.actions = nil
@@ -281,24 +281,24 @@ func (s *Model) goBack() bool {
 }
 
 // buildActions returns context-sensitive actions for a server
-func (s *Model) buildActions(srv ServerItem) []Action {
-	edit := Action{Label: "Edit", Action: "edit"}
+func (s *Model) buildActions(srv serverItem) []action {
+	edit := action{Label: "Edit", Action: "edit"}
 	switch srv.Status {
 	case coremcp.StatusConnected:
-		return []Action{
+		return []action{
 			edit,
 			{Label: "Disable", Action: "disconnect"},
 			{Label: "Reconnect", Action: "reconnect"},
 			{Label: "Remove", Action: "remove"},
 		}
 	case coremcp.StatusConnecting:
-		return []Action{
+		return []action{
 			edit,
 			{Label: "Disable", Action: "disconnect"},
 			{Label: "Remove", Action: "remove"},
 		}
 	default: // Error or Disconnected
-		return []Action{
+		return []action{
 			edit,
 			{Label: "Connect", Action: "connect"},
 			{Label: "Remove", Action: "remove"},
@@ -381,7 +381,7 @@ func (s *Model) HandleRemove(name string) {
 // refreshAndUpdateView refreshes servers and updates the detail view if active
 func (s *Model) refreshAndUpdateView() {
 	s.refreshServers()
-	if s.level == LevelDetail && s.detailServer != nil {
+	if s.level == levelDetail && s.detailServer != nil {
 		s.refreshDetailView()
 	}
 }

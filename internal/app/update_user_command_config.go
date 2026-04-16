@@ -16,7 +16,7 @@ import (
 )
 
 func handleSearchCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if err := m.search.Enter(m.width, m.height); err != nil {
+	if err := m.search.Enter(m.providerStore, m.width, m.height); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil
@@ -65,7 +65,7 @@ func handleMCPCommand(ctx context.Context, m *model, args string) (string, tea.C
 }
 
 func handlePluginCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	result, err := pluginui.HandleCommand(ctx, &m.plugin.Selector, m.cwd, m.width, m.height, args)
+	result, err := pluginui.HandleCommand(ctx, &m.plugin, m.cwd, m.width, m.height, args)
 	return result, nil, err
 }
 

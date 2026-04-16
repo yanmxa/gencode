@@ -23,7 +23,7 @@ import (
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
-	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
+	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	appqueue "github.com/yanmxa/gencode/internal/app/user/queue"
@@ -34,6 +34,7 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/extension/mcp"
 	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/task/tracker"
@@ -63,6 +64,15 @@ type model struct {
 	sessionPermissions *config.SessionPermissions
 	disabledTools      map[string]bool
 
+	// Plan mode domain state
+	planEnabled bool
+	planTask    string
+	planStore   *plan.Store
+
+	// Question channel — synchronization primitive for tool question/answer flow.
+	pendingQuestion      *tool.QuestionRequest
+	pendingQuestionReply chan *tool.QuestionResponse
+
 	// Provider domain state — LLM connection, model info, token tracking, thinking
 	llmProvider provider.Provider
 	providerStore    *provider.Store
@@ -88,7 +98,7 @@ type model struct {
 	memory   appmemory.State
 	tool     toolui.State
 	mcp      mcpui.State
-	plugin   pluginui.State
+	plugin   pluginui.Model
 	agent    agentui.Model
 	search   searchui.Model
 

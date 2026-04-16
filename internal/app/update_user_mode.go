@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
-	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
+	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/util/log"
@@ -17,23 +17,23 @@ import (
 
 // ensurePlanStore lazily initializes the plan store if not yet created.
 func (m *model) ensurePlanStore() {
-	if m.mode.Store != nil {
+	if m.planStore != nil {
 		return
 	}
 	store, err := plan.NewStore()
 	if err != nil {
 		log.Logger().Warn("failed to initialize plan store", zap.Error(err))
 	}
-	m.mode.Store = store
+	m.planStore = store
 }
 
 func (m *model) cycleOperationMode() {
 	m.operationMode = m.operationMode.NextWithBypass(m.settings != nil && m.settings.AllowBypass != nil && *m.settings.AllowBypass)
 	m.applyOperationModePermissions()
-	m.mode.Enabled = m.operationMode == config.ModePlan
+	m.planEnabled = m.operationMode == config.ModePlan
 
 	// Ensure plan store is initialized when entering plan mode via shift+tab.
-	if m.mode.Enabled {
+	if m.planEnabled {
 		m.ensurePlanStore()
 	}
 
@@ -89,7 +89,7 @@ func (m *model) enableAutoAcceptMode() {
 		m.sessionPermissions.AllowPattern(pattern)
 	}
 	m.operationMode = config.ModeAutoAccept
-	m.mode.Enabled = false
+	m.planEnabled = false
 }
 
 // updateMode routes interactive prompt request messages (questions, plans, enter-plan).
@@ -116,16 +116,16 @@ func (m *model) updateMode(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (m *model) handleQuestionRequest(msg appmode.QuestionRequestMsg) tea.Cmd {
-	m.mode.PendingQuestion = msg.Request
-	m.mode.PendingQuestionReply = msg.Reply
+	m.pendingQuestion = msg.Request
+	m.pendingQuestionReply = msg.Reply
 	m.mode.Question.Show(msg.Request, m.width)
 	return tea.Batch(m.commitMessages()...)
 }
 
 func (m *model) handleQuestionResponse(msg appmode.QuestionResponseMsg) tea.Cmd {
-	reply := m.mode.PendingQuestionReply
-	m.mode.PendingQuestionReply = nil
-	defer func() { m.mode.PendingQuestion = nil }()
+	reply := m.pendingQuestionReply
+	m.pendingQuestionReply = nil
+	defer func() { m.pendingQuestion = nil }()
 
 	if reply == nil {
 		return nil
@@ -144,8 +144,8 @@ func (m *model) handleQuestionResponse(msg appmode.QuestionResponseMsg) tea.Cmd 
 
 func (m *model) handlePlanRequest(msg appmode.PlanRequestMsg) tea.Cmd {
 	var planPath string
-	if m.mode.Store != nil {
-		planPath = m.mode.Store.GetPath(plan.GeneratePlanName(m.mode.Task))
+	if m.planStore != nil {
+		planPath = m.planStore.GetPath(plan.GeneratePlanName(m.planTask))
 	}
 
 	cmds := m.commitMessages()
@@ -159,7 +159,7 @@ func (m *model) handlePlanRequest(msg appmode.PlanRequestMsg) tea.Cmd {
 
 func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 	if !msg.Approved {
-		m.mode.Enabled = false
+		m.planEnabled = false
 		m.operationMode = config.ModeNormal
 		return m.abortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.", false)
 	}
@@ -171,13 +171,13 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 
 	if msg.ApproveMode != "modify" {
 		m.ensurePlanStore()
-		if m.mode.Store != nil {
+		if m.planStore != nil {
 			savedPlan := &plan.Plan{
-				Task:    m.mode.Task,
+				Task:    m.planTask,
 				Status:  plan.StatusApproved,
 				Content: planContent,
 			}
-			if _, err := m.mode.Store.Save(savedPlan); err != nil {
+			if _, err := m.planStore.Save(savedPlan); err != nil {
 				m.conv.Append(core.ChatMessage{
 					Role:    core.RoleNotice,
 					Content: fmt.Sprintf("Warning: failed to save plan: %v", err),
@@ -193,10 +193,10 @@ func (m *model) handlePlanResponse(msg appmode.PlanResponseMsg) tea.Cmd {
 		m.enableAutoAcceptMode()
 	case "manual":
 		m.operationMode = config.ModeNormal
-		m.mode.Enabled = false
+		m.planEnabled = false
 	case "modify":
 		m.operationMode = config.ModePlan
-		m.mode.Enabled = true
+		m.planEnabled = true
 	}
 
 	return tea.Batch(m.commitMessages()...)
@@ -222,10 +222,10 @@ func (m *model) handleEnterPlanRequest(msg appmode.EnterPlanRequestMsg) tea.Cmd 
 
 func (m *model) handleEnterPlanResponse(msg appmode.EnterPlanResponseMsg) tea.Cmd {
 	if msg.Approved {
-		m.mode.Enabled = true
+		m.planEnabled = true
 		m.operationMode = config.ModePlan
 		if msg.Request != nil && msg.Request.Message != "" {
-			m.mode.Task = msg.Request.Message
+			m.planTask = msg.Request.Message
 		}
 		m.ensurePlanStore()
 	}

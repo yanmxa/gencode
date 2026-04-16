@@ -19,7 +19,7 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	}
 
 	// Detail view keypress handling
-	if s.level == LevelDetail {
+	if s.level == levelDetail {
 		return s.handleDetailKeypress(key)
 	}
 

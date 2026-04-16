@@ -8,7 +8,7 @@ import (
 
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
-	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
+	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
@@ -29,11 +29,11 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 	m := &model{
 		operationMode:      config.ModePlan,
 		sessionPermissions: config.NewSessionPermissions(),
+		planEnabled: true,
+		planTask:    "test task",
 		mode: appmode.State{
-			Enabled:            true,
-			Task:               "test task",
-			PlanApproval:       appmode.NewPlanPrompt(),
-			Question:           appmode.NewQuestionPrompt(),
+			PlanApproval: appmode.NewPlanPrompt(),
+			Question:     appmode.NewQuestionPrompt(),
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
@@ -62,7 +62,7 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 	m.handlePlanResponse(msg)
 
 	// After modify: should still be in plan mode
-	if !m.mode.Enabled {
+	if !m.planEnabled {
 		t.Error("plan.enabled should remain true after modify feedback")
 	}
 	if m.operationMode != config.ModePlan {
@@ -75,11 +75,11 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 	m := &model{
 		operationMode:      config.ModePlan,
 		sessionPermissions: config.NewSessionPermissions(),
+		planEnabled: true,
+		planTask:    "test task",
 		mode: appmode.State{
-			Enabled:            true,
-			Task:               "test task",
-			PlanApproval:       appmode.NewPlanPrompt(),
-			Question:           appmode.NewQuestionPrompt(),
+			PlanApproval: appmode.NewPlanPrompt(),
+			Question:     appmode.NewQuestionPrompt(),
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
@@ -105,7 +105,7 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 
 	m.handlePlanResponse(msg)
 
-	if m.mode.Enabled {
+	if m.planEnabled {
 		t.Error("plan.enabled should be false after manual approval")
 	}
 	if m.operationMode != config.ModeNormal {
@@ -118,11 +118,11 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 	m := &model{
 		operationMode:      config.ModePlan,
 		sessionPermissions: config.NewSessionPermissions(),
+		planEnabled: true,
+		planTask:    "test task",
 		mode: appmode.State{
-			Enabled:            true,
-			Task:               "test task",
-			PlanApproval:       appmode.NewPlanPrompt(),
-			Question:           appmode.NewQuestionPrompt(),
+			PlanApproval: appmode.NewPlanPrompt(),
+			Question:     appmode.NewQuestionPrompt(),
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
@@ -148,7 +148,7 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 
 	m.handlePlanResponse(msg)
 
-	if m.mode.Enabled {
+	if m.planEnabled {
 		t.Error("plan.enabled should be false after auto approval")
 	}
 	if m.operationMode != config.ModeAutoAccept {
@@ -164,11 +164,11 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 	m := &model{
 		operationMode:      config.ModePlan,
 		sessionPermissions: config.NewSessionPermissions(),
+		planEnabled: true,
+		planTask:    "test task",
 		mode: appmode.State{
-			Enabled:            true,
-			Task:               "test task",
-			PlanApproval:       appmode.NewPlanPrompt(),
-			Question:           appmode.NewQuestionPrompt(),
+			PlanApproval: appmode.NewPlanPrompt(),
+			Question:     appmode.NewQuestionPrompt(),
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
@@ -192,7 +192,7 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 
 	m.handlePlanResponse(msg)
 
-	if m.mode.Enabled {
+	if m.planEnabled {
 		t.Error("plan.enabled should be false after rejection")
 	}
 	if m.operationMode != config.ModeNormal {
@@ -214,12 +214,12 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 	reply := make(chan *tool.QuestionResponse, 1)
 	m := &model{
-		operationMode:      config.ModePlan,
-		sessionPermissions: config.NewSessionPermissions(),
+		operationMode:        config.ModePlan,
+		sessionPermissions:   config.NewSessionPermissions(),
+		pendingQuestion:      &tool.QuestionRequest{ID: "ask-1"},
+		pendingQuestionReply: reply,
 		mode: appmode.State{
-			Question:             appmode.NewQuestionPrompt(),
-			PendingQuestion:      &tool.QuestionRequest{ID: "ask-1"},
-			PendingQuestionReply: reply,
+			Question: appmode.NewQuestionPrompt(),
 		},
 	}
 
@@ -237,10 +237,10 @@ func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("expected no follow-up command for agent question response")
 	}
-	if m.mode.PendingQuestion != nil {
+	if m.pendingQuestion != nil {
 		t.Fatal("expected pending question to be cleared")
 	}
-	if m.mode.PendingQuestionReply != nil {
+	if m.pendingQuestionReply != nil {
 		t.Fatal("expected pending question reply channel to be cleared")
 	}
 

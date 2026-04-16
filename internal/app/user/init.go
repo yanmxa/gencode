@@ -4,8 +4,8 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/app/user/history"
-	"github.com/yanmxa/gencode/internal/app/user/suggest"
+	"github.com/yanmxa/gencode/internal/app/kit/history"
+	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 

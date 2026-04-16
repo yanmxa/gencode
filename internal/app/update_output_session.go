@@ -152,7 +152,7 @@ func (m *model) initTaskStorage() {
 }
 
 func (m *model) currentSessionMode() string {
-	if m.mode.Enabled {
+	if m.planEnabled {
 		return "plan"
 	}
 	switch m.operationMode {

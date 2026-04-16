@@ -44,10 +44,13 @@ func New() Model {
 }
 
 // Enter activates the search kit.
-func (s *Model) Enter(width, height int) error {
-	store, err := provider.NewStore()
-	if err != nil {
-		return fmt.Errorf("failed to open provider store: %w", err)
+func (s *Model) Enter(store *provider.Store, width, height int) error {
+	if store == nil {
+		var err error
+		store, err = provider.NewStore()
+		if err != nil {
+			return fmt.Errorf("failed to open provider store: %w", err)
+		}
 	}
 
 	currentName := store.GetSearchProvider()

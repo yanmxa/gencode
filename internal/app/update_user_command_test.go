@@ -96,13 +96,13 @@ func TestExecuteCommandPlanUsageAndState(t *testing.T) {
 		if cmd != nil {
 			t.Fatal("did not expect follow-up command")
 		}
-		if m.operationMode != config.ModePlan || !m.mode.Enabled {
-			t.Fatalf("expected plan mode enabled, got operation=%v enabled=%v", m.operationMode, m.mode.Enabled)
+		if m.operationMode != config.ModePlan || !m.planEnabled {
+			t.Fatalf("expected plan mode enabled, got operation=%v enabled=%v", m.operationMode, m.planEnabled)
 		}
-		if m.mode.Task != "audit regression coverage" {
-			t.Fatalf("unexpected plan task %q", m.mode.Task)
+		if m.planTask != "audit regression coverage" {
+			t.Fatalf("unexpected plan task %q", m.planTask)
 		}
-		if m.mode.Store == nil {
+		if m.planStore == nil {
 			t.Fatal("expected plan store to be initialized")
 		}
 		if !strings.Contains(result, "Entering plan mode for: audit regression coverage") {

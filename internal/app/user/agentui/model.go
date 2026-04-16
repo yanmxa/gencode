@@ -24,16 +24,16 @@ type item struct {
 	Enabled        bool   // Current enabled state
 }
 
-// SaveLevel represents where to save agent settings.
-type SaveLevel int
+// saveLevel represents where to save agent settings.
+type saveLevel int
 
 const (
-	saveLevelProject SaveLevel = iota // Save to .gen/agents.json
+	saveLevelProject saveLevel = iota // Save to .gen/agents.json
 	saveLevelUser                     // Save to ~/.gen/agents.json
 )
 
 // String returns the display name for the save level.
-func (l SaveLevel) String() string {
+func (l saveLevel) String() string {
 	switch l {
 	case saveLevelUser:
 		return "User"
@@ -54,7 +54,7 @@ type Model struct {
 	searchQuery    string
 	scrollOffset   int
 	maxVisible     int
-	saveLevel      SaveLevel
+	saveLevel      saveLevel
 }
 
 // ToggleMsg is sent when an agent's enabled state is toggled.

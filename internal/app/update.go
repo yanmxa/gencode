@@ -32,7 +32,7 @@ func (m *model) overlaySelectors() []overlaySelector {
 		&m.skill.Selector,
 		&m.agent,
 		&m.mcp.Selector,
-		&m.plugin.Selector,
+		&m.plugin,
 		&m.session.Selector,
 		&m.memory.Selector,
 		&m.search,
@@ -117,8 +117,8 @@ func (m *model) renderOverlaySelector() string {
 		return m.agent.Render()
 	case m.mcp.Selector.IsActive():
 		return m.mcp.Selector.Render()
-	case m.plugin.Selector.IsActive():
-		return m.plugin.Selector.Render()
+	case m.plugin.IsActive():
+		return m.plugin.Render()
 	case m.session.Selector.IsActive():
 		return m.session.Selector.Render()
 	case m.memory.Selector.IsActive():

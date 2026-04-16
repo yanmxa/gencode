@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/user/suggest"
+	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 )
 
 type promptSuggestionMsg struct {

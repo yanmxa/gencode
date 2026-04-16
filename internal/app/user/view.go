@@ -8,15 +8,17 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
-var (
-	pendingImageStyle = lipgloss.NewStyle().
-				Foreground(kit.CurrentTheme.Primary)
+func pendingImageStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(kit.CurrentTheme.Primary)
+}
 
-	selectedImageStyle = lipgloss.NewStyle().
-				Foreground(kit.CurrentTheme.TextBright).
-				Background(kit.CurrentTheme.Primary).
-				Bold(true)
-)
+func selectedImageStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(kit.CurrentTheme.TextBright).
+		Background(kit.CurrentTheme.Primary).
+		Bold(true)
+}
 
 // RenderTextarea renders the textarea with styled inline image tokens.
 func (m *Model) RenderTextarea() string {
@@ -31,9 +33,9 @@ func (m *Model) RenderTextarea() string {
 	}
 
 	for _, match := range m.PendingImageMatches() {
-		style := pendingImageStyle
+		style := pendingImageStyle()
 		if match.PendingIdx == selectedPendingIdx {
-			style = selectedImageStyle
+			style = selectedImageStyle()
 		}
 		view = strings.Replace(view, match.Label, style.Render(match.Label), 1)
 	}

@@ -13,13 +13,25 @@ type themeSelectedMsg struct {
 	Theme string
 }
 
-var (
-	themeTitleStyle  = lipgloss.NewStyle().Bold(true).MarginBottom(1)
-	themeActiveStyle = lipgloss.NewStyle().Bold(true).Foreground(CurrentTheme.Primary)
-	themeItemStyle   = lipgloss.NewStyle().Foreground(CurrentTheme.Text)
-	themeDescStyle   = lipgloss.NewStyle().Foreground(CurrentTheme.TextDim)
-	themeHintStyle   = lipgloss.NewStyle().Foreground(CurrentTheme.TextDim).MarginTop(1)
-)
+func themeTitleStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Bold(true).MarginBottom(1)
+}
+
+func themeActiveStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Bold(true).Foreground(CurrentTheme.Primary)
+}
+
+func themeItemStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Text)
+}
+
+func themeDescStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.TextDim)
+}
+
+func themeHintStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(CurrentTheme.TextDim).MarginTop(1)
+}
 
 var themeChoices = []struct {
 	label, value, desc string
@@ -59,19 +71,19 @@ func (m themeSelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m themeSelectorModel) View() string {
 	var s strings.Builder
-	fmt.Fprintf(&s, "%s\n\n", themeTitleStyle.Render("Choose a color theme"))
+	fmt.Fprintf(&s, "%s\n\n", themeTitleStyle().Render("Choose a color theme"))
 
 	for i, opt := range themeChoices {
 		cursor := "  "
-		style := themeItemStyle
+		style := themeItemStyle()
 		if i == m.cursor {
 			cursor = "▶ "
-			style = themeActiveStyle
+			style = themeActiveStyle()
 		}
-		fmt.Fprintf(&s, "%s%s  %s\n", cursor, style.Render(opt.label), themeDescStyle.Render(opt.desc))
+		fmt.Fprintf(&s, "%s%s  %s\n", cursor, style.Render(opt.label), themeDescStyle().Render(opt.desc))
 	}
 
-	s.WriteString(themeHintStyle.Render("\n↑/↓ to move · enter to confirm · q to quit"))
+	s.WriteString(themeHintStyle().Render("\n↑/↓ to move · enter to confirm · q to quit"))
 	return s.String()
 }
 

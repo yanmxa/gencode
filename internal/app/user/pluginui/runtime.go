@@ -16,36 +16,36 @@ type Runtime interface {
 }
 
 // Update routes plugin management messages.
-func Update(rt Runtime, state *State, msg tea.Msg) (tea.Cmd, bool) {
+func Update(rt Runtime, state *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case EnableMsg:
-		state.Selector.HandleEnable(msg.PluginName)
+		state.HandleEnable(msg.PluginName)
 		return nil, true
 
 	case DisableMsg:
-		state.Selector.HandleDisable(msg.PluginName)
+		state.HandleDisable(msg.PluginName)
 		return nil, true
 
 	case UninstallMsg:
-		state.Selector.HandleUninstall(msg.PluginName)
+		state.HandleUninstall(msg.PluginName)
 		return nil, true
 
 	case InstallMsg:
-		return installPlugin(state.Selector.registry, rt.GetCwd(), msg), true
+		return installPlugin(state.registry, rt.GetCwd(), msg), true
 
 	case InstallResultMsg:
-		state.Selector.HandleInstallResult(msg)
+		state.HandleInstallResult(msg)
 		if msg.Success {
 			_ = rt.ReloadPluginBackedState()
 		}
 		return nil, true
 
 	case MarketplaceRemoveMsg:
-		state.Selector.HandleMarketplaceRemove(msg.ID)
+		state.HandleMarketplaceRemove(msg.ID)
 		return nil, true
 
 	case MarketplaceSyncResultMsg:
-		state.Selector.HandleMarketplaceSync(msg)
+		state.HandleMarketplaceSync(msg)
 		return nil, true
 	}
 	return nil, false

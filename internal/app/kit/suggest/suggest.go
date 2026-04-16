@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -27,36 +26,32 @@ type Suggestion struct {
 
 type Matcher func(query string) []Suggestion
 
-var stylesOnce sync.Once
+func suggestionBoxStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(kit.CurrentTheme.Border).
+		Padding(0, 1)
+}
 
-var (
-	suggestionBoxStyle      lipgloss.Style
-	selectedSuggestionStyle lipgloss.Style
-	normalSuggestionStyle   lipgloss.Style
-	commandNameStyle        lipgloss.Style
-	commandDescStyle        lipgloss.Style
-)
+func selectedSuggestionStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(kit.CurrentTheme.TextBright).
+		Bold(true)
+}
 
-func initStyles() {
-	stylesOnce.Do(func() {
-		suggestionBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(kit.CurrentTheme.Border).
-			Padding(0, 1)
+func normalSuggestionStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(kit.CurrentTheme.Muted)
+}
 
-		selectedSuggestionStyle = lipgloss.NewStyle().
-			Foreground(kit.CurrentTheme.TextBright).
-			Bold(true)
+func commandNameStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(kit.CurrentTheme.Primary)
+}
 
-		normalSuggestionStyle = lipgloss.NewStyle().
-			Foreground(kit.CurrentTheme.Muted)
-
-		commandNameStyle = lipgloss.NewStyle().
-			Foreground(kit.CurrentTheme.Primary)
-
-		commandDescStyle = lipgloss.NewStyle().
-			Foreground(kit.CurrentTheme.Muted)
-	})
+func commandDescStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(kit.CurrentTheme.Muted)
 }
 
 type fileSuggestion struct {
@@ -200,7 +195,7 @@ func (s *State) scanMarkdownFiles(query string) []fileSuggestion {
 			}
 			seen[relPath] = true
 
-			if query != "" && !fuzzyMatchFile(strings.ToLower(relPath), queryLower) {
+			if query != "" && !kit.FuzzyMatch(strings.ToLower(relPath), queryLower) {
 				continue
 			}
 
@@ -245,19 +240,6 @@ func shouldSkipDirectory(name string) bool {
 		return true
 	}
 	return false
-}
-
-func fuzzyMatchFile(str, pattern string) bool {
-	if pattern == "" {
-		return true
-	}
-	pi := 0
-	for si := 0; si < len(str) && pi < len(pattern); si++ {
-		if str[si] == pattern[pi] {
-			pi++
-		}
-	}
-	return pi == len(pattern)
 }
 
 func (s *State) SetCwd(cwd string) {
@@ -317,8 +299,6 @@ func (s *State) Render(width int) string {
 	if !s.IsVisible() {
 		return ""
 	}
-	initStyles()
-
 	if s.suggestionType == TypeFile {
 		return s.renderfileSuggestions(width)
 	}
@@ -349,16 +329,16 @@ func (s *State) renderfileSuggestions(width int) string {
 		line := fmt.Sprintf("%s %s", icon, displayPath)
 
 		if i == s.selectedIdx {
-			lines = append(lines, selectedSuggestionStyle.Render("> "+line))
+			lines = append(lines, selectedSuggestionStyle().Render("> "+line))
 		} else {
-			lines = append(lines, normalSuggestionStyle.Render("  "+line))
+			lines = append(lines, normalSuggestionStyle().Render("  "+line))
 		}
 	}
 
-	lines = append(lines, "", commandDescStyle.Render("Tab/Enter to select · Esc to cancel"))
+	lines = append(lines, "", commandDescStyle().Render("Tab/Enter to select · Esc to cancel"))
 
 	content := strings.Join(lines, "\n")
-	return suggestionBoxStyle.Width(boxWidth).Render(content)
+	return suggestionBoxStyle().Width(boxWidth).Render(content)
 }
 
 func (s *State) renderCommandSuggestions(width int) string {
@@ -380,14 +360,14 @@ func (s *State) renderCommandSuggestions(width int) string {
 		line := fmt.Sprintf("%s - %s", cmdName, desc)
 
 		if i == s.selectedIdx {
-			lines = append(lines, selectedSuggestionStyle.Render(line))
+			lines = append(lines, selectedSuggestionStyle().Render(line))
 		} else {
-			lines = append(lines, commandNameStyle.Render(cmdName)+commandDescStyle.Render(" - "+desc))
+			lines = append(lines, commandNameStyle().Render(cmdName)+commandDescStyle().Render(" - "+desc))
 		}
 	}
 
 	content := strings.Join(lines, "\n")
-	return suggestionBoxStyle.Width(boxWidth).Render(content)
+	return suggestionBoxStyle().Width(boxWidth).Render(content)
 }
 
 func clampInt(value, minVal, maxVal int) int {

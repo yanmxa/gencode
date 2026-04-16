@@ -13,7 +13,7 @@ import (
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
-	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
+	appmode "github.com/yanmxa/gencode/internal/app/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
@@ -21,7 +21,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/searchui"
 	"github.com/yanmxa/gencode/internal/app/user/sessionui"
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
-	"github.com/yanmxa/gencode/internal/app/user/suggest"
+	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
@@ -198,8 +198,8 @@ func newMCPState() mcpui.State {
 	return mcpui.State{Selector: mcpui.New(mcp.DefaultRegistry)}
 }
 
-func newPluginState() pluginui.State {
-	return pluginui.State{Selector: pluginui.New(plugin.DefaultRegistry)}
+func newPluginState() pluginui.Model {
+	return pluginui.New(plugin.DefaultRegistry)
 }
 
 func newAgentState() agentui.Model {
@@ -273,15 +273,15 @@ func (m *model) reloadPluginBackedState() error {
 }
 
 func (m *model) enablePlanMode(prompt string) error {
-	m.mode.Enabled = true
-	m.mode.Task = prompt
+	m.planEnabled = true
+	m.planTask = prompt
 	m.operationMode = config.ModePlan
 
 	planStore, err := plan.NewStore()
 	if err != nil {
 		return fmt.Errorf("failed to initialize plan store: %w", err)
 	}
-	m.mode.Store = planStore
+	m.planStore = planStore
 	return nil
 }
 
@@ -375,7 +375,7 @@ func (m *model) buildLoopSystem(extra []string, loopClient *provider.Client) cor
 		ModelID:             modelID,
 		Cwd:                 m.cwd,
 		IsGit:               m.isGit,
-		PlanMode:            m.mode.Enabled,
+		PlanMode:            m.planEnabled,
 		UserInstructions:    m.cachedUserInstructions,
 		ProjectInstructions: m.cachedProjectInstructions,
 		SessionSummary:      m.buildSessionSummaryBlock(),
@@ -389,7 +389,7 @@ func (m *model) buildLoopSystem(extra []string, loopClient *provider.Client) cor
 func (m *model) buildLoopToolSet() *tool.Set {
 	return &tool.Set{
 		Disabled: m.disabledTools,
-		PlanMode: m.mode.Enabled,
+		PlanMode: m.planEnabled,
 		MCP:      m.buildMCPToolsGetter(),
 	}
 }

@@ -38,30 +38,46 @@ type ToolSideEffects interface {
 	PersistOverflow(result *core.ToolResult)
 }
 
-// TurnManager handles end-of-turn operations: metrics, hooks, session
-// persistence, compaction, queue draining, and agent lifecycle.
-type TurnManager interface {
+// TurnMetrics tracks token counts, turn counters, and transient per-turn state.
+type TurnMetrics interface {
 	SetTokenCounts(in, out int)
 	ClearWarningSuppressed()
 	IncrementTurnCounter()
 	ResetTurnCounter()
 	ClearThinkingOverride()
+}
 
+// TurnHooks fires lifecycle hooks at turn boundaries.
+type TurnHooks interface {
 	FireIdleHooks() bool
 	FireStopFailureHook(err error)
+}
 
+// SessionPersistence handles session saving, compaction, and agent lifecycle.
+type SessionPersistence interface {
 	SaveSession()
 	ShouldAutoCompact() bool
 	SetAutoCompactContinue()
 	TriggerAutoCompact() tea.Cmd
+	StopAgentSession()
+}
 
+// QueueDrainer drains pending work (input, cron, hooks, notifications)
+// and starts prompt suggestions at turn boundaries.
+type QueueDrainer interface {
 	StartPromptSuggestion() tea.Cmd
 	DrainInputQueue() tea.Cmd
 	DrainCronQueue() tea.Cmd
 	DrainAsyncHookQueue() tea.Cmd
 	DrainTaskNotifications() tea.Cmd
+}
 
-	StopAgentSession()
+// TurnManager is the composition of all turn-boundary interfaces.
+type TurnManager interface {
+	TurnMetrics
+	TurnHooks
+	SessionPersistence
+	QueueDrainer
 }
 
 // Runtime is the union of all interfaces needed by the output event handlers.
