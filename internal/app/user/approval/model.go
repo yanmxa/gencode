@@ -25,8 +25,8 @@ type Model struct {
 }
 
 // New creates a new Model instance
-func New() *Model {
-	return &Model{
+func New() Model {
+	return Model{
 		selectedIdx: 0, // Default to "Yes"
 	}
 }

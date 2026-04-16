@@ -116,7 +116,7 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 }
 
 func (m *model) isCurrentPermissionRequest(req *perm.PermissionRequest) bool {
-	if req == nil || m.approval == nil || !m.approval.IsActive() {
+	if req == nil || !m.approval.IsActive() {
 		return false
 	}
 	current := m.approval.GetRequest()

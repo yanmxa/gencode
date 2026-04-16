@@ -9,7 +9,6 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
-	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/extension/skill"
 )
 
@@ -134,7 +133,7 @@ func (m *model) renderActiveModal(separator, trackerPrefix string) string {
 	switch {
 	case m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive():
 		return separatorWrapped(trackerPrefix, separator, m.mode.PlanApproval.RenderMenu())
-	case m.approval != nil && m.approval.IsActive():
+	case m.approval.IsActive():
 		return separatorWrapped(trackerPrefix, separator, m.approval.Render())
 	case m.mode.Question.IsActive():
 		return separatorWrapped(trackerPrefix, separator, m.mode.Question.Render())
@@ -151,7 +150,7 @@ func separatorWrapped(trackerPrefix, separator, content string) string {
 
 // updateTextarea forwards unhandled messages to the textarea and spinner.
 func (m *model) updateTextarea(msg tea.Msg) tea.Cmd {
-	cmd, changed := appuser.HandleTextareaUpdate(&m.userInput, msg)
+	cmd, changed := m.userInput.HandleTextareaUpdate(msg)
 	cmds := []tea.Cmd{cmd}
 	if changed {
 		m.promptSuggestion.Clear()

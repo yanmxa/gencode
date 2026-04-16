@@ -56,7 +56,7 @@ type model struct {
 	userInput        appuser.Model
 	inputQueue       appqueue.Queue
 	mode             appmode.State
-	approval         *appapproval.Model
+	approval         appapproval.Model
 	promptSuggestion promptSuggestionState
 
 	// Operation mode and permissions — runtime configuration, not UI state

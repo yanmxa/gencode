@@ -27,7 +27,6 @@ import (
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/cron"
 	appcommand "github.com/yanmxa/gencode/internal/extension/command"
 	"github.com/yanmxa/gencode/internal/extension/mcp"
@@ -39,8 +38,6 @@ import (
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/extension/plugin"
 	"github.com/yanmxa/gencode/internal/session"
-	"github.com/yanmxa/gencode/internal/tool"
-	toolagent "github.com/yanmxa/gencode/internal/tool/agent"
 	"github.com/yanmxa/gencode/internal/tool/fs"
 	"github.com/yanmxa/gencode/internal/tool/web"
 	"github.com/yanmxa/gencode/internal/util/filecache"
@@ -357,126 +354,3 @@ func buildLLMCompleter(p provider.Provider) hooks.LLMCompleter {
 	}
 }
 
-func (m *model) buildLoopClient() *provider.Client {
-	c := provider.NewClient(m.llmProvider, m.getModelID(), m.getMaxTokens())
-	c.SetThinking(m.effectiveThinkingLevel())
-	return c
-}
-
-func (m *model) buildLoopSystem(extra []string, loopClient *provider.Client) core.System {
-	providerName := ""
-	modelID := ""
-	if loopClient != nil {
-		modelID = loopClient.ModelID()
-		providerName = loopClient.Name()
-	}
-	return system.Build(system.Config{
-		ProviderName:        providerName,
-		ModelID:             modelID,
-		Cwd:                 m.cwd,
-		IsGit:               m.isGit,
-		PlanMode:            m.planEnabled,
-		UserInstructions:    m.cachedUserInstructions,
-		ProjectInstructions: m.cachedProjectInstructions,
-		SessionSummary:      m.buildSessionSummaryBlock(),
-		Skills:              m.buildLoopSkillsSection(),
-		Agents:              m.buildLoopAgentsSection(),
-		DeferredTools:       tool.FormatDeferredToolsPrompt(),
-		Extra:               m.buildLoopExtra(extra),
-	})
-}
-
-func (m *model) buildLoopToolSet() *tool.Set {
-	return &tool.Set{
-		Disabled: m.disabledTools,
-		PlanMode: m.planEnabled,
-		MCP:      m.buildMCPToolsGetter(),
-	}
-}
-
-func (m *model) buildLoopExtra(extra []string) []string {
-	allExtra := append([]string{}, extra...)
-	if coordinator := buildCoordinatorGuidance(); coordinator != "" {
-		allExtra = append(allExtra, coordinator)
-	}
-	if m.skill.ActiveInvocation != "" {
-		allExtra = append(allExtra, m.skill.ActiveInvocation)
-	}
-	if reminder := m.buildTaskReminder(); reminder != "" {
-		allExtra = append(allExtra, reminder)
-	}
-	return allExtra
-}
-
-func buildCoordinatorGuidance() string {
-	return system.CoordinatorGuidance()
-}
-
-func (m *model) buildSessionSummaryBlock() string {
-	if m.sessionSummary == "" {
-		return ""
-	}
-	return fmt.Sprintf("<session-summary>\n%s\n</session-summary>", m.sessionSummary)
-}
-
-func (m *model) buildLoopSkillsSection() string {
-	if skill.DefaultRegistry == nil {
-		return ""
-	}
-	return skill.DefaultRegistry.GetSkillsSection()
-}
-
-func (m *model) buildLoopAgentsSection() string {
-	if agent.DefaultRegistry == nil {
-		return ""
-	}
-	return agent.DefaultRegistry.GetAgentsSection()
-}
-
-func (m *model) buildMCPToolsGetter() func() []core.ToolSchema {
-	if mcp.DefaultRegistry == nil {
-		return nil
-	}
-	return mcp.DefaultRegistry.GetToolSchemas
-}
-
-type agentToolOption func(*agent.Executor)
-
-func configureAgentTool(llmProvider provider.Provider, cwd string, modelID string, hookEngine *hooks.Engine, sessionStore *session.Store, parentSessionID string, opts ...agentToolOption) {
-	executor := agent.NewExecutor(llmProvider, cwd, modelID, hookEngine)
-	if sessionStore != nil && parentSessionID != "" {
-		executor.SetSessionStore(sessionStore, parentSessionID)
-	}
-	for _, opt := range opts {
-		opt(executor)
-	}
-	adapter := agent.NewExecutorAdapter(executor)
-
-	if t, ok := tool.Get(tool.ToolAgent); ok {
-		if agentTool, ok := t.(*toolagent.AgentTool); ok {
-			agentTool.SetExecutor(adapter)
-		}
-	}
-	if t, ok := tool.Get(tool.ToolContinueAgent); ok {
-		if continueTool, ok := t.(*toolagent.ContinueAgentTool); ok {
-			continueTool.SetExecutor(adapter)
-		}
-	}
-	if t, ok := tool.Get(tool.ToolSendMessage); ok {
-		if sendMessageTool, ok := t.(*toolagent.SendMessageTool); ok {
-			sendMessageTool.SetExecutor(adapter)
-		}
-	}
-}
-
-func withAgentContext(userInstructions, projectInstructions string, isGit bool) agentToolOption {
-	return func(e *agent.Executor) {
-		e.SetContext(userInstructions, projectInstructions, isGit)
-	}
-}
-
-func withAgentMCP(getter func() []core.ToolSchema, registry *mcp.Registry) agentToolOption {
-	return func(e *agent.Executor) {
-		e.SetMCP(getter, registry)
-	}
-}

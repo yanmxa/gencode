@@ -9,7 +9,7 @@ import (
 // HandleTextareaUpdate forwards a message to the textarea and applies user-input
 // side effects such as paste placeholder expansion, height updates, and suggestions.
 // It returns the resulting tea.Cmd and whether the textarea value changed.
-func HandleTextareaUpdate(m *Model, msg tea.Msg) (tea.Cmd, bool) {
+func (m *Model) HandleTextareaUpdate(msg tea.Msg) (tea.Cmd, bool) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 

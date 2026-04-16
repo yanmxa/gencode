@@ -205,7 +205,7 @@ type ctrlOSingleTickMsg struct{}
 
 func (m *model) handleCtrlO() tea.Cmd {
 	// Handle permission prompt preview toggle
-	if m.approval != nil && m.approval.IsActive() {
+	if m.approval.IsActive() {
 		m.togglePermissionPreview()
 		return nil
 	}

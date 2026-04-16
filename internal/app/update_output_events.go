@@ -1,6 +1,7 @@
-// Thin dispatcher + output.Runtime implementation for the Agent Output path.
+// output.Runtime implementation for the Agent Output path.
 // Handler logic lives in internal/app/output/update.go; this file provides
 // the mutation primitives that those handlers call via the Runtime interface.
+// Permission bridge routing lives in update_output_perm_bridge.go.
 package app
 
 import (
@@ -13,59 +14,12 @@ import (
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/util/log"
 )
-
-// --- Permission bridge types ---
-
-type agentPermissionMsg struct {
-	Request *appoutput.PermBridgeRequest
-}
-
-func pollPermBridge(pb *appoutput.PermissionBridge) tea.Cmd {
-	return func() tea.Msg {
-		req, ok := pb.Recv()
-		if !ok {
-			return nil
-		}
-		return agentPermissionMsg{Request: req}
-	}
-}
-
-func (m *model) handlePermBridgeResponse(msg appapproval.ResponseMsg) tea.Cmd {
-	req := m.pendingPermBridge
-	m.pendingPermBridge = nil
-
-	if req == nil {
-		return nil
-	}
-
-	resp := appoutput.PermBridgeResponse{
-		Allow:  msg.Approved,
-		Reason: "user decision",
-	}
-
-	if msg.Approved {
-		if msg.AllowAll && m.sessionPermissions != nil && msg.Request != nil {
-			m.sessionPermissions.AllowTool(msg.Request.ToolName)
-		}
-		resp.Reason = "user approved"
-	} else {
-		resp.Reason = "user denied"
-	}
-
-	select {
-	case req.Response <- resp:
-	default:
-	}
-
-	return pollPermBridge(m.agentSess.permBridge)
-}
 
 // --- Dispatcher ---
 
@@ -346,16 +300,6 @@ func (m *model) drainTaskNotificationsToAgent() tea.Cmd {
 		return nil
 	}
 	return m.injectTaskNotificationContinuation(appagent.MergeNotifications(items))
-}
-
-// --- Permission bridge ---
-
-func (m *model) showPermissionPrompt(req *appoutput.PermBridgeRequest) tea.Cmd {
-	if req == nil || req.Request == nil {
-		return nil
-	}
-	m.approval.Show(req.Request, m.width, m.height)
-	return nil
 }
 
 func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {
