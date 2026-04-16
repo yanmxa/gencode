@@ -16,10 +16,10 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core/prompt"
-	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/task/tracker"
@@ -256,11 +256,11 @@ func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 }
 
 // TestSessionSummary_InSystemPrompt verifies that session summary
-// appears in the final system prompt when set via prompt.Build.
+// appears in the final system prompt when set via system.Build.
 func TestSessionSummary_InSystemPrompt(t *testing.T) {
 	summary := "Refactored the session package. Added overflow storage."
 
-	sys := prompt.Build(prompt.Config{
+	sys := system.Build(system.Config{
 		Cwd:            "/tmp",
 		SessionSummary: "<session-summary>\n" + summary + "\n</session-summary>",
 	})
@@ -280,7 +280,7 @@ func TestSessionSummary_InSystemPrompt(t *testing.T) {
 // TestSessionSummary_EmptyNotIncluded verifies that empty session summary
 // does not produce a <session-summary> block.
 func TestSessionSummary_EmptyNotIncluded(t *testing.T) {
-	sys := prompt.Build(prompt.Config{
+	sys := system.Build(system.Config{
 		Cwd:            "/tmp",
 		SessionSummary: "",
 	})
@@ -520,7 +520,7 @@ func TestDetectThinkingKeywords(t *testing.T) {
 	t.Run("high thinking keywords", func(t *testing.T) {
 		m := &model{}
 		m.detectThinkingKeywords("Please think carefully before answering")
-		if m.provider.ThinkingOverride != llm.ThinkingHigh {
+		if m.provider.ThinkingOverride != provider.ThinkingHigh {
 			t.Fatalf("expected high thinking override, got %v", m.provider.ThinkingOverride)
 		}
 	})
@@ -528,7 +528,7 @@ func TestDetectThinkingKeywords(t *testing.T) {
 	t.Run("ultra keywords win over high", func(t *testing.T) {
 		m := &model{}
 		m.detectThinkingKeywords("Think hard and ultrathink about this")
-		if m.provider.ThinkingOverride != llm.ThinkingUltra {
+		if m.provider.ThinkingOverride != provider.ThinkingUltra {
 			t.Fatalf("expected ultra thinking override, got %v", m.provider.ThinkingOverride)
 		}
 	})
@@ -559,10 +559,10 @@ func TestRenderActiveModalPriority(t *testing.T) {
 }
 
 func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
-	engine := hook.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
-	engine.AddSessionFunctionHook(hook.PermissionRequest, "", hook.FunctionHook{
-		Callback: func(_ context.Context, _ hook.HookInput) (hook.HookOutput, error) {
-			return hook.HookOutput{}, nil
+	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine.AddSessionFunctionHook(hooks.PermissionRequest, "", hooks.FunctionHook{
+		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
+			return hooks.HookOutput{}, nil
 		},
 	})
 

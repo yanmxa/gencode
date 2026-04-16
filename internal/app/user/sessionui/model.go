@@ -11,8 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/session"
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // SelectedMsg is sent when a session is selected
@@ -148,8 +147,8 @@ func (s *Model) updateFilter() {
 	s.filtered = make([]*session.SessionMetadata, 0, len(s.sessions))
 
 	for _, sess := range s.sessions {
-		if query != "" && !selector.FuzzyMatch(strings.ToLower(sess.Title), query) &&
-			!selector.FuzzyMatch(strings.ToLower(sess.Model), query) {
+		if query != "" && !kit.FuzzyMatch(strings.ToLower(sess.Title), query) &&
+			!kit.FuzzyMatch(strings.ToLower(sess.Model), query) {
 			continue
 		}
 		s.filtered = append(s.filtered, sess)
@@ -189,7 +188,7 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		s.Cancel()
-		return func() tea.Msg { return selector.DismissedMsg{} }
+		return func() tea.Msg { return kit.DismissedMsg{} }
 	case tea.KeyBackspace:
 		if len(s.searchQuery) > 0 {
 			s.searchQuery = s.searchQuery[:len(s.searchQuery)-1]
@@ -337,9 +336,9 @@ func (s *Model) getFirstSubstantiveMessage(sess *session.SessionMetadata) string
 // Subtitle line: the last message in the conversation (any role) is shown as
 // a muted preview.
 func (s *Model) renderSession(sess *session.SessionMetadata, isSelected bool, sb *strings.Builder, boxWidth int) {
-	titleStyle, indent := selector.SelectorItemStyle, "  "
+	titleStyle, indent := kit.SelectorItemStyle, "  "
 	if isSelected {
-		titleStyle, indent = selector.SelectorSelectedStyle, "> "
+		titleStyle, indent = kit.SelectorSelectedStyle, "> "
 	}
 
 	// Determine display title — prefer substantive message over short titles.
@@ -356,7 +355,7 @@ func (s *Model) renderSession(sess *session.SessionMetadata, isSelected bool, sb
 	if maxTitleWidth < 10 {
 		maxTitleWidth = 10
 	}
-	title := selector.TruncateText(displayTitle, maxTitleWidth)
+	title := kit.TruncateText(displayTitle, maxTitleWidth)
 
 	// Right-align metadata by padding between title and metadata.
 	titleLen := len(indent) + len(title)
@@ -368,7 +367,7 @@ func (s *Model) renderSession(sess *session.SessionMetadata, isSelected bool, sb
 	sb.WriteString(titleStyle.Render(fmt.Sprintf("%s%s%s%s", indent, title, padding, metadata)) + "\n")
 
 	if lastMsg := s.getLastMessage(sess); lastMsg != "" {
-		previewStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+		previewStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 		sb.WriteString(previewStyle.Render(fmt.Sprintf("    %s", lastMsg)))
 	}
 	sb.WriteString("\n\n")
@@ -384,19 +383,19 @@ func (s *Model) Render() string {
 
 	// Title with project name and count
 	title := fmt.Sprintf("Resume Session - %s (%d/%d)", filepath.Base(s.cwd), len(s.filtered), len(s.sessions))
-	sb.WriteString(selector.SelectorTitleStyle.Render(title) + "\n")
+	sb.WriteString(kit.SelectorTitleStyle.Render(title) + "\n")
 
 	// Search input
 	searchLine := "🔍 Type to filter..."
-	searchStyle := selector.SelectorHintStyle
+	searchStyle := kit.SelectorHintStyle
 	if s.searchQuery != "" {
 		searchLine = "> " + s.searchQuery + "_"
-		searchStyle = selector.SelectorBreadcrumbStyle
+		searchStyle = kit.SelectorBreadcrumbStyle
 	}
 	sb.WriteString(searchStyle.Render(searchLine) + "\n\n")
 
 	if len(s.filtered) == 0 {
-		sb.WriteString(selector.SelectorHintStyle.Render("  No sessions match the filter") + "\n")
+		sb.WriteString(kit.SelectorHintStyle.Render("  No sessions match the filter") + "\n")
 	} else {
 		endIdx := min(s.scrollOffset+s.maxVisible, len(s.filtered))
 		s.renderScrollIndicator(&sb, s.scrollOffset > 0, "↑ more above")
@@ -408,14 +407,14 @@ func (s *Model) Render() string {
 		s.renderScrollIndicator(&sb, endIdx < len(s.filtered), "↓ more below")
 	}
 
-	sb.WriteString("\n" + selector.SelectorHintStyle.Render("↑/↓ navigate · Enter select · Esc clear/cancel"))
+	sb.WriteString("\n" + kit.SelectorHintStyle.Render("↑/↓ navigate · Enter select · Esc clear/cancel"))
 	return sb.String()
 }
 
 // renderScrollIndicator writes a scroll indicator if the condition is true
 func (s *Model) renderScrollIndicator(sb *strings.Builder, show bool, text string) {
 	if show {
-		sb.WriteString(selector.SelectorHintStyle.Render("  "+text) + "\n")
+		sb.WriteString(kit.SelectorHintStyle.Render("  "+text) + "\n")
 	}
 }
 

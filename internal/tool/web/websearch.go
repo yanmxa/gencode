@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/llm/search"
+	"github.com/yanmxa/gencode/internal/provider/search"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )

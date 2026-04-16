@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/tool/perm"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // Preview renders a preview of skill metadata for permission prompts.
@@ -29,9 +29,9 @@ func (p *Preview) Render(width int) string {
 	var sb strings.Builder
 
 	// Skill name style
-	nameStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
-	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
-	labelStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	nameStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Primary).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
+	labelStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 
 	// Skill name
 	sb.WriteString("   ")

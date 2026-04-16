@@ -8,12 +8,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	coreskill "github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	coreskill "github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
-// item represents a skill in the selector.
+// item represents a skill in the kit.
 type item struct {
 	Name        string // Base name
 	Namespace   string // Optional namespace
@@ -47,7 +46,7 @@ func (l SaveLevel) String() string {
 	return "Project"
 }
 
-// Model holds state for the skill selector.
+// Model holds state for the skill kit.
 type Model struct {
 	active         bool
 	skills         []item
@@ -67,7 +66,7 @@ type CycleMsg struct {
 	NewState  coreskill.SkillState
 }
 
-// InvokeMsg is sent when a skill is invoked from the selector.
+// InvokeMsg is sent when a skill is invoked from the kit.
 type InvokeMsg struct {
 	SkillName string
 }
@@ -144,7 +143,7 @@ func (s *Model) IsActive() bool {
 	return s.active
 }
 
-// Cancel cancels the selector.
+// Cancel cancels the kit.
 func (s *Model) Cancel() {
 	s.active = false
 	s.skills = []item{}
@@ -189,9 +188,9 @@ func (s *Model) updateFilter() {
 		s.filteredSkills = make([]item, 0)
 		for _, sk := range s.skills {
 			// Match against full name (namespace:name), name, or description
-			if selector.FuzzyMatch(strings.ToLower(sk.FullName()), query) ||
-				selector.FuzzyMatch(strings.ToLower(sk.Name), query) ||
-				selector.FuzzyMatch(strings.ToLower(sk.Description), query) {
+			if kit.FuzzyMatch(strings.ToLower(sk.FullName()), query) ||
+				kit.FuzzyMatch(strings.ToLower(sk.Name), query) ||
+				kit.FuzzyMatch(strings.ToLower(sk.Description), query) {
 				s.filteredSkills = append(s.filteredSkills, sk)
 			}
 		}
@@ -266,7 +265,7 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		// Then close the selector
 		s.Cancel()
 		return func() tea.Msg {
-			return selector.DismissedMsg{}
+			return kit.DismissedMsg{}
 		}
 	case tea.KeyBackspace:
 		if len(s.searchQuery) > 0 {
@@ -295,14 +294,14 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// calculateSkillBoxWidth returns the constrained box width for skill selector.
+// calculateSkillBoxWidth returns the constrained box width for skill kit.
 func calculateSkillBoxWidth(screenWidth int) int {
 	// Use 80% of screen width
 	boxWidth := screenWidth * 80 / 100
 	return max(60, boxWidth)
 }
 
-// Render renders the skill selector.
+// Render renders the skill kit.
 func (s *Model) Render() string {
 	if !s.active {
 		return ""
@@ -316,21 +315,21 @@ func (s *Model) Render() string {
 	// Title with count and save level indicator
 	levelIndicator := fmt.Sprintf("[%s]", s.saveLevel.String())
 	title := fmt.Sprintf("Manage Skills (%d/%d)  %s", len(s.filteredSkills), len(s.skills), levelIndicator)
-	sb.WriteString(selector.SelectorTitleStyle.Render(title))
+	sb.WriteString(kit.SelectorTitleStyle.Render(title))
 	sb.WriteString("\n")
 
 	// Search input box
 	searchPrompt := "\U0001f50d "
 	if s.searchQuery == "" {
-		sb.WriteString(selector.SelectorHintStyle.Render(searchPrompt + "Type to filter..."))
+		sb.WriteString(kit.SelectorHintStyle.Render(searchPrompt + "Type to filter..."))
 	} else {
-		sb.WriteString(selector.SelectorBreadcrumbStyle.Render(searchPrompt + s.searchQuery + "\u258f"))
+		sb.WriteString(kit.SelectorBreadcrumbStyle.Render(searchPrompt + s.searchQuery + "\u258f"))
 	}
 	sb.WriteString("\n\n")
 
 	// Handle empty results
 	if len(s.filteredSkills) == 0 {
-		sb.WriteString(selector.SelectorHintStyle.Render("  No skills match the filter"))
+		sb.WriteString(kit.SelectorHintStyle.Render("  No skills match the filter"))
 		sb.WriteString("\n")
 	} else {
 		// Calculate visible range
@@ -359,7 +358,7 @@ func (s *Model) Render() string {
 
 		// Show scroll up indicator
 		if s.scrollOffset > 0 {
-			sb.WriteString(selector.SelectorHintStyle.Render("  \u2191 more above"))
+			sb.WriteString(kit.SelectorHintStyle.Render("  \u2191 more above"))
 			sb.WriteString("\n")
 		}
 
@@ -373,13 +372,13 @@ func (s *Model) Render() string {
 			switch sk.State {
 			case coreskill.StateActive:
 				statusIcon = "\u25cf"
-				statusStyle = selector.SelectorStatusConnected
+				statusStyle = kit.SelectorStatusConnected
 			case coreskill.StateEnable:
 				statusIcon = "\u25d0"
-				statusStyle = lipgloss.NewStyle().Foreground(theme.CurrentTheme.Warning)
+				statusStyle = lipgloss.NewStyle().Foreground(kit.CurrentTheme.Warning)
 			default:
 				statusIcon = "\u25cb"
-				statusStyle = selector.SelectorStatusNone
+				statusStyle = kit.SelectorStatusNone
 			}
 
 			// Use FullName (namespace:name) for display
@@ -418,7 +417,7 @@ func (s *Model) Render() string {
 				desc = desc[:descMaxLen-3] + "..."
 			}
 
-			descStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+			descStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 
 			// Build the line without using ANSI in width calculation
 			line := fmt.Sprintf("%s %-*s  %s",
@@ -438,17 +437,17 @@ func (s *Model) Render() string {
 
 		// Show scroll down indicator
 		if endIdx < len(s.filteredSkills) {
-			sb.WriteString(selector.SelectorHintStyle.Render("  \u2193 more below"))
+			sb.WriteString(kit.SelectorHintStyle.Render("  \u2193 more below"))
 			sb.WriteString("\n")
 		}
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(selector.SelectorHintStyle.Render("\u2191/\u2193 navigate \u00b7 Tab level \u00b7 Enter toggle \u00b7 Esc close"))
+	sb.WriteString(kit.SelectorHintStyle.Render("\u2191/\u2193 navigate \u00b7 Tab level \u00b7 Enter toggle \u00b7 Esc close"))
 
 	// Wrap in border
 	content := sb.String()
-	box := selector.SelectorBorderStyle.Width(boxWidth).Render(content)
+	box := kit.SelectorBorderStyle.Width(boxWidth).Render(content)
 
 	// Center the box
 	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)

@@ -10,7 +10,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task/tracker"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // maxVisibleTasks is the maximum number of tasks shown before collapsing.
@@ -52,8 +52,8 @@ func RenderTrackerList(params TrackerListParams) string {
 	var sb strings.Builder
 
 	// Header: Tasks (2/4)
-	headerStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim).Bold(true)
-	mutedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	headerStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim).Bold(true)
+	mutedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 
 	sb.WriteString("  " + headerStyle.Render("Tasks") + " " + mutedStyle.Render(fmt.Sprintf("(%d/%d)", completed, total)) + "\n")
 
@@ -105,7 +105,7 @@ func renderTrackerTaskIndented(t *tracker.Task, width int, spinnerView string, e
 	subject := truncateText(t.Subject, maxTextLen)
 	worker := backgroundWorkerSnapshot(t)
 
-	mutedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	mutedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 	idStr := mutedStyle.Render(idTag)
 	statusDetail := trackerMetadataString(t.Metadata, "background_status_detail")
 	if worker != nil && worker.Worker.Status != "" {
@@ -119,7 +119,7 @@ func renderTrackerTaskIndented(t *tracker.Task, width int, spinnerView string, e
 	switch t.Status {
 	case tracker.StatusCompleted:
 		if statusDetail == "failed" || statusDetail == "killed" {
-			failedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error)
+			failedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error)
 			return indent + failedStyle.Render("!") + " " + idStr + failedStyle.Render(subject) + queueSuffix + " " + mutedStyle.Render("["+statusDetail+"]") + "\n"
 		}
 		return indent + trackerCompletedStyle.Render("✓") + " " + idStr + trackerCompletedStyle.Render(subject) + queueSuffix + "\n"
@@ -141,7 +141,7 @@ func renderTrackerTaskIndented(t *tracker.Task, width int, spinnerView string, e
 			for i, b := range blockers {
 				blockerRefs[i] = "#" + b
 			}
-			blockedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error)
+			blockedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error)
 			suffix := " " + blockedStyle.Render("← "+strings.Join(blockerRefs, ", "))
 			return indent + trackerPendingStyle.Render("○") + " " + idStr + trackerPendingStyle.Render(subject) + suffix + "\n"
 		}
@@ -161,7 +161,7 @@ func renderBackgroundBatchTask(batch *tracker.Task, children []*tracker.Task, wi
 func renderBatchHeader(t *tracker.Task, children []*tracker.Task, width int, spinnerView string) string {
 	indent := "  "
 	idTag := fmt.Sprintf("#%s ", t.ID)
-	mutedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	mutedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 	idStr := mutedStyle.Render(idTag)
 	subject := t.Subject
 	total := trackerMetadataInt(t.Metadata, "background_total")
@@ -180,7 +180,7 @@ func renderBatchHeader(t *tracker.Task, children []*tracker.Task, width int, spi
 	if total > 0 {
 		countSuffix = mutedStyle.Render(fmt.Sprintf(" (%d/%d)", completed, total))
 		if failures > 0 {
-			countSuffix += " " + lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error).Render(fmt.Sprintf("%d failed", failures))
+			countSuffix += " " + lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error).Render(fmt.Sprintf("%d failed", failures))
 		}
 	}
 

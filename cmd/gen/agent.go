@@ -9,12 +9,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yanmxa/gencode/internal/ext/subagent"
+	"github.com/yanmxa/gencode/internal/agent"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/loop"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/core/prompt"
+	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -74,16 +74,16 @@ func runHeadlessAgent() error {
 	}()
 
 	// Initialize provider
-	store, _ := llm.NewStore()
+	store, _ := provider.NewStore()
 	if store == nil {
 		return fmt.Errorf("no provider store available")
 	}
 
 	currentModel := store.GetCurrentModel()
-	var llmProvider llm.Provider
+	var llmProvider provider.Provider
 
 	if currentModel != nil {
-		p, err := llm.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod)
+		p, err := provider.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod)
 		if err != nil {
 			return fmt.Errorf("failed to connect provider: %w", err)
 		}
@@ -102,12 +102,12 @@ func runHeadlessAgent() error {
 	}
 
 	// Initialize agent registry
-	if err := subagent.Initialize(cwd); err != nil {
+	if err := agent.Initialize(cwd); err != nil {
 		return fmt.Errorf("failed to initialize agent registry: %w", err)
 	}
 
 	// Get agent configuration
-	agentCfg, ok := subagent.DefaultRegistry.Get(agentRunOpts.agentType)
+	agentCfg, ok := agent.DefaultRegistry.Get(agentRunOpts.agentType)
 	if !ok {
 		return fmt.Errorf("unknown agent type: %s", agentRunOpts.agentType)
 	}
@@ -119,14 +119,14 @@ func runHeadlessAgent() error {
 	}
 
 	// Set up the loop
-	sys := prompt.Build(prompt.Config{
+	sys := system.Build(system.Config{
 		Cwd:   cwd,
 		IsGit: config.IsGitRepo(cwd),
 	})
 
-	loopClient := llm.NewClient(llmProvider, modelID, 16384)
+	loopClient := provider.NewClient(llmProvider, modelID, 16384)
 
-	lp, err := loop.NewLoop(loop.LoopConfig{
+	lp, err := runtime.NewLoop(runtime.LoopConfig{
 		System: sys,
 		Client: loopClient,
 		Tool:   toolSet,
@@ -157,7 +157,7 @@ func runHeadlessAgent() error {
 		}
 
 		// Run one turn
-		result, err := lp.Run(ctx, loop.RunOptions{
+		result, err := lp.Run(ctx, runtime.RunOptions{
 			MaxTurns: 1,
 			OnResponse: func(resp *core.CompletionResponse) {
 				if resp.Content != "" {

@@ -1,6 +1,6 @@
 package mcpui
 
-import "github.com/yanmxa/gencode/internal/ext/mcp"
+import "github.com/yanmxa/gencode/internal/mcp"
 
 // State holds all MCP-related state for the TUI model.
 type State struct {

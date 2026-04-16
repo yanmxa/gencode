@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/tool/perm"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 const (
@@ -48,15 +48,15 @@ func (b *bashPreview) setMaxVisible(n int) {
 
 // Bash command rendering styles - use functions to get current theme dynamically
 func getBashCommandStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Text)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Text)
 }
 
 func getBashBgStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Warning)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Warning)
 }
 
 func getBashDescStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim).Italic(true)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim).Italic(true)
 }
 
 // Render renders the bash command preview with simplified format (3-space indent, no line numbers)

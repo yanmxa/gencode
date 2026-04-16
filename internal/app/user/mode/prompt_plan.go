@@ -9,8 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // PlanPrompt manages the plan approval UI
@@ -257,19 +256,19 @@ func (p *PlanPrompt) submitInlineInput() (tea.Cmd, *PlanResponseMsg) {
 
 // Plan prompt styles
 func getPlanSelectedStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Success).Bold(true)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success).Bold(true)
 }
 
 func getPlanUnselectedStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 }
 
 func getPlanHintStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted).Italic(true)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted).Italic(true)
 }
 
 func getPlanFooterStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 }
 
 // RenderMenu renders the menu options for the input area (below separator)
@@ -295,7 +294,7 @@ func (p *PlanPrompt) RenderMenu() string {
 	// Footer: simple hint + plan path
 	footer := " Esc to reject"
 	if p.planPath != "" {
-		footer += " · " + selector.ShortenPath(p.planPath)
+		footer += " · " + kit.ShortenPath(p.planPath)
 	}
 	sb.WriteString(getPlanFooterStyle().Render(footer))
 

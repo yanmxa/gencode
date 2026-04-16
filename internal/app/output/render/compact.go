@@ -5,8 +5,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 func RenderCompactStatus(width int, spinnerView string, active bool, focus, phase, result string, isError bool) string {
@@ -18,7 +17,7 @@ func RenderCompactStatus(width int, spinnerView string, active bool, focus, phas
 	title := "Conversation compacted"
 	subtitle := "Older context was folded into a shorter summary. You can continue normally."
 	detail := result
-	accent := theme.CurrentTheme.Success
+	accent := kit.CurrentTheme.Success
 	icon := "✓"
 
 	if active {
@@ -33,13 +32,13 @@ func RenderCompactStatus(width int, spinnerView string, active bool, focus, phas
 		} else {
 			detail = "Preparing a smaller conversation state for the next turns."
 		}
-		accent = theme.CurrentTheme.Primary
+		accent = kit.CurrentTheme.Primary
 		icon = ""
 	} else if isError {
 		label = "COMPACT ERROR"
 		title = "Compact failed"
 		subtitle = "Conversation history was not replaced. You can retry once the issue is resolved."
-		accent = theme.CurrentTheme.Error
+		accent = kit.CurrentTheme.Error
 		icon = "✗"
 	}
 
@@ -47,22 +46,22 @@ func RenderCompactStatus(width int, spinnerView string, active bool, focus, phas
 		title = icon + " " + title
 	}
 
-	boxWidth := selector.CalculateBoxWidth(width)
+	boxWidth := kit.CalculateBoxWidth(width)
 
 	labelStyle := lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.TextDim).
+		Foreground(kit.CurrentTheme.TextDim).
 		Bold(true)
 	headerStyle := lipgloss.NewStyle().
 		Foreground(accent).
 		Bold(true)
 	subtitleStyle := lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Text)
+		Foreground(kit.CurrentTheme.Text)
 	bodyStyle := lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.TextDim)
+		Foreground(kit.CurrentTheme.TextDim)
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(accent).
-		Background(theme.CurrentTheme.Background).
+		Background(kit.CurrentTheme.Background).
 		Padding(0, 1).
 		Width(boxWidth).
 		MarginLeft(1)

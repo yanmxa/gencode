@@ -6,7 +6,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/tool/perm"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // Preview renders a preview of agent metadata for permission prompts.
@@ -28,10 +28,10 @@ func (p *Preview) Render(width int) string {
 	var sb strings.Builder
 
 	// Styles
-	nameStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
-	dimStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
-	labelStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
-	modeStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Success)
+	nameStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Primary).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
+	labelStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
+	modeStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success)
 
 	// Agent name
 	sb.WriteString("   ")

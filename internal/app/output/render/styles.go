@@ -3,7 +3,7 @@ package render
 import (
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 var (
@@ -11,54 +11,54 @@ var (
 	assistantMsgStyle = lipgloss.NewStyle()
 
 	InputPromptStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.Primary).
+				Foreground(kit.CurrentTheme.Primary).
 				Bold(true)
 
 	aiPromptStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.AI).
+			Foreground(kit.CurrentTheme.AI).
 			Bold(true)
 
 	SeparatorStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Separator)
+			Foreground(kit.CurrentTheme.Separator)
 
 	ThinkingStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Muted)
+			Foreground(kit.CurrentTheme.Muted)
 
 	systemMsgStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.TextDim).
+			Foreground(kit.CurrentTheme.TextDim).
 			PaddingLeft(2)
 
 	toolCallStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Text)
+			Foreground(kit.CurrentTheme.Text)
 
 	toolResultStyle = toolCallStyle
 
 	toolResultExpandedStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.TextDim).
+				Foreground(kit.CurrentTheme.TextDim).
 				PaddingLeft(4)
 
 	agentLabelStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Success)
+			Foreground(kit.CurrentTheme.Success)
 
 	trackerPendingStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.Muted)
+				Foreground(kit.CurrentTheme.Muted)
 
 	trackerInProgressStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.Primary).
+				Foreground(kit.CurrentTheme.Primary).
 				Bold(true)
 
 	trackerCompletedStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.TextDisabled).
+				Foreground(kit.CurrentTheme.TextDisabled).
 				Strikethrough(true)
 
 	PendingImageStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.Primary)
+				Foreground(kit.CurrentTheme.Primary)
 
 	pendingImageHintStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.Muted)
+				Foreground(kit.CurrentTheme.Muted)
 
 	SelectedImageStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.TextBright).
-				Background(theme.CurrentTheme.Primary).
+				Foreground(kit.CurrentTheme.TextBright).
+				Background(kit.CurrentTheme.Primary).
 				Bold(true)
 )

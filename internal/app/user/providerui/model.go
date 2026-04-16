@@ -5,11 +5,11 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 
-	coreprovider "github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
+	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
-// tab represents which tab is active in the selector.
+// tab represents which tab is active in the kit.
 type tab int
 
 const (
@@ -53,7 +53,7 @@ type authMethodItem struct {
 	EnvVars     []string
 }
 
-// modelItem represents a model in the selector.
+// modelItem represents a model in the kit.
 type modelItem struct {
 	ID               string
 	Name             string
@@ -65,7 +65,7 @@ type modelItem struct {
 	OutputTokenLimit int
 }
 
-// Model holds the state for the unified model & provider selector.
+// Model holds the state for the unified model & provider kit.
 type Model struct {
 	active bool
 	width  int
@@ -115,8 +115,8 @@ type statusDisplayInfo struct {
 
 // statusDisplayMap maps provider status to display information.
 var statusDisplayMap = map[coreprovider.Status]statusDisplayInfo{
-	coreprovider.StatusConnected: {"●", selector.SelectorStatusConnected, ""},
-	coreprovider.StatusAvailable: {"○", selector.SelectorStatusReady, "(available)"},
+	coreprovider.StatusConnected: {"●", kit.SelectorStatusConnected, ""},
+	coreprovider.StatusAvailable: {"○", kit.SelectorStatusReady, "(available)"},
 }
 
 // getStatusDisplay returns the icon, style, and description for a provider status.
@@ -124,7 +124,7 @@ func getStatusDisplay(status coreprovider.Status) (icon string, style lipgloss.S
 	if info, ok := statusDisplayMap[status]; ok {
 		return info.icon, info.style, info.desc
 	}
-	return "◌", selector.SelectorStatusNone, ""
+	return "◌", kit.SelectorStatusNone, ""
 }
 
 // New creates a new provider selector Model.

@@ -11,7 +11,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // Model manages the permission request UI with Claude Code style.
@@ -194,31 +194,31 @@ func (p *Model) confirmSelection() (tea.Cmd, *ResponseMsg) {
 // Permission prompt styles - use functions to get current theme dynamically
 // This ensures styles update when theme changes (same pattern as question prompt)
 func getSeparatorStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Separator)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Separator)
 }
 
 func getQuestionStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 }
 
 func getSelectedStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Success).Bold(true)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success).Bold(true)
 }
 
 func getUnselectedStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 }
 
 func getHintStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted).Italic(true)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted).Italic(true)
 }
 
 func getFooterStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 }
 
 func getTitleStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Primary).Bold(true)
 }
 
 // renderInline renders the permission prompt inline with Claude Code style

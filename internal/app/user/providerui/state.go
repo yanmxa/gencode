@@ -5,21 +5,21 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // State holds all provider-related state for the TUI model.
 type State struct {
-	LLM              llm.Provider
-	Store            *llm.Store
-	CurrentModel     *llm.CurrentModelInfo
+	LLM              provider.Provider
+	Store            *provider.Store
+	CurrentModel     *provider.CurrentModelInfo
 	InputTokens      int
 	OutputTokens     int
 	FetchingLimits   bool
 	Selector         Model
 	StatusMessage    string // Temporary status shown in status bar
-	ThinkingLevel    llm.ThinkingLevel
-	ThinkingOverride llm.ThinkingLevel
+	ThinkingLevel    provider.ThinkingLevel
+	ThinkingOverride provider.ThinkingLevel
 }
 
 // StatusExpiredMsg signals that the temporary status message should be cleared.

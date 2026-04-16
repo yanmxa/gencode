@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	coreplugin "github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 func TestCancelClearsTransientPluginSelectorState(t *testing.T) {
@@ -97,8 +97,8 @@ func TestHandleListEscDismissesSelector(t *testing.T) {
 		t.Fatal("Esc should return dismiss command when no search is active")
 	}
 	msg := cmd()
-	if _, ok := msg.(selector.DismissedMsg); !ok {
-		t.Fatalf("dismiss command returned %T, want selector.DismissedMsg", msg)
+	if _, ok := msg.(kit.DismissedMsg); !ok {
+		t.Fatalf("dismiss command returned %T, want kit.DismissedMsg", msg)
 	}
 	if m.active {
 		t.Fatal("dismiss should deactivate selector")

@@ -19,11 +19,11 @@ import (
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/task"
@@ -32,46 +32,46 @@ import (
 
 type testLLMProvider struct{}
 
-func (testLLMProvider) Stream(_ context.Context, _ llm.CompletionOptions) <-chan core.StreamChunk {
+func (testLLMProvider) Stream(_ context.Context, _ provider.CompletionOptions) <-chan core.StreamChunk {
 	ch := make(chan core.StreamChunk)
 	close(ch)
 	return ch
 }
 
-func (testLLMProvider) ListModels(_ context.Context) ([]llm.ModelInfo, error) { return nil, nil }
+func (testLLMProvider) ListModels(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 
 func (testLLMProvider) Name() string { return "test" }
 
 func TestFireSessionEndClearsSessionHooks(t *testing.T) {
-	engine := hook.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
-	engine.AddSessionFunctionHook(hook.Stop, "", hook.FunctionHook{
-		Callback: func(_ context.Context, _ hook.HookInput) (hook.HookOutput, error) {
-			return hook.HookOutput{}, nil
+	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine.AddSessionFunctionHook(hooks.Stop, "", hooks.FunctionHook{
+		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
+			return hooks.HookOutput{}, nil
 		},
 	})
 
 	m := &model{hookEngine: engine}
 	m.fireSessionEnd("other")
 
-	if engine.HasHooks(hook.Stop) {
+	if engine.HasHooks(hooks.Stop) {
 		t.Fatal("expected session-scoped hooks to be cleared after SessionEnd")
 	}
 }
 
 func TestInitFiresSetupHook(t *testing.T) {
-	engine := hook.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
 	triggered := make(chan string, 1)
-	engine.AddSessionFunctionHook(hook.Setup, "init", hook.FunctionHook{
-		Callback: func(_ context.Context, input hook.HookInput) (hook.HookOutput, error) {
+	engine.AddSessionFunctionHook(hooks.Setup, "init", hooks.FunctionHook{
+		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input.Trigger
-			return hook.HookOutput{}, nil
+			return hooks.HookOutput{}, nil
 		},
 	})
 
 	// Hook firing now happens during model construction (not Init()) to
 	// avoid value-receiver mutation loss. Simulate the newModel() path.
 	m := model{hookEngine: engine}
-	m.hookEngine.ExecuteAsync(hook.Setup, hook.HookInput{Trigger: "init"})
+	m.hookEngine.ExecuteAsync(hooks.Setup, hooks.HookInput{Trigger: "init"})
 
 	select {
 	case trigger := <-triggered:
@@ -190,15 +190,15 @@ func TestApplyRunOptionsPluginDirReloadsPluginComponents(t *testing.T) {
 
 	prevPluginRegistry := plugin.DefaultRegistry
 	prevSkillRegistry := skill.DefaultRegistry
-	prevAgentRegistry := subagent.DefaultRegistry
+	prevAgentRegistry := agent.DefaultRegistry
 	prevMCPRegistry := mcp.DefaultRegistry
 	plugin.DefaultRegistry = plugin.NewRegistry()
-	subagent.DefaultRegistry = subagent.NewRegistry()
+	agent.DefaultRegistry = agent.NewRegistry()
 	mcp.DefaultRegistry = nil
 	t.Cleanup(func() {
 		plugin.DefaultRegistry = prevPluginRegistry
 		skill.DefaultRegistry = prevSkillRegistry
-		subagent.DefaultRegistry = prevAgentRegistry
+		agent.DefaultRegistry = prevAgentRegistry
 		mcp.DefaultRegistry = prevMCPRegistry
 	})
 
@@ -258,7 +258,7 @@ You are a verifier.`), 0o644); err != nil {
 	m := &model{
 		cwd:        cwd,
 		settings:   settings,
-		hookEngine: hook.NewEngine(settings, "test-session", cwd, ""),
+		hookEngine: hooks.NewEngine(settings, "test-session", cwd, ""),
 		mcp:        mcpui.State{},
 	}
 
@@ -266,13 +266,13 @@ You are a verifier.`), 0o644); err != nil {
 		t.Fatalf("applyRunOptions() error = %v", err)
 	}
 
-	if _, ok := subagent.DefaultRegistry.Get("demo:verifier"); !ok {
+	if _, ok := agent.DefaultRegistry.Get("demo:verifier"); !ok {
 		t.Fatal("expected plugin agent to be registered after --plugin-dir load")
 	}
 	if len(m.settings.Hooks["SessionStart"]) == 0 {
 		t.Fatal("expected plugin hooks to be merged into settings after --plugin-dir load")
 	}
-	if !m.hookEngine.HasHooks(hook.SessionStart) {
+	if !m.hookEngine.HasHooks(hooks.SessionStart) {
 		t.Fatal("expected hook engine to see plugin hooks after --plugin-dir load")
 	}
 	if m.mcp.Registry == nil {
@@ -304,12 +304,12 @@ func TestRefreshMemoryContextFiresInstructionsLoaded(t *testing.T) {
 	}
 	defer func() { _ = os.Setenv("HOME", prevHome) }()
 
-	engine := hook.NewEngine(config.NewSettings(), "test-session", tmpDir, "")
-	triggered := make(chan hook.HookInput, 1)
-	engine.AddSessionFunctionHook(hook.InstructionsLoaded, projectFile, hook.FunctionHook{
-		Callback: func(_ context.Context, input hook.HookInput) (hook.HookOutput, error) {
+	engine := hooks.NewEngine(config.NewSettings(), "test-session", tmpDir, "")
+	triggered := make(chan hooks.HookInput, 1)
+	engine.AddSessionFunctionHook(hooks.InstructionsLoaded, projectFile, hooks.FunctionHook{
+		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
-			return hook.HookOutput{}, nil
+			return hooks.HookOutput{}, nil
 		},
 	})
 
@@ -336,12 +336,12 @@ func TestChangeCwdFiresCwdChanged(t *testing.T) {
 	oldCwd := t.TempDir()
 	newCwd := t.TempDir()
 
-	engine := hook.NewEngine(config.NewSettings(), "test-session", oldCwd, "")
-	triggered := make(chan hook.HookInput, 1)
-	engine.AddSessionFunctionHook(hook.CwdChanged, newCwd, hook.FunctionHook{
-		Callback: func(_ context.Context, input hook.HookInput) (hook.HookOutput, error) {
+	engine := hooks.NewEngine(config.NewSettings(), "test-session", oldCwd, "")
+	triggered := make(chan hooks.HookInput, 1)
+	engine.AddSessionFunctionHook(hooks.CwdChanged, newCwd, hooks.FunctionHook{
+		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
-			return hook.HookOutput{}, nil
+			return hooks.HookOutput{}, nil
 		},
 	})
 
@@ -375,12 +375,12 @@ func TestApplyAgentToolSideEffectsFiresFileChanged(t *testing.T) {
 	cwd := t.TempDir()
 	filePath := filepath.Join(cwd, "file.txt")
 
-	engine := hook.NewEngine(config.NewSettings(), "test-session", cwd, "")
-	triggered := make(chan hook.HookInput, 1)
-	engine.AddSessionFunctionHook(hook.FileChanged, filePath, hook.FunctionHook{
-		Callback: func(_ context.Context, input hook.HookInput) (hook.HookOutput, error) {
+	engine := hooks.NewEngine(config.NewSettings(), "test-session", cwd, "")
+	triggered := make(chan hooks.HookInput, 1)
+	engine.AddSessionFunctionHook(hooks.FileChanged, filePath, hooks.FunctionHook{
+		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
-			return hook.HookOutput{}, nil
+			return hooks.HookOutput{}, nil
 		},
 	})
 
@@ -407,12 +407,12 @@ func TestApplyAgentToolSideEffectsUpdatesCwdFromBash(t *testing.T) {
 	oldCwd := t.TempDir()
 	newCwd := t.TempDir()
 
-	engine := hook.NewEngine(config.NewSettings(), "test-session", oldCwd, "")
-	triggered := make(chan hook.HookInput, 1)
-	engine.AddSessionFunctionHook(hook.CwdChanged, newCwd, hook.FunctionHook{
-		Callback: func(_ context.Context, input hook.HookInput) (hook.HookOutput, error) {
+	engine := hooks.NewEngine(config.NewSettings(), "test-session", oldCwd, "")
+	triggered := make(chan hooks.HookInput, 1)
+	engine.AddSessionFunctionHook(hooks.CwdChanged, newCwd, hooks.FunctionHook{
+		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
-			return hook.HookOutput{}, nil
+			return hooks.HookOutput{}, nil
 		},
 	})
 
@@ -471,7 +471,7 @@ func TestChangeCwdReloadsProjectScopedSettings(t *testing.T) {
 
 	m := &model{
 		cwd:      oldCwd,
-		settings: loadSettings(oldCwd),
+		settings: initSettings(oldCwd),
 		mode: appmode.State{
 			SessionPermissions: config.NewSessionPermissions(),
 			DisabledTools:      map[string]bool{"Bash": true},
@@ -495,12 +495,12 @@ func TestChangeCwdReloadsProjectScopedSettings(t *testing.T) {
 }
 
 func TestInitRegistersWatchPathsFromSessionStart(t *testing.T) {
-	engine := hook.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
 	watchPath := filepath.Join(t.TempDir(), ".env")
-	engine.AddSessionFunctionHook(hook.SessionStart, "", hook.FunctionHook{
-		Callback: func(_ context.Context, _ hook.HookInput) (hook.HookOutput, error) {
-			return hook.HookOutput{
-				HookSpecificOutput: &hook.HookSpecificOutput{
+	engine.AddSessionFunctionHook(hooks.SessionStart, "", hooks.FunctionHook{
+		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
+			return hooks.HookOutput{
+				HookSpecificOutput: &hooks.HookSpecificOutput{
 					HookEventName: "SessionStart",
 					WatchPaths:    []string{watchPath},
 				},
@@ -511,7 +511,7 @@ func TestInitRegistersWatchPathsFromSessionStart(t *testing.T) {
 	// Hook firing now happens during model construction (not Init()).
 	// Simulate the newModel() path: fire SessionStart and apply outcome.
 	m := model{hookEngine: engine}
-	outcome := engine.Execute(context.Background(), hook.SessionStart, hook.HookInput{
+	outcome := engine.Execute(context.Background(), hooks.SessionStart, hooks.HookInput{
 		Source: "startup",
 	})
 	m.applyRuntimeHookOutcome(outcome)
@@ -530,12 +530,12 @@ func TestFileWatcherFiresFileChangedForWatchedPath(t *testing.T) {
 		t.Fatalf("write initial file: %v", err)
 	}
 
-	engine := hook.NewEngine(config.NewSettings(), "test-session", cwd, "")
-	triggered := make(chan hook.HookInput, 1)
-	engine.AddSessionFunctionHook(hook.FileChanged, filePath, hook.FunctionHook{
-		Callback: func(_ context.Context, input hook.HookInput) (hook.HookOutput, error) {
+	engine := hooks.NewEngine(config.NewSettings(), "test-session", cwd, "")
+	triggered := make(chan hooks.HookInput, 1)
+	engine.AddSessionFunctionHook(hooks.FileChanged, filePath, hooks.FunctionHook{
+		Callback: func(_ context.Context, input hooks.HookInput) (hooks.HookOutput, error) {
 			triggered <- input
-			return hook.HookOutput{}, nil
+			return hooks.HookOutput{}, nil
 		},
 	})
 
@@ -543,10 +543,10 @@ func TestFileWatcherFiresFileChangedForWatchedPath(t *testing.T) {
 		cwd:        cwd,
 		hookEngine: engine,
 	}
-	m.fileWatcher = appsystem.NewFileWatcher(engine, func(outcome hook.HookOutcome) {
+	m.fileWatcher = appsystem.NewFileWatcher(engine, func(outcome hooks.HookOutcome) {
 		m.applyRuntimeHookOutcome(outcome)
 	})
-	m.applyRuntimeHookOutcome(hook.HookOutcome{WatchPaths: []string{filePath}})
+	m.applyRuntimeHookOutcome(hooks.HookOutcome{WatchPaths: []string{filePath}})
 
 	time.Sleep(appsystem.DefaultFileWatcherInterval + 100*time.Millisecond)
 	if err := os.WriteFile(filePath, []byte("A=2\n"), 0o644); err != nil {
@@ -570,7 +570,7 @@ func TestFileWatcherFiresFileChangedForWatchedPath(t *testing.T) {
 
 func TestApplyRuntimeHookOutcomeSetsInitialPrompt(t *testing.T) {
 	m := &model{}
-	m.applyRuntimeHookOutcome(hook.HookOutcome{
+	m.applyRuntimeHookOutcome(hooks.HookOutcome{
 		InitialUserMessage: "Summarize the repository structure.",
 	})
 	if m.initialPrompt != "Summarize the repository structure." {
@@ -613,15 +613,15 @@ func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 }
 
 func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
-	engine := hook.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine := hooks.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
-	engine.AddSessionFunctionHook(hook.Notification, "", hook.FunctionHook{
+	engine.AddSessionFunctionHook(hooks.Notification, "", hooks.FunctionHook{
 		StatusMessage: "hook is running",
-		Callback: func(_ context.Context, _ hook.HookInput) (hook.HookOutput, error) {
+		Callback: func(_ context.Context, _ hooks.HookInput) (hooks.HookOutput, error) {
 			started <- struct{}{}
 			<-release
-			return hook.HookOutput{}, nil
+			return hooks.HookOutput{}, nil
 		},
 	})
 
@@ -633,7 +633,7 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		engine.Execute(context.Background(), hook.Notification, hook.HookInput{NotificationType: "idle_prompt"})
+		engine.Execute(context.Background(), hooks.Notification, hooks.HookInput{NotificationType: "idle_prompt"})
 	}()
 
 	select {

@@ -8,12 +8,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
-// item represents an agent in the selector.
+// item represents an agent in the kit.
 type item struct {
 	Name           string
 	Description    string
@@ -43,7 +42,7 @@ func (l SaveLevel) String() string {
 	}
 }
 
-// Model holds the state for the agent selector.
+// Model holds the state for the agent kit.
 type Model struct {
 	active         bool
 	agents         []item
@@ -75,10 +74,10 @@ func New() Model {
 // EnterSelect enters agent selection mode.
 func (s *Model) EnterSelect(width, height int) error {
 	// Get all agent configs from registry
-	allConfigs := subagent.DefaultRegistry.ListConfigs()
+	allConfigs := agent.DefaultRegistry.ListConfigs()
 
 	// Get disabled agents for the current level
-	disabledAgents := subagent.DefaultRegistry.GetDisabledAt(s.saveLevel == saveLevelUser)
+	disabledAgents := agent.DefaultRegistry.GetDisabledAt(s.saveLevel == saveLevelUser)
 
 	s.agents = make([]item, 0, len(allConfigs))
 	for _, cfg := range allConfigs {
@@ -114,17 +113,17 @@ func (s *Model) EnterSelect(width, height int) error {
 }
 
 // formatPermissionMode converts PermissionMode to display string.
-func formatPermissionMode(mode subagent.PermissionMode) string {
+func formatPermissionMode(mode agent.PermissionMode) string {
 	switch mode {
-	case subagent.PermissionPlan:
+	case agent.PermissionPlan:
 		return "plan"
-	case subagent.PermissionAcceptEdits:
+	case agent.PermissionAcceptEdits:
 		return "acceptEdits"
-	case subagent.PermissionDontAsk:
+	case agent.PermissionDontAsk:
 		return "dontAsk"
-	case subagent.PermissionBypassPermissions:
+	case agent.PermissionBypassPermissions:
 		return "bypass"
-	case subagent.PermissionAuto:
+	case agent.PermissionAuto:
 		return "auto"
 	default:
 		return "default"
@@ -132,7 +131,7 @@ func formatPermissionMode(mode subagent.PermissionMode) string {
 }
 
 // formatTools formats a tool list for display.
-func formatTools(tools subagent.ToolList) string {
+func formatTools(tools agent.ToolList) string {
 	if tools == nil {
 		return "all tools"
 	}
@@ -147,7 +146,7 @@ func (s *Model) IsActive() bool {
 	return s.active
 }
 
-// Cancel cancels the selector.
+// Cancel cancels the kit.
 func (s *Model) Cancel() {
 	s.active = false
 	s.agents = []item{}
@@ -191,8 +190,8 @@ func (s *Model) updateFilter() {
 		query := strings.ToLower(s.searchQuery)
 		s.filteredAgents = make([]item, 0)
 		for _, a := range s.agents {
-			if selector.FuzzyMatch(strings.ToLower(a.Name), query) ||
-				selector.FuzzyMatch(strings.ToLower(a.Description), query) {
+			if kit.FuzzyMatch(strings.ToLower(a.Name), query) ||
+				kit.FuzzyMatch(strings.ToLower(a.Description), query) {
 				s.filteredAgents = append(s.filteredAgents, a)
 			}
 		}
@@ -203,7 +202,7 @@ func (s *Model) updateFilter() {
 
 // reloadAgentStates reloads the enabled/disabled states from the current save level.
 func (s *Model) reloadAgentStates() {
-	disabledAgents := subagent.DefaultRegistry.GetDisabledAt(s.saveLevel == saveLevelUser)
+	disabledAgents := agent.DefaultRegistry.GetDisabledAt(s.saveLevel == saveLevelUser)
 
 	// Update agent enabled states
 	for i := range s.agents {
@@ -236,7 +235,7 @@ func (s *Model) Toggle() tea.Cmd {
 	}
 
 	// Save to registry (project or user level based on saveLevel)
-	_ = subagent.DefaultRegistry.SetEnabled(
+	_ = agent.DefaultRegistry.SetEnabled(
 		selected.Name,
 		selected.Enabled,
 		s.saveLevel == saveLevelUser,
@@ -280,7 +279,7 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		// Then close the selector
 		s.Cancel()
 		return func() tea.Msg {
-			return selector.DismissedMsg{}
+			return kit.DismissedMsg{}
 		}
 	case tea.KeyBackspace:
 		if len(s.searchQuery) > 0 {
@@ -309,13 +308,13 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// calculateBoxWidth returns the constrained box width for agent selector.
+// calculateBoxWidth returns the constrained box width for agent kit.
 func calculateBoxWidth(screenWidth int) int {
 	boxWidth := screenWidth * 85 / 100
 	return max(70, boxWidth)
 }
 
-// Render renders the agent selector.
+// Render renders the agent kit.
 func (s *Model) Render() string {
 	if !s.active {
 		return ""
@@ -326,15 +325,15 @@ func (s *Model) Render() string {
 	// Title with count and save level indicator
 	levelIndicator := fmt.Sprintf("[%s]", s.saveLevel.String())
 	title := fmt.Sprintf("Manage Agents (%d/%d)  %s", len(s.filteredAgents), len(s.agents), levelIndicator)
-	sb.WriteString(selector.SelectorTitleStyle.Render(title))
+	sb.WriteString(kit.SelectorTitleStyle.Render(title))
 	sb.WriteString("\n")
 
 	// Search input box
 	searchPrompt := "\U0001f50d "
 	if s.searchQuery == "" {
-		sb.WriteString(selector.SelectorHintStyle.Render(searchPrompt + "Type to filter..."))
+		sb.WriteString(kit.SelectorHintStyle.Render(searchPrompt + "Type to filter..."))
 	} else {
-		sb.WriteString(selector.SelectorBreadcrumbStyle.Render(searchPrompt + s.searchQuery + "\u258f"))
+		sb.WriteString(kit.SelectorBreadcrumbStyle.Render(searchPrompt + s.searchQuery + "\u258f"))
 	}
 	sb.WriteString("\n\n")
 
@@ -343,7 +342,7 @@ func (s *Model) Render() string {
 
 	// Handle empty results
 	if len(s.filteredAgents) == 0 {
-		sb.WriteString(selector.SelectorHintStyle.Render("  No agents match the filter"))
+		sb.WriteString(kit.SelectorHintStyle.Render("  No agents match the filter"))
 		sb.WriteString("\n")
 	} else {
 		// Calculate visible range
@@ -351,7 +350,7 @@ func (s *Model) Render() string {
 
 		// Show scroll up indicator
 		if s.scrollOffset > 0 {
-			sb.WriteString(selector.SelectorHintStyle.Render("  \u2191 more above"))
+			sb.WriteString(kit.SelectorHintStyle.Render("  \u2191 more above"))
 			sb.WriteString("\n")
 		}
 
@@ -364,10 +363,10 @@ func (s *Model) Render() string {
 			var statusStyle lipgloss.Style
 			if a.Enabled {
 				statusIcon = "\u25cf"
-				statusStyle = selector.SelectorStatusConnected
+				statusStyle = kit.SelectorStatusConnected
 			} else {
 				statusIcon = "\u25cb"
-				statusStyle = selector.SelectorStatusNone
+				statusStyle = kit.SelectorStatusNone
 			}
 
 			// Format agent info
@@ -407,7 +406,7 @@ func (s *Model) Render() string {
 				sourceTag = " [Custom]"
 			}
 
-			descStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+			descStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 			line := fmt.Sprintf("%s %-15s %-7s %-8s %s%s",
 				statusStyle.Render(statusIcon),
 				name,
@@ -418,26 +417,26 @@ func (s *Model) Render() string {
 			)
 
 			if i == s.selectedIdx {
-				sb.WriteString(selector.SelectorSelectedStyle.Render("> " + line))
+				sb.WriteString(kit.SelectorSelectedStyle.Render("> " + line))
 			} else {
-				sb.WriteString(selector.SelectorItemStyle.Render("  " + line))
+				sb.WriteString(kit.SelectorItemStyle.Render("  " + line))
 			}
 			sb.WriteString("\n")
 		}
 
 		// Show scroll down indicator
 		if endIdx < len(s.filteredAgents) {
-			sb.WriteString(selector.SelectorHintStyle.Render("  \u2193 more below"))
+			sb.WriteString(kit.SelectorHintStyle.Render("  \u2193 more below"))
 			sb.WriteString("\n")
 		}
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(selector.SelectorHintStyle.Render("\u2191/\u2193 navigate \u00b7 Enter toggle \u00b7 Tab level \u00b7 Esc cancel"))
+	sb.WriteString(kit.SelectorHintStyle.Render("\u2191/\u2193 navigate \u00b7 Enter toggle \u00b7 Tab level \u00b7 Esc cancel"))
 
 	// Wrap in border
 	content := sb.String()
-	box := selector.SelectorBorderStyle.Width(boxWidth).Render(content)
+	box := kit.SelectorBorderStyle.Width(boxWidth).Render(content)
 
 	// Center the box
 	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)

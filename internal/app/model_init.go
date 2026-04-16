@@ -27,14 +27,14 @@ import (
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/core/prompt"
+	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/cron"
-	appcommand "github.com/yanmxa/gencode/internal/ext/command"
-	"github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/llm"
+	appcommand "github.com/yanmxa/gencode/internal/command"
+	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
@@ -43,16 +43,16 @@ import (
 	toolagent "github.com/yanmxa/gencode/internal/tool/agent"
 	"github.com/yanmxa/gencode/internal/tool/fs"
 	"github.com/yanmxa/gencode/internal/tool/web"
-	"github.com/yanmxa/gencode/internal/util/filecache"
-	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/filecache"
+	"github.com/yanmxa/gencode/internal/log"
 )
 
 type modelInfra struct {
-	store            *llm.Store
-	llmProvider      llm.Provider
-	currentModel     *llm.CurrentModelInfo
+	store            *provider.Store
+	llmProvider      provider.Provider
+	currentModel     *provider.CurrentModelInfo
 	settings         *config.Settings
-	hookEngine       *hook.Engine
+	hookEngine       *hooks.Engine
 	sessionStore     *session.Store
 	notifications    *appagent.NotificationQueue
 	initialSessionID string
@@ -66,9 +66,9 @@ func initInfra(cwd string) (modelInfra, error) {
 		return modelInfra{}, fmt.Errorf("failed to load scheduled tasks: %w", err)
 	}
 
-	store, llmProvider, currentModel := initProvider()
-	initRegistries(cwd)
-	settings := loadSettings(cwd)
+	store, llmProvider, currentModel := initLLM()
+	initExt(cwd)
+	settings := initSettings(cwd)
 
 	// Wire injected dependencies so tool layer doesn't import upper layers
 	if store != nil {
@@ -87,7 +87,7 @@ func initInfra(cwd string) (modelInfra, error) {
 		transcriptPath = sessionStore.SessionPath(sessionID)
 	}
 	notifications := appagent.NewNotificationQueue()
-	hookEngine := hook.NewEngine(settings, sessionID, cwd, transcriptPath)
+	hookEngine := hooks.NewEngine(settings, sessionID, cwd, transcriptPath)
 	modelID := ""
 	if currentModel != nil {
 		modelID = currentModel.ModelID
@@ -251,7 +251,7 @@ func (m *model) reloadPluginBackedState() error {
 	if err := appcommand.Initialize(m.cwd); err != nil {
 		return fmt.Errorf("failed to reload custom commands: %w", err)
 	}
-	if err := subagent.Initialize(m.cwd); err != nil {
+	if err := agent.Initialize(m.cwd); err != nil {
 		return fmt.Errorf("failed to reload agent registry: %w", err)
 	}
 	if err := mcp.Initialize(m.cwd); err != nil {
@@ -259,7 +259,7 @@ func (m *model) reloadPluginBackedState() error {
 	}
 	m.mcp.Registry = mcp.DefaultRegistry
 
-	settings := loadSettings(m.cwd)
+	settings := initSettings(m.cwd)
 	m.settings = settings
 	if m.hookEngine != nil {
 		m.hookEngine.SetSettings(settings)
@@ -335,15 +335,15 @@ func (m *model) applyResumeOption(resumeID string, fork bool) error {
 	return nil
 }
 
-// buildLLMCompleter wraps a provider into an hook.LLMCompleter closure.
+// buildLLMCompleter wraps a provider into an hooks.LLMCompleter closure.
 // The closure owns client construction and streaming, keeping the hooks
 // engine free from direct provider dependencies.
-func buildLLMCompleter(p llm.Provider) hook.LLMCompleter {
+func buildLLMCompleter(p provider.Provider) hooks.LLMCompleter {
 	if p == nil {
 		return nil
 	}
 	return func(ctx context.Context, systemPrompt, userMessage, model string) (string, error) {
-		c := llm.NewClient(p, model, 0)
+		c := provider.NewClient(p, model, 0)
 		resp, err := c.Complete(ctx, systemPrompt, []core.Message{{
 			Role:    core.RoleUser,
 			Content: userMessage,
@@ -355,20 +355,20 @@ func buildLLMCompleter(p llm.Provider) hook.LLMCompleter {
 	}
 }
 
-func (m *model) buildLoopClient() *llm.Client {
-	llm := llm.NewClient(m.provider.LLM, m.getModelID(), m.getMaxTokens())
-	llm.SetThinking(m.effectiveThinkingLevel())
-	return llm
+func (m *model) buildLoopClient() *provider.Client {
+	c := provider.NewClient(m.provider.LLM, m.getModelID(), m.getMaxTokens())
+	c.SetThinking(m.effectiveThinkingLevel())
+	return c
 }
 
-func (m *model) buildLoopSystem(extra []string, loopClient *llm.Client) core.System {
+func (m *model) buildLoopSystem(extra []string, loopClient *provider.Client) core.System {
 	providerName := ""
 	modelID := ""
 	if loopClient != nil {
 		modelID = loopClient.ModelID()
 		providerName = loopClient.Name()
 	}
-	return prompt.Build(prompt.Config{
+	return system.Build(system.Config{
 		ProviderName:        providerName,
 		ModelID:             modelID,
 		Cwd:                 m.cwd,
@@ -407,7 +407,7 @@ func (m *model) buildLoopExtra(extra []string) []string {
 }
 
 func buildCoordinatorGuidance() string {
-	return prompt.CoordinatorGuidance()
+	return system.CoordinatorGuidance()
 }
 
 func (m *model) buildSessionSummaryBlock() string {
@@ -425,10 +425,10 @@ func (m *model) buildLoopSkillsSection() string {
 }
 
 func (m *model) buildLoopAgentsSection() string {
-	if subagent.DefaultRegistry == nil {
+	if agent.DefaultRegistry == nil {
 		return ""
 	}
-	return subagent.DefaultRegistry.GetAgentsSection()
+	return agent.DefaultRegistry.GetAgentsSection()
 }
 
 func (m *model) buildMCPToolsGetter() func() []core.ToolSchema {
@@ -438,17 +438,17 @@ func (m *model) buildMCPToolsGetter() func() []core.ToolSchema {
 	return m.mcp.Registry.GetToolSchemas
 }
 
-type agentToolOption func(*subagent.Executor)
+type agentToolOption func(*agent.Executor)
 
-func configureAgentTool(llmProvider llm.Provider, cwd string, modelID string, hookEngine *hook.Engine, sessionStore *session.Store, parentSessionID string, opts ...agentToolOption) {
-	executor := subagent.NewExecutor(llmProvider, cwd, modelID, hookEngine)
+func configureAgentTool(llmProvider provider.Provider, cwd string, modelID string, hookEngine *hooks.Engine, sessionStore *session.Store, parentSessionID string, opts ...agentToolOption) {
+	executor := agent.NewExecutor(llmProvider, cwd, modelID, hookEngine)
 	if sessionStore != nil && parentSessionID != "" {
 		executor.SetSessionStore(sessionStore, parentSessionID)
 	}
 	for _, opt := range opts {
 		opt(executor)
 	}
-	adapter := subagent.NewExecutorAdapter(executor)
+	adapter := agent.NewExecutorAdapter(executor)
 
 	if t, ok := tool.Get(tool.ToolAgent); ok {
 		if agentTool, ok := t.(*toolagent.AgentTool); ok {
@@ -468,13 +468,13 @@ func configureAgentTool(llmProvider llm.Provider, cwd string, modelID string, ho
 }
 
 func withAgentContext(userInstructions, projectInstructions string, isGit bool) agentToolOption {
-	return func(e *subagent.Executor) {
+	return func(e *agent.Executor) {
 		e.SetContext(userInstructions, projectInstructions, isGit)
 	}
 }
 
 func withAgentMCP(getter func() []core.ToolSchema, registry *mcp.Registry) agentToolOption {
-	return func(e *subagent.Executor) {
+	return func(e *agent.Executor) {
 		e.SetMCP(getter, registry)
 	}
 }

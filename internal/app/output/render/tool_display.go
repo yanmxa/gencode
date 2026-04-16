@@ -9,44 +9,44 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // Lipgloss styles for tool result rendering, referencing theme directly.
 var (
 	headerStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(theme.CurrentTheme.Border).
+			BorderForeground(kit.CurrentTheme.Border).
 			Padding(0, 1)
 
 	headerTitleStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(theme.CurrentTheme.Primary)
+				Foreground(kit.CurrentTheme.Primary)
 
 	headerSubtitleStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.Text)
+				Foreground(kit.CurrentTheme.Text)
 
 	headerMetaStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Muted)
+			Foreground(kit.CurrentTheme.Muted)
 
 	lineNumberStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Muted).
+			Foreground(kit.CurrentTheme.Muted).
 			Width(5).
 			Align(lipgloss.Right)
 
 	matchStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Warning).
+			Foreground(kit.CurrentTheme.Warning).
 			Bold(true)
 
 	filePathStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Primary)
+			Foreground(kit.CurrentTheme.Primary)
 
 	truncatedStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Muted).
+			Foreground(kit.CurrentTheme.Muted).
 			Italic(true)
 
 	errorStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Error)
+			Foreground(kit.CurrentTheme.Error)
 
 )
 
@@ -146,7 +146,7 @@ func renderErrorHeader(toolName, errorMsg string, width int) string {
 
 	errorBoxStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(theme.CurrentTheme.Error).
+		BorderForeground(kit.CurrentTheme.Error).
 		Padding(0, 1)
 
 	box := errorBoxStyle.Width(capBoxWidth(width) - 4).Render(content)

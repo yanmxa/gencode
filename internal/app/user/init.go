@@ -6,7 +6,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/user/history"
 	"github.com/yanmxa/gencode/internal/app/user/suggest"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // New creates a fully initialized input Model.
@@ -36,8 +36,8 @@ func newTextarea(width int) textarea.Model {
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ta.FocusedStyle.Base = lipgloss.NewStyle()
 	ta.FocusedStyle.Prompt = lipgloss.NewStyle()
-	ta.BlurredStyle.Base = lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
-	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	ta.BlurredStyle.Base = lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
+	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 	ta.KeyMap.InsertNewline.SetEnabled(true)
 	return ta
 }

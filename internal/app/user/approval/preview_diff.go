@@ -9,7 +9,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/yanmxa/gencode/internal/tool/perm"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 const (
@@ -52,38 +52,38 @@ func (d *diffPreview) setMaxVisible(n int) {
 
 // Diff rendering styles - use functions to get current theme dynamically
 func getDiffAddedStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Success)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success)
 }
 
 func getDiffRemovedStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error)
 }
 
 func getDiffAddedBgStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Success).Background(theme.CurrentTheme.SuccessBg)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success).Background(kit.CurrentTheme.SuccessBg)
 }
 
 func getDiffRemovedBgStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error).Background(theme.CurrentTheme.ErrorBg)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error).Background(kit.CurrentTheme.ErrorBg)
 }
 
 func getDiffContextStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 }
 
 func getDiffLineNoStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.TextDisabled).
+		Foreground(kit.CurrentTheme.TextDisabled).
 		Width(5).
 		Align(lipgloss.Right)
 }
 
 func getDiffMoreStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted).Italic(true)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted).Italic(true)
 }
 
 func getDiffHeaderStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Primary).Bold(true)
 }
 
 // render renders the diff preview

@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // EnterPlanPrompt manages the enter plan mode confirmation UI
@@ -92,13 +92,13 @@ func (p *EnterPlanPrompt) Render() string {
 	var sb strings.Builder
 
 	// Title
-	titleStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
+	titleStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Primary).Bold(true)
 	sb.WriteString("\n ")
 	sb.WriteString(titleStyle.Render("\U0001F4CB Enter Plan Mode?"))
 	sb.WriteString("\n\n")
 
 	// Description
-	descStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+	descStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 	desc := "The assistant wants to enter plan mode to explore the codebase and create an implementation plan before making changes."
 	if p.request.Message != "" {
 		desc = p.request.Message
@@ -108,8 +108,8 @@ func (p *EnterPlanPrompt) Render() string {
 	sb.WriteString("\n\n")
 
 	// Options
-	selectedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Success).Bold(true)
-	unselectedStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+	selectedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success).Bold(true)
+	unselectedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 
 	sb.WriteString(" ")
 	if p.selectedIdx == 0 {
@@ -124,7 +124,7 @@ func (p *EnterPlanPrompt) Render() string {
 	sb.WriteString("\n\n")
 
 	// Footer hint
-	hintStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted).Italic(true)
+	hintStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted).Italic(true)
 	sb.WriteString(" ")
 	sb.WriteString(hintStyle.Render("\u2190/\u2192 or Tab to switch \u00B7 Enter to confirm \u00B7 y/n for quick select \u00B7 Esc to decline"))
 	sb.WriteString("\n")

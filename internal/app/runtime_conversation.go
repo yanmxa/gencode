@@ -9,15 +9,15 @@ import (
 
 	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // --- Request types ---
 
 type promptSuggestionRequest struct {
 	Ctx          context.Context
-	Client       *llm.Client
+	Client       *provider.Client
 	Messages     []core.Message
 	SystemPrompt string
 	UserPrompt   string
@@ -26,20 +26,20 @@ type promptSuggestionRequest struct {
 
 type tokenLimitFetchRequest struct {
 	Ctx          context.Context
-	LLM          llm.Provider
-	Store        *llm.Store
-	CurrentModel *llm.CurrentModelInfo
+	LLM          provider.Provider
+	Store        *provider.Store
+	CurrentModel *provider.CurrentModelInfo
 	ModelID      string
 	Cwd          string
 }
 
 type compactRequest struct {
 	Ctx            context.Context
-	Client         *llm.Client
+	Client         *provider.Client
 	Messages       []core.Message
 	SessionSummary string
 	Focus          string
-	HookEngine     *hook.Engine
+	HookEngine     *hooks.Engine
 	Trigger        string
 }
 
@@ -78,7 +78,7 @@ func compactCmd(req compactRequest) tea.Cmd {
 		ctx := req.Ctx
 		focus := req.Focus
 		if req.HookEngine != nil {
-			outcome := req.HookEngine.Execute(ctx, hook.PreCompact, hook.HookInput{
+			outcome := req.HookEngine.Execute(ctx, hooks.PreCompact, hooks.HookInput{
 				Trigger:            req.Trigger,
 				CustomInstructions: req.Focus,
 			})

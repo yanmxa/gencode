@@ -1,4 +1,4 @@
-// Package searchui provides the search engine provider selector.
+// Package searchui provides the search engine provider kit.
 package searchui
 
 import (
@@ -9,12 +9,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/llm/search"
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
+	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/provider/search"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
-// item represents a search provider in the selector.
+// item represents a search provider in the kit.
 type item struct {
 	Name        search.ProviderName
 	DisplayName string
@@ -28,14 +28,14 @@ type SelectedMsg struct {
 	Provider search.ProviderName
 }
 
-// Model holds state for the search engine selector.
+// Model holds state for the search engine kit.
 type Model struct {
 	active      bool
 	items       []item
 	selectedIdx int
 	width       int
 	height      int
-	store       *llm.Store
+	store       *provider.Store
 }
 
 // New creates a new search selector Model.
@@ -43,9 +43,9 @@ func New() Model {
 	return Model{}
 }
 
-// Enter activates the search selector.
+// Enter activates the search kit.
 func (s *Model) Enter(width, height int) error {
-	store, err := llm.NewStore()
+	store, err := provider.NewStore()
 	if err != nil {
 		return fmt.Errorf("failed to open provider store: %w", err)
 	}
@@ -98,7 +98,7 @@ func (s *Model) IsActive() bool {
 	return s.active
 }
 
-// Cancel closes the selector.
+// Cancel closes the kit.
 func (s *Model) Cancel() {
 	s.active = false
 	s.items = nil
@@ -149,7 +149,7 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	case tea.KeyEsc:
 		s.Cancel()
 		return func() tea.Msg {
-			return selector.DismissedMsg{}
+			return kit.DismissedMsg{}
 		}
 	}
 
@@ -168,7 +168,7 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// Render renders the search engine selector.
+// Render renders the search engine kit.
 func (s *Model) Render() string {
 	if !s.active {
 		return ""
@@ -176,10 +176,10 @@ func (s *Model) Render() string {
 
 	var sb strings.Builder
 
-	dimStyle := selector.SelectorDimStyle
+	dimStyle := kit.SelectorDimStyle
 
 	// Title
-	sb.WriteString(selector.SelectorTitleStyle.Render("Search Engine"))
+	sb.WriteString(kit.SelectorTitleStyle.Render("Search Engine"))
 	sb.WriteString("\n\n")
 
 	// Provider list
@@ -188,21 +188,21 @@ func (s *Model) Render() string {
 		isSelected := i == s.selectedIdx
 
 		marker := "[ ]"
-		markerStyle := selector.SelectorStatusNone
+		markerStyle := kit.SelectorStatusNone
 		if item.IsCurrent {
 			marker = "[*]"
-			markerStyle = selector.SelectorStatusConnected
+			markerStyle = kit.SelectorStatusConnected
 		}
 
 		envInfo := ""
 		if len(item.EnvVars) > 0 {
-			envInfo = selector.RenderEnvVarStatus(item.EnvVars[0])
+			envInfo = kit.RenderEnvVarStatus(item.EnvVars[0])
 		} else {
 			envInfo = dimStyle.Render("no key required")
 		}
 
-		line := selector.FormatAlignedRow(markerStyle.Render(marker), item.DisplayName, nameCol, envInfo)
-		sb.WriteString(selector.RenderSelectableRow(line, isSelected))
+		line := kit.FormatAlignedRow(markerStyle.Render(marker), item.DisplayName, nameCol, envInfo)
+		sb.WriteString(kit.RenderSelectableRow(line, isSelected))
 		sb.WriteString("\n")
 	}
 
@@ -210,8 +210,8 @@ func (s *Model) Render() string {
 	sb.WriteString(dimStyle.Render("↑/↓ navigate · Enter select · Esc cancel"))
 
 	content := sb.String()
-	boxWidth := selector.CalculateToolBoxWidth(s.width)
-	box := selector.SelectorBorderStyle.Width(boxWidth).Render(content)
+	boxWidth := kit.CalculateToolBoxWidth(s.width)
+	box := kit.SelectorBorderStyle.Width(boxWidth).Render(content)
 
 	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)
 }

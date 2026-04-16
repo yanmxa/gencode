@@ -11,7 +11,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	"github.com/yanmxa/gencode/internal/app/user/sessionui"
-	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/provider"
 )
 
 // --- Dispatchers ---
@@ -58,7 +58,7 @@ func (m *model) FireFileChanged(path, tool string)   { m.fireFileChanged(path, t
 func (m *model) SetInputText(text string) { m.userInput.Textarea.SetValue(text) }
 
 // providerui.Runtime
-func (m *model) SetHookLLMCompleter(p llm.Provider, modelID string) {
+func (m *model) SetHookLLMCompleter(p provider.Provider, modelID string) {
 	if m.hookEngine != nil {
 		m.hookEngine.SetLLMCompleter(buildLLMCompleter(p), modelID)
 	}

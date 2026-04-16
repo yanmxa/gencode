@@ -10,18 +10,19 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"go.uber.org/zap"
 
+	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/config"
-	appcommand "github.com/yanmxa/gencode/internal/ext/command"
-	"github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/core"
+	appcommand "github.com/yanmxa/gencode/internal/command"
+	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 	_ "github.com/yanmxa/gencode/internal/tool/registry"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/log"
 )
 
 // Run routes to either print mode or interactive TUI.
@@ -30,25 +31,11 @@ func Run(opts config.RunOptions) error {
 		return runPrint(opts.Print)
 	}
 
-	// Resolve theme: config > selector prompt
-	settings := loadSettings("")
-	themeValue := settings.Theme
-	if themeValue == "" {
-		chosen, err := theme.RunSelector()
-		if err != nil {
-			return fmt.Errorf("theme selection failed: %w", err)
-		}
-		if chosen == "" {
-			return nil // user quit
-		}
-		themeValue = chosen
-		if err := config.SaveTheme(themeValue); err != nil {
-			log.Logger().Warn("failed to save theme", zap.Error(err))
-		}
+	if done, err := initTheme(); done || err != nil {
+		return err
 	}
-	theme.Init(themeValue)
 
-	m, err := newModel(opts)
+	m, err := initModel(opts)
 	if err != nil {
 		return err
 	}
@@ -68,17 +55,17 @@ func Run(opts config.RunOptions) error {
 func runPrint(userMessage string) error {
 	ctx := context.Background()
 
-	store, err := llm.NewStore()
+	store, err := provider.NewStore()
 	if err != nil {
 		return fmt.Errorf("failed to load store: %w", err)
 	}
 
-	var llmProvider llm.Provider
+	var llmProvider provider.Provider
 	var modelID string
 
 	current := store.GetCurrentModel()
 	if current != nil {
-		p, err := llm.GetProvider(ctx, current.Provider, current.AuthMethod)
+		p, err := provider.GetProvider(ctx, current.Provider, current.AuthMethod)
 		if err != nil {
 			return fmt.Errorf("provider %s (%s) not available: %w. Run 'gen' and use /provider to connect",
 				current.Provider, current.AuthMethod, err)
@@ -87,7 +74,7 @@ func runPrint(userMessage string) error {
 		modelID = current.ModelID
 	} else {
 		for providerName, conn := range store.GetConnections() {
-			p, err := llm.GetProvider(ctx, llm.Name(providerName), conn.AuthMethod)
+			p, err := provider.GetProvider(ctx, provider.Name(providerName), conn.AuthMethod)
 			if err == nil {
 				llmProvider = p
 				modelID = config.DefaultModel(providerName, conn.AuthMethod)
@@ -100,7 +87,7 @@ func runPrint(userMessage string) error {
 		return fmt.Errorf("no provider connected. Run 'gen' and use /provider to connect")
 	}
 
-	completionOpts := llm.CompletionOptions{
+	completionOpts := provider.CompletionOptions{
 		Model:        modelID,
 		MaxTokens:    config.DefaultMaxTokens,
 		SystemPrompt: config.DefaultSystemPrompt,
@@ -123,10 +110,32 @@ func runPrint(userMessage string) error {
 	return nil
 }
 
+// initTheme resolves the color theme from config or interactive selector.
+// Returns (true, nil) if the user quit the selector without choosing.
+func initTheme() (done bool, err error) {
+	settings := initSettings("")
+	themeValue := settings.Theme
+	if themeValue == "" {
+		chosen, err := user.RunThemeSelector()
+		if err != nil {
+			return false, fmt.Errorf("theme selection failed: %w", err)
+		}
+		if chosen == "" {
+			return true, nil
+		}
+		themeValue = chosen
+		if err := config.SaveTheme(themeValue); err != nil {
+			log.Logger().Warn("failed to save theme", zap.Error(err))
+		}
+	}
+	kit.InitTheme(themeValue)
+	return false, nil
+}
+
 // --- Infrastructure initialization ---
 
-func initProvider() (*llm.Store, llm.Provider, *llm.CurrentModelInfo) {
-	store, _ := llm.NewStore()
+func initLLM() (*provider.Store, provider.Provider, *provider.CurrentModelInfo) {
+	store, _ := provider.NewStore()
 	if store == nil {
 		return nil, nil, nil
 	}
@@ -136,14 +145,14 @@ func initProvider() (*llm.Store, llm.Provider, *llm.CurrentModelInfo) {
 
 	// Try to connect to current model's provider first
 	if currentModel != nil {
-		if p, err := llm.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod); err == nil {
+		if p, err := provider.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod); err == nil {
 			return store, p, currentModel
 		}
 	}
 
 	// Fall back to any available provider
 	for providerName, conn := range store.GetConnections() {
-		if p, err := llm.GetProvider(ctx, llm.Name(providerName), conn.AuthMethod); err == nil {
+		if p, err := provider.GetProvider(ctx, provider.Name(providerName), conn.AuthMethod); err == nil {
 			return store, p, currentModel
 		}
 	}
@@ -151,8 +160,8 @@ func initProvider() (*llm.Store, llm.Provider, *llm.CurrentModelInfo) {
 	return store, nil, currentModel
 }
 
-// initRegistries loads all component registries in dependency order.
-func initRegistries(cwd string) {
+// initExt loads all component registries in dependency order.
+func initExt(cwd string) {
 	ctx := context.Background()
 
 	if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
@@ -165,7 +174,7 @@ func initRegistries(cwd string) {
 	if err := appcommand.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize custom commands", zap.Error(err))
 	}
-	if err := subagent.Initialize(cwd); err != nil {
+	if err := agent.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize agent registry", zap.Error(err))
 	}
 	if err := mcp.Initialize(cwd); err != nil {
@@ -173,7 +182,7 @@ func initRegistries(cwd string) {
 	}
 }
 
-func loadSettings(cwd string) *config.Settings {
+func initSettings(cwd string) *config.Settings {
 	var (
 		settings *config.Settings
 		err      error
@@ -247,7 +256,7 @@ func cloneSettings(src *config.Settings) *config.Settings {
 // printExitMessage prints resume command after the TUI exits.
 func printExitMessage(m model) {
 	if m.session.CurrentID != "" {
-		dim := lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+		dim := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 		fmt.Println()
 		fmt.Println(dim.Render("Resume this session with:"))
 		fmt.Println(dim.Render("gen -r " + m.session.CurrentID))

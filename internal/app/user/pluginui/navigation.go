@@ -3,7 +3,7 @@ package pluginui
 import (
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // Tab navigation
@@ -60,7 +60,7 @@ func filterItems[T any](items []T, query string, getFields func(T) []string) []a
 	result := make([]any, 0, len(items))
 	for _, item := range items {
 		for _, field := range getFields(item) {
-			if selector.FuzzyMatch(strings.ToLower(field), query) {
+			if kit.FuzzyMatch(strings.ToLower(field), query) {
 				result = append(result, item)
 				break
 			}

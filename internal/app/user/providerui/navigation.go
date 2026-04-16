@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 func (s *Model) ensureVisible() {
@@ -140,7 +140,7 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		s.Cancel()
-		return func() tea.Msg { return selector.DismissedMsg{} }
+		return func() tea.Msg { return kit.DismissedMsg{} }
 
 	case tea.KeyBackspace:
 		s.trimModelSearch()

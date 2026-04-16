@@ -10,15 +10,15 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/user/searchui"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/util/log"
+	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/log"
 )
 
 // Runtime defines the callbacks the providerui package needs from the parent app model.
 type Runtime interface {
 	AppendMessage(msg core.ChatMessage)
 	CommitMessages() []tea.Cmd
-	SetHookLLMCompleter(p llm.Provider, modelID string)
+	SetHookLLMCompleter(p provider.Provider, modelID string)
 	ReconfigureAgentTool()
 	GetModelID() string
 }
@@ -72,22 +72,22 @@ func handleModelSelected(rt Runtime, state *State, msg ModelSelectedMsg) tea.Cmd
 		return tea.Batch(rt.CommitMessages()...)
 	}
 
-	state.CurrentModel = &llm.CurrentModelInfo{
+	state.CurrentModel = &provider.CurrentModelInfo{
 		ModelID:    msg.ModelID,
-		Provider:   llm.Name(msg.ProviderName),
+		Provider:   provider.Name(msg.ProviderName),
 		AuthMethod: msg.AuthMethod,
 	}
 	rt.SetHookLLMCompleter(state.LLM, msg.ModelID)
 	ctx := context.Background()
-	refreshProviderConnection(rt, state, ctx, llm.Name(msg.ProviderName), msg.AuthMethod)
+	refreshProviderConnection(rt, state, ctx, provider.Name(msg.ProviderName), msg.AuthMethod)
 
 	// Show model name in status bar for 5 seconds
 	state.StatusMessage = msg.ModelID
 	return StatusTimer(5 * time.Second)
 }
 
-func refreshProviderConnection(rt Runtime, state *State, ctx context.Context, providerName llm.Name, authMethod llm.AuthMethod) {
-	p, err := llm.GetProvider(ctx, providerName, authMethod)
+func refreshProviderConnection(rt Runtime, state *State, ctx context.Context, providerName provider.Name, authMethod provider.AuthMethod) {
+	p, err := provider.GetProvider(ctx, providerName, authMethod)
 	if err != nil {
 		log.Logger().Warn("failed to refresh provider connection",
 			zap.String("provider", string(providerName)),

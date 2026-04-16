@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // QuestionPrompt manages the question prompt UI for AskUserQuestion tool
@@ -292,48 +292,48 @@ func (p *QuestionPrompt) tryFinishOrAdvance() (tea.Cmd, *QuestionResponseMsg) {
 // Question prompt styles - use functions to get current theme dynamically
 // This ensures styles update when theme changes
 func getQuestionSeparatorStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Separator)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Separator)
 }
 
 func getQuestionHeaderStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.Primary).
+		Foreground(kit.CurrentTheme.Primary).
 		Bold(true)
 }
 
 func getQuestionTextStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Text)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Text)
 }
 
 func getQuestionSelectedStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Success).Bold(true)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success).Bold(true)
 }
 
 func getQuestionUnselectedStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 }
 
 func getQuestionDescStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted).Italic(true)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted).Italic(true)
 }
 
 func getQuestionFooterStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 }
 
 func getQuestionTabActiveStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(theme.CurrentTheme.TextBright).
+		Foreground(kit.CurrentTheme.TextBright).
 		Bold(true).
 		Underline(true)
 }
 
 func getQuestionTabInactiveStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 }
 
 func getQuestionTabAnsweredStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.CurrentTheme.Success)
+	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success)
 }
 
 // Render renders the question prompt

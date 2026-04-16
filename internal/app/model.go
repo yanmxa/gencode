@@ -14,30 +14,30 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
+	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
+	"github.com/yanmxa/gencode/internal/app/output/toolui"
+	appsystem "github.com/yanmxa/gencode/internal/app/system"
+	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/app/user/agentui"
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
-	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
 	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	appqueue "github.com/yanmxa/gencode/internal/app/user/queue"
 	"github.com/yanmxa/gencode/internal/app/user/searchui"
 	"github.com/yanmxa/gencode/internal/app/user/sessionui"
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
-	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/app/output/toolui"
-	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/tasktools"
-	"github.com/yanmxa/gencode/internal/util/filecache"
+	"github.com/yanmxa/gencode/internal/filecache"
 )
 
 const (
@@ -85,7 +85,7 @@ type model struct {
 	isGit         bool
 	initialPrompt string
 	settings      *config.Settings
-	hookEngine    *hook.Engine
+	hookEngine    *hooks.Engine
 	fileWatcher   *appsystem.FileWatcher
 	fileCache     *filecache.Cache
 
@@ -95,7 +95,7 @@ type model struct {
 }
 
 // --- Constructor and Init ---
-func newModel(opts config.RunOptions) (*model, error) {
+func initModel(opts config.RunOptions) (*model, error) {
 	cwd, _ := os.Getwd()
 	infra, err := initInfra(cwd)
 	if err != nil {
@@ -105,7 +105,7 @@ func newModel(opts config.RunOptions) (*model, error) {
 	m := &base
 	if m.hookEngine != nil && m.systemInput.AsyncHookQueue != nil {
 		queue := m.systemInput.AsyncHookQueue
-		m.hookEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
+		m.hookEngine.SetAsyncHookCallback(func(result hooks.AsyncHookResult) {
 			reason := result.BlockReason
 			if reason == "" {
 				reason = "asynchronous hook requested a rewake"
@@ -128,14 +128,14 @@ func newModel(opts config.RunOptions) (*model, error) {
 	// Fire SessionStart during construction so hook-driven mutations apply
 	// before Bubble Tea starts driving the pointer-backed model.
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hook.Setup, hook.HookInput{
+		m.hookEngine.ExecuteAsync(hooks.Setup, hooks.HookInput{
 			Trigger: "init",
 		})
 		source := "startup"
 		if m.session.CurrentID != "" {
 			source = "resume"
 		}
-		outcome := m.hookEngine.Execute(context.Background(), hook.SessionStart, hook.HookInput{
+		outcome := m.hookEngine.Execute(context.Background(), hooks.SessionStart, hooks.HookInput{
 			Source: source,
 			Model:  m.getModelID(),
 		})
@@ -160,7 +160,7 @@ func (m *model) lastAssistantContent() string {
 // Uses Execute (not ExecuteAsync) to ensure the hook completes before the process exits.
 func (m *model) fireSessionEnd(reason string) {
 	if m.hookEngine != nil {
-		m.hookEngine.Execute(context.Background(), hook.SessionEnd, hook.HookInput{
+		m.hookEngine.Execute(context.Background(), hooks.SessionEnd, hooks.HookInput{
 			Reason: reason,
 		})
 		if m.fileWatcher != nil {
@@ -249,7 +249,7 @@ func (m *model) ensureMemoryContextLoaded() {
 }
 
 // effectiveThinkingLevel returns the higher of the persistent level and the per-turn override.
-func (m *model) effectiveThinkingLevel() llm.ThinkingLevel {
+func (m *model) effectiveThinkingLevel() provider.ThinkingLevel {
 	return max(m.provider.ThinkingLevel, m.provider.ThinkingOverride)
 }
 
@@ -295,7 +295,7 @@ func (m model) getModelID() string {
 	return "claude-sonnet-4-20250514"
 }
 
-func formatAsyncHookContinuationContext(result hook.AsyncHookResult, reason string) string {
+func formatAsyncHookContinuationContext(result hooks.AsyncHookResult, reason string) string {
 	return fmt.Sprintf(
 		"<background-hook-result>\nstatus: blocked\nevent: %s\nhook_type: %s\nhook_source: %s\nhook_name: %s\nreason: %s\ninstruction: Re-evaluate the plan before any further model or tool action.\n</background-hook-result>",
 		result.Event,
@@ -325,7 +325,7 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 	}
 
 	// LLM — wraps the current provider as core.LLM
-	client := llm.NewClient(m.provider.LLM, m.getModelID(), m.getMaxTokens())
+	client := provider.NewClient(m.provider.LLM, m.getModelID(), m.getMaxTokens())
 	client.SetThinking(m.effectiveThinkingLevel())
 
 	// System prompt — build layered core.System directly
@@ -344,8 +344,8 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 	}
 	tools := tool.AdaptToolRegistry(coreSchemas, func() string { return m.cwd })
 
-	// Hooks — wrap hook.Engine as core.Hooks
-	coreHooks := hook.AsCoreHooks(m.hookEngine)
+	// Hooks — wrap hooks.Engine as core.Hooks
+	coreHooks := hooks.AsCoreHooks(m.hookEngine)
 
 	// Permission bridge — blocking PermissionFunc with TUI approval
 	permBridge := appoutput.NewPermissionBridge(

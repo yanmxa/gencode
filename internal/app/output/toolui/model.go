@@ -11,8 +11,7 @@ import (
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
 	coretool "github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // item represents a tool in the selector
@@ -147,8 +146,8 @@ func (s *Model) updateFilter() {
 		s.filteredTools = make([]item, 0)
 		for _, t := range s.tools {
 			// Fuzzy match: check if query chars appear in order
-			if selector.FuzzyMatch(strings.ToLower(t.Name), query) ||
-				selector.FuzzyMatch(strings.ToLower(t.Description), query) {
+			if kit.FuzzyMatch(strings.ToLower(t.Name), query) ||
+				kit.FuzzyMatch(strings.ToLower(t.Description), query) {
 				s.filteredTools = append(s.filteredTools, t)
 			}
 		}
@@ -249,7 +248,7 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		// Then close the selector
 		s.Cancel()
 		return func() tea.Msg {
-			return selector.DismissedMsg{}
+			return kit.DismissedMsg{}
 		}
 	case tea.KeyBackspace:
 		// Handle backspace for search
@@ -291,27 +290,27 @@ func (s *Model) Render() string {
 	// Title with count and save level indicator
 	levelIndicator := fmt.Sprintf("[%s]", s.saveLevel.String())
 	title := fmt.Sprintf("Manage Tools (%d/%d)  %s", len(s.filteredTools), len(s.tools), levelIndicator)
-	sb.WriteString(selector.SelectorTitleStyle.Render(title))
+	sb.WriteString(kit.SelectorTitleStyle.Render(title))
 	sb.WriteString("\n")
 
 	// Search input box
 	searchPrompt := "🔍 "
 	if s.searchQuery == "" {
-		sb.WriteString(selector.SelectorHintStyle.Render(searchPrompt + "Type to filter..."))
+		sb.WriteString(kit.SelectorHintStyle.Render(searchPrompt + "Type to filter..."))
 	} else {
-		sb.WriteString(selector.SelectorBreadcrumbStyle.Render(searchPrompt + s.searchQuery + "▏"))
+		sb.WriteString(kit.SelectorBreadcrumbStyle.Render(searchPrompt + s.searchQuery + "▏"))
 	}
 	sb.WriteString("\n\n")
 
 	// Calculate box width for dynamic description length
-	boxWidth := selector.CalculateToolBoxWidth(s.width)
+	boxWidth := kit.CalculateToolBoxWidth(s.width)
 	// Available width = boxWidth - border(2) - padding(4) - itemPaddingLeft(2) - prefix(2) - icon(2) - name(15) - spacing(2)
 	// Total overhead = 29, use 30 for safety margin
 	maxDescLen := max(boxWidth-30, 20)
 
 	// Handle empty results
 	if len(s.filteredTools) == 0 {
-		sb.WriteString(selector.SelectorHintStyle.Render("  No tools match the filter"))
+		sb.WriteString(kit.SelectorHintStyle.Render("  No tools match the filter"))
 		sb.WriteString("\n")
 	} else {
 		// Calculate visible range
@@ -319,7 +318,7 @@ func (s *Model) Render() string {
 
 		// Show scroll up indicator
 		if s.scrollOffset > 0 {
-			sb.WriteString(selector.SelectorHintStyle.Render("  ↑ more above"))
+			sb.WriteString(kit.SelectorHintStyle.Render("  ↑ more above"))
 			sb.WriteString("\n")
 		}
 
@@ -332,10 +331,10 @@ func (s *Model) Render() string {
 			var statusStyle lipgloss.Style
 			if t.Enabled {
 				statusIcon = "●"
-				statusStyle = selector.SelectorStatusConnected
+				statusStyle = kit.SelectorStatusConnected
 			} else {
 				statusIcon = "○"
-				statusStyle = selector.SelectorStatusNone
+				statusStyle = kit.SelectorStatusNone
 			}
 
 			// Use only the first line of description, then truncate if needed
@@ -348,7 +347,7 @@ func (s *Model) Render() string {
 			}
 
 			// Use inline style for description (without MarginTop from SelectorHintStyle)
-			descStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+			descStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 			line := fmt.Sprintf("%s %-15s  %s",
 				statusStyle.Render(statusIcon),
 				t.Name,
@@ -356,26 +355,26 @@ func (s *Model) Render() string {
 			)
 
 			if i == s.selectedIdx {
-				sb.WriteString(selector.SelectorSelectedStyle.Render("> " + line))
+				sb.WriteString(kit.SelectorSelectedStyle.Render("> " + line))
 			} else {
-				sb.WriteString(selector.SelectorItemStyle.Render("  " + line))
+				sb.WriteString(kit.SelectorItemStyle.Render("  " + line))
 			}
 			sb.WriteString("\n")
 		}
 
 		// Show scroll down indicator
 		if endIdx < len(s.filteredTools) {
-			sb.WriteString(selector.SelectorHintStyle.Render("  ↓ more below"))
+			sb.WriteString(kit.SelectorHintStyle.Render("  ↓ more below"))
 			sb.WriteString("\n")
 		}
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(selector.SelectorHintStyle.Render("↑/↓ navigate · Enter toggle · Tab level · Esc cancel"))
+	sb.WriteString(kit.SelectorHintStyle.Render("↑/↓ navigate · Enter toggle · Tab level · Esc cancel"))
 
 	// Wrap in border
 	content := sb.String()
-	box := selector.SelectorBorderStyle.Width(boxWidth).Render(content)
+	box := kit.SelectorBorderStyle.Width(boxWidth).Render(content)
 
 	// Center the box
 	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)

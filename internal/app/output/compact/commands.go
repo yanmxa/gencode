@@ -9,7 +9,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -36,8 +36,8 @@ Do not include any other text in your final response.`, modelID, providerName, a
 }
 
 // getTokenLimitAgentTools returns the tool definitions used by the token-limit agent.
-func getTokenLimitAgentTools() []llm.ToolSchema {
-	return []llm.ToolSchema{
+func getTokenLimitAgentTools() []provider.ToolSchema {
+	return []provider.ToolSchema{
 		{
 			Name:        "WebSearch",
 			Description: "Search the web for information about model token limits",
@@ -92,7 +92,7 @@ func tokenLimitNotFoundMessage(modelID string) string {
 // parseTokenLimitResponse parses the agent response for FOUND/NOT_FOUND results.
 // It returns the display string and whether processing is done.
 // When limits are found and a store is provided, the limits are persisted.
-func parseTokenLimitResponse(content, modelID string, store *llm.Store) (string, bool) {
+func parseTokenLimitResponse(content, modelID string, store *provider.Store) (string, bool) {
 	if strings.HasPrefix(content, "FOUND:") {
 		var inputLimit, outputLimit int
 		if _, err := fmt.Sscanf(content, "FOUND: %d %d", &inputLimit, &outputLimit); err == nil && inputLimit > 0 {
@@ -129,7 +129,7 @@ func FormatTokenLimitDisplay(modelID string, inputLimit, outputLimit int, isCust
 }
 
 // GetModelTokenLimits returns the cached token limits for the current model.
-func GetModelTokenLimits(store *llm.Store, currentModel *llm.CurrentModelInfo) (inputLimit, outputLimit int) {
+func GetModelTokenLimits(store *provider.Store, currentModel *provider.CurrentModelInfo) (inputLimit, outputLimit int) {
 	if store == nil || currentModel == nil {
 		return 0, 0
 	}
@@ -148,7 +148,7 @@ func GetModelTokenLimits(store *llm.Store, currentModel *llm.CurrentModelInfo) (
 }
 
 // getEffectiveTokenLimits returns custom limits if set, otherwise cached model limits.
-func getEffectiveTokenLimits(store *llm.Store, currentModel *llm.CurrentModelInfo) (inputLimit, outputLimit int) {
+func getEffectiveTokenLimits(store *provider.Store, currentModel *provider.CurrentModelInfo) (inputLimit, outputLimit int) {
 	if currentModel == nil {
 		return 0, 0
 	}
@@ -163,22 +163,22 @@ func getEffectiveTokenLimits(store *llm.Store, currentModel *llm.CurrentModelInf
 }
 
 // GetEffectiveInputLimit returns only the effective input token limit.
-func GetEffectiveInputLimit(store *llm.Store, currentModel *llm.CurrentModelInfo) int {
+func GetEffectiveInputLimit(store *provider.Store, currentModel *provider.CurrentModelInfo) int {
 	input, _ := getEffectiveTokenLimits(store, currentModel)
 	return input
 }
 
 // getEffectiveOutputLimit returns only the effective output token limit.
-func getEffectiveOutputLimit(store *llm.Store, currentModel *llm.CurrentModelInfo) int {
+func getEffectiveOutputLimit(store *provider.Store, currentModel *provider.CurrentModelInfo) int {
 	_, output := getEffectiveTokenLimits(store, currentModel)
 	return output
 }
 
 // AutoFetchTokenLimitsDeps holds the dependencies needed by AutoFetchTokenLimits.
 type AutoFetchTokenLimitsDeps struct {
-	LLM          llm.Provider
-	Store        *llm.Store
-	CurrentModel *llm.CurrentModelInfo
+	LLM          provider.Provider
+	Store        *provider.Store
+	CurrentModel *provider.CurrentModelInfo
 	ModelID      string
 	Cwd          string
 }
@@ -195,7 +195,7 @@ func AutoFetchTokenLimits(ctx context.Context, deps AutoFetchTokenLimitsDeps) (s
 	providerName := string(deps.CurrentModel.Provider)
 
 	// Try direct API fetch if the provider supports it
-	if fetcher, ok := deps.LLM.(llm.ModelLimitsFetcher); ok {
+	if fetcher, ok := deps.LLM.(provider.ModelLimitsFetcher); ok {
 		inputLimit, outputLimit, err := fetcher.FetchModelLimits(ctx, modelID)
 		if err == nil && (inputLimit > 0 || outputLimit > 0) {
 			if deps.Store != nil {
@@ -213,7 +213,7 @@ func AutoFetchTokenLimits(ctx context.Context, deps AutoFetchTokenLimitsDeps) (s
 	const maxTurns = 5
 
 	for range maxTurns {
-		response, err := llm.Complete(ctx, deps.LLM, llm.CompletionOptions{
+		response, err := provider.Complete(ctx, deps.LLM, provider.CompletionOptions{
 			Model:        deps.ModelID,
 			SystemPrompt: systemPrompt,
 			Messages:     messages,

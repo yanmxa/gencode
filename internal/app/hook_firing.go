@@ -5,13 +5,13 @@ import (
 
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core/prompt"
-	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/app/user/suggest"
 )
 
 func (m *model) refreshMemoryContext(loadReason string) {
-	files := prompt.LoadMemoryFiles(m.cwd)
+	files := system.LoadMemoryFiles(m.cwd)
 	var userParts, projectParts []string
 	for _, f := range files {
 		switch f.Level {
@@ -21,7 +21,7 @@ func (m *model) refreshMemoryContext(loadReason string) {
 			projectParts = append(projectParts, f.Content)
 		}
 		if m.hookEngine != nil {
-			m.hookEngine.ExecuteAsync(hook.InstructionsLoaded, hook.HookInput{
+			m.hookEngine.ExecuteAsync(hooks.InstructionsLoaded, hooks.HookInput{
 				FilePath:   f.Path,
 				MemoryType: memoryTypeForLevel(f.Level),
 				LoadReason: loadReason,
@@ -37,7 +37,7 @@ func (m *model) fireFileChanged(filePath, source string) {
 	if m.hookEngine == nil || filePath == "" {
 		return
 	}
-	outcome := m.hookEngine.Execute(context.Background(), hook.FileChanged, hook.HookInput{
+	outcome := m.hookEngine.Execute(context.Background(), hooks.FileChanged, hooks.HookInput{
 		FilePath: filePath,
 		Source:   source,
 		Event:    "change",
@@ -67,7 +67,7 @@ func (m *model) changeCwd(newCwd string) {
 	if m.hookEngine != nil {
 		m.hookEngine.SetCwd(newCwd)
 		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.provider.LLM, m.settings, newCwd, m.isGit, m.mcp.Registry, m.getModelID()))
-		outcome := m.hookEngine.Execute(context.Background(), hook.CwdChanged, hook.HookInput{
+		outcome := m.hookEngine.Execute(context.Background(), hooks.CwdChanged, hooks.HookInput{
 			OldCwd: oldCwd,
 			NewCwd: newCwd,
 		})
@@ -76,9 +76,9 @@ func (m *model) changeCwd(newCwd string) {
 }
 
 func (m *model) reloadProjectContext(cwd string) {
-	initRegistries(cwd)
+	initExt(cwd)
 
-	settings := loadSettings(cwd)
+	settings := initSettings(cwd)
 	m.settings = settings
 	if m.mode.DisabledTools == nil {
 		m.mode.DisabledTools = make(map[string]bool)
@@ -95,7 +95,7 @@ func (m *model) reloadProjectContext(cwd string) {
 	}
 }
 
-func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
+func (m *model) applyRuntimeHookOutcome(outcome hooks.HookOutcome) {
 	if outcome.InitialUserMessage != "" && m.initialPrompt == "" && len(m.conv.Messages) == 0 {
 		m.initialPrompt = outcome.InitialUserMessage
 	}
@@ -104,7 +104,7 @@ func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
 	}
 	if m.fileWatcher == nil {
 		queue := m.systemInput.AsyncHookQueue
-		m.fileWatcher = appsystem.NewFileWatcher(m.hookEngine, func(outcome hook.HookOutcome) {
+		m.fileWatcher = appsystem.NewFileWatcher(m.hookEngine, func(outcome hooks.HookOutcome) {
 			// Route through AsyncHookQueue to avoid mutating model from
 			// the file watcher's background goroutine. The Bubble Tea
 			// tick handler processes these safely in the Update loop.

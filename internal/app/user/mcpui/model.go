@@ -8,8 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	coremcp "github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
+	coremcp "github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // SelectorLevel represents the navigation level in the MCP selector
@@ -202,8 +202,8 @@ func (s *Model) updateFilter() {
 		query := strings.ToLower(s.searchQuery)
 		s.filteredServers = make([]ServerItem, 0)
 		for _, srv := range s.servers {
-			if selector.FuzzyMatch(strings.ToLower(srv.Name), query) ||
-				selector.FuzzyMatch(strings.ToLower(srv.Type), query) {
+			if kit.FuzzyMatch(strings.ToLower(srv.Name), query) ||
+				kit.FuzzyMatch(strings.ToLower(srv.Type), query) {
 				s.filteredServers = append(s.filteredServers, srv)
 			}
 		}

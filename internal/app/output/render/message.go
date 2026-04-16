@@ -8,8 +8,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 const (
@@ -26,9 +26,9 @@ const (
 
 // RenderWelcome renders the welcome screen.
 func RenderWelcome() string {
-	genStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.AI).Bold(true)
-	bracketStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
-	slashStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Accent).Bold(true)
+	genStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.AI).Bold(true)
+	bracketStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Primary).Bold(true)
+	slashStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Accent).Bold(true)
 
 	icon := bracketStyle.Render("   < ") +
 		genStyle.Render("GEN") +
@@ -46,7 +46,7 @@ type OperationModeParams struct {
 	InputLimit    int
 	ModelName     string
 	Width         int
-	ThinkingLevel llm.ThinkingLevel
+	ThinkingLevel provider.ThinkingLevel
 	QueueCount    int
 }
 
@@ -76,7 +76,7 @@ func RenderModeStatus(params OperationModeParams) string {
 		return left
 	}
 
-	modelStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	modelStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 	right := modelStyle.Render(params.ModelName)
 	gap := max(2, params.Width-lipgloss.Width(left)-lipgloss.Width(right)-1)
 	return left + strings.Repeat(" ", gap) + right
@@ -91,42 +91,42 @@ func RenderOperationModeIndicator(mode config.OperationMode) string {
 	case config.ModeAutoAccept:
 		icon = "⏵⏵"
 		label = " accept edits on"
-		color = theme.CurrentTheme.Success
+		color = kit.CurrentTheme.Success
 	case config.ModePlan:
 		icon = "⏸"
 		label = " plan mode on"
-		color = theme.CurrentTheme.Warning
+		color = kit.CurrentTheme.Warning
 	case config.ModeBypassPermissions:
 		icon = "⏩"
 		label = " bypass permissions on"
-		color = theme.CurrentTheme.Error
+		color = kit.CurrentTheme.Error
 	default:
 		return ""
 	}
 
 	style := lipgloss.NewStyle().Foreground(color)
-	hint := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted).Render("  shift+tab to toggle")
+	hint := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted).Render("  shift+tab to toggle")
 	return "  " + style.Render(icon+label) + hint
 }
 
 // RenderThinkingIndicator returns a styled indicator for the current thinking level.
-func RenderThinkingIndicator(level llm.ThinkingLevel) string {
+func RenderThinkingIndicator(level provider.ThinkingLevel) string {
 	var icon, label string
 	var color lipgloss.TerminalColor
 
 	switch level {
-	case llm.ThinkingNormal:
+	case provider.ThinkingNormal:
 		icon = "✦"
 		label = " think"
-		color = theme.CurrentTheme.Accent
-	case llm.ThinkingHigh:
+		color = kit.CurrentTheme.Accent
+	case provider.ThinkingHigh:
 		icon = "✦✦"
 		label = " think+"
-		color = theme.CurrentTheme.Primary
-	case llm.ThinkingUltra:
+		color = kit.CurrentTheme.Primary
+	case provider.ThinkingUltra:
 		icon = "✦✦✦"
 		label = " ultrathink"
-		color = theme.CurrentTheme.AI
+		color = kit.CurrentTheme.AI
 	default:
 		return ""
 	}
@@ -169,15 +169,15 @@ func toolResultIcon(isError bool) string {
 // tokenUsageColorAndHint returns the color and hint text for token usage percentage.
 func tokenUsageColorAndHint(percent float64) (lipgloss.TerminalColor, string) {
 	if percent >= autoCompactThreshold {
-		return theme.CurrentTheme.Error, " ⚠ auto-compact"
+		return kit.CurrentTheme.Error, " ⚠ auto-compact"
 	}
 	if percent >= 85 {
-		return theme.CurrentTheme.Warning, fmt.Sprintf(" (compact at %d%%)", autoCompactThreshold)
+		return kit.CurrentTheme.Warning, fmt.Sprintf(" (compact at %d%%)", autoCompactThreshold)
 	}
 	if percent >= 70 {
-		return theme.CurrentTheme.Accent, ""
+		return kit.CurrentTheme.Accent, ""
 	}
-	return theme.CurrentTheme.Muted, ""
+	return kit.CurrentTheme.Muted, ""
 }
 
 // RenderTokenWarning returns a warning line when context usage is high.
@@ -195,14 +195,14 @@ func RenderTokenWarning(inputTokens, inputLimit int, compactSuppressed bool) str
 	untilCompact := max(int(autoCompactThreshold-percent), 0)
 
 	if percent >= autoCompactThreshold {
-		style := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Error)
+		style := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error)
 		return "  " + style.Render(fmt.Sprintf("⚠ Context nearly full (%d%% used) — auto-compact imminent", int(percent)))
 	}
 	if percent >= 85 {
-		style := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Warning)
+		style := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Warning)
 		return "  " + style.Render(fmt.Sprintf("⚡ %d%% until auto-compact", untilCompact))
 	}
-	style := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Muted)
+	style := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 	return "  " + style.Render(fmt.Sprintf("⚡ %d%% until auto-compact", untilCompact))
 }
 

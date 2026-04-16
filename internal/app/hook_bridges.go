@@ -2,15 +2,15 @@ package app
 
 import (
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	"github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/worktree"
 )
 
 type taskHookBridge struct {
-	engine        *hook.Engine
+	engine        *hooks.Engine
 	notifications *appagent.NotificationQueue
 }
 
@@ -18,7 +18,7 @@ func (b taskHookBridge) TaskCreated(info task.TaskInfo) {
 	if b.engine == nil {
 		return
 	}
-	b.engine.ExecuteAsync(hook.TaskCreated, hook.HookInput{
+	b.engine.ExecuteAsync(hooks.TaskCreated, hooks.HookInput{
 		TaskID:          info.ID,
 		TaskSubject:     taskSubject(info),
 		TaskDescription: info.Description,
@@ -27,7 +27,7 @@ func (b taskHookBridge) TaskCreated(info task.TaskInfo) {
 
 func (b taskHookBridge) TaskCompleted(info task.TaskInfo) {
 	if b.engine != nil {
-		b.engine.ExecuteAsync(hook.TaskCompleted, hook.HookInput{
+		b.engine.ExecuteAsync(hooks.TaskCompleted, hooks.HookInput{
 			TaskID:          info.ID,
 			TaskSubject:     taskSubject(info),
 			TaskDescription: info.Description,
@@ -49,18 +49,18 @@ func (b taskHookBridge) TaskCompleted(info task.TaskInfo) {
 }
 
 type worktreeHookBridge struct {
-	engine *hook.Engine
+	engine *hooks.Engine
 }
 
 type configHookBridge struct {
-	engine *hook.Engine
+	engine *hooks.Engine
 }
 
 func (b worktreeHookBridge) WorktreeCreated(name, path string) {
 	if b.engine == nil {
 		return
 	}
-	b.engine.ExecuteAsync(hook.WorktreeCreate, hook.HookInput{
+	b.engine.ExecuteAsync(hooks.WorktreeCreate, hooks.HookInput{
 		Name:         name,
 		WorktreePath: path,
 	})
@@ -70,7 +70,7 @@ func (b worktreeHookBridge) WorktreeRemoved(path string) {
 	if b.engine == nil {
 		return
 	}
-	b.engine.ExecuteAsync(hook.WorktreeRemove, hook.HookInput{
+	b.engine.ExecuteAsync(hooks.WorktreeRemove, hooks.HookInput{
 		WorktreePath: path,
 	})
 }
@@ -79,11 +79,11 @@ func (b configHookBridge) ConfigChanged(source, filePath string) {
 	if b.engine == nil {
 		return
 	}
-	b.engine.ExecuteAsync(hook.ConfigChange, hook.HookInput{
+	b.engine.ExecuteAsync(hooks.ConfigChange, hooks.HookInput{
 		Source:   source,
 		FilePath: filePath,
 	})
-	b.engine.ExecuteAsync(hook.FileChanged, hook.HookInput{
+	b.engine.ExecuteAsync(hooks.FileChanged, hooks.HookInput{
 		Source:   source,
 		FilePath: filePath,
 	})
@@ -103,7 +103,7 @@ func taskSubject(info task.TaskInfo) string {
 	return info.Description
 }
 
-func installHookBridges(engine *hook.Engine, notifications *appagent.NotificationQueue) {
+func installHookBridges(engine *hooks.Engine, notifications *appagent.NotificationQueue) {
 	task.SetHookObserver(taskHookBridge{engine: engine, notifications: notifications})
 	worktree.SetHookObserver(worktreeHookBridge{engine: engine})
 	plugin.SetConfigObserver(configHookBridge{engine: engine})

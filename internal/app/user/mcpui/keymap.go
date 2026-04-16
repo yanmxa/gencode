@@ -4,7 +4,7 @@ package mcpui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // HandleKeypress handles a keypress and returns a command if needed
@@ -13,7 +13,7 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	if s.connecting {
 		if key.Type == tea.KeyEsc {
 			s.Cancel()
-			return func() tea.Msg { return selector.DismissedMsg{} }
+			return func() tea.Msg { return kit.DismissedMsg{} }
 		}
 		return nil
 	}
@@ -85,7 +85,7 @@ func (s *Model) handleListKeypress(key tea.KeyMsg) tea.Cmd {
 		}
 		// Then close the selector
 		s.Cancel()
-		return func() tea.Msg { return selector.DismissedMsg{} }
+		return func() tea.Msg { return kit.DismissedMsg{} }
 	case tea.KeyBackspace:
 		if len(s.searchQuery) > 0 {
 			s.searchQuery = s.searchQuery[:len(s.searchQuery)-1]

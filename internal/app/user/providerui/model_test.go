@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	coreprovider "github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
+	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 func TestCancelClearsTransientState(t *testing.T) {
@@ -125,8 +125,8 @@ func TestHandleKeypressEscDismissesAfterSearchCleared(t *testing.T) {
 		t.Fatal("expected dismiss command on Esc")
 	}
 	msg := cmd()
-	if _, ok := msg.(selector.DismissedMsg); !ok {
-		t.Fatalf("dismiss command returned %T, want selector.DismissedMsg", msg)
+	if _, ok := msg.(kit.DismissedMsg); !ok {
+		t.Fatalf("dismiss command returned %T, want kit.DismissedMsg", msg)
 	}
 	if m.active {
 		t.Fatal("dismiss should deactivate selector")

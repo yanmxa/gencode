@@ -10,7 +10,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 type Type int
@@ -41,21 +41,21 @@ func initStyles() {
 	stylesOnce.Do(func() {
 		suggestionBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(theme.CurrentTheme.Border).
+			BorderForeground(kit.CurrentTheme.Border).
 			Padding(0, 1)
 
 		selectedSuggestionStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.TextBright).
+			Foreground(kit.CurrentTheme.TextBright).
 			Bold(true)
 
 		normalSuggestionStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Muted)
+			Foreground(kit.CurrentTheme.Muted)
 
 		commandNameStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Primary)
+			Foreground(kit.CurrentTheme.Primary)
 
 		commandDescStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Muted)
+			Foreground(kit.CurrentTheme.Muted)
 	})
 }
 
@@ -335,7 +335,7 @@ func (s *State) renderfileSuggestions(width int) string {
 	boxWidth := clampInt(width*60/100, 40, 60)
 
 	var lines []string
-	headerStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Primary).Bold(true)
+	headerStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Primary).Bold(true)
 	lines = append(lines, headerStyle.Render("@ Import file:"))
 
 	maxPathLen := boxWidth - 10

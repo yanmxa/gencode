@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	coremcp "github.com/yanmxa/gencode/internal/ext/mcp"
+	coremcp "github.com/yanmxa/gencode/internal/mcp"
 )
 
 func withTestRegistry(t *testing.T, reg *coremcp.Registry) {

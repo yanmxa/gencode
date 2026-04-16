@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	agentloop "github.com/yanmxa/gencode/internal/loop"
+	agentloop "github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )

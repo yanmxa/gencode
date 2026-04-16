@@ -4,7 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/hooks"
 )
 
 // Runtime defines the app callbacks needed to process system-originated input.
@@ -16,7 +16,7 @@ type Runtime interface {
 }
 
 // Update routes Source 3 (system -> agent) messages for the app runtime.
-func Update(rt Runtime, state *State, hookEngine *hook.Engine, msg tea.Msg) (tea.Cmd, bool) {
+func Update(rt Runtime, state *State, hookEngine *hooks.Engine, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg.(type) {
 	case CronTickMsg:
 		return handleCronTick(rt, state), true
@@ -40,7 +40,7 @@ func handleCronTick(rt Runtime, state *State) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func handleAsyncHookTick(rt Runtime, state *State, hookEngine *hook.Engine) tea.Cmd {
+func handleAsyncHookTick(rt Runtime, state *State, hookEngine *hooks.Engine) tea.Cmd {
 	cmds := []tea.Cmd{StartAsyncHookTicker()}
 
 	item := state.HandleAsyncHookTick(hookEngine, rt.IsInputIdle())

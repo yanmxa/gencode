@@ -6,14 +6,14 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/loop"
-	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/runtime"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
 
-// newFakeClient creates a *llm.Client backed by the given responses.
-func newFakeClient(responses ...core.CompletionResponse) (*llm.Client, *llm.FakeLLM) {
-	fake := &llm.FakeLLM{Responses: responses}
+// newFakeClient creates a *provider.Client backed by the given responses.
+func newFakeClient(responses ...core.CompletionResponse) (*provider.Client, *provider.FakeLLM) {
+	fake := &provider.FakeLLM{Responses: responses}
 	return testutil.NewTestClient(fake), fake
 }
 
@@ -29,7 +29,7 @@ func TestCompact_SummarizesConversation(t *testing.T) {
 		core.AssistantMessage("you're welcome", "", nil),
 	}
 
-	summary, count, err := loop.Compact(context.Background(), c, msgs, "", "")
+	summary, count, err := runtime.Compact(context.Background(), c, msgs, "", "")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestCompact_WithFocus(t *testing.T) {
 		core.AssistantMessage("ok", "", nil),
 	}
 
-	_, _, err := loop.Compact(context.Background(), c, msgs, "", "testing")
+	_, _, err := runtime.Compact(context.Background(), c, msgs, "", "testing")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestCompact_EmptyConversation(t *testing.T) {
 		core.CompletionResponse{Content: "Empty summary", StopReason: "end_turn"},
 	)
 
-	summary, count, err := loop.Compact(context.Background(), c, nil, "", "")
+	summary, count, err := runtime.Compact(context.Background(), c, nil, "", "")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestCompact_WithSessionMemory(t *testing.T) {
 	}
 
 	sessionMemory := "Previous context: refactored session store."
-	_, _, err := loop.Compact(context.Background(), c, msgs, sessionMemory, "")
+	_, _, err := runtime.Compact(context.Background(), c, msgs, sessionMemory, "")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestCompact_WithoutOptionalSections_LeavesPromptPlain(t *testing.T) {
 		core.AssistantMessage("checking now", "", nil),
 	}
 
-	_, _, err := loop.Compact(context.Background(), c, msgs, "", "")
+	_, _, err := runtime.Compact(context.Background(), c, msgs, "", "")
 	if err != nil {
 		t.Fatalf("Compact() error: %v", err)
 	}

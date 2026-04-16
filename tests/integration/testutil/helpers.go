@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/loop"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/permission"
-	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
@@ -17,9 +17,9 @@ import (
 // Loop construction helpers
 // ---------------------------------------------------------------------------
 
-// NewTestLoop creates a loop.Loop with a FakeClient, PermitAll permission,
+// NewTestLoop creates a runtime.Loop with a FakeClient, PermitAll permission,
 // and a temp cwd. Responses are queued in order.
-func NewTestLoop(t *testing.T, responses ...core.CompletionResponse) (*loop.Loop, *llm.FakeLLM) {
+func NewTestLoop(t *testing.T, responses ...core.CompletionResponse) (*runtime.Loop, *provider.FakeLLM) {
 	t.Helper()
 	return NewTestLoopWithPermission(t, permission.PermitAll(), responses...)
 }
@@ -27,12 +27,12 @@ func NewTestLoop(t *testing.T, responses ...core.CompletionResponse) (*loop.Loop
 // NewTestLoopWithPermission creates a Loop with a custom permission checker.
 func NewTestLoopWithPermission(t *testing.T, checker permission.Checker,
 	responses ...core.CompletionResponse,
-) (*loop.Loop, *llm.FakeLLM) {
+) (*runtime.Loop, *provider.FakeLLM) {
 	t.Helper()
 
 	tmpDir := t.TempDir()
-	fake := &llm.FakeLLM{Responses: responses}
-	lp := &loop.Loop{
+	fake := &provider.FakeLLM{Responses: responses}
+	lp := &runtime.Loop{
 		System:     core.NewSystem(core.Layer{Name: "test", Priority: 0, Content: "test"}),
 		Client:     NewTestClient(fake),
 		Tool:       &tool.Set{},
@@ -42,10 +42,10 @@ func NewTestLoopWithPermission(t *testing.T, checker permission.Checker,
 	return lp, fake
 }
 
-// NewTestClient wraps a FakeLLM in a llm.Client ready for use in loops
+// NewTestClient wraps a FakeLLM in a provider.Client ready for use in loops
 // or compact calls. This avoids repeating the FakeProvider wiring in every test.
-func NewTestClient(fake *llm.FakeLLM) *llm.Client {
-	return llm.NewClient(&FakeProvider{Client: fake}, "fake-model", 8192)
+func NewTestClient(fake *provider.FakeLLM) *provider.Client {
+	return provider.NewClient(&FakeProvider{Client: fake}, "fake-model", 8192)
 }
 
 // ---------------------------------------------------------------------------
@@ -120,20 +120,20 @@ func (f *fakeTool) Execute(_ context.Context, _ map[string]any, _ string) toolre
 // Fake / mock providers
 // ---------------------------------------------------------------------------
 
-// FakeProvider wraps a FakeClient as a llm.Provider.
-// Use this when the code under test expects a llm.Provider and you
+// FakeProvider wraps a FakeClient as a provider.Provider.
+// Use this when the code under test expects a provider.Provider and you
 // want to control responses via FakeClient.
 type FakeProvider struct {
-	Client *llm.FakeLLM
+	Client *provider.FakeLLM
 }
 
-func (p *FakeProvider) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan core.StreamChunk {
+func (p *FakeProvider) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan core.StreamChunk {
 	return p.Client.Stream(ctx, opts.Messages, opts.Tools, opts.SystemPrompt)
 }
-func (p *FakeProvider) ListModels(_ context.Context) ([]llm.ModelInfo, error) { return nil, nil }
+func (p *FakeProvider) ListModels(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 func (p *FakeProvider) Name() string                                               { return p.Client.Name() }
 
-// MockProvider is a standalone llm.Provider backed by a response queue.
+// MockProvider is a standalone provider.Provider backed by a response queue.
 // Unlike FakeProvider, it does not require a FakeClient — use this when the
 // code under test (e.g., agent.Executor) creates its own client internally.
 type MockProvider struct {
@@ -141,7 +141,7 @@ type MockProvider struct {
 	callIdx   int
 }
 
-func (m *MockProvider) Stream(_ context.Context, _ llm.CompletionOptions) <-chan core.StreamChunk {
+func (m *MockProvider) Stream(_ context.Context, _ provider.CompletionOptions) <-chan core.StreamChunk {
 	ch := make(chan core.StreamChunk, 1)
 	go func() {
 		defer close(ch)
@@ -156,5 +156,5 @@ func (m *MockProvider) Stream(_ context.Context, _ llm.CompletionOptions) <-chan
 	}()
 	return ch
 }
-func (m *MockProvider) ListModels(_ context.Context) ([]llm.ModelInfo, error) { return nil, nil }
+func (m *MockProvider) ListModels(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 func (m *MockProvider) Name() string                                               { return "mock" }

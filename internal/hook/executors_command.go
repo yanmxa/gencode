@@ -1,4 +1,4 @@
-package hook
+package hooks
 
 import (
 	"bufio"

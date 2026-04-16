@@ -1,6 +1,6 @@
 // Package hook implements the event hooks system for GenCode.
 // Compatible with Claude Code hooks that execute shell commands on events.
-package hook
+package hooks
 
 import (
 	"context"

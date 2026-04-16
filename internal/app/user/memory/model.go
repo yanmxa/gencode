@@ -8,11 +8,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/core/prompt"
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
+	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
-// item represents a memory file option in the selector.
+// item represents a memory file option in the kit.
 type item struct {
 	Label       string
 	Description string
@@ -23,7 +23,7 @@ type item struct {
 	CreateHint  string
 }
 
-// Model holds the state for the memory selector.
+// Model holds the state for the memory kit.
 type Model struct {
 	active      bool
 	items       []item
@@ -56,10 +56,10 @@ func (m *Model) EnterSelect(cwd string, width, height int) {
 	m.active = true
 	m.selectedIdx = 0
 
-	paths := prompt.GetAllMemoryPaths(cwd)
+	paths := system.GetAllMemoryPaths(cwd)
 	m.items = []item{
 		m.buildItem("Global", "global", paths.Global, cwd,
-			fmt.Sprintf("Saved in %s", selector.ShortenPath(paths.Global[0])),
+			fmt.Sprintf("Saved in %s", kit.ShortenPath(paths.Global[0])),
 			"Will be created on edit"),
 
 		m.buildItem("Project", "project", paths.Project, cwd,
@@ -73,7 +73,7 @@ func (m *Model) EnterSelect(cwd string, width, height int) {
 }
 
 func (m *Model) buildItem(label, level string, searchPaths []string, cwd, defaultDesc, createHint string) item {
-	foundPath := prompt.FindMemoryFile(searchPaths)
+	foundPath := system.FindMemoryFile(searchPaths)
 	exists := foundPath != ""
 
 	path := foundPath
@@ -83,7 +83,7 @@ func (m *Model) buildItem(label, level string, searchPaths []string, cwd, defaul
 
 	description := defaultDesc
 	if exists && level == "project" {
-		description = fmt.Sprintf("Checked in at %s", selector.ShortenPathForProject(foundPath, cwd))
+		description = fmt.Sprintf("Checked in at %s", kit.ShortenPathForProject(foundPath, cwd))
 	}
 
 	return item{
@@ -91,7 +91,7 @@ func (m *Model) buildItem(label, level string, searchPaths []string, cwd, defaul
 		Description: description,
 		Path:        path,
 		Exists:      exists,
-		Size:        prompt.GetFileSize(path),
+		Size:        system.GetFileSize(path),
 		Level:       level,
 		CreateHint:  createHint,
 	}
@@ -102,7 +102,7 @@ func (m *Model) IsActive() bool {
 	return m.active
 }
 
-// Cancel cancels the selector.
+// Cancel cancels the kit.
 func (m *Model) Cancel() {
 	m.active = false
 	m.items = []item{}
@@ -173,11 +173,11 @@ func (m *Model) selectItem() tea.Cmd {
 func (m *Model) cancelWithMsg() tea.Cmd {
 	m.Cancel()
 	return func() tea.Msg {
-		return selector.DismissedMsg{}
+		return kit.DismissedMsg{}
 	}
 }
 
-// Render renders the selector.
+// Render renders the kit.
 func (m *Model) Render() string {
 	if !m.active {
 		return ""
@@ -185,7 +185,7 @@ func (m *Model) Render() string {
 
 	var sb strings.Builder
 
-	sb.WriteString(selector.SelectorTitleStyle.Render("Select memory to edit:"))
+	sb.WriteString(kit.SelectorTitleStyle.Render("Select memory to edit:"))
 	sb.WriteString("\n\n")
 
 	for i, item := range m.items {
@@ -194,42 +194,42 @@ func (m *Model) Render() string {
 
 		if item.Exists {
 			statusIcon = "●"
-			statusStyle = selector.SelectorStatusConnected
+			statusStyle = kit.SelectorStatusConnected
 		} else {
 			statusIcon = "○"
-			statusStyle = selector.SelectorStatusNone
+			statusStyle = kit.SelectorStatusNone
 		}
 
 		numKey := fmt.Sprintf("%d.", i+1)
 		sizeStr := ""
 		if item.Exists && item.Size > 0 {
-			sizeStr = fmt.Sprintf(" (%s)", prompt.FormatFileSize(item.Size))
+			sizeStr = fmt.Sprintf(" (%s)", system.FormatFileSize(item.Size))
 		}
 
 		line := fmt.Sprintf("%s %s %s",
 			statusStyle.Render(statusIcon),
 			item.Label,
-			selector.SelectorHintStyle.Render(item.Description+sizeStr),
+			kit.SelectorHintStyle.Render(item.Description+sizeStr),
 		)
 
 		if i == m.selectedIdx {
-			sb.WriteString(selector.SelectorSelectedStyle.Render(fmt.Sprintf("❯ %s %s", numKey, line)))
+			sb.WriteString(kit.SelectorSelectedStyle.Render(fmt.Sprintf("❯ %s %s", numKey, line)))
 		} else {
-			sb.WriteString(selector.SelectorItemStyle.Render(fmt.Sprintf("  %s %s", numKey, line)))
+			sb.WriteString(kit.SelectorItemStyle.Render(fmt.Sprintf("  %s %s", numKey, line)))
 		}
 		sb.WriteString("\n")
 
 		if !item.Exists && i == m.selectedIdx {
-			sb.WriteString(selector.SelectorItemStyle.Render("      " + selector.SelectorHintStyle.Render(item.CreateHint)))
+			sb.WriteString(kit.SelectorItemStyle.Render("      " + kit.SelectorHintStyle.Render(item.CreateHint)))
 			sb.WriteString("\n")
 		}
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(selector.SelectorHintStyle.Render("↑/↓ navigate · Enter edit · 1-3 quick select · Esc cancel"))
+	sb.WriteString(kit.SelectorHintStyle.Render("↑/↓ navigate · Enter edit · 1-3 quick select · Esc cancel"))
 
 	content := sb.String()
-	box := selector.SelectorBorderStyle.Width(selector.CalculateBoxWidth(m.width)).Render(content)
+	box := kit.SelectorBorderStyle.Width(kit.CalculateBoxWidth(m.width)).Render(content)
 
 	return lipgloss.Place(m.width, m.height-4, lipgloss.Center, lipgloss.Center, box)
 }

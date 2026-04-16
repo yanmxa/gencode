@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // QueuePreviewItem is the minimal data needed to render a queue item preview.
@@ -18,21 +18,21 @@ type QueuePreviewItem struct {
 
 var (
 	queueBadgeStyle = lipgloss.NewStyle().
-			Foreground(theme.CurrentTheme.Accent).
+			Foreground(kit.CurrentTheme.Accent).
 			Bold(true)
 
 	queueContentStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.TextDim)
+				Foreground(kit.CurrentTheme.TextDim)
 
 	queueSelectedBadgeStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.TextBright).
+				Foreground(kit.CurrentTheme.TextBright).
 				Bold(true)
 
 	queueSelectedContentStyle = lipgloss.NewStyle().
-					Foreground(theme.CurrentTheme.Text)
+					Foreground(kit.CurrentTheme.Text)
 
 	queueOverflowStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.Muted).
+				Foreground(kit.CurrentTheme.Muted).
 				Italic(true)
 )
 

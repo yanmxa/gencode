@@ -9,11 +9,11 @@ import (
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/output/render"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
-var ghostTextStyle = lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+var ghostTextStyle = lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 
 func (m *model) View() string {
 	if !m.ready {

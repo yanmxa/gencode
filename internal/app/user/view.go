@@ -5,16 +5,16 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 var (
 	pendingImageStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.Primary)
+				Foreground(kit.CurrentTheme.Primary)
 
 	selectedImageStyle = lipgloss.NewStyle().
-				Foreground(theme.CurrentTheme.TextBright).
-				Background(theme.CurrentTheme.Primary).
+				Foreground(kit.CurrentTheme.TextBright).
+				Background(kit.CurrentTheme.Primary).
 				Bold(true)
 )
 

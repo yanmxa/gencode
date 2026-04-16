@@ -14,7 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 
-	"github.com/yanmxa/gencode/internal/app/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // MDRenderer renders markdown content to styled terminal output using glamour.
@@ -30,7 +30,7 @@ type MDRenderer struct {
 // visible boundary after the "● " prompt icon + indent are applied.
 func NewMDRenderer(width int) *MDRenderer {
 	w := max(width-4, minWrapWidth)
-	dark := theme.IsDarkBackground()
+	dark := kit.IsDarkBackground()
 	r := buildGlamourRenderer(w, dark)
 	return &MDRenderer{renderer: r, width: w, darkBg: dark}
 }
@@ -58,7 +58,7 @@ func buildGlamourRenderer(width int, dark bool) *glamour.TermRenderer {
 
 // rebuildIfNeeded recreates the glamour renderer when the terminal background changes.
 func (r *MDRenderer) rebuildIfNeeded() {
-	dark := theme.IsDarkBackground()
+	dark := kit.IsDarkBackground()
 	if dark != r.darkBg {
 		r.renderer = buildGlamourRenderer(r.width, dark)
 		r.darkBg = dark
@@ -178,8 +178,8 @@ func (r *MDRenderer) renderTable(content string) string {
 		return content
 	}
 
-	borderColor := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Separator)
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(theme.CurrentTheme.TextBright)
+	borderColor := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Separator)
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(kit.CurrentTheme.TextBright)
 
 	t := table.New().
 		Headers(headers...).
@@ -198,7 +198,7 @@ func (r *MDRenderer) renderTable(content string) string {
 			if row == table.HeaderRow {
 				return headerStyle
 			}
-			return lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextBright)
+			return lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
 		})
 
 	return "\n" + t.String() + "\n"
@@ -263,7 +263,7 @@ func renderInlineMarkdown(text string) string {
 			end := strings.Index(text[i+1:], "`")
 			if end != -1 {
 				code := text[i+1 : i+1+end]
-				codeStyle := lipgloss.NewStyle().Foreground(theme.CurrentTheme.Accent)
+				codeStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Accent)
 				result.WriteString(codeStyle.Render(code))
 				i += end + 2
 				continue
@@ -279,7 +279,7 @@ func renderInlineMarkdown(text string) string {
 				if closeParen != -1 {
 					url := text[urlStart : urlStart+closeParen]
 					linkStyle := lipgloss.NewStyle().
-						Foreground(theme.CurrentTheme.Primary).
+						Foreground(kit.CurrentTheme.Primary).
 						Underline(true)
 					styled := linkStyle.Render(linkText)
 					result.WriteString("\x1b]8;;" + url + "\x1b\\" + styled + "\x1b]8;;\x1b\\")
@@ -319,7 +319,7 @@ func renderInlineMarkdown(text string) string {
 // adaptiveColorHex resolves an AdaptiveColor to its hex string based on the
 // current terminal background. Used for glamour StyleConfig which requires *string.
 func adaptiveColorHex(c lipgloss.AdaptiveColor) string {
-	if theme.IsDarkBackground() {
+	if kit.IsDarkBackground() {
 		return c.Dark
 	}
 	return c.Light
@@ -327,10 +327,10 @@ func adaptiveColorHex(c lipgloss.AdaptiveColor) string {
 
 // customizeStyle adjusts glamour's default style for a clean, unified look.
 func customizeStyle(s *ansi.StyleConfig, width int) {
-	blue := adaptiveColorHex(theme.CurrentTheme.Primary)
-	muted := adaptiveColorHex(theme.CurrentTheme.Muted)
-	text := adaptiveColorHex(theme.CurrentTheme.Text)
-	textDim := adaptiveColorHex(theme.CurrentTheme.TextDim)
+	blue := adaptiveColorHex(kit.CurrentTheme.Primary)
+	muted := adaptiveColorHex(kit.CurrentTheme.Muted)
+	text := adaptiveColorHex(kit.CurrentTheme.Text)
+	textDim := adaptiveColorHex(kit.CurrentTheme.TextDim)
 
 	// Document: set foreground color, no margin (paragraph spacing handled by glamour block prefix/suffix)
 	margin := uint(0)
@@ -367,7 +367,7 @@ func customizeStyle(s *ansi.StyleConfig, width int) {
 	s.HorizontalRule.Color = &muted
 
 	// Inline code: no background, accent color
-	accent := adaptiveColorHex(theme.CurrentTheme.Accent)
+	accent := adaptiveColorHex(kit.CurrentTheme.Accent)
 	s.Code.BackgroundColor = nil
 	s.Code.Prefix = ""
 	s.Code.Suffix = ""

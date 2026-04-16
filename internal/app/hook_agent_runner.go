@@ -5,20 +5,20 @@ import (
 	"fmt"
 
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core/prompt"
-	"github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/ext/skill"
-	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/agent"
+	"github.com/yanmxa/gencode/internal/hooks"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/permission"
-	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/loop"
+	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
 type HookAgentRunner struct {
-	llmProvider  llm.Provider
+	llmProvider  provider.Provider
 	settings     *config.Settings
 	cwd          string
 	isGit        bool
@@ -26,7 +26,7 @@ type HookAgentRunner struct {
 	defaultModel string
 }
 
-func NewHookAgentRunner(llmProvider llm.Provider, settings *config.Settings, cwd string, isGit bool, mcpRegistry *mcp.Registry, defaultModel string) *HookAgentRunner {
+func NewHookAgentRunner(llmProvider provider.Provider, settings *config.Settings, cwd string, isGit bool, mcpRegistry *mcp.Registry, defaultModel string) *HookAgentRunner {
 	return &HookAgentRunner{
 		llmProvider:  llmProvider,
 		settings:     settings,
@@ -45,12 +45,12 @@ func (r *HookAgentRunner) RunAgentHook(ctx context.Context, userPrompt string, m
 		model = r.defaultModel
 	}
 
-	userInstructions, projectInstructions := prompt.LoadInstructions(r.cwd)
-	loopClient := llm.NewClient(r.llmProvider, model, 0)
-	loopClient.SetThinking(llm.ThinkingHigh)
+	userInstructions, projectInstructions := system.LoadInstructions(r.cwd)
+	loopClient := provider.NewClient(r.llmProvider, model, 0)
+	loopClient.SetThinking(provider.ThinkingHigh)
 
-	lp, err := loop.NewLoop(loop.LoopConfig{
-		System: prompt.Build(prompt.Config{
+	lp, err := runtime.NewLoop(runtime.LoopConfig{
+		System: system.Build(system.Config{
 			ProviderName:        r.llmProvider.Name(),
 			ModelID:             model,
 			Cwd:                 r.cwd,
@@ -74,7 +74,7 @@ func (r *HookAgentRunner) RunAgentHook(ctx context.Context, userPrompt string, m
 	}
 	lp.AddUser(userPrompt, nil)
 
-	result, err := lp.Run(ctx, loop.RunOptions{MaxTurns: 16})
+	result, err := lp.Run(ctx, runtime.RunOptions{MaxTurns: 16})
 	if err != nil {
 		return "", err
 	}
@@ -105,7 +105,7 @@ func (r *HookAgentRunner) mcpToolsGetter() func() []core.ToolSchema {
 	return r.mcpRegistry.GetToolSchemas
 }
 
-func (r *HookAgentRunner) mcpCaller() loop.MCPCaller {
+func (r *HookAgentRunner) mcpCaller() runtime.MCPCaller {
 	if r.mcpRegistry == nil {
 		return nil
 	}
@@ -120,10 +120,10 @@ func (r *HookAgentRunner) skillsSection() string {
 }
 
 func (r *HookAgentRunner) agentsSection() string {
-	if subagent.DefaultRegistry == nil {
+	if agent.DefaultRegistry == nil {
 		return ""
 	}
-	return subagent.DefaultRegistry.GetAgentsSection()
+	return agent.DefaultRegistry.GetAgentsSection()
 }
 
-var _ hook.AgentRunner = (*HookAgentRunner)(nil)
+var _ hooks.AgentRunner = (*HookAgentRunner)(nil)

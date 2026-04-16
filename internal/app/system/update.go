@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/cron"
-	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/hooks"
 )
 
 const cronTickInterval = 30 * time.Second
@@ -82,7 +82,7 @@ func (s *State) HandleCronTick(isIdle bool) CronResult {
 
 // HandleAsyncHookTick checks for pending async hook rewakes and returns what action to take.
 // hookEngine may be nil.
-func (s *State) HandleAsyncHookTick(hookEngine *hook.Engine, isIdle bool) *AsyncHookRewake {
+func (s *State) HandleAsyncHookTick(hookEngine *hooks.Engine, isIdle bool) *AsyncHookRewake {
 	if hookEngine != nil {
 		s.HookStatus = hookEngine.CurrentStatusMessage()
 	} else {

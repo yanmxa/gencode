@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	coreprovider "github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/app/ui/selector"
+	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
 // providerOrder defines the display order for providers.
@@ -32,7 +32,7 @@ var providerDisplayNames = map[coreprovider.Name]string{
 	coreprovider.Alibaba:   "Alibaba",
 }
 
-// Enter opens the unified model & provider selector.
+// Enter opens the unified model & provider kit.
 func (s *Model) Enter(ctx context.Context, width, height int) (tea.Cmd, error) {
 	s.resetNavigation()
 	s.resetModelSearch()
@@ -338,8 +338,8 @@ func (s *Model) rebuildProvidersTab() {
 		// Apply search filter on provider name
 		if s.searchQuery != "" {
 			query := strings.ToLower(s.searchQuery)
-			if !selector.FuzzyMatch(strings.ToLower(p.DisplayName), query) &&
-				!selector.FuzzyMatch(strings.ToLower(string(p.Provider)), query) {
+			if !kit.FuzzyMatch(strings.ToLower(p.DisplayName), query) &&
+				!kit.FuzzyMatch(strings.ToLower(string(p.Provider)), query) {
 				continue
 			}
 		}
@@ -371,9 +371,9 @@ func (s *Model) applyFilter() {
 	query := strings.ToLower(s.searchQuery)
 	s.filteredModels = nil
 	for _, m := range s.allModels {
-		if selector.FuzzyMatch(strings.ToLower(m.ID), query) ||
-			selector.FuzzyMatch(strings.ToLower(m.DisplayName), query) ||
-			selector.FuzzyMatch(strings.ToLower(m.ProviderName), query) {
+		if kit.FuzzyMatch(strings.ToLower(m.ID), query) ||
+			kit.FuzzyMatch(strings.ToLower(m.DisplayName), query) ||
+			kit.FuzzyMatch(strings.ToLower(m.ProviderName), query) {
 			s.filteredModels = append(s.filteredModels, m)
 		}
 	}
