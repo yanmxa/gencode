@@ -5,5 +5,4 @@ package sessionui
 type State struct {
 	Selector        Model
 	PendingSelector bool
-	PendingFork     bool // Fork after session selection
 }

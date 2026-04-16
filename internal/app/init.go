@@ -230,13 +230,13 @@ func (m *model) applyRunOptions(opts config.RunOptions) error {
 	}
 
 	if opts.Continue {
-		if err := m.applyContinueOption(opts.Fork); err != nil {
+		if err := m.applyContinueOption(); err != nil {
 			return err
 		}
 	}
 
 	if opts.Resume {
-		if err := m.applyResumeOption(opts.ResumeID, opts.Fork); err != nil {
+		if err := m.applyResumeOption(opts.ResumeID); err != nil {
 			return err
 		}
 	}
@@ -283,7 +283,7 @@ func (m *model) enablePlanMode(prompt string) error {
 	return nil
 }
 
-func (m *model) applyContinueOption(fork bool) error {
+func (m *model) applyContinueOption() error {
 	sessionStore, err := session.NewStore(m.cwd)
 	if err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
@@ -295,19 +295,11 @@ func (m *model) applyContinueOption(fork bool) error {
 		return fmt.Errorf("no previous session to continue: %w", err)
 	}
 
-	if fork {
-		forked, err := sessionStore.Fork(sess.Metadata.ID)
-		if err != nil {
-			return fmt.Errorf("failed to fork session: %w", err)
-		}
-		sess = forked
-	}
-
 	m.restoreSessionData(sess)
 	return nil
 }
 
-func (m *model) applyResumeOption(resumeID string, fork bool) error {
+func (m *model) applyResumeOption(resumeID string) error {
 	sessionStore, err := session.NewStore(m.cwd)
 	if err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
@@ -319,19 +311,11 @@ func (m *model) applyResumeOption(resumeID string, fork bool) error {
 		if err != nil {
 			return fmt.Errorf("failed to load session %s: %w", resumeID, err)
 		}
-		if fork {
-			forked, err := sessionStore.Fork(sess.Metadata.ID)
-			if err != nil {
-				return fmt.Errorf("failed to fork session: %w", err)
-			}
-			sess = forked
-		}
 		m.restoreSessionData(sess)
 		return nil
 	}
 
 	m.session.PendingSelector = true
-	m.session.PendingFork = fork
 	return nil
 }
 

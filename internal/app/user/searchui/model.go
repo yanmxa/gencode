@@ -179,7 +179,7 @@ func (s *Model) Render() string {
 
 	var sb strings.Builder
 
-	dimStyle := kit.SelectorDimStyle()
+	dimStyle := kit.DimStyle()
 
 	// Title
 	sb.WriteString(kit.SelectorTitleStyle().Render("Search Engine"))

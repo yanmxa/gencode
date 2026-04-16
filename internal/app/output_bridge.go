@@ -1,0 +1,700 @@
+// Agent output bridge: implements output.Runtime on *model, plus compact handling,
+// session persistence on turn boundaries, turn queue coordination, and permission bridge.
+package app
+
+import (
+	"context"
+	"fmt"
+	"unicode/utf8"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"go.uber.org/zap"
+
+	appagent "github.com/yanmxa/gencode/internal/app/agent"
+	"github.com/yanmxa/gencode/internal/ui"
+	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
+	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/filecache"
+	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/runtime"
+	"github.com/yanmxa/gencode/internal/task/tracker"
+	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/perm"
+)
+
+// --- output.Runtime implementation ---
+
+type outputRuntime struct {
+	*model
+}
+
+func (m *model) updateOutput(msg tea.Msg) (tea.Cmd, bool) {
+	return appoutput.Update(outputRuntime{m}, &m.agentOutput, msg)
+}
+
+var _ appoutput.Runtime = outputRuntime{}
+
+func (m *model) CommitMessages() []tea.Cmd              { return m.commitMessages() }
+func (m *model) AppendMessage(msg core.ChatMessage)     { m.conv.Append(msg) }
+func (m *model) AppendToLast(text, thinking string)     { m.conv.AppendToLast(text, thinking) }
+func (m *model) SetLastToolCalls(calls []core.ToolCall) { m.conv.SetLastToolCalls(calls) }
+func (m *model) SetLastThinkingSignature(sig string)    { m.conv.SetLastThinkingSignature(sig) }
+func (m *model) AddNotice(text string)                  { m.conv.AddNotice(text) }
+
+func (m *model) ActivateStream() {
+	m.conv.Stream.Active = true
+	m.conv.Stream.BuildingTool = ""
+}
+
+func (m *model) SetBuildingTool(name string) { m.conv.Stream.BuildingTool = name }
+func (m *model) StopStream()                 { m.conv.Stream.Stop() }
+
+func (m *model) SetTokenCounts(in, out int) {
+	m.inputTokens = in
+	m.outputTokens = out
+}
+
+func (m *model) ClearWarningSuppressed() { m.conv.Compact.WarningSuppressed = false }
+func (m *model) IncrementTurnCounter()   { m.conv.TurnsSinceLastTaskTool++ }
+func (m *model) ResetTurnCounter()       { m.conv.TurnsSinceLastTaskTool = 0 }
+func (m *model) ClearThinkingOverride()  { m.thinkingOverride = llm.ThinkingOff }
+
+func (rt outputRuntime) ContinueOutbox() tea.Cmd {
+	return rt.model.outputContinueOutbox()
+}
+
+func (m *model) ApplyToolSideEffects(toolName string, sideEffect any) {
+	m.applyAgentToolSideEffects(toolName, sideEffect)
+}
+
+func (m *model) FirePostToolHook(tr core.ToolResult, sideEffect any) {
+	m.fireAgentPostToolHook(tr, sideEffect)
+}
+
+func (m *model) PersistOverflow(result *core.ToolResult) { m.persistToolResultOverflow(result) }
+func (m *model) FireIdleHooks() bool                     { return m.fireIdleHooks() }
+
+func (m *model) SaveSession() {
+	if err := m.saveSession(); err != nil {
+		log.Logger().Warn("failed to save session", zap.Error(err))
+	}
+}
+
+func (m *model) ShouldAutoCompact() bool     { return m.shouldAutoCompact() }
+func (m *model) SetAutoCompactContinue()     { m.conv.Compact.AutoContinue = true }
+func (m *model) TriggerAutoCompact() tea.Cmd { return m.triggerAutoCompact() }
+func (m *model) StartPromptSuggestion() tea.Cmd {
+	return m.startPromptSuggestion()
+}
+func (m *model) HasRunningTasks() bool { return tracker.DefaultStore.HasInProgress() }
+
+func (m *model) FireStopFailureHook(err error) {
+	if m.hookEngine != nil {
+		m.hookEngine.ExecuteAsync(hook.StopFailure, hook.HookInput{
+			LastAssistantMessage: m.lastAssistantContent(),
+			Error:                err.Error(),
+			StopHookActive:       m.hookEngine.StopHookActive(),
+		})
+	}
+}
+
+func (m *model) StopAgentSession() {
+	if m.agentSess != nil {
+		m.agentSess.stop()
+		m.agentSess = nil
+	}
+}
+
+// --- Tool side effects ---
+
+func (m *model) applyAgentToolSideEffects(toolName string, sideEffect any) {
+	resp, ok := sideEffect.(map[string]any)
+	if !ok {
+		return
+	}
+
+	m.syncBackgroundTaskTrackerFromAgent(toolName, resp)
+
+	switch toolName {
+	case "Bash":
+		if newCwd := getHookResponseString(resp, "cwd"); newCwd != "" {
+			m.changeCwd(newCwd)
+		}
+	case tool.ToolEnterWorktree:
+		if worktreePath := getHookResponseString(resp, "worktreePath"); worktreePath != "" {
+			m.changeCwd(worktreePath)
+		}
+	case tool.ToolExitWorktree:
+		if restoredPath := getHookResponseString(resp, "restoredPath"); restoredPath != "" {
+			m.changeCwd(restoredPath)
+		}
+	case "Write", "Edit":
+		if filePath := getHookResponseString(resp, "filePath"); filePath != "" {
+			m.fireFileChanged(filePath, toolName)
+			if m.fileCache != nil {
+				m.fileCache.Touch(filePath)
+			}
+		}
+	case "Read":
+		if fileData, ok := resp["file"].(map[string]any); ok {
+			if filePath := getHookResponseString(fileData, "filePath"); filePath != "" {
+				if m.fileCache != nil {
+					m.fileCache.Touch(filePath)
+				}
+			}
+		}
+	}
+}
+
+func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[string]any) {
+	if !tool.IsAgentToolName(toolName) {
+		return
+	}
+	bg, ok := resp["backgroundTask"].(map[string]any)
+	if !ok {
+		return
+	}
+	launch := appagent.BackgroundTaskLaunch{
+		TaskID:      appagent.MetadataString(bg, "taskId"),
+		AgentName:   appagent.MetadataString(bg, "agentName"),
+		AgentType:   appagent.MetadataString(bg, "agentType"),
+		Description: appagent.MetadataString(bg, "description"),
+		ResumeID:    appagent.MetadataString(bg, "resumeId"),
+	}
+	if launch.TaskID == "" {
+		return
+	}
+	childID := appagent.EnsureBackgroundWorkerTracker(launch, "", "")
+	if childID != "" {
+		appagent.RecordBackgroundTaskLaunch(launch, "", "", 0)
+	}
+}
+
+// --- Post-tool hooks ---
+
+func (m *model) fireAgentPostToolHook(tr core.ToolResult, sideEffect any) {
+	if m.hookEngine == nil {
+		return
+	}
+	eventType := hook.PostToolUse
+	if tr.IsError {
+		eventType = hook.PostToolUseFailure
+	}
+	toolResponse := any(tr.Content)
+	if sideEffect != nil {
+		toolResponse = sideEffect
+	}
+	input := hook.HookInput{
+		ToolName:     tr.ToolName,
+		ToolUseID:    tr.ToolCallID,
+		ToolResponse: toolResponse,
+	}
+	if tr.IsError {
+		input.Error = tr.Content
+	}
+	m.hookEngine.ExecuteAsync(eventType, input)
+}
+
+func (m *model) fireIdleHooks() bool {
+	if m.hookEngine == nil {
+		return false
+	}
+
+	blocked := false
+	if m.hookEngine.HasHooks(hook.Stop) {
+		outcome := m.hookEngine.Execute(context.Background(), hook.Stop, hook.HookInput{
+			LastAssistantMessage: m.lastAssistantContent(),
+			StopHookActive:       m.hookEngine.StopHookActive(),
+		})
+		if outcome.ShouldBlock {
+			m.conv.Append(core.ChatMessage{
+				Role:    core.RoleUser,
+				Content: "Stop hook blocked: " + outcome.BlockReason,
+			})
+			if m.agentSess != nil {
+				m.agentSess.agent.Inbox() <- core.Message{
+					Role:    core.RoleUser,
+					Content: "Stop hook blocked: " + outcome.BlockReason,
+				}
+			}
+			blocked = true
+		}
+	}
+
+	m.hookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
+		Message:          "Claude is waiting for your input",
+		NotificationType: "idle_prompt",
+	})
+	return blocked
+}
+
+// --- Tool result overflow ---
+
+const (
+	toolResultOverflowThreshold = 100_000
+	toolResultPreviewSize       = 10_000
+)
+
+func (m *model) persistToolResultOverflow(result *core.ToolResult) {
+	if len(result.Content) <= toolResultOverflowThreshold {
+		return
+	}
+
+	cutoff := toolResultPreviewSize
+	if cutoff > len(result.Content) {
+		cutoff = len(result.Content)
+	}
+	for cutoff > 0 && !utf8.RuneStart(result.Content[cutoff]) {
+		cutoff--
+	}
+	preview := result.Content[:cutoff]
+
+	persisted := false
+	if err := m.ensureSessionStore(); err == nil && m.sessionID != "" {
+		if err := m.sessionStore.PersistToolResult(m.sessionID, result.ToolCallID, result.Content); err == nil {
+			persisted = true
+		}
+	}
+
+	if persisted {
+		result.Content = fmt.Sprintf("%s\n\n[Full output persisted to blobs/tool-result/%s/%s]", preview, m.sessionID, result.ToolCallID)
+	} else {
+		result.Content = fmt.Sprintf("%s\n\n[Output truncated from %d bytes — full content not persisted]", preview, len(result.Content))
+	}
+}
+
+func getHookResponseString(resp map[string]any, key string) string {
+	if value, ok := resp[key].(string); ok {
+		return value
+	}
+	return ""
+}
+
+// --- Turn queue coordination ---
+
+func (m *model) DrainTurnQueues() tea.Cmd {
+	for _, drain := range []func() tea.Cmd{
+		m.drainInputQueueToAgent,
+		m.drainCronQueueToAgent,
+		m.drainAsyncHookQueueToAgent,
+		m.drainTaskNotificationsToAgent,
+	} {
+		if cmd := drain(); cmd != nil {
+			return cmd
+		}
+	}
+	return nil
+}
+
+func (m *model) drainInputQueueToAgent() tea.Cmd {
+	if m.userInput.Queue.Len() == 0 {
+		return nil
+	}
+	item, ok := m.userInput.Queue.Dequeue()
+	if !ok {
+		return nil
+	}
+	m.conv.Append(core.ChatMessage{
+		Role:    core.RoleUser,
+		Content: item.Content,
+		Images:  item.Images,
+	})
+	return m.sendToAgent(item.Content, item.Images)
+}
+
+func (m *model) drainCronQueueToAgent() tea.Cmd {
+	if len(m.systemInput.CronQueue) == 0 {
+		return nil
+	}
+	prompt := m.systemInput.CronQueue[0]
+	m.systemInput.CronQueue = m.systemInput.CronQueue[1:]
+
+	m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Scheduled task fired"})
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: prompt})
+	return m.sendToAgent(prompt, nil)
+}
+
+func (m *model) drainAsyncHookQueueToAgent() tea.Cmd {
+	if m.systemInput.AsyncHookQueue == nil {
+		return nil
+	}
+	item, ok := m.systemInput.AsyncHookQueue.Pop()
+	if !ok {
+		return nil
+	}
+
+	if item.Notice != "" {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: item.Notice})
+	}
+	if len(item.Context) == 0 && item.ContinuationPrompt == "" {
+		return nil
+	}
+
+	var content string
+	if item.ContinuationPrompt != "" {
+		content = item.ContinuationPrompt
+	}
+	for _, ctx := range item.Context {
+		if content != "" {
+			content += "\n"
+		}
+		content += ctx
+	}
+
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: content})
+	return m.sendToAgent(content, nil)
+}
+
+func (m *model) drainTaskNotificationsToAgent() tea.Cmd {
+	if m.agentInput.Notifications == nil {
+		return nil
+	}
+	items := appagent.PopReadyNotifications(m.agentInput.Notifications, true)
+	if len(items) == 0 {
+		return nil
+	}
+	return m.injectTaskNotificationContinuation(appagent.MergeNotifications(items))
+}
+
+func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {
+	if m.agentSess == nil || m.agentSess.agent == nil {
+		return nil
+	}
+	inbox := m.agentSess.agent.Inbox()
+	msg := core.Message{
+		Role:    core.RoleUser,
+		Content: content,
+		Images:  images,
+	}
+	return func() tea.Msg {
+		inbox <- msg
+		return nil
+	}
+}
+
+func (m *model) continueOutbox() tea.Cmd {
+	if m.agentSess == nil || m.agentSess.agent == nil {
+		return nil
+	}
+	return appoutput.DrainAgentOutbox(m.agentSess.agent.Outbox())
+}
+
+func (m *model) outputContinueOutbox() tea.Cmd {
+	return m.continueOutbox()
+}
+
+// --- Permission bridge ---
+
+type permissionDecision struct {
+	Approved bool
+	AllowAll bool
+	Request  *perm.PermissionRequest
+}
+
+func (m *model) StorePendingPermRequest(req *appoutput.PermBridgeRequest) {
+	if m.agentSess != nil {
+		m.agentSess.pendingPermRequest = req
+	}
+}
+
+func (m *model) ShowPermissionPrompt(req *appoutput.PermBridgeRequest) tea.Cmd {
+	if req == nil || req.Request == nil {
+		return nil
+	}
+	m.approval.Show(req.Request, m.width, m.height)
+	return nil
+}
+
+func (m *model) handlePermBridgeDecision(decision permissionDecision) tea.Cmd {
+	if m.agentSess == nil {
+		return nil
+	}
+	req := m.agentSess.pendingPermRequest
+	m.agentSess.pendingPermRequest = nil
+
+	if req == nil {
+		return nil
+	}
+
+	resp := appoutput.PermBridgeResponse{
+		Allow:  decision.Approved,
+		Reason: "user decision",
+	}
+
+	if decision.Approved {
+		if decision.AllowAll && m.sessionPermissions != nil && decision.Request != nil {
+			m.sessionPermissions.AllowTool(decision.Request.ToolName)
+		}
+		resp.Reason = "user approved"
+	} else {
+		resp.Reason = "user denied"
+	}
+
+	select {
+	case req.Response <- resp:
+	default:
+	}
+
+	return appoutput.PollPermBridge(m.agentSess.permBridge)
+}
+
+// --- Compact handling ---
+
+func (m *model) HandleCompactResult(msg appcompact.ResultMsg) tea.Cmd {
+	return m.handleCompactResult(msg)
+}
+
+func (m *model) HandleTokenLimitResult(msg appcompact.TokenLimitResultMsg) tea.Cmd {
+	return m.handleTokenLimitResult(msg)
+}
+
+func (m *model) getEffectiveInputLimit() int {
+	return appcompact.GetEffectiveInputLimit(m.providerStore, m.currentModel)
+}
+
+func (m *model) getMaxTokens() int {
+	return appcompact.GetMaxTokens(m.providerStore, m.currentModel, config.DefaultMaxTokens)
+}
+
+func (m *model) getContextUsagePercent() float64 {
+	return appcompact.GetContextUsagePercent(m.inputTokens, m.providerStore, m.currentModel)
+}
+
+func (m *model) shouldAutoCompact() bool {
+	return appcompact.ShouldAutoCompact(m.llmProvider, len(m.conv.Messages), m.inputTokens, m.providerStore, m.currentModel)
+}
+
+func (m *model) triggerAutoCompact() tea.Cmd {
+	m.conv.Compact.Active = true
+	m.conv.Compact.Focus = ""
+	m.conv.Compact.Phase = appcompact.PhaseSummarizing
+	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()))
+	commitCmds := m.commitMessages()
+	commitCmds = append(commitCmds, m.agentOutput.Spinner.Tick, compactCmd(m.buildCompactRequest("", "auto")))
+	return tea.Batch(commitCmds...)
+}
+
+func (m *model) handleCompactResult(msg appcompact.ResultMsg) tea.Cmd {
+	shouldContinue := m.conv.Compact.AutoContinue
+
+	if msg.Error != nil {
+		m.conv.Compact.Complete(fmt.Sprintf("Compaction could not be completed: %v", msg.Error), true)
+		return tea.Batch(m.commitMessages()...)
+	}
+
+	m.conv.Compact.Complete(fmt.Sprintf("Condensed %d earlier messages.", msg.OriginalCount), false)
+
+	scrollbackCmds := m.commitAllMessages()
+
+	boundaryStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
+	boundary := boundaryStyle.Render(fmt.Sprintf("✻ Conversation compacted — %d messages summarized (scroll up for history)", msg.OriginalCount))
+
+	m.resetAfterCompact()
+
+	var restoredFiles []filecache.RestoredFile
+	var restoredContext string
+	if m.fileCache != nil {
+		restoredFiles, _ = m.fileCache.RestoreRecent()
+		if len(restoredFiles) > 0 {
+			restoredContext = filecache.FormatRestoredFiles(restoredFiles)
+		}
+	}
+
+	if m.sessionStore != nil && m.sessionID != "" {
+		_ = m.sessionStore.SaveSessionMemory(m.sessionID, msg.Summary)
+	}
+	m.sessionSummary = msg.Summary
+
+	if m.hookEngine != nil {
+		m.hookEngine.ExecuteAsync(hook.PostCompact, hook.HookInput{
+			Trigger: msg.Trigger,
+		})
+	}
+
+	scrollPart := tea.Sequence(append(scrollbackCmds, tea.Println(boundary), tea.ClearScreen)...)
+	cmds := []tea.Cmd{scrollPart}
+	if shouldContinue {
+		m.conv.Compact.ClearResult()
+		if restoredContext != "" {
+			m.conv.Append(core.ChatMessage{
+				Role:    core.RoleUser,
+				Content: restoredContext,
+			})
+		}
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleUser,
+			Content: runtime.AutoCompactResumePrompt,
+		})
+		cmds = append(cmds, m.sendToAgent(runtime.AutoCompactResumePrompt, nil))
+	} else if restoredContext != "" {
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleUser,
+			Content: restoredContext,
+		})
+		m.conv.AddNotice(fmt.Sprintf("Restored %d recently accessed file(s) for context.", len(restoredFiles)))
+		cmds = append(cmds, m.commitMessages()...)
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m *model) resetAfterCompact() {
+	m.conv.Clear()
+	m.inputTokens = 0
+	m.outputTokens = 0
+}
+
+func (m *model) handleTokenLimitResult(msg appcompact.TokenLimitResultMsg) tea.Cmd {
+	m.provider.FetchingLimits = false
+
+	var content string
+	if msg.Error != nil {
+		content = "Error: " + msg.Error.Error()
+	} else {
+		content = msg.Result
+	}
+	m.conv.AddNotice(content)
+
+	return tea.Batch(m.commitMessages()...)
+}
+
+// --- Request types and tea.Cmd builders for compaction and prompt suggestion ---
+
+type promptSuggestionRequest struct {
+	Ctx          context.Context
+	Client       *llm.Client
+	Messages     []core.Message
+	SystemPrompt string
+	UserPrompt   string
+	MaxTokens    int
+}
+
+type tokenLimitFetchRequest struct {
+	Ctx          context.Context
+	LLM          llm.Provider
+	Store        *llm.Store
+	CurrentModel *llm.CurrentModelInfo
+	ModelID      string
+	Cwd          string
+}
+
+type compactRequest struct {
+	Ctx            context.Context
+	Client         *llm.Client
+	Messages       []core.Message
+	SessionSummary string
+	Focus          string
+	HookEngine     *hook.Engine
+	Trigger        string
+}
+
+func suggestPromptCmd(req promptSuggestionRequest) tea.Cmd {
+	if req.Client == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		resp, err := req.Client.Complete(req.Ctx, req.SystemPrompt, req.Messages, req.MaxTokens)
+		if err != nil {
+			return promptSuggestionMsg{err: err}
+		}
+		return promptSuggestionMsg{text: resp.Content}
+	}
+}
+
+func fetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.Cmd {
+	deps := appcompact.AutoFetchTokenLimitsDeps{
+		LLM:          req.LLM,
+		Store:        req.Store,
+		CurrentModel: req.CurrentModel,
+		ModelID:      req.ModelID,
+		Cwd:          req.Cwd,
+	}
+	ctx := req.Ctx
+	return func() tea.Msg {
+		result, err := appcompact.AutoFetchTokenLimits(ctx, deps)
+		return appcompact.TokenLimitResultMsg{Result: result, Error: err}
+	}
+}
+
+func compactCmd(req compactRequest) tea.Cmd {
+	return func() tea.Msg {
+		ctx := req.Ctx
+		focus := req.Focus
+		if req.HookEngine != nil {
+			outcome := req.HookEngine.Execute(ctx, hook.PreCompact, hook.HookInput{
+				Trigger:            req.Trigger,
+				CustomInstructions: req.Focus,
+			})
+			if outcome.AdditionalContext != "" {
+				if focus != "" {
+					focus += "\n" + outcome.AdditionalContext
+				} else {
+					focus = outcome.AdditionalContext
+				}
+			}
+		}
+		summary, count, err := appcompact.CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
+		return appcompact.ResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
+	}
+}
+
+func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
+	if m.llmProvider == nil {
+		return promptSuggestionRequest{}, false
+	}
+
+	assistantCount := 0
+	for _, msg := range m.conv.Messages {
+		if msg.Role == core.RoleAssistant {
+			assistantCount++
+		}
+	}
+	if assistantCount < 2 {
+		return promptSuggestionRequest{}, false
+	}
+
+	startIdx := 0
+	if len(m.conv.Messages) > maxSuggestionMessages {
+		startIdx = len(m.conv.Messages) - maxSuggestionMessages
+	}
+	msgs := m.conv.ConvertToProviderFrom(startIdx)
+	msgs = append(msgs, core.Message{
+		Role:    core.RoleUser,
+		Content: suggestionUserPrompt,
+	})
+
+	return promptSuggestionRequest{
+		Client:       m.buildLoopClient(),
+		Messages:     msgs,
+		SystemPrompt: suggestionSystemPrompt,
+		UserPrompt:   suggestionUserPrompt,
+		MaxTokens:    60,
+	}, true
+}
+
+func (m *model) buildTokenLimitFetchRequest() tokenLimitFetchRequest {
+	return tokenLimitFetchRequest{
+		Ctx:          context.Background(),
+		LLM:          m.llmProvider,
+		Store:        m.providerStore,
+		CurrentModel: m.currentModel,
+		ModelID:      m.getModelID(),
+		Cwd:          m.cwd,
+	}
+}
+
+func (m *model) buildCompactRequest(focus, trigger string) compactRequest {
+	return compactRequest{
+		Ctx:            context.Background(),
+		Client:         m.buildLoopClient(),
+		Messages:       m.conv.ConvertToProvider(),
+		SessionSummary: m.sessionSummary,
+		Focus:          focus,
+		HookEngine:     m.hookEngine,
+		Trigger:        trigger,
+	}
+}

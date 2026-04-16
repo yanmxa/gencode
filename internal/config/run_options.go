@@ -10,5 +10,4 @@ type RunOptions struct {
 	Continue  bool   // resume most recent session
 	Resume    bool   // open session selector or resume by ID
 	ResumeID  string // specific session ID to resume
-	Fork      bool   // fork from the continued/resumed session
 }

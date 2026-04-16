@@ -198,7 +198,7 @@ func (s *Model) getTabHint() string {
 // ── Installed list ────────────────────────────────────────────────────────
 
 func (s *Model) renderInstalledList(sb *strings.Builder) {
-	dimStyle := kit.SelectorDimStyle()
+	dimStyle := kit.DimStyle()
 
 	if len(s.filteredItems) == 0 {
 		if len(s.installedFlatList) == 0 {
@@ -263,7 +263,7 @@ func (s *Model) renderInstalledList(sb *strings.Builder) {
 // ── Discover list ─────────────────────────────────────────────────────────
 
 func (s *Model) renderDiscoverList(sb *strings.Builder) {
-	dimStyle := kit.SelectorDimStyle()
+	dimStyle := kit.DimStyle()
 
 	if len(s.filteredItems) == 0 {
 		if len(s.discoverPlugins) == 0 {
@@ -329,7 +329,7 @@ func (s *Model) renderDiscoverList(sb *strings.Builder) {
 // ── Marketplaces list ─────────────────────────────────────────────────────
 
 func (s *Model) renderMarketplacesList(sb *strings.Builder) {
-	dimStyle := kit.SelectorDimStyle()
+	dimStyle := kit.DimStyle()
 	addStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success).Bold(true)
 
 	addLine := addStyle.Render("+ Add Marketplace")
@@ -388,7 +388,7 @@ func (s *Model) renderInstalledDetail() string {
 	p := s.detailPlugin
 	cw := s.contentWidth()
 
-	dimStyle := kit.SelectorDimStyle()
+	dimStyle := kit.DimStyle()
 	brightStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
 	labelStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted).Width(12)
 
@@ -465,7 +465,7 @@ func (s *Model) renderDiscoverDetail() string {
 	p := s.detailDiscover
 	cw := s.contentWidth()
 
-	dimStyle := kit.SelectorDimStyle()
+	dimStyle := kit.DimStyle()
 	brightStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
 	warnStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Warning)
 
@@ -515,7 +515,7 @@ func (s *Model) renderMarketplaceDetail() string {
 	var sb strings.Builder
 	m := s.detailMarketplace
 
-	dimStyle := kit.SelectorDimStyle()
+	dimStyle := kit.DimStyle()
 	brightStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
 
 	// Header
@@ -562,7 +562,7 @@ func (s *Model) renderAddMarketplaceDialog() string {
 	var sb strings.Builder
 	cw := s.contentWidth()
 
-	dimStyle := kit.SelectorDimStyle()
+	dimStyle := kit.DimStyle()
 	brightStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
 
 	sb.WriteString(s.sepLine())
@@ -601,7 +601,7 @@ func (s *Model) renderAddMarketplaceDialog() string {
 
 func (s *Model) renderBrowsePlugins() string {
 	var sb strings.Builder
-	dimStyle := kit.SelectorDimStyle()
+	dimStyle := kit.DimStyle()
 	brightStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
 
 	sb.WriteString(s.sepLine())
@@ -702,7 +702,7 @@ func (s *Model) renderFooter(sb *strings.Builder, hint string) {
 		}
 		sb.WriteString("\n")
 	}
-	sb.WriteString(kit.SelectorDimStyle().Render(hint))
+	sb.WriteString(kit.DimStyle().Render(hint))
 }
 
 // ── Viewport ──────────────────────────────────────────────────────────────

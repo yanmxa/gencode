@@ -1,6 +1,8 @@
 package kit
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -60,6 +62,25 @@ func InitTheme(t string) {
 	dark := t == "dark"
 	darkModeSet, darkModeVal = true, dark
 	lipgloss.SetHasDarkBackground(dark)
+}
+
+// ResolveTheme ensures a theme is configured.
+// If configuredTheme is empty, it opens the interactive selector.
+// Returns true if the user quit the selector without choosing.
+func ResolveTheme(configuredTheme string, saveTheme func(string) error) (userQuit bool, err error) {
+	if configuredTheme == "" {
+		chosen, err := RunThemeSelector()
+		if err != nil {
+			return false, fmt.Errorf("theme selection failed: %w", err)
+		}
+		if chosen == "" {
+			return true, nil
+		}
+		configuredTheme = chosen
+		_ = saveTheme(configuredTheme)
+	}
+	InitTheme(configuredTheme)
+	return false, nil
 }
 
 func IsDarkBackground() bool {

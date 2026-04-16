@@ -64,8 +64,8 @@ func SelectorBreadcrumbStyle() lipgloss.Style {
 		MarginBottom(1)
 }
 
-// SelectorDimStyle is a plain dim-text style (no margins/padding).
-func SelectorDimStyle() lipgloss.Style {
+// DimStyle is a plain dim-text style (no margins/padding).
+func DimStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(CurrentTheme.TextDim)
 }

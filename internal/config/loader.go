@@ -346,6 +346,15 @@ func AddAllowRuleDirectlyAt(rule, cwd string) error {
 	return nil
 }
 
+// LoadTheme returns the configured theme string, or "" if none is set.
+func LoadTheme() string {
+	s, err := Load()
+	if err != nil || s == nil {
+		return ""
+	}
+	return s.Theme
+}
+
 // SaveTheme persists the chosen theme to ~/.gen/settings.json.
 func SaveTheme(t string) error {
 	if err := NewLoader().SaveToUser(&Settings{Theme: t}); err != nil {

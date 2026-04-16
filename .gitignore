@@ -17,6 +17,9 @@ gen_*
 # OS
 .DS_Store
 
+# Dependencies
+vendor/
+
 # Local config
 .gen/*
 !.gen/skills/
