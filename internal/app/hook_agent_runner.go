@@ -9,16 +9,16 @@ import (
 	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/permission"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/loop"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
 type hookAgentRunner struct {
-	llmProvider  provider.LLMProvider
+	llmProvider  llm.LLMProvider
 	settings     *config.Settings
 	cwd          string
 	isGit        bool
@@ -26,7 +26,7 @@ type hookAgentRunner struct {
 	defaultModel string
 }
 
-func newHookAgentRunner(llmProvider provider.LLMProvider, settings *config.Settings, cwd string, isGit bool, mcpRegistry *mcp.Registry, defaultModel string) *hookAgentRunner {
+func newHookAgentRunner(llmProvider llm.LLMProvider, settings *config.Settings, cwd string, isGit bool, mcpRegistry *mcp.Registry, defaultModel string) *hookAgentRunner {
 	return &hookAgentRunner{
 		llmProvider:  llmProvider,
 		settings:     settings,
@@ -46,8 +46,8 @@ func (r *hookAgentRunner) RunAgentHook(ctx context.Context, userPrompt string, m
 	}
 
 	userInstructions, projectInstructions := prompt.LoadInstructions(r.cwd)
-	loopClient := provider.NewLLM(r.llmProvider, model, 0)
-	loopClient.SetThinking(provider.ThinkingHigh)
+	loopClient := llm.NewLLM(r.llmProvider, model, 0)
+	loopClient.SetThinking(llm.ThinkingHigh)
 
 	lp, err := loop.NewLoop(loop.LoopConfig{
 		System: prompt.Build(prompt.Config{
@@ -126,4 +126,4 @@ func (r *hookAgentRunner) agentsSection() string {
 	return subagent.DefaultRegistry.GetAgentsSection()
 }
 
-var _ hooks.AgentRunner = (*hookAgentRunner)(nil)
+var _ hook.AgentRunner = (*hookAgentRunner)(nil)

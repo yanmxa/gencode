@@ -10,7 +10,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
@@ -207,7 +207,7 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 	// Each hook writes to a temp file so we can verify it fired.
 	settings := &config.Settings{
 		Hooks: map[string][]config.Hook{
-			string(hooks.SubagentStart): {
+			string(hook.SubagentStart): {
 				{
 					Matcher: "",
 					Hooks: []config.HookCmd{
@@ -215,7 +215,7 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 					},
 				},
 			},
-			string(hooks.SubagentStop): {
+			string(hook.SubagentStop): {
 				{
 					Matcher: "",
 					Hooks: []config.HookCmd{
@@ -226,7 +226,7 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 		},
 	}
 
-	engine := hooks.NewEngine(settings, "test-session-id", tmpDir, "")
+	engine := hook.NewEngine(settings, "test-session-id", tmpDir, "")
 
 	mp := &testutil.MockProvider{
 		Responses: []core.CompletionResponse{

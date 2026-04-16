@@ -13,6 +13,7 @@ import (
 	appcommand "github.com/yanmxa/gencode/internal/ext/command"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
 	appmode "github.com/yanmxa/gencode/internal/app/mode"
+	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/sessionui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/cron"
@@ -450,13 +451,13 @@ func TestHandleClearCommand_PreservesScheduledTasks(t *testing.T) {
 }
 
 func TestTriggerCronTickNow_ReturnsCronTickMsg(t *testing.T) {
-	cmd := triggerCronTickNow()
+	cmd := appsystem.TriggerCronTickNow()
 	if cmd == nil {
-		t.Fatal("expected triggerCronTickNow to return a command")
+		t.Fatal("expected TriggerCronTickNow to return a command")
 	}
 	msg := cmd()
-	if _, ok := msg.(cronTickMsg); !ok {
-		t.Fatalf("expected cronTickMsg, got %T", msg)
+	if _, ok := msg.(appsystem.CronTickMsg); !ok {
+		t.Fatalf("expected CronTickMsg, got %T", msg)
 	}
 }
 

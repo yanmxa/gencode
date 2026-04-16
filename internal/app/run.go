@@ -18,7 +18,7 @@ import (
 	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 	_ "github.com/yanmxa/gencode/internal/tool/registry"
 	"github.com/yanmxa/gencode/internal/app/theme"
@@ -68,17 +68,17 @@ func RunWithOptions(opts config.RunOptions) error {
 func runNonInteractive(userMessage string) error {
 	ctx := context.Background()
 
-	store, err := provider.NewStore()
+	store, err := llm.NewStore()
 	if err != nil {
 		return fmt.Errorf("failed to load store: %w", err)
 	}
 
-	var llmProvider provider.LLMProvider
+	var llmProvider llm.LLMProvider
 	var modelID string
 
 	current := store.GetCurrentModel()
 	if current != nil {
-		p, err := provider.GetProvider(ctx, current.Provider, current.AuthMethod)
+		p, err := llm.GetProvider(ctx, current.Provider, current.AuthMethod)
 		if err != nil {
 			return fmt.Errorf("provider %s (%s) not available: %w. Run 'gen' and use /provider to connect",
 				current.Provider, current.AuthMethod, err)
@@ -87,7 +87,7 @@ func runNonInteractive(userMessage string) error {
 		modelID = current.ModelID
 	} else {
 		for providerName, conn := range store.GetConnections() {
-			p, err := provider.GetProvider(ctx, provider.Provider(providerName), conn.AuthMethod)
+			p, err := llm.GetProvider(ctx, llm.Provider(providerName), conn.AuthMethod)
 			if err == nil {
 				llmProvider = p
 				modelID = config.DefaultModel(providerName, conn.AuthMethod)
@@ -100,7 +100,7 @@ func runNonInteractive(userMessage string) error {
 		return fmt.Errorf("no provider connected. Run 'gen' and use /provider to connect")
 	}
 
-	completionOpts := provider.CompletionOptions{
+	completionOpts := llm.CompletionOptions{
 		Model:        modelID,
 		MaxTokens:    config.DefaultMaxTokens,
 		SystemPrompt: config.DefaultSystemPrompt,
@@ -125,8 +125,8 @@ func runNonInteractive(userMessage string) error {
 
 // --- Infrastructure initialization ---
 
-func initializeProvider() (*provider.Store, provider.LLMProvider, *provider.CurrentModelInfo) {
-	store, _ := provider.NewStore()
+func initializeProvider() (*llm.Store, llm.LLMProvider, *llm.CurrentModelInfo) {
+	store, _ := llm.NewStore()
 	if store == nil {
 		return nil, nil, nil
 	}
@@ -136,14 +136,14 @@ func initializeProvider() (*provider.Store, provider.LLMProvider, *provider.Curr
 
 	// Try to connect to current model's provider first
 	if currentModel != nil {
-		if p, err := provider.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod); err == nil {
+		if p, err := llm.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod); err == nil {
 			return store, p, currentModel
 		}
 	}
 
 	// Fall back to any available provider
 	for providerName, conn := range store.GetConnections() {
-		if p, err := provider.GetProvider(ctx, provider.Provider(providerName), conn.AuthMethod); err == nil {
+		if p, err := llm.GetProvider(ctx, llm.Provider(providerName), conn.AuthMethod); err == nil {
 			return store, p, currentModel
 		}
 	}

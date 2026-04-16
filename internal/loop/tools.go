@@ -7,15 +7,15 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
-// FilterToolCallsResult is an alias for hooks.FilterToolCallsResult.
-type FilterToolCallsResult = hooks.FilterToolCallsResult
+// FilterToolCallsResult is an alias for hook.FilterToolCallsResult.
+type FilterToolCallsResult = hook.FilterToolCallsResult
 
 // FilterToolCalls runs PreToolUse hooks. Convenience wrapper for backward compat.
 func (l *Loop) FilterToolCalls(ctx context.Context, calls []core.ToolCall) (
@@ -40,16 +40,16 @@ func (l *Loop) firePostToolHook(ctx context.Context, tc core.ToolCall, result *c
 	}
 
 	params, _ := core.ParseToolInput(tc.Input)
-	event := hooks.PostToolUse
+	event := hook.PostToolUse
 	if result.IsError {
-		event = hooks.PostToolUseFailure
+		event = hook.PostToolUseFailure
 	}
 
 	toolResponse := any(result.Content)
 	if result.HookResponse != nil {
 		toolResponse = result.HookResponse
 	}
-	input := hooks.HookInput{
+	input := hook.HookInput{
 		ToolName:     tc.Name,
 		ToolInput:    params,
 		ToolUseID:    tc.ID,

@@ -14,9 +14,9 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/progress"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/util/log"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -230,7 +230,7 @@ func (m *model) handleTurn(ev core.Event) tea.Cmd {
 
 	// Stop streaming state
 	m.conv.Stream.Stop()
-	m.provider.ThinkingOverride = provider.ThinkingOff
+	m.provider.ThinkingOverride = llm.ThinkingOff
 
 	// Commit all pending messages to scrollback
 	commitCmds := m.commitMessages()
@@ -306,7 +306,7 @@ func (m *model) handleAgentStopped(err error) tea.Cmd {
 
 	// Fire StopFailure hook if there was an error
 	if err != nil && m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.StopFailure, hooks.HookInput{
+		m.hookEngine.ExecuteAsync(hook.StopFailure, hook.HookInput{
 			LastAssistantMessage: m.lastAssistantContent(),
 			Error:                err.Error(),
 			StopHookActive:       m.hookEngine.StopHookActive(),
@@ -402,15 +402,15 @@ func (m *model) fireAgentPostToolHook(tr core.ToolResult, sideEffect any) {
 	if m.hookEngine == nil {
 		return
 	}
-	eventType := hooks.PostToolUse
+	eventType := hook.PostToolUse
 	if tr.IsError {
-		eventType = hooks.PostToolUseFailure
+		eventType = hook.PostToolUseFailure
 	}
 	toolResponse := any(tr.Content)
 	if sideEffect != nil {
 		toolResponse = sideEffect
 	}
-	input := hooks.HookInput{
+	input := hook.HookInput{
 		ToolName:     tr.ToolName,
 		ToolUseID:    tr.ToolCallID,
 		ToolResponse: toolResponse,
@@ -430,8 +430,8 @@ func (m *model) fireIdleHooks() bool {
 	}
 
 	blocked := false
-	if m.hookEngine.HasHooks(hooks.Stop) {
-		outcome := m.hookEngine.Execute(context.Background(), hooks.Stop, hooks.HookInput{
+	if m.hookEngine.HasHooks(hook.Stop) {
+		outcome := m.hookEngine.Execute(context.Background(), hook.Stop, hook.HookInput{
 			LastAssistantMessage: m.lastAssistantContent(),
 			StopHookActive:       m.hookEngine.StopHookActive(),
 		})
@@ -451,7 +451,7 @@ func (m *model) fireIdleHooks() bool {
 		}
 	}
 
-	m.hookEngine.ExecuteAsync(hooks.Notification, hooks.HookInput{
+	m.hookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
 		Message:          "Claude is waiting for your input",
 		NotificationType: "idle_prompt",
 	})
@@ -479,11 +479,11 @@ func (m *model) drainInputQueueToAgent() tea.Cmd {
 
 // drainCronQueueToAgent pops one queued cron prompt and sends it to the agent.
 func (m *model) drainCronQueueToAgent() tea.Cmd {
-	if len(m.cronQueue) == 0 {
+	if len(m.systemInput.CronQueue) == 0 {
 		return nil
 	}
-	prompt := m.cronQueue[0]
-	m.cronQueue = m.cronQueue[1:]
+	prompt := m.systemInput.CronQueue[0]
+	m.systemInput.CronQueue = m.systemInput.CronQueue[1:]
 
 	m.conv.Append(core.ChatMessage{
 		Role:    core.RoleNotice,
@@ -498,10 +498,10 @@ func (m *model) drainCronQueueToAgent() tea.Cmd {
 
 // drainAsyncHookQueueToAgent pops one async hook rewake and sends it to the agent.
 func (m *model) drainAsyncHookQueueToAgent() tea.Cmd {
-	if m.asyncHookQueue == nil {
+	if m.systemInput.AsyncHookQueue == nil {
 		return nil
 	}
-	item, ok := m.asyncHookQueue.Pop()
+	item, ok := m.systemInput.AsyncHookQueue.Pop()
 	if !ok {
 		return nil
 	}

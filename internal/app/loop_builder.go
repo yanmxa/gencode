@@ -7,17 +7,17 @@ import (
 	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
-func (m *model) buildLoopClient() *provider.LLM {
-	llm := provider.NewLLM(m.provider.LLM, m.getModelID(), m.getMaxTokens())
+func (m *model) buildLoopClient() *llm.LLM {
+	llm := llm.NewLLM(m.provider.LLM, m.getModelID(), m.getMaxTokens())
 	llm.SetThinking(m.effectiveThinkingLevel())
 	return llm
 }
 
-func (m *model) buildLoopSystem(extra []string, loopClient *provider.LLM) core.System {
+func (m *model) buildLoopSystem(extra []string, loopClient *llm.LLM) core.System {
 	providerName := ""
 	modelID := ""
 	if loopClient != nil {

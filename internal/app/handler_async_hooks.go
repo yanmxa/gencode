@@ -1,51 +1,33 @@
 package app
 
 import (
-	"time"
-
 	tea "github.com/charmbracelet/bubbletea"
 
+	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/core"
 )
 
-const asyncHookTickInterval = 500 * time.Millisecond
-
-type asyncHookTickMsg struct{}
-
-func startAsyncHookTicker() tea.Cmd {
-	return tea.Tick(asyncHookTickInterval, func(time.Time) tea.Msg {
-		return asyncHookTickMsg{}
-	})
-}
-
 func (m *model) updateAsyncHooks(msg tea.Msg) (tea.Cmd, bool) {
-	if _, ok := msg.(asyncHookTickMsg); !ok {
+	if _, ok := msg.(appsystem.AsyncHookTickMsg); !ok {
 		return nil, false
 	}
 	return m.handleAsyncHookTick(), true
 }
 
 func (m *model) handleAsyncHookTick() tea.Cmd {
-	cmds := []tea.Cmd{startAsyncHookTicker()}
-	if m.hookEngine != nil {
-		m.hookStatus = m.hookEngine.CurrentStatusMessage()
-	} else {
-		m.hookStatus = ""
-	}
-	if m.conv.Stream.Active || m.isToolPhaseActive() {
+	cmds := []tea.Cmd{appsystem.StartAsyncHookTicker()}
+	idle := !m.conv.Stream.Active && !m.isToolPhaseActive()
+
+	item := m.systemInput.HandleAsyncHookTick(m.hookEngine, idle)
+	if item == nil {
 		return tea.Batch(cmds...)
 	}
 
-	item, ok := m.asyncHookQueue.Pop()
-	if !ok {
-		return tea.Batch(cmds...)
-	}
-
-	cmds = append(cmds, m.injectAsyncHookContinuation(item))
+	cmds = append(cmds, m.injectAsyncHookContinuation(*item))
 	return tea.Batch(cmds...)
 }
 
-func (m *model) injectAsyncHookContinuation(item asyncHookRewake) tea.Cmd {
+func (m *model) injectAsyncHookContinuation(item appsystem.AsyncHookRewake) tea.Cmd {
 	if item.Notice != "" {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleNotice,

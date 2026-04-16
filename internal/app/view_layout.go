@@ -132,8 +132,8 @@ func (m model) renderWelcome() string {
 
 func (m model) renderModeStatus() string {
 	modelName := m.provider.StatusMessage
-	if m.hookStatus != "" {
-		modelName = m.hookStatus
+	if m.systemInput.HookStatus != "" {
+		modelName = m.systemInput.HookStatus
 	}
 	return render.RenderModeStatus(render.OperationModeParams{
 		Mode:          m.mode.Operation,

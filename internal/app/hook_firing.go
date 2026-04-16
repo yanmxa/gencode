@@ -3,9 +3,10 @@ package app
 import (
 	"context"
 
+	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core/prompt"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/app/suggest"
 )
 
@@ -20,7 +21,7 @@ func (m *model) refreshMemoryContext(loadReason string) {
 			projectParts = append(projectParts, f.Content)
 		}
 		if m.hookEngine != nil {
-			m.hookEngine.ExecuteAsync(hooks.InstructionsLoaded, hooks.HookInput{
+			m.hookEngine.ExecuteAsync(hook.InstructionsLoaded, hook.HookInput{
 				FilePath:   f.Path,
 				MemoryType: memoryTypeForLevel(f.Level),
 				LoadReason: loadReason,
@@ -36,7 +37,7 @@ func (m *model) fireFileChanged(filePath, source string) {
 	if m.hookEngine == nil || filePath == "" {
 		return
 	}
-	outcome := m.hookEngine.Execute(context.Background(), hooks.FileChanged, hooks.HookInput{
+	outcome := m.hookEngine.Execute(context.Background(), hook.FileChanged, hook.HookInput{
 		FilePath: filePath,
 		Source:   source,
 		Event:    "change",
@@ -66,7 +67,7 @@ func (m *model) changeCwd(newCwd string) {
 	if m.hookEngine != nil {
 		m.hookEngine.SetCwd(newCwd)
 		m.hookEngine.SetAgentRunner(newHookAgentRunner(m.provider.LLM, m.settings, newCwd, m.isGit, m.mcp.Registry, m.getModelID()))
-		outcome := m.hookEngine.Execute(context.Background(), hooks.CwdChanged, hooks.HookInput{
+		outcome := m.hookEngine.Execute(context.Background(), hook.CwdChanged, hook.HookInput{
 			OldCwd: oldCwd,
 			NewCwd: newCwd,
 		})
@@ -94,7 +95,7 @@ func (m *model) reloadProjectContext(cwd string) {
 	}
 }
 
-func (m *model) applyRuntimeHookOutcome(outcome hooks.HookOutcome) {
+func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
 	if outcome.InitialUserMessage != "" && m.initialPrompt == "" && len(m.conv.Messages) == 0 {
 		m.initialPrompt = outcome.InitialUserMessage
 	}
@@ -102,13 +103,13 @@ func (m *model) applyRuntimeHookOutcome(outcome hooks.HookOutcome) {
 		return
 	}
 	if m.fileWatcher == nil {
-		queue := m.asyncHookQueue
-		m.fileWatcher = newFileWatcher(m.hookEngine, func(outcome hooks.HookOutcome) {
-			// Route through asyncHookQueue to avoid mutating model from
+		queue := m.systemInput.AsyncHookQueue
+		m.fileWatcher = newFileWatcher(m.hookEngine, func(outcome hook.HookOutcome) {
+			// Route through AsyncHookQueue to avoid mutating model from
 			// the file watcher's background goroutine. The Bubble Tea
 			// tick handler processes these safely in the Update loop.
 			if queue != nil && outcome.InitialUserMessage != "" {
-				queue.Push(asyncHookRewake{
+				queue.Push(appsystem.AsyncHookRewake{
 					Notice:  "File watcher hook triggered",
 					Context: []string{outcome.InitialUserMessage},
 				})

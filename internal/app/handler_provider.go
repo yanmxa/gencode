@@ -10,7 +10,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/providerui"
 	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 )
 
 // updateProvider routes provider connection and selection messages.
@@ -58,24 +58,24 @@ func (m *model) handleModelSelected(msg providerui.ModelSelectedMsg) tea.Cmd {
 		return tea.Batch(m.commitMessages()...)
 	}
 
-	m.provider.CurrentModel = &provider.CurrentModelInfo{
+	m.provider.CurrentModel = &llm.CurrentModelInfo{
 		ModelID:    msg.ModelID,
-		Provider:   provider.Provider(msg.ProviderName),
+		Provider:   llm.Provider(msg.ProviderName),
 		AuthMethod: msg.AuthMethod,
 	}
 	if m.hookEngine != nil {
 		m.hookEngine.SetLLMCompleter(buildLLMCompleter(m.provider.LLM), msg.ModelID)
 	}
 	ctx := context.Background()
-	m.refreshProviderConnection(ctx, provider.Provider(msg.ProviderName), msg.AuthMethod)
+	m.refreshProviderConnection(ctx, llm.Provider(msg.ProviderName), msg.AuthMethod)
 
 	// Show model name in status bar for 5 seconds
 	m.provider.StatusMessage = msg.ModelID
 	return providerui.StatusTimer(5 * time.Second)
 }
 
-func (m *model) refreshProviderConnection(ctx context.Context, providerName provider.Provider, authMethod provider.AuthMethod) {
-	p, err := provider.GetProvider(ctx, providerName, authMethod)
+func (m *model) refreshProviderConnection(ctx context.Context, providerName llm.Provider, authMethod llm.AuthMethod) {
+	p, err := llm.GetProvider(ctx, providerName, authMethod)
 	if err != nil {
 		log.Logger().Warn("failed to refresh provider connection",
 			zap.String("provider", string(providerName)),

@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/app/theme"
 )
 
@@ -46,7 +46,7 @@ type OperationModeParams struct {
 	InputLimit    int
 	ModelName     string
 	Width         int
-	ThinkingLevel provider.ThinkingLevel
+	ThinkingLevel llm.ThinkingLevel
 	QueueCount    int
 }
 
@@ -110,20 +110,20 @@ func RenderOperationModeIndicator(mode config.OperationMode) string {
 }
 
 // RenderThinkingIndicator returns a styled indicator for the current thinking level.
-func RenderThinkingIndicator(level provider.ThinkingLevel) string {
+func RenderThinkingIndicator(level llm.ThinkingLevel) string {
 	var icon, label string
 	var color lipgloss.TerminalColor
 
 	switch level {
-	case provider.ThinkingNormal:
+	case llm.ThinkingNormal:
 		icon = "✦"
 		label = " think"
 		color = theme.CurrentTheme.Accent
-	case provider.ThinkingHigh:
+	case llm.ThinkingHigh:
 		icon = "✦✦"
 		label = " think+"
 		color = theme.CurrentTheme.Primary
-	case provider.ThinkingUltra:
+	case llm.ThinkingUltra:
 		icon = "✦✦✦"
 		label = " ultrathink"
 		color = theme.CurrentTheme.AI

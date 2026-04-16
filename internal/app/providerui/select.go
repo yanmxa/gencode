@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	coreprovider "github.com/yanmxa/gencode/internal/llm"
 )
 
 func (s *Model) Select() tea.Cmd {

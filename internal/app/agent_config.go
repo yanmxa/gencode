@@ -3,9 +3,9 @@ package app
 import (
 	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/ext/subagent"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/tool"
 	toolagent "github.com/yanmxa/gencode/internal/tool/agent"
@@ -13,7 +13,7 @@ import (
 
 type agentToolOption func(*subagent.Executor)
 
-func configureAgentTool(llmProvider provider.LLMProvider, cwd string, modelID string, hookEngine *hooks.Engine, sessionStore *session.Store, parentSessionID string, opts ...agentToolOption) {
+func configureAgentTool(llmProvider llm.LLMProvider, cwd string, modelID string, hookEngine *hook.Engine, sessionStore *session.Store, parentSessionID string, opts ...agentToolOption) {
 	executor := subagent.NewExecutor(llmProvider, cwd, modelID, hookEngine)
 	if sessionStore != nil && parentSessionID != "" {
 		executor.SetSessionStore(sessionStore, parentSessionID)

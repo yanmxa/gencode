@@ -9,11 +9,11 @@ import (
 
 	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/permission"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/loop"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -23,10 +23,10 @@ import (
 
 // Executor runs agent LLM loops
 type Executor struct {
-	provider            provider.LLMProvider
+	provider            llm.LLMProvider
 	cwd                 string
 	parentModelID       string // Parent conversation's model ID (used when inheriting)
-	hooks               *hooks.Engine
+	hooks               *hook.Engine
 	sessionStore        SubagentSessionStore        // Optional: when set, subagent sessions are persisted
 	parentSessionID     string                      // Parent session ID for linking subagent sessions
 	userInstructions    string                      // ~/.gen/GEN.md + rules
@@ -53,7 +53,7 @@ type runConfig struct {
 // NewExecutor creates a new agent executor
 // parentModelID is the model used by the parent conversation (for inheritance)
 // hookEngine is optional — when non-nil, PreToolUse hooks will fire during agent tool calls
-func NewExecutor(llmProvider provider.LLMProvider, cwd string, parentModelID string, hookEngine *hooks.Engine) *Executor {
+func NewExecutor(llmProvider llm.LLMProvider, cwd string, parentModelID string, hookEngine *hook.Engine) *Executor {
 	return &Executor{
 		provider:      llmProvider,
 		cwd:           cwd,
@@ -236,7 +236,7 @@ func (e *Executor) fireSubagentStart(req AgentRequest, agentHookID string) {
 	if e.hooks == nil {
 		return
 	}
-	e.hooks.ExecuteAsync(hooks.SubagentStart, hooks.HookInput{
+	e.hooks.ExecuteAsync(hook.SubagentStart, hook.HookInput{
 		AgentType:   req.Agent,
 		AgentID:     agentHookID,
 		Description: req.Description,
@@ -272,7 +272,7 @@ func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string
 			ProjectInstructions: e.projectInstructions,
 			Extra:               []string{rc.agentPrompt},
 		}),
-		Client:     provider.NewLLM(e.provider, rc.modelID, 0),
+		Client:     llm.NewLLM(e.provider, rc.modelID, 0),
 		Tool:       newAgentToolSet([]string(rc.config.Tools), []string(rc.config.DisallowedTools), e.mcpGetter),
 		Permission: agentPermission(rc.permMode),
 		Hooks:      e.hooks,
@@ -346,7 +346,7 @@ func (e *Executor) fireSubagentStop(req AgentRequest, agentHookID, agentSessionI
 	if agentSessionID != "" {
 		stopAgentID = agentSessionID
 	}
-	e.hooks.ExecuteAsync(hooks.SubagentStop, hooks.HookInput{
+	e.hooks.ExecuteAsync(hook.SubagentStop, hook.HookInput{
 		AgentType:            req.Agent,
 		AgentID:              stopAgentID,
 		AgentTranscriptPath:  agentTranscriptPath,

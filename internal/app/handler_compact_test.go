@@ -10,7 +10,7 @@ import (
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/providerui"
 	"github.com/yanmxa/gencode/internal/core"
-	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	coreprovider "github.com/yanmxa/gencode/internal/llm"
 )
 
 func newTokenLimitStore(t *testing.T) *coreprovider.Store {

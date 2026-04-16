@@ -13,7 +13,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/providerui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/plan"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 )
 
 func handlePlanCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
@@ -44,16 +44,16 @@ func handleThinkCommand(ctx context.Context, m *model, args string) (string, tea
 
 	switch args {
 	case "off", "0":
-		m.provider.ThinkingLevel = provider.ThinkingOff
+		m.provider.ThinkingLevel = llm.ThinkingOff
 	case "", "toggle":
 		// Cycle to next level
 		m.provider.ThinkingLevel = m.provider.ThinkingLevel.Next()
 	case "think", "normal", "1":
-		m.provider.ThinkingLevel = provider.ThinkingNormal
+		m.provider.ThinkingLevel = llm.ThinkingNormal
 	case "think+", "high", "2":
-		m.provider.ThinkingLevel = provider.ThinkingHigh
+		m.provider.ThinkingLevel = llm.ThinkingHigh
 	case "ultra", "ultrathink", "max", "3":
-		m.provider.ThinkingLevel = provider.ThinkingUltra
+		m.provider.ThinkingLevel = llm.ThinkingUltra
 	default:
 		return "Usage: /think [off|think|think+|ultra]\n\nLevels:\n  off        — No extended thinking\n  think      — Moderate thinking budget\n  think+     — Extended thinking budget\n  ultra      — Maximum thinking budget\n\nWithout arguments, cycles to the next level.", nil, nil
 	}

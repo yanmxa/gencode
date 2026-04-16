@@ -11,8 +11,8 @@ import (
 
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -31,7 +31,7 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 	}
 
 	// LLM — wraps the current provider as core.LLM
-	llm := provider.NewLLM(m.provider.LLM, m.getModelID(), m.getMaxTokens())
+	llm := llm.NewLLM(m.provider.LLM, m.getModelID(), m.getMaxTokens())
 	llm.SetThinking(m.effectiveThinkingLevel())
 
 	// System prompt — build layered core.System directly
@@ -50,8 +50,8 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 	}
 	tools := tool.AdaptToolRegistry(coreSchemas, func() string { return m.cwd })
 
-	// Hooks — wrap hooks.Engine as core.Hooks
-	coreHooks := hooks.AsCoreHooks(m.hookEngine)
+	// Hooks — wrap hook.Engine as core.Hooks
+	coreHooks := hook.AsCoreHooks(m.hookEngine)
 
 	// Permission bridge — blocking PermissionFunc with TUI approval
 	permBridge := newPermissionBridge(

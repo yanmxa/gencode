@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 	"gopkg.in/yaml.v3"
 )
@@ -229,7 +229,7 @@ type AgentResult struct {
 	ToolUses int
 
 	// TokenUsage is the total tokens consumed
-	TokenUsage provider.TokenUsage
+	TokenUsage llm.TokenUsage
 
 	// Duration is the total execution time
 	Duration time.Duration

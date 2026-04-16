@@ -13,7 +13,7 @@ import (
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/loop"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -74,16 +74,16 @@ func runHeadlessAgent() error {
 	}()
 
 	// Initialize provider
-	store, _ := provider.NewStore()
+	store, _ := llm.NewStore()
 	if store == nil {
 		return fmt.Errorf("no provider store available")
 	}
 
 	currentModel := store.GetCurrentModel()
-	var llmProvider provider.LLMProvider
+	var llmProvider llm.LLMProvider
 
 	if currentModel != nil {
-		p, err := provider.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod)
+		p, err := llm.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod)
 		if err != nil {
 			return fmt.Errorf("failed to connect provider: %w", err)
 		}
@@ -124,7 +124,7 @@ func runHeadlessAgent() error {
 		IsGit: config.IsGitRepo(cwd),
 	})
 
-	loopClient := provider.NewLLM(llmProvider, modelID, 16384)
+	loopClient := llm.NewLLM(llmProvider, modelID, 16384)
 
 	lp, err := loop.NewLoop(loop.LoopConfig{
 		System: sys,

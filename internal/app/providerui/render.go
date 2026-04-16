@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	coreprovider "github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/app/selector"
 	"github.com/yanmxa/gencode/internal/app/theme"
 )

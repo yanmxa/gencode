@@ -8,9 +8,9 @@ import (
 	"fmt"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/permission"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -94,7 +94,7 @@ type Result struct {
 	Messages    []core.Message
 	Turns       int
 	ToolUses    int
-	Tokens      provider.TokenUsage
+	Tokens      llm.TokenUsage
 	StopReason  string
 	transitions []transitionReason
 	StopDetail  string
@@ -115,10 +115,10 @@ type MCPCaller interface {
 // System, Client, and Tool are required; all other fields are optional.
 type LoopConfig struct {
 	System          core.System          // required: system prompt provider
-	Client          *provider.LLM       // required: LLM client
+	Client          *llm.LLM       // required: LLM client
 	Tool            *tool.Set            // required: tool registry
 	Permission      permission.Checker   // optional: permission checker (nil = permit all)
-	Hooks           *hooks.Engine        // optional: hook engine
+	Hooks           *hook.Engine        // optional: hook engine
 	MCP             MCPCaller            // optional: routes mcp__*__* tool calls
 	QuestionHandler tool.AskQuestionFunc // optional: interactive question handler
 	Cwd             string               // required: working directory for tool execution
@@ -154,10 +154,10 @@ func NewLoop(cfg LoopConfig) (*Loop, error) {
 //	Incremental: loop.Stream()/Collect()/AddResponse()/FilterToolCalls()/ExecTool() — for event-driven callers
 type Loop struct {
 	System     core.System
-	Client     *provider.LLM
+	Client     *llm.LLM
 	Tool       *tool.Set
 	Permission permission.Checker
-	Hooks      *hooks.Engine
+	Hooks      *hook.Engine
 	MCP        MCPCaller // optional: routes mcp__*__* tool calls
 	Cwd        string    // working directory for tool execution
 

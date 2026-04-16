@@ -5,13 +5,13 @@ import (
 	"context"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/loop"
 )
 
 // ShouldAutoCompact returns true when context usage is high enough to trigger
 // automatic compaction.
-func ShouldAutoCompact(llm provider.LLMProvider, messageCount, inputTokens int, store *provider.Store, currentModel *provider.CurrentModelInfo) bool {
+func ShouldAutoCompact(llm llm.LLMProvider, messageCount, inputTokens int, store *llm.Store, currentModel *llm.CurrentModelInfo) bool {
 	if llm == nil || messageCount < 3 {
 		return false
 	}
@@ -19,7 +19,7 @@ func ShouldAutoCompact(llm provider.LLMProvider, messageCount, inputTokens int, 
 }
 
 // GetContextUsagePercent returns what percentage of the context window is used.
-func GetContextUsagePercent(inputTokens int, store *provider.Store, currentModel *provider.CurrentModelInfo) float64 {
+func GetContextUsagePercent(inputTokens int, store *llm.Store, currentModel *llm.CurrentModelInfo) float64 {
 	inputLimit := GetEffectiveInputLimit(store, currentModel)
 	if inputLimit == 0 || inputTokens == 0 {
 		return 0
@@ -28,7 +28,7 @@ func GetContextUsagePercent(inputTokens int, store *provider.Store, currentModel
 }
 
 // GetMaxTokens returns the effective output limit, falling back to defaultMaxTokens.
-func GetMaxTokens(store *provider.Store, currentModel *provider.CurrentModelInfo, defaultMaxTokens int) int {
+func GetMaxTokens(store *llm.Store, currentModel *llm.CurrentModelInfo, defaultMaxTokens int) int {
 	if limit := getEffectiveOutputLimit(store, currentModel); limit > 0 {
 		return limit
 	}
@@ -37,6 +37,6 @@ func GetMaxTokens(store *provider.Store, currentModel *provider.CurrentModelInfo
 
 // CompactConversation compacts the message history into a summary.
 // Delegates to runtime.Compact as the canonical implementation.
-func CompactConversation(ctx context.Context, c *provider.LLM, msgs []core.Message, sessionMemory, focus string) (summary string, count int, err error) {
+func CompactConversation(ctx context.Context, c *llm.LLM, msgs []core.Message, sessionMemory, focus string) (summary string, count int, err error) {
 	return loop.Compact(ctx, c, msgs, sessionMemory, focus)
 }

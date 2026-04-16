@@ -2,35 +2,16 @@ package app
 
 import (
 	"fmt"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/cron"
+	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/core"
 )
 
-const cronTickInterval = 30 * time.Second
-const maxCronQueueSize = 100
-
-// cronTickMsg is sent periodically to check for due cron jobs.
-type cronTickMsg struct{}
-
-// triggerCronTickNow returns a command that immediately checks cron jobs once.
-func triggerCronTickNow() tea.Cmd {
-	return func() tea.Msg { return cronTickMsg{} }
-}
-
-// startCronTicker returns a command that sends the first cronTickMsg.
-func startCronTicker() tea.Cmd {
-	return tea.Tick(cronTickInterval, func(time.Time) tea.Msg {
-		return cronTickMsg{}
-	})
-}
-
 // updateCron handles cron-related messages.
 func (m *model) updateCron(msg tea.Msg) (tea.Cmd, bool) {
-	if _, ok := msg.(cronTickMsg); ok {
+	if _, ok := msg.(appsystem.CronTickMsg); ok {
 		return m.handleCronTick(), true
 	}
 	return nil, false
@@ -38,47 +19,22 @@ func (m *model) updateCron(msg tea.Msg) (tea.Cmd, bool) {
 
 // handleCronTick checks for due jobs and fires them if the REPL is idle.
 func (m *model) handleCronTick() tea.Cmd {
-	// Skip lock acquisition and iteration when no jobs exist
-	if cron.DefaultStore.Empty() && len(m.cronQueue) == 0 {
-		return startCronTicker()
-	}
-
-	fired := cron.DefaultStore.Tick()
-
-	cmds := []tea.Cmd{startCronTicker()}
 	idle := !m.conv.Stream.Active && !m.isToolPhaseActive()
-	injected := false
+	result := m.systemInput.HandleCronTick(idle)
 
-	for i, f := range fired {
-		if !idle || i > 0 {
-			// Queue if busy, or if another cron prompt already started a stream this tick
-			if len(m.cronQueue) < maxCronQueueSize {
-				m.cronQueue = append(m.cronQueue, f.Prompt)
-			}
-		} else {
-			cmds = append(cmds, m.injectCronPrompt(f.Prompt))
-			injected = true
-		}
+	cmds := []tea.Cmd{appsystem.StartCronTicker()}
+
+	if result.InjectPrompt != "" {
+		cmds = append(cmds, m.injectCronPrompt(result.InjectPrompt))
 	}
-
-	// Drain one queued prompt if idle and no prompt was already injected this tick
-	if idle && !injected {
-		if cmd := m.drainCronQueue(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+	for _, notice := range result.Notices {
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleNotice,
+			Content: notice,
+		})
 	}
 
 	return tea.Batch(cmds...)
-}
-
-// drainCronQueue pops and injects one queued cron prompt. Returns nil if the queue is empty.
-func (m *model) drainCronQueue() tea.Cmd {
-	if len(m.cronQueue) == 0 {
-		return nil
-	}
-	prompt := m.cronQueue[0]
-	m.cronQueue = m.cronQueue[1:]
-	return m.injectCronPrompt(prompt)
 }
 
 // injectCronPrompt injects a cron prompt as a user message and starts an LLM stream.

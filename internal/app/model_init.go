@@ -7,6 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
+	appagent "github.com/yanmxa/gencode/internal/app/agentinput"
 	"github.com/yanmxa/gencode/internal/app/agentui"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
@@ -20,6 +21,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/searchui"
 	"github.com/yanmxa/gencode/internal/app/sessionui"
 	"github.com/yanmxa/gencode/internal/app/skillui"
+	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/cron"
@@ -28,13 +30,13 @@ import (
 	"github.com/yanmxa/gencode/internal/ext/skill"
 	"github.com/yanmxa/gencode/internal/ext/subagent"
 	"github.com/yanmxa/gencode/internal/util/filecache"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/tool/fs"
 	"github.com/yanmxa/gencode/internal/tool/web"
@@ -43,13 +45,13 @@ import (
 )
 
 type modelInfra struct {
-	store             *provider.Store
-	llmProvider       provider.LLMProvider
-	currentModel      *provider.CurrentModelInfo
+	store             *llm.Store
+	llmProvider       llm.LLMProvider
+	currentModel      *llm.CurrentModelInfo
 	settings          *config.Settings
-	hookEngine        *hooks.Engine
+	hookEngine        *hook.Engine
 	sessionStore      *session.Store
-	taskNotifications *taskNotificationQueue
+	notifications *appagent.NotificationQueue
 	initialSessionID  string
 }
 
@@ -81,8 +83,8 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 	if sessionStore != nil {
 		transcriptPath = sessionStore.SessionPath(sessionID)
 	}
-	taskNotifications := newTaskNotificationQueue()
-	hookEngine := hooks.NewEngine(settings, sessionID, cwd, transcriptPath)
+	notifications := appagent.NewNotificationQueue()
+	hookEngine := hook.NewEngine(settings, sessionID, cwd, transcriptPath)
 	modelID := ""
 	if currentModel != nil {
 		modelID = currentModel.ModelID
@@ -90,7 +92,7 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 	hookEngine.SetLLMCompleter(buildLLMCompleter(llmProvider), modelID)
 	hookEngine.SetAgentRunner(newHookAgentRunner(llmProvider, settings, cwd, config.IsGitRepo(cwd), mcp.DefaultRegistry, modelID))
 	hookEngine.SetEnvProvider(plugin.PluginEnv)
-	installHookBridges(hookEngine, taskNotifications)
+	installHookBridges(hookEngine, notifications)
 
 	return modelInfra{
 		store:             store,
@@ -130,10 +132,10 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		showTasks: true,
 		isGit:     config.IsGitRepo(cwd),
 
+		systemInput:       appsystem.New(),
 		settings:          infra.settings,
 		hookEngine:        infra.hookEngine,
 		fileWatcher:       newFileWatcher(infra.hookEngine, nil),
-		asyncHookQueue:    newAsyncHookQueue(),
 		taskNotifications: infra.taskNotifications,
 		fileCache:         filecache.New(),
 	}
@@ -334,15 +336,15 @@ func (m *model) applyResumeOption(resumeID string, fork bool) error {
 	return nil
 }
 
-// buildLLMCompleter wraps a provider into an hooks.LLMCompleter closure.
+// buildLLMCompleter wraps a provider into an hook.LLMCompleter closure.
 // The closure owns client construction and streaming, keeping the hooks
 // engine free from direct provider dependencies.
-func buildLLMCompleter(p provider.LLMProvider) hooks.LLMCompleter {
+func buildLLMCompleter(p llm.LLMProvider) hook.LLMCompleter {
 	if p == nil {
 		return nil
 	}
 	return func(ctx context.Context, systemPrompt, userMessage, model string) (string, error) {
-		c := provider.NewLLM(p, model, 0)
+		c := llm.NewLLM(p, model, 0)
 		resp, err := c.Complete(ctx, systemPrompt, []core.Message{{
 			Role:    core.RoleUser,
 			Content: userMessage,

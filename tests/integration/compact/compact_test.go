@@ -7,13 +7,13 @@ import (
 
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/loop"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
 
-// newFakeClient creates a *provider.LLM backed by the given responses.
-func newFakeClient(responses ...core.CompletionResponse) (*provider.LLM, *provider.FakeLLM) {
-	fake := &provider.FakeLLM{Responses: responses}
+// newFakeClient creates a *llm.LLM backed by the given responses.
+func newFakeClient(responses ...core.CompletionResponse) (*llm.LLM, *llm.FakeLLM) {
+	fake := &llm.FakeLLM{Responses: responses}
 	return testutil.NewTestClient(fake), fake
 }
 

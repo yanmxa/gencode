@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	appagent "github.com/yanmxa/gencode/internal/app/agentinput"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
@@ -42,14 +43,14 @@ func (m *model) handleTaskNotificationTick() tea.Cmd {
 		tracker.DefaultStore.Reset()
 	}
 
-	if m.taskNotifications == nil {
+	if m.agentInput.Notifications == nil {
 		return tea.Batch(cmds...)
 	}
 	if m.conv.Stream.Active || m.isToolPhaseActive() {
 		return tea.Batch(cmds...)
 	}
 
-	items := m.taskNotifications.PopBatch(maxTaskNotificationsPerContinuation)
+	items := m.agentInput.Notifications.PopBatch(maxTaskNotificationsPerContinuation)
 	if len(items) == 0 {
 		return tea.Batch(cmds...)
 	}

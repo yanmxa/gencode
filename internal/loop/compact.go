@@ -7,7 +7,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/prompt"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 )
 
 func isPromptTooLong(err error) bool {
@@ -49,7 +49,7 @@ func (l *Loop) compactAndReplace(ctx context.Context, opts RunOptions) bool {
 // the summary text, the original message count, and any error.
 // sessionMemory is the previous compaction summary; if non-empty it is
 // prepended so the new summary incorporates prior context.
-func Compact(ctx context.Context, c *provider.LLM,
+func Compact(ctx context.Context, c *llm.LLM,
 	msgs []core.Message, sessionMemory, focus string,
 ) (summary string, count int, err error) {
 	count = len(msgs)

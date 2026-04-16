@@ -11,6 +11,7 @@ import (
 
 	"strings"
 
+	appagent "github.com/yanmxa/gencode/internal/app/agentinput"
 	"github.com/yanmxa/gencode/internal/app/agentui"
 	appapproval "github.com/yanmxa/gencode/internal/app/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/conversation"
@@ -25,12 +26,13 @@ import (
 	"github.com/yanmxa/gencode/internal/app/searchui"
 	"github.com/yanmxa/gencode/internal/app/sessionui"
 	"github.com/yanmxa/gencode/internal/app/skillui"
+	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/util/filecache"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool/tasktools"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
@@ -75,21 +77,21 @@ type model struct {
 	queueSelectIdx int    // -1 = no selection, 0+ = selected queue item index
 	queueTempInput string // stashed input when navigating into queue
 
-	// Cron scheduler
-	cronQueue []string // queued cron prompts waiting for idle REPL
+	// Agent events — background task notifications (Source 2)
+	agentInput appagent.State
+
+	// System events — cron scheduler and async hook rewakes (Source 3)
+	systemInput appsystem.State
 
 	// UI toggles
 	showTasks     bool   // Ctrl+T toggles task list visibility
 	isGit         bool   // cached: whether cwd is a git repository
 	initialPrompt string // initial prompt from CLI args
-	hookStatus    string // temporary active hook status shown in status bar
 
 	// Config and Infra
-	settings          *config.Settings
-	hookEngine        *hooks.Engine
-	fileWatcher       *fileWatcher
-	asyncHookQueue    *asyncHookQueue
-	taskNotifications *taskNotificationQueue
+	settings    *config.Settings
+	hookEngine  *hook.Engine
+	fileWatcher *fileWatcher
 	promptSuggestion  promptSuggestionState
 	fileCache         *filecache.Cache
 
@@ -107,14 +109,14 @@ func newModel(opts config.RunOptions) (*model, error) {
 	}
 	base := newBaseModel(cwd, infra)
 	m := &base
-	if m.hookEngine != nil && m.asyncHookQueue != nil {
-		queue := m.asyncHookQueue
-		m.hookEngine.SetAsyncHookCallback(func(result hooks.AsyncHookResult) {
+	if m.hookEngine != nil && m.systemInput.AsyncHookQueue != nil {
+		queue := m.systemInput.AsyncHookQueue
+		m.hookEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
 			reason := result.BlockReason
 			if reason == "" {
 				reason = "asynchronous hook requested a rewake"
 			}
-			queue.Push(asyncHookRewake{
+			queue.Push(appsystem.AsyncHookRewake{
 				Notice:             fmt.Sprintf("Async hook blocked: %s", reason),
 				Context:            []string{formatAsyncHookContinuationContext(result, reason)},
 				ContinuationPrompt: "A background policy hook reported a blocking condition. Re-evaluate the plan and choose a safer next step.",
@@ -132,14 +134,14 @@ func newModel(opts config.RunOptions) (*model, error) {
 	// Fire SessionStart during construction so hook-driven mutations apply
 	// before Bubble Tea starts driving the pointer-backed model.
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.Setup, hooks.HookInput{
+		m.hookEngine.ExecuteAsync(hook.Setup, hook.HookInput{
 			Trigger: "init",
 		})
 		source := "startup"
 		if m.session.CurrentID != "" {
 			source = "resume"
 		}
-		outcome := m.hookEngine.Execute(context.Background(), hooks.SessionStart, hooks.HookInput{
+		outcome := m.hookEngine.Execute(context.Background(), hook.SessionStart, hook.HookInput{
 			Source: source,
 			Model:  m.getModelID(),
 		})
@@ -164,7 +166,7 @@ func (m *model) lastAssistantContent() string {
 // Uses Execute (not ExecuteAsync) to ensure the hook completes before the process exits.
 func (m *model) fireSessionEnd(reason string) {
 	if m.hookEngine != nil {
-		m.hookEngine.Execute(context.Background(), hooks.SessionEnd, hooks.HookInput{
+		m.hookEngine.Execute(context.Background(), hook.SessionEnd, hook.HookInput{
 			Reason: reason,
 		})
 		if m.fileWatcher != nil {
@@ -175,7 +177,7 @@ func (m *model) fireSessionEnd(reason string) {
 }
 
 func (m *model) Init() tea.Cmd {
-	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, mcpui.AutoConnect(), triggerCronTickNow(), startCronTicker(), startAsyncHookTicker(), startTaskNotificationTicker()}
+	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, mcpui.AutoConnect(), appsystem.TriggerCronTickNow(), appsystem.StartCronTicker(), appsystem.StartAsyncHookTicker(), startTaskNotificationTicker()}
 	if m.initialPrompt != "" {
 		prompt := m.initialPrompt
 		cmds = append(cmds, func() tea.Msg { return initialPromptMsg(prompt) })
@@ -253,7 +255,7 @@ func (m *model) ensureMemoryContextLoaded() {
 }
 
 // effectiveThinkingLevel returns the higher of the persistent level and the per-turn override.
-func (m *model) effectiveThinkingLevel() provider.ThinkingLevel {
+func (m *model) effectiveThinkingLevel() llm.ThinkingLevel {
 	return max(m.provider.ThinkingLevel, m.provider.ThinkingOverride)
 }
 
@@ -299,7 +301,7 @@ func (m model) getModelID() string {
 	return "claude-sonnet-4-20250514"
 }
 
-func formatAsyncHookContinuationContext(result hooks.AsyncHookResult, reason string) string {
+func formatAsyncHookContinuationContext(result hook.AsyncHookResult, reason string) string {
 	return fmt.Sprintf(
 		"<background-hook-result>\nstatus: blocked\nevent: %s\nhook_type: %s\nhook_source: %s\nhook_name: %s\nreason: %s\ninstruction: Re-evaluate the plan before any further model or tool action.\n</background-hook-result>",
 		result.Event,

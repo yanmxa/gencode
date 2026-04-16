@@ -3,7 +3,7 @@ package loop
 import (
 	"context"
 
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
 )
 
@@ -88,12 +88,12 @@ func (l *Loop) Run(ctx context.Context, opts RunOptions) (*Result, error) {
 		}
 
 		if decision.Action == CompletionEndTurn {
-			if l.Hooks != nil && l.Hooks.HasHooks(hooks.Stop) {
-				stopInput := hooks.HookInput{
+			if l.Hooks != nil && l.Hooks.HasHooks(hook.Stop) {
+				stopInput := hook.HookInput{
 					LastAssistantMessage: l.lastAssistantContent(),
 					StopHookActive:       l.Hooks.StopHookActive(),
 				}
-				outcome := l.Hooks.Execute(ctx, hooks.Stop, stopInput)
+				outcome := l.Hooks.Execute(ctx, hook.Stop, stopInput)
 				if outcome.ShouldBlock {
 					r := terminate(StopHook)
 					r.StopDetail = "Stop hook blocked: " + outcome.BlockReason

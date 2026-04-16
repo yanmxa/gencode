@@ -31,7 +31,7 @@ func handleClearCommand(ctx context.Context, m *model, args string) (string, tea
 	m.provider.OutputTokens = 0
 	tracker.DefaultStore.Reset()
 	tool.ResetFetched()
-	m.cronQueue = nil
+	m.systemInput.CronQueue = nil
 	cmds := []tea.Cmd{tea.ClearScreen}
 	if os.Getenv("TMUX") != "" {
 		cmds = append(cmds, func() tea.Msg {

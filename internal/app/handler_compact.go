@@ -13,7 +13,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/render"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/util/filecache"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/loop"
 	"github.com/yanmxa/gencode/internal/app/theme"
@@ -168,7 +168,7 @@ func (m *model) handleCompactResult(msg appcompact.ResultMsg) tea.Cmd {
 
 	// Fire PostCompact hook (fire-and-forget; no blocking semantics)
 	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.PostCompact, hooks.HookInput{
+		m.hookEngine.ExecuteAsync(hook.PostCompact, hook.HookInput{
 			Trigger: msg.Trigger,
 		})
 	}

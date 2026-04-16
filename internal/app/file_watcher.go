@@ -7,14 +7,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 )
 
 const defaultFileWatcherInterval = 500 * time.Millisecond
 
 type fileWatcher struct {
-	engine    *hooks.Engine
-	onOutcome func(hooks.HookOutcome)
+	engine    *hook.Engine
+	onOutcome func(hook.HookOutcome)
 	interval  time.Duration
 
 	mu      sync.Mutex
@@ -30,7 +30,7 @@ type fileSnapshot struct {
 	modTime time.Time
 }
 
-func newFileWatcher(engine *hooks.Engine, onOutcome func(hooks.HookOutcome)) *fileWatcher {
+func newFileWatcher(engine *hook.Engine, onOutcome func(hook.HookOutcome)) *fileWatcher {
 	return &fileWatcher{
 		engine:    engine,
 		onOutcome: onOutcome,
@@ -164,7 +164,7 @@ func (w *fileWatcher) poll() {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		outcome := w.engine.Execute(ctx, hooks.FileChanged, hooks.HookInput{
+		outcome := w.engine.Execute(ctx, hook.FileChanged, hook.HookInput{
 			FilePath: change.path,
 			Event:    change.event,
 		})

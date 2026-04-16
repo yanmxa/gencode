@@ -6,14 +6,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appcompact "github.com/yanmxa/gencode/internal/app/compact"
-	"github.com/yanmxa/gencode/internal/hooks"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/llm"
 )
 
 type promptSuggestionRequest struct {
 	Ctx          context.Context
-	Client       *provider.LLM
+	Client       *llm.LLM
 	Messages     []core.Message
 	SystemPrompt string
 	UserPrompt   string
@@ -22,20 +22,20 @@ type promptSuggestionRequest struct {
 
 type tokenLimitFetchRequest struct {
 	Ctx          context.Context
-	LLM          provider.LLMProvider
-	Store        *provider.Store
-	CurrentModel *provider.CurrentModelInfo
+	LLM          llm.LLMProvider
+	Store        *llm.Store
+	CurrentModel *llm.CurrentModelInfo
 	ModelID      string
 	Cwd          string
 }
 
 type compactRequest struct {
 	Ctx            context.Context
-	Client         *provider.LLM
+	Client         *llm.LLM
 	Messages       []core.Message
 	SessionSummary string
 	Focus          string
-	HookEngine     *hooks.Engine
+	HookEngine     *hook.Engine
 	Trigger        string
 }
 
@@ -72,7 +72,7 @@ func compactCmd(req compactRequest) tea.Cmd {
 		ctx := req.Ctx
 		focus := req.Focus
 		if req.HookEngine != nil {
-			outcome := req.HookEngine.Execute(ctx, hooks.PreCompact, hooks.HookInput{
+			outcome := req.HookEngine.Execute(ctx, hook.PreCompact, hook.HookInput{
 				Trigger:            req.Trigger,
 				CustomInstructions: req.Focus,
 			})

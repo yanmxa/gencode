@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	coreprovider "github.com/yanmxa/gencode/internal/provider"
+	coreprovider "github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/app/selector"
 )
 
