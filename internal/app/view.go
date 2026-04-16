@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/output/render"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
@@ -120,7 +119,14 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 // renderTrackerList renders a compact task list above the input area.
 // Returns empty string when task display is toggled off via Ctrl+T.
 func (m model) renderTrackerList() string {
-	return appagent.RenderTrackerList(m.userInput.ShowTasks, m.conv.Stream.Active, m.width, m.agentOutput.Spinner.View())
+	if !m.userInput.ShowTasks {
+		return ""
+	}
+	return render.RenderTrackerList(render.TrackerListParams{
+		StreamActive: m.conv.Stream.Active,
+		Width:        m.width,
+		SpinnerView:  m.agentOutput.Spinner.View(),
+	})
 }
 
 func (m model) renderWelcome() string {
