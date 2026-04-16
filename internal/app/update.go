@@ -105,28 +105,12 @@ func (m *model) routeFeatureUpdate(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (m *model) renderOverlaySelector() string {
-	switch {
-	case m.provider.Selector.IsActive():
-		return m.provider.Selector.Render()
-	case m.tool.Selector.IsActive():
-		return m.tool.Selector.Render()
-	case m.skill.Selector.IsActive():
-		return m.skill.Selector.Render()
-	case m.agent.IsActive():
-		return m.agent.Render()
-	case m.mcp.Selector.IsActive():
-		return m.mcp.Selector.Render()
-	case m.plugin.IsActive():
-		return m.plugin.Render()
-	case m.session.Selector.IsActive():
-		return m.session.Selector.Render()
-	case m.memory.Selector.IsActive():
-		return m.memory.Selector.Render()
-	case m.search.IsActive():
-		return m.search.Render()
-	default:
-		return ""
+	for _, s := range m.overlaySelectors() {
+		if s.IsActive() {
+			return s.Render()
+		}
 	}
+	return ""
 }
 
 func (m *model) renderActiveModal(separator, trackerPrefix string) string {

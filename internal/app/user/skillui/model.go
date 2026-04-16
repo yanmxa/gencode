@@ -30,35 +30,16 @@ func (s *item) FullName() string {
 	return s.Name
 }
 
-// saveLevel represents where to save skill settings.
-type saveLevel int
-
-const (
-	saveLevelProject saveLevel = iota // Save to .gen/skills.json
-	saveLevelUser                     // Save to ~/.gen/skills.json
-)
-
-// String returns the display name for the save level.
-func (l saveLevel) String() string {
-	if l == saveLevelUser {
-		return "User"
-	}
-	return "Project"
-}
-
-// Model holds state for the skill kit.
+// Model holds state for the skill selector.
 type Model struct {
 	registry       *coreskill.Registry
 	active         bool
 	skills         []item
 	filteredSkills []item
-	selectedIdx    int
+	nav            kit.ListNav
 	width          int
 	height         int
-	searchQuery    string
-	scrollOffset   int
-	maxVisible     int
-	saveLevel      saveLevel // Where to save settings (project or user)
+	saveLevel      kit.SaveLevel
 }
 
 // CycleMsg is sent when a skill's state is cycled.
@@ -75,10 +56,10 @@ type InvokeMsg struct {
 // New creates a new skill selector Model.
 func New(reg *coreskill.Registry) Model {
 	return Model{
-		registry:   reg,
-		active:     false,
-		skills:     []item{},
-		maxVisible: 10,
+		registry: reg,
+		active:   false,
+		skills:   []item{},
+		nav:      kit.ListNav{MaxVisible: 10},
 	}
 }
 
@@ -89,13 +70,10 @@ func (s *Model) EnterSelect(width, height int) error {
 	}
 
 	allSkills := s.registry.List()
-
-	// Get states from current level
-	levelStates := s.registry.GetStatesAt(s.saveLevel == saveLevelUser)
+	levelStates := s.registry.GetStatesAt(s.saveLevel == kit.SaveLevelUser)
 
 	s.skills = make([]item, 0, len(allSkills))
 	for _, sk := range allSkills {
-		// Use level-specific state if available, otherwise use merged state
 		state := sk.State
 		if levelState, ok := levelStates[sk.FullName()]; ok {
 			state = levelState
@@ -111,12 +89,11 @@ func (s *Model) EnterSelect(width, height int) error {
 	}
 
 	s.active = true
-	s.selectedIdx = 0
-	s.scrollOffset = 0
-	s.searchQuery = ""
 	s.width = width
 	s.height = height
 	s.filteredSkills = s.skills
+	s.nav.Reset()
+	s.nav.Total = len(s.filteredSkills)
 
 	return nil
 }
@@ -127,14 +104,14 @@ func (s *Model) reloadSkillStates() {
 		return
 	}
 
-	levelStates := s.registry.GetStatesAt(s.saveLevel == saveLevelUser)
+	levelStates := s.registry.GetStatesAt(s.saveLevel == kit.SaveLevelUser)
 
 	for i := range s.skills {
 		fullName := s.skills[i].FullName()
 		if state, ok := levelStates[fullName]; ok {
 			s.skills[i].State = state
 		} else {
-			s.skills[i].State = coreskill.StateEnable // Default
+			s.skills[i].State = coreskill.StateEnable
 		}
 	}
 	s.updateFilter()
@@ -150,46 +127,18 @@ func (s *Model) Cancel() {
 	s.active = false
 	s.skills = []item{}
 	s.filteredSkills = []item{}
-	s.selectedIdx = 0
-	s.scrollOffset = 0
-	s.searchQuery = ""
-}
-
-// MoveUp moves the selection up.
-func (s *Model) MoveUp() {
-	if s.selectedIdx > 0 {
-		s.selectedIdx--
-		s.ensureVisible()
-	}
-}
-
-// MoveDown moves the selection down.
-func (s *Model) MoveDown() {
-	if s.selectedIdx < len(s.filteredSkills)-1 {
-		s.selectedIdx++
-		s.ensureVisible()
-	}
-}
-
-// ensureVisible adjusts scrollOffset to keep selectedIdx visible.
-func (s *Model) ensureVisible() {
-	if s.selectedIdx < s.scrollOffset {
-		s.scrollOffset = s.selectedIdx
-	}
-	if s.selectedIdx >= s.scrollOffset+s.maxVisible {
-		s.scrollOffset = s.selectedIdx - s.maxVisible + 1
-	}
+	s.nav.Reset()
+	s.nav.Total = 0
 }
 
 // updateFilter filters skills based on search query (fuzzy match).
 func (s *Model) updateFilter() {
-	if s.searchQuery == "" {
+	if s.nav.Search == "" {
 		s.filteredSkills = s.skills
 	} else {
-		query := strings.ToLower(s.searchQuery)
+		query := strings.ToLower(s.nav.Search)
 		s.filteredSkills = make([]item, 0)
 		for _, sk := range s.skills {
-			// Match against full name (namespace:name), name, or description
 			if kit.FuzzyMatch(strings.ToLower(sk.FullName()), query) ||
 				kit.FuzzyMatch(strings.ToLower(sk.Name), query) ||
 				kit.FuzzyMatch(strings.ToLower(sk.Description), query) {
@@ -197,24 +146,22 @@ func (s *Model) updateFilter() {
 			}
 		}
 	}
-	s.selectedIdx = 0
-	s.scrollOffset = 0
+	s.nav.ResetCursor()
+	s.nav.Total = len(s.filteredSkills)
 }
 
 // CycleState cycles the state of the currently selected skill.
 func (s *Model) CycleState() tea.Cmd {
-	if len(s.filteredSkills) == 0 || s.selectedIdx >= len(s.filteredSkills) {
+	if len(s.filteredSkills) == 0 || s.nav.Selected >= len(s.filteredSkills) {
 		return nil
 	}
 
-	selected := &s.filteredSkills[s.selectedIdx]
+	selected := &s.filteredSkills[s.nav.Selected]
 	newState := selected.State.NextState()
 	selected.State = newState
 
-	// Use FullName for comparison and persistence
 	fullName := selected.FullName()
 
-	// Update the source skills list
 	for i := range s.skills {
 		if s.skills[i].FullName() == fullName {
 			s.skills[i].State = newState
@@ -222,9 +169,8 @@ func (s *Model) CycleState() tea.Cmd {
 		}
 	}
 
-	// Persist via registry (using FullName) to the current save level
 	if s.registry != nil {
-		_ = s.registry.SetState(fullName, newState, s.saveLevel == saveLevelUser)
+		_ = s.registry.SetState(fullName, newState, s.saveLevel == kit.SaveLevelUser)
 	}
 
 	return func() tea.Msg {
@@ -237,60 +183,35 @@ func (s *Model) CycleState() tea.Cmd {
 
 // HandleKeypress handles a keypress and returns a command if needed.
 func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
-	switch key.Type {
-	case tea.KeyUp, tea.KeyCtrlP:
-		s.MoveUp()
-		return nil
-	case tea.KeyDown, tea.KeyCtrlN:
-		s.MoveDown()
-		return nil
-	case tea.KeyTab:
-		// Tab toggles save level between project and user
-		if s.saveLevel == saveLevelProject {
-			s.saveLevel = saveLevelUser
+	// Tab toggles save level
+	if key.Type == tea.KeyTab {
+		if s.saveLevel == kit.SaveLevelProject {
+			s.saveLevel = kit.SaveLevelUser
 		} else {
-			s.saveLevel = saveLevelProject
+			s.saveLevel = kit.SaveLevelProject
 		}
-		// Reload skill states from the new level
 		s.reloadSkillStates()
-		return nil
-	case tea.KeyEnter:
-		// Enter cycles the state
-		return s.CycleState()
-	case tea.KeyEsc:
-		// First clear search if active
-		if s.searchQuery != "" {
-			s.searchQuery = ""
-			s.updateFilter()
-			return nil
-		}
-		// Then close the selector
-		s.Cancel()
-		return func() tea.Msg {
-			return kit.DismissedMsg{}
-		}
-	case tea.KeyBackspace:
-		if len(s.searchQuery) > 0 {
-			s.searchQuery = s.searchQuery[:len(s.searchQuery)-1]
-			s.updateFilter()
-		}
-		return nil
-	case tea.KeyRunes:
-		s.searchQuery += string(key.Runes)
-		s.updateFilter()
 		return nil
 	}
 
-	// Handle j/k for vim-style navigation (only when not searching)
-	if s.searchQuery == "" {
-		switch key.String() {
-		case "j":
-			s.MoveDown()
-			return nil
-		case "k":
-			s.MoveUp()
-			return nil
-		}
+	// Enter cycles the state
+	if key.Type == tea.KeyEnter {
+		return s.CycleState()
+	}
+
+	// Delegate navigation and search to ListNav
+	searchChanged, consumed := s.nav.HandleKey(key)
+	if searchChanged {
+		s.updateFilter()
+	}
+	if consumed {
+		return nil
+	}
+
+	// Esc with empty search — dismiss
+	if key.Type == tea.KeyEsc {
+		s.Cancel()
+		return func() tea.Msg { return kit.DismissedMsg{} }
 	}
 
 	return nil
@@ -298,7 +219,6 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 
 // calculateSkillBoxWidth returns the constrained box width for skill kit.
 func calculateSkillBoxWidth(screenWidth int) int {
-	// Use 80% of screen width
 	boxWidth := screenWidth * 80 / 100
 	return max(60, boxWidth)
 }
@@ -311,7 +231,6 @@ func (s *Model) Render() string {
 
 	var sb strings.Builder
 
-	// Calculate box width for dynamic description length
 	boxWidth := calculateSkillBoxWidth(s.width)
 
 	// Title with count and save level indicator
@@ -322,53 +241,41 @@ func (s *Model) Render() string {
 
 	// Search input box
 	searchPrompt := "\U0001f50d "
-	if s.searchQuery == "" {
+	if s.nav.Search == "" {
 		sb.WriteString(kit.SelectorHintStyle().Render(searchPrompt + "Type to filter..."))
 	} else {
-		sb.WriteString(kit.SelectorBreadcrumbStyle().Render(searchPrompt + s.searchQuery + "\u258f"))
+		sb.WriteString(kit.SelectorBreadcrumbStyle().Render(searchPrompt + s.nav.Search + "\u258f"))
 	}
 	sb.WriteString("\n\n")
 
-	// Handle empty results
 	if len(s.filteredSkills) == 0 {
 		sb.WriteString(kit.SelectorHintStyle().Render("  No skills match the filter"))
 		sb.WriteString("\n")
 	} else {
-		// Calculate visible range
-		endIdx := min(s.scrollOffset+s.maxVisible, len(s.filteredSkills))
+		startIdx, endIdx := s.nav.VisibleRange()
 
 		// Content width is box width minus border (2) and padding (4)
 		contentWidth := boxWidth - 6
 
 		// Calculate max name width from visible skills for proper alignment
 		maxNameWidth := 0
-		for i := s.scrollOffset; i < endIdx; i++ {
+		for i := startIdx; i < endIdx; i++ {
 			nameLen := len(s.filteredSkills[i].FullName())
 			if nameLen > maxNameWidth {
 				maxNameWidth = nameLen
 			}
 		}
-		// Add space for [P] indicator
-		maxNameWidth += 5
-		// Cap at reasonable width
-		if maxNameWidth > 30 {
-			maxNameWidth = 30
-		}
-		if maxNameWidth < 15 {
-			maxNameWidth = 15
-		}
+		maxNameWidth += 5 // space for [P] indicator
+		maxNameWidth = max(15, min(30, maxNameWidth))
 
-		// Show scroll up indicator
-		if s.scrollOffset > 0 {
+		if startIdx > 0 {
 			sb.WriteString(kit.SelectorHintStyle().Render("  \u2191 more above"))
 			sb.WriteString("\n")
 		}
 
-		// Render visible skills
-		for i := s.scrollOffset; i < endIdx; i++ {
+		for i := startIdx; i < endIdx; i++ {
 			sk := s.filteredSkills[i]
 
-			// Status icon: filled active (green), half enabled (yellow), empty disabled (gray)
 			var statusIcon string
 			var statusStyle lipgloss.Style
 			switch sk.State {
@@ -383,21 +290,17 @@ func (s *Model) Render() string {
 				statusStyle = kit.SelectorStatusNone()
 			}
 
-			// Use FullName (namespace:name) for display
 			displayName := sk.FullName()
 
-			// Scope indicator for project skills
 			scopeIndicator := ""
 			if sk.Scope == coreskill.ScopeProject || sk.Scope == coreskill.ScopeClaudeProject || sk.Scope == coreskill.ScopeProjectPlugin {
 				scopeIndicator = "[P]"
 			}
 
-			// Create padded name with scope indicator
 			nameWithScope := displayName
 			if scopeIndicator != "" {
 				nameWithScope = displayName + " " + scopeIndicator
 			}
-			// Pad to max width
 			paddedName := nameWithScope
 			if len(paddedName) < maxNameWidth {
 				paddedName = paddedName + strings.Repeat(" ", maxNameWidth-len(paddedName))
@@ -405,9 +308,6 @@ func (s *Model) Render() string {
 				paddedName = paddedName[:maxNameWidth-3] + "..."
 			}
 
-			// Build description with optional hint
-			// Calculate remaining space for description
-			// Format: "> icon name  desc" = 2 + 2 + maxNameWidth + 2 = 6 + maxNameWidth
 			usedWidth := 6 + maxNameWidth
 			descMaxLen := contentWidth - usedWidth
 			if descMaxLen < 15 {
@@ -421,7 +321,6 @@ func (s *Model) Render() string {
 
 			descStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 
-			// Build the line without using ANSI in width calculation
 			line := fmt.Sprintf("%s %-*s  %s",
 				statusStyle.Render(statusIcon),
 				maxNameWidth,
@@ -429,7 +328,7 @@ func (s *Model) Render() string {
 				descStyle.Render(desc),
 			)
 
-			if i == s.selectedIdx {
+			if i == s.nav.Selected {
 				sb.WriteString("> " + line)
 			} else {
 				sb.WriteString("  " + line)
@@ -437,7 +336,6 @@ func (s *Model) Render() string {
 			sb.WriteString("\n")
 		}
 
-		// Show scroll down indicator
 		if endIdx < len(s.filteredSkills) {
 			sb.WriteString(kit.SelectorHintStyle().Render("  \u2193 more below"))
 			sb.WriteString("\n")
@@ -447,10 +345,8 @@ func (s *Model) Render() string {
 	sb.WriteString("\n")
 	sb.WriteString(kit.SelectorHintStyle().Render("\u2191/\u2193 navigate \u00b7 Tab level \u00b7 Enter toggle \u00b7 Esc close"))
 
-	// Wrap in border
 	content := sb.String()
 	box := kit.SelectorBorderStyle().Width(boxWidth).Render(content)
 
-	// Center the box
 	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)
 }
