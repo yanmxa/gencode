@@ -35,7 +35,7 @@ func handleToolCommand(ctx context.Context, m *model, args string) (string, tea.
 	if m.mcp.Registry != nil {
 		mcpTools = m.mcp.Registry.GetToolSchemas
 	}
-	if err := m.tool.Selector.EnterSelect(m.width, m.height, m.mode.DisabledTools, mcpTools); err != nil {
+	if err := m.tool.Selector.EnterSelect(m.width, m.height, m.disabledTools, mcpTools); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil

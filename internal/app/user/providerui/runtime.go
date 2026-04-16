@@ -16,12 +16,7 @@ import (
 type Runtime interface {
 	AppendMessage(msg core.ChatMessage)
 	CommitMessages() []tea.Cmd
-	SetLLM(p provider.Provider)
-	SetCurrentModel(m *provider.CurrentModelInfo)
-	SetHookLLMCompleter(p provider.Provider, modelID string)
-	ReconfigureAgentTool()
-	GetModelID() string
-	GetLLM() provider.Provider
+	OnProviderChanged(p provider.Provider, model *provider.CurrentModelInfo)
 }
 
 // Update routes provider connection and selection messages.
@@ -50,7 +45,7 @@ func handleProviderSelected(rt Runtime, state *State, msg SelectedMsg) tea.Cmd {
 		rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: "Error: " + err.Error()})
 	} else {
 		rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: result})
-		refreshProviderConnection(rt, state, ctx, msg.Provider, msg.AuthMethod)
+		refreshProviderConnection(rt, ctx, msg.Provider, msg.AuthMethod)
 	}
 	return tea.Batch(rt.CommitMessages()...)
 }
@@ -62,29 +57,34 @@ func handleModelSelected(rt Runtime, state *State, msg ModelSelectedMsg) tea.Cmd
 		return tea.Batch(rt.CommitMessages()...)
 	}
 
-	rt.SetCurrentModel(&provider.CurrentModelInfo{
+	model := &provider.CurrentModelInfo{
 		ModelID:    msg.ModelID,
 		Provider:   provider.Name(msg.ProviderName),
 		AuthMethod: msg.AuthMethod,
-	})
-	rt.SetHookLLMCompleter(rt.GetLLM(), msg.ModelID)
+	}
 	ctx := context.Background()
-	refreshProviderConnection(rt, state, ctx, provider.Name(msg.ProviderName), msg.AuthMethod)
+	p := connectProvider(ctx, provider.Name(msg.ProviderName), msg.AuthMethod)
+	rt.OnProviderChanged(p, model)
 
 	// Show model name in status bar for 5 seconds
 	state.StatusMessage = msg.ModelID
 	return StatusTimer(5 * time.Second)
 }
 
-func refreshProviderConnection(rt Runtime, state *State, ctx context.Context, providerName provider.Name, authMethod provider.AuthMethod) {
+func refreshProviderConnection(rt Runtime, ctx context.Context, providerName provider.Name, authMethod provider.AuthMethod) {
+	p := connectProvider(ctx, providerName, authMethod)
+	if p != nil {
+		rt.OnProviderChanged(p, nil)
+	}
+}
+
+func connectProvider(ctx context.Context, providerName provider.Name, authMethod provider.AuthMethod) provider.Provider {
 	p, err := provider.GetProvider(ctx, providerName, authMethod)
 	if err != nil {
 		log.Logger().Warn("failed to refresh provider connection",
 			zap.String("provider", string(providerName)),
 			zap.Error(err))
-		return
+		return nil
 	}
-	rt.SetLLM(p)
-	rt.SetHookLLMCompleter(p, rt.GetModelID())
-	rt.ReconfigureAgentTool()
+	return p
 }

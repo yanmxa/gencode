@@ -1,4 +1,4 @@
-package memory
+package kit
 
 import (
 	"os"
@@ -7,17 +7,19 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// startExternalEditor launches the user's preferred editor for the given file.
-func startExternalEditor(filePath string, msgFn func(error) tea.Msg) tea.Cmd {
-	editor := getEditor()
+// StartExternalEditor launches the user's preferred editor for the given file.
+// The msgFn callback converts the editor's exit error into a tea.Msg for the
+// caller's message loop.
+func StartExternalEditor(filePath string, msgFn func(error) tea.Msg) tea.Cmd {
+	editor := GetEditor()
 	cmd := exec.Command(editor, filePath)
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return msgFn(err)
 	})
 }
 
-// getEditor returns the user's preferred text editor.
-func getEditor() string {
+// GetEditor returns the user's preferred text editor.
+func GetEditor() string {
 	if editor := os.Getenv("EDITOR"); editor != "" {
 		return editor
 	}

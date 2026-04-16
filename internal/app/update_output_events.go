@@ -51,8 +51,8 @@ func (m *model) handlePermBridgeResponse(msg appapproval.ResponseMsg) tea.Cmd {
 	}
 
 	if msg.Approved {
-		if msg.AllowAll && m.mode.SessionPermissions != nil && msg.Request != nil {
-			m.mode.SessionPermissions.AllowTool(msg.Request.ToolName)
+		if msg.AllowAll && m.sessionPermissions != nil && msg.Request != nil {
+			m.sessionPermissions.AllowTool(msg.Request.ToolName)
 		}
 		resp.Reason = "user approved"
 	} else {
@@ -395,14 +395,14 @@ func (m *model) persistToolResultOverflow(result *core.ToolResult) {
 	preview := result.Content[:cutoff]
 
 	persisted := false
-	if err := m.ensureSessionStore(); err == nil && m.session.CurrentID != "" {
-		if err := m.session.Store.PersistToolResult(m.session.CurrentID, result.ToolCallID, result.Content); err == nil {
+	if err := m.ensureSessionStore(); err == nil && m.sessionID != "" {
+		if err := m.sessionStore.PersistToolResult(m.sessionID, result.ToolCallID, result.Content); err == nil {
 			persisted = true
 		}
 	}
 
 	if persisted {
-		result.Content = fmt.Sprintf("%s\n\n[Full output persisted to blobs/tool-result/%s/%s]", preview, m.session.CurrentID, result.ToolCallID)
+		result.Content = fmt.Sprintf("%s\n\n[Full output persisted to blobs/tool-result/%s/%s]", preview, m.sessionID, result.ToolCallID)
 	} else {
 		result.Content = fmt.Sprintf("%s\n\n[Output truncated from %d bytes — full content not persisted]", preview, len(result.Content))
 	}

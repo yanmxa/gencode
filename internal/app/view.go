@@ -136,7 +136,7 @@ func (m model) renderWelcome() string {
 func (m model) renderModeStatus() string {
 	modelName := appsystem.RenderHookStatus(m.systemInput.HookStatus, m.provider.StatusMessage)
 	return render.RenderModeStatus(render.OperationModeParams{
-		Mode:          m.mode.Operation,
+		Mode:          m.operationMode,
 		InputTokens:   m.inputTokens,
 		InputLimit:    m.getEffectiveInputLimit(),
 		ModelName:     modelName,

@@ -14,6 +14,7 @@ type Runtime interface {
 	AppendMessage(msg core.ChatMessage)
 	CommitMessages() []tea.Cmd
 	GetCwd() string
+	ClearCachedInstructions()
 	RefreshMemoryContext(trigger string)
 	FireFileChanged(path, tool string)
 }
@@ -60,8 +61,7 @@ func handleEditorFinished(rt Runtime, state *State, msg EditorFinishedMsg) tea.C
 	filePath := state.EditingFile
 	state.EditingFile = ""
 
-	state.CachedUser = ""
-	state.CachedProject = ""
+	rt.ClearCachedInstructions()
 
 	content := fmt.Sprintf("Saved: %s", filePath)
 	if msg.Err != nil {
@@ -77,7 +77,7 @@ func handleEditorFinished(rt Runtime, state *State, msg EditorFinishedMsg) tea.C
 
 // startExternalEditorForMemory launches the external editor for a memory file.
 func startExternalEditorForMemory(filePath string) tea.Cmd {
-	return StartExternalEditor(filePath, func(err error) tea.Msg {
+	return startExternalEditor(filePath, func(err error) tea.Msg {
 		return EditorFinishedMsg{Err: err}
 	})
 }

@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
@@ -61,6 +62,10 @@ func (m *model) GetCwd() string                { return m.cwd }
 func (m *model) ReloadPluginBackedState() error { return m.reloadPluginBackedState() }
 
 // memory.Runtime
+func (m *model) ClearCachedInstructions() {
+	m.cachedUserInstructions = ""
+	m.cachedProjectInstructions = ""
+}
 func (m *model) RefreshMemoryContext(trigger string) { m.refreshMemoryContext(trigger) }
 func (m *model) FireFileChanged(path, tool string)   { m.fireFileChanged(path, tool) }
 
@@ -68,21 +73,23 @@ func (m *model) FireFileChanged(path, tool string)   { m.fireFileChanged(path, t
 func (m *model) SetInputText(text string) { m.userInput.Textarea.SetValue(text) }
 
 // providerui.Runtime
-func (m *model) SetLLM(p provider.Provider)                    { m.llmProvider = p }
-func (m *model) SetCurrentModel(cm *provider.CurrentModelInfo) { m.currentModel = cm }
-func (m *model) GetLLM() provider.Provider                     { return m.llmProvider }
-func (m *model) SetHookLLMCompleter(p provider.Provider, modelID string) {
-	if m.hookEngine != nil {
-		m.hookEngine.SetLLMCompleter(buildLLMCompleter(p), modelID)
+func (m *model) OnProviderChanged(p provider.Provider, cm *provider.CurrentModelInfo) {
+	if p != nil {
+		m.llmProvider = p
 	}
+	if cm != nil {
+		m.currentModel = cm
+	}
+	if m.hookEngine != nil {
+		m.hookEngine.SetLLMCompleter(buildLLMCompleter(m.llmProvider), m.getModelID())
+	}
+	m.reconfigureAgentTool()
 }
-func (m *model) ReconfigureAgentTool() { m.reconfigureAgentTool() }
-func (m *model) GetModelID() string    { return m.getModelID() }
 
 // sessionui.Runtime
 func (m *model) EnsureSessionStore() error { return m.ensureSessionStore() }
 func (m *model) ForkSession(id string) (string, error) {
-	forked, err := m.session.Store.Fork(id)
+	forked, err := m.sessionStore.Fork(id)
 	if err != nil {
 		return "", err
 	}
@@ -94,7 +101,7 @@ func (m *model) CommitAllMessages() []tea.Cmd { return m.commitAllMessages() }
 
 // startExternalEditor is a thin wrapper kept for command handler reuse.
 func startExternalEditor(filePath string) tea.Cmd {
-	return appmemory.StartExternalEditor(filePath, func(err error) tea.Msg {
+	return kit.StartExternalEditor(filePath, func(err error) tea.Msg {
 		return appmemory.EditorFinishedMsg{Err: err}
 	})
 }

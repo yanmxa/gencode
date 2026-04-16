@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
-	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/extension/mcp"
 )
 
@@ -171,7 +171,7 @@ var mcpEditCmd = &cobra.Command{
 			return err
 		}
 
-		editor := appmemory.GetEditor()
+		editor := kit.GetEditor()
 		editorCmd := exec.Command(editor, info.TempFile)
 		editorCmd.Stdin = os.Stdin
 		editorCmd.Stdout = os.Stdout

@@ -118,12 +118,17 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		conv:        appconv.New(),
 		cwd:         cwd,
 
-		llmProvider:   infra.llmProvider,
-		providerStore: infra.store,
-		currentModel:  infra.currentModel,
+		operationMode:      config.ModeNormal,
+		sessionPermissions: config.NewSessionPermissions(),
+		disabledTools:      config.GetDisabledTools(),
+		llmProvider:        infra.llmProvider,
+		providerStore:      infra.store,
+		currentModel:       infra.currentModel,
+		sessionStore:       infra.sessionStore,
+		sessionID:          infra.initialSessionID,
 
 		provider: newProviderState(),
-		session:  newSessionState(infra),
+		session:  newSessionState(),
 		skill:    newSkillState(),
 		memory:   newMemoryState(),
 		mode:     newModeState(),
@@ -161,11 +166,9 @@ func newProviderState() providerui.State {
 	}
 }
 
-func newSessionState(infra modelInfra) sessionui.State {
+func newSessionState() sessionui.State {
 	return sessionui.State{
-		Selector:  sessionui.New(),
-		Store:     infra.sessionStore,
-		CurrentID: infra.initialSessionID,
+		Selector: sessionui.New(),
 	}
 }
 
@@ -179,12 +182,9 @@ func newMemoryState() appmemory.State {
 
 func newModeState() appmode.State {
 	return appmode.State{
-		Operation:          config.ModeNormal,
-		SessionPermissions: config.NewSessionPermissions(),
-		DisabledTools:      config.GetDisabledTools(),
-		PlanApproval:       appmode.NewPlanPrompt(),
-		PlanEntry:          appmode.NewEnterPlanPrompt(),
-		Question:           appmode.NewQuestionPrompt(),
+		PlanApproval: appmode.NewPlanPrompt(),
+		PlanEntry:    appmode.NewEnterPlanPrompt(),
+		Question:     appmode.NewQuestionPrompt(),
 	}
 }
 
@@ -274,7 +274,7 @@ func (m *model) reloadPluginBackedState() error {
 func (m *model) enablePlanMode(prompt string) error {
 	m.mode.Enabled = true
 	m.mode.Task = prompt
-	m.mode.Operation = config.ModePlan
+	m.operationMode = config.ModePlan
 
 	planStore, err := plan.NewStore()
 	if err != nil {
@@ -289,7 +289,7 @@ func (m *model) applyContinueOption(fork bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
-	m.session.Store = sessionStore
+	m.sessionStore = sessionStore
 
 	sess, err := sessionStore.GetLatest()
 	if err != nil {
@@ -313,7 +313,7 @@ func (m *model) applyResumeOption(resumeID string, fork bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
-	m.session.Store = sessionStore
+	m.sessionStore = sessionStore
 
 	if resumeID != "" {
 		sess, err := sessionStore.Load(resumeID)
@@ -375,8 +375,8 @@ func (m *model) buildLoopSystem(extra []string, loopClient *provider.Client) cor
 		Cwd:                 m.cwd,
 		IsGit:               m.isGit,
 		PlanMode:            m.mode.Enabled,
-		UserInstructions:    m.memory.CachedUser,
-		ProjectInstructions: m.memory.CachedProject,
+		UserInstructions:    m.cachedUserInstructions,
+		ProjectInstructions: m.cachedProjectInstructions,
 		SessionSummary:      m.buildSessionSummaryBlock(),
 		Skills:              m.buildLoopSkillsSection(),
 		Agents:              m.buildLoopAgentsSection(),
@@ -387,7 +387,7 @@ func (m *model) buildLoopSystem(extra []string, loopClient *provider.Client) cor
 
 func (m *model) buildLoopToolSet() *tool.Set {
 	return &tool.Set{
-		Disabled: m.mode.DisabledTools,
+		Disabled: m.disabledTools,
 		PlanMode: m.mode.Enabled,
 		MCP:      m.buildMCPToolsGetter(),
 	}
@@ -412,10 +412,10 @@ func buildCoordinatorGuidance() string {
 }
 
 func (m *model) buildSessionSummaryBlock() string {
-	if m.session.Summary == "" {
+	if m.sessionSummary == "" {
 		return ""
 	}
-	return fmt.Sprintf("<session-summary>\n%s\n</session-summary>", m.session.Summary)
+	return fmt.Sprintf("<session-summary>\n%s\n</session-summary>", m.sessionSummary)
 }
 
 func (m *model) buildLoopSkillsSection() string {

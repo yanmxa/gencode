@@ -29,8 +29,8 @@ func (m *model) refreshMemoryContext(loadReason string) {
 		}
 	}
 
-	m.memory.CachedUser = joinSections(userParts)
-	m.memory.CachedProject = joinSections(projectParts)
+	m.cachedUserInstructions = joinSections(userParts)
+	m.cachedProjectInstructions = joinSections(projectParts)
 }
 
 func (m *model) fireFileChanged(filePath, source string) {
@@ -58,8 +58,8 @@ func (m *model) changeCwd(newCwd string) {
 		m.userInput.Suggestions.Hide()
 	}
 
-	m.memory.CachedUser = ""
-	m.memory.CachedProject = ""
+	m.cachedUserInstructions = ""
+	m.cachedProjectInstructions = ""
 	m.refreshMemoryContext("cwd_changed")
 	m.reloadProjectContext(newCwd)
 	m.reconfigureAgentTool()
@@ -80,15 +80,15 @@ func (m *model) reloadProjectContext(cwd string) {
 
 	settings := initSettings(cwd)
 	m.settings = settings
-	if m.mode.DisabledTools == nil {
-		m.mode.DisabledTools = make(map[string]bool)
+	if m.disabledTools == nil {
+		m.disabledTools = make(map[string]bool)
 	} else {
-		for k := range m.mode.DisabledTools {
-			delete(m.mode.DisabledTools, k)
+		for k := range m.disabledTools {
+			delete(m.disabledTools, k)
 		}
 	}
 	for k, v := range settings.DisabledTools {
-		m.mode.DisabledTools[k] = v
+		m.disabledTools[k] = v
 	}
 	if m.hookEngine != nil {
 		m.hookEngine.SetSettings(settings)

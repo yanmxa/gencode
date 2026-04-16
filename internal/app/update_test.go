@@ -8,10 +8,10 @@ import (
 
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
-	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
+
 	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/user/sessionui"
+
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	"github.com/yanmxa/gencode/internal/config"
@@ -29,13 +29,13 @@ import (
 // via option 4 (modify), the model stays in plan mode for plan revision.
 func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 	m := &model{
+		operationMode:      config.ModePlan,
+		sessionPermissions: config.NewSessionPermissions(),
 		mode: appmode.State{
-			Operation:          config.ModePlan,
-			SessionPermissions: config.NewSessionPermissions(),
-			Enabled:            true,
-			Task:               "test task",
-			PlanApproval:       appmode.NewPlanPrompt(),
-			Question:           appmode.NewQuestionPrompt(),
+			Enabled:      true,
+			Task:         "test task",
+			PlanApproval: appmode.NewPlanPrompt(),
+			Question:     appmode.NewQuestionPrompt(),
 		},
 		tool: toolui.State{
 			ExecState: toolui.ExecState{
@@ -67,17 +67,17 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 	if !m.mode.Enabled {
 		t.Error("plan.enabled should remain true after modify feedback")
 	}
-	if m.mode.Operation != config.ModePlan {
-		t.Errorf("operationMode should be config.ModePlan, got %d", m.mode.Operation)
+	if m.operationMode != config.ModePlan {
+		t.Errorf("operationMode should be config.ModePlan, got %d", m.operationMode)
 	}
 }
 
 // TestPlanResponse_ManualExitsPlanMode verifies that manual approval exits plan mode.
 func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 	m := &model{
+		operationMode:      config.ModePlan,
+		sessionPermissions: config.NewSessionPermissions(),
 		mode: appmode.State{
-			Operation:          config.ModePlan,
-			SessionPermissions: config.NewSessionPermissions(),
 			Enabled:            true,
 			Task:               "test task",
 			PlanApproval:       appmode.NewPlanPrompt(),
@@ -110,17 +110,17 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 	if m.mode.Enabled {
 		t.Error("plan.enabled should be false after manual approval")
 	}
-	if m.mode.Operation != config.ModeNormal {
-		t.Errorf("operationMode should be config.ModeNormal, got %d", m.mode.Operation)
+	if m.operationMode != config.ModeNormal {
+		t.Errorf("operationMode should be config.ModeNormal, got %d", m.operationMode)
 	}
 }
 
 // TestPlanResponse_AutoExitsPlanMode verifies that auto approval exits plan mode.
 func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 	m := &model{
+		operationMode:      config.ModePlan,
+		sessionPermissions: config.NewSessionPermissions(),
 		mode: appmode.State{
-			Operation:          config.ModePlan,
-			SessionPermissions: config.NewSessionPermissions(),
 			Enabled:            true,
 			Task:               "test task",
 			PlanApproval:       appmode.NewPlanPrompt(),
@@ -153,10 +153,10 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 	if m.mode.Enabled {
 		t.Error("plan.enabled should be false after auto approval")
 	}
-	if m.mode.Operation != config.ModeAutoAccept {
-		t.Errorf("operationMode should be config.ModeAutoAccept, got %d", m.mode.Operation)
+	if m.operationMode != config.ModeAutoAccept {
+		t.Errorf("operationMode should be config.ModeAutoAccept, got %d", m.operationMode)
 	}
-	if !m.mode.SessionPermissions.AllowAllEdits {
+	if !m.sessionPermissions.AllowAllEdits {
 		t.Error("auto mode should enable AllowAllEdits")
 	}
 }
@@ -164,9 +164,9 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 // TestPlanResponse_RejectedExitsPlanMode verifies that rejection exits plan mode.
 func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 	m := &model{
+		operationMode:      config.ModePlan,
+		sessionPermissions: config.NewSessionPermissions(),
 		mode: appmode.State{
-			Operation:          config.ModePlan,
-			SessionPermissions: config.NewSessionPermissions(),
 			Enabled:            true,
 			Task:               "test task",
 			PlanApproval:       appmode.NewPlanPrompt(),
@@ -197,8 +197,8 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 	if m.mode.Enabled {
 		t.Error("plan.enabled should be false after rejection")
 	}
-	if m.mode.Operation != config.ModeNormal {
-		t.Errorf("operationMode should be config.ModeNormal after rejection, got %d", m.mode.Operation)
+	if m.operationMode != config.ModeNormal {
+		t.Errorf("operationMode should be config.ModeNormal after rejection, got %d", m.operationMode)
 	}
 	// Should have added a rejection tool result message
 	found := false
@@ -402,9 +402,7 @@ func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing
 
 func TestBuildCompactRequest(t *testing.T) {
 	m := &model{
-		session: sessionui.State{
-			Summary: "existing summary",
-		},
+		sessionSummary: "existing summary",
 		conv: appconv.Model{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleUser, Content: "hello"},
@@ -462,13 +460,9 @@ func TestBuildLoopExtraIncludesSkillInvocationAndTaskReminder(t *testing.T) {
 func TestBuildLoopSystemIncludesSessionSummary(t *testing.T) {
 	m := &model{
 		cwd: "/tmp/project",
-		session: sessionui.State{
-			Summary: "condensed summary",
-		},
-		memory: appmemory.State{
-			CachedUser:    "user memory",
-			CachedProject: "project memory",
-		},
+		sessionSummary:         "condensed summary",
+		cachedUserInstructions:    "user memory",
+		cachedProjectInstructions: "project memory",
 	}
 
 	sys := m.buildLoopSystem([]string{"extra"}, nil)

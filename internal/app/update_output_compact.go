@@ -161,10 +161,10 @@ func (m *model) handleCompactResult(msg appcompact.ResultMsg) tea.Cmd {
 	}
 
 	// Persist the compaction summary as session memory
-	if m.session.Store != nil && m.session.CurrentID != "" {
-		_ = m.session.Store.SaveSessionMemory(m.session.CurrentID, msg.Summary)
+	if m.sessionStore != nil && m.sessionID != "" {
+		_ = m.sessionStore.SaveSessionMemory(m.sessionID, msg.Summary)
 	}
-	m.session.Summary = msg.Summary
+	m.sessionSummary = msg.Summary
 
 	// Fire PostCompact hook (fire-and-forget; no blocking semantics)
 	if m.hookEngine != nil {

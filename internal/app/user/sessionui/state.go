@@ -1,13 +1,8 @@
 package sessionui
 
-import "github.com/yanmxa/gencode/internal/session"
-
-// State holds all session-related state for the TUI model.
+// State holds session selector UI state for the TUI model.
 type State struct {
-	Store           *session.Store
-	CurrentID       string
 	Selector        Model
 	PendingSelector bool
-	PendingFork     bool   // Fork after session selection
-	Summary         string // Loaded session summary (from compaction)
+	PendingFork     bool // Fork after session selection
 }

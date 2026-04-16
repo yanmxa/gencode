@@ -34,6 +34,7 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/tasktools"
@@ -56,14 +57,28 @@ type model struct {
 	approval         *appapproval.Model
 	promptSuggestion promptSuggestionState
 
+	// Operation mode and permissions — runtime configuration, not UI state
+	operationMode      config.OperationMode
+	sessionPermissions *config.SessionPermissions
+	disabledTools      map[string]bool
+
 	// Provider domain state — LLM connection, model info, token tracking, thinking
-	llmProvider      provider.Provider
+	llmProvider provider.Provider
 	providerStore    *provider.Store
 	currentModel     *provider.CurrentModelInfo
 	inputTokens      int
 	outputTokens     int
 	thinkingLevel    provider.ThinkingLevel
 	thinkingOverride provider.ThinkingLevel
+
+	// Cached system prompt instructions (loaded from GEN.md/CLAUDE.md files)
+	cachedUserInstructions    string
+	cachedProjectInstructions string
+
+	// Session domain state — persistence and compaction
+	sessionStore   *session.Store
+	sessionID      string
+	sessionSummary string
 
 	// Source 1 overlays — each selector is user-triggered
 	provider providerui.State
@@ -141,7 +156,7 @@ func initModel(opts config.RunOptions) (*model, error) {
 			Trigger: "init",
 		})
 		source := "startup"
-		if m.session.CurrentID != "" {
+		if m.sessionID != "" {
 			source = "resume"
 		}
 		outcome := m.hookEngine.Execute(context.Background(), hooks.SessionStart, hooks.HookInput{
@@ -235,14 +250,14 @@ func (m *model) commitMessagesWithCheck(checkReady bool) []tea.Cmd {
 func (m *model) reconfigureAgentTool() {
 	if m.llmProvider != nil {
 		m.ensureMemoryContextLoaded()
-		configureAgentTool(m.llmProvider, m.cwd, m.getModelID(), m.hookEngine, m.session.Store, m.session.CurrentID,
+		configureAgentTool(m.llmProvider, m.cwd, m.getModelID(), m.hookEngine, m.sessionStore, m.sessionID,
 			m.agentToolOpts()...)
 	}
 }
 
 func (m *model) agentToolOpts() []agentToolOption {
 	opts := []agentToolOption{
-		withAgentContext(m.memory.CachedUser, m.memory.CachedProject, m.isGit),
+		withAgentContext(m.cachedUserInstructions, m.cachedProjectInstructions, m.isGit),
 	}
 	if m.mcp.Registry != nil {
 		opts = append(opts, withAgentMCP(m.mcp.Registry.GetToolSchemas, m.mcp.Registry))
@@ -251,7 +266,7 @@ func (m *model) agentToolOpts() []agentToolOption {
 }
 
 func (m *model) ensureMemoryContextLoaded() {
-	if m.memory.CachedUser != "" || m.memory.CachedProject != "" {
+	if m.cachedUserInstructions != "" || m.cachedProjectInstructions != "" {
 		return
 	}
 	m.refreshMemoryContext("session_start")
@@ -359,7 +374,7 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 	// Permission bridge — blocking PermissionFunc with TUI approval
 	permBridge := appoutput.NewPermissionBridge(
 		func() *config.Settings { return m.settings },
-		func() *config.SessionPermissions { return m.mode.SessionPermissions },
+		func() *config.SessionPermissions { return m.sessionPermissions },
 		func() string { return m.cwd },
 	)
 

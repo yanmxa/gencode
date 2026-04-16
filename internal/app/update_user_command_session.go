@@ -52,18 +52,18 @@ func handleForkCommand(ctx context.Context, m *model, args string) (string, tea.
 		return "", nil, fmt.Errorf("failed to save session before fork: %w", err)
 	}
 
-	if m.session.CurrentID == "" {
+	if m.sessionID == "" {
 		return "No active session to fork.", nil, nil
 	}
 
-	forked, err := m.session.Store.Fork(m.session.CurrentID)
+	forked, err := m.sessionStore.Fork(m.sessionID)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to fork session: %w", err)
 	}
 
 	// Switch to the forked session.
-	m.session.CurrentID = forked.Metadata.ID
-	m.session.Summary = ""
+	m.sessionID = forked.Metadata.ID
+	m.sessionSummary = ""
 	tracker.DefaultStore.SetStorageDir("")
 	m.initTaskStorage()
 
@@ -77,7 +77,7 @@ func handleResumeCommand(ctx context.Context, m *model, args string) (string, te
 	if err := m.ensureSessionStore(); err != nil {
 		return "", nil, fmt.Errorf("failed to initialize session store: %w", err)
 	}
-	if err := m.session.Selector.EnterSelect(m.width, m.height, m.session.Store, m.cwd); err != nil {
+	if err := m.session.Selector.EnterSelect(m.width, m.height, m.sessionStore, m.cwd); err != nil {
 		return "", nil, fmt.Errorf("failed to open session selector: %w", err)
 	}
 	return "", nil, nil
