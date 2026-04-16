@@ -6,15 +6,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	appcommand "github.com/yanmxa/gencode/internal/ext/command"
-	appconv "github.com/yanmxa/gencode/internal/app/ui/conversation"
-	appmode "github.com/yanmxa/gencode/internal/app/ui/mode"
+	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
+	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/app/ui/sessionui"
+	"github.com/yanmxa/gencode/internal/app/user/sessionui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/core"
@@ -315,51 +314,6 @@ func TestExecuteCommandLoopOnceSchedulesOneShot(t *testing.T) {
 	}
 	if jobs[0].Prompt != "check the deploy" {
 		t.Fatalf("unexpected scheduled prompt %q", jobs[0].Prompt)
-	}
-}
-
-func TestParseLoopCommand_RoundsNonCleanIntervals(t *testing.T) {
-	now := time.Date(2026, 4, 6, 14, 30, 0, 0, time.Local)
-
-	parsed, err := parseLoopCommand("90m check the deploy", now)
-	if err != nil {
-		t.Fatalf("parseLoopCommand failed: %v", err)
-	}
-	if parsed.Cron != "37 */2 * * *" {
-		t.Fatalf("unexpected cron expression %q", parsed.Cron)
-	}
-	if !strings.Contains(parsed.Note, "Rounded `90m` to `every 2 hour(s)`") {
-		t.Fatalf("expected rounding note, got %q", parsed.Note)
-	}
-}
-
-func TestParseLoopCommand_AvoidsTopOfHourScheduling(t *testing.T) {
-	now := time.Date(2026, 4, 6, 10, 0, 0, 0, time.Local)
-
-	parsed, err := parseLoopCommand("1h check deploy", now)
-	if err != nil {
-		t.Fatalf("parseLoopCommand failed: %v", err)
-	}
-	if parsed.Cron != "7 * * * *" {
-		t.Fatalf("unexpected cron expression %q", parsed.Cron)
-	}
-}
-
-func TestParseLoopOnceCommand_SupportsTrailingInClause(t *testing.T) {
-	now := time.Date(2026, 4, 6, 10, 5, 0, 0, time.Local)
-
-	parsed, err := parseLoopOnceCommand("check deploy in 20m", now)
-	if err != nil {
-		t.Fatalf("parseLoopOnceCommand failed: %v", err)
-	}
-	if parsed.Prompt != "check deploy" {
-		t.Fatalf("unexpected prompt %q", parsed.Prompt)
-	}
-	if parsed.Cron != "25 10 6 4 *" {
-		t.Fatalf("unexpected cron expression %q", parsed.Cron)
-	}
-	if !strings.Contains(parsed.Human, "once at 2026-04-06 10:25") {
-		t.Fatalf("unexpected human schedule %q", parsed.Human)
 	}
 }
 

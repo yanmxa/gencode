@@ -244,7 +244,7 @@ func reconcileBackgroundBatch(parentID string) {
 }
 
 func backgroundWorkerSubject(launch BackgroundTaskLaunch) string {
-	if s := joinNameDesc(launch.AgentName, launch.Description); s != "" {
+	if s := JoinNameDesc(launch.AgentName, launch.Description); s != "" {
 		return s
 	}
 	if launch.AgentType != "" {
@@ -404,7 +404,8 @@ func metadataInt(metadata map[string]any, key string) int {
 	}
 }
 
-func joinNameDesc(name, desc string) string {
+// JoinNameDesc joins a name and description into a compact label.
+func JoinNameDesc(name, desc string) string {
 	name = strings.TrimSpace(name)
 	desc = strings.TrimSpace(desc)
 	switch {

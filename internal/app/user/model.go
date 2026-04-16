@@ -5,7 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 
-	"github.com/yanmxa/gencode/internal/app/ui/suggest"
+	"github.com/yanmxa/gencode/internal/app/user/suggest"
 	"github.com/yanmxa/gencode/internal/core"
 )
 

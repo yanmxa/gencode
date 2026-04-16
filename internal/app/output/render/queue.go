@@ -6,9 +6,15 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	appqueue "github.com/yanmxa/gencode/internal/app/ui/queue"
 	"github.com/yanmxa/gencode/internal/app/ui/theme"
 )
+
+// QueuePreviewItem is the minimal data needed to render a queue item preview.
+// Defined here to avoid importing the user/queue package.
+type QueuePreviewItem struct {
+	Content   string
+	HasImages bool
+}
 
 var (
 	queueBadgeStyle = lipgloss.NewStyle().
@@ -32,7 +38,7 @@ var (
 
 // RenderQueuePreview renders queued input items above the input area.
 // selectedIdx is the currently selected item index (-1 = none).
-func RenderQueuePreview(items []appqueue.Item, selectedIdx, width int) string {
+func RenderQueuePreview(items []QueuePreviewItem, selectedIdx, width int) string {
 	if len(items) == 0 {
 		return ""
 	}
@@ -51,7 +57,7 @@ func RenderQueuePreview(items []appqueue.Item, selectedIdx, width int) string {
 		isSelected := i == selectedIdx
 
 		content := truncateQueueContent(item.Content, width-8)
-		if len(item.Images) > 0 {
+		if item.HasImages {
 			content = PendingImageStyle.Render("[Image] ") + content
 		}
 

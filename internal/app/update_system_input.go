@@ -17,10 +17,6 @@ func (m *model) IsInputIdle() bool {
 	return !m.conv.Stream.Active && !m.isToolPhaseActive()
 }
 
-func (m *model) AppendMessage(msg core.ChatMessage) {
-	m.conv.Append(msg)
-}
-
 func (m *model) handleAsyncHookTick() tea.Cmd {
 	cmd, _ := appsystem.Update(m, &m.systemInput, m.hookEngine, appsystem.AsyncHookTickMsg{})
 	return cmd

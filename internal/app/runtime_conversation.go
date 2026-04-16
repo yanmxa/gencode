@@ -1,3 +1,5 @@
+// Request types, tea.Cmd builders, and model methods for prompt suggestion,
+// token-limit fetching, and conversation compaction.
 package app
 
 import (
@@ -5,11 +7,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appcompact "github.com/yanmxa/gencode/internal/app/ui/compact"
-	"github.com/yanmxa/gencode/internal/hook"
+	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
 )
+
+// --- Request types ---
 
 type promptSuggestionRequest struct {
 	Ctx          context.Context
@@ -38,6 +42,8 @@ type compactRequest struct {
 	HookEngine     *hook.Engine
 	Trigger        string
 }
+
+// --- tea.Cmd builders ---
 
 func suggestPromptCmd(req promptSuggestionRequest) tea.Cmd {
 	if req.Client == nil {
@@ -86,5 +92,64 @@ func compactCmd(req compactRequest) tea.Cmd {
 		}
 		summary, count, err := appcompact.CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
 		return appcompact.ResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
+	}
+}
+
+// --- Model methods that build requests from state ---
+
+func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
+	if m.provider.LLM == nil {
+		return promptSuggestionRequest{}, false
+	}
+
+	assistantCount := 0
+	for _, msg := range m.conv.Messages {
+		if msg.Role == core.RoleAssistant {
+			assistantCount++
+		}
+	}
+	if assistantCount < 2 {
+		return promptSuggestionRequest{}, false
+	}
+
+	startIdx := 0
+	if len(m.conv.Messages) > maxSuggestionMessages {
+		startIdx = len(m.conv.Messages) - maxSuggestionMessages
+	}
+	msgs := m.conv.ConvertToProviderFrom(startIdx)
+	msgs = append(msgs, core.Message{
+		Role:    core.RoleUser,
+		Content: suggestionUserPrompt,
+	})
+
+	return promptSuggestionRequest{
+		Client:       m.buildLoopClient(),
+		Messages:     msgs,
+		SystemPrompt: suggestionSystemPrompt,
+		UserPrompt:   suggestionUserPrompt,
+		MaxTokens:    60,
+	}, true
+}
+
+func (m *model) buildTokenLimitFetchRequest() tokenLimitFetchRequest {
+	return tokenLimitFetchRequest{
+		Ctx:          context.Background(),
+		LLM:          m.provider.LLM,
+		Store:        m.provider.Store,
+		CurrentModel: m.provider.CurrentModel,
+		ModelID:      m.getModelID(),
+		Cwd:          m.cwd,
+	}
+}
+
+func (m *model) buildCompactRequest(focus, trigger string) compactRequest {
+	return compactRequest{
+		Ctx:            context.Background(),
+		Client:         m.buildLoopClient(),
+		Messages:       m.conv.ConvertToProvider(),
+		SessionSummary: m.session.Summary,
+		Focus:          focus,
+		HookEngine:     m.hookEngine,
+		Trigger:        trigger,
 	}
 }

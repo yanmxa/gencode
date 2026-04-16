@@ -3,7 +3,7 @@ package output
 import (
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/app/ui/render"
+	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )

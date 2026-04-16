@@ -24,14 +24,14 @@ import (
 	"github.com/yanmxa/gencode/internal/app/ui/theme"
 )
 
-// RunWithOptions routes to either print mode or interactive TUI.
-func RunWithOptions(opts config.RunOptions) error {
+// Run routes to either print mode or interactive TUI.
+func Run(opts config.RunOptions) error {
 	if opts.Print != "" {
-		return runNonInteractive(opts.Print)
+		return runPrint(opts.Print)
 	}
 
 	// Resolve theme: config > selector prompt
-	settings := loadSettings()
+	settings := loadSettings("")
 	themeValue := settings.Theme
 	if themeValue == "" {
 		chosen, err := theme.RunSelector()
@@ -64,8 +64,8 @@ func RunWithOptions(opts config.RunOptions) error {
 	return nil
 }
 
-// runNonInteractive sends a single message and streams the response to stdout.
-func runNonInteractive(userMessage string) error {
+// runPrint sends a single message and streams the response to stdout.
+func runPrint(userMessage string) error {
 	ctx := context.Background()
 
 	store, err := llm.NewStore()
@@ -125,7 +125,7 @@ func runNonInteractive(userMessage string) error {
 
 // --- Infrastructure initialization ---
 
-func initializeProvider() (*llm.Store, llm.Provider, *llm.CurrentModelInfo) {
+func initProvider() (*llm.Store, llm.Provider, *llm.CurrentModelInfo) {
 	store, _ := llm.NewStore()
 	if store == nil {
 		return nil, nil, nil
@@ -151,10 +151,8 @@ func initializeProvider() (*llm.Store, llm.Provider, *llm.CurrentModelInfo) {
 	return store, nil, currentModel
 }
 
-// initializeRegistries loads all component registries in dependency order.
-// Plugins must load first since skills, commands, agents, and MCP servers
-// all read plugin-provided paths.
-func initializeRegistries(cwd string) {
+// initRegistries loads all component registries in dependency order.
+func initRegistries(cwd string) {
 	ctx := context.Background()
 
 	if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
@@ -175,11 +173,7 @@ func initializeRegistries(cwd string) {
 	}
 }
 
-func loadSettings() *config.Settings {
-	return loadSettingsForCwd("")
-}
-
-func loadSettingsForCwd(cwd string) *config.Settings {
+func loadSettings(cwd string) *config.Settings {
 	var (
 		settings *config.Settings
 		err      error

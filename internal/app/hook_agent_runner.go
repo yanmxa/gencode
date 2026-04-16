@@ -17,7 +17,7 @@ import (
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
-type hookAgentRunner struct {
+type HookAgentRunner struct {
 	llmProvider  llm.Provider
 	settings     *config.Settings
 	cwd          string
@@ -26,8 +26,8 @@ type hookAgentRunner struct {
 	defaultModel string
 }
 
-func newHookAgentRunner(llmProvider llm.Provider, settings *config.Settings, cwd string, isGit bool, mcpRegistry *mcp.Registry, defaultModel string) *hookAgentRunner {
-	return &hookAgentRunner{
+func NewHookAgentRunner(llmProvider llm.Provider, settings *config.Settings, cwd string, isGit bool, mcpRegistry *mcp.Registry, defaultModel string) *HookAgentRunner {
+	return &HookAgentRunner{
 		llmProvider:  llmProvider,
 		settings:     settings,
 		cwd:          cwd,
@@ -37,7 +37,7 @@ func newHookAgentRunner(llmProvider llm.Provider, settings *config.Settings, cwd
 	}
 }
 
-func (r *hookAgentRunner) RunAgentHook(ctx context.Context, userPrompt string, model string) (string, error) {
+func (r *HookAgentRunner) RunAgentHook(ctx context.Context, userPrompt string, model string) (string, error) {
 	if r == nil || r.llmProvider == nil {
 		return "", fmt.Errorf("agent hook runner requires an active provider")
 	}
@@ -87,7 +87,7 @@ func (r *hookAgentRunner) RunAgentHook(ctx context.Context, userPrompt string, m
 	return result.Content, nil
 }
 
-func (r *hookAgentRunner) disabledTools() map[string]bool {
+func (r *HookAgentRunner) disabledTools() map[string]bool {
 	if r.settings == nil || len(r.settings.DisabledTools) == 0 {
 		return nil
 	}
@@ -98,32 +98,32 @@ func (r *hookAgentRunner) disabledTools() map[string]bool {
 	return dup
 }
 
-func (r *hookAgentRunner) mcpToolsGetter() func() []core.ToolSchema {
+func (r *HookAgentRunner) mcpToolsGetter() func() []core.ToolSchema {
 	if r.mcpRegistry == nil {
 		return nil
 	}
 	return r.mcpRegistry.GetToolSchemas
 }
 
-func (r *hookAgentRunner) mcpCaller() loop.MCPCaller {
+func (r *HookAgentRunner) mcpCaller() loop.MCPCaller {
 	if r.mcpRegistry == nil {
 		return nil
 	}
 	return mcp.NewCaller(r.mcpRegistry)
 }
 
-func (r *hookAgentRunner) skillsSection() string {
+func (r *HookAgentRunner) skillsSection() string {
 	if skill.DefaultRegistry == nil {
 		return ""
 	}
 	return skill.DefaultRegistry.GetSkillsSection()
 }
 
-func (r *hookAgentRunner) agentsSection() string {
+func (r *HookAgentRunner) agentsSection() string {
 	if subagent.DefaultRegistry == nil {
 		return ""
 	}
 	return subagent.DefaultRegistry.GetAgentsSection()
 }
 
-var _ hook.AgentRunner = (*hookAgentRunner)(nil)
+var _ hook.AgentRunner = (*HookAgentRunner)(nil)

@@ -1,7 +1,7 @@
 package agent
 
 import (
-	"github.com/yanmxa/gencode/internal/app/ui/render"
+	"github.com/yanmxa/gencode/internal/app/output/render"
 )
 
 // RenderTrackerList renders the task tracker list.

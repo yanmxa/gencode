@@ -8,7 +8,7 @@ import (
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/ui/render"
+	"github.com/yanmxa/gencode/internal/app/output/render"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/ui/theme"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -145,7 +145,11 @@ func (m model) renderQueuePreview() string {
 	if len(items) == 0 {
 		return ""
 	}
-	return strings.TrimSuffix(render.RenderQueuePreview(items, m.userInput.QueueSelectIdx, m.width), "\n")
+	previews := make([]render.QueuePreviewItem, len(items))
+	for i, item := range items {
+		previews[i] = render.QueuePreviewItem{Content: item.Content, HasImages: len(item.Images) > 0}
+	}
+	return strings.TrimSuffix(render.RenderQueuePreview(previews, m.userInput.QueueSelectIdx, m.width), "\n")
 }
 
 // --- Message rendering (thin delegation to output package) ---

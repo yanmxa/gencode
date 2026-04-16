@@ -7,7 +7,7 @@ import (
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/app/ui/suggest"
+	"github.com/yanmxa/gencode/internal/app/user/suggest"
 )
 
 func (m *model) refreshMemoryContext(loadReason string) {
@@ -66,7 +66,7 @@ func (m *model) changeCwd(newCwd string) {
 
 	if m.hookEngine != nil {
 		m.hookEngine.SetCwd(newCwd)
-		m.hookEngine.SetAgentRunner(newHookAgentRunner(m.provider.LLM, m.settings, newCwd, m.isGit, m.mcp.Registry, m.getModelID()))
+		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.provider.LLM, m.settings, newCwd, m.isGit, m.mcp.Registry, m.getModelID()))
 		outcome := m.hookEngine.Execute(context.Background(), hook.CwdChanged, hook.HookInput{
 			OldCwd: oldCwd,
 			NewCwd: newCwd,
@@ -76,9 +76,9 @@ func (m *model) changeCwd(newCwd string) {
 }
 
 func (m *model) reloadProjectContext(cwd string) {
-	initializeRegistries(cwd)
+	initRegistries(cwd)
 
-	settings := loadSettingsForCwd(cwd)
+	settings := loadSettings(cwd)
 	m.settings = settings
 	if m.mode.DisabledTools == nil {
 		m.mode.DisabledTools = make(map[string]bool)
@@ -104,7 +104,7 @@ func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
 	}
 	if m.fileWatcher == nil {
 		queue := m.systemInput.AsyncHookQueue
-		m.fileWatcher = newFileWatcher(m.hookEngine, func(outcome hook.HookOutcome) {
+		m.fileWatcher = appsystem.NewFileWatcher(m.hookEngine, func(outcome hook.HookOutcome) {
 			// Route through AsyncHookQueue to avoid mutating model from
 			// the file watcher's background goroutine. The Bubble Tea
 			// tick handler processes these safely in the Update loop.

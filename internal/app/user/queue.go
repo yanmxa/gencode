@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appqueue "github.com/yanmxa/gencode/internal/app/ui/queue"
+	appqueue "github.com/yanmxa/gencode/internal/app/user/queue"
 )
 
 // HandleQueueSelectKey handles keys when a queue item is selected.

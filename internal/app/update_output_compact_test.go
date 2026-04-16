@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	appcompact "github.com/yanmxa/gencode/internal/app/ui/compact"
-	appconv "github.com/yanmxa/gencode/internal/app/ui/conversation"
+	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
+	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/ui/providerui"
+	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	"github.com/yanmxa/gencode/internal/core"
 	coreprovider "github.com/yanmxa/gencode/internal/llm"
 )

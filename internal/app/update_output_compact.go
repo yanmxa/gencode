@@ -9,8 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	appcompact "github.com/yanmxa/gencode/internal/app/ui/compact"
-	"github.com/yanmxa/gencode/internal/app/ui/render"
+	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
+	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/util/filecache"
 	"github.com/yanmxa/gencode/internal/hook"

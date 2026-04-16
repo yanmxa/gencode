@@ -6,15 +6,15 @@ import (
 	"strings"
 	"testing"
 
-	appapproval "github.com/yanmxa/gencode/internal/app/ui/approval"
-	appconv "github.com/yanmxa/gencode/internal/app/ui/conversation"
-	appmemory "github.com/yanmxa/gencode/internal/app/ui/memory"
-	appmode "github.com/yanmxa/gencode/internal/app/ui/mode"
+	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
+	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
+	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
+	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/ui/providerui"
-	"github.com/yanmxa/gencode/internal/app/ui/sessionui"
-	"github.com/yanmxa/gencode/internal/app/ui/skillui"
-	"github.com/yanmxa/gencode/internal/app/ui/toolui"
+	"github.com/yanmxa/gencode/internal/app/user/providerui"
+	"github.com/yanmxa/gencode/internal/app/user/sessionui"
+	"github.com/yanmxa/gencode/internal/app/user/skillui"
+	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core/prompt"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -23,7 +23,7 @@ import (
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/task/tracker"
-	"github.com/yanmxa/gencode/internal/app/ui/progress"
+	"github.com/yanmxa/gencode/internal/app/output/progress"
 )
 
 // TestPlanResponse_ModifyStaysInPlanMode verifies that when user gives feedback

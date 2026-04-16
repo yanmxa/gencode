@@ -7,8 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
-	appapproval "github.com/yanmxa/gencode/internal/app/ui/approval"
-	"github.com/yanmxa/gencode/internal/app/ui/toolui"
+	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
+	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/util/log"

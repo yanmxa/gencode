@@ -1,4 +1,4 @@
-package app
+package system
 
 import (
 	"context"
@@ -10,9 +10,9 @@ import (
 	"github.com/yanmxa/gencode/internal/hook"
 )
 
-const defaultFileWatcherInterval = 500 * time.Millisecond
+const DefaultFileWatcherInterval = 500 * time.Millisecond
 
-type fileWatcher struct {
+type FileWatcher struct {
 	engine    *hook.Engine
 	onOutcome func(hook.HookOutcome)
 	interval  time.Duration
@@ -30,17 +30,17 @@ type fileSnapshot struct {
 	modTime time.Time
 }
 
-func newFileWatcher(engine *hook.Engine, onOutcome func(hook.HookOutcome)) *fileWatcher {
-	return &fileWatcher{
+func NewFileWatcher(engine *hook.Engine, onOutcome func(hook.HookOutcome)) *FileWatcher {
+	return &FileWatcher{
 		engine:    engine,
 		onOutcome: onOutcome,
-		interval:  defaultFileWatcherInterval,
+		interval:  DefaultFileWatcherInterval,
 		stopCh:    make(chan struct{}),
 		paths:     make(map[string]fileSnapshot),
 	}
 }
 
-func (w *fileWatcher) SetPaths(paths []string) {
+func (w *FileWatcher) SetPaths(paths []string) {
 	if w == nil {
 		return
 	}
@@ -72,7 +72,7 @@ func (w *fileWatcher) SetPaths(paths []string) {
 	}
 }
 
-func (w *fileWatcher) CurrentPaths() []string {
+func (w *FileWatcher) CurrentPaths() []string {
 	if w == nil {
 		return nil
 	}
@@ -87,7 +87,7 @@ func (w *fileWatcher) CurrentPaths() []string {
 	return paths
 }
 
-func (w *fileWatcher) Stop() {
+func (w *FileWatcher) Stop() {
 	if w == nil {
 		return
 	}
@@ -107,7 +107,7 @@ func (w *fileWatcher) Stop() {
 	}
 }
 
-func (w *fileWatcher) loop(stopCh, done chan struct{}) {
+func (w *FileWatcher) loop(stopCh, done chan struct{}) {
 	if done != nil {
 		defer close(done)
 	}
@@ -125,7 +125,7 @@ func (w *fileWatcher) loop(stopCh, done chan struct{}) {
 	}
 }
 
-func (w *fileWatcher) poll() {
+func (w *FileWatcher) poll() {
 	type change struct {
 		path  string
 		event string

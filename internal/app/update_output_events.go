@@ -1,9 +1,6 @@
-// output_events.go handles the agent outbox, which is the Agent Output path
-// in docs/architecture.md. This is the single integration point between the
-// background core.Agent goroutine and the TUI's output state.
-// This is the single integration point between the core.Agent (background goroutine)
-// and the Bubble Tea TUI (Model-View-Update). Every model mutation from the agent
-// flows through handleAgentEvent.
+// Thin dispatcher + output.Runtime implementation for the Agent Output path.
+// Handler logic lives in internal/app/output/update.go; this file provides
+// the mutation primitives that those handlers call via the Runtime interface.
 package app
 
 import (
@@ -16,13 +13,61 @@ import (
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/ui/progress"
+	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/util/log"
 )
+
+// --- Permission bridge types ---
+
+type agentPermissionMsg struct {
+	Request *appoutput.PermBridgeRequest
+}
+
+func pollPermBridge(pb *appoutput.PermissionBridge) tea.Cmd {
+	return func() tea.Msg {
+		req, ok := pb.Recv()
+		if !ok {
+			return nil
+		}
+		return agentPermissionMsg{Request: req}
+	}
+}
+
+func (m *model) handlePermBridgeResponse(msg appapproval.ResponseMsg) tea.Cmd {
+	req := m.pendingPermBridge
+	m.pendingPermBridge = nil
+
+	if req == nil {
+		return nil
+	}
+
+	resp := appoutput.PermBridgeResponse{
+		Allow:  msg.Approved,
+		Reason: "user decision",
+	}
+
+	if msg.Approved {
+		if msg.AllowAll && m.mode.SessionPermissions != nil && msg.Request != nil {
+			m.mode.SessionPermissions.AllowTool(msg.Request.ToolName)
+		}
+		resp.Reason = "user approved"
+	} else {
+		resp.Reason = "user denied"
+	}
+
+	select {
+	case req.Response <- resp:
+	default:
+	}
+
+	return pollPermBridge(m.agentSess.permBridge)
+}
+
+// --- Dispatcher ---
 
 // updateOutput handles core.Agent events (outbox events and permission bridge
 // requests) in the TUI update loop.
@@ -31,296 +76,85 @@ func (m *model) updateOutput(msg tea.Msg) (tea.Cmd, bool) {
 		m.pendingPermBridge = msg.Request
 		return m.showPermissionPrompt(msg.Request), true
 	}
-	return appoutput.Update(m, msg)
+	return appoutput.Update(m, &m.agentOutput, msg)
 }
 
-func (m *model) HandleAgentEvent(ev core.Event) tea.Cmd { return m.handleAgentEvent(ev) }
-func (m *model) HandleAgentStopped(err error) tea.Cmd   { return m.handleAgentStopped(err) }
-func (m *model) HandleProgress(msg progress.UpdateMsg) tea.Cmd {
-	return m.agentOutput.HandleProgress(msg)
-}
-func (m *model) HandleProgressTick() tea.Cmd {
-	return m.agentOutput.HandleProgressTick(false)
-}
+// --- output.Runtime interface implementation ---
 
-// --- Core event dispatch ---
+func (m *model) CommitMessages() []tea.Cmd             { return m.commitMessages() }
+func (m *model) AppendMessage(msg core.ChatMessage)    { m.conv.Append(msg) }
+func (m *model) AppendToLast(text, thinking string)    { m.conv.AppendToLast(text, thinking) }
+func (m *model) SetLastToolCalls(calls []core.ToolCall) { m.conv.SetLastToolCalls(calls) }
+func (m *model) SetLastThinkingSignature(sig string)   { m.conv.SetLastThinkingSignature(sig) }
+func (m *model) AddNotice(text string)                 { m.conv.AddNotice(text) }
 
-// handleAgentEvent processes a single event from the core.Agent outbox.
-func (m *model) handleAgentEvent(ev core.Event) tea.Cmd {
-	switch ev.Type {
-	case core.OnStart:
-		return m.continueOutbox()
-
-	case core.OnMessage:
-		return m.continueOutbox()
-
-	case core.PreInfer:
-		return m.handlePreInfer()
-
-	case core.OnChunk:
-		return m.handleChunk(ev)
-
-	case core.PostInfer:
-		return m.handlePostInfer(ev)
-
-	case core.PreTool:
-		return m.handlePreTool(ev)
-
-	case core.PostTool:
-		return m.handlePostTool(ev)
-
-	case core.OnTurn:
-		return m.handleTurn(ev)
-
-	case core.OnStop:
-		err, _ := ev.Error()
-		return m.handleAgentStopped(err)
-
-	default:
-		return m.continueOutbox()
-	}
-}
-
-// --- Event handlers ---
-
-// handlePreInfer fires when the agent is about to call the LLM.
-// We mark the stream as active and append an empty assistant message for
-// incremental text accumulation.
-func (m *model) handlePreInfer() tea.Cmd {
+func (m *model) ActivateStream() {
 	m.conv.Stream.Active = true
 	m.conv.Stream.BuildingTool = ""
-
-	// Commit any pending messages (e.g. user input, tool results) to scrollback
-	// before the new assistant message starts.
-	commitCmds := m.commitMessages()
-
-	// Append an empty assistant message that will accumulate streamed text.
-	m.conv.Append(core.ChatMessage{Role: core.RoleAssistant, Content: ""})
-
-	cmds := append(commitCmds, m.agentOutput.Spinner.Tick)
-	cmds = append(cmds, m.continueOutbox())
-	return tea.Batch(cmds...)
 }
+func (m *model) SetBuildingTool(name string) { m.conv.Stream.BuildingTool = name }
+func (m *model) StopStream()                 { m.conv.Stream.Stop() }
 
-// handleChunk processes a streaming text/thinking chunk from the LLM.
-func (m *model) handleChunk(ev core.Event) tea.Cmd {
-	chunk, ok := ev.Chunk()
-	if !ok {
-		return m.continueOutbox()
-	}
-	if chunk.Text != "" || chunk.Thinking != "" {
-		m.conv.AppendToLast(chunk.Text, chunk.Thinking)
-	}
-	return m.continueOutbox()
+func (m *model) SetTokenCounts(in, out int) {
+	m.provider.InputTokens = in
+	m.provider.OutputTokens = out
 }
+func (m *model) ClearWarningSuppressed() { m.conv.Compact.WarningSuppressed = false }
+func (m *model) IncrementTurnCounter()   { m.conv.TurnsSinceLastTaskTool++ }
+func (m *model) ResetTurnCounter()       { m.conv.TurnsSinceLastTaskTool = 0 }
+func (m *model) ClearThinkingOverride()  { m.provider.ThinkingOverride = llm.ThinkingOff }
+func (m *model) ContinueOutbox() tea.Cmd { return m.continueOutbox() }
 
-// handlePostInfer fires after the LLM response is fully received.
-// Updates token counts, thinking signature, and tool call display state.
-func (m *model) handlePostInfer(ev core.Event) tea.Cmd {
-	resp, ok := ev.Response()
-	if !ok {
-		return m.continueOutbox()
-	}
-
-	// Update token tracking
-	m.provider.InputTokens = resp.TokensIn
-	m.provider.OutputTokens = resp.TokensOut
-	m.conv.Compact.WarningSuppressed = false
-
-	// Track turns for task reminder nudges
-	m.conv.TurnsSinceLastTaskTool++
-
-	// Store thinking signature for session persistence
-	if resp.ThinkingSignature != "" {
-		m.conv.SetLastThinkingSignature(resp.ThinkingSignature)
-	}
-
-	// If the response contains tool calls, display them on the last message
-	if len(resp.ToolCalls) > 0 {
-		m.conv.SetLastToolCalls(resp.ToolCalls)
-	}
-
-	// Clear building tool indicator
-	m.conv.Stream.BuildingTool = ""
-
-	return m.continueOutbox()
+func (m *model) ApplyToolSideEffects(toolName string, sideEffect any) {
+	m.applyAgentToolSideEffects(toolName, sideEffect)
 }
-
-// handlePreTool fires before a tool is executed. Updates the building tool
-// indicator for the spinner display.
-func (m *model) handlePreTool(ev core.Event) tea.Cmd {
-	if tc, ok := ev.ToolCall(); ok {
-		m.conv.Stream.BuildingTool = tc.Name
-	}
-	return m.continueOutbox()
-}
-
-// handlePostTool fires after a tool execution completes. Applies side effects
-// (cwd changes, file cache, background task tracking) and appends the tool
-// result to the conversation display.
-func (m *model) handlePostTool(ev core.Event) tea.Cmd {
-	tr, ok := ev.ToolResult()
-	if !ok {
-		return m.continueOutbox()
-	}
-
-	m.conv.Stream.BuildingTool = ""
-
-	// Retrieve side effects stored by the tool adapter
-	sideEffect := tool.PopSideEffect(tr.ToolCallID)
-	if sideEffect != nil {
-		m.applyAgentToolSideEffects(tr.ToolName, sideEffect)
-	}
-
-	// Track task tools for reminder nudges
-	if isTaskTool(tr.ToolName) {
-		m.conv.TurnsSinceLastTaskTool = 0
-	}
-
-	// Clean up agent progress display
-	if tool.IsAgentToolName(tr.ToolName) {
-		// Clear progress for this tool (we don't have an index, clear all)
-		m.agentOutput.TaskProgress = nil
-	}
-
-	// Fire PostToolUse hook asynchronously
+func (m *model) FirePostToolHook(tr core.ToolResult, sideEffect any) {
 	m.fireAgentPostToolHook(tr, sideEffect)
-
-	// Persist overflow and append to conversation display
-	m.persistToolResultOverflow(&core.ToolResult{
-		ToolCallID: tr.ToolCallID,
-		ToolName:   tr.ToolName,
-		Content:    tr.Content,
-		IsError:    tr.IsError,
-	})
-	m.conv.Append(core.ChatMessage{
-		Role:     core.RoleUser,
-		ToolName: tr.ToolName,
-		ToolResult: &core.ToolResult{
-			ToolCallID: tr.ToolCallID,
-			ToolName:   tr.ToolName,
-			Content:    tr.Content,
-			IsError:    tr.IsError,
-		},
-	})
-
-	return m.continueOutbox()
 }
+func (m *model) PersistOverflow(result *core.ToolResult) { m.persistToolResultOverflow(result) }
+func (m *model) FireIdleHooks() bool                     { return m.fireIdleHooks() }
 
-// handleTurn fires when the agent completes a think+act cycle (end_turn).
-// This is the idle point — save session, fire hooks, check compaction,
-// drain queued inputs.
-func (m *model) handleTurn(ev core.Event) tea.Cmd {
-	result, _ := ev.Result()
-
-	// Stop streaming state
-	m.conv.Stream.Stop()
-	m.provider.ThinkingOverride = llm.ThinkingOff
-
-	// Commit all pending messages to scrollback
-	commitCmds := m.commitMessages()
-
-	// Fire idle hooks (Stop + Notification)
-	if m.fireIdleHooks() {
-		// Stop hook blocked — send continuation to agent
-		cmds := append(commitCmds, m.continueOutbox())
-		return tea.Batch(cmds...)
-	}
-
-	// Save session
+func (m *model) SaveSession() {
 	if err := m.saveSession(); err != nil {
 		log.Logger().Warn("failed to save session", zap.Error(err))
 	}
-
-	// Check auto-compact
-	if m.shouldAutoCompact() {
-		m.conv.Compact.AutoContinue = true
-		commitCmds = append(commitCmds, m.triggerAutoCompact())
-		return tea.Batch(commitCmds...)
-	}
-
-	// Try prompt suggestion if idle
-	if cmd := m.startPromptSuggestion(); cmd != nil {
-		commitCmds = append(commitCmds, cmd)
-	}
-
-	// Drain queued inputs
-	if cmd := m.drainInputQueueToAgent(); cmd != nil {
-		commitCmds = append(commitCmds, cmd)
-		return tea.Batch(commitCmds...)
-	}
-
-	// Drain cron queue
-	if cmd := m.drainCronQueueToAgent(); cmd != nil {
-		commitCmds = append(commitCmds, cmd)
-		return tea.Batch(commitCmds...)
-	}
-
-	// Drain async hook queue
-	if cmd := m.drainAsyncHookQueueToAgent(); cmd != nil {
-		commitCmds = append(commitCmds, cmd)
-		return tea.Batch(commitCmds...)
-	}
-
-	// Drain task notifications
-	if cmd := m.drainTaskNotificationsToAgent(); cmd != nil {
-		commitCmds = append(commitCmds, cmd)
-		return tea.Batch(commitCmds...)
-	}
-
-	// Check for stop reason details (max_turns etc.)
-	if result.StopReason != "" && result.StopReason != core.StopEndTurn {
-		m.conv.AddNotice(fmt.Sprintf("Agent stopped: %s", result.StopReason))
-		if result.StopDetail != "" {
-			m.conv.AddNotice(result.StopDetail)
-		}
-	}
-
-	// Continue draining outbox (agent goes back to waitForInput)
-	cmds := append(commitCmds, m.continueOutbox())
-	return tea.Batch(cmds...)
 }
+func (m *model) ShouldAutoCompact() bool     { return m.shouldAutoCompact() }
+func (m *model) SetAutoCompactContinue()     { m.conv.Compact.AutoContinue = true }
+func (m *model) TriggerAutoCompact() tea.Cmd { return m.triggerAutoCompact() }
+func (m *model) StartPromptSuggestion() tea.Cmd {
+	return m.startPromptSuggestion()
+}
+func (m *model) DrainInputQueue() tea.Cmd        { return m.drainInputQueueToAgent() }
+func (m *model) DrainCronQueue() tea.Cmd         { return m.drainCronQueueToAgent() }
+func (m *model) DrainAsyncHookQueue() tea.Cmd    { return m.drainAsyncHookQueueToAgent() }
+func (m *model) DrainTaskNotifications() tea.Cmd { return m.drainTaskNotificationsToAgent() }
 
-// handleAgentStopped processes agent shutdown.
-func (m *model) handleAgentStopped(err error) tea.Cmd {
-	m.conv.Stream.Stop()
-
-	if err != nil {
-		m.conv.AddNotice(fmt.Sprintf("Agent error: %v", err))
-	}
-
-	// Fire StopFailure hook if there was an error
-	if err != nil && m.hookEngine != nil {
+func (m *model) FireStopFailureHook(err error) {
+	if m.hookEngine != nil {
 		m.hookEngine.ExecuteAsync(hook.StopFailure, hook.HookInput{
 			LastAssistantMessage: m.lastAssistantContent(),
 			Error:                err.Error(),
 			StopHookActive:       m.hookEngine.StopHookActive(),
 		})
 	}
+}
 
-	commitCmds := m.commitMessages()
-
-	// Clean up agent session
+func (m *model) StopAgentSession() {
 	if m.agentSess != nil {
 		m.agentSess.stop()
 		m.agentSess = nil
 	}
-
-	return tea.Batch(commitCmds...)
 }
 
-// --- Side effects ---
+// --- Side effects (parent-level, needs model internals) ---
 
-// applyAgentToolSideEffects applies environment changes from tool execution.
-// This mirrors the logic from the old applyEnvironmentSideEffects but works
-// with the side-effect map from tool.PopSideEffect instead of toolui.ExecResultMsg.
 func (m *model) applyAgentToolSideEffects(toolName string, sideEffect any) {
 	resp, ok := sideEffect.(map[string]any)
 	if !ok {
 		return
 	}
 
-	// Background task tracking
 	m.syncBackgroundTaskTrackerFromAgent(toolName, resp)
 
 	switch toolName {
@@ -354,8 +188,6 @@ func (m *model) applyAgentToolSideEffects(toolName string, sideEffect any) {
 	}
 }
 
-// syncBackgroundTaskTrackerFromAgent handles background agent task tracking
-// when a tool result contains backgroundTask metadata.
 func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[string]any) {
 	if !tool.IsAgentToolName(toolName) {
 		return
@@ -374,15 +206,12 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 	if launch.TaskID == "" {
 		return
 	}
-	// For agent-managed tool calls, we don't have PendingCalls for batch spec.
-	// Record as a single worker (no batch).
 	childID := appagent.EnsureBackgroundWorkerTracker(launch, "", "")
 	if childID != "" {
 		appagent.RecordBackgroundTaskLaunch(launch, "", "", 0)
 	}
 }
 
-// fireAgentPostToolHook fires the PostToolUse hook asynchronously for a tool result.
 func (m *model) fireAgentPostToolHook(tr core.ToolResult, sideEffect any) {
 	if m.hookEngine == nil {
 		return
@@ -406,9 +235,6 @@ func (m *model) fireAgentPostToolHook(tr core.ToolResult, sideEffect any) {
 	m.hookEngine.ExecuteAsync(eventType, input)
 }
 
-// fireIdleHooks fires Stop hooks synchronously (honoring block decisions)
-// and Notification hooks asynchronously. Returns true if a Stop hook blocked,
-// in which case a continuation message is sent to the agent.
 func (m *model) fireIdleHooks() bool {
 	if m.hookEngine == nil {
 		return false
@@ -421,7 +247,6 @@ func (m *model) fireIdleHooks() bool {
 			StopHookActive:       m.hookEngine.StopHookActive(),
 		})
 		if outcome.ShouldBlock {
-			// Send the block reason to the agent so it can re-evaluate
 			m.conv.Append(core.ChatMessage{
 				Role:    core.RoleUser,
 				Content: "Stop hook blocked: " + outcome.BlockReason,
@@ -445,7 +270,6 @@ func (m *model) fireIdleHooks() bool {
 
 // --- Continuation injection helpers ---
 
-// drainInputQueueToAgent pops the next queued user input and sends it to the agent.
 func (m *model) drainInputQueueToAgent() tea.Cmd {
 	if m.inputQueue.Len() == 0 {
 		return nil
@@ -462,7 +286,6 @@ func (m *model) drainInputQueueToAgent() tea.Cmd {
 	return m.sendToAgent(item.Content, item.Images)
 }
 
-// drainCronQueueToAgent pops one queued cron prompt and sends it to the agent.
 func (m *model) drainCronQueueToAgent() tea.Cmd {
 	if len(m.systemInput.CronQueue) == 0 {
 		return nil
@@ -470,18 +293,11 @@ func (m *model) drainCronQueueToAgent() tea.Cmd {
 	prompt := m.systemInput.CronQueue[0]
 	m.systemInput.CronQueue = m.systemInput.CronQueue[1:]
 
-	m.conv.Append(core.ChatMessage{
-		Role:    core.RoleNotice,
-		Content: "Scheduled task fired",
-	})
-	m.conv.Append(core.ChatMessage{
-		Role:    core.RoleUser,
-		Content: prompt,
-	})
+	m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Scheduled task fired"})
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: prompt})
 	return m.sendToAgent(prompt, nil)
 }
 
-// drainAsyncHookQueueToAgent pops one async hook rewake and sends it to the agent.
 func (m *model) drainAsyncHookQueueToAgent() tea.Cmd {
 	if m.systemInput.AsyncHookQueue == nil {
 		return nil
@@ -492,16 +308,12 @@ func (m *model) drainAsyncHookQueueToAgent() tea.Cmd {
 	}
 
 	if item.Notice != "" {
-		m.conv.Append(core.ChatMessage{
-			Role:    core.RoleNotice,
-			Content: item.Notice,
-		})
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: item.Notice})
 	}
 	if len(item.Context) == 0 && item.ContinuationPrompt == "" {
 		return nil
 	}
 
-	// Build the continuation message combining context and prompt
 	var content string
 	if item.ContinuationPrompt != "" {
 		content = item.ContinuationPrompt
@@ -513,14 +325,10 @@ func (m *model) drainAsyncHookQueueToAgent() tea.Cmd {
 		content += ctx
 	}
 
-	m.conv.Append(core.ChatMessage{
-		Role:    core.RoleUser,
-		Content: content,
-	})
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: content})
 	return m.sendToAgent(content, nil)
 }
 
-// drainTaskNotificationsToAgent pops completed task notifications and sends them to the agent.
 func (m *model) drainTaskNotificationsToAgent() tea.Cmd {
 	if m.agentInput.Notifications == nil {
 		return nil
@@ -534,8 +342,7 @@ func (m *model) drainTaskNotificationsToAgent() tea.Cmd {
 
 // --- Permission bridge ---
 
-// showPermissionPrompt shows the TUI permission approval dialog for a bridge request.
-func (m *model) showPermissionPrompt(req *permBridgeRequest) tea.Cmd {
+func (m *model) showPermissionPrompt(req *appoutput.PermBridgeRequest) tea.Cmd {
 	if req == nil || req.Request == nil {
 		return nil
 	}
@@ -543,7 +350,6 @@ func (m *model) showPermissionPrompt(req *permBridgeRequest) tea.Cmd {
 	return nil
 }
 
-// sendToAgent sends a user message to the core.Agent's inbox.
 func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {
 	if m.agentSess == nil || m.agentSess.agent == nil {
 		return nil
@@ -560,7 +366,6 @@ func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {
 	}
 }
 
-// continueOutbox returns the command to keep reading the agent outbox.
 func (m *model) continueOutbox() tea.Cmd {
 	if m.agentSess == nil || m.agentSess.agent == nil {
 		return nil
@@ -568,20 +373,13 @@ func (m *model) continueOutbox() tea.Cmd {
 	return appoutput.DrainAgentOutbox(m.agentSess.agent.Outbox())
 }
 
-// --- Overflow persistence (ported from handler_tool.go) ---
+// --- Overflow persistence ---
 
 const (
-	// toolResultOverflowThreshold is the size in bytes above which tool results
-	// are persisted to disk and replaced with a truncated preview.
-	toolResultOverflowThreshold = 100_000 // 100KB
-
-	// toolResultPreviewSize is the number of bytes to keep as an inline preview
-	// when a tool result exceeds the overflow threshold.
-	toolResultPreviewSize = 10_000 // 10KB
+	toolResultOverflowThreshold = 100_000
+	toolResultPreviewSize       = 10_000
 )
 
-// persistToolResultOverflow checks if a tool result exceeds the overflow threshold
-// and, if so, persists the full content to disk and replaces it with a truncated preview.
 func (m *model) persistToolResultOverflow(result *core.ToolResult) {
 	if len(result.Content) <= toolResultOverflowThreshold {
 		return
@@ -610,19 +408,9 @@ func (m *model) persistToolResultOverflow(result *core.ToolResult) {
 	}
 }
 
-// getHookResponseString extracts a string value from a hook response map.
 func getHookResponseString(resp map[string]any, key string) string {
 	if value, ok := resp[key].(string); ok {
 		return value
 	}
 	return ""
-}
-
-// isTaskTool returns true if the tool name is a task management tool.
-func isTaskTool(name string) bool {
-	switch name {
-	case tool.ToolTaskCreate, tool.ToolTaskGet, tool.ToolTaskUpdate, tool.ToolTaskList:
-		return true
-	}
-	return false
 }

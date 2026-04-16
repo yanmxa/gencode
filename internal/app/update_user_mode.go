@@ -6,8 +6,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
-	appmode "github.com/yanmxa/gencode/internal/app/ui/mode"
-	"github.com/yanmxa/gencode/internal/app/ui/progress"
+	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
+	"github.com/yanmxa/gencode/internal/app/output/progress"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/util/log"
 	"github.com/yanmxa/gencode/internal/core"

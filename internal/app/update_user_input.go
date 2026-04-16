@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/hook"
 )
 
@@ -277,4 +278,18 @@ func (m *model) checkPromptHook(prompt string) (bool, string) {
 	}
 	outcome := m.hookEngine.Execute(context.Background(), hook.UserPromptSubmit, hook.HookInput{Prompt: prompt})
 	return outcome.ShouldBlock, outcome.BlockReason
+}
+
+// --- Queue selection (Source 1 overlay) ---
+
+func (m *model) handleQueueSelectKey(msg tea.KeyMsg) (tea.Cmd, bool) {
+	return appuser.HandleQueueSelectKey(&m.userInput, &m.inputQueue, msg)
+}
+
+func (m *model) enterQueueSelection() {
+	appuser.EnterQueueSelection(&m.userInput, &m.inputQueue)
+}
+
+func (m *model) saveCurrentQueueEdit() {
+	appuser.SaveCurrentQueueEdit(&m.userInput, &m.inputQueue)
 }

@@ -9,9 +9,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/ui/mcpui"
-	appmemory "github.com/yanmxa/gencode/internal/app/ui/memory"
-	"github.com/yanmxa/gencode/internal/app/ui/pluginui"
+	"github.com/yanmxa/gencode/internal/app/user/mcpui"
+	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
+	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/plugin"
 )
 
@@ -56,7 +56,7 @@ func handleMCPCommand(ctx context.Context, m *model, args string) (string, tea.C
 		m.mcp.EditingFile = editInfo.TempFile
 		m.mcp.EditingServer = editInfo.ServerName
 		m.mcp.EditingScope = editInfo.Scope
-		return result, startMCPEditor(editInfo.TempFile), nil
+		return result, mcpui.StartMCPEditor(editInfo.TempFile), nil
 	}
 	if m.mcp.Selector.IsActive() {
 		return result, m.mcp.Selector.AutoReconnect(), nil

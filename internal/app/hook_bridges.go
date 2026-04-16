@@ -1,8 +1,6 @@
 package app
 
 import (
-	"strings"
-
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	"github.com/yanmxa/gencode/internal/ext/mcp"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -91,25 +89,10 @@ func (b configHookBridge) ConfigChanged(source, filePath string) {
 	})
 }
 
-func joinNameDesc(name, desc string) string {
-	name = strings.TrimSpace(name)
-	desc = strings.TrimSpace(desc)
-	switch {
-	case name != "" && desc != "" && !strings.EqualFold(name, desc):
-		return name + ": " + desc
-	case desc != "":
-		return desc
-	case name != "":
-		return name
-	default:
-		return ""
-	}
-}
-
 func taskSubject(info task.TaskInfo) string {
 	switch info.Type {
 	case task.TaskTypeAgent:
-		if s := joinNameDesc(info.AgentName, info.Description); s != "" {
+		if s := appagent.JoinNameDesc(info.AgentName, info.Description); s != "" {
 			return s
 		}
 	case task.TaskTypeBash:

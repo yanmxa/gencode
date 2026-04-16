@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/ui/suggest"
+	"github.com/yanmxa/gencode/internal/app/user/suggest"
 )
 
 // ExtractPastedText derives the pasted content by comparing the textarea

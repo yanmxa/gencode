@@ -2,6 +2,24 @@
 
 GenCode is a terminal AI agent built on [Bubble Tea](https://github.com/charmbracelet/bubbletea). The core design is an **event-based agent**: the Agent communicates through Inbox/Outbox channels, and the TUI observes events via the Bubble Tea MVU (Model-View-Update) loop. This channel-based, loosely-coupled architecture is designed for extensibility — each agent is an independent goroutine with its own Inbox/Outbox, agents interact only through messages with no shared mutable state, making it straightforward to scale from single-agent to multi-agent orchestration.
 
+## Bubble Tea MVU
+
+Bubble Tea 的核心是三个方法：
+
+```go
+type Model interface {
+    Init() Cmd                           // called once at startup, returns first Cmd
+    Update(Msg) (Model, Cmd)             // receives msg, returns updated Model + side effect
+    View() string                        // reads Model, returns string to render
+}
+```
+
+- **Init()**: returns the first `tea.Cmd` (start timers, fetch data). Called once.
+- **Update()**: value receiver — gets a copy of Model, must return the updated copy. `tea.Msg` is any type (key event, timer tick, custom event). `tea.Cmd` is an async function that produces the next `tea.Msg` (`nil` = no side effect).
+- **View()**: pure function, no side effects. Framework calls it after every `Update()`.
+
+The loop: `Init → Cmd → Msg → Update → Cmd → Msg → ...`, with `View()` after every `Update`.
+
 ## Three-Source MVU
 
 The Agent is the central processing unit. **Three input sources** feed its Inbox. The **Outbox** outputs events that mutate the TUI Model and trigger View. Together, 3 input sources + Agent Output form the four paths that update the Model.
@@ -180,11 +198,11 @@ Organized by the four mutation sources + config. Pseudo-code showing what each s
 
 ```go
 type Model struct {
-    userInput   UserInput    // textarea, history, images, queue, overlay, modal, mode
-    agentInput  AgentInput   // background agent notifications, batch tracking
-    systemInput SystemInput  // cron prompts, async hook state
-    agentOutput AgentOutput  // conversation, stream, tokens, provider, session, compact
-    config      Config       // settings, hookEngine, fileCache, cwd, isGit
+    user    UserInput    // textarea, history, images, queue, overlay, modal, mode
+    agent   AgentInput   // background agent notifications, batch tracking
+    system  SystemInput  // cron prompts, async hook state
+    outbox  OutboxState  // conversation, stream, tokens, provider, session, compact
+    config  Config       // settings, hookEngine, fileCache, cwd, isGit
 }
 ```
 
@@ -199,13 +217,13 @@ msg → Update(msg) → handler mutates Model → return tea.Cmd
                                                     ↓
                                           tea.Cmd produces new msg → loop
 
-  msg type         → updates       → handler
-  ─────────────────────────────────────────────
-  userInput  msgs  → m.userInput   → handleKey, handleSubmit, ...
-  agentInput msgs  → m.agentInput  → handleTaskNotif, ...
-  systemInput msgs → m.systemInput → handleCronTick, handleAsyncHook, ...
-  agentOutput msgs → m.agentOutput → handleAgentEvent, handlePermRequest, ...
-  config msgs      → m.config      → handleConfigReload
+  msg type      → updates    → handler
+  ──────────────────────────────────────────────
+  user msgs     → m.user    → handleKey, handleSubmit, ...
+  agent msgs    → m.agent   → handleTaskNotif, ...
+  system msgs   → m.system  → handleCronTick, handleAsyncHook, ...
+  outbox msgs   → m.outbox  → handleOutboxEvent, handlePermRequest, ...
+  config msgs   → m.config  → handleConfigReload
 ```
 
 ## View
@@ -213,13 +231,13 @@ msg → Update(msg) → handler mutates Model → return tea.Cmd
 ```
 View() → reads Model → renders terminal
 
-  Model field    → renders
+  Model field  → renders
   ──────────────────────────────────────────────
-  userInput      → input textarea, overlay selector, modal dialog, status bar
-  agentInput     → task tracker (background agent progress)
-  systemInput    → (inline notices when cron/hook injects)
-  agentOutput    → chat messages, streaming content, tool results, token counts
-  config         → mode indicator, model name, thinking level
+  user         → input textarea, overlay selector, modal dialog, status bar
+  agent        → task tracker (background agent progress)
+  system       → (inline notices when cron/hook injects)
+  outbox       → chat messages, streaming content, tool results, token counts
+  config       → mode indicator, model name, thinking level
 ```
 
 ## App Directory Structure
@@ -234,21 +252,24 @@ internal/app/
 ├── update.go                   # Update() top-level dispatch
 ├── view.go                     # View() layout composition
 │
-├── user/                       # userInput: handlers + view
+├── user/                       # userInput: handlers + view + overlays
 │   ├── update.go               #   handleKey, handleSubmit, command dispatch
 │   └── view.go                 #   input textarea, overlay, modal, status bar
 │
-├── agent/                      # agentInput: handlers + view
+├── agent/                      # agent: handlers + view
 │   ├── update.go               #   task notification, SendMessage, self-inject
 │   └── view.go                 #   task tracker, progress
 │
-├── system/                     # systemInput: handlers + view
+├── system/                     # system: handlers + view
 │   ├── update.go               #   cron tick, async hook rewake
 │   └── view.go                 #   cron status, hook indicators
 │
-├── output/                     # agentOutput: handlers + view
+├── output/                     # agentOutput: handlers + view + rendering
 │   ├── update.go               #   outbox events, OnTurn, permission bridge, side effects
-│   └── view.go                 #   chat messages, streaming, tool results, tokens
+│   ├── view.go                 #   chat messages, streaming, tool results, tokens
+│   ├── theme/                  #   colors/styles shared by all views
+│   ├── render/                 #   chat message & tool result rendering
+│   └── toolui/                 #   tool selector & execution
 ```
 
 Agent builder（buildCoreAgent, ensureAgentSession, startAgentLoop）belongs in `model.go` — it's Model initialization, not an Update handler.

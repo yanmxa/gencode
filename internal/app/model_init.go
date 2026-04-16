@@ -8,22 +8,22 @@ import (
 	"go.uber.org/zap"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	"github.com/yanmxa/gencode/internal/app/ui/agentui"
-	appapproval "github.com/yanmxa/gencode/internal/app/ui/approval"
-	appconv "github.com/yanmxa/gencode/internal/app/ui/conversation"
-	"github.com/yanmxa/gencode/internal/app/ui/mcpui"
-	appmemory "github.com/yanmxa/gencode/internal/app/ui/memory"
-	appmode "github.com/yanmxa/gencode/internal/app/ui/mode"
+	"github.com/yanmxa/gencode/internal/app/user/agentui"
+	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
+	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
+	"github.com/yanmxa/gencode/internal/app/user/mcpui"
+	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
+	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/ui/pluginui"
-	"github.com/yanmxa/gencode/internal/app/ui/progress"
-	"github.com/yanmxa/gencode/internal/app/ui/providerui"
-	"github.com/yanmxa/gencode/internal/app/ui/searchui"
-	"github.com/yanmxa/gencode/internal/app/ui/sessionui"
-	"github.com/yanmxa/gencode/internal/app/ui/skillui"
-	"github.com/yanmxa/gencode/internal/app/ui/suggest"
+	"github.com/yanmxa/gencode/internal/app/user/pluginui"
+	"github.com/yanmxa/gencode/internal/app/output/progress"
+	"github.com/yanmxa/gencode/internal/app/user/providerui"
+	"github.com/yanmxa/gencode/internal/app/user/searchui"
+	"github.com/yanmxa/gencode/internal/app/user/sessionui"
+	"github.com/yanmxa/gencode/internal/app/user/skillui"
+	"github.com/yanmxa/gencode/internal/app/user/suggest"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/app/ui/toolui"
+	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
@@ -58,7 +58,7 @@ type modelInfra struct {
 	initialSessionID string
 }
 
-func initializeModelInfra(cwd string) (modelInfra, error) {
+func initInfra(cwd string) (modelInfra, error) {
 	orchestration.DefaultStore.Reset()
 	cron.DefaultStore.Reset()
 	cron.DefaultStore.SetStoragePath(filepath.Join(cwd, ".gen", "scheduled_tasks.json"))
@@ -66,9 +66,9 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 		return modelInfra{}, fmt.Errorf("failed to load scheduled tasks: %w", err)
 	}
 
-	store, llmProvider, currentModel := initializeProvider()
-	initializeRegistries(cwd)
-	settings := loadSettingsForCwd(cwd)
+	store, llmProvider, currentModel := initProvider()
+	initRegistries(cwd)
+	settings := loadSettings(cwd)
 
 	// Wire injected dependencies so tool layer doesn't import upper layers
 	if store != nil {
@@ -93,7 +93,7 @@ func initializeModelInfra(cwd string) (modelInfra, error) {
 		modelID = currentModel.ModelID
 	}
 	hookEngine.SetLLMCompleter(buildLLMCompleter(llmProvider), modelID)
-	hookEngine.SetAgentRunner(newHookAgentRunner(llmProvider, settings, cwd, config.IsGitRepo(cwd), mcp.DefaultRegistry, modelID))
+	hookEngine.SetAgentRunner(NewHookAgentRunner(llmProvider, settings, cwd, config.IsGitRepo(cwd), mcp.DefaultRegistry, modelID))
 	hookEngine.SetEnvProvider(plugin.PluginEnv)
 	installHookBridges(hookEngine, notifications)
 
@@ -134,7 +134,7 @@ func newBaseModel(cwd string, infra modelInfra) model {
 		systemInput: appsystem.New(),
 		settings:    infra.settings,
 		hookEngine:  infra.hookEngine,
-		fileWatcher: newFileWatcher(infra.hookEngine, nil),
+		fileWatcher: appsystem.NewFileWatcher(infra.hookEngine, nil),
 		agentInput:  appagent.State{Notifications: infra.notifications},
 		fileCache:   filecache.New(),
 	}
@@ -259,11 +259,11 @@ func (m *model) reloadPluginBackedState() error {
 	}
 	m.mcp.Registry = mcp.DefaultRegistry
 
-	settings := loadSettings()
+	settings := loadSettings(m.cwd)
 	m.settings = settings
 	if m.hookEngine != nil {
 		m.hookEngine.SetSettings(settings)
-		m.hookEngine.SetAgentRunner(newHookAgentRunner(m.provider.LLM, settings, m.cwd, m.isGit, m.mcp.Registry, m.getModelID()))
+		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.provider.LLM, settings, m.cwd, m.isGit, m.mcp.Registry, m.getModelID()))
 	}
 	m.reconfigureAgentTool()
 

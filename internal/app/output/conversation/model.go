@@ -1,7 +1,7 @@
 package conversation
 
 import (
-	appcompact "github.com/yanmxa/gencode/internal/app/ui/compact"
+	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
 	"github.com/yanmxa/gencode/internal/core"
 )
 

@@ -13,7 +13,7 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	coretool "github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
-	"github.com/yanmxa/gencode/internal/app/ui/progress"
+	"github.com/yanmxa/gencode/internal/app/output/progress"
 )
 
 type defaultMCPExecutor struct{}

@@ -10,12 +10,12 @@ import (
 	"time"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	appconv "github.com/yanmxa/gencode/internal/app/ui/conversation"
-	"github.com/yanmxa/gencode/internal/app/ui/mcpui"
-	appmode "github.com/yanmxa/gencode/internal/app/ui/mode"
+	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
+	"github.com/yanmxa/gencode/internal/app/user/mcpui"
+	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/ui/progress"
-	"github.com/yanmxa/gencode/internal/app/ui/providerui"
+	"github.com/yanmxa/gencode/internal/app/output/progress"
+	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
@@ -471,7 +471,7 @@ func TestChangeCwdReloadsProjectScopedSettings(t *testing.T) {
 
 	m := &model{
 		cwd:      oldCwd,
-		settings: loadSettingsForCwd(oldCwd),
+		settings: loadSettings(oldCwd),
 		mode: appmode.State{
 			SessionPermissions: config.NewSessionPermissions(),
 			DisabledTools:      map[string]bool{"Bash": true},
@@ -540,16 +540,15 @@ func TestFileWatcherFiresFileChangedForWatchedPath(t *testing.T) {
 	})
 
 	m := &model{
-		cwd:         cwd,
-		hookEngine:  engine,
-		fileWatcher: newFileWatcher(engine, nil),
+		cwd:        cwd,
+		hookEngine: engine,
 	}
-	m.fileWatcher.onOutcome = func(outcome hook.HookOutcome) {
+	m.fileWatcher = appsystem.NewFileWatcher(engine, func(outcome hook.HookOutcome) {
 		m.applyRuntimeHookOutcome(outcome)
-	}
+	})
 	m.applyRuntimeHookOutcome(hook.HookOutcome{WatchPaths: []string{filePath}})
 
-	time.Sleep(defaultFileWatcherInterval + 100*time.Millisecond)
+	time.Sleep(appsystem.DefaultFileWatcherInterval + 100*time.Millisecond)
 	if err := os.WriteFile(filePath, []byte("A=2\n"), 0o644); err != nil {
 		t.Fatalf("update watched file: %v", err)
 	}

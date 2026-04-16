@@ -14,21 +14,21 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	"github.com/yanmxa/gencode/internal/app/ui/agentui"
-	appapproval "github.com/yanmxa/gencode/internal/app/ui/approval"
-	appconv "github.com/yanmxa/gencode/internal/app/ui/conversation"
-	"github.com/yanmxa/gencode/internal/app/ui/mcpui"
-	appmemory "github.com/yanmxa/gencode/internal/app/ui/memory"
-	appmode "github.com/yanmxa/gencode/internal/app/ui/mode"
+	"github.com/yanmxa/gencode/internal/app/user/agentui"
+	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
+	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
+	"github.com/yanmxa/gencode/internal/app/user/mcpui"
+	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
+	appmode "github.com/yanmxa/gencode/internal/app/user/mode"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/ui/pluginui"
-	"github.com/yanmxa/gencode/internal/app/ui/providerui"
-	appqueue "github.com/yanmxa/gencode/internal/app/ui/queue"
-	"github.com/yanmxa/gencode/internal/app/ui/searchui"
-	"github.com/yanmxa/gencode/internal/app/ui/sessionui"
-	"github.com/yanmxa/gencode/internal/app/ui/skillui"
+	"github.com/yanmxa/gencode/internal/app/user/pluginui"
+	"github.com/yanmxa/gencode/internal/app/user/providerui"
+	appqueue "github.com/yanmxa/gencode/internal/app/user/queue"
+	"github.com/yanmxa/gencode/internal/app/user/searchui"
+	"github.com/yanmxa/gencode/internal/app/user/sessionui"
+	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/app/ui/toolui"
+	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
@@ -86,18 +86,18 @@ type model struct {
 	initialPrompt string
 	settings      *config.Settings
 	hookEngine    *hook.Engine
-	fileWatcher   *fileWatcher
+	fileWatcher   *appsystem.FileWatcher
 	fileCache     *filecache.Cache
 
 	// Agent session
 	agentSess         *agentSession
-	pendingPermBridge *permBridgeRequest
+	pendingPermBridge *appoutput.PermBridgeRequest
 }
 
 // --- Constructor and Init ---
 func newModel(opts config.RunOptions) (*model, error) {
 	cwd, _ := os.Getwd()
-	infra, err := initializeModelInfra(cwd)
+	infra, err := initInfra(cwd)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +313,7 @@ func formatAsyncHookContinuationContext(result hook.AsyncHookResult, reason stri
 // agentSession holds the running core.Agent and its supporting infrastructure.
 type agentSession struct {
 	agent      core.Agent
-	permBridge *permissionBridge
+	permBridge *appoutput.PermissionBridge
 	cancel     context.CancelFunc
 }
 
@@ -348,7 +348,7 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 	coreHooks := hook.AsCoreHooks(m.hookEngine)
 
 	// Permission bridge — blocking PermissionFunc with TUI approval
-	permBridge := newPermissionBridge(
+	permBridge := appoutput.NewPermissionBridge(
 		func() *config.Settings { return m.settings },
 		func() *config.SessionPermissions { return m.mode.SessionPermissions },
 		func() string { return m.cwd },
@@ -384,7 +384,7 @@ func (m *model) startAgentLoop(sess *agentSession) tea.Cmd {
 	// Return commands that drain the outbox and poll the permission bridge
 	return tea.Batch(
 		appoutput.DrainAgentOutbox(sess.agent.Outbox()),
-		sess.permBridge.PollCmd(),
+		pollPermBridge(sess.permBridge),
 	)
 }
 

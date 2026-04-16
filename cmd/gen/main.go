@@ -39,7 +39,6 @@ var cliOpts struct {
 func init() {
 	// Load .env file if it exists (silent fail if not found)
 	_ = godotenv.Load()
-
 	// Initialize logging (enabled via GEN_DEBUG=1)
 	_ = log.Init()
 
@@ -105,7 +104,7 @@ Non-interactive mode:
 			ResumeID:  resumeID,
 			Fork:      cliOpts.fork,
 		}
-		if err := app.RunWithOptions(opts); err != nil {
+		if err := app.Run(opts); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
