@@ -30,12 +30,12 @@ func (m *model) overlaySelectors() []overlaySelector {
 		&m.provider.Selector,
 		&m.tool.Selector,
 		&m.skill.Selector,
-		&m.agent.Selector,
+		&m.agent.Model,
 		&m.mcp.Selector,
 		&m.plugin.Selector,
 		&m.session.Selector,
 		&m.memory.Selector,
-		&m.search.Selector,
+		&m.search.Model,
 	}
 }
 
@@ -113,8 +113,8 @@ func (m *model) renderOverlaySelector() string {
 		return m.tool.Selector.Render()
 	case m.skill.Selector.IsActive():
 		return m.skill.Selector.Render()
-	case m.agent.Selector.IsActive():
-		return m.agent.Selector.Render()
+	case m.agent.IsActive():
+		return m.agent.Render()
 	case m.mcp.Selector.IsActive():
 		return m.mcp.Selector.Render()
 	case m.plugin.Selector.IsActive():
@@ -123,8 +123,8 @@ func (m *model) renderOverlaySelector() string {
 		return m.session.Selector.Render()
 	case m.memory.Selector.IsActive():
 		return m.memory.Selector.Render()
-	case m.search.Selector.IsActive():
-		return m.search.Selector.Render()
+	case m.search.IsActive():
+		return m.search.Render()
 	default:
 		return ""
 	}

@@ -4,6 +4,7 @@
 package agentui
 
 // State holds all agent-related state for the TUI model.
+// Model is embedded so callers access IsActive/HandleKeypress/Render directly.
 type State struct {
-	Selector Model
+	Model
 }

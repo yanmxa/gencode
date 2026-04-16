@@ -2,13 +2,11 @@ package providerui
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
-	"github.com/yanmxa/gencode/internal/app/user/searchui"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/provider"
 	"github.com/yanmxa/gencode/internal/util/log"
@@ -38,17 +36,6 @@ func Update(rt Runtime, state *State, msg tea.Msg) (tea.Cmd, bool) {
 	case StatusExpiredMsg:
 		state.StatusMessage = ""
 		return nil, true
-	}
-	return nil, false
-}
-
-// UpdateSearch routes search provider selection messages.
-func UpdateSearch(state *State, search *searchui.State, msg tea.Msg) (tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case searchui.SelectedMsg:
-		search.Selector.Cancel()
-		state.StatusMessage = fmt.Sprintf("Search engine: %s", msg.Provider)
-		return StatusTimer(3 * time.Second), true
 	}
 	return nil, false
 }

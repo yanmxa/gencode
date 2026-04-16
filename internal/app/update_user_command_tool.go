@@ -49,7 +49,7 @@ func handleSkillCommand(ctx context.Context, m *model, args string) (string, tea
 }
 
 func handleAgentCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if err := m.agent.Selector.EnterSelect(m.width, m.height); err != nil {
+	if err := m.agent.EnterSelect(m.width, m.height); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil

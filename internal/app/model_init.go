@@ -200,11 +200,11 @@ func newPluginState() pluginui.State {
 }
 
 func newAgentState() agentui.State {
-	return agentui.State{Selector: agentui.New()}
+	return agentui.State{Model: agentui.New()}
 }
 
 func newSearchState() searchui.State {
-	return searchui.State{Selector: searchui.New()}
+	return searchui.State{Model: searchui.New()}
 }
 
 func (m *model) applyRunOptions(opts config.RunOptions) error {

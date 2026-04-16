@@ -181,8 +181,8 @@ func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 		return true, m.tool.Selector.HandleKeypress(msg)
 	case m.skill.Selector.IsActive():
 		return true, m.skill.Selector.HandleKeypress(msg)
-	case m.agent.Selector.IsActive():
-		return true, m.agent.Selector.HandleKeypress(msg)
+	case m.agent.IsActive():
+		return true, m.agent.HandleKeypress(msg)
 	case m.mcp.Selector.IsActive():
 		return true, m.mcp.Selector.HandleKeypress(msg)
 	case m.plugin.Selector.IsActive():
@@ -191,8 +191,8 @@ func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 		return true, m.session.Selector.HandleKeypress(msg)
 	case m.memory.Selector.IsActive():
 		return true, m.memory.Selector.HandleKeypress(msg)
-	case m.search.Selector.IsActive():
-		return true, m.search.Selector.HandleKeypress(msg)
+	case m.search.IsActive():
+		return true, m.search.HandleKeypress(msg)
 	}
 
 	return false, nil

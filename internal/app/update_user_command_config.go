@@ -16,7 +16,7 @@ import (
 )
 
 func handleSearchCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if err := m.search.Selector.Enter(m.width, m.height); err != nil {
+	if err := m.search.Enter(m.width, m.height); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil

@@ -4,12 +4,16 @@
 package app
 
 import (
+	"fmt"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
+	"github.com/yanmxa/gencode/internal/app/user/searchui"
 	"github.com/yanmxa/gencode/internal/app/user/sessionui"
 	"github.com/yanmxa/gencode/internal/provider"
 )
@@ -33,7 +37,13 @@ func (m *model) updateProvider(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (m *model) updateSearch(msg tea.Msg) (tea.Cmd, bool) {
-	return providerui.UpdateSearch(&m.provider, &m.search, msg)
+	switch msg := msg.(type) {
+	case searchui.SelectedMsg:
+		m.search.Cancel()
+		m.provider.StatusMessage = fmt.Sprintf("Search engine: %s", msg.Provider)
+		return providerui.StatusTimer(3 * time.Second), true
+	}
+	return nil, false
 }
 
 func (m *model) updateSession(msg tea.Msg) (tea.Cmd, bool) {
