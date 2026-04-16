@@ -50,38 +50,6 @@ func TestEnqueueWithImages(t *testing.T) {
 	}
 }
 
-func TestRemove(t *testing.T) {
-	var q Queue
-
-	q.Enqueue("a", nil)
-	id2 := q.Enqueue("b", nil)
-	q.Enqueue("c", nil)
-
-	if !q.remove(id2) {
-		t.Fatal("expected Remove to return true")
-	}
-	if q.Len() != 2 {
-		t.Fatalf("expected 2 items after remove, got %d", q.Len())
-	}
-
-	// Verify order: a, c
-	item, _ := q.Dequeue()
-	if item.Content != "a" {
-		t.Fatalf("expected 'a', got %q", item.Content)
-	}
-	item, _ = q.Dequeue()
-	if item.Content != "c" {
-		t.Fatalf("expected 'c', got %q", item.Content)
-	}
-}
-
-func TestRemoveNotFound(t *testing.T) {
-	var q Queue
-	q.Enqueue("a", nil)
-	if q.remove(999) {
-		t.Fatal("expected Remove to return false for non-existent ID")
-	}
-}
 
 func TestClear(t *testing.T) {
 	var q Queue

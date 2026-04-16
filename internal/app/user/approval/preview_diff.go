@@ -40,15 +40,6 @@ func (d *diffPreview) toggleExpand() {
 	d.expanded = !d.expanded
 }
 
-// isExpanded returns whether the preview is expanded
-func (d *diffPreview) isExpanded() bool {
-	return d.expanded
-}
-
-// setMaxVisible sets the maximum visible lines when collapsed
-func (d *diffPreview) setMaxVisible(n int) {
-	d.maxVisible = n
-}
 
 // Diff rendering styles - use functions to get current theme dynamically
 func getDiffAddedStyle() lipgloss.Style {

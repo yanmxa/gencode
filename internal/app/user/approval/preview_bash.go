@@ -36,15 +36,6 @@ func (b *bashPreview) toggleExpand() {
 	b.expanded = !b.expanded
 }
 
-// isExpanded returns whether the preview is expanded
-func (b *bashPreview) isExpanded() bool {
-	return b.expanded
-}
-
-// setMaxVisible sets the maximum visible lines when collapsed
-func (b *bashPreview) setMaxVisible(n int) {
-	b.maxVisible = n
-}
 
 // Bash command rendering styles - use functions to get current theme dynamically
 func getBashCommandStyle() lipgloss.Style {

@@ -56,16 +56,6 @@ func (q *Queue) At(idx int) (Item, bool) {
 	return q.items[idx], true
 }
 
-// remove deletes the item with the given ID. Returns true if found.
-func (q *Queue) remove(id int) bool {
-	for i, item := range q.items {
-		if item.ID == id {
-			q.items = append(q.items[:i], q.items[i+1:]...)
-			return true
-		}
-	}
-	return false
-}
 
 // Items returns a copy of the queued items. Safe for iteration
 // without risk of mutating the queue's internal state.

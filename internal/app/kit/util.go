@@ -1,4 +1,4 @@
-// Package common provides utility functions and styles used across UI packages.
+// Package kit provides utility functions and styles used across UI packages.
 package kit
 
 import (
