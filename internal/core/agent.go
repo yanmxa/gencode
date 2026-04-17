@@ -4,11 +4,6 @@ import (
 	"context"
 )
 
-// PermissionFunc is called before each tool execution.
-// Returns whether the tool call is allowed, with an optional reason.
-// Permission runs before PreTool hooks — see Config.Permission doc.
-type PermissionFunc func(ctx context.Context, tc ToolCall) (allow bool, reason string)
-
 // Agent is the core abstraction — an autonomous entity that reasons and acts.
 //
 // Three capabilities, nothing more:
@@ -90,16 +85,17 @@ type Agent interface {
 // Config holds construction parameters for an agent.
 //
 // Required fields: LLM, System, Tools. NewAgent panics if any is nil.
-// Optional fields: Permission, ID, CWD, MaxTurns, InboxBuf, OutboxBuf, AllowedTools, CompactFunc.
+// Optional fields: ID, CWD, MaxTurns, InboxBuf, OutboxBuf, CompactFunc.
+//
+// Permission is a tool-layer concern — use tool.WithPermission to wrap Tools
+// before passing them to NewAgent. See docs/permission.md.
 type Config struct {
 	ID                string
-	LLM               LLM            // required: inference backend
-	System             System         // required: system prompt layers
-	Tools              Tools          // required: available tools
-	Permission         PermissionFunc // optional: called before each tool execution
-	AgentType          string   // optional: agent type identifier for hook events
-	Color              string   // optional: display color for TUI (e.g. "#ff6600", "blue")
-	AllowedTools       []string // optional: tools that skip Permission check
+	LLM               LLM    // required: inference backend
+	System             System // required: system prompt layers
+	Tools              Tools  // required: available tools (wrap with tool.WithPermission for permission)
+	AgentType          string // optional: agent type identifier for hook events
+	Color              string // optional: display color for TUI (e.g. "#ff6600", "blue")
 	CompactFunc        func(ctx context.Context, msgs []Message) (string, error) // optional: summarize messages for compaction
 	CWD                string
 	MaxTurns           int // max LLM inference rounds per cycle, 0 = unlimited
@@ -129,13 +125,6 @@ func NewAgent(cfg Config) Agent {
 	if cfg.OutboxBuf == 0 {
 		cfg.OutboxBuf = 64
 	}
-	var allowed map[string]bool
-	if len(cfg.AllowedTools) > 0 {
-		allowed = make(map[string]bool, len(cfg.AllowedTools))
-		for _, name := range cfg.AllowedTools {
-			allowed[name] = true
-		}
-	}
 
 	var outbox chan Event
 	if cfg.OutboxBuf > 0 {
@@ -148,8 +137,6 @@ func NewAgent(cfg Config) Agent {
 		color:             cfg.Color,
 		system:            cfg.System,
 		tools:             cfg.Tools,
-		permission:        cfg.Permission,
-		allowedTools:      allowed,
 		compactFunc:       cfg.CompactFunc,
 		llm:               cfg.LLM,
 		cwd:               cfg.CWD,
@@ -172,3 +159,54 @@ type Result struct {
 	StopReason StopReason // why the loop stopped
 	StopDetail string     // human-readable detail (e.g. hook block reason)
 }
+
+
+// EventType identifies an agent lifecycle event.
+type EventType string
+
+// Agent lifecycle events — emitted to the Outbox for TUI rendering.
+const (
+	OnStart   EventType = "AgentStart" // agent begins
+	OnStop    EventType = "AgentStop"  // agent ends (error or nil in Data)
+	PreInfer  EventType = "PreInfer"   // before LLM call
+	PostInfer EventType = "PostInfer"  // after LLM response (*InferResponse in Data)
+	OnChunk   EventType = "Chunk"      // streaming chunk (Chunk in Data)
+	PreTool   EventType = "PreTool"    // before tool execution (ToolCall in Data)
+	PostTool  EventType = "PostTool"   // after tool execution (ToolResult in Data)
+	OnMessage EventType = "Message"    // message received on inbox (Message in Data)
+	OnTurn    EventType = "Turn"       // think+act cycle completed (Result in Data)
+)
+
+// Event carries context for an agent lifecycle point.
+// Emitted to Outbox for TUI observation.
+type Event struct {
+	Type   EventType // which event
+	Source string    // who triggered (agent ID, tool name, "user")
+	Data   any       // payload — type depends on EventType (see above)
+}
+
+// Event.Data type helpers — reduce boilerplate in handlers.
+
+func (e Event) ToolCall() (ToolCall, bool)       { tc, ok := e.Data.(ToolCall); return tc, ok }
+func (e Event) ToolResult() (ToolResult, bool)   { tr, ok := e.Data.(ToolResult); return tr, ok }
+func (e Event) Message() (Message, bool)         { m, ok := e.Data.(Message); return m, ok }
+func (e Event) Result() (Result, bool)           { r, ok := e.Data.(Result); return r, ok }
+func (e Event) Response() (*InferResponse, bool) { r, ok := e.Data.(*InferResponse); return r, ok }
+func (e Event) Chunk() (Chunk, bool)             { c, ok := e.Data.(Chunk); return c, ok }
+func (e Event) Error() (error, bool)             { err, ok := e.Data.(error); return err, ok }
+
+// Typed event constructors — enforce correct Data types at construction.
+
+func StartEvent(agentID string) Event { return Event{Type: OnStart, Source: agentID} }
+func StopEvent(agentID string, err error) Event {
+	return Event{Type: OnStop, Source: agentID, Data: err}
+}
+func ChunkEvent(agentID string, c Chunk) Event { return Event{Type: OnChunk, Source: agentID, Data: c} }
+func MessageEvent(msg Message) Event           { return Event{Type: OnMessage, Source: msg.From, Data: msg} }
+func TurnEvent(agentID string, r Result) Event { return Event{Type: OnTurn, Source: agentID, Data: r} }
+func PreInferEvent(agentID string) Event       { return Event{Type: PreInfer, Source: agentID} }
+func PostInferEvent(agentID string, r *InferResponse) Event {
+	return Event{Type: PostInfer, Source: agentID, Data: r}
+}
+func PreToolEvent(tc ToolCall) Event    { return Event{Type: PreTool, Source: tc.Name, Data: tc} }
+func PostToolEvent(tr ToolResult) Event { return Event{Type: PostTool, Source: tr.ToolName, Data: tr} }

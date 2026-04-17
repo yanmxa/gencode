@@ -19,8 +19,6 @@ type agent struct {
 	color             string
 	system            System
 	tools             Tools
-	permission        PermissionFunc
-	allowedTools      map[string]bool
 	compactFunc       func(ctx context.Context, msgs []Message) (string, error)
 	llm               LLM
 	cwd               string
@@ -223,9 +221,12 @@ func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 }
 
 // execTools runs tool calls in three phases:
-//  1. Permission check — sequential
-//  2. Execute — parallel when multiple tools pass
+//  1. Resolve — emit PreTool event, look up tool
+//  2. Execute — parallel when multiple tools, direct when single
 //  3. Record results — sequential, in original call order
+//
+// Permission checking is handled by the tool decorator (tool.WithPermission),
+// not by the agent. See docs/permission.md.
 func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 	type task struct {
 		call ToolCall
@@ -235,12 +236,6 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 	for _, tc := range calls {
 		if ctx.Err() != nil {
 			break
-		}
-		if a.permission != nil && !a.allowedTools[tc.Name] {
-			if allow, reason := a.permission(ctx, tc); !allow {
-				a.appendResult(tc, "blocked: "+reason, true)
-				continue
-			}
 		}
 		a.emit(ctx, PreToolEvent(tc))
 		t := a.tools.Get(tc.Name)
