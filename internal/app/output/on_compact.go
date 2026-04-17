@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/runtime"
@@ -199,7 +198,7 @@ func parseTokenLimitResponse(content, modelID string, store *llm.Store) (string,
 				_ = store.SetTokenLimit(modelID, inputLimit, outputLimit)
 			}
 			return fmt.Sprintf("Found and saved token limits for %s:\n  Input:  %s tokens\n  Output: %s tokens",
-				modelID, render.FormatTokenCount(inputLimit), render.FormatTokenCount(outputLimit)), true
+				modelID, FormatTokenCount(inputLimit), FormatTokenCount(outputLimit)), true
 		}
 	}
 
@@ -213,7 +212,7 @@ func parseTokenLimitResponse(content, modelID string, store *llm.Store) (string,
 // FormatTokenLimitDisplay formats a token limit display string.
 func FormatTokenLimitDisplay(modelID string, inputLimit, outputLimit int, isCustom bool, currentInputTokens int) string {
 	result := fmt.Sprintf("Token Limits for %s:\n\n  Input:  %s tokens\n  Output: %s tokens",
-		modelID, render.FormatTokenCount(inputLimit), render.FormatTokenCount(outputLimit))
+		modelID, FormatTokenCount(inputLimit), FormatTokenCount(outputLimit))
 
 	if isCustom {
 		result += "\n\n(custom override)"
@@ -221,7 +220,7 @@ func FormatTokenLimitDisplay(modelID string, inputLimit, outputLimit int, isCust
 
 	if currentInputTokens > 0 && inputLimit > 0 {
 		percent := float64(currentInputTokens) / float64(inputLimit) * 100
-		result += fmt.Sprintf("\n\nCurrent usage: %s tokens (%.1f%%)", render.FormatTokenCount(currentInputTokens), percent)
+		result += fmt.Sprintf("\n\nCurrent usage: %s tokens (%.1f%%)", FormatTokenCount(currentInputTokens), percent)
 	}
 
 	return result

@@ -72,7 +72,7 @@ func (a *agent) Run(ctx context.Context) error {
 		// Drain async hooks before closing outbox to prevent
 		// late writes to a closed channel.
 		if a.hooks != nil {
-			a.hooks.Drain()
+			a.hooks.Wait()
 		}
 		if a.outbox != nil {
 			close(a.outbox)
@@ -184,7 +184,7 @@ func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 		}
 
 		// PreInfer hook — can inject context, block, or compact (via SetMessages)
-		action := a.fire(ctx, PreInferEvent(a.id))
+		action := a.emitAndFire(ctx, PreInferEvent(a.id))
 		if action.Block {
 			return makeResult("", StopHook, action.Reason), nil
 		}
@@ -265,7 +265,7 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 				continue
 			}
 		}
-		action := a.fire(ctx, PreToolEvent(tc))
+		action := a.emitAndFire(ctx, PreToolEvent(tc))
 		if action.Block {
 			a.appendResult(tc, "blocked: "+action.Reason, true)
 			continue
@@ -457,15 +457,15 @@ func (a *agent) emitFinal(event Event) {
 	}
 }
 
-// fire dispatches an event to hooks and returns the merged Action.
-// Also emits the event to outbox for observation.
+// emitAndFire emits the event to the outbox for TUI observation,
+// then fires hooks and returns the merged Action.
 // Hook errors are treated as Block (fail-closed for safety).
-func (a *agent) fire(ctx context.Context, event Event) Action {
+func (a *agent) emitAndFire(ctx context.Context, event Event) Action {
 	a.emit(ctx, event)
 	if a.hooks == nil {
 		return Action{}
 	}
-	action, err := a.hooks.Fire(ctx, event)
+	action, err := a.hooks.On(ctx, event)
 	if err != nil {
 		log.Printf("core/agent: hook error on %s: %v (treating as block)", event.Type, err)
 		action.Block = true

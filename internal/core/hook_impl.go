@@ -60,7 +60,7 @@ func (h *hooks) remove(id string) bool {
 	return false
 }
 
-func (h *hooks) Fire(ctx context.Context, event Event) (Action, error) {
+func (h *hooks) On(ctx context.Context, event Event) (Action, error) {
 	// Snapshot matching entries under read lock, then release before calling handlers.
 	h.mu.RLock()
 	entries := h.byEvent[event.Type]
@@ -80,7 +80,7 @@ func (h *hooks) Fire(ctx context.Context, event Event) (Action, error) {
 	var merged Action
 	for _, e := range snapshot {
 		// Once hooks: use atomic CAS to guarantee at-most-once execution
-		// even under concurrent Fire calls. The entry stays in the slice
+		// even under concurrent On calls. The entry stays in the slice
 		// with fired=true; subsequent snapshots skip it via the CAS check.
 		// This avoids a deferred removal goroutine that could race with
 		// re-registration of the same hook ID.
@@ -92,7 +92,7 @@ func (h *hooks) Fire(ctx context.Context, event Event) (Action, error) {
 		if e.Async {
 			h.wg.Add(1)
 			// Use a detached context so async hooks are not cancelled when the
-			// caller's context expires (e.g., during agent shutdown). Drain()
+			// caller's context expires (e.g., during agent shutdown). Wait()
 			// provides the shutdown boundary for async hooks.
 			asyncCtx := context.WithoutCancel(ctx)
 			go func(handler Handler) {
@@ -125,17 +125,17 @@ func (h *hooks) Has(event EventType) bool {
 	return len(h.byEvent[event]) > 0
 }
 
-// Drain blocks until all async hook goroutines have completed or the timeout
+// Wait blocks until all async hook goroutines have completed or the timeout
 // expires. Call this during shutdown before closing channels that hooks may
 // write to. A 10-second timeout prevents indefinite hangs from misbehaving
 // async hooks that ignore context cancellation.
-func (h *hooks) Drain() {
+func (h *hooks) Wait() {
 	done := make(chan struct{})
 	go func() { h.wg.Wait(); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
-		log.Printf("core/hooks: Drain timed out after 10s, some async hooks still running")
+		log.Printf("core/hooks: Wait timed out after 10s, some async hooks still running")
 	}
 }
 

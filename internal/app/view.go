@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/output/render"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -25,7 +24,7 @@ func (m *model) View() string {
 		return selectorView
 	}
 
-	separator := render.SeparatorStyle.Render(strings.Repeat("─", m.width))
+	separator := appoutput.SeparatorStyle.Render(strings.Repeat("─", m.width))
 	trackerView := m.renderTrackerList()
 	trackerPrefix := ""
 	if trackerView != "" {
@@ -41,7 +40,7 @@ func (m *model) View() string {
 	chatSection := m.renderChatSection(activeContent, trackerView)
 	statusLine := m.renderModeStatus()
 	suggestions := m.userInput.Suggestions.Render(m.width)
-	tokenWarning := render.RenderTokenWarning(m.inputTokens, m.getEffectiveInputLimit(), m.conv.Compact.WarningSuppressed)
+	tokenWarning := appoutput.RenderTokenWarning(m.inputTokens, m.getEffectiveInputLimit(), m.conv.Compact.WarningSuppressed)
 	queuePreview := m.renderQueuePreview()
 
 	var view strings.Builder
@@ -77,7 +76,7 @@ func (m *model) View() string {
 }
 
 func (m model) renderInputView() string {
-	prompt := render.InputPromptStyle.Render("❯ ")
+	prompt := appoutput.InputPromptStyle.Render("❯ ")
 	if m.promptSuggestion.text != "" && m.userInput.Textarea.Value() == "" &&
 		!m.conv.Stream.Active && !m.userInput.Suggestions.IsVisible() {
 		return prompt + ghostTextStyle.Render(m.promptSuggestion.text)
@@ -97,11 +96,11 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 	}
 
 	if m.userInput.Provider.FetchingLimits {
-		spinnerView := render.ThinkingStyle.Render(m.agentOutput.Spinner.View() + " Fetching token limits...")
+		spinnerView := appoutput.ThinkingStyle.Render(m.agentOutput.Spinner.View() + " Fetching token limits...")
 		parts = append(parts, spinnerView)
 	}
 
-	if compactView := render.RenderCompactStatus(
+	if compactView := appoutput.RenderCompactStatus(
 		m.width,
 		m.agentOutput.Spinner.View(),
 		m.conv.Compact.Active,
@@ -122,7 +121,7 @@ func (m model) renderTrackerList() string {
 	if !m.showTasks {
 		return ""
 	}
-	return render.RenderTrackerList(render.TrackerListParams{
+	return appoutput.RenderTrackerList(appoutput.TrackerListParams{
 		StreamActive: m.conv.Stream.Active,
 		Width:        m.width,
 		SpinnerView:  m.agentOutput.Spinner.View(),
@@ -130,12 +129,12 @@ func (m model) renderTrackerList() string {
 }
 
 func (m model) renderWelcome() string {
-	return render.RenderWelcome()
+	return appoutput.RenderWelcome()
 }
 
 func (m model) renderModeStatus() string {
 	modelName := appsystem.RenderHookStatus(m.systemInput.HookStatus, m.userInput.Provider.StatusMessage)
-	return render.RenderModeStatus(render.OperationModeParams{
+	return appoutput.RenderModeStatus(appoutput.OperationModeParams{
 		Mode:          m.operationMode,
 		InputTokens:   m.inputTokens,
 		InputLimit:    m.getEffectiveInputLimit(),
@@ -151,11 +150,11 @@ func (m model) renderQueuePreview() string {
 	if len(items) == 0 {
 		return ""
 	}
-	previews := make([]render.QueuePreviewItem, len(items))
+	previews := make([]appoutput.QueuePreviewItem, len(items))
 	for i, item := range items {
-		previews[i] = render.QueuePreviewItem{Content: item.Content, HasImages: len(item.Images) > 0}
+		previews[i] = appoutput.QueuePreviewItem{Content: item.Content, HasImages: len(item.Images) > 0}
 	}
-	return strings.TrimSuffix(render.RenderQueuePreview(previews, m.userInput.QueueSelectIdx, m.width), "\n")
+	return strings.TrimSuffix(appoutput.RenderQueuePreview(previews, m.userInput.QueueSelectIdx, m.width), "\n")
 }
 
 // --- Message rendering (thin delegation to output package) ---

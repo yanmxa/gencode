@@ -1,6 +1,6 @@
 // Tool result display rendering — lipgloss-based formatting for tool output.
 // Separated from internal/tool/toolresult to keep the tool layer UI-free.
-package render
+package output
 
 import (
 	"fmt"

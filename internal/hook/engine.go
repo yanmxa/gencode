@@ -250,15 +250,15 @@ func (e *Engine) getAsyncHookCallback() AsyncHookCallback {
 	return e.asyncCallback
 }
 
-// Drain waits for all async hook goroutines to finish, including both
+// Wait waits for all async hook goroutines to finish, including both
 // core.Hooks goroutines and engine-level detached goroutines.
-func (e *Engine) Drain() {
-	e.handlers.Drain()
+func (e *Engine) Wait() {
+	e.handlers.Wait()
 	e.detachedWg.Wait()
 }
 
 // AsCoreHooks returns the Engine as a core.Hooks interface.
-// Engine directly satisfies core.Hooks via Register/Unregister/Fire/Has/Drain.
+// Engine directly satisfies core.Hooks via Register/Unregister/On/Has/Wait.
 func AsCoreHooks(engine *Engine) core.Hooks {
 	if engine == nil {
 		return nil
@@ -281,9 +281,9 @@ func (e *Engine) Unregister(id string) bool {
 	return e.handlers.Unregister(id)
 }
 
-// Fire executes Go handlers first, then config-driven hooks if the event maps.
-func (e *Engine) Fire(ctx context.Context, event core.Event) (core.Action, error) {
-	action, err := e.handlers.Fire(ctx, event)
+// On executes Go handlers first, then config-driven hooks if the event maps.
+func (e *Engine) On(ctx context.Context, event core.Event) (core.Action, error) {
+	action, err := e.handlers.On(ctx, event)
 	if err != nil || action.Block {
 		return action, err
 	}

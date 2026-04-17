@@ -1,5 +1,5 @@
 // Task list rendering: displays task progress above the input area.
-package render
+package output
 
 import (
 	"fmt"

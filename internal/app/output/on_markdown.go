@@ -1,7 +1,7 @@
 // Markdown renderer using glamour for styled terminal output.
 // Tables are rendered separately with lipgloss/table for full border control,
 // since glamour hardcodes outer borders off (ansi/table.go setBorders).
-package render
+package output
 
 import (
 	"regexp"

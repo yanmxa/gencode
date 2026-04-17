@@ -13,7 +13,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/command"
@@ -432,7 +431,7 @@ func handleGlobCommand(ctx context.Context, m *model, args string) (string, tea.
 	}
 
 	result := tool.Execute(ctx, "glob", params, m.cwd)
-	return render.RenderToolResult(result, m.width), nil, nil
+	return appoutput.RenderToolResult(result, m.width), nil, nil
 }
 
 func handleToolCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
@@ -668,7 +667,7 @@ func setTokenLimits(m *model, modelID, args string) (string, tea.Cmd, error) {
 	}
 
 	return fmt.Sprintf("Set token limits for %s:\n  Input:  %s tokens\n  Output: %s tokens",
-		modelID, render.FormatTokenCount(inputLimit), render.FormatTokenCount(outputLimit)), nil, nil
+		modelID, appoutput.FormatTokenCount(inputLimit), appoutput.FormatTokenCount(outputLimit)), nil, nil
 }
 
 func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {

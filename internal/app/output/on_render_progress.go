@@ -1,5 +1,5 @@
 // Task progress rendering: agent progress bars and spinner displays.
-package render
+package output
 
 import (
 	"fmt"

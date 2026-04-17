@@ -7,7 +7,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -297,5 +296,5 @@ func (m *Model) HandleTick(msg tea.Msg, active, fetching, compacting, interactiv
 
 // ResizeMDRenderer recreates the markdown renderer for the given width.
 func (m *Model) ResizeMDRenderer(width int) {
-	m.MDRenderer = render.NewMDRenderer(width)
+	m.MDRenderer = NewMDRenderer(width)
 }

@@ -1,5 +1,5 @@
 // Pure message rendering functions that take explicit parameters instead of model state.
-package render
+package output
 
 import (
 	"fmt"

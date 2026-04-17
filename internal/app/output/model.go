@@ -5,14 +5,12 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/yanmxa/gencode/internal/app/output/render"
 )
 
 // Model holds all output-related state: spinner, markdown renderer, and task progress.
 type Model struct {
 	Spinner      spinner.Model
-	MDRenderer   *render.MDRenderer
+	MDRenderer   *MDRenderer
 	TaskProgress map[int][]string
 	ProgressHub  *ProgressHub
 }
@@ -22,7 +20,7 @@ type Model struct {
 func New(width int, hub *ProgressHub) Model {
 	return Model{
 		Spinner:     newSpinner(),
-		MDRenderer:  render.NewMDRenderer(width),
+		MDRenderer:  NewMDRenderer(width),
 		ProgressHub: hub,
 	}
 }

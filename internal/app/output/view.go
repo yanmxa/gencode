@@ -3,7 +3,6 @@ package output
 import (
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
@@ -15,7 +14,7 @@ type MessageRenderParams struct {
 	StreamActive            bool
 	BuildingTool            string
 	Width                   int
-	MDRenderer              *render.MDRenderer
+	MDRenderer              *MDRenderer
 	SpinnerView             string
 	TaskProgress            map[int][]string
 	InteractivePromptActive bool
@@ -89,7 +88,7 @@ func RenderMessageAt(p MessageRenderParams, idx int, isStreaming bool) string {
 	switch msg.Role {
 	case core.RoleUser:
 		if msg.ToolResult != nil {
-			sb.WriteString(render.RenderToolResultInline(render.ToolResultData{
+			sb.WriteString(RenderToolResultInline(ToolResultData{
 				ToolName: msg.ToolName,
 				Content:  msg.ToolResult.Content,
 				Error:    msg.ToolResult.Content,
@@ -97,20 +96,20 @@ func RenderMessageAt(p MessageRenderParams, idx int, isStreaming bool) string {
 				Expanded: msg.Expanded,
 			}, p.MDRenderer))
 		} else {
-			sb.WriteString(render.RenderUserMessage(msg.Content, msg.DisplayContent, msg.Images, p.MDRenderer, p.Width))
+			sb.WriteString(RenderUserMessage(msg.Content, msg.DisplayContent, msg.Images, p.MDRenderer, p.Width))
 		}
 	case core.RoleNotice:
-		sb.WriteString(render.RenderSystemMessage(msg.Content))
+		sb.WriteString(RenderSystemMessage(msg.Content))
 	case core.RoleAssistant:
-		sb.WriteString(RenderAssistantMessage(p, msg, idx, isStreaming))
+		sb.WriteString(renderAssistantWithTools(p, msg, idx, isStreaming))
 	}
 
 	return sb.String()
 }
 
-// RenderAssistantMessage renders an assistant message with tool calls.
-func RenderAssistantMessage(p MessageRenderParams, msg core.ChatMessage, idx int, isLast bool) string {
-	base := render.RenderAssistantMessage(render.AssistantParams{
+// renderAssistantWithTools renders an assistant message with tool calls.
+func renderAssistantWithTools(p MessageRenderParams, msg core.ChatMessage, idx int, isLast bool) string {
+	base := RenderAssistantMessage(AssistantParams{
 		Content:       msg.Content,
 		Thinking:      msg.Thinking,
 		ToolCalls:     msg.ToolCalls,
@@ -133,7 +132,7 @@ func RenderAssistantMessage(p MessageRenderParams, msg core.ChatMessage, idx int
 		sb.WriteString("\n")
 	}
 
-	resultMap := make(map[string]render.ToolResultData)
+	resultMap := make(map[string]ToolResultData)
 	for j := idx + 1; j < len(p.Messages); j++ {
 		nextMsg := p.Messages[j]
 		if nextMsg.Role == core.RoleNotice {
@@ -142,7 +141,7 @@ func RenderAssistantMessage(p MessageRenderParams, msg core.ChatMessage, idx int
 		if nextMsg.ToolResult == nil {
 			break
 		}
-		resultMap[nextMsg.ToolResult.ToolCallID] = render.ToolResultData{
+		resultMap[nextMsg.ToolResult.ToolCallID] = ToolResultData{
 			ToolName: nextMsg.ToolName,
 			Content:  nextMsg.ToolResult.Content,
 			Error:    nextMsg.ToolResult.Content,
@@ -151,7 +150,7 @@ func RenderAssistantMessage(p MessageRenderParams, msg core.ChatMessage, idx int
 		}
 	}
 
-	sb.WriteString(render.RenderToolCalls(render.ToolCallsParams{
+	sb.WriteString(RenderToolCalls(ToolCallsParams{
 		ToolCalls:         msg.ToolCalls,
 		ToolCallsExpanded: msg.ToolCallsExpanded,
 		ResultMap:         resultMap,
@@ -182,7 +181,7 @@ func RenderMessageRange(p MessageRenderParams, startIdx, endIdx int, includeSpin
 	}
 
 	if includeSpinner {
-		sb.WriteString(RenderPendingToolSpinner(p, startIdx < endIdx))
+		sb.WriteString(renderPendingToolSpinnerFromParams(p, startIdx < endIdx))
 	}
 
 	return sb.String()
@@ -204,14 +203,14 @@ func RenderSingleMessage(p MessageRenderParams, idx int) string {
 // RenderActiveContent renders all uncommitted messages for the managed region.
 func RenderActiveContent(p MessageRenderParams) string {
 	if p.CommittedCount >= len(p.Messages) {
-		return RenderPendingToolSpinner(p, false)
+		return renderPendingToolSpinnerFromParams(p, false)
 	}
 	return RenderMessageRange(p, p.CommittedCount, len(p.Messages), true)
 }
 
-// RenderPendingToolSpinner renders the pending tool spinner.
-func RenderPendingToolSpinner(p MessageRenderParams, suppressAgentLabel bool) string {
-	return render.RenderPendingToolSpinner(render.PendingToolSpinnerParams{
+// renderPendingToolSpinnerFromParams renders the pending tool spinner from message params.
+func renderPendingToolSpinnerFromParams(p MessageRenderParams, suppressAgentLabel bool) string {
+	return RenderPendingToolSpinner(PendingToolSpinnerParams{
 		InteractivePromptActive: p.InteractivePromptActive,
 		BuildingTool:            p.BuildingTool,
 		TaskProgress:            p.TaskProgress,
@@ -219,14 +218,6 @@ func RenderPendingToolSpinner(p MessageRenderParams, suppressAgentLabel bool) st
 		Width:                   p.Width,
 		SuppressAgentLabel:      suppressAgentLabel,
 	})
-}
-
-// RenderPlanForScrollback renders the plan markdown content as a styled string.
-func RenderPlanForScrollback(plan string, mdRenderer *render.MDRenderer) string {
-	if plan == "" {
-		return ""
-	}
-	return render.RenderPlanForScrollback(plan, mdRenderer)
 }
 
 // BuildTaskOwnerMap builds a map of task ID → owner name for TaskGet display.

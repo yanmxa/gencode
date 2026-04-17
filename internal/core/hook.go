@@ -73,9 +73,9 @@ type Hook struct {
 type Hooks interface {
 	Register(hook Hook) string                             // register, returns ID
 	Unregister(id string) bool                             // unregister by ID
-	Fire(ctx context.Context, event Event) (Action, error) // execute matching hooks
-	Has(event EventType) bool                              // any hooks registered?
-	Drain()                                                // wait for all async hook goroutines to finish
+	On(ctx context.Context, event Event) (Action, error) // execute matching hooks
+	Has(event EventType) bool                            // any hooks registered?
+	Wait()                                               // wait for all async hook goroutines to finish
 }
 
 // Event.Data type helpers — reduce boilerplate in handlers.
