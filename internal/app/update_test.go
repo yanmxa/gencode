@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/app/conv"
-	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
 	"github.com/yanmxa/gencode/internal/app/input"
+	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/system"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -32,13 +32,11 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 			PlanApproval: conv.NewPlanPrompt(),
 			Question:     conv.NewQuestionPrompt(),
 		},
-		tool: conv.ToolState{
-			ToolExecState: conv.ToolExecState{
-				PendingCalls: []core.ToolCall{
-					{ID: "tc-1", Name: "ExitPlanMode"},
-				},
-				CurrentIdx: 0,
+		tool: conv.ToolExecState{
+			PendingCalls: []core.ToolCall{
+				{ID: "tc-1", Name: "ExitPlanMode"},
 			},
+			CurrentIdx: 0,
 		},
 		conv: conv.NewConversation(),
 	}
@@ -80,13 +78,11 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 			PlanApproval: conv.NewPlanPrompt(),
 			Question:     conv.NewQuestionPrompt(),
 		},
-		tool: conv.ToolState{
-			ToolExecState: conv.ToolExecState{
-				PendingCalls: []core.ToolCall{
-					{ID: "tc-1", Name: "ExitPlanMode"},
-				},
-				CurrentIdx: 0,
+		tool: conv.ToolExecState{
+			PendingCalls: []core.ToolCall{
+				{ID: "tc-1", Name: "ExitPlanMode"},
 			},
+			CurrentIdx: 0,
 		},
 		conv: conv.NewConversation(),
 	}
@@ -125,13 +121,11 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 			PlanApproval: conv.NewPlanPrompt(),
 			Question:     conv.NewQuestionPrompt(),
 		},
-		tool: conv.ToolState{
-			ToolExecState: conv.ToolExecState{
-				PendingCalls: []core.ToolCall{
-					{ID: "tc-1", Name: "ExitPlanMode"},
-				},
-				CurrentIdx: 0,
+		tool: conv.ToolExecState{
+			PendingCalls: []core.ToolCall{
+				{ID: "tc-1", Name: "ExitPlanMode"},
 			},
+			CurrentIdx: 0,
 		},
 		conv: conv.NewConversation(),
 	}
@@ -173,13 +167,11 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 			PlanApproval: conv.NewPlanPrompt(),
 			Question:     conv.NewQuestionPrompt(),
 		},
-		tool: conv.ToolState{
-			ToolExecState: conv.ToolExecState{
-				PendingCalls: []core.ToolCall{
-					{ID: "tc-1", Name: "ExitPlanMode"},
-				},
-				CurrentIdx: 0,
+		tool: conv.ToolExecState{
+			PendingCalls: []core.ToolCall{
+				{ID: "tc-1", Name: "ExitPlanMode"},
 			},
+			CurrentIdx: 0,
 		},
 		conv: conv.NewConversation(),
 	}
@@ -381,7 +373,8 @@ func TestBuildPromptSuggestionRequest(t *testing.T) {
 }
 
 func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing.T) {
-	appCwd = t.TempDir(); base := newBaseModel()
+	appCwd = t.TempDir()
+	base := newBaseModel()
 	m := &base
 	m.agentOutput = conv.New(80, conv.NewProgressHub(16))
 	m.conv = conv.ConversationModel{
@@ -407,7 +400,6 @@ func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing
 		t.Fatalf("expected user message to be appended to conversation, got %#v", m.conv.Messages)
 	}
 }
-
 
 func TestBuildCompactRequest(t *testing.T) {
 	m := &model{
@@ -491,7 +483,6 @@ func TestBuildLoopSystemIncludesSessionSummary(t *testing.T) {
 	}
 }
 
-
 func TestBuildCoordinatorGuidanceEncouragesParallelAuditFanout(t *testing.T) {
 	guidance := buildCoordinatorGuidance()
 	for _, want := range []string{
@@ -507,7 +498,6 @@ func TestBuildCoordinatorGuidanceEncouragesParallelAuditFanout(t *testing.T) {
 		}
 	}
 }
-
 
 func TestDetectThinkingKeywords(t *testing.T) {
 	t.Run("high thinking keywords", func(t *testing.T) {

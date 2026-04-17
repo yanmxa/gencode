@@ -74,8 +74,8 @@ func (m *model) startProviderTurn(content string) tea.Cmd {
 	return m.sendToAgent(content, images)
 }
 
-func shouldPreserveCommandInConversation(input string) bool {
-	name, _, isCmd := appcommand.ParseCommand(input)
+func shouldPreserveCommandInConversation(text string) bool {
+	name, _, isCmd := appcommand.ParseCommand(text)
 	if !isCmd {
 		return false
 	}
@@ -83,7 +83,7 @@ func shouldPreserveCommandInConversation(input string) bool {
 	case "clear", "exit":
 		return false
 	}
-	if _, ok := lookupSkillCommand(name); ok {
+	if _, ok := input.LookupSkillCommand(name); ok {
 		return false
 	}
 	if _, ok := appcommand.IsCustomCommand(name); ok {
@@ -92,8 +92,8 @@ func shouldPreserveCommandInConversation(input string) bool {
 	return true
 }
 
-func shouldPreserveBeforeCommandExecution(input string) bool {
-	name, _, isCmd := appcommand.ParseCommand(input)
+func shouldPreserveBeforeCommandExecution(text string) bool {
+	name, _, isCmd := appcommand.ParseCommand(text)
 	if !isCmd {
 		return false
 	}

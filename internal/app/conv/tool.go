@@ -9,16 +9,12 @@ import (
 
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/mcp"
 	coretool "github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
 // --- Tool state ---
-
-// ToolState holds tool execution state for the TUI model.
-type ToolState struct {
-	ToolExecState
-}
 
 // ToolExecState holds tool execution state for the TUI model.
 type ToolExecState struct {
@@ -80,6 +76,27 @@ func (t *ToolExecState) RemainingCalls(startIdx int) []core.ToolCall {
 
 // --- Tool execution dispatching ---
 
+type defaultMCPExecutor struct{}
+
+func (defaultMCPExecutor) IsMCPTool(name string) bool {
+	return mcp.IsMCPTool(name)
+}
+
+func (defaultMCPExecutor) ExecuteMCP(ctx context.Context, name string, params map[string]any) (toolresult.ToolResult, error) {
+	if mcp.DefaultRegistry == nil {
+		return toolresult.NewErrorResult(name, "MCP registry not initialized"), nil
+	}
+	result, err := mcp.DefaultRegistry.CallTool(ctx, name, params)
+	if err != nil {
+		return toolresult.NewErrorResult(name, err.Error()), nil
+	}
+	return toolresult.ToolResult{
+		Success:  !result.IsError,
+		Output:   mcp.ExtractContent(result.Content),
+		Metadata: toolresult.ResultMetadata{Title: name, Icon: "plugin"},
+	}, nil
+}
+
 type ExecResultMsg struct {
 	Index    int
 	Result   core.ToolResult
@@ -102,17 +119,21 @@ func newExecResultFromOutput(tc core.ToolCall, index int, output toolresult.Tool
 	}
 }
 
-func ExecuteApproved(ctx context.Context, hub *ProgressHub, toolCalls []core.ToolCall, idx int, cwd string, mcpExec coretool.MCPExecutor) tea.Cmd {
+func ExecuteApproved(ctx context.Context, hub *ProgressHub, toolCalls []core.ToolCall, idx int, cwd string, mcpExec ...coretool.MCPExecutor) tea.Cmd {
 	if idx >= len(toolCalls) {
 		return nil
 	}
 
 	tc := toolCalls[idx]
+	executor := coretool.MCPExecutor(defaultMCPExecutor{})
+	if len(mcpExec) > 0 && mcpExec[0] != nil {
+		executor = mcpExec[0]
+	}
 
 	return func() tea.Msg {
 		ctx = execContext(ctx)
 
-		prepared, err := coretool.PrepareToolCall(tc, mcpExec)
+		prepared, err := coretool.PrepareToolCall(tc, executor)
 		if err != nil {
 			return newExecResult(tc, idx, formatExecPrepareError(err), true)
 		}
@@ -120,9 +141,9 @@ func ExecuteApproved(ctx context.Context, hub *ProgressHub, toolCalls []core.Too
 		attachExecAgentCallbacks(ctx, hub, idx, prepared)
 
 		start := time.Now()
-		result, err := prepared.Execute(ctx, cwd, true, mcpExec)
+		result, err := prepared.Execute(ctx, cwd, true, executor)
 		if err != nil {
-			if mcpExec != nil && mcpExec.IsMCPTool(tc.Name) {
+			if executor != nil && executor.IsMCPTool(tc.Name) {
 				return newExecResult(tc, idx, "Internal error: "+err.Error(), true)
 			}
 			return newExecResult(tc, idx, "Internal error: unknown tool: "+tc.Name, true)

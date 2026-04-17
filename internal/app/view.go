@@ -77,6 +77,34 @@ func (m *model) View() string {
 	return view.String()
 }
 
+func (m *model) renderOverlaySelector() string {
+	for _, s := range m.overlaySelectors() {
+		if s.IsActive() {
+			return s.Render()
+		}
+	}
+	return ""
+}
+
+func (m *model) renderActiveModal(separator, trackerPrefix string) string {
+	switch {
+	case m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.mode.PlanApproval.RenderMenu())
+	case m.userInput.Approval.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.userInput.Approval.Render())
+	case m.mode.Question.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.mode.Question.Render())
+	case m.mode.PlanEntry.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.mode.PlanEntry.Render())
+	default:
+		return ""
+	}
+}
+
+func separatorWrapped(trackerPrefix, separator, content string) string {
+	return trackerPrefix + separator + "\n" + content
+}
+
 func (m model) renderInputView() string {
 	prompt := conv.InputPromptStyle.Render("❯ ")
 	if m.userInput.PromptSuggestion.Text != "" && m.userInput.Textarea.Value() == "" &&

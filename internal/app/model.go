@@ -57,7 +57,7 @@ type model struct {
 	userInput input.Model
 	mode      conv.ModalState
 	showTasks bool
-	tool      conv.ToolState
+	tool      conv.ToolExecState
 
 	// ── Agent Input ─────────────────────────────────────────────────────
 	agentInput notify.Model
@@ -629,7 +629,7 @@ func newBaseModel() model {
 		},
 
 		mode:        newModeState(),
-		tool:        conv.ToolState{},
+		tool:        conv.ToolExecState{},
 		isGit:       setting.IsGitRepo(appCwd),
 		systemInput: trigger.New(hook.DefaultEngine),
 		fileWatcher: trigger.NewFileWatcher(hook.DefaultEngine, nil),
