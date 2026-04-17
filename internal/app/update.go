@@ -31,8 +31,8 @@ func (m *model) overlaySelectors() []overlaySelector {
 		&m.userInput.Agent,
 		&m.mcp.Selector,
 		&m.plugin,
-		&m.session.Selector,
-		&m.memory.Selector,
+		&m.userInput.Session.Selector,
+		&m.userInput.Memory.Selector,
 		&m.userInput.Search,
 	}
 }

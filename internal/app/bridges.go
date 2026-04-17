@@ -13,10 +13,8 @@ import (
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
-	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
-	"github.com/yanmxa/gencode/internal/app/user/sessionui"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/llm"
@@ -28,7 +26,7 @@ func (m *model) updateMCP(msg tea.Msg) (tea.Cmd, bool) {
 	return mcpui.Update(m, &m.mcp, msg)
 }
 func (m *model) updateMemory(msg tea.Msg) (tea.Cmd, bool) {
-	return appmemory.Update(m, &m.memory, msg)
+	return appuser.UpdateMemory(m, &m.userInput.Memory, msg)
 }
 func (m *model) updatePlugin(msg tea.Msg) (tea.Cmd, bool) {
 	return pluginui.Update(m, &m.plugin, msg)
@@ -40,7 +38,7 @@ func (m *model) updateSearch(msg tea.Msg) (tea.Cmd, bool) {
 	return appuser.UpdateSearch(m, &m.userInput.Search, msg)
 }
 func (m *model) updateSession(msg tea.Msg) (tea.Cmd, bool) {
-	return sessionui.Update(m, &m.session, msg)
+	return appuser.UpdateSession(m, &m.userInput.Session, msg)
 }
 
 // --- User overlay Runtime interface implementations ---
@@ -70,7 +68,7 @@ func (m *model) SwitchProvider(p llm.Provider) {
 }
 func (m *model) SetCurrentModel(cm *llm.CurrentModelInfo) { m.currentModel = cm }
 
-// sessionui.Runtime
+// user.SessionRuntime
 func (m *model) EnsureSessionStore() error { return m.ensureSessionStore() }
 func (m *model) ForkSession(id string) (string, error) {
 	forked, err := m.sessionStore.Fork(id)
@@ -88,7 +86,7 @@ func (m *model) SetProviderStatusMessage(msg string) { m.provider.SetStatusMessa
 
 func startExternalEditor(filePath string) tea.Cmd {
 	return kit.StartExternalEditor(filePath, func(err error) tea.Msg {
-		return appmemory.EditorFinishedMsg{Err: err}
+		return appuser.MemoryEditorFinishedMsg{Err: err}
 	})
 }
 

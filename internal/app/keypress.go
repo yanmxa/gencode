@@ -363,10 +363,10 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 			cmds = append(cmds, tea.Println(m.renderWelcome()))
 		}
 
-		if m.session.PendingSelector {
-			m.session.PendingSelector = false
+		if m.userInput.Session.PendingSelector {
+			m.userInput.Session.PendingSelector = false
 			if m.sessionStore != nil {
-				_ = m.session.Selector.EnterSelect(m.width, m.height, m.sessionStore, m.cwd)
+				_ = m.userInput.Session.Selector.EnterSelect(m.width, m.height, m.sessionStore, m.cwd)
 			}
 		}
 

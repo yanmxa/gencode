@@ -19,11 +19,9 @@ import (
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
-	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
 	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
-	"github.com/yanmxa/gencode/internal/app/user/sessionui"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/mcp"
@@ -45,8 +43,6 @@ type model struct {
 	promptSuggestion promptSuggestionState
 	showTasks        bool
 	provider         providerui.State
-	session          sessionui.State
-	memory           appmemory.State
 	tool             toolui.State
 	mcp              mcpui.State
 	plugin           pluginui.Model

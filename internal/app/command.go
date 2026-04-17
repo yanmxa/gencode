@@ -16,8 +16,8 @@ import (
 	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
 	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
-	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/setting"
@@ -340,7 +340,7 @@ func handleResumeCommand(ctx context.Context, m *model, args string) (string, te
 	if err := m.ensureSessionStore(); err != nil {
 		return "", nil, fmt.Errorf("failed to initialize session store: %w", err)
 	}
-	if err := m.session.Selector.EnterSelect(m.width, m.height, m.sessionStore, m.cwd); err != nil {
+	if err := m.userInput.Session.Selector.EnterSelect(m.width, m.height, m.sessionStore, m.cwd); err != nil {
 		return "", nil, fmt.Errorf("failed to open session selector: %w", err)
 	}
 	return "", nil, nil
@@ -364,17 +364,17 @@ func handleModelCommand(ctx context.Context, m *model, args string) (string, tea
 }
 
 func handleInitCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	result, err := appmemory.HandleInitCommand(m.cwd, args)
+	result, err := appuser.HandleInitCommand(m.cwd, args)
 	return result, nil, err
 }
 
 func handleMemoryCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	result, editPath, err := appmemory.HandleMemoryCommand(&m.memory.Selector, m.cwd, m.width, m.height, args)
+	result, editPath, err := appuser.HandleMemoryCommand(&m.userInput.Memory.Selector, m.cwd, m.width, m.height, args)
 	if err != nil {
 		return "", nil, err
 	}
 	if editPath != "" {
-		m.memory.EditingFile = editPath
+		m.userInput.Memory.EditingFile = editPath
 		return result, startExternalEditor(editPath), nil
 	}
 	return result, nil, nil

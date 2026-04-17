@@ -1,5 +1,5 @@
-// Package session provides the session selector feature.
-package sessionui
+// Session selector feature — flattened from sessionui package.
+package user
 
 import (
 	"fmt"
@@ -14,13 +14,13 @@ import (
 	"github.com/yanmxa/gencode/internal/session"
 )
 
-// SelectedMsg is sent when a session is selected
-type SelectedMsg struct {
+// SessionSelectedMsg is sent when a session is selected.
+type SessionSelectedMsg struct {
 	SessionID string
 }
 
-// Model holds the state for the session selector
-type Model struct {
+// SessionSelector holds the state for the session selector.
+type SessionSelector struct {
 	active   bool
 	sessions []*session.SessionMetadata
 	filtered []*session.SessionMetadata
@@ -30,20 +30,33 @@ type Model struct {
 	store    *session.Store
 	cwd      string
 
-	messageCache map[string]string // Cache for last user messages
+	messageCache map[string]string
 }
 
-// New creates a new Model
-func New() Model {
-	return Model{
+// SessionState holds session selector UI state for the TUI model.
+type SessionState struct {
+	Selector        SessionSelector
+	PendingSelector bool
+}
+
+// SessionRuntime defines the callbacks the session selector needs from the parent app model.
+type SessionRuntime interface {
+	LoadSession(id string) error
+	AddNotice(text string)
+	ResetCommitIndex()
+	CommitAllMessages() []tea.Cmd
+}
+
+// NewSessionSelector creates a new SessionSelector.
+func NewSessionSelector() SessionSelector {
+	return SessionSelector{
 		active:       false,
 		nav:          kit.ListNav{MaxVisible: 6},
 		messageCache: make(map[string]string),
 	}
 }
 
-// clamp constrains a value between min and max bounds
-func clamp(value, minVal, maxVal int) int {
+func sessionClamp(value, minVal, maxVal int) int {
 	if value < minVal {
 		return minVal
 	}
@@ -53,25 +66,21 @@ func clamp(value, minVal, maxVal int) int {
 	return value
 }
 
-// calculateMaxVisible calculates how many sessions can fit on screen.
-// Each session takes 3 lines (title + preview + blank separator).
-func calculateMaxVisible(height int) int {
+func calculateSessionMaxVisible(height int) int {
 	const (
-		fixedLines      = 7 // title(1) + search(1) + blank(1) + hint(2) + scroll indicators(2)
+		fixedLines      = 7
 		linesPerSession = 3
 	)
 	maxVisible := (height - fixedLines) / linesPerSession
-	return clamp(maxVisible, 3, 20)
+	return sessionClamp(maxVisible, 3, 20)
 }
 
-// calculateMessagePreviewLength calculates message preview length based on terminal width.
-// Accounts for indentation (4 chars) + quotes (2 chars) + margins.
-func calculateMessagePreviewLength(width int) int {
-	return clamp(width-10, 30, 120)
+func calculateSessionPreviewLength(width int) int {
+	return sessionClamp(width-10, 30, 120)
 }
 
-// EnterSelect enters session selection mode
-func (s *Model) EnterSelect(width, height int, store *session.Store, cwd string) error {
+// EnterSelect enters session selection mode.
+func (s *SessionSelector) EnterSelect(width, height int, store *session.Store, cwd string) error {
 	if store == nil {
 		return fmt.Errorf("session store is required")
 	}
@@ -84,8 +93,8 @@ func (s *Model) EnterSelect(width, height int, store *session.Store, cwd string)
 		return fmt.Errorf("no sessions found")
 	}
 
-	maxVis := calculateMaxVisible(height)
-	*s = Model{
+	maxVis := calculateSessionMaxVisible(height)
+	*s = SessionSelector{
 		active:       true,
 		sessions:     sessions,
 		width:        width,
@@ -103,19 +112,15 @@ func (s *Model) EnterSelect(width, height int, store *session.Store, cwd string)
 	return nil
 }
 
-// IsActive returns whether the selector is active
-func (s *Model) IsActive() bool {
+func (s *SessionSelector) IsActive() bool {
 	return s.active
 }
 
-// Cancel cancels the selector
-func (s *Model) Cancel() {
-	*s = New()
+func (s *SessionSelector) Cancel() {
+	*s = NewSessionSelector()
 }
 
-// updateFilter filters sessions by search query.
-// The store is already project-scoped, so no CWD filtering is needed.
-func (s *Model) updateFilter() {
+func (s *SessionSelector) updateFilter() {
 	query := strings.ToLower(s.nav.Search)
 	s.filtered = make([]*session.SessionMetadata, 0, len(s.sessions))
 
@@ -131,8 +136,7 @@ func (s *Model) updateFilter() {
 	s.nav.Total = len(s.filtered)
 }
 
-// Select returns a command when a session is selected
-func (s *Model) Select() tea.Cmd {
+func (s *SessionSelector) Select() tea.Cmd {
 	if len(s.filtered) == 0 || s.nav.Selected >= len(s.filtered) {
 		return nil
 	}
@@ -141,18 +145,15 @@ func (s *Model) Select() tea.Cmd {
 	s.active = false
 
 	return func() tea.Msg {
-		return SelectedMsg{SessionID: selected.ID}
+		return SessionSelectedMsg{SessionID: selected.ID}
 	}
 }
 
-// HandleKeypress handles a keypress and returns a command if selection is made
-func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
-	// Enter selects the session
+func (s *SessionSelector) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	if key.Type == tea.KeyEnter {
 		return s.Select()
 	}
 
-	// Delegate navigation and search to ListNav
 	searchChanged, consumed := s.nav.HandleKey(key)
 	if searchChanged {
 		s.updateFilter()
@@ -161,7 +162,6 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	// Esc with empty search — dismiss
 	if key.Type == tea.KeyEsc {
 		s.Cancel()
 		return func() tea.Msg { return kit.DismissedMsg{} }
@@ -170,13 +170,11 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// formatCompactMetadata formats message count and time inline
-func formatCompactMetadata(sess *session.SessionMetadata) string {
-	return fmt.Sprintf("%d msgs · %s", sess.MessageCount, formatRelativeTime(sess.UpdatedAt))
+func sessionFormatCompactMetadata(sess *session.SessionMetadata) string {
+	return fmt.Sprintf("%d msgs · %s", sess.MessageCount, sessionFormatRelativeTime(sess.UpdatedAt))
 }
 
-// truncateToFirstLine extracts the first line and truncates to maxLen
-func truncateToFirstLine(content string, maxLen int) string {
+func sessionTruncateToFirstLine(content string, maxLen int) string {
 	content = strings.TrimSpace(content)
 	if first, _, found := strings.Cut(content, "\n"); found {
 		content = first
@@ -187,17 +185,15 @@ func truncateToFirstLine(content string, maxLen int) string {
 	return content
 }
 
-// getLastMessage retrieves the last message (user or assistant) from a session
-// for preview. It skips tool_result and tool_use entries.
-func (s *Model) getLastMessage(sess *session.SessionMetadata) string {
+func (s *SessionSelector) getLastMessage(sess *session.SessionMetadata) string {
 	cacheKey := sess.ID + ":last"
 	if cached, ok := s.messageCache[cacheKey]; ok {
 		return cached
 	}
 
 	if sess.LastPrompt != "" {
-		maxLen := calculateMessagePreviewLength(s.width)
-		content := truncateToFirstLine(sess.LastPrompt, maxLen)
+		maxLen := calculateSessionPreviewLength(s.width)
+		content := sessionTruncateToFirstLine(sess.LastPrompt, maxLen)
 		s.messageCache[cacheKey] = content
 		return content
 	}
@@ -231,8 +227,8 @@ func (s *Model) getLastMessage(sess *session.SessionMetadata) string {
 		}
 		for _, block := range entry.Message.Content {
 			if block.Type == "text" && block.Text != "" {
-				maxLen := calculateMessagePreviewLength(s.width)
-				content := truncateToFirstLine(block.Text, maxLen)
+				maxLen := calculateSessionPreviewLength(s.width)
+				content := sessionTruncateToFirstLine(block.Text, maxLen)
 				s.messageCache[cacheKey] = content
 				return content
 			}
@@ -242,9 +238,7 @@ func (s *Model) getLastMessage(sess *session.SessionMetadata) string {
 	return ""
 }
 
-// getFirstSubstantiveMessage finds the first user message with >5 characters
-// from a session. Used as a display title when the stored title is too short.
-func (s *Model) getFirstSubstantiveMessage(sess *session.SessionMetadata) string {
+func (s *SessionSelector) getFirstSubstantiveMessage(sess *session.SessionMetadata) string {
 	cacheKey := sess.ID + ":subst"
 	if cached, ok := s.messageCache[cacheKey]; ok {
 		return cached
@@ -275,8 +269,8 @@ func (s *Model) getFirstSubstantiveMessage(sess *session.SessionMetadata) string
 		}
 		for _, block := range entry.Message.Content {
 			if block.Type == "text" && len([]rune(block.Text)) >= session.MinSubstantiveLength {
-				maxLen := calculateMessagePreviewLength(s.width)
-				content := truncateToFirstLine(block.Text, maxLen)
+				maxLen := calculateSessionPreviewLength(s.width)
+				content := sessionTruncateToFirstLine(block.Text, maxLen)
 				s.messageCache[cacheKey] = content
 				return content
 			}
@@ -286,8 +280,7 @@ func (s *Model) getFirstSubstantiveMessage(sess *session.SessionMetadata) string
 	return ""
 }
 
-// renderSession renders a single session in compact 2-line format.
-func (s *Model) renderSession(sess *session.SessionMetadata, isSelected bool, sb *strings.Builder, boxWidth int) {
+func (s *SessionSelector) renderSession(sess *session.SessionMetadata, isSelected bool, sb *strings.Builder, boxWidth int) {
 	titleStyle, indent := kit.SelectorItemStyle(), "  "
 	if isSelected {
 		titleStyle, indent = kit.SelectorSelectedStyle(), "> "
@@ -300,7 +293,7 @@ func (s *Model) renderSession(sess *session.SessionMetadata, isSelected bool, sb
 		}
 	}
 
-	metadata := formatCompactMetadata(sess)
+	metadata := sessionFormatCompactMetadata(sess)
 	maxTitleWidth := boxWidth - len(indent) - len(metadata) - 4
 	if maxTitleWidth < 10 {
 		maxTitleWidth = 10
@@ -322,8 +315,7 @@ func (s *Model) renderSession(sess *session.SessionMetadata, isSelected bool, sb
 	sb.WriteString("\n\n")
 }
 
-// Render renders the session selector
-func (s *Model) Render() string {
+func (s *SessionSelector) Render() string {
 	if !s.active {
 		return ""
 	}
@@ -358,24 +350,22 @@ func (s *Model) Render() string {
 	return sb.String()
 }
 
-// renderScrollIndicator writes a scroll indicator if the condition is true
-func (s *Model) renderScrollIndicator(sb *strings.Builder, show bool, text string) {
+func (s *SessionSelector) renderScrollIndicator(sb *strings.Builder, show bool, text string) {
 	if show {
 		sb.WriteString(kit.SelectorHintStyle().Render("  "+text) + "\n")
 	}
 }
 
-// formatRelativeTime formats a time as a relative string (e.g., "2h ago", "yesterday")
-func formatRelativeTime(t time.Time) string {
+func sessionFormatRelativeTime(t time.Time) string {
 	diff := time.Since(t)
 
 	switch {
 	case diff < time.Minute:
 		return "just now"
 	case diff < time.Hour:
-		return pluralize(int(diff.Minutes()), "min") + " ago"
+		return sessionPluralize(int(diff.Minutes()), "min") + " ago"
 	case diff < 24*time.Hour:
-		return pluralize(int(diff.Hours()), "hour") + " ago"
+		return sessionPluralize(int(diff.Hours()), "hour") + " ago"
 	case diff < 48*time.Hour:
 		return "yesterday"
 	case diff < 7*24*time.Hour:
@@ -385,10 +375,29 @@ func formatRelativeTime(t time.Time) string {
 	}
 }
 
-// pluralize returns "1 unit" or "n units" based on count
-func pluralize(n int, unit string) string {
+func sessionPluralize(n int, unit string) string {
 	if n == 1 {
 		return "1 " + unit
 	}
 	return fmt.Sprintf("%d %ss", n, unit)
+}
+
+// UpdateSession routes session selection messages.
+func UpdateSession(rt SessionRuntime, state *SessionState, msg tea.Msg) (tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case SessionSelectedMsg:
+		return handleSessionSelected(rt, state, msg), true
+	}
+	return nil, false
+}
+
+func handleSessionSelected(rt SessionRuntime, _ *SessionState, msg SessionSelectedMsg) tea.Cmd {
+	sessionID := msg.SessionID
+
+	if err := rt.LoadSession(sessionID); err != nil {
+		rt.AddNotice("Failed to load session: " + err.Error())
+	}
+
+	rt.ResetCommitIndex()
+	return tea.Batch(rt.CommitAllMessages()...)
 }

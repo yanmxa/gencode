@@ -12,13 +12,11 @@ import (
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
-	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
 	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
-	"github.com/yanmxa/gencode/internal/app/user/sessionui"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
@@ -106,6 +104,8 @@ func newBaseModel() model {
 	userInput.Agent = appuser.NewAgentSelector(subagent.DefaultRegistry)
 	userInput.Search = appuser.NewSearchSelector()
 	userInput.Skill = appuser.SkillState{Selector: appuser.NewSkillSelector(skill.DefaultRegistry)}
+	userInput.Session = appuser.SessionState{Selector: appuser.NewSessionSelector()}
+	userInput.Memory = appuser.MemoryState{Selector: appuser.NewMemorySelector()}
 
 	return model{
 		userInput:   userInput,
@@ -126,8 +126,6 @@ func newBaseModel() model {
 		sessionID:    session.DefaultSetup.SessionID,
 
 		provider: newProviderState(),
-		session:  newSessionState(),
-		memory:   newMemoryState(),
 		mode:     newModeState(),
 		tool:     newToolState(),
 		mcp:      newMCPState(),
@@ -161,15 +159,6 @@ func newProviderState() providerui.State {
 	}
 }
 
-func newSessionState() sessionui.State {
-	return sessionui.State{
-		Selector: sessionui.New(),
-	}
-}
-
-func newMemoryState() appmemory.State {
-	return appmemory.State{Selector: appmemory.New()}
-}
 
 func newModeState() appmodal.State {
 	return appmodal.State{
@@ -290,7 +279,7 @@ func (m *model) applyResumeOption(resumeID string) error {
 		return nil
 	}
 
-	m.session.PendingSelector = true
+	m.userInput.Session.PendingSelector = true
 	return nil
 }
 

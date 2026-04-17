@@ -172,7 +172,7 @@ func TestExecuteCommandOpenSelectors(t *testing.T) {
 		if result != "" || cmd != nil {
 			t.Fatalf("unexpected command outputs: result=%q cmd=%v", result, cmd != nil)
 		}
-		if !m.session.Selector.IsActive() {
+		if !m.userInput.Session.Selector.IsActive() {
 			t.Fatal("expected session selector to become active")
 		}
 	})

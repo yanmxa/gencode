@@ -315,8 +315,8 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 		"*user.AgentSelector",
 		"*mcpui.Model",
 		"*pluginui.Model",
-		"*sessionui.Model",
-		"*memory.Model",
+		"*user.SessionSelector",
+		"*user.MemorySelector",
 		"*user.SearchSelector",
 	}
 
