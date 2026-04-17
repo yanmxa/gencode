@@ -8,14 +8,14 @@ import (
 	"github.com/yanmxa/gencode/internal/orchestration"
 )
 
-// State holds all agent-event input state: task notification queue and batch tracking.
-type State struct {
+// Model holds all agent-event input state: task notification queue and batch tracking.
+type Model struct {
 	Notifications *NotificationQueue
 }
 
-// New creates a State with an initialized NotificationQueue.
-func New() State {
-	return State{
+// New creates a Model with an initialized NotificationQueue.
+func New() Model {
+	return Model{
 		Notifications: NewNotificationQueue(),
 	}
 }

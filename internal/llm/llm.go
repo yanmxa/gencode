@@ -182,6 +182,16 @@ func (l *Client) ModelID() string {
 	return l.model
 }
 
+// InputLimit returns the model's max input token capacity (context window).
+// Queries the provider's model metadata. Returns 0 if unknown.
+func (l *Client) InputLimit() int {
+	l.mu.RLock()
+	p := l.provider
+	model := l.model
+	l.mu.RUnlock()
+	return inputLimitFromProvider(p, model)
+}
+
 // ResolveMaxTokens returns the effective output token limit.
 // Priority: 1. Custom override (maxTokens field)
 //
@@ -231,6 +241,23 @@ func (l *Client) completionOpts(msgs []core.Message, tools []ToolSchema, sysProm
 		SystemPrompt:  sysPrompt,
 		ThinkingLevel: thinking,
 	}
+}
+
+// inputLimitFromProvider queries the provider for the model's input token limit.
+func inputLimitFromProvider(p Provider, model string) int {
+	if p == nil {
+		return 0
+	}
+	models, err := p.ListModels(context.TODO())
+	if err != nil {
+		return 0
+	}
+	for _, m := range models {
+		if m.ID == model {
+			return m.InputTokenLimit
+		}
+	}
+	return 0
 }
 
 // outputLimitFromProvider queries the provider for the model's output token limit.

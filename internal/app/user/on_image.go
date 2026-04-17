@@ -1,21 +1,8 @@
 package user
 
 import (
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
-
-	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 )
-
-// ExtractPastedText derives the pasted content by comparing the textarea
-// value before and after the paste event.
-func ExtractPastedText(prevValue, newValue string) string {
-	if strings.HasPrefix(newValue, prevValue) {
-		return strings.TrimSpace(newValue[len(prevValue):])
-	}
-	return strings.TrimSpace(newValue)
-}
 
 // HandleImageSelectKey handles inline image token selection and deletion.
 // Returns (cmd, true) if the key was consumed, (nil, false) otherwise.
@@ -87,41 +74,5 @@ func (m *Model) HandleImageSelectKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 	}
 
-	return nil, false
-}
-
-// HandleSuggestionKey handles keys while the autocomplete suggestion list is visible.
-// Returns (cmd, true) if the key was consumed, (nil, false) otherwise.
-func (m *Model) HandleSuggestionKey(msg tea.KeyMsg) (tea.Cmd, bool) {
-	if !m.Suggestions.IsVisible() {
-		return nil, false
-	}
-	switch msg.Type {
-	case tea.KeyUp, tea.KeyCtrlP:
-		m.Suggestions.MoveUp()
-		return nil, true
-	case tea.KeyDown, tea.KeyCtrlN:
-		m.Suggestions.MoveDown()
-		return nil, true
-	case tea.KeyTab, tea.KeyEnter:
-		if selected := m.Suggestions.GetSelected(); selected != "" {
-			if m.Suggestions.GetSuggestionType() == suggest.TypeFile {
-				currentValue := m.Textarea.Value()
-				if atIdx := strings.LastIndex(currentValue, "@"); atIdx >= 0 {
-					newValue := currentValue[:atIdx] + "@" + selected
-					m.Textarea.SetValue(newValue)
-					m.Textarea.CursorEnd()
-				}
-			} else {
-				m.Textarea.SetValue(selected + " ")
-				m.Textarea.CursorEnd()
-			}
-			m.Suggestions.Hide()
-		}
-		return nil, true
-	case tea.KeyEsc:
-		m.Suggestions.Hide()
-		return nil, true
-	}
 	return nil, false
 }

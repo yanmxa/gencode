@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,6 +23,7 @@ type agent struct {
 	hooks             Hooks
 	permission        PermissionFunc
 	allowedTools      map[string]bool
+	compactFunc       func(ctx context.Context, msgs []Message) (string, error)
 	llm               LLM
 	cwd               string
 	maxTurns          int
@@ -72,7 +74,9 @@ func (a *agent) Run(ctx context.Context) error {
 		if a.hooks != nil {
 			a.hooks.Drain()
 		}
-		close(a.outbox)
+		if a.outbox != nil {
+			close(a.outbox)
+		}
 	}()
 
 	for {
@@ -170,6 +174,15 @@ func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 			}
 		}
 
+		// Pre-infer compaction: if context exceeds 95% of limit, compact before inference
+		if a.compactFunc != nil && tokensIn > 0 {
+			if limit := a.llm.InputLimit(); limit > 0 && NeedsCompaction(tokensIn, limit) {
+				if a.compact(ctx) {
+					continue
+				}
+			}
+		}
+
 		// PreInfer hook — can inject context, block, or compact (via SetMessages)
 		action := a.fire(ctx, PreInferEvent(a.id))
 		if action.Block {
@@ -186,6 +199,10 @@ func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 
 		resp, err := a.streamInfer(ctx)
 		if err != nil {
+			// Reactive compaction: if prompt too long, compact and retry
+			if a.compactFunc != nil && isPromptTooLong(err) && a.compact(ctx) {
+				continue
+			}
 			return nil, err
 		}
 
@@ -329,6 +346,31 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 	return toolUses
 }
 
+// compact calls CompactFunc and replaces messages with the summary.
+// Returns true if compaction succeeded.
+func (a *agent) compact(ctx context.Context) bool {
+	msgs := a.snapshot()
+	if len(msgs) < 3 {
+		return false
+	}
+	summary, err := a.compactFunc(ctx, msgs)
+	if err != nil || summary == "" {
+		return false
+	}
+	a.SetMessages([]Message{UserMessage("Previous context:\n"+summary+"\n\nContinue with the task.", nil)})
+	return true
+}
+
+// isPromptTooLong checks if an error indicates the prompt exceeds the model's limit.
+func isPromptTooLong(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "prompt is too long") ||
+		strings.Contains(msg, "prompt_too_long")
+}
+
 // --- context keys ---
 
 type contextKey string
@@ -387,9 +429,10 @@ func (a *agent) streamInfer(ctx context.Context) (*InferResponse, error) {
 }
 
 // emit sends an event to the outbox for external observation.
+// No-op when outbox is nil (subagent direct path).
 // Blocks if outbox is full (backpressure). Skips if outbox is closed or ctx is cancelled.
 func (a *agent) emit(ctx context.Context, event Event) {
-	if a.closed.Load() {
+	if a.outbox == nil || a.closed.Load() {
 		return
 	}
 	select {
@@ -400,9 +443,9 @@ func (a *agent) emit(ctx context.Context, event Event) {
 
 // emitFinal sends a critical event that must be delivered even on ctx cancellation.
 // Used for StopEvent — consumers rely on it for cleanup/session saving.
-// Blocks up to 5 seconds; logs a warning if delivery fails.
+// No-op when outbox is nil. Blocks up to 5 seconds; logs a warning if delivery fails.
 func (a *agent) emitFinal(event Event) {
-	if a.closed.Load() {
+	if a.outbox == nil || a.closed.Load() {
 		return
 	}
 	timer := time.NewTimer(5 * time.Second)

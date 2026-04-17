@@ -109,11 +109,12 @@ type Config struct {
 	AgentType          string   // optional: agent type identifier for hook events
 	Color              string   // optional: display color for TUI (e.g. "#ff6600", "blue")
 	AllowedTools       []string // optional: tools that skip Permission check
+	CompactFunc        func(ctx context.Context, msgs []Message) (string, error) // optional: summarize messages for compaction
 	CWD                string
 	MaxTurns           int // max LLM inference rounds per cycle, 0 = unlimited
 	MaxOutputRecovery  int // max retries on truncated output, 0 = use default (3)
 	InboxBuf           int // inbox channel buffer size, default 16
-	OutboxBuf          int // outbox channel buffer size, default 64
+	OutboxBuf          int // outbox channel buffer size, default 64; -1 = no outbox (subagent path)
 }
 
 // NewAgent creates an agent from config.
@@ -134,7 +135,7 @@ func NewAgent(cfg Config) Agent {
 	if cfg.InboxBuf <= 0 {
 		cfg.InboxBuf = 16
 	}
-	if cfg.OutboxBuf <= 0 {
+	if cfg.OutboxBuf == 0 {
 		cfg.OutboxBuf = 64
 	}
 	var allowed map[string]bool
@@ -144,6 +145,12 @@ func NewAgent(cfg Config) Agent {
 			allowed[name] = true
 		}
 	}
+
+	var outbox chan Event
+	if cfg.OutboxBuf > 0 {
+		outbox = make(chan Event, cfg.OutboxBuf)
+	}
+
 	return &agent{
 		id:                cfg.ID,
 		agentType:         cfg.AgentType,
@@ -153,12 +160,13 @@ func NewAgent(cfg Config) Agent {
 		hooks:             cfg.Hooks,
 		permission:        cfg.Permission,
 		allowedTools:      allowed,
+		compactFunc:       cfg.CompactFunc,
 		llm:               cfg.LLM,
 		cwd:               cfg.CWD,
 		maxTurns:          cfg.MaxTurns,
 		maxOutputRecovery: cfg.MaxOutputRecovery,
 		inbox:             make(chan Message, cfg.InboxBuf),
-		outbox:            make(chan Event, cfg.OutboxBuf),
+		outbox:            outbox,
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/app/output/render"
-	"github.com/yanmxa/gencode/internal/app/output/progress"
 )
 
 // Model holds all output-related state: spinner, markdown renderer, and task progress.
@@ -15,12 +14,12 @@ type Model struct {
 	Spinner      spinner.Model
 	MDRenderer   *render.MDRenderer
 	TaskProgress map[int][]string
-	ProgressHub  *progress.Hub
+	ProgressHub  *ProgressHub
 }
 
 // New creates a fully initialized output Model.
 // hub may be nil to disable progress transport for tests or non-interactive use.
-func New(width int, hub *progress.Hub) Model {
+func New(width int, hub *ProgressHub) Model {
 	return Model{
 		Spinner:     newSpinner(),
 		MDRenderer:  render.NewMDRenderer(width),

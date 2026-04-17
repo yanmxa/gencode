@@ -13,7 +13,6 @@ import (
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/app/output/progress"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
@@ -586,7 +585,7 @@ func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 		conv:        appconv.New(),
 		systemInput: appsystem.New(),
 		llmProvider: testLLMProvider{},
-		agentOutput:      appoutput.New(80, progress.NewHub(10)),
+		agentOutput:      appoutput.New(80, appoutput.NewProgressHub(10)),
 	}
 	m.systemInput.AsyncHookQueue.Push(appsystem.AsyncHookRewake{
 		Notice:             "Async hook blocked: background policy blocked this",

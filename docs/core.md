@@ -340,38 +340,109 @@ Only `PreInfer` and `PreTool` are interceptors; all other events are observation
                       OnStop    → cleanup
 ```
 
-## Gaps (ThinkAct as foundation for subagents)
+## Auto Compaction
 
-Features currently in `runtime.Loop` that `core.Agent` needs:
+When context grows too large, ThinkAct automatically compacts the conversation.
+The caller provides a `CompactFunc` that summarizes messages; core handles the rest.
+
+### LLM Interface
+
+```go
+  LLM interface {
+      Infer(ctx, req) (<-chan Chunk, error)
+      InputLimit() int    // model's context window size
+  }
+```
+
+`InputLimit()` returns the model's max input tokens. ThinkAct uses
+`InferResponse.TokensIn` (current context size) to compare against it.
+
+### Compaction Flow
 
 ```
-  Gap                          Where it lives now          How to bridge
-  ─────────────────────────────────────────────────────────────────────────
+  ThinkAct(ctx)
+    for each turn:
+      │
+      ├─ check: TokensIn >= 95% of LLM.InputLimit()?
+      │   │
+      │   yes ──► COMPACT
+      │   │
+      │   no
+      │   ▼
+      │  PreInfer → streamInfer()
+      │                │
+      │           prompt_too_long error?
+      │                │
+      │               yes ──► COMPACT → retry streamInfer
+      │                │
+      │               no (other error) → return error
+      │
+      └─ continue turn loop
 
-  AllowedTools whitelist       tool.Set.Allow +            Config.AllowedTools
-  (skip Permission check)      permission.PermitAll()      checked in execTools
 
-  Token budget check           Loop pre-stream check       PreInfer hook with
-  + auto compaction            + reactive on error         token info, or Config
+  COMPACT:
+  ┌────────────────────────────────────────────────────┐
+  │                                                    │
+  │  CompactFunc(ctx, messages) → summary              │
+  │       │                                            │
+  │       ▼                                            │
+  │  SetMessages([UserMessage("Previous context:\n"    │
+  │               + summary)])                         │
+  │                                                    │
+  │  Summary lives in messages, not system prompt.     │
+  │  Next turn's TokensIn reflects the smaller context.│
+  │                                                    │
+  └────────────────────────────────────────────────────┘
+```
 
-  Reactive compaction          Loop catches prompt_too_    streamInfer retry
-  on prompt-too-long           long, compacts, retries     or PreInfer hook
+### CompactFunc
 
-  Interactive tools            Loop.SetQuestionHandler     Config field or
-  (AskUser)                    + tool.InteractiveTool      tool context
+```go
+  Config.CompactFunc func(ctx context.Context, msgs []Message) (string, error)
+```
 
-  Compaction context           RunOptions.SessionMemory    Config fields
-  (session memory, focus)      + CompactFocus
+The caller wraps SessionMemory and Focus into the closure:
 
-  Agent identity               Loop.SetAgentContext        Config.AgentType
-  in hook events               (agentID, agentType)        (ID already exists)
+```
+  sessionMemory := ""               // accumulates across compactions
+  cfg.CompactFunc = func(ctx, msgs) (string, error) {
+      summary, err := runtime.Compact(ctx, client, msgs, sessionMemory, focus)
+      if err != nil { return "", err }
+      sessionMemory = summary       // update for next compaction
+      return summary, nil
+  }
+```
 
-  OnToolStart / OnToolDone     RunOptions callbacks        Outbox PreTool /
-  progress callbacks           for progress tracking       PostTool events
-  ─────────────────────────────────────────────────────────────────────────
+Core does not know about SessionMemory, Focus, or the LLM client
+used for summarization — all encapsulated in the closure.
 
-  Resolved by Append + ThinkAct design:
-    ✓ Message injection — Append() before each ThinkAct() call
-    ✓ Message hooks — Append() fires OnMessage, same as Run() path
-    ✓ Conversation history — messages accumulate across ThinkAct() calls
+### Cumulative Compaction
+
+```
+  Compaction₁: summary₁ = f(conversation₁)
+  Compaction₂: summary₂ = f(summary₁ + conversation₂)
+  Compaction₃: summary₃ = f(summary₂ + conversation₃)
+                           └── recursive compression,
+                               managed by CompactFunc closure
+```
+
+Each compaction's output becomes the next compaction's SessionMemory input.
+Older context is progressively compressed. Core only sees:
+messages in → CompactFunc → summary out → SetMessages.
+
+## Resolved Gaps
+
+```
+  Feature                      How
+  ────────────────────────────────────────────────────────────────
+  AllowedTools                 Config.AllowedTools, checked in execTools
+  Agent identity               Config.AgentType (ID already exists)
+  Message injection            Append() before ThinkAct()
+  Message hooks                Append() fires OnMessage
+  Conversation history         messages accumulate across ThinkAct() calls
+  Auto compaction              CompactFunc + LLM.InputLimit()
+  Progress callbacks           Outbox PreTool / PostTool events
+  Outbox optional              OutboxBuf = -1 → no outbox, emit is no-op
+  Interactive tools (AskUser)  TUI-layer concern, not core's responsibility
+  ────────────────────────────────────────────────────────────────
 ```

@@ -11,9 +11,9 @@ import (
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/core"
+	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	coretool "github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
-	"github.com/yanmxa/gencode/internal/app/output/progress"
 )
 
 type defaultMCPExecutor struct{}
@@ -63,7 +63,7 @@ func newResultFromOutput(tc core.ToolCall, index int, output toolresult.ToolResu
 }
 
 // ExecuteApproved executes a tool that has been approved by the user.
-func ExecuteApproved(ctx context.Context, hub *progress.Hub, toolCalls []core.ToolCall, idx int, cwd string) tea.Cmd {
+func ExecuteApproved(ctx context.Context, hub *appoutput.ProgressHub, toolCalls []core.ToolCall, idx int, cwd string) tea.Cmd {
 	if idx >= len(toolCalls) {
 		return nil
 	}
@@ -93,7 +93,7 @@ func ExecuteApproved(ctx context.Context, hub *progress.Hub, toolCalls []core.To
 	}
 }
 
-func attachAgentCallbacks(ctx context.Context, hub *progress.Hub, idx int, prepared *coretool.PreparedToolCall) {
+func attachAgentCallbacks(ctx context.Context, hub *appoutput.ProgressHub, idx int, prepared *coretool.PreparedToolCall) {
 	if !coretool.IsAgentToolName(prepared.Call.Name) {
 		return
 	}
@@ -114,7 +114,7 @@ func attachAgentCallbacks(ctx context.Context, hub *progress.Hub, idx int, prepa
 	}
 }
 
-func askAgentQuestion(ctx context.Context, hub *progress.Hub, idx int, req *coretool.QuestionRequest) (*coretool.QuestionResponse, error) {
+func askAgentQuestion(ctx context.Context, hub *appoutput.ProgressHub, idx int, req *coretool.QuestionRequest) (*coretool.QuestionResponse, error) {
 	if hub == nil {
 		return nil, context.Canceled
 	}
@@ -138,7 +138,7 @@ func executionContext(ctx context.Context) context.Context {
 	return context.Background()
 }
 
-func sendAgentProgress(hub *progress.Hub, index int, msg string) {
+func sendAgentProgress(hub *appoutput.ProgressHub, index int, msg string) {
 	if hub == nil {
 		return
 	}

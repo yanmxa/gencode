@@ -2,14 +2,12 @@ package output
 
 import (
 	"testing"
-
-	"github.com/yanmxa/gencode/internal/app/output/progress"
 )
 
 func TestHandleProgressWithoutHubDoesNotPanic(t *testing.T) {
 	m := New(80, nil)
 
-	cmd := m.HandleProgress(progress.UpdateMsg{
+	cmd := m.HandleProgress(ProgressUpdateMsg{
 		Index:   1,
 		Message: "step",
 	})

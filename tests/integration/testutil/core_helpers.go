@@ -14,6 +14,8 @@ type FakeLLM struct {
 	callIdx   int
 }
 
+func (f *FakeLLM) InputLimit() int { return 0 }
+
 func (f *FakeLLM) Infer(_ context.Context, _ core.InferRequest) (<-chan core.Chunk, error) {
 	ch := make(chan core.Chunk, 1)
 	go func() {

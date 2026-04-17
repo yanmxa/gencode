@@ -57,6 +57,10 @@ type Chunk struct {
 // Infer sends a request and returns a channel of streaming chunks.
 // The channel is closed when the response is complete or on error.
 // The final chunk has Done=true and carries the aggregated InferResponse.
+//
+// InputLimit returns the model's max input token capacity (context window).
+// Returns 0 if unknown — auto compaction is disabled in that case.
 type LLM interface {
 	Infer(ctx context.Context, req InferRequest) (<-chan Chunk, error)
+	InputLimit() int
 }

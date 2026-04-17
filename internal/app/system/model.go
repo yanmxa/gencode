@@ -4,16 +4,16 @@ package system
 
 import "sync"
 
-// State holds all system-event input state: cron prompts and async hook rewakes.
-type State struct {
+// Model holds all system-event input state: cron prompts and async hook rewakes.
+type Model struct {
 	CronQueue      []string
 	AsyncHookQueue *AsyncHookQueue
 	HookStatus     string // temporary active hook status shown in status bar
 }
 
-// New creates a State with an initialized AsyncHookQueue.
-func New() State {
-	return State{
+// New creates a Model with an initialized AsyncHookQueue.
+func New() Model {
+	return Model{
 		AsyncHookQueue: NewAsyncHookQueue(),
 	}
 }

@@ -40,10 +40,10 @@ type model struct {
 	tool             toolui.State
 
 	// ── Agent Input ─────────────────────────────────────────────────────
-	agentInput appagent.State
+	agentInput appagent.Model
 
 	// ── System Input ────────────────────────────────────────────────────
-	systemInput appsystem.State
+	systemInput appsystem.Model
 
 	// ── Agent Output ────────────────────────────────────────────────────
 	conv                 appconv.Model

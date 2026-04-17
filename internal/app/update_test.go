@@ -18,7 +18,6 @@ import (
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
-	"github.com/yanmxa/gencode/internal/app/output/progress"
 )
 
 // TestPlanResponse_ModifyStaysInPlanMode verifies that when user gives feedback
@@ -372,7 +371,7 @@ func TestBuildPromptSuggestionRequest(t *testing.T) {
 func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing.T) {
 	appCwd = t.TempDir(); base := newBaseModel()
 	m := &base
-	m.agentOutput = appoutput.New(80, progress.NewHub(16))
+	m.agentOutput = appoutput.New(80, appoutput.NewProgressHub(16))
 	m.conv = appconv.Model{
 		Messages: []core.ChatMessage{
 			{Role: core.RoleUser, Content: "previous request"},

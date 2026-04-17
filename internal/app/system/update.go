@@ -9,6 +9,51 @@ import (
 	"github.com/yanmxa/gencode/internal/hook"
 )
 
+// Runtime defines the app callbacks needed to process system-originated input.
+type Runtime interface {
+	IsInputIdle() bool
+	InjectCronPrompt(prompt string) tea.Cmd
+	InjectAsyncHookContinuation(item AsyncHookRewake) tea.Cmd
+	AppendNotice(text string)
+}
+
+// Update routes Source 3 (system -> agent) messages for the app runtime.
+func Update(rt Runtime, state *Model, hookEngine *hook.Engine, msg tea.Msg) (tea.Cmd, bool) {
+	switch msg.(type) {
+	case CronTickMsg:
+		return handleCronTick(rt, state), true
+	case AsyncHookTickMsg:
+		return handleAsyncHookTick(rt, state, hookEngine), true
+	default:
+		return nil, false
+	}
+}
+
+func handleCronTick(rt Runtime, state *Model) tea.Cmd {
+	result := state.HandleCronTick(rt.IsInputIdle())
+
+	cmds := []tea.Cmd{StartCronTicker()}
+	if result.InjectPrompt != "" {
+		cmds = append(cmds, rt.InjectCronPrompt(result.InjectPrompt))
+	}
+	for _, notice := range result.Notices {
+		rt.AppendNotice(notice)
+	}
+	return tea.Batch(cmds...)
+}
+
+func handleAsyncHookTick(rt Runtime, state *Model, hookEngine *hook.Engine) tea.Cmd {
+	cmds := []tea.Cmd{StartAsyncHookTicker()}
+
+	item := state.HandleAsyncHookTick(hookEngine, rt.IsInputIdle())
+	if item == nil {
+		return tea.Batch(cmds...)
+	}
+
+	cmds = append(cmds, rt.InjectAsyncHookContinuation(*item))
+	return tea.Batch(cmds...)
+}
+
 const cronTickInterval = 30 * time.Second
 const asyncHookTickInterval = 500 * time.Millisecond
 const maxCronQueueSize = 100
@@ -48,7 +93,7 @@ type CronResult struct {
 
 // HandleCronTick checks for due cron jobs and returns what action to take.
 // isIdle indicates whether the REPL is idle (no active stream or tool execution).
-func (s *State) HandleCronTick(isIdle bool) CronResult {
+func (s *Model) HandleCronTick(isIdle bool) CronResult {
 	var result CronResult
 
 	// Skip when no jobs exist and queue is empty
@@ -82,7 +127,7 @@ func (s *State) HandleCronTick(isIdle bool) CronResult {
 
 // HandleAsyncHookTick checks for pending async hook rewakes and returns what action to take.
 // hookEngine may be nil.
-func (s *State) HandleAsyncHookTick(hookEngine *hook.Engine, isIdle bool) *AsyncHookRewake {
+func (s *Model) HandleAsyncHookTick(hookEngine *hook.Engine, isIdle bool) *AsyncHookRewake {
 	if hookEngine != nil {
 		s.HookStatus = hookEngine.CurrentStatusMessage()
 	} else {

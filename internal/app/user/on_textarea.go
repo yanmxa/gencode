@@ -11,8 +11,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/kit/history"
-	"github.com/yanmxa/gencode/internal/image"
+	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/image"
 )
 
 const (
@@ -375,4 +376,97 @@ func (m *Model) PendingImages() []core.Image {
 		images[i] = p.Data
 	}
 	return images
+}
+
+// HandleTextareaUpdate forwards a message to the textarea and applies user-input
+// side effects such as paste placeholder expansion, height updates, and suggestions.
+// It returns the resulting tea.Cmd and whether the textarea value changed.
+func (m *Model) HandleTextareaUpdate(msg tea.Msg) (tea.Cmd, bool) {
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
+
+	isPaste := false
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		isPaste = keyMsg.Paste
+	}
+
+	prevValue := m.Textarea.Value()
+	m.Textarea, cmd = m.Textarea.Update(msg)
+	cmds = append(cmds, cmd)
+
+	if isPaste {
+		newValue := m.Textarea.Value()
+		pastedText := ExtractPastedText(prevValue, newValue)
+		lines := strings.Split(pastedText, "\n")
+		if len(lines) > 1 {
+			chunk := PastedChunk{
+				Text:      pastedText,
+				LineCount: len(lines),
+			}
+			m.PastedChunks = append(m.PastedChunks, chunk)
+			placeholder := PastePlaceholder(len(m.PastedChunks), chunk.LineCount)
+			m.Textarea.SetValue(prevValue)
+			m.Textarea.CursorEnd()
+			m.Textarea.InsertString(placeholder)
+		} else {
+			trimmed := strings.TrimSpace(newValue)
+			if trimmed != newValue {
+				m.Textarea.SetValue(trimmed)
+				m.Textarea.CursorEnd()
+			}
+		}
+	}
+
+	changed := m.Textarea.Value() != prevValue
+	if changed {
+		m.UpdateHeight()
+		m.Suggestions.UpdateSuggestions(m.Textarea.Value())
+	}
+
+	return tea.Batch(cmds...), changed
+}
+
+// ExtractPastedText derives the pasted content by comparing the textarea
+// value before and after the paste event.
+func ExtractPastedText(prevValue, newValue string) string {
+	if strings.HasPrefix(newValue, prevValue) {
+		return strings.TrimSpace(newValue[len(prevValue):])
+	}
+	return strings.TrimSpace(newValue)
+}
+
+// HandleSuggestionKey handles keys while the autocomplete suggestion list is visible.
+// Returns (cmd, true) if the key was consumed, (nil, false) otherwise.
+func (m *Model) HandleSuggestionKey(msg tea.KeyMsg) (tea.Cmd, bool) {
+	if !m.Suggestions.IsVisible() {
+		return nil, false
+	}
+	switch msg.Type {
+	case tea.KeyUp, tea.KeyCtrlP:
+		m.Suggestions.MoveUp()
+		return nil, true
+	case tea.KeyDown, tea.KeyCtrlN:
+		m.Suggestions.MoveDown()
+		return nil, true
+	case tea.KeyTab, tea.KeyEnter:
+		if selected := m.Suggestions.GetSelected(); selected != "" {
+			if m.Suggestions.GetSuggestionType() == suggest.TypeFile {
+				currentValue := m.Textarea.Value()
+				if atIdx := strings.LastIndex(currentValue, "@"); atIdx >= 0 {
+					newValue := currentValue[:atIdx] + "@" + selected
+					m.Textarea.SetValue(newValue)
+					m.Textarea.CursorEnd()
+				}
+			} else {
+				m.Textarea.SetValue(selected + " ")
+				m.Textarea.CursorEnd()
+			}
+			m.Suggestions.Hide()
+		}
+		return nil, true
+	case tea.KeyEsc:
+		m.Suggestions.Hide()
+		return nil, true
+	}
+	return nil, false
 }

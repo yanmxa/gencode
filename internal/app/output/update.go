@@ -7,7 +7,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/output/progress"
 	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/task/tracker"
@@ -238,7 +237,7 @@ func (m *Model) drainProgress() {
 }
 
 // HandleProgress processes a task progress message.
-func (m *Model) HandleProgress(msg progress.UpdateMsg) tea.Cmd {
+func (m *Model) HandleProgress(msg ProgressUpdateMsg) tea.Cmd {
 	if m.TaskProgress == nil {
 		m.TaskProgress = make(map[int][]string)
 	}

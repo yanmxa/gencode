@@ -1,4 +1,4 @@
-package progress
+package output
 
 import (
 	"context"
@@ -9,67 +9,67 @@ import (
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
-type update struct {
+type progressUpdate struct {
 	Index   int
 	Message string
 }
 
-// UpdateMsg carries a task progress update from an agent.
-type UpdateMsg struct {
+// ProgressUpdateMsg carries a task progress update from an agent.
+type ProgressUpdateMsg struct {
 	Index   int
 	Message string
 }
 
-type questionUpdate struct {
+type progressQuestionUpdate struct {
 	Index   int
 	Request *tool.QuestionRequest
 	Reply   chan *tool.QuestionResponse
 }
 
-// QuestionMsg carries an agent question request to the TUI.
-type QuestionMsg struct {
+// ProgressQuestionMsg carries an agent question request to the TUI.
+type ProgressQuestionMsg struct {
 	Index   int
 	Request *tool.QuestionRequest
 	Reply   chan *tool.QuestionResponse
 }
 
-// CheckTickMsg triggers a check for new progress updates.
-type CheckTickMsg struct{}
+// ProgressCheckTickMsg triggers a check for new progress updates.
+type ProgressCheckTickMsg struct{}
 
-// Hub is an instance-scoped progress transport.
-type Hub struct {
-	ch  chan update
-	qch chan questionUpdate
+// ProgressHub is an instance-scoped progress transport.
+type ProgressHub struct {
+	ch  chan progressUpdate
+	qch chan progressQuestionUpdate
 }
 
-// NewHub creates a new progress hub with the given buffer size.
-func NewHub(buffer int) *Hub {
+// NewProgressHub creates a new progress hub with the given buffer size.
+func NewProgressHub(buffer int) *ProgressHub {
 	if buffer <= 0 {
 		buffer = 100
 	}
-	return &Hub{
-		ch:  make(chan update, buffer),
-		qch: make(chan questionUpdate, buffer),
+	return &ProgressHub{
+		ch:  make(chan progressUpdate, buffer),
+		qch: make(chan progressQuestionUpdate, buffer),
 	}
 }
 
 // SendForAgent enqueues a progress message for a specific agent index.
-func (h *Hub) SendForAgent(index int, msg string) {
+func (h *ProgressHub) SendForAgent(index int, msg string) {
 	select {
-	case h.ch <- update{Index: index, Message: msg}:
+	case h.ch <- progressUpdate{Index: index, Message: msg}:
 	default:
 	}
 }
 
 // Ask enqueues an interactive question and waits for the user's response.
-func (h *Hub) Ask(ctx context.Context, index int, req *tool.QuestionRequest) (*tool.QuestionResponse, error) {
+func (h *ProgressHub) Ask(ctx context.Context, index int, req *tool.QuestionRequest) (*tool.QuestionResponse, error) {
 	if h == nil {
 		return nil, fmt.Errorf("progress hub not initialized")
 	}
 
 	reply := make(chan *tool.QuestionResponse, 1)
 	select {
-	case h.qch <- questionUpdate{Index: index, Request: req, Reply: reply}:
+	case h.qch <- progressQuestionUpdate{Index: index, Request: req, Reply: reply}:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -86,21 +86,21 @@ func (h *Hub) Ask(ctx context.Context, index int, req *tool.QuestionRequest) (*t
 }
 
 // Check returns a tea.Cmd that polls this hub for the next update.
-func (h *Hub) Check() tea.Cmd {
+func (h *ProgressHub) Check() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		select {
 		case q := <-h.qch:
-			return QuestionMsg{Index: q.Index, Request: q.Request, Reply: q.Reply}
+			return ProgressQuestionMsg{Index: q.Index, Request: q.Request, Reply: q.Reply}
 		case u := <-h.ch:
-			return UpdateMsg(u)
+			return ProgressUpdateMsg(u)
 		default:
-			return CheckTickMsg{}
+			return ProgressCheckTickMsg{}
 		}
 	})
 }
 
 // Drain pulls all pending updates into taskProgress.
-func (h *Hub) Drain(taskProgress map[int][]string) map[int][]string {
+func (h *ProgressHub) Drain(taskProgress map[int][]string) map[int][]string {
 	for {
 		select {
 		case u := <-h.ch:

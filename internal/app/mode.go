@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
-	"github.com/yanmxa/gencode/internal/app/output/progress"
+	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/core"
@@ -96,7 +96,7 @@ func (m *model) enableAutoAcceptMode() {
 // Note: response messages are handled directly in delegateToActiveModal.
 func (m *model) updateMode(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case progress.QuestionMsg:
+	case appoutput.ProgressQuestionMsg:
 		c := m.handleQuestionRequest(appmodal.QuestionRequestMsg{
 			Request: msg.Request,
 			Reply:   msg.Reply,

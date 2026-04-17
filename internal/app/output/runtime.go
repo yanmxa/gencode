@@ -4,7 +4,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/output/compact"
-	"github.com/yanmxa/gencode/internal/app/output/progress"
 	"github.com/yanmxa/gencode/internal/core"
 )
 
@@ -147,9 +146,9 @@ func Update(rt Runtime, m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		return rt.HandleCompactResult(msg), true
 	case compact.TokenLimitResultMsg:
 		return rt.HandleTokenLimitResult(msg), true
-	case progress.UpdateMsg:
+	case ProgressUpdateMsg:
 		return m.HandleProgress(msg), true
-	case progress.CheckTickMsg:
+	case ProgressCheckTickMsg:
 		return m.HandleProgressTick(rt.HasRunningTasks()), true
 	default:
 		return nil, false

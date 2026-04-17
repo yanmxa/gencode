@@ -12,7 +12,6 @@ import (
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/output/progress"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
@@ -94,7 +93,7 @@ func newModel(opts setting.RunOptions) (*model, error) {
 }
 
 func newBaseModel() model {
-	progressHub := progress.NewHub(100)
+	progressHub := appoutput.NewProgressHub(100)
 
 	userInput := appuser.New(appCwd, defaultWidth, commandSuggestionMatcher())
 	userInput.Agent = appuser.NewAgentSelector(subagent.DefaultRegistry)
