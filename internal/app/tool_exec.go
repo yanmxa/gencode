@@ -9,7 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/mcp"
@@ -62,7 +62,7 @@ func newExecResultFromOutput(tc core.ToolCall, index int, output toolresult.Tool
 	}
 }
 
-func executeApproved(ctx context.Context, hub *appoutput.ProgressHub, toolCalls []core.ToolCall, idx int, cwd string) tea.Cmd {
+func executeApproved(ctx context.Context, hub *conv.ProgressHub, toolCalls []core.ToolCall, idx int, cwd string) tea.Cmd {
 	if idx >= len(toolCalls) {
 		return nil
 	}
@@ -92,7 +92,7 @@ func executeApproved(ctx context.Context, hub *appoutput.ProgressHub, toolCalls 
 	}
 }
 
-func attachExecAgentCallbacks(ctx context.Context, hub *appoutput.ProgressHub, idx int, prepared *coretool.PreparedToolCall) {
+func attachExecAgentCallbacks(ctx context.Context, hub *conv.ProgressHub, idx int, prepared *coretool.PreparedToolCall) {
 	if !coretool.IsAgentToolName(prepared.Call.Name) {
 		return
 	}
@@ -112,7 +112,7 @@ func attachExecAgentCallbacks(ctx context.Context, hub *appoutput.ProgressHub, i
 	}
 }
 
-func askExecAgentQuestion(ctx context.Context, hub *appoutput.ProgressHub, idx int, req *coretool.QuestionRequest) (*coretool.QuestionResponse, error) {
+func askExecAgentQuestion(ctx context.Context, hub *conv.ProgressHub, idx int, req *coretool.QuestionRequest) (*coretool.QuestionResponse, error) {
 	if hub == nil {
 		return nil, context.Canceled
 	}
@@ -136,7 +136,7 @@ func execContext(ctx context.Context) context.Context {
 	return context.Background()
 }
 
-func sendExecAgentProgress(hub *appoutput.ProgressHub, index int, msg string) {
+func sendExecAgentProgress(hub *conv.ProgressHub, index int, msg string) {
 	if hub == nil {
 		return
 	}

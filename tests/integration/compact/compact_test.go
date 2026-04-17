@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
@@ -28,7 +28,7 @@ func TestCompact_SummarizesConversation(t *testing.T) {
 		core.AssistantMessage("you're welcome", "", nil),
 	}
 
-	summary, count, err := output.CompactConversation(context.Background(), c, msgs, "", "")
+	summary, count, err := conv.CompactConversation(context.Background(), c, msgs, "", "")
 	if err != nil {
 		t.Fatalf("CompactConversation() error: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestCompact_WithFocus(t *testing.T) {
 		core.AssistantMessage("ok", "", nil),
 	}
 
-	_, _, err := output.CompactConversation(context.Background(), c, msgs, "", "testing")
+	_, _, err := conv.CompactConversation(context.Background(), c, msgs, "", "testing")
 	if err != nil {
 		t.Fatalf("CompactConversation() error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestCompact_EmptyConversation(t *testing.T) {
 		llm.CompletionResponse{Content: "Empty summary", StopReason: "end_turn"},
 	)
 
-	summary, count, err := output.CompactConversation(context.Background(), c, nil, "", "")
+	summary, count, err := conv.CompactConversation(context.Background(), c, nil, "", "")
 	if err != nil {
 		t.Fatalf("CompactConversation() error: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestCompact_WithSessionMemory(t *testing.T) {
 	}
 
 	sessionMemory := "Previous context: refactored session store."
-	_, _, err := output.CompactConversation(context.Background(), c, msgs, sessionMemory, "")
+	_, _, err := conv.CompactConversation(context.Background(), c, msgs, sessionMemory, "")
 	if err != nil {
 		t.Fatalf("CompactConversation() error: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestCompact_WithoutOptionalSections_LeavesPromptPlain(t *testing.T) {
 		core.AssistantMessage("checking now", "", nil),
 	}
 
-	_, _, err := output.CompactConversation(context.Background(), c, msgs, "", "")
+	_, _, err := conv.CompactConversation(context.Background(), c, msgs, "", "")
 	if err != nil {
 		t.Fatalf("CompactConversation() error: %v", err)
 	}

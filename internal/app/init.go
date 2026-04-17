@@ -8,12 +8,12 @@ import (
 
 	"go.uber.org/zap"
 
-	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/notify"
+	"github.com/yanmxa/gencode/internal/app/conv"
 	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
-	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	appuser "github.com/yanmxa/gencode/internal/app/user"
+	"github.com/yanmxa/gencode/internal/app/trigger"
+	"github.com/yanmxa/gencode/internal/app/input"
 
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/cron"
@@ -88,7 +88,7 @@ func initTools(cwd string) error {
 func newModel(opts setting.RunOptions) (*model, error) {
 	base := newBaseModel()
 	m := &base
-	appagent.InstallCompletionObserver(m.agentInput.Notifications)
+	notify.InstallCompletionObserver(m.agentInput.Notifications)
 	m.configureAsyncHookCallback()
 	m.ensureMemoryContextLoaded()
 	m.reconfigureAgentTool()
@@ -100,23 +100,23 @@ func newModel(opts setting.RunOptions) (*model, error) {
 }
 
 func newBaseModel() model {
-	progressHub := appoutput.NewProgressHub(100)
+	progressHub := conv.NewProgressHub(100)
 
-	userInput := appuser.New(appCwd, defaultWidth, commandSuggestionMatcher())
-	userInput.Agent = appuser.NewAgentSelector(&agentRegistryAdapter{subagent.DefaultRegistry})
-	userInput.Search = appuser.NewSearchSelector()
-	userInput.Skill = appuser.SkillState{Selector: appuser.NewSkillSelector(skill.DefaultRegistry)}
-	userInput.Session = appuser.SessionState{Selector: appuser.NewSessionSelector()}
-	userInput.Memory = appuser.MemoryState{Selector: appuser.NewMemorySelector()}
-	userInput.Approval = appuser.NewApproval()
-	userInput.MCP = appuser.MCPState{Selector: appuser.NewMCPSelector(mcp.DefaultRegistry)}
-	userInput.Plugin = appuser.NewPluginSelector(plugin.DefaultRegistry)
-	userInput.Provider = appuser.ProviderState{Selector: appuser.NewProviderSelector()}
+	userInput := input.New(appCwd, defaultWidth, commandSuggestionMatcher())
+	userInput.Agent = input.NewAgentSelector(&agentRegistryAdapter{subagent.DefaultRegistry})
+	userInput.Search = input.NewSearchSelector()
+	userInput.Skill = input.SkillState{Selector: input.NewSkillSelector(skill.DefaultRegistry)}
+	userInput.Session = input.SessionState{Selector: input.NewSessionSelector()}
+	userInput.Memory = input.MemoryState{Selector: input.NewMemorySelector()}
+	userInput.Approval = input.NewApproval()
+	userInput.MCP = input.MCPState{Selector: input.NewMCPSelector(mcp.DefaultRegistry)}
+	userInput.Plugin = input.NewPluginSelector(plugin.DefaultRegistry)
+	userInput.Provider = input.ProviderState{Selector: input.NewProviderSelector()}
 
 	return model{
 		userInput:   userInput,
-		agentOutput: appoutput.New(defaultWidth, progressHub),
-		conv:        appoutput.NewConversation(),
+		agentOutput: conv.New(defaultWidth, progressHub),
+		conv:        conv.NewConversation(),
 		cwd:         appCwd,
 		showTasks:   true,
 
@@ -139,9 +139,9 @@ func newBaseModel() model {
 		mode:        newModeState(),
 		tool:        newToolState(),
 		isGit:       setting.IsGitRepo(appCwd),
-		systemInput: appsystem.New(hook.DefaultEngine),
-		fileWatcher: appsystem.NewFileWatcher(hook.DefaultEngine, nil),
-		agentInput:  appagent.New(),
+		systemInput: trigger.New(hook.DefaultEngine),
+		fileWatcher: trigger.NewFileWatcher(hook.DefaultEngine, nil),
+		agentInput:  notify.New(),
 		fileCache:   filecache.New(),
 	}
 }
@@ -157,16 +157,16 @@ func commandSuggestionMatcher() func(string) []suggest.Suggestion {
 	}
 }
 
-func newModeState() appoutput.ModalState {
-	return appoutput.ModalState{
-		PlanApproval: appoutput.NewPlanPrompt(),
-		PlanEntry:    appoutput.NewEnterPlanPrompt(),
-		Question:     appoutput.NewQuestionPrompt(),
+func newModeState() conv.ModalState {
+	return conv.ModalState{
+		PlanApproval: conv.NewPlanPrompt(),
+		PlanEntry:    conv.NewEnterPlanPrompt(),
+		Question:     conv.NewQuestionPrompt(),
 	}
 }
 
-func newToolState() appoutput.ToolState {
-	return appoutput.ToolState{Selector: appoutput.NewToolSelector(
+func newToolState() conv.ToolState {
+	return conv.ToolState{Selector: conv.NewToolSelector(
 		setting.GetDisabledToolsAt,
 		setting.UpdateDisabledToolsAt,
 	)}
@@ -329,21 +329,21 @@ func pluginMCPServers() []mcp.PluginServer {
 	return servers
 }
 
-// agentRegistryAdapter adapts *subagent.Registry to the appuser.AgentRegistry
+// agentRegistryAdapter adapts *subagent.Registry to the input.AgentRegistry
 // interface so app/user doesn't import subagent directly.
 type agentRegistryAdapter struct {
 	reg *subagent.Registry
 }
 
-func (a *agentRegistryAdapter) ListConfigs() []appuser.AgentConfigInfo {
+func (a *agentRegistryAdapter) ListConfigs() []input.AgentConfigInfo {
 	configs := a.reg.ListConfigs()
-	out := make([]appuser.AgentConfigInfo, len(configs))
+	out := make([]input.AgentConfigInfo, len(configs))
 	for i, cfg := range configs {
 		var tools []string
 		if cfg.Tools != nil {
 			tools = []string(cfg.Tools)
 		}
-		out[i] = appuser.AgentConfigInfo{
+		out[i] = input.AgentConfigInfo{
 			Name:           cfg.Name,
 			Description:    cfg.Description,
 			Model:          cfg.Model,

@@ -14,10 +14,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"go.uber.org/zap"
 
-	appagent "github.com/yanmxa/gencode/internal/app/agent"
+	"github.com/yanmxa/gencode/internal/app/notify"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/filecache"
@@ -42,11 +42,11 @@ type outputRuntime struct {
 }
 
 func (m *model) updateOutput(msg tea.Msg) (tea.Cmd, bool) {
-	return appoutput.Update(outputRuntime{m}, &m.agentOutput, msg)
+	return conv.Update(outputRuntime{m}, &m.agentOutput, msg)
 }
 
 // Compile-time checks: the adapter satisfies output.Runtime.
-var _ appoutput.Runtime = outputRuntime{}
+var _ conv.Runtime = outputRuntime{}
 
 // --- output.Runtime: ConversationMutator ---
 
@@ -125,22 +125,22 @@ func (m *model) StopAgentSession() {
 
 // --- output.Runtime: CompactHandler ---
 
-func (m *model) HandleCompactResult(msg appoutput.CompactResultMsg) tea.Cmd {
+func (m *model) HandleCompactResult(msg conv.CompactResultMsg) tea.Cmd {
 	return m.handleCompactResult(msg)
 }
-func (m *model) HandleTokenLimitResult(msg appoutput.TokenLimitResultMsg) tea.Cmd {
+func (m *model) HandleTokenLimitResult(msg conv.TokenLimitResultMsg) tea.Cmd {
 	return m.handleTokenLimitResult(msg)
 }
 
 // --- output.Runtime: PermBridgeHandler ---
 
-func (m *model) StorePendingPermRequest(req *appoutput.PermBridgeRequest) {
+func (m *model) StorePendingPermRequest(req *conv.PermBridgeRequest) {
 	if m.agentSess != nil {
 		m.agentSess.pendingPermRequest = req
 	}
 }
 
-func (m *model) ShowPermissionPrompt(req *appoutput.PermBridgeRequest) tea.Cmd {
+func (m *model) ShowPermissionPrompt(req *conv.PermBridgeRequest) tea.Cmd {
 	if req == nil {
 		return nil
 	}
@@ -168,7 +168,7 @@ func (m *model) handlePermBridgeDecision(decision permissionDecision) tea.Cmd {
 		return nil
 	}
 
-	resp := appoutput.PermBridgeResponse{
+	resp := conv.PermBridgeResponse{
 		Allow:  decision.Approved,
 		Reason: "user decision",
 	}
@@ -187,7 +187,7 @@ func (m *model) handlePermBridgeDecision(decision permissionDecision) tea.Cmd {
 	default:
 	}
 
-	return appoutput.PollPermBridge(m.agentSess.permBridge)
+	return conv.PollPermBridge(m.agentSess.permBridge)
 }
 
 // --- Side effects (parent-level, needs model internals) ---
@@ -239,19 +239,19 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 	if !ok {
 		return
 	}
-	launch := appagent.BackgroundTaskLaunch{
-		TaskID:      appagent.MetadataString(bg, "taskId"),
-		AgentName:   appagent.MetadataString(bg, "agentName"),
-		AgentType:   appagent.MetadataString(bg, "agentType"),
-		Description: appagent.MetadataString(bg, "description"),
-		ResumeID:    appagent.MetadataString(bg, "resumeId"),
+	launch := notify.BackgroundTaskLaunch{
+		TaskID:      notify.MetadataString(bg, "taskId"),
+		AgentName:   notify.MetadataString(bg, "agentName"),
+		AgentType:   notify.MetadataString(bg, "agentType"),
+		Description: notify.MetadataString(bg, "description"),
+		ResumeID:    notify.MetadataString(bg, "resumeId"),
 	}
 	if launch.TaskID == "" {
 		return
 	}
-	childID := appagent.EnsureBackgroundWorkerTracker(launch, "", "")
+	childID := notify.EnsureBackgroundWorkerTracker(launch, "", "")
 	if childID != "" {
-		appagent.RecordBackgroundTaskLaunch(launch, "", "", 0)
+		notify.RecordBackgroundTaskLaunch(launch, "", "", 0)
 	}
 }
 
@@ -334,11 +334,11 @@ func (m *model) drainTaskNotificationsToAgent() tea.Cmd {
 	if m.agentInput.Notifications == nil {
 		return nil
 	}
-	items := appagent.PopReadyNotifications(m.agentInput.Notifications, true)
+	items := notify.PopReadyNotifications(m.agentInput.Notifications, true)
 	if len(items) == 0 {
 		return nil
 	}
-	return m.injectTaskNotificationContinuation(appagent.MergeNotifications(items))
+	return m.injectTaskNotificationContinuation(notify.MergeNotifications(items))
 }
 
 func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {
@@ -361,7 +361,7 @@ func (m *model) continueOutbox() tea.Cmd {
 	if m.agentSess == nil || m.agentSess.agent == nil {
 		return nil
 	}
-	return appoutput.DrainAgentOutbox(m.agentSess.agent.Outbox())
+	return conv.DrainAgentOutbox(m.agentSess.agent.Outbox())
 }
 
 
@@ -410,32 +410,32 @@ func getHookResponseString(resp map[string]any, key string) string {
 // --- Compact helpers ---
 
 func (m *model) getEffectiveInputLimit() int {
-	return appoutput.GetEffectiveInputLimit(m.runtime.ProviderStore, m.runtime.CurrentModel)
+	return conv.GetEffectiveInputLimit(m.runtime.ProviderStore, m.runtime.CurrentModel)
 }
 
 func (m *model) getMaxTokens() int {
-	return appoutput.GetMaxTokens(m.runtime.ProviderStore, m.runtime.CurrentModel, setting.DefaultMaxTokens)
+	return conv.GetMaxTokens(m.runtime.ProviderStore, m.runtime.CurrentModel, setting.DefaultMaxTokens)
 }
 
 func (m *model) getContextUsagePercent() float64 {
-	return appoutput.GetContextUsagePercent(m.runtime.InputTokens, m.runtime.ProviderStore, m.runtime.CurrentModel)
+	return conv.GetContextUsagePercent(m.runtime.InputTokens, m.runtime.ProviderStore, m.runtime.CurrentModel)
 }
 
 func (m *model) shouldAutoCompact() bool {
-	return appoutput.ShouldAutoCompact(m.runtime.LLMProvider, len(m.conv.Messages), m.runtime.InputTokens, m.runtime.ProviderStore, m.runtime.CurrentModel)
+	return conv.ShouldAutoCompact(m.runtime.LLMProvider, len(m.conv.Messages), m.runtime.InputTokens, m.runtime.ProviderStore, m.runtime.CurrentModel)
 }
 
 func (m *model) triggerAutoCompact() tea.Cmd {
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = ""
-	m.conv.Compact.Phase = appoutput.PhaseSummarizing
+	m.conv.Compact.Phase = conv.PhaseSummarizing
 	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()))
 	commitCmds := m.commitMessages()
 	commitCmds = append(commitCmds, m.agentOutput.Spinner.Tick, compactCmd(m.buildCompactRequest("", "auto")))
 	return tea.Batch(commitCmds...)
 }
 
-func (m *model) handleCompactResult(msg appoutput.CompactResultMsg) tea.Cmd {
+func (m *model) handleCompactResult(msg conv.CompactResultMsg) tea.Cmd {
 	shouldContinue := m.conv.Compact.AutoContinue
 
 	if msg.Error != nil {
@@ -503,7 +503,7 @@ func (m *model) resetAfterCompact() {
 	m.runtime.ResetTokens()
 }
 
-func (m *model) handleTokenLimitResult(msg appoutput.TokenLimitResultMsg) tea.Cmd {
+func (m *model) handleTokenLimitResult(msg conv.TokenLimitResultMsg) tea.Cmd {
 	m.userInput.Provider.FetchingLimits = false
 
 	var content string
@@ -752,8 +752,8 @@ func compactCmd(req compactRequest) tea.Cmd {
 				}
 			}
 		}
-		summary, count, err := appoutput.CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
-		return appoutput.CompactResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
+		summary, count, err := conv.CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
+		return conv.CompactResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
 	}
 }
 

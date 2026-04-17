@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/notify"
+	"github.com/yanmxa/gencode/internal/app/conv"
 	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
-	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	appuser "github.com/yanmxa/gencode/internal/app/user"
+	"github.com/yanmxa/gencode/internal/app/trigger"
+	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
@@ -82,7 +82,7 @@ func TestInitFiresSetupHook(t *testing.T) {
 }
 
 func TestHasAllToolResultsAllowsInterleavedNotices(t *testing.T) {
-	m := appoutput.ConversationModel{
+	m := conv.ConversationModel{
 		Messages: []core.ChatMessage{
 			{
 				Role: core.RoleAssistant,
@@ -260,7 +260,7 @@ You are a verifier.`), 0o644); err != nil {
 	settings := setting.NewSettings()
 	m := &model{
 		cwd:       cwd,
-		userInput: appuser.Model{MCP: appuser.MCPState{}},
+		userInput: input.Model{MCP: input.MCPState{}},
 		runtime: appruntime.Model{
 			Settings:   settings,
 			HookEngine: hook.NewEngine(settings, "test-session", cwd, ""),
@@ -548,12 +548,12 @@ func TestFileWatcherFiresFileChangedForWatchedPath(t *testing.T) {
 		cwd:     cwd,
 		runtime: appruntime.Model{HookEngine: engine},
 	}
-	m.fileWatcher = appsystem.NewFileWatcher(engine, func(outcome hook.HookOutcome) {
+	m.fileWatcher = trigger.NewFileWatcher(engine, func(outcome hook.HookOutcome) {
 		m.applyRuntimeHookOutcome(outcome)
 	})
 	m.applyRuntimeHookOutcome(hook.HookOutcome{WatchPaths: []string{filePath}})
 
-	time.Sleep(appsystem.DefaultFileWatcherInterval + 100*time.Millisecond)
+	time.Sleep(trigger.DefaultFileWatcherInterval + 100*time.Millisecond)
 	if err := os.WriteFile(filePath, []byte("A=2\n"), 0o644); err != nil {
 		t.Fatalf("update watched file: %v", err)
 	}
@@ -586,14 +586,14 @@ func TestApplyRuntimeHookOutcomeSetsInitialPrompt(t *testing.T) {
 func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 	m := &model{
 		cwd:         t.TempDir(),
-		conv:        appoutput.NewConversation(),
-		systemInput: appsystem.New(nil),
-		agentOutput: appoutput.New(80, appoutput.NewProgressHub(10)),
+		conv:        conv.NewConversation(),
+		systemInput: trigger.New(nil),
+		agentOutput: conv.New(80, conv.NewProgressHub(10)),
 		runtime: appruntime.Model{
 			LLMProvider: testLLMProvider{},
 		},
 	}
-	m.systemInput.AsyncHookQueue.Push(appsystem.AsyncHookRewake{
+	m.systemInput.AsyncHookQueue.Push(trigger.AsyncHookRewake{
 		Notice:             "Async hook blocked: background policy blocked this",
 		Context:            []string{"<background-hook-result>\nstatus: blocked\n</background-hook-result>"},
 		ContinuationPrompt: "Re-evaluate the plan.",
@@ -633,7 +633,7 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	})
 
 	m := &model{
-		systemInput: appsystem.New(engine),
+		systemInput: trigger.New(engine),
 		runtime:     appruntime.Model{HookEngine: engine},
 	}
 
@@ -670,9 +670,9 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 	m := &model{
 		cwd:         t.TempDir(),
-		conv:        appoutput.NewConversation(),
-		agentInput:  appagent.New(),
-		agentOutput: appoutput.New(80, appoutput.NewProgressHub(10)),
+		conv:        conv.NewConversation(),
+		agentInput:  notify.New(),
+		agentOutput: conv.New(80, conv.NewProgressHub(10)),
 		runtime: appruntime.Model{
 			LLMProvider: testLLMProvider{},
 		},
@@ -687,10 +687,10 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 		TokenUsage:  321,
 		Output:      "Architecture looks consistent.",
 	}
-	item, ok := appagent.BuildTaskNotification(appagent.TaskNotificationInput{
+	item, ok := notify.BuildTaskNotification(notify.TaskNotificationInput{
 		Info:    info,
-		Subject: appagent.TaskSubject(info),
-		Batch:   appagent.SnapshotBackgroundBatchForTask(info.ID),
+		Subject: notify.TaskSubject(info),
+		Batch:   notify.SnapshotBackgroundBatchForTask(info.ID),
 	})
 	if !ok {
 		t.Fatal("expected BuildTaskNotification to produce an item")
@@ -714,7 +714,7 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 	}
 
 	// Verify coordinator hint is included in the continuation prompt
-	prompt := appagent.BuildContinuationPrompt(item)
+	prompt := notify.BuildContinuationPrompt(item)
 	if !strings.Contains(prompt, "<phase>single_completion</phase>") {
 		t.Fatalf("expected single completion coordinator hint, got %q", prompt)
 	}
@@ -732,9 +732,9 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 func TestTaskNotificationTickBatchesDrainsQueue(t *testing.T) {
 	m := &model{
 		cwd:         t.TempDir(),
-		conv:        appoutput.NewConversation(),
-		agentInput:  appagent.New(),
-		agentOutput: appoutput.New(80, appoutput.NewProgressHub(10)),
+		conv:        conv.NewConversation(),
+		agentInput:  notify.New(),
+		agentOutput: conv.New(80, conv.NewProgressHub(10)),
 		runtime: appruntime.Model{
 			LLMProvider: testLLMProvider{},
 		},
@@ -749,13 +749,13 @@ func TestTaskNotificationTickBatchesDrainsQueue(t *testing.T) {
 		Failures:  1,
 	}
 
-	m.agentInput.Notifications.Push(appagent.Notification{
+	m.agentInput.Notifications.Push(notify.Notification{
 		Notice:             "dir-audit completed",
 		Context:            []string{"single task context"},
 		ContinuationPrompt: "<task-notification><task-id>bg-1</task-id></task-notification>",
 		Batch:              batch,
 	})
-	m.agentInput.Notifications.Push(appagent.Notification{
+	m.agentInput.Notifications.Push(notify.Notification{
 		Notice:             "naming-audit failed",
 		Context:            []string{"single task context"},
 		ContinuationPrompt: "<task-notification><task-id>bg-2</task-id></task-notification>",
@@ -787,7 +787,7 @@ func TestTaskNotificationBatchMergeProducesCorrectXML(t *testing.T) {
 		Failures:  1,
 	}
 
-	items := []appagent.Notification{
+	items := []notify.Notification{
 		{
 			Notice:             "dir-audit completed",
 			Context:            []string{"single task context"},
@@ -801,8 +801,8 @@ func TestTaskNotificationBatchMergeProducesCorrectXML(t *testing.T) {
 			Batch:              batch,
 		},
 	}
-	merged := appagent.MergeNotifications(items)
-	prompt := appagent.BuildContinuationPrompt(merged)
+	merged := notify.MergeNotifications(items)
+	prompt := notify.BuildContinuationPrompt(merged)
 
 	if !strings.Contains(prompt, "<coordinator-hint>") {
 		t.Fatalf("expected structured coordinator hint, got %q", prompt)
@@ -843,7 +843,7 @@ func TestTaskNotificationBatchMergeProducesCorrectXML(t *testing.T) {
 		t.Fatalf("expected batched continuation context, got %#v", contexts)
 	}
 
-	contextStrs := appagent.ContinuationContext(merged)
+	contextStrs := notify.ContinuationContext(merged)
 	foundPolicy := false
 	for _, ctx := range contextStrs {
 		if strings.Contains(ctx, "Do not assume the batch is finished") {
@@ -857,7 +857,7 @@ func TestTaskNotificationBatchMergeProducesCorrectXML(t *testing.T) {
 }
 
 func TestCoordinatorPolicyForCompletedFailedBatch(t *testing.T) {
-	item := appagent.Notification{
+	item := notify.Notification{
 		Notice:             "naming-audit failed",
 		Context:            []string{"background task context"},
 		ContinuationPrompt: "<task-notification><task-id>bg-2</task-id></task-notification>",
@@ -873,7 +873,7 @@ func TestCoordinatorPolicyForCompletedFailedBatch(t *testing.T) {
 		},
 	}
 
-	prompt := appagent.BuildContinuationPrompt(item)
+	prompt := notify.BuildContinuationPrompt(item)
 	if !strings.Contains(prompt, "<coordinator-hint>") {
 		t.Fatalf("expected structured coordinator hint in prompt, got %q", prompt)
 	}
@@ -896,7 +896,7 @@ func TestCoordinatorPolicyForCompletedFailedBatch(t *testing.T) {
 		t.Fatalf("expected completed batch to allow final summary, got %q", prompt)
 	}
 
-	contextStrs := appagent.ContinuationContext(item)
+	contextStrs := notify.ContinuationContext(item)
 	foundPolicy := false
 	for _, ctx := range contextStrs {
 		if strings.Contains(ctx, "background batch completed with failures") &&

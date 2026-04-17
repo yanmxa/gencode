@@ -11,11 +11,11 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 
-	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/notify"
+	"github.com/yanmxa/gencode/internal/app/conv"
 	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
-	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	appuser "github.com/yanmxa/gencode/internal/app/user"
+	"github.com/yanmxa/gencode/internal/app/trigger"
+	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -30,21 +30,21 @@ const defaultWidth = 80
 
 type model struct {
 	// ── User Input ──────────────────────────────────────────────────────
-	userInput        appuser.Model
-	mode             appoutput.ModalState
+	userInput        input.Model
+	mode             conv.ModalState
 	promptSuggestion promptSuggestionState
 	showTasks        bool
-	tool             appoutput.ToolState
+	tool             conv.ToolState
 
 	// ── Agent Input ─────────────────────────────────────────────────────
-	agentInput appagent.Model
+	agentInput notify.Model
 
 	// ── System Input ────────────────────────────────────────────────────
-	systemInput appsystem.Model
+	systemInput trigger.Model
 
 	// ── Agent Output ────────────────────────────────────────────────────
-	conv                 appoutput.ConversationModel
-	agentOutput          appoutput.Model
+	conv                 conv.ConversationModel
+	agentOutput          conv.Model
 	agentSess            *agentSession
 	pendingQuestion      *tool.QuestionRequest
 	pendingQuestionReply chan *tool.QuestionResponse
@@ -59,7 +59,7 @@ type model struct {
 	height        int
 	ready         bool
 	initialPrompt string
-	fileWatcher   *appsystem.FileWatcher
+	fileWatcher   *trigger.FileWatcher
 	fileCache     *filecache.Cache
 }
 
@@ -71,7 +71,7 @@ func (m *model) fireSessionEnd(reason string) {
 }
 
 func (m *model) Init() tea.Cmd {
-	cmds := []tea.Cmd{textarea.Blink, m.agentOutput.Spinner.Tick, m.userInput.MCP.Selector.AutoConnect(), appsystem.TriggerCronTickNow(), appsystem.StartCronTicker(), appsystem.StartAsyncHookTicker(), appagent.StartTicker()}
+	cmds := []tea.Cmd{textarea.Blink, m.agentOutput.Spinner.Tick, m.userInput.MCP.Selector.AutoConnect(), trigger.TriggerCronTickNow(), trigger.StartCronTicker(), trigger.StartAsyncHookTicker(), notify.StartTicker()}
 	if m.initialPrompt != "" {
 		prompt := m.initialPrompt
 		cmds = append(cmds, func() tea.Msg { return initialPromptMsg(prompt) })
@@ -174,9 +174,9 @@ func formatAsyncHookContinuationContext(result hook.AsyncHookResult, reason stri
 // agentSession holds the running core.Agent and its supporting infrastructure.
 type agentSession struct {
 	agent              core.Agent
-	permBridge         *appoutput.PermissionBridge
+	permBridge         *conv.PermissionBridge
 	cancel             context.CancelFunc
-	pendingPermRequest *appoutput.PermBridgeRequest
+	pendingPermRequest *conv.PermBridgeRequest
 }
 
 // buildCoreAgent creates a core.Agent and permissionBridge from the model's
@@ -207,19 +207,19 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 	}
 
 	// Permission bridge — blocking PermissionFunc with TUI approval
-	permBridge := appoutput.NewPermissionBridge(func(name string, args map[string]any) appoutput.PermDecisionResult {
+	permBridge := conv.NewPermissionBridge(func(name string, args map[string]any) conv.PermDecisionResult {
 		settings := m.runtime.Settings
 		if settings == nil {
-			return appoutput.PermDecisionResult{Decision: perm.Permit}
+			return conv.PermDecisionResult{Decision: perm.Permit}
 		}
 		decision := settings.HasPermissionToUseTool(name, args, m.runtime.SessionPermissions)
 		switch decision.Behavior {
 		case setting.Allow:
-			return appoutput.PermDecisionResult{Decision: perm.Permit, Reason: decision.Reason}
+			return conv.PermDecisionResult{Decision: perm.Permit, Reason: decision.Reason}
 		case setting.Deny:
-			return appoutput.PermDecisionResult{Decision: perm.Reject, Reason: decision.Reason}
+			return conv.PermDecisionResult{Decision: perm.Reject, Reason: decision.Reason}
 		default:
-			return appoutput.PermDecisionResult{
+			return conv.PermDecisionResult{
 				Decision:    perm.Prompt,
 				Reason:      decision.Reason,
 				ToolName:    name,
@@ -258,8 +258,8 @@ func (m *model) startAgentLoop(sess *agentSession) tea.Cmd {
 
 	// Return commands that drain the outbox and poll the permission bridge
 	return tea.Batch(
-		appoutput.DrainAgentOutbox(sess.agent.Outbox()),
-		appoutput.PollPermBridge(sess.permBridge),
+		conv.DrainAgentOutbox(sess.agent.Outbox()),
+		conv.PollPermBridge(sess.permBridge),
 	)
 }
 

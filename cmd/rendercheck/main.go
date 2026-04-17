@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/conv"
 )
 
 func main() {
-	md := appoutput.NewMDRenderer(80)
+	md := conv.NewMDRenderer(80)
 
 	tests := []struct {
 		name    string

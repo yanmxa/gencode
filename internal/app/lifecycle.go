@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	appsystem "github.com/yanmxa/gencode/internal/app/system"
+	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/plugin"
@@ -68,12 +68,12 @@ func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
 	}
 	if m.fileWatcher == nil {
 		queue := m.systemInput.AsyncHookQueue
-		m.fileWatcher = appsystem.NewFileWatcher(m.runtime.HookEngine, func(outcome hook.HookOutcome) {
+		m.fileWatcher = trigger.NewFileWatcher(m.runtime.HookEngine, func(outcome hook.HookOutcome) {
 			// Route through AsyncHookQueue to avoid mutating model from
 			// the file watcher's background goroutine. The Bubble Tea
 			// tick handler processes these safely in the Update loop.
 			if queue != nil && outcome.InitialUserMessage != "" {
-				queue.Push(appsystem.AsyncHookRewake{
+				queue.Push(trigger.AsyncHookRewake{
 					Notice:  "File watcher hook triggered",
 					Context: []string{outcome.InitialUserMessage},
 				})

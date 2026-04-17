@@ -12,9 +12,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/app/kit"
-	appuser "github.com/yanmxa/gencode/internal/app/user"
+	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
@@ -359,12 +359,12 @@ func handleModelCommand(ctx context.Context, m *model, args string) (string, tea
 }
 
 func handleInitCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	result, err := appuser.HandleInitCommand(m.cwd, args)
+	result, err := input.HandleInitCommand(m.cwd, args)
 	return result, nil, err
 }
 
 func handleMemoryCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	result, editPath, err := appuser.HandleMemoryCommand(&m.userInput.Memory.Selector, m.cwd, m.width, m.height, args)
+	result, editPath, err := input.HandleMemoryCommand(&m.userInput.Memory.Selector, m.cwd, m.width, m.height, args)
 	if err != nil {
 		return "", nil, err
 	}
@@ -376,7 +376,7 @@ func handleMemoryCommand(ctx context.Context, m *model, args string) (string, te
 }
 
 func handleMCPCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	result, editInfo, err := appuser.HandleMCPCommand(ctx, &m.userInput.MCP.Selector, m.width, m.height, args)
+	result, editInfo, err := input.HandleMCPCommand(ctx, &m.userInput.MCP.Selector, m.width, m.height, args)
 	if err != nil {
 		return "", nil, err
 	}
@@ -384,7 +384,7 @@ func handleMCPCommand(ctx context.Context, m *model, args string) (string, tea.C
 		m.userInput.MCP.EditingFile = editInfo.TempFile
 		m.userInput.MCP.EditingServer = editInfo.ServerName
 		m.userInput.MCP.EditingScope = editInfo.Scope
-		return result, appuser.StartMCPEditor(editInfo.TempFile), nil
+		return result, input.StartMCPEditor(editInfo.TempFile), nil
 	}
 	if m.userInput.MCP.Selector.IsActive() {
 		return result, m.userInput.MCP.Selector.AutoReconnect(), nil
@@ -393,7 +393,7 @@ func handleMCPCommand(ctx context.Context, m *model, args string) (string, tea.C
 }
 
 func handlePluginCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	result, err := appuser.HandlePluginCommand(ctx, &m.userInput.Plugin, m.cwd, m.width, m.height, args)
+	result, err := input.HandlePluginCommand(ctx, &m.userInput.Plugin, m.cwd, m.width, m.height, args)
 	return result, nil, err
 }
 
@@ -430,7 +430,7 @@ func handleGlobCommand(ctx context.Context, m *model, args string) (string, tea.
 	}
 
 	result := tool.Execute(ctx, "glob", params, m.cwd)
-	return appoutput.RenderToolResult(result, m.width), nil, nil
+	return conv.RenderToolResult(result, m.width), nil, nil
 }
 
 func handleToolCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
@@ -527,7 +527,7 @@ func handleLoopCommand(_ context.Context, m *model, args string) (string, tea.Cm
 		}
 
 		if m.conv.Messages == nil {
-			m.conv = appoutput.NewConversation()
+			m.conv = conv.NewConversation()
 		}
 		m.conv.AddNotice(fmt.Sprintf(
 			"Scheduled one-shot task %s (%s, cron `%s`).%s It will fire once and auto-delete.",
@@ -550,7 +550,7 @@ func handleLoopCommand(_ context.Context, m *model, args string) (string, tea.Cm
 	}
 
 	if m.conv.Messages == nil {
-		m.conv = appoutput.NewConversation()
+		m.conv = conv.NewConversation()
 	}
 
 	m.conv.AddNotice(fmt.Sprintf(
@@ -635,7 +635,7 @@ func loopUsage() string {
 // --- Compact/TokenLimit commands ---
 
 func handleTokenLimitCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	result, cmd, err := appuser.HandleTokenLimitCommand(appuser.TokenLimitDeps{
+	result, cmd, err := input.HandleTokenLimitCommand(input.TokenLimitDeps{
 		CurrentModel: m.runtime.CurrentModel,
 		Provider:     m.runtime.LLMProvider,
 		Store:        m.runtime.ProviderStore,
@@ -664,6 +664,6 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	}
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = strings.TrimSpace(args)
-	m.conv.Compact.Phase = appoutput.PhaseSummarizing
+	m.conv.Compact.Phase = conv.PhaseSummarizing
 	return "", tea.Batch(m.agentOutput.Spinner.Tick, compactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
 }

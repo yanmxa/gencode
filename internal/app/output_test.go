@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 )
@@ -86,7 +86,7 @@ func TestHandleTokenLimitCommand_TriggersFetchWhenLimitsUnknown(t *testing.T) {
 	store := newTokenLimitStore(t)
 	m := &model{
 		cwd:         "/repo",
-		agentOutput: appoutput.New(80, nil),
+		agentOutput: conv.New(80, nil),
 	}
 	setProviderDomainForTest(m, store, "gpt-unknown", llm.OpenAI, llm.AuthAPIKey)
 
@@ -149,18 +149,18 @@ func setProviderDomainForTest(m *model, store *llm.Store, modelID string, p llm.
 
 func TestHandleCompactResultStoresVisibleSuccessState(t *testing.T) {
 	m := &model{
-		conv: appoutput.ConversationModel{
+		conv: conv.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleUser, Content: "one"},
 				{Role: core.RoleAssistant, Content: "two"},
 			},
-			Compact: appoutput.CompactState{
+			Compact: conv.CompactState{
 				Active: true,
 			},
 		},
 	}
 
-	cmd := m.handleCompactResult(appoutput.CompactResultMsg{
+	cmd := m.handleCompactResult(conv.CompactResultMsg{
 		Summary:       "summary",
 		OriginalCount: 2,
 		Trigger:       "manual",
@@ -184,12 +184,12 @@ func TestHandleCompactResultStoresVisibleSuccessState(t *testing.T) {
 
 func TestHandleCompactResultStoresVisibleErrorState(t *testing.T) {
 	m := &model{
-		conv: appoutput.ConversationModel{
-			Compact: appoutput.CompactState{Active: true},
+		conv: conv.ConversationModel{
+			Compact: conv.CompactState{Active: true},
 		},
 	}
 
-	cmd := m.handleCompactResult(appoutput.CompactResultMsg{
+	cmd := m.handleCompactResult(conv.CompactResultMsg{
 		Error: context.DeadlineExceeded,
 	})
 	_ = cmd

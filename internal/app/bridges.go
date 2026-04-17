@@ -7,10 +7,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appagent "github.com/yanmxa/gencode/internal/app/agent"
+	"github.com/yanmxa/gencode/internal/app/notify"
 	"github.com/yanmxa/gencode/internal/app/kit"
-	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	appuser "github.com/yanmxa/gencode/internal/app/user"
+	"github.com/yanmxa/gencode/internal/app/trigger"
+	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/llm"
@@ -19,7 +19,7 @@ import (
 // --- User overlay dispatcher (Source 1) ---
 
 func (m *model) updateUserOverlays(msg tea.Msg) (tea.Cmd, bool) {
-	return appuser.Update(m, &m.userInput, msg)
+	return input.Update(m, &m.userInput, msg)
 }
 
 // --- User overlay Runtime interface implementations ---
@@ -36,7 +36,7 @@ func (m *model) FireFileChanged(path, tool string)   { m.fireFileChanged(path, t
 // user.MCPRuntime
 func (m *model) SetInputText(text string) { m.userInput.Textarea.SetValue(text) }
 
-// appuser.ProviderRuntime
+// input.ProviderRuntime
 func (m *model) SwitchProvider(p llm.Provider) {
 	m.runtime.SwitchProvider(p)
 	m.reconfigureAgentTool()
@@ -53,7 +53,7 @@ func (m *model) SetProviderStatusMessage(msg string) { m.userInput.Provider.SetS
 
 func startExternalEditor(filePath string) tea.Cmd {
 	return kit.StartExternalEditor(filePath, func(err error) tea.Msg {
-		return appuser.MemoryEditorFinishedMsg{Err: err}
+		return input.MemoryEditorFinishedMsg{Err: err}
 	})
 }
 
@@ -123,7 +123,7 @@ func (m *model) pasteImageFromClipboard() (tea.Cmd, bool) {
 		return nil, false
 	}
 	label := m.userInput.AddPendingImage(*imgData)
-	m.userInput.Images.Selection = appuser.ImageSelection{}
+	m.userInput.Images.Selection = input.ImageSelection{}
 	m.userInput.Textarea.InsertString(label)
 	m.userInput.UpdateHeight()
 	return nil, true
@@ -149,22 +149,22 @@ type agentRuntime struct {
 }
 
 func (m *model) updateAgentInput(msg tea.Msg) (tea.Cmd, bool) {
-	return appagent.Update(agentRuntime{m: m}, &m.agentInput, msg)
+	return notify.Update(agentRuntime{m: m}, &m.agentInput, msg)
 }
 
 func (m *model) handleTaskNotificationTick() tea.Cmd {
-	cmd, _ := appagent.Update(agentRuntime{m: m}, &m.agentInput, appagent.TickMsg{})
+	cmd, _ := notify.Update(agentRuntime{m: m}, &m.agentInput, notify.TickMsg{})
 	return cmd
 }
 
 func (rt agentRuntime) IsInputIdle() bool    { return rt.m.isInputIdle() }
 func (rt agentRuntime) StreamActive() bool   { return rt.m.conv.Stream.Active }
 
-func (rt agentRuntime) InjectTaskNotificationContinuation(item appagent.Notification) tea.Cmd {
+func (rt agentRuntime) InjectTaskNotificationContinuation(item notify.Notification) tea.Cmd {
 	return rt.m.injectTaskNotificationContinuation(item)
 }
 
-func (m *model) injectTaskNotificationContinuation(item appagent.Notification) tea.Cmd {
+func (m *model) injectTaskNotificationContinuation(item notify.Notification) tea.Cmd {
 	if item.Notice != "" {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleNotice,
@@ -188,13 +188,13 @@ func (m *model) injectTaskNotificationContinuation(item appagent.Notification) t
 		return tea.Batch(m.commitMessages()...)
 	}
 
-	for _, ctx := range appagent.ContinuationContext(item) {
+	for _, ctx := range notify.ContinuationContext(item) {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleUser,
 			Content: ctx,
 		})
 	}
-	return m.sendToAgent(appagent.BuildContinuationPrompt(item), nil)
+	return m.sendToAgent(notify.BuildContinuationPrompt(item), nil)
 }
 
 // --- System input bridge (Source 3) ---
@@ -204,7 +204,7 @@ type systemRuntime struct {
 }
 
 func (m *model) updateSystemInput(msg tea.Msg) (tea.Cmd, bool) {
-	return appsystem.Update(systemRuntime{m: m}, &m.systemInput, msg)
+	return trigger.Update(systemRuntime{m: m}, &m.systemInput, msg)
 }
 
 func (m *model) isInputIdle() bool {
@@ -212,13 +212,13 @@ func (m *model) isInputIdle() bool {
 }
 
 func (m *model) handleAsyncHookTick() tea.Cmd {
-	cmd, _ := appsystem.Update(systemRuntime{m: m}, &m.systemInput, appsystem.AsyncHookTickMsg{})
+	cmd, _ := trigger.Update(systemRuntime{m: m}, &m.systemInput, trigger.AsyncHookTickMsg{})
 	return cmd
 }
 
 func (rt systemRuntime) IsInputIdle() bool { return rt.m.isInputIdle() }
 
-func (rt systemRuntime) InjectAsyncHookContinuation(item appsystem.AsyncHookRewake) tea.Cmd {
+func (rt systemRuntime) InjectAsyncHookContinuation(item trigger.AsyncHookRewake) tea.Cmd {
 	return rt.m.injectAsyncHookContinuation(item)
 }
 
@@ -236,7 +236,7 @@ func (rt systemRuntime) AppendNotice(text string) {
 	})
 }
 
-func (m *model) injectAsyncHookContinuation(item appsystem.AsyncHookRewake) tea.Cmd {
+func (m *model) injectAsyncHookContinuation(item trigger.AsyncHookRewake) tea.Cmd {
 	if item.Notice != "" {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleNotice,

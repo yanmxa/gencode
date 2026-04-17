@@ -10,8 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/kit"
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	appuser "github.com/yanmxa/gencode/internal/app/user"
+	"github.com/yanmxa/gencode/internal/app/conv"
+	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/skill"
 )
 
@@ -60,7 +60,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.agentOutput.Spinner, cmd = m.agentOutput.Spinner.Update(msg)
 		return m, cmd
-	case appuser.SkillInvokeMsg:
+	case input.SkillInvokeMsg:
 		if sk, ok := skill.DefaultRegistry.Get(msg.SkillName); ok {
 			executeSkillCommand(m, sk, "")
 			return m, m.handleSkillInvocation()
@@ -71,7 +71,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case promptSuggestionMsg:
 		m.handlePromptSuggestion(msg)
 		return m, nil
-	case kit.DismissedMsg, appoutput.ToggleMsg, appuser.SkillCycleMsg, appuser.AgentToggleMsg:
+	case kit.DismissedMsg, conv.ToggleMsg, input.SkillCycleMsg, input.AgentToggleMsg:
 		return m, nil
 	}
 

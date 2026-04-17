@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appsystem "github.com/yanmxa/gencode/internal/app/system"
+	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
@@ -62,7 +62,7 @@ func (m *model) configureAsyncHookCallback() {
 		if reason == "" {
 			reason = "asynchronous hook requested a rewake"
 		}
-		queue.Push(appsystem.AsyncHookRewake{
+		queue.Push(trigger.AsyncHookRewake{
 			Notice:             fmt.Sprintf("Async hook blocked: %s", reason),
 			Context:            []string{formatAsyncHookContinuationContext(result, reason)},
 			ContinuationPrompt: "A background policy hook reported a blocking condition. Re-evaluate the plan and choose a safer next step.",

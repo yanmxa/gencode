@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
-	appuser "github.com/yanmxa/gencode/internal/app/user"
+	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/log"
@@ -28,7 +28,7 @@ type hookPermissionResultMsg struct {
 // Note: response messages are handled directly in delegateToActiveModal.
 func (m *model) updateApproval(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case appuser.ApprovalRequestMsg:
+	case input.ApprovalRequestMsg:
 		c := m.handlePermissionRequest(msg)
 		return c, true
 	case hookPermissionResultMsg:
@@ -38,7 +38,7 @@ func (m *model) updateApproval(msg tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-func (m *model) handlePermissionRequest(msg appuser.ApprovalRequestMsg) tea.Cmd {
+func (m *model) handlePermissionRequest(msg input.ApprovalRequestMsg) tea.Cmd {
 	// If there's a PermissionRequest hook configured, run it asynchronously
 	// to avoid blocking the Bubble Tea event loop (which freezes the TUI).
 	if m.runtime.HookEngine != nil && m.runtime.HookEngine.HasHooks(hook.PermissionRequest) && msg.Request != nil {
@@ -315,7 +315,7 @@ func buildRuleString(rule hook.PermissionRule) string {
 	return ""
 }
 
-func (m *model) handlePermissionResponse(msg appuser.ApprovalResponseMsg) tea.Cmd {
+func (m *model) handlePermissionResponse(msg input.ApprovalResponseMsg) tea.Cmd {
 	return m.handlePermBridgeDecision(permissionDecision{
 		Approved: msg.Approved,
 		AllowAll: msg.AllowAll,

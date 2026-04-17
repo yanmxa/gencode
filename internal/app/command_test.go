@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/conv"
 	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
-	appsystem "github.com/yanmxa/gencode/internal/app/system"
+	"github.com/yanmxa/gencode/internal/app/trigger"
 	appcommand "github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/cron"
@@ -219,7 +219,7 @@ func TestExecuteCommandLoopSchedulesRecurringPrompt(t *testing.T) {
 
 	m := &model{
 		cwd:  tmpDir,
-		conv: appoutput.NewConversation(),
+		conv: conv.NewConversation(),
 	}
 
 	result, cmd, handled := executeCommand(context.Background(), m, "/loop 5m check the deploy")
@@ -261,7 +261,7 @@ func TestExecuteCommandLoopParsesTrailingEveryClause(t *testing.T) {
 	cron.DefaultStore = cron.NewStore()
 	t.Cleanup(func() { cron.DefaultStore = prevStore })
 
-	m := &model{conv: appoutput.NewConversation()}
+	m := &model{conv: conv.NewConversation()}
 
 	result, cmd, handled := executeCommand(context.Background(), m, "/loop check the deploy every 20m")
 	if !handled {
@@ -291,7 +291,7 @@ func TestExecuteCommandLoopOnceSchedulesOneShot(t *testing.T) {
 	cron.DefaultStore = cron.NewStore()
 	t.Cleanup(func() { cron.DefaultStore = prevStore })
 
-	m := &model{conv: appoutput.NewConversation()}
+	m := &model{conv: conv.NewConversation()}
 
 	result, cmd, handled := executeCommand(context.Background(), m, "/loop once 20m check the deploy")
 	if !handled {
@@ -326,7 +326,7 @@ func TestExecuteCommandLoopListAndDelete(t *testing.T) {
 		t.Fatalf("Create() failed: %v", err)
 	}
 
-	m := &model{conv: appoutput.NewConversation()}
+	m := &model{conv: conv.NewConversation()}
 
 	result, cmd, handled := executeCommand(context.Background(), m, "/loop list")
 	if !handled {
@@ -366,7 +366,7 @@ func TestExecuteCommandLoopDeleteAll(t *testing.T) {
 		t.Fatalf("Create() failed: %v", err)
 	}
 
-	m := &model{conv: appoutput.NewConversation()}
+	m := &model{conv: conv.NewConversation()}
 
 	result, cmd, handled := executeCommand(context.Background(), m, "/loop delete all")
 	if !handled {
@@ -392,7 +392,7 @@ func TestHandleClearCommand_PreservesScheduledTasks(t *testing.T) {
 		t.Fatalf("Create() failed: %v", err)
 	}
 
-	m := &model{conv: appoutput.NewConversation()}
+	m := &model{conv: conv.NewConversation()}
 	_, _, err := handleClearCommand(context.Background(), m, "")
 	if err != nil {
 		t.Fatalf("handleClearCommand() failed: %v", err)
@@ -404,12 +404,12 @@ func TestHandleClearCommand_PreservesScheduledTasks(t *testing.T) {
 }
 
 func TestTriggerCronTickNow_ReturnsCronTickMsg(t *testing.T) {
-	cmd := appsystem.TriggerCronTickNow()
+	cmd := trigger.TriggerCronTickNow()
 	if cmd == nil {
 		t.Fatal("expected TriggerCronTickNow to return a command")
 	}
 	msg := cmd()
-	if _, ok := msg.(appsystem.CronTickMsg); !ok {
+	if _, ok := msg.(trigger.CronTickMsg); !ok {
 		t.Fatalf("expected CronTickMsg, got %T", msg)
 	}
 }
@@ -449,7 +449,7 @@ func TestHandleCommandSubmit_LoopDeleteAllPreservesLiteralInputAndDeletesJobs(t 
 	m := &model{
 		cwd:   tmpDir,
 		userInput: base.userInput,
-		conv:      appoutput.NewConversation(),
+		conv:      conv.NewConversation(),
 	}
 
 	cmd, handled := m.commands().handleSubmit("/loop delete all")
@@ -479,7 +479,7 @@ func TestHandleCommandSubmit_ToolsPreservesLiteralInput(t *testing.T) {
 	m := &model{
 		cwd:    tmpDir,
 		userInput: base.userInput,
-		conv:      appoutput.NewConversation(),
+		conv:      conv.NewConversation(),
 		width:     80,
 		height:    24,
 	}
@@ -512,7 +512,7 @@ func TestHandleCommandSubmit_LoopOncePlacesCommandBeforeNotice(t *testing.T) {
 	m := &model{
 		cwd:       tmpDir,
 		userInput: base.userInput,
-		conv:      appoutput.NewConversation(),
+		conv:      conv.NewConversation(),
 	}
 
 	cmd, handled := m.commands().handleSubmit("/loop once 20m check the deploy")
@@ -543,7 +543,7 @@ func TestHandleCommandSubmit_LoopRecurringPlacesCommandBeforeNoticeAndPrompt(t *
 	m := &model{
 		cwd:       tmpDir,
 		userInput: base.userInput,
-		conv:      appoutput.NewConversation(),
+		conv:      conv.NewConversation(),
 	}
 
 	cmd, handled := m.commands().handleSubmit("/loop 5m check the deploy")

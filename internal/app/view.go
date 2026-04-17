@@ -6,8 +6,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	appsystem "github.com/yanmxa/gencode/internal/app/system"
+	"github.com/yanmxa/gencode/internal/app/conv"
+	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task/tracker"
@@ -26,7 +26,7 @@ func (m *model) View() string {
 		return selectorView
 	}
 
-	separator := appoutput.SeparatorStyle.Render(strings.Repeat("─", m.width))
+	separator := conv.SeparatorStyle.Render(strings.Repeat("─", m.width))
 	trackerView := m.renderTrackerList()
 	trackerPrefix := ""
 	if trackerView != "" {
@@ -42,7 +42,7 @@ func (m *model) View() string {
 	chatSection := m.renderChatSection(activeContent, trackerView)
 	statusLine := m.renderModeStatus()
 	suggestions := m.userInput.Suggestions.Render(m.width)
-	tokenWarning := appoutput.RenderTokenWarning(m.runtime.InputTokens, m.getEffectiveInputLimit(), m.conv.Compact.WarningSuppressed)
+	tokenWarning := conv.RenderTokenWarning(m.runtime.InputTokens, m.getEffectiveInputLimit(), m.conv.Compact.WarningSuppressed)
 	queuePreview := m.renderQueuePreview()
 
 	var view strings.Builder
@@ -78,7 +78,7 @@ func (m *model) View() string {
 }
 
 func (m model) renderInputView() string {
-	prompt := appoutput.InputPromptStyle.Render("❯ ")
+	prompt := conv.InputPromptStyle.Render("❯ ")
 	if m.promptSuggestion.text != "" && m.userInput.Textarea.Value() == "" &&
 		!m.conv.Stream.Active && !m.userInput.Suggestions.IsVisible() {
 		return prompt + ghostTextStyle.Render(m.promptSuggestion.text)
@@ -98,11 +98,11 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 	}
 
 	if m.userInput.Provider.FetchingLimits {
-		spinnerView := appoutput.ThinkingStyle.Render(m.agentOutput.Spinner.View() + " Fetching token limits...")
+		spinnerView := conv.ThinkingStyle.Render(m.agentOutput.Spinner.View() + " Fetching token limits...")
 		parts = append(parts, spinnerView)
 	}
 
-	if compactView := appoutput.RenderCompactStatus(
+	if compactView := conv.RenderCompactStatus(
 		m.width,
 		m.agentOutput.Spinner.View(),
 		m.conv.Compact.Active,
@@ -124,7 +124,7 @@ func (m model) renderTrackerList() string {
 		return ""
 	}
 	tasks := tracker.DefaultStore.List()
-	return appoutput.RenderTrackerList(appoutput.TrackerListParams{
+	return conv.RenderTrackerList(conv.TrackerListParams{
 		Tasks:        tasks,
 		AllDone:      tracker.DefaultStore.AllDone(),
 		StreamActive: m.conv.Stream.Active,
@@ -138,13 +138,13 @@ func (m model) renderTrackerList() string {
 }
 
 func (m model) renderWelcome() string {
-	return appoutput.RenderWelcome()
+	return conv.RenderWelcome()
 }
 
 func (m model) renderModeStatus() string {
-	modelName := appsystem.RenderHookStatus(m.systemInput.HookStatus, m.userInput.Provider.StatusMessage)
-	return appoutput.RenderModeStatus(appoutput.OperationModeParams{
-		Mode:          appoutput.OperationMode(m.runtime.OperationMode),
+	modelName := trigger.RenderHookStatus(m.systemInput.HookStatus, m.userInput.Provider.StatusMessage)
+	return conv.RenderModeStatus(conv.OperationModeParams{
+		Mode:          conv.OperationMode(m.runtime.OperationMode),
 		InputTokens:   m.runtime.InputTokens,
 		InputLimit:    m.getEffectiveInputLimit(),
 		ModelName:     modelName,
@@ -159,17 +159,17 @@ func (m model) renderQueuePreview() string {
 	if len(items) == 0 {
 		return ""
 	}
-	previews := make([]appoutput.QueuePreviewItem, len(items))
+	previews := make([]conv.QueuePreviewItem, len(items))
 	for i, item := range items {
-		previews[i] = appoutput.QueuePreviewItem{Content: item.Content, HasImages: len(item.Images) > 0}
+		previews[i] = conv.QueuePreviewItem{Content: item.Content, HasImages: len(item.Images) > 0}
 	}
-	return strings.TrimSuffix(appoutput.RenderQueuePreview(previews, m.userInput.QueueSelectIdx, m.width), "\n")
+	return strings.TrimSuffix(conv.RenderQueuePreview(previews, m.userInput.QueueSelectIdx, m.width), "\n")
 }
 
 // --- Message rendering (thin delegation to output package) ---
 
-func (m model) messageRenderParams() appoutput.MessageRenderParams {
-	return appoutput.MessageRenderParams{
+func (m model) messageRenderParams() conv.MessageRenderParams {
+	return conv.MessageRenderParams{
 		Messages:                m.conv.Messages,
 		CommittedCount:          m.conv.CommittedCount,
 		StreamActive:            m.conv.Stream.Active,
@@ -178,7 +178,7 @@ func (m model) messageRenderParams() appoutput.MessageRenderParams {
 		MDRenderer:              m.agentOutput.MDRenderer,
 		SpinnerView:             m.agentOutput.Spinner.View(),
 		TaskProgress:            m.agentOutput.TaskProgress,
-		TaskOwnerMap:            appoutput.BuildTaskOwnerMap(tracker.DefaultStore.List()),
+		TaskOwnerMap:            conv.BuildTaskOwnerMap(tracker.DefaultStore.List()),
 		InteractivePromptActive: (m.mode.Question != nil && m.mode.Question.IsActive()) || (m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive()),
 	}
 }
@@ -187,15 +187,15 @@ func (m model) renderPlanForScrollback(req *tool.PlanRequest) string {
 	if req == nil {
 		return ""
 	}
-	return appoutput.RenderPlanForScrollback(req.Plan, m.agentOutput.MDRenderer)
+	return conv.RenderPlanForScrollback(req.Plan, m.agentOutput.MDRenderer)
 }
 
 func (m model) renderSingleMessage(idx int) string {
-	return appoutput.RenderSingleMessage(m.messageRenderParams(), idx)
+	return conv.RenderSingleMessage(m.messageRenderParams(), idx)
 }
 
 func (m model) renderActiveContent() string {
-	return appoutput.RenderActiveContent(m.messageRenderParams())
+	return conv.RenderActiveContent(m.messageRenderParams())
 }
 
 func (m model) isToolPhaseActive() bool {

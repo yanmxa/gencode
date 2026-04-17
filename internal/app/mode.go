@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/setting"
@@ -29,33 +29,33 @@ func (m *model) cycleOperationMode() {
 // Note: response messages are handled directly in delegateToActiveModal.
 func (m *model) updateMode(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case appoutput.ProgressQuestionMsg:
-		c := m.handleQuestionRequest(appoutput.QuestionRequestMsg{
+	case conv.ProgressQuestionMsg:
+		c := m.handleQuestionRequest(conv.QuestionRequestMsg{
 			Request: msg.Request,
 			Reply:   msg.Reply,
 		})
 		return c, true
-	case appoutput.QuestionRequestMsg:
+	case conv.QuestionRequestMsg:
 		c := m.handleQuestionRequest(msg)
 		return c, true
-	case appoutput.PlanRequestMsg:
+	case conv.PlanRequestMsg:
 		c := m.handlePlanRequest(msg)
 		return c, true
-	case appoutput.EnterPlanRequestMsg:
+	case conv.EnterPlanRequestMsg:
 		c := m.handleEnterPlanRequest(msg)
 		return c, true
 	}
 	return nil, false
 }
 
-func (m *model) handleQuestionRequest(msg appoutput.QuestionRequestMsg) tea.Cmd {
+func (m *model) handleQuestionRequest(msg conv.QuestionRequestMsg) tea.Cmd {
 	m.pendingQuestion = msg.Request
 	m.pendingQuestionReply = msg.Reply
 	m.mode.Question.Show(msg.Request, m.width)
 	return tea.Batch(m.commitMessages()...)
 }
 
-func (m *model) handleQuestionResponse(msg appoutput.QuestionResponseMsg) tea.Cmd {
+func (m *model) handleQuestionResponse(msg conv.QuestionResponseMsg) tea.Cmd {
 	reply := m.pendingQuestionReply
 	m.pendingQuestionReply = nil
 	defer func() { m.pendingQuestion = nil }()
@@ -75,7 +75,7 @@ func (m *model) handleQuestionResponse(msg appoutput.QuestionResponseMsg) tea.Cm
 	return nil
 }
 
-func (m *model) handlePlanRequest(msg appoutput.PlanRequestMsg) tea.Cmd {
+func (m *model) handlePlanRequest(msg conv.PlanRequestMsg) tea.Cmd {
 	var planPath string
 	if m.runtime.PlanStore != nil {
 		planPath = m.runtime.PlanStore.GetPath(plan.GeneratePlanName(m.runtime.PlanTask))
@@ -90,7 +90,7 @@ func (m *model) handlePlanRequest(msg appoutput.PlanRequestMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m *model) handlePlanResponse(msg appoutput.PlanResponseMsg) tea.Cmd {
+func (m *model) handlePlanResponse(msg conv.PlanResponseMsg) tea.Cmd {
 	if !msg.Approved {
 		m.runtime.PlanEnabled = false
 		m.runtime.OperationMode = setting.ModeNormal
@@ -148,12 +148,12 @@ func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
 	return m.sendToAgent(userMsg, nil)
 }
 
-func (m *model) handleEnterPlanRequest(msg appoutput.EnterPlanRequestMsg) tea.Cmd {
+func (m *model) handleEnterPlanRequest(msg conv.EnterPlanRequestMsg) tea.Cmd {
 	m.mode.PlanEntry.Show(msg.Request, m.width)
 	return tea.Batch(m.commitMessages()...)
 }
 
-func (m *model) handleEnterPlanResponse(msg appoutput.EnterPlanResponseMsg) tea.Cmd {
+func (m *model) handleEnterPlanResponse(msg conv.EnterPlanResponseMsg) tea.Cmd {
 	if msg.Approved {
 		m.runtime.PlanEnabled = true
 		m.runtime.OperationMode = setting.ModePlan

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	"github.com/yanmxa/gencode/internal/app/conv"
 	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
-	appuser "github.com/yanmxa/gencode/internal/app/user"
+	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/system"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -28,22 +28,22 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 			PlanEnabled:        true,
 			PlanTask:           "test task",
 		},
-		mode: appoutput.ModalState{
-			PlanApproval: appoutput.NewPlanPrompt(),
-			Question:     appoutput.NewQuestionPrompt(),
+		mode: conv.ModalState{
+			PlanApproval: conv.NewPlanPrompt(),
+			Question:     conv.NewQuestionPrompt(),
 		},
-		tool: appoutput.ToolState{
-			ToolExecState: appoutput.ToolExecState{
+		tool: conv.ToolState{
+			ToolExecState: conv.ToolExecState{
 				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
 			},
 		},
-		conv: appoutput.NewConversation(),
+		conv: conv.NewConversation(),
 	}
 
-	msg := appoutput.PlanResponseMsg{
+	msg := conv.PlanResponseMsg{
 		Request:      &tool.PlanRequest{ID: "plan-1", Plan: "## Original Plan\nDo something"},
 		Approved:     true,
 		ApproveMode:  "modify",
@@ -76,22 +76,22 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 			PlanEnabled:        true,
 			PlanTask:           "test task",
 		},
-		mode: appoutput.ModalState{
-			PlanApproval: appoutput.NewPlanPrompt(),
-			Question:     appoutput.NewQuestionPrompt(),
+		mode: conv.ModalState{
+			PlanApproval: conv.NewPlanPrompt(),
+			Question:     conv.NewQuestionPrompt(),
 		},
-		tool: appoutput.ToolState{
-			ToolExecState: appoutput.ToolExecState{
+		tool: conv.ToolState{
+			ToolExecState: conv.ToolExecState{
 				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
 			},
 		},
-		conv: appoutput.NewConversation(),
+		conv: conv.NewConversation(),
 	}
 
-	msg := appoutput.PlanResponseMsg{
+	msg := conv.PlanResponseMsg{
 		Request:     &tool.PlanRequest{ID: "plan-1", Plan: "## Plan\nSome plan"},
 		Approved:    true,
 		ApproveMode: "manual",
@@ -121,22 +121,22 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 			PlanEnabled:        true,
 			PlanTask:           "test task",
 		},
-		mode: appoutput.ModalState{
-			PlanApproval: appoutput.NewPlanPrompt(),
-			Question:     appoutput.NewQuestionPrompt(),
+		mode: conv.ModalState{
+			PlanApproval: conv.NewPlanPrompt(),
+			Question:     conv.NewQuestionPrompt(),
 		},
-		tool: appoutput.ToolState{
-			ToolExecState: appoutput.ToolExecState{
+		tool: conv.ToolState{
+			ToolExecState: conv.ToolExecState{
 				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
 			},
 		},
-		conv: appoutput.NewConversation(),
+		conv: conv.NewConversation(),
 	}
 
-	msg := appoutput.PlanResponseMsg{
+	msg := conv.PlanResponseMsg{
 		Request:     &tool.PlanRequest{ID: "plan-1", Plan: "## Plan\nSome plan"},
 		Approved:    true,
 		ApproveMode: "auto",
@@ -169,22 +169,22 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 			PlanEnabled:        true,
 			PlanTask:           "test task",
 		},
-		mode: appoutput.ModalState{
-			PlanApproval: appoutput.NewPlanPrompt(),
-			Question:     appoutput.NewQuestionPrompt(),
+		mode: conv.ModalState{
+			PlanApproval: conv.NewPlanPrompt(),
+			Question:     conv.NewQuestionPrompt(),
 		},
-		tool: appoutput.ToolState{
-			ToolExecState: appoutput.ToolExecState{
+		tool: conv.ToolState{
+			ToolExecState: conv.ToolExecState{
 				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
 			},
 		},
-		conv: appoutput.NewConversation(),
+		conv: conv.NewConversation(),
 	}
 
-	msg := appoutput.PlanResponseMsg{
+	msg := conv.PlanResponseMsg{
 		Request:  &tool.PlanRequest{ID: "plan-1", Plan: "## Plan\nSome plan"},
 		Approved: false,
 		Response: &tool.PlanResponse{
@@ -223,8 +223,8 @@ func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 		},
 		pendingQuestion:      &tool.QuestionRequest{ID: "ask-1"},
 		pendingQuestionReply: reply,
-		mode: appoutput.ModalState{
-			Question: appoutput.NewQuestionPrompt(),
+		mode: conv.ModalState{
+			Question: conv.NewQuestionPrompt(),
 		},
 	}
 
@@ -234,7 +234,7 @@ func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 			0: {"Patch"},
 		},
 	}
-	cmd := m.handleQuestionResponse(appoutput.QuestionResponseMsg{
+	cmd := m.handleQuestionResponse(conv.QuestionResponseMsg{
 		Request:  &tool.QuestionRequest{ID: "ask-1"},
 		Response: resp,
 	})
@@ -336,7 +336,7 @@ func TestStartPromptSuggestionGeneratesCommand(t *testing.T) {
 		runtime: appruntime.Model{
 			LLMProvider: testLLMProvider{},
 		},
-		conv: appoutput.ConversationModel{
+		conv: conv.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleAssistant, Content: "first"},
 				{Role: core.RoleAssistant, Content: "second"},
@@ -355,7 +355,7 @@ func TestBuildPromptSuggestionRequest(t *testing.T) {
 		runtime: appruntime.Model{
 			LLMProvider: testLLMProvider{},
 		},
-		conv: appoutput.ConversationModel{
+		conv: conv.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleUser, Content: "u1"},
 				{Role: core.RoleAssistant, Content: "a1"},
@@ -383,8 +383,8 @@ func TestBuildPromptSuggestionRequest(t *testing.T) {
 func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing.T) {
 	appCwd = t.TempDir(); base := newBaseModel()
 	m := &base
-	m.agentOutput = appoutput.New(80, appoutput.NewProgressHub(16))
-	m.conv = appoutput.ConversationModel{
+	m.agentOutput = conv.New(80, conv.NewProgressHub(16))
+	m.conv = conv.ConversationModel{
 		Messages: []core.ChatMessage{
 			{Role: core.RoleUser, Content: "previous request"},
 		},
@@ -414,7 +414,7 @@ func TestBuildCompactRequest(t *testing.T) {
 		runtime: appruntime.Model{
 			SessionSummary: "existing summary",
 		},
-		conv: appoutput.ConversationModel{
+		conv: conv.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleUser, Content: "hello"},
 			},
@@ -438,7 +438,7 @@ func TestBuildCompactRequest(t *testing.T) {
 
 func TestBuildLoopExtraIncludesSkillInvocation(t *testing.T) {
 	m := &model{}
-	m.userInput.Skill = appuser.SkillState{
+	m.userInput.Skill = input.SkillState{
 		ActiveInvocation: "<skill>Use the active skill</skill>",
 	}
 
@@ -533,13 +533,13 @@ func TestRenderActiveModalPriority(t *testing.T) {
 			OperationMode:      setting.ModePlan,
 			SessionPermissions: setting.NewSessionPermissions(),
 		},
-		mode: appoutput.ModalState{
-			PlanApproval: appoutput.NewPlanPrompt(),
-			Question:     appoutput.NewQuestionPrompt(),
-			PlanEntry:    appoutput.NewEnterPlanPrompt(),
+		mode: conv.ModalState{
+			PlanApproval: conv.NewPlanPrompt(),
+			Question:     conv.NewQuestionPrompt(),
+			PlanEntry:    conv.NewEnterPlanPrompt(),
 		},
 	}
-	m.userInput.Approval = appuser.NewApproval()
+	m.userInput.Approval = input.NewApproval()
 
 	m.mode.PlanApproval.Show(&tool.PlanRequest{Plan: "plan"}, "", 80, 24)
 	m.userInput.Approval.Show(&perm.PermissionRequest{ToolName: "Bash", Description: "run"}, 80, 24)
@@ -570,9 +570,9 @@ func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
 			HookEngine: engine,
 		},
 	}
-	m.userInput.Approval = appuser.NewApproval()
+	m.userInput.Approval = input.NewApproval()
 
-	cmd := m.handlePermissionRequest(appuser.ApprovalRequestMsg{
+	cmd := m.handlePermissionRequest(input.ApprovalRequestMsg{
 		Request: &perm.PermissionRequest{ToolName: "Edit", FilePath: "/tmp/test.txt"},
 	})
 
@@ -593,7 +593,7 @@ func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
 
 func TestLatePermissionHookResultIsIgnoredAfterApprovalModalCloses(t *testing.T) {
 	m := &model{}
-	m.userInput.Approval = appuser.NewApproval()
+	m.userInput.Approval = input.NewApproval()
 	req := &perm.PermissionRequest{
 		ID:       "perm-1",
 		ToolName: "Edit",
