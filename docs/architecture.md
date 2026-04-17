@@ -194,19 +194,19 @@ agentPermMsg
 
 ## Model
 
-Five sub-Models — four mutation sources + shared runtime:
+Five sub-Models — four mutation sources + shared runtime. Each sub-Model's
+fields are defined in its own `model.go`; the root model only holds references.
 
 ```go
 type model struct {
-    userInput   user.Model      // textarea, history, overlays, approval, modal
-    agentInput  agent.Model     // background agent notifications, batch tracking
-    systemInput system.Model    // cron scheduler, async hooks, file watcher
-    agentOutput output.Model    // conversation, streaming, tool results, agent session
-    runtime     runtime.Model   // shared state: provider, permissions, session, config
+    userInput   user.Model      // user/model.go
+    agentInput  agent.Model     // agent/model.go
+    systemInput system.Model    // system/model.go
+    agentOutput output.Model    // output/model.go
+    runtime     runtime.Model   // runtime/model.go
 }
 ```
 
-Each sub-Model owns its component state, update routing, and view rendering.
 The root `update.go` dispatches messages to the appropriate sub-Model;
 the root `view.go` composes their views into the final layout.
 
@@ -248,68 +248,80 @@ View() → reads Model → renders terminal
 
 Target layout — files organized by **input source** (who triggered the mutation).
 
-Each sub-package uses a flat component pattern: `update.go` and `view.go` only
-do routing, each component lives in its own `_xxx.go` file containing its model,
-update, and view logic. No nested sub-packages for individual UI components.
+Each sub-package is flat — no nested sub-packages. Core files (`model.go`,
+`update.go`, `view.go`) handle definition and routing. Component files use
+`on_` prefix (`on_textarea.go`, `on_approval.go`, `on_provider.go`) to
+distinguish from core files and group together in directory listings.
+
+### Target Directory Structure
 
 ```
 internal/app/
 │
 │  ── Core MVU ──────────────────────────────────
-├── model.go                    # Model struct, Init(), agent session builder
-├── update.go                   # Update() top-level dispatch
-├── view.go                     # View() layout composition
-├── init.go                     # Infrastructure initialization
+├── model.go                        # Model struct, Init(), agent session builder
+├── update.go                       # Update() top-level dispatch
+├── view.go                         # View() layout composition
+├── init.go                         # Infrastructure initialization
 │
-├── user/                       # User Input source
-│   ├── model.go                #   main Model (textarea, history, images, queue)
-│   ├── update.go               #   routing: key → component update
-│   ├── view.go                 #   routing: component → render
-│   ├── _approval.go            #   Approval: model + update + view
-│   ├── _provider.go            #   Provider selector: model + update + view
-│   ├── _session.go             #   Session selector: model + update + view
-│   ├── _search.go              #   Search engine selector: model + update + view
-│   ├── _skill.go               #   Skill selector
-│   ├── _memory.go              #   Memory selector
-│   ├── _mcp.go                 #   MCP server selector
-│   ├── _plugin.go              #   Plugin selector
-│   └── _agent.go               #   Agent/subagent selector
+├── user/                           # User Input source
+│   ├── model.go                    #   Model definition
+│   ├── update.go                   #   routing: key → component update
+│   ├── view.go                     #   routing: component → render
+│   ├── on_textarea.go              #   text input, history, suggestions
+│   ├── on_queue.go                 #   message queue
+│   ├── on_image.go                 #   image paste handling
+│   ├── on_approval.go              #   tool approval dialog
+│   ├── on_approval_bash.go         #   approval preview: bash
+│   ├── on_approval_diff.go         #   approval preview: diff
+│   ├── on_agent.go                 #   agent selector overlay
+│   ├── on_mcp.go                   #   MCP server selector
+│   ├── on_memory.go                #   memory selector
+│   ├── on_plugin.go                #   plugin selector
+│   ├── on_plugin_render.go         #   plugin selector rendering
+│   ├── on_provider.go              #   provider selector
+│   ├── on_provider_render.go       #   provider selector rendering
+│   ├── on_search.go                #   search engine selector
+│   ├── on_session.go               #   session selector
+│   └── on_skill.go                 #   skill selector
 │
-├── agent/                      # Agent Input source
-│   ├── model.go                #   State: notifications, batch tracking
-│   ├── update.go               #   routing: notification → handler
-│   ├── _notification.go        #   notification queue + build logic
-│   └── _tracker.go             #   background worker/batch tracking
+├── agent/                          # Agent Input source
+│   ├── model.go                    #   Model: notifications, batch tracking
+│   ├── update.go                   #   routing: notification → handler
+│   ├── view.go                     #   task tracker, background agent progress
+│   ├── on_notification.go          #   notification queue + build logic
+│   └── on_tracker.go               #   background worker/batch tracking
 │
-├── system/                     # System Input source
-│   ├── model.go                #   State: cron, async hooks
-│   ├── update.go               #   routing: tick → handler
-│   ├── view.go                 #   cron status rendering
-│   └── _file_watcher.go        #   file change detection
+├── system/                         # System Input source
+│   ├── model.go                    #   Model: cron, async hooks
+│   ├── update.go                   #   routing: tick → handler
+│   ├── view.go                     #   cron status rendering
+│   └── on_file_watcher.go          #   file change detection
 │
-├── output/                     # Agent Output
-│   ├── model.go                #   streaming, progress, permission bridge
-│   ├── update.go               #   routing: outbox event → handler
-│   ├── view.go                 #   chat messages, streaming, tool results
-│   ├── _conversation.go        #   message history, stream state
-│   ├── _modal.go               #   plan approval, question prompts
-│   ├── _compact.go             #   context compaction
-│   ├── _toolui.go              #   tool selector + execution state
-│   ├── _progress.go            #   progress hub for background agents
-│   └── _render.go              #   markdown rendering, message formatting
+├── output/                         # Agent Output
+│   ├── model.go                    #   streaming, progress, permission bridge
+│   ├── update.go                   #   routing: outbox event → handler
+│   ├── view.go                     #   chat messages, streaming, tool results
+│   ├── on_conversation.go          #   message history, stream state
+│   ├── on_modal.go                 #   plan approval, question prompts
+│   ├── on_compact.go               #   context compaction
+│   ├── on_tool.go                  #   tool selector + execution state
+│   ├── on_progress.go              #   progress hub for background agents
+│   ├── on_message.go               #   message rendering
+│   └── on_markdown.go              #   markdown rendering
 │
-├── runtime/                    # Shared Runtime State
-│   ├── model.go                #   Model: provider, permissions, session, plan, config
-│   ├── update.go               #   config reload, mode toggle, provider switch
-│   ├── view.go                 #   status bar: mode, model name, thinking, tokens
-│   ├── _provider.go            #   LLM connection, model info, token tracking
-│   ├── _session.go             #   session store, ID, summary, compaction
-│   ├── _permission.go          #   operation mode, session permissions, disabled tools
-│   └── _plan.go                #   plan mode state
+├── runtime/                        # Shared Runtime State
+│   ├── model.go                    #   Model: provider, permissions, session, config
+│   ├── update.go                   #   config reload, mode toggle, provider switch
+│   ├── view.go                     #   status bar: mode, model name, thinking, tokens
+│   ├── on_provider.go              #   LLM connection, model info, token tracking
+│   ├── on_session.go               #   session store, ID, summary, compaction
+│   ├── on_permission.go            #   operation mode, session permissions
+│   └── on_plan.go                  #   plan mode state
 │
-├── kit/                        # Shared UI utilities
-│   ├── suggest/                #   autocomplete
-│   └── history/                #   input history
+├── kit/                            # Shared UI utilities
+│   ├── suggest/                    #   autocomplete
+│   └── history/                    #   input history
 │
 ```
 
