@@ -5,20 +5,18 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"go.uber.org/zap"
 
-	"github.com/yanmxa/gencode/internal/app/notify"
+	"github.com/yanmxa/gencode/internal/app/conv"
+	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
-	"github.com/yanmxa/gencode/internal/app/conv"
+	"github.com/yanmxa/gencode/internal/app/notify"
 	"github.com/yanmxa/gencode/internal/app/trigger"
-	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -26,9 +24,7 @@ import (
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/setting"
-	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
@@ -466,7 +462,7 @@ func (m *model) StopAgentSession() {
 func (m *model) HandleCompactResult(msg conv.CompactResultMsg) tea.Cmd {
 	return m.handleCompactResult(msg)
 }
-func (m *model) HandleTokenLimitResult(msg conv.TokenLimitResultMsg) tea.Cmd {
+func (m *model) HandleTokenLimitResult(msg kit.TokenLimitResultMsg) tea.Cmd {
 	return m.handleTokenLimitResult(msg)
 }
 
@@ -741,24 +737,6 @@ func getHookResponseString(resp map[string]any, key string) string {
 	return ""
 }
 
-// --- Compact helpers ---
-
-func (m *model) getEffectiveInputLimit() int {
-	return conv.GetEffectiveInputLimit(m.runtime.ProviderStore, m.runtime.CurrentModel)
-}
-
-func (m *model) getMaxTokens() int {
-	return conv.GetMaxTokens(m.runtime.ProviderStore, m.runtime.CurrentModel, setting.DefaultMaxTokens)
-}
-
-func (m *model) getContextUsagePercent() float64 {
-	return conv.GetContextUsagePercent(m.runtime.InputTokens, m.runtime.ProviderStore, m.runtime.CurrentModel)
-}
-
-func (m *model) shouldAutoCompact() bool {
-	return conv.ShouldAutoCompact(m.runtime.LLMProvider, len(m.conv.Messages), m.runtime.InputTokens, m.runtime.ProviderStore, m.runtime.CurrentModel)
-}
-
 func (m *model) triggerAutoCompact() tea.Cmd {
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = ""
@@ -837,7 +815,7 @@ func (m *model) resetAfterCompact() {
 	m.runtime.ResetTokens()
 }
 
-func (m *model) handleTokenLimitResult(msg conv.TokenLimitResultMsg) tea.Cmd {
+func (m *model) handleTokenLimitResult(msg kit.TokenLimitResultMsg) tea.Cmd {
 	m.userInput.Provider.FetchingLimits = false
 
 	var content string
@@ -851,285 +829,3 @@ func (m *model) handleTokenLimitResult(msg conv.TokenLimitResultMsg) tea.Cmd {
 	return tea.Batch(m.commitMessages()...)
 }
 
-// --- Session lifecycle ---
-
-func (m *model) saveSession() error {
-	if err := m.runtime.EnsureSessionStore(m.cwd); err != nil {
-		return err
-	}
-
-	if len(m.conv.Messages) == 0 {
-		return nil
-	}
-
-	entries := session.ConvertToEntries(m.conv.Messages)
-
-	providerName := ""
-	modelID := ""
-	if m.runtime.CurrentModel != nil {
-		providerName = string(m.runtime.CurrentModel.Provider)
-		modelID = m.runtime.CurrentModel.ModelID
-	}
-
-	sess := &session.Snapshot{
-		Metadata: session.SessionMetadata{
-			ID:         m.runtime.SessionID,
-			Provider:   providerName,
-			Model:      modelID,
-			Cwd:        m.cwd,
-			LastPrompt: session.ExtractLastUserText(entries),
-			Summary:    m.runtime.SessionSummary,
-			Mode:       m.runtime.SessionMode(),
-		},
-		Entries: entries,
-		Tasks:   tracker.DefaultStore.Export(),
-	}
-
-	if sess.Metadata.Title == "" || sess.Metadata.ID == "" {
-		sess.Metadata.Title = session.GenerateTitle(sess.Entries)
-	}
-
-	if err := m.runtime.SessionStore.Save(sess); err != nil {
-		return err
-	}
-
-	m.runtime.SessionID = sess.Metadata.ID
-	m.initTaskStorage()
-
-	if m.runtime.HookEngine != nil {
-		m.runtime.HookEngine.SetTranscriptPath(m.runtime.SessionStore.SessionPath(sess.Metadata.ID))
-	}
-
-	m.reconfigureAgentTool()
-
-	return nil
-}
-
-func (m *model) loadSession(id string) error {
-	if err := m.runtime.EnsureSessionStore(m.cwd); err != nil {
-		return err
-	}
-
-	sess, err := m.runtime.SessionStore.Load(id)
-	if err != nil {
-		return err
-	}
-
-	tracker.DefaultStore.SetStorageDir("")
-	m.restoreSessionData(sess)
-
-	if len(sess.Tasks) == 0 {
-		tracker.DefaultStore.Reset()
-	}
-	tool.ResetFetched()
-
-	m.runtime.InputTokens = 0
-	m.runtime.OutputTokens = 0
-
-	return nil
-}
-
-func (m *model) restoreSessionData(sess *session.Snapshot) {
-	m.conv.Messages = session.ConvertFromEntries(sess.Entries)
-	m.runtime.SessionID = sess.Metadata.ID
-
-	if sess.Metadata.Summary != "" {
-		m.runtime.SessionSummary = sess.Metadata.Summary
-	} else if m.runtime.SessionStore != nil {
-		if mem, err := m.runtime.SessionStore.LoadSessionMemory(sess.Metadata.ID); err == nil && mem != "" {
-			m.runtime.SessionSummary = mem
-		}
-	}
-
-	m.initTaskStorage()
-
-	if len(sess.Tasks) > 0 {
-		tracker.DefaultStore.Import(sess.Tasks)
-	}
-}
-
-func (m *model) initTaskStorage() {
-	if tracker.DefaultStore.GetStorageDir() != "" {
-		return
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Logger().Warn("failed to get home directory for task storage", zap.Error(err))
-		return
-	}
-
-	taskListID := os.Getenv("GEN_TASK_LIST_ID")
-	if taskListID != "" {
-		dir := filepath.Join(homeDir, ".gen", "tasks", taskListID)
-		tracker.DefaultStore.SetStorageDir(dir)
-		_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
-		return
-	}
-
-	if m.runtime.SessionID == "" {
-		return
-	}
-	dir := filepath.Join(homeDir, ".gen", "tasks", m.runtime.SessionID)
-	tracker.DefaultStore.SetStorageDir(dir)
-	_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
-}
-
-// --- Prompt suggestion (ghost text) ---
-
-type promptSuggestionMsg struct {
-	text string
-	err  error
-}
-
-type promptSuggestionState struct {
-	text   string
-	cancel context.CancelFunc
-}
-
-func (s *promptSuggestionState) Clear() {
-	s.text = ""
-	if s.cancel != nil {
-		s.cancel()
-		s.cancel = nil
-	}
-}
-
-const suggestionSystemPrompt = `You predict what the user will type next in a coding assistant CLI.
-Reply with ONLY the predicted text (2-12 words). No quotes, no explanation.
-If unsure, reply with nothing.`
-
-const suggestionUserPrompt = `[PREDICTION MODE] Based on this conversation, predict what the user will type next.
-Stay silent if the next step isn't obvious. Match the user's language and style.`
-
-const maxSuggestionMessages = 20
-
-func (m *model) startPromptSuggestion() tea.Cmd {
-	req, ok := m.buildPromptSuggestionRequest()
-	if !ok {
-		return nil
-	}
-
-	m.promptSuggestion.Clear()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	m.promptSuggestion.cancel = cancel
-	req.Ctx = ctx
-
-	return suggestPromptCmd(req)
-}
-
-func (m *model) handlePromptSuggestion(msg promptSuggestionMsg) {
-	if msg.err != nil {
-		return
-	}
-	if m.userInput.Textarea.Value() != "" {
-		return
-	}
-	if m.conv.Stream.Active {
-		return
-	}
-	if text := suggest.FilterSuggestion(msg.text); text != "" {
-		m.promptSuggestion.text = text
-	}
-}
-
-type promptSuggestionRequest struct {
-	Ctx          context.Context
-	Client       *llm.Client
-	Messages     []core.Message
-	SystemPrompt string
-	UserPrompt   string
-	MaxTokens    int
-}
-
-type compactRequest struct {
-	Ctx            context.Context
-	Client         *llm.Client
-	Messages       []core.Message
-	SessionSummary string
-	Focus          string
-	HookEngine     *hook.Engine
-	Trigger        string
-}
-
-func suggestPromptCmd(req promptSuggestionRequest) tea.Cmd {
-	if req.Client == nil {
-		return nil
-	}
-	return func() tea.Msg {
-		resp, err := req.Client.Complete(req.Ctx, req.SystemPrompt, req.Messages, req.MaxTokens)
-		if err != nil {
-			return promptSuggestionMsg{err: err}
-		}
-		return promptSuggestionMsg{text: resp.Content}
-	}
-}
-
-func compactCmd(req compactRequest) tea.Cmd {
-	return func() tea.Msg {
-		ctx := req.Ctx
-		focus := req.Focus
-		if req.HookEngine != nil {
-			outcome := req.HookEngine.Execute(ctx, hook.PreCompact, hook.HookInput{
-				Trigger:            req.Trigger,
-				CustomInstructions: req.Focus,
-			})
-			if outcome.AdditionalContext != "" {
-				if focus != "" {
-					focus += "\n" + outcome.AdditionalContext
-				} else {
-					focus = outcome.AdditionalContext
-				}
-			}
-		}
-		summary, count, err := conv.CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
-		return conv.CompactResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
-	}
-}
-
-func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
-	if m.runtime.LLMProvider == nil {
-		return promptSuggestionRequest{}, false
-	}
-
-	assistantCount := 0
-	for _, msg := range m.conv.Messages {
-		if msg.Role == core.RoleAssistant {
-			assistantCount++
-		}
-	}
-	if assistantCount < 2 {
-		return promptSuggestionRequest{}, false
-	}
-
-	startIdx := 0
-	if len(m.conv.Messages) > maxSuggestionMessages {
-		startIdx = len(m.conv.Messages) - maxSuggestionMessages
-	}
-	msgs := m.conv.ConvertToProviderFrom(startIdx)
-	msgs = append(msgs, core.Message{
-		Role:    core.RoleUser,
-		Content: suggestionUserPrompt,
-	})
-
-	return promptSuggestionRequest{
-		Client:       m.buildLoopClient(),
-		Messages:     msgs,
-		SystemPrompt: suggestionSystemPrompt,
-		UserPrompt:   suggestionUserPrompt,
-		MaxTokens:    60,
-	}, true
-}
-
-func (m *model) buildCompactRequest(focus, trigger string) compactRequest {
-	return compactRequest{
-		Ctx:            context.Background(),
-		Client:         m.buildLoopClient(),
-		Messages:       m.conv.ConvertToProvider(),
-		SessionSummary: m.runtime.SessionSummary,
-		Focus:          focus,
-		HookEngine:     m.runtime.HookEngine,
-		Trigger:        trigger,
-	}
-}

@@ -42,13 +42,6 @@ type ProviderStatusExpiredMsg = kit.StatusExpiredMsg
 
 // ── Runtime ────────────────────────────────────────────────────────────────────
 
-// ProviderRuntime defines the callbacks the provider selector needs from the parent app model.
-type ProviderRuntime interface {
-	ConvWriter
-	SwitchProvider(p llm.Provider)
-	SetCurrentModel(m *llm.CurrentModelInfo)
-}
-
 // UpdateProvider routes provider connection and selection messages.
 func UpdateProvider(rt ProviderRuntime, state *ProviderState, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {

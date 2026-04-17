@@ -438,7 +438,7 @@ func handleToolCommand(ctx context.Context, m *model, args string) (string, tea.
 	if mcp.DefaultRegistry != nil {
 		mcpTools = mcp.DefaultRegistry.GetToolSchemas
 	}
-	if err := m.tool.Selector.EnterSelect(m.width, m.height, m.runtime.DisabledTools, mcpTools); err != nil {
+	if err := m.userInput.Tool.EnterSelect(m.width, m.height, m.runtime.DisabledTools, mcpTools); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil

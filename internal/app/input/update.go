@@ -8,27 +8,7 @@ package input
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-
-	"github.com/yanmxa/gencode/internal/core"
 )
-
-// ConvWriter is the shared base for overlay Runtime interfaces that
-// need to append messages and commit them for rendering.
-type ConvWriter interface {
-	AppendMessage(msg core.ChatMessage)
-	CommitMessages() []tea.Cmd
-}
-
-// Runtime composes all overlay Runtime interfaces.
-// The root app model satisfies this by implementing each sub-interface.
-type Runtime interface {
-	MCPRuntime
-	MemoryRuntime
-	PluginRuntime
-	ProviderRuntime
-	SessionRuntime
-	SearchRuntime
-}
 
 // Update routes Source 1 overlay messages to the appropriate handler.
 func Update(rt Runtime, state *Model, msg tea.Msg) (tea.Cmd, bool) {

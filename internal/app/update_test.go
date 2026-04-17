@@ -316,7 +316,7 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 
 	want := []string{
 		"*input.ProviderSelector",
-		"*conv.ToolSelector",
+		"*input.ToolSelector",
 		"*input.SkillSelector",
 		"*input.AgentSelector",
 		"*input.MCPSelector",

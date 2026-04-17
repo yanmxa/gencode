@@ -257,15 +257,6 @@ func (m *MemorySelector) Render() string {
 
 // ── Runtime interface & Update ──────────────────────────────────────────
 
-// MemoryRuntime defines the callbacks the memory feature needs from the parent app model.
-type MemoryRuntime interface {
-	ConvWriter
-	GetCwd() string
-	ClearCachedInstructions()
-	RefreshMemoryContext(trigger string)
-	FireFileChanged(path, tool string)
-}
-
 // UpdateMemory routes memory selection and editor messages.
 func UpdateMemory(rt MemoryRuntime, state *MemoryState, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {

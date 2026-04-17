@@ -35,7 +35,7 @@ type overlaySelector interface {
 func (m *model) overlaySelectors() []overlaySelector {
 	return []overlaySelector{
 		&m.userInput.Provider.Selector,
-		&m.tool.Selector,
+		&m.userInput.Tool,
 		&m.userInput.Skill.Selector,
 		&m.userInput.Agent,
 		&m.userInput.MCP.Selector,
@@ -76,7 +76,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case promptSuggestionMsg:
 		m.handlePromptSuggestion(msg)
 		return m, nil
-	case kit.DismissedMsg, conv.ToggleMsg, input.SkillCycleMsg, input.AgentToggleMsg:
+	case kit.DismissedMsg, input.ToolToggleMsg, input.SkillCycleMsg, input.AgentToggleMsg:
 		return m, nil
 	}
 

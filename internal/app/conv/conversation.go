@@ -20,20 +20,6 @@ func NewConversation() ConversationModel {
 	return ConversationModel{Messages: []core.ChatMessage{}}
 }
 
-// --- Stream state ---
-
-// StreamState holds streaming-related display state for the TUI.
-type StreamState struct {
-	Active       bool
-	BuildingTool string
-}
-
-// Stop clears streaming state.
-func (s *StreamState) Stop() {
-	s.Active = false
-	s.BuildingTool = ""
-}
-
 // --- Conversation methods ---
 
 // Append adds a message to the conversation.

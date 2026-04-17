@@ -43,6 +43,7 @@ type Model struct {
 	MCP      MCPState
 	Plugin   PluginSelector
 	Provider ProviderState
+	Tool     ToolSelector
 }
 
 // PendingImage holds an inline image token and its provider payload.

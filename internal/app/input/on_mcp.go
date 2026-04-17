@@ -478,12 +478,6 @@ func mcpStartConnect(reg *coremcp.Registry, name string) tea.Cmd {
 
 // ── Runtime interface ───────────────────────────────────────────────
 
-// MCPRuntime defines the callbacks the MCP handler needs from the parent app model.
-type MCPRuntime interface {
-	ConvWriter
-	SetInputText(text string)
-}
-
 // UpdateMCP routes MCP server management messages.
 func UpdateMCP(rt MCPRuntime, state *MCPState, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {

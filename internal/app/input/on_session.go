@@ -39,14 +39,6 @@ type SessionState struct {
 	PendingSelector bool
 }
 
-// SessionRuntime defines the callbacks the session selector needs from the parent app model.
-type SessionRuntime interface {
-	LoadSession(id string) error
-	AddNotice(text string)
-	ResetCommitIndex()
-	CommitAllMessages() []tea.Cmd
-}
-
 // NewSessionSelector creates a new SessionSelector.
 func NewSessionSelector() SessionSelector {
 	return SessionSelector{

@@ -126,7 +126,7 @@ func TestExecuteCommandOpenSelectors(t *testing.T) {
 		if result != "" || cmd != nil {
 			t.Fatalf("unexpected command outputs: result=%q cmd=%v", result, cmd != nil)
 		}
-		if !m.tool.Selector.IsActive() {
+		if !m.userInput.Tool.IsActive() {
 			t.Fatal("expected tool selector to become active")
 		}
 	})
@@ -491,7 +491,7 @@ func TestHandleCommandSubmit_ToolsPreservesLiteralInput(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected commit command for handled slash command")
 	}
-	if !m.tool.Selector.IsActive() {
+	if !m.userInput.Tool.IsActive() {
 		t.Fatal("expected tool selector to open")
 	}
 	if len(m.conv.Messages) != 1 {

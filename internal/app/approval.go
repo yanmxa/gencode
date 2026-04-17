@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
+	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -105,7 +106,7 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 		if m.runtime.Settings != nil && m.runtime.Settings.ResolveHookAllow(msg.Request.ToolName, args, m.runtime.SessionPermissions) {
 			// Hook allow is valid, skip permission prompt
 			m.userInput.Approval.Hide()
-			return executeApproved(m.tool.Context(), m.agentOutput.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
+			return conv.ExecuteApproved(m.tool.Context(), m.agentOutput.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
 		}
 		// Safety invariant denied the hook allow — fall through to normal approval modal
 	}

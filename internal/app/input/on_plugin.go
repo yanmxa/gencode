@@ -179,12 +179,6 @@ func (s *PluginSelector) IsActive() bool {
 
 // ── Runtime ──────────────────────────────────────────────────────────────────
 
-// PluginRuntime defines the callbacks the plugin selector needs from the parent app model.
-type PluginRuntime interface {
-	GetCwd() string
-	ReloadPluginBackedState() error
-}
-
 // UpdatePlugin routes plugin management messages.
 func UpdatePlugin(rt PluginRuntime, state *PluginSelector, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {

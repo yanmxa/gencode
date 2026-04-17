@@ -521,6 +521,7 @@ func newBaseModel() model {
 	userInput.MCP = input.MCPState{Selector: input.NewMCPSelector(mcp.DefaultRegistry)}
 	userInput.Plugin = input.NewPluginSelector(plugin.DefaultRegistry)
 	userInput.Provider = input.ProviderState{Selector: input.NewProviderSelector()}
+	userInput.Tool = input.NewToolSelector(setting.GetDisabledToolsAt, setting.UpdateDisabledToolsAt)
 
 	return model{
 		userInput:   userInput,
@@ -575,10 +576,7 @@ func newModeState() conv.ModalState {
 }
 
 func newToolState() conv.ToolState {
-	return conv.ToolState{Selector: conv.NewToolSelector(
-		setting.GetDisabledToolsAt,
-		setting.UpdateDisabledToolsAt,
-	)}
+	return conv.ToolState{}
 }
 
 func (m *model) applyRunOptions(opts setting.RunOptions) error {

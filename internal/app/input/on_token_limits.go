@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/conv"
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -57,7 +57,7 @@ func setTokenLimits(deps TokenLimitDeps, modelID, args string) (string, tea.Cmd,
 	}
 
 	return fmt.Sprintf("Set token limits for %s:\n  Input:  %s tokens\n  Output: %s tokens",
-		modelID, conv.FormatTokenCount(inputLimit), conv.FormatTokenCount(outputLimit)), nil, nil
+		modelID, kit.FormatTokenCount(inputLimit), kit.FormatTokenCount(outputLimit)), nil, nil
 }
 
 func showOrFetchTokenLimits(deps TokenLimitDeps, modelID string) (string, tea.Cmd, error) {
@@ -67,7 +67,7 @@ func showOrFetchTokenLimits(deps TokenLimitDeps, modelID string) (string, tea.Cm
 		}
 	}
 
-	inputLimit, outputLimit := conv.GetModelTokenLimits(deps.Store, deps.CurrentModel)
+	inputLimit, outputLimit := kit.GetModelTokenLimits(deps.Store, deps.CurrentModel)
 	if inputLimit > 0 || outputLimit > 0 {
 		return formatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, deps.InputTokens), nil, nil
 	}
@@ -84,7 +84,7 @@ func fetchTokenLimitsCmd(deps TokenLimitDeps) tea.Cmd {
 	}
 	return func() tea.Msg {
 		result, err := autoFetchTokenLimits(context.Background(), fetchDeps)
-		return conv.TokenLimitResultMsg{Result: result, Error: err}
+		return kit.TokenLimitResultMsg{Result: result, Error: err}
 	}
 }
 

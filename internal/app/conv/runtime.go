@@ -3,6 +3,7 @@ package conv
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
 )
 
@@ -83,7 +84,7 @@ type TurnManager interface {
 // CompactHandler handles compaction and token limit result processing.
 type CompactHandler interface {
 	HandleCompactResult(msg CompactResultMsg) tea.Cmd
-	HandleTokenLimitResult(msg TokenLimitResultMsg) tea.Cmd
+	HandleTokenLimitResult(msg kit.TokenLimitResultMsg) tea.Cmd
 }
 
 // PermBridgeHandler handles permission bridge events from the agent.
@@ -144,7 +145,7 @@ func Update(rt Runtime, m *Model, msg tea.Msg) (tea.Cmd, bool) {
 		return rt.ShowPermissionPrompt(msg.Request), true
 	case CompactResultMsg:
 		return rt.HandleCompactResult(msg), true
-	case TokenLimitResultMsg:
+	case kit.TokenLimitResultMsg:
 		return rt.HandleTokenLimitResult(msg), true
 	case ProgressUpdateMsg:
 		return m.HandleProgress(msg), true

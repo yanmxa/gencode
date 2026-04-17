@@ -210,10 +210,6 @@ func (s *SearchSelector) Render() string {
 
 // --- Search Runtime ---
 
-type SearchRuntime interface {
-	SetProviderStatusMessage(msg string)
-}
-
 func UpdateSearch(rt SearchRuntime, state *SearchSelector, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case SearchSelectedMsg:
