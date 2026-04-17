@@ -11,20 +11,20 @@ import (
 // --- mock provider for LLM tests ---
 
 type mockLLMProvider struct {
-	responses []core.CompletionResponse
+	responses []CompletionResponse
 	callIdx   int
 	models    []ModelInfo
 	listErr   error
 	lastOpts  CompletionOptions
 }
 
-func (m *mockLLMProvider) Stream(_ context.Context, opts CompletionOptions) <-chan core.StreamChunk {
+func (m *mockLLMProvider) Stream(_ context.Context, opts CompletionOptions) <-chan StreamChunk {
 	m.lastOpts = opts
-	ch := make(chan core.StreamChunk, 1)
+	ch := make(chan StreamChunk, 1)
 	go func() {
 		defer close(ch)
 		if m.callIdx >= len(m.responses) {
-			ch <- core.StreamChunk{Type: core.ChunkTypeDone, Response: &core.CompletionResponse{
+			ch <- StreamChunk{Type: ChunkTypeDone, Response: &CompletionResponse{
 				Content:    "no more responses",
 				StopReason: "end_turn",
 			}}
@@ -32,7 +32,7 @@ func (m *mockLLMProvider) Stream(_ context.Context, opts CompletionOptions) <-ch
 		}
 		resp := m.responses[m.callIdx]
 		m.callIdx++
-		ch <- core.StreamChunk{Type: core.ChunkTypeDone, Response: &resp}
+		ch <- StreamChunk{Type: ChunkTypeDone, Response: &resp}
 	}()
 	return ch
 }
@@ -47,8 +47,8 @@ func (m *mockLLMProvider) Name() string { return "mock" }
 
 func TestLLMSend(t *testing.T) {
 	mp := &mockLLMProvider{
-		responses: []core.CompletionResponse{
-			{Content: "hello", StopReason: "end_turn", Usage: core.Usage{InputTokens: 10, OutputTokens: 5}},
+		responses: []CompletionResponse{
+			{Content: "hello", StopReason: "end_turn", Usage: Usage{InputTokens: 10, OutputTokens: 5}},
 		},
 	}
 	l := &Client{provider: mp, model: "test-model", maxTokens: 4096}
@@ -65,7 +65,7 @@ func TestLLMSend(t *testing.T) {
 
 func TestLLMStream(t *testing.T) {
 	mp := &mockLLMProvider{
-		responses: []core.CompletionResponse{
+		responses: []CompletionResponse{
 			{Content: "streamed", StopReason: "end_turn"},
 		},
 	}
@@ -74,9 +74,9 @@ func TestLLMStream(t *testing.T) {
 	msgs := []core.Message{{Role: core.RoleUser, Content: "hi"}}
 	ch := l.Stream(context.Background(), msgs, nil, "")
 
-	var resp *core.CompletionResponse
+	var resp *CompletionResponse
 	for chunk := range ch {
-		if chunk.Type == core.ChunkTypeDone {
+		if chunk.Type == ChunkTypeDone {
 			resp = chunk.Response
 		}
 	}
@@ -90,7 +90,7 @@ func TestLLMStream(t *testing.T) {
 
 func TestLLMComplete(t *testing.T) {
 	mp := &mockLLMProvider{
-		responses: []core.CompletionResponse{
+		responses: []CompletionResponse{
 			{Content: "summary", StopReason: "end_turn"},
 		},
 	}
@@ -193,7 +193,7 @@ func TestOutputLimitFromProviderListModelsError(t *testing.T) {
 
 func TestFakeLLMSend(t *testing.T) {
 	fake := &FakeLLM{
-		Responses: []core.CompletionResponse{
+		Responses: []CompletionResponse{
 			{Content: "response 1", StopReason: "end_turn"},
 			{Content: "response 2", StopReason: "end_turn"},
 		},
@@ -224,15 +224,15 @@ func TestFakeLLMSend(t *testing.T) {
 
 func TestFakeLLMStream(t *testing.T) {
 	fake := &FakeLLM{
-		Responses: []core.CompletionResponse{
-			{Content: "streamed", StopReason: "end_turn", Usage: core.Usage{InputTokens: 5, OutputTokens: 3}},
+		Responses: []CompletionResponse{
+			{Content: "streamed", StopReason: "end_turn", Usage: Usage{InputTokens: 5, OutputTokens: 3}},
 		},
 	}
 
 	ch := fake.Stream(context.Background(), nil, nil, "")
-	var resp *core.CompletionResponse
+	var resp *CompletionResponse
 	for chunk := range ch {
-		if chunk.Type == core.ChunkTypeDone {
+		if chunk.Type == ChunkTypeDone {
 			resp = chunk.Response
 		}
 	}
@@ -249,7 +249,7 @@ func TestFakeLLMStream(t *testing.T) {
 
 func TestFakeLLMWithToolCalls(t *testing.T) {
 	fake := &FakeLLM{
-		Responses: []core.CompletionResponse{
+		Responses: []CompletionResponse{
 			{
 				Content:    "",
 				StopReason: "tool_use",
@@ -279,7 +279,7 @@ func TestFakeLLMWithToolCalls(t *testing.T) {
 
 func TestFakeLLMComplete(t *testing.T) {
 	fake := &FakeLLM{
-		Responses: []core.CompletionResponse{
+		Responses: []CompletionResponse{
 			{Content: "summary", StopReason: "end_turn"},
 		},
 	}
@@ -295,7 +295,7 @@ func TestFakeLLMComplete(t *testing.T) {
 
 func TestFakeLLMRecordsCalls(t *testing.T) {
 	fake := &FakeLLM{
-		Responses: []core.CompletionResponse{
+		Responses: []CompletionResponse{
 			{Content: "ok", StopReason: "end_turn"},
 		},
 	}

@@ -6,9 +6,9 @@ import "strings"
 // for structured log output. Domain types satisfy this implicitly
 // through duck typing -- no import of the log package is needed.
 //
-// Note: response logging uses core.CompletionResponse directly (no duck typing)
-// because util/log can safely import core. Request logging still uses duck typing
-// because importing provider would create a circular dependency.
+// Note: response logging uses llm.CompletionResponse via duck typing —
+// the log package does not import core or llm. Request logging also uses duck
+// typing because importing provider would create a circular dependency.
 type requestLoggable interface {
 	LogMaxTokens() int
 	LogTemperature() float64

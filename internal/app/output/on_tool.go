@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/app/kit"
-	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	coretool "github.com/yanmxa/gencode/internal/tool"
 )
@@ -76,6 +75,8 @@ type ToolSelector struct {
 	height        int
 	disabledTools map[string]bool
 	saveLevel     kit.SaveLevel
+	loadDisabled  func(userLevel bool) map[string]bool
+	saveDisabled  func(disabled map[string]bool, userLevel bool) error
 }
 
 // ToggleMsg is sent when a tool's enabled state is toggled
@@ -84,12 +85,17 @@ type ToggleMsg struct {
 	Enabled  bool
 }
 
-// NewToolSelector creates a new ToolSelector
-func NewToolSelector() ToolSelector {
+// NewToolSelector creates a new ToolSelector with injected load/save callbacks.
+func NewToolSelector(
+	loadDisabled func(userLevel bool) map[string]bool,
+	saveDisabled func(disabled map[string]bool, userLevel bool) error,
+) ToolSelector {
 	return ToolSelector{
-		active: false,
-		tools:  []toolItem{},
-		nav:    kit.ListNav{MaxVisible: 10},
+		active:       false,
+		tools:        []toolItem{},
+		nav:          kit.ListNav{MaxVisible: 10},
+		loadDisabled: loadDisabled,
+		saveDisabled: saveDisabled,
 	}
 }
 
@@ -149,7 +155,7 @@ func (s *ToolSelector) updateFilter() {
 }
 
 func (s *ToolSelector) reloadToolStates() {
-	levelDisabled := setting.GetDisabledToolsAt(s.saveLevel == kit.SaveLevelUser)
+	levelDisabled := s.loadDisabled(s.saveLevel == kit.SaveLevelUser)
 
 	for k := range s.disabledTools {
 		delete(s.disabledTools, k)
@@ -188,7 +194,7 @@ func (s *ToolSelector) Toggle() tea.Cmd {
 		s.disabledTools[selected.Name] = true
 	}
 
-	_ = setting.UpdateDisabledToolsAt(s.disabledTools, s.saveLevel == kit.SaveLevelUser)
+	_ = s.saveDisabled(s.disabledTools, s.saveLevel == kit.SaveLevelUser)
 
 	return func() tea.Msg {
 		return ToggleMsg{

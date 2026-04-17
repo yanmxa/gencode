@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
 
@@ -75,7 +76,7 @@ func TestAgent_MultiTurn_ToolUse(t *testing.T) {
 func TestAgent_MaxTurns(t *testing.T) {
 	testutil.RegisterFakeTool(t, "AlwaysTool", "ok")
 
-	responses := make([]core.CompletionResponse, 10)
+	responses := make([]llm.CompletionResponse, 10)
 	for i := range responses {
 		responses[i] = testutil.ToolCallResponse("AlwaysTool", "tc", `{}`)
 	}

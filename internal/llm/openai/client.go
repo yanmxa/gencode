@@ -44,7 +44,7 @@ func isResponsesModel(model string) bool {
 
 // Stream sends a completion request and returns a channel of streaming chunks.
 // It routes to the Responses API for codex models and Chat Completions for all others.
-func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan core.StreamChunk {
+func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan llm.StreamChunk {
 	if isResponsesModel(opts.Model) {
 		return c.streamResponses(ctx, opts)
 	}
@@ -52,8 +52,8 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 }
 
 // streamResponses implements streaming via the Responses API for codex models.
-func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions) <-chan core.StreamChunk {
-	ch := make(chan core.StreamChunk)
+func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions) <-chan llm.StreamChunk {
+	ch := make(chan llm.StreamChunk)
 
 	go func() {
 		defer close(ch)
@@ -264,8 +264,8 @@ func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions
 }
 
 // streamChatCompletions implements streaming via the Chat Completions API.
-func (c *Client) streamChatCompletions(ctx context.Context, opts llm.CompletionOptions) <-chan core.StreamChunk {
-	ch := make(chan core.StreamChunk)
+func (c *Client) streamChatCompletions(ctx context.Context, opts llm.CompletionOptions) <-chan llm.StreamChunk {
+	ch := make(chan llm.StreamChunk)
 
 	go func() {
 		defer close(ch)

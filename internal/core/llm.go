@@ -2,15 +2,6 @@ package core
 
 import "context"
 
-// AuthMethod represents an authentication method for an LLM provider.
-type AuthMethod string
-
-const (
-	AuthAPIKey  AuthMethod = "api_key"
-	AuthVertex  AuthMethod = "vertex"
-	AuthBedrock AuthMethod = "bedrock"
-)
-
 // StopReason describes why the LLM stopped generating.
 type StopReason string
 

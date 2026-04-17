@@ -6,10 +6,11 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/llm"
 )
 
 func TestStateEmitsAndAccumulatesChunks(t *testing.T) {
-	ch := make(chan core.StreamChunk, 8)
+	ch := make(chan llm.StreamChunk, 8)
 	state := NewState("test")
 
 	state.EmitText(ch, "hello")
@@ -18,17 +19,17 @@ func TestStateEmitsAndAccumulatesChunks(t *testing.T) {
 	state.EmitToolInput(ch, "tool-1", `{"path":"a.go"}`)
 
 	// Verify streaming chunks emitted in order
-	msgs := []core.StreamChunk{<-ch, <-ch, <-ch, <-ch}
-	if msgs[0].Type != core.ChunkTypeText || msgs[0].Text != "hello" {
+	msgs := []llm.StreamChunk{<-ch, <-ch, <-ch, <-ch}
+	if msgs[0].Type != llm.ChunkTypeText || msgs[0].Text != "hello" {
 		t.Fatalf("unexpected text chunk: %#v", msgs[0])
 	}
-	if msgs[1].Type != core.ChunkTypeThinking || msgs[1].Text != "thinking" {
+	if msgs[1].Type != llm.ChunkTypeThinking || msgs[1].Text != "thinking" {
 		t.Fatalf("unexpected thinking chunk: %#v", msgs[1])
 	}
-	if msgs[2].Type != core.ChunkTypeToolStart || msgs[2].ToolID != "tool-1" || msgs[2].ToolName != "Read" {
+	if msgs[2].Type != llm.ChunkTypeToolStart || msgs[2].ToolID != "tool-1" || msgs[2].ToolName != "Read" {
 		t.Fatalf("unexpected tool start chunk: %#v", msgs[2])
 	}
-	if msgs[3].Type != core.ChunkTypeToolInput || msgs[3].ToolID != "tool-1" || msgs[3].Text != `{"path":"a.go"}` {
+	if msgs[3].Type != llm.ChunkTypeToolInput || msgs[3].ToolID != "tool-1" || msgs[3].Text != `{"path":"a.go"}` {
 		t.Fatalf("unexpected tool input chunk: %#v", msgs[3])
 	}
 
@@ -90,7 +91,7 @@ func TestStateEnsureToolUseStopReason(t *testing.T) {
 }
 
 func TestStateFailAndFinishEmitTerminalChunks(t *testing.T) {
-	ch := make(chan core.StreamChunk, 4)
+	ch := make(chan llm.StreamChunk, 4)
 	state := NewState("test")
 
 	// Accumulate content via EmitText (content flushes in Finish)
@@ -99,13 +100,13 @@ func TestStateFailAndFinishEmitTerminalChunks(t *testing.T) {
 
 	state.Fail(ch, errors.New("boom"))
 	errChunk := <-ch
-	if errChunk.Type != core.ChunkTypeError || errChunk.Error == nil || errChunk.Error.Error() != "boom" {
+	if errChunk.Type != llm.ChunkTypeError || errChunk.Error == nil || errChunk.Error.Error() != "boom" {
 		t.Fatalf("unexpected error chunk: %#v", errChunk)
 	}
 
 	state.Finish(context.Background(), ch)
 	doneChunk := <-ch
-	if doneChunk.Type != core.ChunkTypeDone || doneChunk.Response == nil {
+	if doneChunk.Type != llm.ChunkTypeDone || doneChunk.Response == nil {
 		t.Fatalf("unexpected done chunk: %#v", doneChunk)
 	}
 	if doneChunk.Response.Content != "done" {

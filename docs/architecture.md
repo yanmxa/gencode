@@ -298,8 +298,8 @@ internal/app/
 │   ├── view.go                     #   cron status rendering
 │   └── on_file_watcher.go          #   file change detection
 │
-├── output/                         # Agent Output
-│   ├── model.go                    #   streaming, progress, permission bridge
+├── output/                         # Agent Output (rendering only — no tool dispatch)
+│   ├── model.go                    #   streaming, progress, permission bridge types
 │   ├── update.go                   #   routing: outbox event → handler
 │   ├── view.go                     #   chat messages, streaming, tool results
 │   ├── on_conversation.go          #   message history, stream state
@@ -308,6 +308,7 @@ internal/app/
 │   ├── on_tool.go                  #   tool selector + execution state
 │   ├── on_progress.go              #   progress hub for background agents
 │   ├── on_message.go               #   message rendering
+│   ├── permission_bridge.go        #   permission bridge (setting-free)
 │   └── on_markdown.go              #   markdown rendering
 │
 ├── runtime/                        # Shared Runtime State

@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/yanmxa/gencode/internal/core"
 )
@@ -18,15 +19,13 @@ const (
 	Alibaba   Name = "alibaba"
 )
 
-// AuthMethod is an alias for core.AuthMethod so that existing consumers
-// of the provider package continue to compile without changes.
-type AuthMethod = core.AuthMethod
+// AuthMethod represents an authentication method for an LLM provider.
+type AuthMethod string
 
-// Auth method constants re-exported from core.
 const (
-	AuthAPIKey  = core.AuthAPIKey
-	AuthVertex  = core.AuthVertex
-	AuthBedrock = core.AuthBedrock
+	AuthAPIKey  AuthMethod = "api_key"
+	AuthVertex  AuthMethod = "vertex"
+	AuthBedrock AuthMethod = "bedrock"
 )
 
 // Meta contains static metadata about a provider
@@ -106,13 +105,79 @@ type CompletionOptions struct {
 	ThinkingLevel ThinkingLevel
 }
 
+// --- Completion Response Types ---
+
+// CompletionResponse represents a completion response from an LLM provider.
+type CompletionResponse struct {
+	Content           string          `json:"content,omitempty"`
+	Thinking          string          `json:"thinking,omitempty"`
+	ThinkingSignature string          `json:"thinking_signature,omitempty"`
+	ToolCalls         []core.ToolCall `json:"tool_calls,omitempty"`
+	StopReason        string          `json:"stop_reason"`
+	Usage             Usage           `json:"usage"`
+}
+
+// Logging accessors — satisfy duck-typed interfaces in the log package so
+// log does not need to import llm (foundation-layer contract).
+func (r CompletionResponse) LogStopReason() string  { return r.StopReason }
+func (r CompletionResponse) LogContent() string     { return r.Content }
+func (r CompletionResponse) LogThinking() string    { return r.Thinking }
+func (r CompletionResponse) LogInputTokens() int    { return r.Usage.InputTokens }
+func (r CompletionResponse) LogOutputTokens() int   { return r.Usage.OutputTokens }
+func (r CompletionResponse) LogRawToolCalls() any   { return r.ToolCalls }
+func (r CompletionResponse) LogRawUsage() any       { return r.Usage }
+
+func (r CompletionResponse) LogToolCallSummary(escaper func(string) string) string {
+	if len(r.ToolCalls) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "    ToolCalls(%d):\n", len(r.ToolCalls))
+	for _, tc := range r.ToolCalls {
+		fmt.Fprintf(&sb, "      [%s] %s(%s)\n", tc.ID, tc.Name, escaper(tc.Input))
+	}
+	return sb.String()
+}
+
+// Usage contains token usage information.
+type Usage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
+}
+
+// --- Streaming Types ---
+
+// ChunkType represents the type of a stream chunk from a provider.
+type ChunkType string
+
+const (
+	ChunkTypeText      ChunkType = "text"
+	ChunkTypeThinking  ChunkType = "thinking"
+	ChunkTypeToolStart ChunkType = "tool_start"
+	ChunkTypeToolInput ChunkType = "tool_input"
+	ChunkTypeDone      ChunkType = "done"
+	ChunkTypeError     ChunkType = "error"
+)
+
+// StreamChunk represents a chunk in a streaming response from a provider.
+type StreamChunk struct {
+	Type     ChunkType
+	Text     string              // For text chunks
+	ToolID   string              // For tool_start chunks
+	ToolName string              // For tool_start chunks
+	Response *CompletionResponse // For done chunks
+	Error    error               // For error chunks
+}
+
 // ToolSchema is a backward-compatible alias for core.ToolSchema.
 type ToolSchema = core.ToolSchema
 
 // Provider is the interface that all providers must implement
 type Provider interface {
 	// Stream sends a completion request and returns a channel of streaming chunks
-	Stream(ctx context.Context, opts CompletionOptions) <-chan core.StreamChunk
+	Stream(ctx context.Context, opts CompletionOptions) <-chan StreamChunk
 
 	// ListModels returns the available models for this provider
 	ListModels(ctx context.Context) ([]ModelInfo, error)
@@ -132,24 +197,24 @@ type Factory func(ctx context.Context) (Provider, error)
 
 // Complete is a helper function that collects stream chunks into a complete response
 // This provides non-streaming output from any Provider
-func Complete(ctx context.Context, provider Provider, opts CompletionOptions) (core.CompletionResponse, error) {
-	var response core.CompletionResponse
+func Complete(ctx context.Context, provider Provider, opts CompletionOptions) (CompletionResponse, error) {
+	var response CompletionResponse
 
 	streamChan := provider.Stream(ctx, opts)
 
 	gotDone := false
 	for chunk := range streamChan {
 		switch chunk.Type {
-		case core.ChunkTypeText:
+		case ChunkTypeText:
 			response.Content += chunk.Text
-		case core.ChunkTypeToolStart, core.ChunkTypeToolInput:
+		case ChunkTypeToolStart, ChunkTypeToolInput:
 			// Tool calls are accumulated in the done chunk
-		case core.ChunkTypeDone:
+		case ChunkTypeDone:
 			if chunk.Response != nil {
 				return *chunk.Response, nil
 			}
 			gotDone = true
-		case core.ChunkTypeError:
+		case ChunkTypeError:
 			return response, chunk.Error
 		}
 	}

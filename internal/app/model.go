@@ -226,11 +226,26 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 	coreHooks := hook.AsCoreHooks(m.runtime.HookEngine)
 
 	// Permission bridge — blocking PermissionFunc with TUI approval
-	permBridge := appoutput.NewPermissionBridge(
-		func() *setting.Settings { return m.runtime.Settings },
-		func() *setting.SessionPermissions { return m.runtime.SessionPermissions },
-		func() string { return m.cwd },
-	)
+	permBridge := appoutput.NewPermissionBridge(func(name string, args map[string]any) appoutput.PermDecisionResult {
+		settings := m.runtime.Settings
+		if settings == nil {
+			return appoutput.PermDecisionResult{Decision: appoutput.PermAllow}
+		}
+		decision := settings.HasPermissionToUseTool(name, args, m.runtime.SessionPermissions)
+		switch decision.Behavior {
+		case setting.Allow:
+			return appoutput.PermDecisionResult{Decision: appoutput.PermAllow, Reason: decision.Reason}
+		case setting.Deny:
+			return appoutput.PermDecisionResult{Decision: appoutput.PermDeny, Reason: decision.Reason}
+		default:
+			return appoutput.PermDecisionResult{
+				Decision:    appoutput.PermPrompt,
+				Reason:      decision.Reason,
+				ToolName:    name,
+				Description: decision.Reason,
+			}
+		}
+	})
 
 	ag := core.NewAgent(core.Config{
 		ID:         "main",

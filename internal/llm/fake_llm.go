@@ -14,7 +14,7 @@ import (
 // Usage:
 //
 //	fake := &llm.FakeLLM{
-//	    Responses: []core.CompletionResponse{
+//	    Responses: []CompletionResponse{
 //	        {Content: "hello", StopReason: "end_turn"},
 //	    },
 //	}
@@ -23,7 +23,7 @@ type FakeLLM struct {
 	// Responses is the queue of responses to return, consumed in order.
 	// Each call to Send/Stream pops the first entry. If exhausted,
 	// a default "no more responses" reply is returned.
-	Responses []core.CompletionResponse
+	Responses []CompletionResponse
 
 	// Model name (defaults to "fake-model")
 	Model string
@@ -50,12 +50,12 @@ type FakeLLM struct {
 // Send returns the next response synchronously.
 func (f *FakeLLM) Send(_ context.Context, msgs []core.Message,
 	tools []ToolSchema, sysPrompt string,
-) (core.CompletionResponse, error) {
+) (CompletionResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.recordCallLocked(msgs, tools, sysPrompt)
 	if f.shouldInjectErrorLocked() {
-		return core.CompletionResponse{}, f.ErrorValue
+		return CompletionResponse{}, f.ErrorValue
 	}
 	return f.nextLocked(), nil
 }
@@ -63,17 +63,17 @@ func (f *FakeLLM) Send(_ context.Context, msgs []core.Message,
 // Stream returns the next response as a single-chunk stream.
 func (f *FakeLLM) Stream(_ context.Context, msgs []core.Message,
 	tools []ToolSchema, sysPrompt string,
-) <-chan core.StreamChunk {
+) <-chan StreamChunk {
 	f.mu.Lock()
 	f.recordCallLocked(msgs, tools, sysPrompt)
-	ch := make(chan core.StreamChunk, 1)
+	ch := make(chan StreamChunk, 1)
 
-	var chunk core.StreamChunk
+	var chunk StreamChunk
 	if f.shouldInjectErrorLocked() {
-		chunk = core.StreamChunk{Type: core.ChunkTypeError, Error: f.ErrorValue}
+		chunk = StreamChunk{Type: ChunkTypeError, Error: f.ErrorValue}
 	} else {
 		resp := f.nextLocked()
-		chunk = core.StreamChunk{Type: core.ChunkTypeDone, Response: &resp}
+		chunk = StreamChunk{Type: ChunkTypeDone, Response: &resp}
 	}
 	f.mu.Unlock()
 
@@ -87,7 +87,7 @@ func (f *FakeLLM) Stream(_ context.Context, msgs []core.Message,
 // Complete returns the next response (used for utility calls like compaction).
 func (f *FakeLLM) Complete(_ context.Context,
 	sysPrompt string, msgs []core.Message, maxTokens int,
-) (core.CompletionResponse, error) {
+) (CompletionResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, CompletionOptions{
@@ -97,7 +97,7 @@ func (f *FakeLLM) Complete(_ context.Context,
 		MaxTokens:    maxTokens,
 	})
 	if f.shouldInjectErrorLocked() {
-		return core.CompletionResponse{}, f.ErrorValue
+		return CompletionResponse{}, f.ErrorValue
 	}
 	return f.nextLocked(), nil
 }
@@ -127,9 +127,9 @@ func (f *FakeLLM) shouldInjectErrorLocked() bool {
 	return f.ErrorAt > 0 && f.callCount == f.ErrorAt
 }
 
-func (f *FakeLLM) nextLocked() core.CompletionResponse {
+func (f *FakeLLM) nextLocked() CompletionResponse {
 	if len(f.Responses) == 0 {
-		return core.CompletionResponse{
+		return CompletionResponse{
 			Content:    "no more responses",
 			StopReason: "end_turn",
 		}

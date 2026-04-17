@@ -11,14 +11,14 @@ import (
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
 
-func newFakeClient(responses ...core.CompletionResponse) (*llm.Client, *llm.FakeLLM) {
+func newFakeClient(responses ...llm.CompletionResponse) (*llm.Client, *llm.FakeLLM) {
 	fake := &llm.FakeLLM{Responses: responses}
 	return testutil.NewTestClient(fake), fake
 }
 
 func TestCompact_SummarizesConversation(t *testing.T) {
 	c, _ := newFakeClient(
-		core.CompletionResponse{Content: "Summary: discussed file reading", StopReason: "end_turn"},
+		llm.CompletionResponse{Content: "Summary: discussed file reading", StopReason: "end_turn"},
 	)
 
 	msgs := []core.Message{
@@ -42,7 +42,7 @@ func TestCompact_SummarizesConversation(t *testing.T) {
 
 func TestCompact_WithFocus(t *testing.T) {
 	c, fake := newFakeClient(
-		core.CompletionResponse{Content: "Focused summary on testing", StopReason: "end_turn"},
+		llm.CompletionResponse{Content: "Focused summary on testing", StopReason: "end_turn"},
 	)
 
 	msgs := []core.Message{
@@ -65,7 +65,7 @@ func TestCompact_WithFocus(t *testing.T) {
 
 func TestCompact_EmptyConversation(t *testing.T) {
 	c, _ := newFakeClient(
-		core.CompletionResponse{Content: "Empty summary", StopReason: "end_turn"},
+		llm.CompletionResponse{Content: "Empty summary", StopReason: "end_turn"},
 	)
 
 	summary, count, err := output.CompactConversation(context.Background(), c, nil, "", "")
@@ -82,7 +82,7 @@ func TestCompact_EmptyConversation(t *testing.T) {
 
 func TestCompact_WithSessionMemory(t *testing.T) {
 	c, fake := newFakeClient(
-		core.CompletionResponse{Content: "Combined summary", StopReason: "end_turn"},
+		llm.CompletionResponse{Content: "Combined summary", StopReason: "end_turn"},
 	)
 
 	msgs := []core.Message{
@@ -113,7 +113,7 @@ func TestCompact_WithSessionMemory(t *testing.T) {
 
 func TestCompact_WithoutOptionalSections_LeavesPromptPlain(t *testing.T) {
 	c, fake := newFakeClient(
-		core.CompletionResponse{Content: "Plain summary", StopReason: "end_turn"},
+		llm.CompletionResponse{Content: "Plain summary", StopReason: "end_turn"},
 	)
 
 	msgs := []core.Message{

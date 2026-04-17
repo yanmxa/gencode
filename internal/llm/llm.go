@@ -69,13 +69,13 @@ func (l *Client) Infer(ctx context.Context, req core.InferRequest) (<-chan core.
 		defer close(ch)
 		for sc := range srcCh {
 			switch sc.Type {
-			case core.ChunkTypeText:
+			case ChunkTypeText:
 				ch <- core.Chunk{Text: sc.Text}
-			case core.ChunkTypeThinking:
+			case ChunkTypeThinking:
 				ch <- core.Chunk{Thinking: sc.Text}
-			case core.ChunkTypeDone:
+			case ChunkTypeDone:
 				ch <- core.Chunk{Done: true, Response: toInferResponse(sc.Response)}
-			case core.ChunkTypeError:
+			case ChunkTypeError:
 				ch <- core.Chunk{Err: sc.Error}
 				return
 			}
@@ -110,7 +110,7 @@ func (l *Client) ThinkingLevel() ThinkingLevel {
 // Stream starts a streaming completion request and returns a chunk channel.
 func (l *Client) Stream(ctx context.Context, msgs []core.Message,
 	tools []ToolSchema, sysPrompt string,
-) <-chan core.StreamChunk {
+) <-chan StreamChunk {
 	return l.provider.Stream(ctx, l.completionOpts(msgs, tools, sysPrompt))
 }
 
@@ -118,7 +118,7 @@ func (l *Client) Stream(ctx context.Context, msgs []core.Message,
 // Used for utility calls like conversation compaction.
 func (l *Client) Complete(ctx context.Context,
 	sysPrompt string, msgs []core.Message, maxTokens int,
-) (core.CompletionResponse, error) {
+) (CompletionResponse, error) {
 	l.mu.RLock()
 	model := l.model
 	p := l.provider
@@ -135,7 +135,7 @@ func (l *Client) Complete(ctx context.Context,
 // send sends a non-streaming completion request and returns the full response.
 func (l *Client) send(ctx context.Context, msgs []core.Message,
 	tools []ToolSchema, sysPrompt string,
-) (core.CompletionResponse, error) {
+) (CompletionResponse, error) {
 	return Complete(ctx, l.provider, l.completionOpts(msgs, tools, sysPrompt))
 }
 
@@ -144,7 +144,7 @@ func (l *Client) send(ctx context.Context, msgs []core.Message,
 // ---------------------------------------------------------------------------
 
 // AddUsage accumulates token usage from a completion response.
-func (l *Client) AddUsage(usage core.Usage) {
+func (l *Client) AddUsage(usage Usage) {
 	l.mu.Lock()
 	l.tokens.InputTokens += usage.InputTokens
 	l.tokens.OutputTokens += usage.OutputTokens
@@ -310,7 +310,7 @@ func toProviderMessages(msgs []core.Message) []core.Message {
 }
 
 // toInferResponse converts a CompletionResponse to an InferResponse.
-func toInferResponse(r *core.CompletionResponse) *core.InferResponse {
+func toInferResponse(r *CompletionResponse) *core.InferResponse {
 	if r == nil {
 		return nil
 	}

@@ -1,7 +1,7 @@
 package setting
 
 import (
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/llm"
 )
 
 const (
@@ -10,8 +10,8 @@ const (
 )
 
 // DefaultModel returns the default model ID for a given provider and auth method.
-func DefaultModel(providerName string, authMethod core.AuthMethod) string {
-	if providerName == "anthropic" && authMethod == core.AuthVertex {
+func DefaultModel(providerName string, authMethod llm.AuthMethod) string {
+	if providerName == "anthropic" && authMethod == llm.AuthVertex {
 		return "claude-sonnet-4-5@20250929"
 	}
 	switch providerName {

@@ -11,17 +11,15 @@ in-memory Go function.
 
 ## Design Principles
 
-**Generic engine, no domain knowledge.** The hook engine provides generic
-capabilities (Deny, Rewrite, SetContext, Extra). It does not understand
-the semantics of any specific application built on top of it. For example,
-permission automation is an app-layer application of hooks — the hook
-engine has no knowledge of allow/deny/ask/setMode. Domain-specific
-interpretation stays in the caller.
+**Dual event pathway.** Agent lifecycle has two independent channels:
+`emit()` sends events to the Outbox for TUI rendering; `hooks.On()`
+fires extensibility hooks and returns `HookOutcome` to control behavior.
+They serve different purposes and do not interfere with each other.
 
-**Built-in events are lifecycle only.** The engine defines a small set of
-agent lifecycle events (PreInfer, PreTool, etc). `EventType` is
-`type EventType string` — extensible at the code level when new events
-are needed, without changing the hook engine.
+**Engine understands permissions.** The engine directly parses and returns
+permission-related fields (`PermissionDecision`, `UpdatedPermissions`).
+This is the only domain coupling — everything else (block, modify, inject)
+is generic.
 
 ## Structure
 
@@ -32,12 +30,21 @@ internal/core/                        internal/hook/
 │   Register / On / Wait   │         │                                  │
 │                          │         │  On(event):                      │
 │ Event { Type, Source }   │         │    match → execute → merge       │
-│ Action { Deny, SetContext,│        │    → return Action               │
-│      Rewrite, Extra }    │         │                                  │
+│                          │         │    → return HookOutcome          │
+│ HookOutcome:             │         │                                  │
+│   ShouldBlock bool       │         │                                  │
+│   BlockReason string     │         │                                  │
+│   AdditionalContext str  │         │                                  │
+│   UpdatedInput map       │         │                                  │
+│   PermissionDecision str │         │  "allow" | "deny" | "ask"       │
+│   UpdatedPermissions []  │         │  setMode/addRules/addDirs       │
+│   WatchPaths []string    │         │                                  │
+│   InitialUserMessage str │         │                                  │
+│   Retry bool             │         │                                  │
 └──────────────────────────┘         │  ExecuteAsync(event):            │
                                      │    fire-and-forget, no result    │
                                      ├──────────────────────────────────┤
-                                     │ Store     config + code hooks    │
+                                     │ Store     config + session hooks │
                                      │ Matcher   2-layer filter         │
                                      │ Status    active hook tracking   │
                                      ├──────────────────────────────────┤
@@ -53,37 +60,89 @@ internal/core/                        internal/hook/
   imports. The Agent depends only on this.
 - `hook/` provides the implementation (`Engine`). Handles matching, execution,
   output parsing. Depends on `setting/`, `llm/`, `plugin/`, `session/`.
-- `app/` wires them together: `hook.AsCoreHooks(engine)` wraps the Engine as
-  `core.Hooks` and injects it into the Agent.
+- `app/` wires them together: injects the Engine as `core.Hooks` into
+  the Agent. TUI rendering is driven by the Outbox (emit), not hooks.
 
-## Event Sources
+## Agent Lifecycle Events
 
-Events reach the hook engine from two places. Both go through the same
-`core.Hooks.On()` interface and receive the same `core.Action` back.
+The Agent has two event channels at each lifecycle point:
 
-### Agent lifecycle (built-in events)
-
-The Agent calls `emitAndFire()` at two decision points in its Run Loop.
-All other lifecycle points use `emit()` (Outbox only, no hook).
+- `emit(event)` — sends to Outbox for TUI rendering (always fires)
+- `hooks.On(event)` — fires extensibility hooks, returns HookOutcome (only at decision points)
 
 ```
-ThinkAct() loop
-  emitAndFire(PreInfer)   → Deny | SetContext
+core.Agent Run Loop
+  emit(PreInfer)                        → TUI: show "thinking..."
+  hooks.On(PreInfer)                    → HookOutcome: inject context
   streamInfer()
+    emit(OnChunk)                       → TUI: render streaming tokens
+  emit(PostInfer)                       → TUI: update state
   execTools()
-    emitAndFire(PreTool)  → Deny | Rewrite
+    emit(PreTool)                       → TUI: show tool name
+    hooks.On(PreTool)                   → HookOutcome: block | modify input
     tool.Execute()
+    emit(PostTool)                      → TUI: show tool result
+  emit(OnTurn)                          → TUI: turn complete
 ```
 
-`emit` = send to Outbox for TUI observation.
-`emitAndFire` = emit + `hooks.On()`, returns Action that controls behavior.
+`emit` is fire-and-forget to the Outbox channel — the TUI observes.
+`hooks.On` is synchronous — the returned HookOutcome controls agent behavior.
 
-### App layer (custom events)
+## App-Layer Events
 
-The app layer can fire its own event types via `hooks.On()`. The engine
-treats them identically to built-in events. `EventType` is extensible
-(`type EventType string`), so new events can be added at the code level
-without changing the hook engine.
+Beyond agent lifecycle events, the app layer fires its own events via the
+hook engine. These cover session lifecycle, permissions, compaction, and
+system-level concerns.
+
+### Event Types
+
+**24 hook event types:**
+
+| Event | When fired | Matcher |
+|-------|-----------|---------|
+| `SessionStart` | Session initializes | source (`startup`, `resume`, `clear`, `compact`) |
+| `SessionEnd` | Session terminates | reason (`clear`, `resume`, `logout`, `prompt_input_exit`) |
+| `UserPromptSubmit` | User submits a prompt | — |
+| `PreToolUse` | Before tool runs (app-level) | tool name |
+| `PostToolUse` | After successful tool execution | tool name |
+| `PostToolUseFailure` | After tool execution error | tool name |
+| `PermissionRequest` | Permission check needed | tool name |
+| `PermissionDenied` | Tool request denied | tool name |
+| `Stop` | Assistant concludes response | — |
+| `StopFailure` | Stop due to error | error type (`rate_limit`, `auth_failed`, `billing`, `server`, `max_tokens`, `unknown`) |
+| `Notification` | System notification | notification_type |
+| `SubagentStart` | Subagent starts | agent type |
+| `SubagentStop` | Subagent finishes | agent type |
+| `Setup` | System initialization | trigger (`init`, `maintenance`) |
+| `TaskCreated` | Background task registered | — |
+| `TaskCompleted` | Background task finishes | — |
+| `ConfigChange` | Config file changes | source (`user_settings`, `project_settings`, `local_settings`) |
+| `InstructionsLoaded` | Instruction file loaded | load_reason (`session_start`, `nested_traversal`, `path_glob_match`, `include`, `compact`) |
+| `CwdChanged` | Working directory changes | — |
+| `FileChanged` | Watched file modified | filename |
+| `PreCompact` | Before compaction | trigger (`manual`, `auto`) |
+| `PostCompact` | After compaction | trigger (`manual`, `auto`) |
+| `WorktreeCreate` | Git worktree created | name |
+| `WorktreeRemove` | Git worktree removed | worktree_path |
+
+### Sync vs Async by Event
+
+Events that need a decision use sync execution (caller blocks).
+Events for observation use async execution (fire-and-forget).
+
+| Sync (blocks, returns Action) | Async (fire-and-forget) |
+|-------------------------------|------------------------|
+| `PreToolUse` | `PostToolUse` |
+| `PermissionRequest` | `PostToolUseFailure` |
+| `UserPromptSubmit` | `StopFailure` |
+| `Stop` | `SubagentStart` / `SubagentStop` |
+| `PreCompact` | `PostCompact` |
+| `SessionStart` | `SessionEnd` |
+| `FileChanged` | `InstructionsLoaded` |
+| `CwdChanged` | `TaskCreated` / `TaskCompleted` |
+| | `WorktreeCreate` / `WorktreeRemove` |
+| | `Notification` |
+| | `ConfigChange` |
 
 ## Execution Pipeline
 
@@ -110,98 +169,60 @@ Match ────────────────────────�
   ▼
 Execute ───────────────────────────────────
   For each matched hook:
-    sync  → run and collect Action
+    sync  → run and collect HookOutcome
     async → go executeDetachedHook() (background, result discarded)
 
   Executors:
     Function → callback(ctx, input)
-    Command  → sh -c subprocess (see below)
+    Command  → sh -c subprocess, one-shot
     HTTP     → POST JSON to URL, response body=JSON
     Prompt   → single LLM completion, response=JSON
 
-  Output JSON is parsed and converted to core.Action.
+  Output JSON is parsed into HookOutcome fields.
 
-  Command executor modes:
+  Command executor (one-shot):
+    engine starts process, pipes HookInput JSON to stdin,
+    waits for exit. stdout = final HookOutput JSON.
 
-    Simple (one-shot):
-      engine starts process, pipes HookInput JSON to stdin,
-      waits for exit. stdout = final HookOutput JSON.
+    Exit codes:
+      0  → success, parse stdout as HookOutput
+      2  → block (stderr = reason), ShouldBlock=true
+      other → failure, logged and ignored
 
-    Bidirectional (interactive):
-      The hook process stays alive and communicates via a
-      stdin/stdout pipe protocol. Each stdout line is either
-      a PromptRequest (mid-execution interaction) or the final
-      HookOutput (last line before exit).
-
-      engine starts process, pipes HookInput JSON to stdin
-        │
-        ▼
-      hook reads input, decides it needs user confirmation
-        │
-        ▼
-      hook writes PromptRequest to stdout:
-        {"prompt":"confirm","message":"Allow rm -rf?",
-         "options":[{"key":"yes"},{"key":"no"}]}
-        │
-        ▼
-      engine reads PromptRequest, calls PromptCallback
-      (provided by app layer — TUI dialog, API, auto-approve)
-        │
-        ▼
-      engine writes PromptResponse to hook's stdin:
-        {"prompt_response":"confirm","selected":"no"}
-        │
-        ▼
-      hook reads response, makes its decision
-        │
-        ▼
-      hook writes final HookOutput to stdout:
-        {"continue":false,"stopReason":"User denied rm -rf"}
-        │
-        ▼
-      hook exits. engine parses output → Action{Deny, Reason}
-
-      The hook controls the outcome. The engine is just a
-      messenger between hook and caller. Multiple prompt
-      rounds are allowed before the final output.
+    First-line async detection: if stdout begins with
+    {"async": true}, engine detaches the hook to background.
 ───────────────────────────────────────────
   │
   ▼
 Merge ─────────────────────────────────────
-  MergeActions() across all sync hooks.
-  If any hook sets Deny=true, remaining hooks are skipped.
+  mergeOutcome() across all sync hooks.
+  If any hook sets ShouldBlock=true, remaining hooks are skipped.
 ───────────────────────────────────────────
 ```
 
-## Action
+## HookOutcome
 
-The pipeline returns an `Action`. Zero value = continue normally.
+The pipeline returns a `HookOutcome`. Zero value = continue normally.
 
-```
-Field              When used      What it does
-──────────────────────────────────────────────────────────────────
-Deny + Reason      any event      Reject the operation. The Reason
-                                  is fed back to the LLM as an error.
-
-SetContext         PreInfer        Set temporary context in the system
-                                  prompt for the next LLM call.
-                                  Replaces previous value each turn.
-
-Rewrite            PreTool         Replace tool input parameters
-                                  before execution. e.g. rewrite
-                                  "rm -rf /" to "echo blocked".
-
-Extra              any event       Opaque map for app-layer extensions.
-                                  core.Agent ignores it. App reads it
-                                  for domain-specific behavior.
-```
+| Field | Scoped to | What it does |
+|-------|-----------|-------------|
+| `ShouldBlock` | any event | Reject the operation |
+| `BlockReason` | any event | Reason fed back to the LLM |
+| `AdditionalContext` | any event | Context injected into conversation |
+| `UpdatedInput` | PreToolUse, PermissionRequest | Replace tool input parameters |
+| `PermissionDecision` | PreToolUse | `"allow"` / `"deny"` / `"ask"` |
+| `UpdatedPermissions` | PermissionRequest | `setMode` / `addRules` / `addDirectories` |
+| `WatchPaths` | SessionStart, CwdChanged, FileChanged | Register file watcher paths |
+| `InitialUserMessage` | SessionStart | Seed the first user turn |
+| `Retry` | PermissionDenied | Resume assistant turn after denial |
 
 Merge semantics (when multiple hooks fire):
 
-- `Deny` — any true wins, short-circuits remaining hooks
-- `SetContext` — concatenate (final result overwrites previous turn's slot)
-- `Rewrite` — last writer wins
-- `Extra` — merge maps, last writer wins per key
+- `ShouldBlock` — any true wins, short-circuits remaining hooks
+- `AdditionalContext` — concatenate with newline
+- `UpdatedInput` — last writer wins
+- `PermissionDecision` — deny > ask > allow (most restrictive wins)
+- `UpdatedPermissions` — accumulate (all updates applied)
 
 ## Hook Registration
 
@@ -209,29 +230,181 @@ Merge semantics (when multiple hooks fire):
 Source           Lifetime            Where defined
 ──────────────────────────────────────────────────────────────
 Config hooks     Permanent           settings.json, plugins
-Code hooks       runtime-scoped      AddHook(scope: runtime)
-                 session-scoped      AddHook(scope: session)
+Session hooks    Session-scoped      AddSessionHook() / AddSessionFunctionHook()
 ```
 
-Config hooks fire first, then code hooks.
-Session-scoped hooks are cleared on session change.
+Config hooks fire first, then session hooks.
+Session hooks are cleared on session change (`ClearSessionHooks()`).
 
-## Sync vs Async
+Session function hooks are in-memory Go callbacks:
 
-**Sync** — caller blocks, results merge. Used when the caller needs a
-decision. Any hook can short-circuit the chain via `Deny=true`.
+```go
+engine.AddSessionFunctionHook(event, matcher, hook) → hookID
+engine.RemoveSessionFunctionHook(event, hookID) → bool
+engine.ClearSessionHooks()
+```
 
-**Async** — background goroutine, result discarded. Used for observation
-(logging, notifications, auditing).
+There is no runtime-scoped hook layer. All non-config hooks are
+session-scoped and cleared when the session ends.
 
-**AsyncRewake** — async variant where a blocking result (exit code 2) feeds
-back into the agent. Driven by Bubble Tea's constraint that external
-goroutines cannot push into the MVU loop directly:
+## Async Hooks
+
+Three modes:
+
+**Sync** (default) — caller blocks, results merge. Used when the caller
+needs a decision. Any hook can short-circuit the chain via `ShouldBlock=true`.
+
+**Async** (`async: true`) — background goroutine, result discarded. Used
+for observation (logging, notifications, auditing).
+
+**AsyncRewake** (`asyncRewake: true`) — async variant where a blocking
+result (exit code 2) feeds back into the agent. Driven by Bubble Tea's
+constraint that external goroutines cannot push into the MVU loop directly:
 
 ```
 background hook blocks (exit 2) → AsyncHookCallback → TUI queue
   → ticker polls (500ms) → pop when idle → inject into agent conversation
 ```
+
+First-line async detection: if a command hook's first stdout line is
+`{"async": true}`, the engine detaches it to run in background.
+
+`asyncRewake` differs from first-line `{"async":true}` detach: it is
+configured declaratively in settings and only triggers a re-wake when
+the background hook finishes with a blocking result.
+
+## Hook Input/Output
+
+**Input** (JSON on stdin for command hooks, POST body for HTTP):
+
+Common fields (always present):
+```json
+{
+  "session_id": "...",
+  "transcript_path": "/path/to/transcript",
+  "cwd": "/current/working/dir",
+  "hook_event_name": "PreToolUse",
+  "permission_mode": "default"
+}
+```
+
+Event-specific fields vary: `tool_name`, `tool_input`, `tool_response`,
+`last_assistant_message`, `source`, `reason`, `file_path`, etc.
+
+**Output** (JSON from stdout for command, response body for HTTP):
+
+```json
+{
+  "continue": true,
+  "stopReason": "...",
+  "systemMessage": "...",
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "allow|deny|ask",
+    "permissionDecisionReason": "...",
+    "updatedInput": {},
+    "additionalContext": "...",
+    "watchPaths": [],
+    "initialUserMessage": "..."
+  }
+}
+```
+
+**Exit code semantics** (command hooks only):
+
+| Exit Code | Behavior |
+|-----------|----------|
+| 0 | Success, parse stdout as HookOutput |
+| 1 | Non-blocking error, logged |
+| 2 | Block operation, stderr = reason |
+| other | Non-blocking error, logged |
+
+## Permission Integration
+
+Hooks integrate with the permission system at three points:
+
+```
+Tool call
+  ↓
+PreToolUse hook (sync)
+  ├─ permissionDecision: "allow" → skip permission check
+  ├─ permissionDecision: "deny"  → block tool
+  ├─ permissionDecision: "ask"   → force permission prompt
+  └─ updatedInput: {...}         → rewrite tool params
+  ↓
+Permission rules check (settings.json allow/deny rules)
+  ↓
+PermissionRequest hook (sync)
+  ├─ behavior: "allow" / "deny"
+  ├─ updatedInput: {...}
+  └─ updatedPermissions: [
+       {"type": "setMode", "mode": "bypassPermissions", "destination": "session"},
+       {"type": "addRules", "rules": [...], "behavior": "allow", "destination": "persistent"},
+       {"type": "addDirectories", "directories": [...], "destination": "session"}
+     ]
+  ↓
+User dialog (if needed)
+  ↓
+PermissionDenied hook (if denied)
+  └─ retry: true → resume assistant turn
+```
+
+PreToolUse cannot inject `updatedPermissions` — that capability is
+exclusive to PermissionRequest hooks.
+
+## Configuration
+
+Hooks are configured in `settings.json` under `hooks`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [{
+        "type": "command",
+        "command": "audit-tool.sh",
+        "timeout": 30,
+        "if": "Bash(git *)",
+        "statusMessage": "Auditing..."
+      }]
+    }],
+    "Stop": [{
+      "hooks": [{ "type": "command", "command": "notify.sh", "async": true }]
+    }]
+  }
+}
+```
+
+**Hook options:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | `"command"` (default), `"prompt"`, `"agent"`, `"http"` |
+| `command` | string | Shell command (command type) |
+| `prompt` | string | LLM prompt template, `$ARGUMENTS` substituted (prompt/agent type) |
+| `url` | string | HTTP endpoint URL (http type) |
+| `shell` | string | `"sh"` (default) or `"powershell"` |
+| `model` | string | Override default hook model (prompt/agent type) |
+| `async` | bool | Fire in background, discard result |
+| `asyncRewake` | bool | Background, inject queue if blocks |
+| `timeout` | int | Timeout in seconds (default 600) |
+| `statusMessage` | string | UI status message while running |
+| `once` | bool | Fire at most once per session |
+| `if` | string | Tool pattern condition (e.g. `"Bash(cd *)"`) |
+| `headers` | map | HTTP headers with env var interpolation |
+| `allowedEnvVars` | list | Environment variables allowed in header interpolation |
+
+**Settings sources and priority:**
+
+| Source | Path | Priority |
+|--------|------|----------|
+| User | `~/.gen/settings.json` | base |
+| Project | `.gen/settings.json` | overrides user per event type |
+| Plugin | `plugin.json` hooks | lowest |
+
+Project settings override user settings **per event type** — if a project
+defines `Stop` hooks, all user-level `Stop` hooks are replaced.
 
 ## Dependencies
 

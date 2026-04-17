@@ -7,9 +7,18 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/app/kit"
+)
+
+// OperationMode mirrors OperationMode to avoid importing setting in the render layer.
+type OperationMode int
+
+const (
+	ModeNormal            OperationMode = iota
+	ModeAutoAccept
+	ModePlan
+	ModeBypassPermissions
 )
 
 const (
@@ -41,7 +50,7 @@ func RenderWelcome() string {
 
 // OperationModeParams holds the parameters needed for rendering mode status.
 type OperationModeParams struct {
-	Mode          setting.OperationMode
+	Mode          OperationMode
 	InputTokens   int
 	InputLimit    int
 	ModelName     string
@@ -83,20 +92,20 @@ func RenderModeStatus(params OperationModeParams) string {
 }
 
 // RenderOperationModeIndicator returns the mode status indicator for auto-accept or plan mode.
-func RenderOperationModeIndicator(mode setting.OperationMode) string {
+func RenderOperationModeIndicator(mode OperationMode) string {
 	var icon, label string
 	var color lipgloss.TerminalColor
 
 	switch mode {
-	case setting.ModeAutoAccept:
+	case ModeAutoAccept:
 		icon = "⏵⏵"
 		label = " accept edits on"
 		color = kit.CurrentTheme.Success
-	case setting.ModePlan:
+	case ModePlan:
 		icon = "⏸"
 		label = " plan mode on"
 		color = kit.CurrentTheme.Warning
-	case setting.ModeBypassPermissions:
+	case ModeBypassPermissions:
 		icon = "⏩"
 		label = " bypass permissions on"
 		color = kit.CurrentTheme.Error

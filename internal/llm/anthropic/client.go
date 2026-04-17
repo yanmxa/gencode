@@ -67,8 +67,8 @@ func (c *Client) Name() string {
 }
 
 // Stream sends a completion request and returns a channel of streaming chunks
-func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan core.StreamChunk {
-	ch := make(chan core.StreamChunk)
+func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan llm.StreamChunk {
+	ch := make(chan llm.StreamChunk)
 
 	go func() {
 		defer close(ch)

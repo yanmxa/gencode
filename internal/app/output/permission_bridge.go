@@ -3,15 +3,34 @@ package output
 import (
 	"context"
 
-	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/tool/perm"
 )
 
+// PermDecision represents a permission decision outcome.
+type PermDecision int
+
+const (
+	PermAllow  PermDecision = iota
+	PermDeny
+	PermPrompt
+)
+
+// PermDecisionResult holds a permission decision and its reason.
+type PermDecisionResult struct {
+	Decision    PermDecision
+	Reason      string
+	ToolName    string
+	Description string
+}
+
+// PermDecisionFunc evaluates whether a tool call is allowed, denied, or needs prompting.
+type PermDecisionFunc func(name string, args map[string]any) PermDecisionResult
+
 type PermBridgeRequest struct {
-	ToolCall core.ToolCall
-	Request  *perm.PermissionRequest
-	Response chan PermBridgeResponse
+	ToolCall    core.ToolCall
+	ToolName    string
+	Description string
+	Response    chan PermBridgeResponse
 }
 
 type PermBridgeResponse struct {
@@ -20,49 +39,34 @@ type PermBridgeResponse struct {
 }
 
 type PermissionBridge struct {
-	requests   chan *PermBridgeRequest
-	settingsFn func() *setting.Settings
-	sessionFn  func() *setting.SessionPermissions
-	cwdFn      func() string
+	requests chan *PermBridgeRequest
+	decideFn PermDecisionFunc
 }
 
-func NewPermissionBridge(
-	settingsFn func() *setting.Settings,
-	sessionFn func() *setting.SessionPermissions,
-	cwdFn func() string,
-) *PermissionBridge {
+func NewPermissionBridge(decideFn PermDecisionFunc) *PermissionBridge {
 	return &PermissionBridge{
-		requests:   make(chan *PermBridgeRequest, 1),
-		settingsFn: settingsFn,
-		sessionFn:  sessionFn,
-		cwdFn:      cwdFn,
+		requests: make(chan *PermBridgeRequest, 1),
+		decideFn: decideFn,
 	}
 }
 
 func (pb *PermissionBridge) PermissionFunc() core.PermissionFunc {
 	return func(ctx context.Context, tc core.ToolCall) (bool, string) {
-		settings := pb.settingsFn()
-		if settings == nil {
-			return true, ""
-		}
-
 		args, _ := core.ParseToolInput(tc.Input)
-		decision := settings.HasPermissionToUseTool(tc.Name, args, pb.sessionFn())
+		decision := pb.decideFn(tc.Name, args)
 
-		switch decision.Behavior {
-		case setting.Allow:
+		switch decision.Decision {
+		case PermAllow:
 			return true, decision.Reason
-		case setting.Deny:
+		case PermDeny:
 			return false, decision.Reason
 		}
 
 		req := &PermBridgeRequest{
-			ToolCall: tc,
-			Request: &perm.PermissionRequest{
-				ToolName:    tc.Name,
-				Description: decision.Reason,
-			},
-			Response: make(chan PermBridgeResponse, 1),
+			ToolCall:    tc,
+			ToolName:    decision.ToolName,
+			Description: decision.Description,
+			Response:    make(chan PermBridgeResponse, 1),
 		}
 
 		select {

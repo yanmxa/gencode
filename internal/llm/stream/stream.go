@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/log"
 )
 
 // State tracks common streaming response state across provider implementations.
@@ -16,7 +17,7 @@ type State struct {
 	ProviderName string
 	Start        time.Time
 	ChunkCount   int
-	Response     core.CompletionResponse
+	Response     llm.CompletionResponse
 
 	contentBuf  strings.Builder
 	thinkingBuf strings.Builder
@@ -36,45 +37,45 @@ func (s *State) Count() {
 }
 
 // EmitText forwards a text delta and accumulates it into the response.
-func (s *State) EmitText(ch chan<- core.StreamChunk, text string) {
+func (s *State) EmitText(ch chan<- llm.StreamChunk, text string) {
 	if text == "" {
 		return
 	}
-	ch <- core.StreamChunk{
-		Type: core.ChunkTypeText,
+	ch <- llm.StreamChunk{
+		Type: llm.ChunkTypeText,
 		Text: text,
 	}
 	s.contentBuf.WriteString(text)
 }
 
 // EmitThinking forwards a thinking delta and accumulates it into the response.
-func (s *State) EmitThinking(ch chan<- core.StreamChunk, text string) {
+func (s *State) EmitThinking(ch chan<- llm.StreamChunk, text string) {
 	if text == "" {
 		return
 	}
-	ch <- core.StreamChunk{
-		Type: core.ChunkTypeThinking,
+	ch <- llm.StreamChunk{
+		Type: llm.ChunkTypeThinking,
 		Text: text,
 	}
 	s.thinkingBuf.WriteString(text)
 }
 
 // EmitToolStart forwards a tool start event.
-func (s *State) EmitToolStart(ch chan<- core.StreamChunk, toolID, toolName string) {
-	ch <- core.StreamChunk{
-		Type:     core.ChunkTypeToolStart,
+func (s *State) EmitToolStart(ch chan<- llm.StreamChunk, toolID, toolName string) {
+	ch <- llm.StreamChunk{
+		Type:     llm.ChunkTypeToolStart,
 		ToolID:   toolID,
 		ToolName: toolName,
 	}
 }
 
 // EmitToolInput forwards a tool input delta.
-func (s *State) EmitToolInput(ch chan<- core.StreamChunk, toolID, text string) {
+func (s *State) EmitToolInput(ch chan<- llm.StreamChunk, toolID, text string) {
 	if text == "" {
 		return
 	}
-	ch <- core.StreamChunk{
-		Type:   core.ChunkTypeToolInput,
+	ch <- llm.StreamChunk{
+		Type:   llm.ChunkTypeToolInput,
 		ToolID: toolID,
 		Text:   text,
 	}
@@ -122,10 +123,10 @@ func (s *State) EnsureToolUseStopReason() {
 }
 
 // Fail logs and emits a terminal error chunk.
-func (s *State) Fail(ch chan<- core.StreamChunk, err error) {
+func (s *State) Fail(ch chan<- llm.StreamChunk, err error) {
 	log.LogError(s.ProviderName, err)
-	ch <- core.StreamChunk{
-		Type:  core.ChunkTypeError,
+	ch <- llm.StreamChunk{
+		Type:  llm.ChunkTypeError,
 		Error: err,
 	}
 }
@@ -133,14 +134,14 @@ func (s *State) Fail(ch chan<- core.StreamChunk, err error) {
 // Finish logs stream completion, logs the final response, and emits the done chunk.
 // It copies the response so the receiver does not retain a pointer into State,
 // allowing the State (and its string builders) to be GC'd.
-func (s *State) Finish(ctx context.Context, ch chan<- core.StreamChunk) {
+func (s *State) Finish(ctx context.Context, ch chan<- llm.StreamChunk) {
 	s.Response.Content = s.contentBuf.String()
 	s.Response.Thinking = s.thinkingBuf.String()
 	log.LogStreamDone(s.ProviderName, time.Since(s.Start), s.ChunkCount)
 	log.LogResponseCtx(ctx, s.ProviderName, s.Response)
 	resp := s.Response // shallow copy — breaks the pointer into State
-	ch <- core.StreamChunk{
-		Type:     core.ChunkTypeDone,
+	ch <- llm.StreamChunk{
+		Type:     llm.ChunkTypeDone,
 		Response: &resp,
 	}
 }

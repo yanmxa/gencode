@@ -167,7 +167,10 @@ func newModeState() appoutput.ModalState {
 }
 
 func newToolState() appoutput.ToolState {
-	return appoutput.ToolState{Selector: appoutput.NewToolSelector()}
+	return appoutput.ToolState{Selector: appoutput.NewToolSelector(
+		setting.GetDisabledToolsAt,
+		setting.UpdateDisabledToolsAt,
+	)}
 }
 
 func (m *model) applyRunOptions(opts setting.RunOptions) error {

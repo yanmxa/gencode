@@ -143,10 +143,13 @@ func (m *model) StorePendingPermRequest(req *appoutput.PermBridgeRequest) {
 }
 
 func (m *model) ShowPermissionPrompt(req *appoutput.PermBridgeRequest) tea.Cmd {
-	if req == nil || req.Request == nil {
+	if req == nil {
 		return nil
 	}
-	m.userInput.Approval.Show(req.Request, m.width, m.height)
+	m.userInput.Approval.Show(&perm.PermissionRequest{
+		ToolName:    req.ToolName,
+		Description: req.Description,
+	}, m.width, m.height)
 	return nil
 }
 

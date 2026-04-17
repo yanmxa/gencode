@@ -57,11 +57,11 @@ func runPrint(userMessage string) error {
 	streamChan := llmProvider.Stream(ctx, completionOpts)
 	for chunk := range streamChan {
 		switch chunk.Type {
-		case core.ChunkTypeText:
+		case llm.ChunkTypeText:
 			fmt.Print(chunk.Text)
-		case core.ChunkTypeError:
+		case llm.ChunkTypeError:
 			return chunk.Error
-		case core.ChunkTypeDone:
+		case llm.ChunkTypeDone:
 			fmt.Println()
 		}
 	}

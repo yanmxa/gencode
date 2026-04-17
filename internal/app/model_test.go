@@ -30,8 +30,8 @@ import (
 
 type testLLMProvider struct{}
 
-func (testLLMProvider) Stream(_ context.Context, _ llm.CompletionOptions) <-chan core.StreamChunk {
-	ch := make(chan core.StreamChunk)
+func (testLLMProvider) Stream(_ context.Context, _ llm.CompletionOptions) <-chan llm.StreamChunk {
+	ch := make(chan llm.StreamChunk)
 	close(ch)
 	return ch
 }

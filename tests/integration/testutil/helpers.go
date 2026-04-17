@@ -26,38 +26,38 @@ func NewTestClient(fake *llm.FakeLLM) *llm.Client {
 // ---------------------------------------------------------------------------
 
 // ToolCallResponse builds a CompletionResponse that triggers a single tool_use.
-func ToolCallResponse(toolName, toolID, input string) core.CompletionResponse {
-	return core.CompletionResponse{
+func ToolCallResponse(toolName, toolID, input string) llm.CompletionResponse {
+	return llm.CompletionResponse{
 		StopReason: "tool_use",
 		ToolCalls:  []core.ToolCall{{ID: toolID, Name: toolName, Input: input}},
-		Usage:      core.Usage{InputTokens: 10, OutputTokens: 5},
+		Usage:      llm.Usage{InputTokens: 10, OutputTokens: 5},
 	}
 }
 
 // MultiToolCallResponse builds a CompletionResponse with multiple tool calls.
-func MultiToolCallResponse(calls ...core.ToolCall) core.CompletionResponse {
-	return core.CompletionResponse{
+func MultiToolCallResponse(calls ...core.ToolCall) llm.CompletionResponse {
+	return llm.CompletionResponse{
 		StopReason: "tool_use",
 		ToolCalls:  calls,
-		Usage:      core.Usage{InputTokens: 10, OutputTokens: 5},
+		Usage:      llm.Usage{InputTokens: 10, OutputTokens: 5},
 	}
 }
 
 // EndTurnResponse builds a simple end_turn response with default usage.
-func EndTurnResponse(content string) core.CompletionResponse {
-	return core.CompletionResponse{
+func EndTurnResponse(content string) llm.CompletionResponse {
+	return llm.CompletionResponse{
 		Content:    content,
 		StopReason: "end_turn",
-		Usage:      core.Usage{InputTokens: 10, OutputTokens: 5},
+		Usage:      llm.Usage{InputTokens: 10, OutputTokens: 5},
 	}
 }
 
 // EndTurnResponseWithUsage builds an end_turn response with custom token counts.
-func EndTurnResponseWithUsage(content string, input, output int) core.CompletionResponse {
-	return core.CompletionResponse{
+func EndTurnResponseWithUsage(content string, input, output int) llm.CompletionResponse {
+	return llm.CompletionResponse{
 		Content:    content,
 		StopReason: "end_turn",
-		Usage:      core.Usage{InputTokens: input, OutputTokens: output},
+		Usage:      llm.Usage{InputTokens: input, OutputTokens: output},
 	}
 }
 
@@ -100,7 +100,7 @@ type FakeProvider struct {
 	Client *llm.FakeLLM
 }
 
-func (p *FakeProvider) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan core.StreamChunk {
+func (p *FakeProvider) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan llm.StreamChunk {
 	return p.Client.Stream(ctx, opts.Messages, opts.Tools, opts.SystemPrompt)
 }
 func (p *FakeProvider) ListModels(_ context.Context) ([]llm.ModelInfo, error) { return nil, nil }
@@ -110,22 +110,22 @@ func (p *FakeProvider) Name() string                                            
 // Unlike FakeProvider, it does not require a FakeClient — use this when the
 // code under test (e.g., agent.Executor) creates its own client internally.
 type MockProvider struct {
-	Responses []core.CompletionResponse
+	Responses []llm.CompletionResponse
 	callIdx   int
 }
 
-func (m *MockProvider) Stream(_ context.Context, _ llm.CompletionOptions) <-chan core.StreamChunk {
-	ch := make(chan core.StreamChunk, 1)
+func (m *MockProvider) Stream(_ context.Context, _ llm.CompletionOptions) <-chan llm.StreamChunk {
+	ch := make(chan llm.StreamChunk, 1)
 	go func() {
 		defer close(ch)
-		var resp core.CompletionResponse
+		var resp llm.CompletionResponse
 		if m.callIdx < len(m.Responses) {
 			resp = m.Responses[m.callIdx]
 			m.callIdx++
 		} else {
-			resp = core.CompletionResponse{Content: "no more responses", StopReason: "end_turn"}
+			resp = llm.CompletionResponse{Content: "no more responses", StopReason: "end_turn"}
 		}
-		ch <- core.StreamChunk{Type: core.ChunkTypeDone, Response: &resp}
+		ch <- llm.StreamChunk{Type: llm.ChunkTypeDone, Response: &resp}
 	}()
 	return ch
 }
