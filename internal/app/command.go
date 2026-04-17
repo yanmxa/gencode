@@ -15,7 +15,6 @@ import (
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
 	"github.com/yanmxa/gencode/internal/app/output/render"
-	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
@@ -381,18 +380,18 @@ func handleMemoryCommand(ctx context.Context, m *model, args string) (string, te
 }
 
 func handleMCPCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	result, editInfo, err := mcpui.HandleCommand(ctx, &m.mcp.Selector, m.width, m.height, args)
+	result, editInfo, err := appuser.HandleMCPCommand(ctx, &m.userInput.MCP.Selector, m.width, m.height, args)
 	if err != nil {
 		return "", nil, err
 	}
 	if editInfo != nil {
-		m.mcp.EditingFile = editInfo.TempFile
-		m.mcp.EditingServer = editInfo.ServerName
-		m.mcp.EditingScope = editInfo.Scope
-		return result, mcpui.StartMCPEditor(editInfo.TempFile), nil
+		m.userInput.MCP.EditingFile = editInfo.TempFile
+		m.userInput.MCP.EditingServer = editInfo.ServerName
+		m.userInput.MCP.EditingScope = editInfo.Scope
+		return result, appuser.StartMCPEditor(editInfo.TempFile), nil
 	}
-	if m.mcp.Selector.IsActive() {
-		return result, m.mcp.Selector.AutoReconnect(), nil
+	if m.userInput.MCP.Selector.IsActive() {
+		return result, m.userInput.MCP.Selector.AutoReconnect(), nil
 	}
 	return result, nil, nil
 }

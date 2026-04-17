@@ -31,11 +31,13 @@ type Model struct {
 	Queue          Queue
 
 	// Selectors / overlays
-	Agent   AgentSelector
-	Search  SearchSelector
-	Skill   SkillState
-	Session SessionState
-	Memory  MemoryState
+	Approval ApprovalModel
+	Agent    AgentSelector
+	Search   SearchSelector
+	Skill    SkillState
+	Session  SessionState
+	Memory   MemoryState
+	MCP      MCPState
 }
 
 // PendingImage holds an inline image token and its provider payload.

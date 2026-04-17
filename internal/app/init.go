@@ -9,9 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
-	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
@@ -106,6 +104,8 @@ func newBaseModel() model {
 	userInput.Skill = appuser.SkillState{Selector: appuser.NewSkillSelector(skill.DefaultRegistry)}
 	userInput.Session = appuser.SessionState{Selector: appuser.NewSessionSelector()}
 	userInput.Memory = appuser.MemoryState{Selector: appuser.NewMemorySelector()}
+	userInput.Approval = appuser.NewApproval()
+	userInput.MCP = appuser.MCPState{Selector: appuser.NewMCPSelector(mcp.DefaultRegistry)}
 
 	return model{
 		userInput:   userInput,
@@ -128,9 +128,7 @@ func newBaseModel() model {
 		provider: newProviderState(),
 		mode:     newModeState(),
 		tool:     newToolState(),
-		mcp:      newMCPState(),
 		plugin:   newPluginState(),
-		approval: appapproval.New(),
 		isGit:    setting.IsGitRepo(appCwd),
 
 		systemInput: appsystem.New(),
@@ -170,10 +168,6 @@ func newModeState() appmodal.State {
 
 func newToolState() toolui.State {
 	return toolui.State{Selector: toolui.New()}
-}
-
-func newMCPState() mcpui.State {
-	return mcpui.State{Selector: mcpui.New(mcp.DefaultRegistry)}
 }
 
 func newPluginState() pluginui.Model {

@@ -45,7 +45,7 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 
 	case tea.KeyShiftTab:
-		if !m.conv.Stream.Active && !m.approval.IsActive() &&
+		if !m.conv.Stream.Active && !m.userInput.Approval.IsActive() &&
 			!m.mode.Question.IsActive() &&
 			(m.mode.PlanApproval == nil || !m.mode.PlanApproval.IsActive()) &&
 			!m.provider.Selector.IsActive() && !m.userInput.Suggestions.IsVisible() {
@@ -159,8 +159,8 @@ func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 		}
 		return true, cmd
 	}
-	if m.approval.IsActive() {
-		cmd, resp := m.approval.HandleKeypress(msg)
+	if m.userInput.Approval.IsActive() {
+		cmd, resp := m.userInput.Approval.HandleKeypress(msg)
 		if resp != nil {
 			return true, tea.Batch(cmd, m.handlePermissionResponse(*resp))
 		}
@@ -192,7 +192,7 @@ type ctrlOSingleTickMsg struct{}
 
 func (m *model) handleCtrlO() tea.Cmd {
 	// Handle permission prompt preview toggle
-	if m.approval.IsActive() {
+	if m.userInput.Approval.IsActive() {
 		m.togglePermissionPreview()
 		return nil
 	}

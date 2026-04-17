@@ -144,7 +144,7 @@ func (m *model) ShowPermissionPrompt(req *appoutput.PermBridgeRequest) tea.Cmd {
 	if req == nil || req.Request == nil {
 		return nil
 	}
-	m.approval.Show(req.Request, m.width, m.height)
+	m.userInput.Approval.Show(req.Request, m.width, m.height)
 	return nil
 }
 

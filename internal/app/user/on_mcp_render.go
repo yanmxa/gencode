@@ -1,5 +1,5 @@
 // Rendering logic for the MCP server selector UI.
-package mcpui
+package user
 
 import (
 	"fmt"
@@ -7,8 +7,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	coremcp "github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	coremcp "github.com/yanmxa/gencode/internal/mcp"
 )
 
 // mcpStatusDisplay returns icon and label for an MCP server status.
@@ -25,8 +25,8 @@ func mcpStatusDisplay(status coremcp.ServerStatus) (icon, label string) {
 	}
 }
 
-// statusIconAndStyle returns the status icon and style for an MCP server status
-func statusIconAndStyle(status coremcp.ServerStatus) (string, lipgloss.Style) {
+// mcpStatusIconAndStyle returns the status icon and style for an MCP server status
+func mcpStatusIconAndStyle(status coremcp.ServerStatus) (string, lipgloss.Style) {
 	icon, _ := mcpStatusDisplay(status)
 	switch status {
 	case coremcp.StatusConnected:
@@ -41,19 +41,19 @@ func statusIconAndStyle(status coremcp.ServerStatus) (string, lipgloss.Style) {
 }
 
 // Render renders the MCP selector
-func (s *Model) Render() string {
+func (s *MCPSelector) Render() string {
 	if !s.active {
 		return ""
 	}
 
-	if s.level == levelDetail {
+	if s.level == mcpLevelDetail {
 		return s.renderDetail()
 	}
 	return s.renderList()
 }
 
 // renderErrorAndFooter appends the error message (if any) and footer hint to the builder
-func (s *Model) renderErrorAndFooter(sb *strings.Builder, hint string) {
+func (s *MCPSelector) renderErrorAndFooter(sb *strings.Builder, hint string) {
 	if s.lastError != "" {
 		sb.WriteString(kit.SelectorStatusError().Render("    ! " + s.lastError + "\n"))
 	}
@@ -66,14 +66,14 @@ func (s *Model) renderErrorAndFooter(sb *strings.Builder, hint string) {
 }
 
 // renderBox wraps content in a centered bordered box
-func (s *Model) renderBox(content string) string {
+func (s *MCPSelector) renderBox(content string) string {
 	boxWidth := kit.CalculateToolBoxWidth(s.width)
 	box := kit.SelectorBorderStyle().Width(boxWidth).Render(content)
 	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)
 }
 
 // renderList renders the list view
-func (s *Model) renderList() string {
+func (s *MCPSelector) renderList() string {
 	var sb strings.Builder
 	descStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 
@@ -110,7 +110,7 @@ func (s *Model) renderList() string {
 
 		for i := s.nav.Scroll; i < endIdx; i++ {
 			srv := s.filteredServers[i]
-			icon, statusStyle := statusIconAndStyle(srv.Status)
+			icon, statusStyle := mcpStatusIconAndStyle(srv.Status)
 
 			// Name uses status color for connected, muted for others
 			nameStyle := descStyle
@@ -145,7 +145,7 @@ func (s *Model) renderList() string {
 }
 
 // renderDetail renders the detail view for a selected server
-func (s *Model) renderDetail() string {
+func (s *MCPSelector) renderDetail() string {
 	if s.detailServer == nil {
 		return s.renderList()
 	}
@@ -167,7 +167,7 @@ func (s *Model) renderDetail() string {
 	sb.WriteString("\n\n")
 
 	// Status
-	icon, statusStyle := statusIconAndStyle(srv.Status)
+	icon, statusStyle := mcpStatusIconAndStyle(srv.Status)
 	_, statusLabel := mcpStatusDisplay(srv.Status)
 	fmt.Fprintf(&sb, "  %s  %s\n",
 		labelStyle.Render("Status:"),
@@ -241,7 +241,7 @@ func (s *Model) renderDetail() string {
 }
 
 // serverDetails returns the details string for a server item
-func (s *Model) serverDetails(srv serverItem) string {
+func (s *MCPSelector) serverDetails(srv mcpServerItem) string {
 	if srv.Status == coremcp.StatusConnected {
 		return fmt.Sprintf("Tools: %d", srv.ToolCount)
 	}

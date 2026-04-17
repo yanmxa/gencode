@@ -58,6 +58,20 @@ type Agent interface {
 	// The provided slice is shallow-copied; same mutation caveats as Messages().
 	SetMessages(msgs []Message)
 
+	// Append adds a message to the conversation and fires the OnMessage hook.
+	// This is the unified entry point for both paths:
+	//   Run path:   inbox → ingest (Append internally)
+	//   Direct path: caller → Append → ThinkAct
+	Append(ctx context.Context, msg Message)
+
+	// ThinkAct runs one full inference-action cycle: PreInfer → LLM stream →
+	// tool execution → repeat until end_turn. Returns the result directly.
+	//
+	// This is the agent's atomic operation. Two callers drive it differently:
+	//   Run():   loop { waitForInput → ThinkAct }, emits TurnEvent to Outbox
+	//   Direct:  Append(msg) → ThinkAct(ctx), returns *Result synchronously
+	ThinkAct(ctx context.Context) (*Result, error)
+
 	// Run starts the agent's main loop. Blocks until context cancellation or SigStop.
 	//
 	// The run loop has three phases per cycle:
@@ -92,6 +106,9 @@ type Config struct {
 	Tools              Tools          // required: available tools
 	Hooks              Hooks          // optional: event handlers
 	Permission         PermissionFunc // optional: called before each tool execution (runs before PreTool hooks)
+	AgentType          string   // optional: agent type identifier for hook events
+	Color              string   // optional: display color for TUI (e.g. "#ff6600", "blue")
+	AllowedTools       []string // optional: tools that skip Permission check
 	CWD                string
 	MaxTurns           int // max LLM inference rounds per cycle, 0 = unlimited
 	MaxOutputRecovery  int // max retries on truncated output, 0 = use default (3)
@@ -120,12 +137,22 @@ func NewAgent(cfg Config) Agent {
 	if cfg.OutboxBuf <= 0 {
 		cfg.OutboxBuf = 64
 	}
+	var allowed map[string]bool
+	if len(cfg.AllowedTools) > 0 {
+		allowed = make(map[string]bool, len(cfg.AllowedTools))
+		for _, name := range cfg.AllowedTools {
+			allowed[name] = true
+		}
+	}
 	return &agent{
 		id:                cfg.ID,
+		agentType:         cfg.AgentType,
+		color:             cfg.Color,
 		system:            cfg.System,
 		tools:             cfg.Tools,
 		hooks:             cfg.Hooks,
 		permission:        cfg.Permission,
+		allowedTools:      allowed,
 		llm:               cfg.LLM,
 		cwd:               cfg.CWD,
 		maxTurns:          cfg.MaxTurns,

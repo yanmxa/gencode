@@ -15,10 +15,13 @@ import (
 // agent is the default Agent implementation.
 type agent struct {
 	id                string
+	agentType         string
+	color             string
 	system            System
 	tools             Tools
 	hooks             Hooks
 	permission        PermissionFunc
+	allowedTools      map[string]bool
 	llm               LLM
 	cwd               string
 	maxTurns          int
@@ -45,6 +48,11 @@ func (a *agent) SetMessages(msgs []Message) {
 	defer a.mu.Unlock()
 	a.messages = make([]Message, len(msgs))
 	copy(a.messages, msgs)
+}
+
+// Append adds a message to the conversation and fires the OnMessage hook.
+func (a *agent) Append(ctx context.Context, msg Message) {
+	a.ingest(ctx, msg)
 }
 
 // Run is the agent's main loop: wait for input → think+act → repeat.
@@ -76,7 +84,11 @@ func (a *agent) Run(ctx context.Context) error {
 			return err
 		}
 
-		if err := a.thinkAct(ctx); err != nil {
+		result, err := a.ThinkAct(ctx)
+		if result != nil {
+			a.emit(ctx, TurnEvent(a.id, *result))
+		}
+		if err != nil {
 			if err == errStopped {
 				return nil
 			}
@@ -127,48 +139,41 @@ func (a *agent) ingest(ctx context.Context, msg Message) {
 	}
 }
 
-// thinkAct runs the LLM inference loop until end_turn.
-func (a *agent) thinkAct(ctx context.Context) error {
+// ThinkAct runs one full inference-action cycle until end_turn.
+// Returns the result directly — the caller decides whether to emit TurnEvent.
+func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 	var turns, toolUses, tokensIn, tokensOut int
 	var maxOutputRecoveryCount int
 
+	makeResult := func(content string, stop StopReason, detail string) *Result {
+		return &Result{
+			Content: content, Messages: a.snapshot(),
+			Turns: turns, ToolUses: toolUses, TokensIn: tokensIn, TokensOut: tokensOut,
+			StopReason: stop, StopDetail: detail,
+		}
+	}
+
 	for {
 		if ctx.Err() != nil {
-			a.emit(ctx, TurnEvent(a.id, Result{
-				Messages: a.snapshot(),
-				Turns: turns, ToolUses: toolUses, TokensIn: tokensIn, TokensOut: tokensOut,
-				StopReason: StopCancelled,
-			}))
-			return ctx.Err()
+			return makeResult("", StopCancelled, ""), ctx.Err()
 		}
 
 		// Max turns guard
 		if a.maxTurns > 0 && turns >= a.maxTurns {
-			a.emit(ctx, TurnEvent(a.id, Result{
-				Content: "max turns reached", Messages: a.snapshot(),
-				Turns: turns, ToolUses: toolUses, TokensIn: tokensIn, TokensOut: tokensOut,
-				StopReason: StopMaxTurns,
-			}))
-			break
+			return makeResult("max turns reached", StopMaxTurns, ""), nil
 		}
 
 		// Between turns: drain any new inbox messages (non-blocking)
 		if turns > 0 {
 			if err := a.drainInbox(ctx); err != nil {
-				return err
+				return nil, err
 			}
 		}
 
 		// PreInfer hook — can inject context, block, or compact (via SetMessages)
 		action := a.fire(ctx, PreInferEvent(a.id))
 		if action.Block {
-			a.emit(ctx, TurnEvent(a.id, Result{
-				Messages: a.snapshot(),
-				Turns: turns, ToolUses: toolUses, TokensIn: tokensIn, TokensOut: tokensOut,
-				StopReason: StopHook,
-				StopDetail: action.Reason,
-			}))
-			break
+			return makeResult("", StopHook, action.Reason), nil
 		}
 		if action.Inject != "" {
 			// Fixed name so each turn's injection replaces the previous one.
@@ -181,7 +186,7 @@ func (a *agent) thinkAct(ctx context.Context) error {
 
 		resp, err := a.streamInfer(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		turns++
@@ -203,12 +208,7 @@ func (a *agent) thinkAct(ctx context.Context) error {
 				maxRecovery = 3
 			}
 			if maxOutputRecoveryCount >= maxRecovery {
-				a.emit(ctx, TurnEvent(a.id, Result{
-					Content: resp.Content, Messages: a.snapshot(),
-					Turns: turns, ToolUses: toolUses, TokensIn: tokensIn, TokensOut: tokensOut,
-					StopReason: StopMaxOutputRecoveryExhausted,
-				}))
-				break
+				return makeResult(resp.Content, StopMaxOutputRecoveryExhausted, ""), nil
 			}
 			maxOutputRecoveryCount++
 			a.append(Message{Role: RoleUser, From: "system", Content: TruncatedResumePrompt})
@@ -217,23 +217,12 @@ func (a *agent) thinkAct(ctx context.Context) error {
 
 		// No tool calls → end turn
 		if len(resp.ToolCalls) == 0 {
-			a.emit(ctx, TurnEvent(a.id, Result{
-				Content:    resp.Content,
-				Messages:   a.snapshot(),
-				Turns:      turns,
-				ToolUses:   toolUses,
-				TokensIn:   tokensIn,
-				TokensOut:  tokensOut,
-				StopReason: StopEndTurn,
-			}))
-			break
+			return makeResult(resp.Content, StopEndTurn, ""), nil
 		}
 
 		// Execute tool calls
 		toolUses += a.execTools(ctx, resp.ToolCalls)
 	}
-
-	return nil
 }
 
 // execTools runs tool calls in three phases:
@@ -252,7 +241,8 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 			break
 		}
 		// Permission check runs before hooks to gate on the original input.
-		if a.permission != nil {
+		// AllowedTools bypass permission — subagents use this for pre-approved tools.
+		if a.permission != nil && !a.allowedTools[tc.Name] {
 			if allow, reason := a.permission(ctx, tc); !allow {
 				a.appendResult(tc, "blocked: "+reason, true)
 				continue

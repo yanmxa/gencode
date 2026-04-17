@@ -29,7 +29,7 @@ func (m *model) overlaySelectors() []overlaySelector {
 		&m.tool.Selector,
 		&m.userInput.Skill.Selector,
 		&m.userInput.Agent,
-		&m.mcp.Selector,
+		&m.userInput.MCP.Selector,
 		&m.plugin,
 		&m.userInput.Session.Selector,
 		&m.userInput.Memory.Selector,
@@ -115,8 +115,8 @@ func (m *model) renderActiveModal(separator, trackerPrefix string) string {
 	switch {
 	case m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive():
 		return separatorWrapped(trackerPrefix, separator, m.mode.PlanApproval.RenderMenu())
-	case m.approval.IsActive():
-		return separatorWrapped(trackerPrefix, separator, m.approval.Render())
+	case m.userInput.Approval.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.userInput.Approval.Render())
 	case m.mode.Question.IsActive():
 		return separatorWrapped(trackerPrefix, separator, m.mode.Question.Render())
 	case m.mode.PlanEntry.IsActive():

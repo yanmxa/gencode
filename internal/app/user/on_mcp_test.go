@@ -1,4 +1,4 @@
-package mcpui
+package user
 
 import (
 	"context"
@@ -19,11 +19,11 @@ func withTestRegistry(t *testing.T, reg *coremcp.Registry) {
 
 func TestHandleCommand_UninitializedRegistryMessage(t *testing.T) {
 	withTestRegistry(t, nil)
-	selector := New(coremcp.DefaultRegistry)
+	selector := NewMCPSelector(coremcp.DefaultRegistry)
 
-	result, editInfo, err := HandleCommand(context.Background(), &selector, 80, 24, "")
+	result, editInfo, err := HandleMCPCommand(context.Background(), &selector, 80, 24, "")
 	if err != nil {
-		t.Fatalf("HandleCommand() error = %v", err)
+		t.Fatalf("HandleMCPCommand() error = %v", err)
 	}
 	if editInfo != nil {
 		t.Fatalf("expected nil edit info, got %#v", editInfo)
@@ -37,11 +37,11 @@ func TestHandleCommand_EmptyArgsOpensSelector(t *testing.T) {
 	withTestRegistry(t, coremcp.NewRegistryForTest(map[string]coremcp.ServerConfig{
 		"demo": {Name: "demo", Command: "echo", Scope: coremcp.ScopeLocal},
 	}))
-	selector := New(coremcp.DefaultRegistry)
+	selector := NewMCPSelector(coremcp.DefaultRegistry)
 
-	result, editInfo, err := HandleCommand(context.Background(), &selector, 80, 24, "")
+	result, editInfo, err := HandleMCPCommand(context.Background(), &selector, 80, 24, "")
 	if err != nil {
-		t.Fatalf("HandleCommand() error = %v", err)
+		t.Fatalf("HandleMCPCommand() error = %v", err)
 	}
 	if result != "" || editInfo != nil {
 		t.Fatalf("unexpected outputs: result=%q editInfo=%#v", result, editInfo)
@@ -122,9 +122,9 @@ func TestHandleGet_MasksSecretsAndShowsDefaults(t *testing.T) {
 		},
 	}))
 
-	result, err := handleGet(coremcp.DefaultRegistry, "api")
+	result, err := handleMCPGet(coremcp.DefaultRegistry, "api")
 	if err != nil {
-		t.Fatalf("handleGet() error = %v", err)
+		t.Fatalf("handleMCPGet() error = %v", err)
 	}
 	if !strings.Contains(result, "Scope:  local") {
 		t.Fatalf("expected default local scope, got %q", result)

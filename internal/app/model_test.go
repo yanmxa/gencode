@@ -11,8 +11,8 @@ import (
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
-	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/setting"
@@ -263,7 +263,7 @@ You are a verifier.`), 0o644); err != nil {
 		cwd:        cwd,
 		settings:   settings,
 		hookEngine: hook.NewEngine(settings, "test-session", cwd, ""),
-		mcp:        mcpui.State{},
+		userInput: appuser.Model{MCP: appuser.MCPState{}},
 	}
 
 	if err := m.applyRunOptions(setting.RunOptions{PluginDir: pluginDir}); err != nil {

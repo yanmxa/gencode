@@ -12,7 +12,6 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	"github.com/yanmxa/gencode/internal/core"
@@ -23,7 +22,7 @@ import (
 // --- User overlay dispatchers (Source 1) ---
 
 func (m *model) updateMCP(msg tea.Msg) (tea.Cmd, bool) {
-	return mcpui.Update(m, &m.mcp, msg)
+	return appuser.UpdateMCP(m, &m.userInput.MCP, msg)
 }
 func (m *model) updateMemory(msg tea.Msg) (tea.Cmd, bool) {
 	return appuser.UpdateMemory(m, &m.userInput.Memory, msg)
@@ -55,7 +54,7 @@ func (m *model) ClearCachedInstructions() {
 func (m *model) RefreshMemoryContext(trigger string) { m.refreshMemoryContext(trigger) }
 func (m *model) FireFileChanged(path, tool string)   { m.fireFileChanged(path, tool) }
 
-// mcpui.Runtime
+// user.MCPRuntime
 func (m *model) SetInputText(text string) { m.userInput.Textarea.SetValue(text) }
 
 // providerui.Runtime

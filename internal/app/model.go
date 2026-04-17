@@ -17,8 +17,6 @@ import (
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
-	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
@@ -38,13 +36,11 @@ const defaultWidth = 80
 type model struct {
 	// ── User Input ──────────────────────────────────────────────────────
 	userInput        appuser.Model
-	approval         appapproval.Model
 	mode             appmodal.State
 	promptSuggestion promptSuggestionState
 	showTasks        bool
 	provider         providerui.State
 	tool             toolui.State
-	mcp              mcpui.State
 	plugin           pluginui.Model
 
 	// ── Agent Input ─────────────────────────────────────────────────────
@@ -117,7 +113,7 @@ func (m *model) fireSessionEnd(reason string) {
 }
 
 func (m *model) Init() tea.Cmd {
-	cmds := []tea.Cmd{textarea.Blink, m.agentOutput.Spinner.Tick, m.mcp.Selector.AutoConnect(), appsystem.TriggerCronTickNow(), appsystem.StartCronTicker(), appsystem.StartAsyncHookTicker(), appagent.StartTicker()}
+	cmds := []tea.Cmd{textarea.Blink, m.agentOutput.Spinner.Tick, m.userInput.MCP.Selector.AutoConnect(), appsystem.TriggerCronTickNow(), appsystem.StartCronTicker(), appsystem.StartAsyncHookTicker(), appagent.StartTicker()}
 	if m.initialPrompt != "" {
 		prompt := m.initialPrompt
 		cmds = append(cmds, func() tea.Msg { return initialPromptMsg(prompt) })

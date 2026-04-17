@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
-	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
+	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -29,7 +29,7 @@ type hookPermissionResultMsg struct {
 // Note: response messages are handled directly in delegateToActiveModal.
 func (m *model) updateApproval(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case appapproval.RequestMsg:
+	case appuser.ApprovalRequestMsg:
 		c := m.handlePermissionRequest(msg)
 		return c, true
 	case hookPermissionResultMsg:
@@ -39,7 +39,7 @@ func (m *model) updateApproval(msg tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-func (m *model) handlePermissionRequest(msg appapproval.RequestMsg) tea.Cmd {
+func (m *model) handlePermissionRequest(msg appuser.ApprovalRequestMsg) tea.Cmd {
 	// If there's a PermissionRequest hook configured, run it asynchronously
 	// to avoid blocking the Bubble Tea event loop (which freezes the TUI).
 	if m.hookEngine != nil && m.hookEngine.HasHooks(hook.PermissionRequest) && msg.Request != nil {
@@ -89,7 +89,7 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 	}
 
 	if msg.Blocked {
-		m.approval.Hide()
+		m.userInput.Approval.Hide()
 		return m.abortToolWithError("Blocked by hook: "+msg.Reason, false)
 	}
 
@@ -105,7 +105,7 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 		args := m.buildPermissionArgs(msg.Request)
 		if m.settings != nil && m.settings.ResolveHookAllow(msg.Request.ToolName, args, m.sessionPermissions) {
 			// Hook allow is valid, skip permission prompt
-			m.approval.Hide()
+			m.userInput.Approval.Hide()
 			return toolui.ExecuteApproved(m.tool.Context(), m.agentOutput.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
 		}
 		// Safety invariant denied the hook allow — fall through to normal approval modal
@@ -116,10 +116,10 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 }
 
 func (m *model) isCurrentPermissionRequest(req *perm.PermissionRequest) bool {
-	if req == nil || !m.approval.IsActive() {
+	if req == nil || !m.userInput.Approval.IsActive() {
 		return false
 	}
-	current := m.approval.GetRequest()
+	current := m.userInput.Approval.GetRequest()
 	if current == nil {
 		return false
 	}
@@ -133,7 +133,7 @@ func (m *model) showApprovalModal(req *perm.PermissionRequest) tea.Cmd {
 		req.SuggestedRules = setting.GenerateSuggestions(req.ToolName, m.buildPermissionArgs(req), 5)
 	}
 
-	m.approval.Show(req, m.width, m.height)
+	m.userInput.Approval.Show(req, m.width, m.height)
 
 	// Fire Notification hook when permission prompt is shown
 	if m.hookEngine != nil {
@@ -316,7 +316,7 @@ func buildRuleString(rule hook.PermissionRule) string {
 	return ""
 }
 
-func (m *model) handlePermissionResponse(msg appapproval.ResponseMsg) tea.Cmd {
+func (m *model) handlePermissionResponse(msg appuser.ApprovalResponseMsg) tea.Cmd {
 	return m.handlePermBridgeDecision(permissionDecision{
 		Approved: msg.Approved,
 		AllowAll: msg.AllowAll,
@@ -340,5 +340,5 @@ func (m *model) applyUpdatedToolInput(updated map[string]any) {
 
 // togglePermissionPreview toggles the expand state of permission prompt previews.
 func (m *model) togglePermissionPreview() {
-	m.approval.TogglePreview()
+	m.userInput.Approval.TogglePreview()
 }

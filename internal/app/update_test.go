@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
@@ -313,7 +312,7 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 		"*toolui.Model",
 		"*user.SkillSelector",
 		"*user.AgentSelector",
-		"*mcpui.Model",
+		"*user.MCPSelector",
 		"*pluginui.Model",
 		"*user.SessionSelector",
 		"*user.MemorySelector",
@@ -522,11 +521,11 @@ func TestRenderActiveModalPriority(t *testing.T) {
 			Question:     appmodal.NewQuestionPrompt(),
 			PlanEntry:    appmodal.NewEnterPlanPrompt(),
 		},
-		approval: appapproval.New(),
 	}
+	m.userInput.Approval = appuser.NewApproval()
 
 	m.mode.PlanApproval.Show(&tool.PlanRequest{Plan: "plan"}, "", 80, 24)
-	m.approval.Show(&perm.PermissionRequest{ToolName: "Bash", Description: "run"}, 80, 24)
+	m.userInput.Approval.Show(&perm.PermissionRequest{ToolName: "Bash", Description: "run"}, 80, 24)
 	m.mode.Question.Show(&tool.QuestionRequest{}, 80)
 	m.mode.PlanEntry.Show(&tool.EnterPlanRequest{}, 80)
 
@@ -548,23 +547,23 @@ func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
 	})
 
 	m := &model{
-		approval:   appapproval.New(),
 		width:      80,
 		height:     24,
 		hookEngine: engine,
 	}
+	m.userInput.Approval = appuser.NewApproval()
 
-	cmd := m.handlePermissionRequest(appapproval.RequestMsg{
+	cmd := m.handlePermissionRequest(appuser.ApprovalRequestMsg{
 		Request: &perm.PermissionRequest{ToolName: "Edit", FilePath: "/tmp/test.txt"},
 	})
 
 	if cmd == nil {
 		t.Fatal("expected async hook command")
 	}
-	if !m.approval.IsActive() {
+	if !m.userInput.Approval.IsActive() {
 		t.Fatal("expected approval modal to be active while hook runs")
 	}
-	view := m.approval.Render()
+	view := m.userInput.Approval.Render()
 	if !strings.Contains(view, "Do you want to proceed?") {
 		t.Fatalf("expected normal approval modal while hook runs, got %q", view)
 	}
@@ -574,16 +573,15 @@ func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
 }
 
 func TestLatePermissionHookResultIsIgnoredAfterApprovalModalCloses(t *testing.T) {
-	m := &model{
-		approval: appapproval.New(),
-	}
+	m := &model{}
+	m.userInput.Approval = appuser.NewApproval()
 	req := &perm.PermissionRequest{
 		ID:       "perm-1",
 		ToolName: "Edit",
 		FilePath: "/tmp/test.txt",
 	}
-	m.approval.Show(req, 80, 24)
-	m.approval.Hide()
+	m.userInput.Approval.Show(req, 80, 24)
+	m.userInput.Approval.Hide()
 
 	cmd := m.handleHookPermissionResult(hookPermissionResultMsg{
 		Request: req,
