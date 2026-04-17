@@ -1,6 +1,7 @@
 package subagent
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/skill"
 )
@@ -102,12 +102,12 @@ func TestBuildCancelledAgentResultUsesPreparedRunMetadata(t *testing.T) {
 		progress:  []string{"Read(main.go)"},
 	}
 
-	result := executor.buildCancelledAgentResult(run, &runtime.Result{
+	result := executor.buildCancelledAgentResult(run, &core.Result{
 		Content:    "partial",
 		Messages:   []core.Message{{Role: core.RoleAssistant, Content: "partial"}},
 		Turns:      2,
 		ToolUses:   1,
-		StopReason: runtime.StopCancelled,
+		StopReason: core.StopCancelled,
 	})
 	if result == nil {
 		t.Fatal("expected cancelled result")
@@ -263,13 +263,20 @@ func TestResumeFromSessionUsesSessionStore(t *testing.T) {
 		},
 	}
 	executor := &Executor{sessionStore: store}
-	lp := &runtime.Loop{}
 
-	if err := executor.resumeFromSession(lp, "agent-1", "continue"); err != nil {
+	// Create a minimal core.Agent for testing
+	ag := core.NewAgent(core.Config{
+		LLM:    &stubLLM{},
+		System: &stubSystem{},
+		Tools:  core.NewTools(),
+	})
+	ctx := context.Background()
+
+	if err := executor.resumeFromSession(ag, ctx, "agent-1", "continue"); err != nil {
 		t.Fatalf("resumeFromSession(): %v", err)
 	}
 
-	msgs := lp.Messages()
+	msgs := ag.Messages()
 	if len(msgs) != 3 {
 		t.Fatalf("len(messages) = %d, want 3", len(msgs))
 	}
@@ -280,7 +287,12 @@ func TestResumeFromSessionUsesSessionStore(t *testing.T) {
 
 func TestResumeFromSessionRequiresSessionStore(t *testing.T) {
 	executor := &Executor{}
-	err := executor.resumeFromSession(&runtime.Loop{}, "agent-1", "continue")
+	ag := core.NewAgent(core.Config{
+		LLM:    &stubLLM{},
+		System: &stubSystem{},
+		Tools:  core.NewTools(),
+	})
+	err := executor.resumeFromSession(ag, context.Background(), "agent-1", "continue")
 	if err == nil || !strings.Contains(err.Error(), "session store not configured") {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -290,8 +302,33 @@ func TestResumeFromSessionPropagatesLoadError(t *testing.T) {
 	executor := &Executor{
 		sessionStore: &stubSubagentSessionStore{loadErr: errors.New("boom")},
 	}
-	err := executor.resumeFromSession(&runtime.Loop{}, "agent-1", "continue")
+	ag := core.NewAgent(core.Config{
+		LLM:    &stubLLM{},
+		System: &stubSystem{},
+		Tools:  core.NewTools(),
+	})
+	err := executor.resumeFromSession(ag, context.Background(), "agent-1", "continue")
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+// stubLLM is a minimal core.LLM for tests that don't call inference.
+type stubLLM struct{}
+
+func (s *stubLLM) Infer(_ context.Context, _ core.InferRequest) (<-chan core.Chunk, error) {
+	ch := make(chan core.Chunk)
+	close(ch)
+	return ch, nil
+}
+func (s *stubLLM) InputLimit() int { return 0 }
+
+// stubSystem is a minimal core.System for tests.
+type stubSystem struct{}
+
+func (s *stubSystem) Prompt() string                  { return "" }
+func (s *stubSystem) Set(_ core.Layer)                {}
+func (s *stubSystem) Remove(_ string)                 {}
+func (s *stubSystem) Get(_ string) (core.Layer, bool) { return core.Layer{}, false }
+func (s *stubSystem) Layers() []core.Layer            { return nil }
+func (s *stubSystem) Invalidate()                     {}

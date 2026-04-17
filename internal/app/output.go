@@ -22,7 +22,6 @@ import (
 	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/task/tracker"
@@ -30,6 +29,10 @@ import (
 	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/log"
 )
+
+const autoCompactResumePrompt = "Continue with the task. The conversation was auto-compacted to free up context."
+
+const minMessagesForCompaction = 3
 
 // --- Dispatcher ---
 
@@ -61,11 +64,11 @@ func (m *model) SetBuildingTool(name string) { m.conv.Stream.BuildingTool = name
 func (m *model) StopStream()                 { m.conv.Stream.Stop() }
 
 func (m *model) SetTokenCounts(in, out int) {
-	m.inputTokens = in
-	m.outputTokens = out
+	m.runtime.InputTokens = in
+	m.runtime.OutputTokens = out
 }
 func (m *model) ClearWarningSuppressed() { m.conv.Compact.WarningSuppressed = false }
-func (m *model) ClearThinkingOverride()  { m.thinkingOverride = llm.ThinkingOff }
+func (m *model) ClearThinkingOverride()  { m.runtime.ThinkingOverride = llm.ThinkingOff }
 func (rt outputRuntime) ContinueOutbox() tea.Cmd {
 	return rt.model.outputContinueOutbox()
 }
@@ -106,11 +109,11 @@ func (m *model) DrainTurnQueues() tea.Cmd {
 func (m *model) HasRunningTasks() bool { return tracker.DefaultStore.HasInProgress() }
 
 func (m *model) FireStopFailureHook(err error) {
-	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hook.StopFailure, hook.HookInput{
+	if m.runtime.HookEngine != nil {
+		m.runtime.HookEngine.ExecuteAsync(hook.StopFailure, hook.HookInput{
 			LastAssistantMessage: m.lastAssistantContent(),
 			Error:                err.Error(),
-			StopHookActive:       m.hookEngine.StopHookActive(),
+			StopHookActive:       m.runtime.HookEngine.StopHookActive(),
 		})
 	}
 }
@@ -170,8 +173,8 @@ func (m *model) handlePermBridgeDecision(decision permissionDecision) tea.Cmd {
 	}
 
 	if decision.Approved {
-		if decision.AllowAll && m.sessionPermissions != nil && decision.Request != nil {
-			m.sessionPermissions.AllowTool(decision.Request.ToolName)
+		if decision.AllowAll && m.runtime.SessionPermissions != nil && decision.Request != nil {
+			m.runtime.SessionPermissions.AllowTool(decision.Request.ToolName)
 		}
 		resp.Reason = "user approved"
 	} else {
@@ -252,7 +255,7 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 }
 
 func (m *model) fireAgentPostToolHook(tr core.ToolResult, sideEffect any) {
-	if m.hookEngine == nil {
+	if m.runtime.HookEngine == nil {
 		return
 	}
 	eventType := hook.PostToolUse
@@ -271,19 +274,19 @@ func (m *model) fireAgentPostToolHook(tr core.ToolResult, sideEffect any) {
 	if tr.IsError {
 		input.Error = tr.Content
 	}
-	m.hookEngine.ExecuteAsync(eventType, input)
+	m.runtime.HookEngine.ExecuteAsync(eventType, input)
 }
 
 func (m *model) fireIdleHooks() bool {
-	if m.hookEngine == nil {
+	if m.runtime.HookEngine == nil {
 		return false
 	}
 
 	blocked := false
-	if m.hookEngine.HasHooks(hook.Stop) {
-		outcome := m.hookEngine.Execute(context.Background(), hook.Stop, hook.HookInput{
+	if m.runtime.HookEngine.HasHooks(hook.Stop) {
+		outcome := m.runtime.HookEngine.Execute(context.Background(), hook.Stop, hook.HookInput{
 			LastAssistantMessage: m.lastAssistantContent(),
-			StopHookActive:       m.hookEngine.StopHookActive(),
+			StopHookActive:       m.runtime.HookEngine.StopHookActive(),
 		})
 		if outcome.ShouldBlock {
 			m.conv.Append(core.ChatMessage{
@@ -300,7 +303,7 @@ func (m *model) fireIdleHooks() bool {
 		}
 	}
 
-	m.hookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
+	m.runtime.HookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
 		Message:          "Claude is waiting for your input",
 		NotificationType: "idle_prompt",
 	})
@@ -428,14 +431,14 @@ func (m *model) persistToolResultOverflow(result *core.ToolResult) {
 	preview := result.Content[:cutoff]
 
 	persisted := false
-	if err := m.ensureSessionStore(); err == nil && m.sessionID != "" {
-		if err := m.sessionStore.PersistToolResult(m.sessionID, result.ToolCallID, result.Content); err == nil {
+	if err := m.ensureSessionStore(); err == nil && m.runtime.SessionID != "" {
+		if err := m.runtime.SessionStore.PersistToolResult(m.runtime.SessionID, result.ToolCallID, result.Content); err == nil {
 			persisted = true
 		}
 	}
 
 	if persisted {
-		result.Content = fmt.Sprintf("%s\n\n[Full output persisted to blobs/tool-result/%s/%s]", preview, m.sessionID, result.ToolCallID)
+		result.Content = fmt.Sprintf("%s\n\n[Full output persisted to blobs/tool-result/%s/%s]", preview, m.runtime.SessionID, result.ToolCallID)
 	} else {
 		result.Content = fmt.Sprintf("%s\n\n[Output truncated from %d bytes — full content not persisted]", preview, len(result.Content))
 	}
@@ -451,19 +454,19 @@ func getHookResponseString(resp map[string]any, key string) string {
 // --- Compact helpers ---
 
 func (m *model) getEffectiveInputLimit() int {
-	return appoutput.GetEffectiveInputLimit(m.providerStore, m.currentModel)
+	return appoutput.GetEffectiveInputLimit(m.runtime.ProviderStore, m.runtime.CurrentModel)
 }
 
 func (m *model) getMaxTokens() int {
-	return appoutput.GetMaxTokens(m.providerStore, m.currentModel, setting.DefaultMaxTokens)
+	return appoutput.GetMaxTokens(m.runtime.ProviderStore, m.runtime.CurrentModel, setting.DefaultMaxTokens)
 }
 
 func (m *model) getContextUsagePercent() float64 {
-	return appoutput.GetContextUsagePercent(m.inputTokens, m.providerStore, m.currentModel)
+	return appoutput.GetContextUsagePercent(m.runtime.InputTokens, m.runtime.ProviderStore, m.runtime.CurrentModel)
 }
 
 func (m *model) shouldAutoCompact() bool {
-	return appoutput.ShouldAutoCompact(m.llmProvider, len(m.conv.Messages), m.inputTokens, m.providerStore, m.currentModel)
+	return appoutput.ShouldAutoCompact(m.runtime.LLMProvider, len(m.conv.Messages), m.runtime.InputTokens, m.runtime.ProviderStore, m.runtime.CurrentModel)
 }
 
 func (m *model) triggerAutoCompact() tea.Cmd {
@@ -502,13 +505,13 @@ func (m *model) handleCompactResult(msg appoutput.CompactResultMsg) tea.Cmd {
 		}
 	}
 
-	if m.sessionStore != nil && m.sessionID != "" {
-		_ = m.sessionStore.SaveSessionMemory(m.sessionID, msg.Summary)
+	if m.runtime.SessionStore != nil && m.runtime.SessionID != "" {
+		_ = m.runtime.SessionStore.SaveSessionMemory(m.runtime.SessionID, msg.Summary)
 	}
-	m.sessionSummary = msg.Summary
+	m.runtime.SessionSummary = msg.Summary
 
-	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hook.PostCompact, hook.HookInput{
+	if m.runtime.HookEngine != nil {
+		m.runtime.HookEngine.ExecuteAsync(hook.PostCompact, hook.HookInput{
 			Trigger: msg.Trigger,
 		})
 	}
@@ -525,9 +528,9 @@ func (m *model) handleCompactResult(msg appoutput.CompactResultMsg) tea.Cmd {
 		}
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleUser,
-			Content: runtime.AutoCompactResumePrompt,
+			Content: autoCompactResumePrompt,
 		})
-		cmds = append(cmds, m.sendToAgent(runtime.AutoCompactResumePrompt, nil))
+		cmds = append(cmds, m.sendToAgent(autoCompactResumePrompt, nil))
 	} else if restoredContext != "" {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleUser,
@@ -541,8 +544,8 @@ func (m *model) handleCompactResult(msg appoutput.CompactResultMsg) tea.Cmd {
 
 func (m *model) resetAfterCompact() {
 	m.conv.Clear()
-	m.inputTokens = 0
-	m.outputTokens = 0
+	m.runtime.InputTokens = 0
+	m.runtime.OutputTokens = 0
 }
 
 func (m *model) handleTokenLimitResult(msg appoutput.TokenLimitResultMsg) tea.Cmd {
@@ -562,12 +565,12 @@ func (m *model) handleTokenLimitResult(msg appoutput.TokenLimitResultMsg) tea.Cm
 // --- Session lifecycle ---
 
 func (m *model) ensureSessionStore() error {
-	if m.sessionStore == nil {
+	if m.runtime.SessionStore == nil {
 		store, err := session.NewStore(m.cwd)
 		if err != nil {
 			return err
 		}
-		m.sessionStore = store
+		m.runtime.SessionStore = store
 	}
 	return nil
 }
@@ -585,19 +588,19 @@ func (m *model) saveSession() error {
 
 	providerName := ""
 	modelID := ""
-	if m.currentModel != nil {
-		providerName = string(m.currentModel.Provider)
-		modelID = m.currentModel.ModelID
+	if m.runtime.CurrentModel != nil {
+		providerName = string(m.runtime.CurrentModel.Provider)
+		modelID = m.runtime.CurrentModel.ModelID
 	}
 
 	sess := &session.Snapshot{
 		Metadata: session.SessionMetadata{
-			ID:         m.sessionID,
+			ID:         m.runtime.SessionID,
 			Provider:   providerName,
 			Model:      modelID,
 			Cwd:        m.cwd,
 			LastPrompt: session.ExtractLastUserText(entries),
-			Summary:    m.sessionSummary,
+			Summary:    m.runtime.SessionSummary,
 			Mode:       m.currentSessionMode(),
 		},
 		Entries: entries,
@@ -608,15 +611,15 @@ func (m *model) saveSession() error {
 		sess.Metadata.Title = session.GenerateTitle(sess.Entries)
 	}
 
-	if err := m.sessionStore.Save(sess); err != nil {
+	if err := m.runtime.SessionStore.Save(sess); err != nil {
 		return err
 	}
 
-	m.sessionID = sess.Metadata.ID
+	m.runtime.SessionID = sess.Metadata.ID
 	m.initTaskStorage()
 
-	if m.hookEngine != nil {
-		m.hookEngine.SetTranscriptPath(m.sessionStore.SessionPath(sess.Metadata.ID))
+	if m.runtime.HookEngine != nil {
+		m.runtime.HookEngine.SetTranscriptPath(m.runtime.SessionStore.SessionPath(sess.Metadata.ID))
 	}
 
 	m.reconfigureAgentTool()
@@ -629,7 +632,7 @@ func (m *model) loadSession(id string) error {
 		return err
 	}
 
-	sess, err := m.sessionStore.Load(id)
+	sess, err := m.runtime.SessionStore.Load(id)
 	if err != nil {
 		return err
 	}
@@ -642,21 +645,21 @@ func (m *model) loadSession(id string) error {
 	}
 	tool.ResetFetched()
 
-	m.inputTokens = 0
-	m.outputTokens = 0
+	m.runtime.InputTokens = 0
+	m.runtime.OutputTokens = 0
 
 	return nil
 }
 
 func (m *model) restoreSessionData(sess *session.Snapshot) {
 	m.conv.Messages = session.ConvertFromEntries(sess.Entries)
-	m.sessionID = sess.Metadata.ID
+	m.runtime.SessionID = sess.Metadata.ID
 
 	if sess.Metadata.Summary != "" {
-		m.sessionSummary = sess.Metadata.Summary
-	} else if m.sessionStore != nil {
-		if mem, err := m.sessionStore.LoadSessionMemory(sess.Metadata.ID); err == nil && mem != "" {
-			m.sessionSummary = mem
+		m.runtime.SessionSummary = sess.Metadata.Summary
+	} else if m.runtime.SessionStore != nil {
+		if mem, err := m.runtime.SessionStore.LoadSessionMemory(sess.Metadata.ID); err == nil && mem != "" {
+			m.runtime.SessionSummary = mem
 		}
 	}
 
@@ -686,19 +689,19 @@ func (m *model) initTaskStorage() {
 		return
 	}
 
-	if m.sessionID == "" {
+	if m.runtime.SessionID == "" {
 		return
 	}
-	dir := filepath.Join(homeDir, ".gen", "tasks", m.sessionID)
+	dir := filepath.Join(homeDir, ".gen", "tasks", m.runtime.SessionID)
 	tracker.DefaultStore.SetStorageDir(dir)
 	_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
 }
 
 func (m *model) currentSessionMode() string {
-	if m.planEnabled {
+	if m.runtime.PlanEnabled {
 		return "plan"
 	}
-	switch m.operationMode {
+	switch m.runtime.OperationMode {
 	case setting.ModeAutoAccept:
 		return "auto-accept"
 	default:
@@ -787,7 +790,7 @@ func compactCmd(req compactRequest) tea.Cmd {
 }
 
 func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
-	if m.llmProvider == nil {
+	if m.runtime.LLMProvider == nil {
 		return promptSuggestionRequest{}, false
 	}
 
@@ -823,9 +826,9 @@ func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
 func (m *model) buildTokenLimitFetchRequest() tokenLimitFetchRequest {
 	return tokenLimitFetchRequest{
 		Ctx:          context.Background(),
-		LLM:          m.llmProvider,
-		Store:        m.providerStore,
-		CurrentModel: m.currentModel,
+		LLM:          m.runtime.LLMProvider,
+		Store:        m.runtime.ProviderStore,
+		CurrentModel: m.runtime.CurrentModel,
 		ModelID:      m.getModelID(),
 		Cwd:          m.cwd,
 	}
@@ -836,9 +839,9 @@ func (m *model) buildCompactRequest(focus, trigger string) compactRequest {
 		Ctx:            context.Background(),
 		Client:         m.buildLoopClient(),
 		Messages:       m.conv.ConvertToProvider(),
-		SessionSummary: m.sessionSummary,
+		SessionSummary: m.runtime.SessionSummary,
 		Focus:          focus,
-		HookEngine:     m.hookEngine,
+		HookEngine:     m.runtime.HookEngine,
 		Trigger:        trigger,
 	}
 }

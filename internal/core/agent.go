@@ -146,6 +146,10 @@ func NewAgent(cfg Config) Agent {
 		}
 	}
 
+	if cfg.Hooks == nil {
+		cfg.Hooks = NewHooks()
+	}
+
 	var outbox chan Event
 	if cfg.OutboxBuf > 0 {
 		outbox = make(chan Event, cfg.OutboxBuf)

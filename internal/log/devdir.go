@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/yanmxa/gencode/internal/core"
 )
 
 // devRequest represents the request data saved to JSON file.
@@ -85,21 +83,12 @@ func writeDevResponse(tracker *AgentTurnTracker, providerName string, resp any, 
 		Provider:  providerName,
 	}
 
-	switch r := resp.(type) {
-	case core.CompletionResponse:
-		res.StopReason = r.StopReason
-		res.Content = r.Content
-		res.Thinking = r.Thinking
-		res.ToolCalls = r.ToolCalls
-		res.Usage = r.Usage
-	case *core.CompletionResponse:
-		if r != nil {
-			res.StopReason = r.StopReason
-			res.Content = r.Content
-			res.Thinking = r.Thinking
-			res.ToolCalls = r.ToolCalls
-			res.Usage = r.Usage
-		}
+	if rl, ok := resp.(responseLoggable); ok {
+		res.StopReason = rl.LogStopReason()
+		res.Content = rl.LogContent()
+		res.Thinking = rl.LogThinking()
+		res.ToolCalls = rl.LogRawToolCalls()
+		res.Usage = rl.LogRawUsage()
 	}
 
 	writeJSON(filepath.Join(devDir, turnFilePrefix(tracker, turn)+"-response.json"), res)

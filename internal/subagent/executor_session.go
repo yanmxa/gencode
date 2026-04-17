@@ -1,11 +1,11 @@
 package subagent
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/runtime"
+	"github.com/yanmxa/gencode/internal/log"
 	"go.uber.org/zap"
 )
 
@@ -33,7 +33,7 @@ func (e *Executor) persistSubagentSession(agentName, modelID, description string
 
 // resumeFromSession loads a previous subagent session and restores its conversation,
 // then appends the new prompt as a continuation.
-func (e *Executor) resumeFromSession(lp *runtime.Loop, agentID, newPrompt string) error {
+func (e *Executor) resumeFromSession(ag core.Agent, ctx context.Context, agentID, newPrompt string) error {
 	if e.sessionStore == nil {
 		return fmt.Errorf("session store not configured, cannot resume")
 	}
@@ -43,9 +43,8 @@ func (e *Executor) resumeFromSession(lp *runtime.Loop, agentID, newPrompt string
 		return fmt.Errorf("load subagent messages for %s: %w", agentID, err)
 	}
 
-	// Restore previous conversation and append continuation prompt
-	lp.SetMessages(prevMessages)
-	lp.AddUser(newPrompt, nil)
+	ag.SetMessages(prevMessages)
+	ag.Append(ctx, core.UserMessage(newPrompt, nil))
 
 	log.Logger().Info("Resumed agent from previous session",
 		zap.String("agentID", agentID),

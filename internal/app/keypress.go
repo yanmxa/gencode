@@ -259,10 +259,10 @@ func (m *model) handleHistoryDown() tea.Cmd {
 
 // checkPromptHook runs UserPromptSubmit hook and returns (blocked, reason).
 func (m *model) checkPromptHook(prompt string) (bool, string) {
-	if m.hookEngine == nil {
+	if m.runtime.HookEngine == nil {
 		return false, ""
 	}
-	outcome := m.hookEngine.Execute(context.Background(), hook.UserPromptSubmit, hook.HookInput{Prompt: prompt})
+	outcome := m.runtime.HookEngine.Execute(context.Background(), hook.UserPromptSubmit, hook.HookInput{Prompt: prompt})
 	return outcome.ShouldBlock, outcome.BlockReason
 }
 
@@ -365,8 +365,8 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 
 		if m.userInput.Session.PendingSelector {
 			m.userInput.Session.PendingSelector = false
-			if m.sessionStore != nil {
-				_ = m.userInput.Session.Selector.EnterSelect(m.width, m.height, m.sessionStore, m.cwd)
+			if m.runtime.SessionStore != nil {
+				_ = m.userInput.Session.Selector.EnterSelect(m.width, m.height, m.runtime.SessionStore, m.cwd)
 			}
 		}
 

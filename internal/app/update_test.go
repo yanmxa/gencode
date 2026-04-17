@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/setting"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/system"
 	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 )
@@ -21,10 +22,12 @@ import (
 // via option 4 (modify), the model stays in plan mode for plan revision.
 func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 	m := &model{
-		operationMode:      setting.ModePlan,
-		sessionPermissions: setting.NewSessionPermissions(),
-		planEnabled: true,
-		planTask:    "test task",
+		runtime: appruntime.Model{
+			OperationMode:      setting.ModePlan,
+			SessionPermissions: setting.NewSessionPermissions(),
+			PlanEnabled:        true,
+			PlanTask:           "test task",
+		},
 		mode: appoutput.ModalState{
 			PlanApproval: appoutput.NewPlanPrompt(),
 			Question:     appoutput.NewQuestionPrompt(),
@@ -56,21 +59,23 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 	m.handlePlanResponse(msg)
 
 	// After modify: should still be in plan mode
-	if !m.planEnabled {
+	if !m.runtime.PlanEnabled {
 		t.Error("plan.enabled should remain true after modify feedback")
 	}
-	if m.operationMode != setting.ModePlan {
-		t.Errorf("operationMode should be setting.ModePlan, got %d", m.operationMode)
+	if m.runtime.OperationMode != setting.ModePlan {
+		t.Errorf("operationMode should be setting.ModePlan, got %d", m.runtime.OperationMode)
 	}
 }
 
 // TestPlanResponse_ManualExitsPlanMode verifies that manual approval exits plan mode.
 func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 	m := &model{
-		operationMode:      setting.ModePlan,
-		sessionPermissions: setting.NewSessionPermissions(),
-		planEnabled: true,
-		planTask:    "test task",
+		runtime: appruntime.Model{
+			OperationMode:      setting.ModePlan,
+			SessionPermissions: setting.NewSessionPermissions(),
+			PlanEnabled:        true,
+			PlanTask:           "test task",
+		},
 		mode: appoutput.ModalState{
 			PlanApproval: appoutput.NewPlanPrompt(),
 			Question:     appoutput.NewQuestionPrompt(),
@@ -99,21 +104,23 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 
 	m.handlePlanResponse(msg)
 
-	if m.planEnabled {
+	if m.runtime.PlanEnabled {
 		t.Error("plan.enabled should be false after manual approval")
 	}
-	if m.operationMode != setting.ModeNormal {
-		t.Errorf("operationMode should be setting.ModeNormal, got %d", m.operationMode)
+	if m.runtime.OperationMode != setting.ModeNormal {
+		t.Errorf("operationMode should be setting.ModeNormal, got %d", m.runtime.OperationMode)
 	}
 }
 
 // TestPlanResponse_AutoExitsPlanMode verifies that auto approval exits plan mode.
 func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 	m := &model{
-		operationMode:      setting.ModePlan,
-		sessionPermissions: setting.NewSessionPermissions(),
-		planEnabled: true,
-		planTask:    "test task",
+		runtime: appruntime.Model{
+			OperationMode:      setting.ModePlan,
+			SessionPermissions: setting.NewSessionPermissions(),
+			PlanEnabled:        true,
+			PlanTask:           "test task",
+		},
 		mode: appoutput.ModalState{
 			PlanApproval: appoutput.NewPlanPrompt(),
 			Question:     appoutput.NewQuestionPrompt(),
@@ -142,13 +149,13 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 
 	m.handlePlanResponse(msg)
 
-	if m.planEnabled {
+	if m.runtime.PlanEnabled {
 		t.Error("plan.enabled should be false after auto approval")
 	}
-	if m.operationMode != setting.ModeAutoAccept {
-		t.Errorf("operationMode should be setting.ModeAutoAccept, got %d", m.operationMode)
+	if m.runtime.OperationMode != setting.ModeAutoAccept {
+		t.Errorf("operationMode should be setting.ModeAutoAccept, got %d", m.runtime.OperationMode)
 	}
-	if !m.sessionPermissions.AllowAllEdits {
+	if !m.runtime.SessionPermissions.AllowAllEdits {
 		t.Error("auto mode should enable AllowAllEdits")
 	}
 }
@@ -156,10 +163,12 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 // TestPlanResponse_RejectedExitsPlanMode verifies that rejection exits plan mode.
 func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 	m := &model{
-		operationMode:      setting.ModePlan,
-		sessionPermissions: setting.NewSessionPermissions(),
-		planEnabled: true,
-		planTask:    "test task",
+		runtime: appruntime.Model{
+			OperationMode:      setting.ModePlan,
+			SessionPermissions: setting.NewSessionPermissions(),
+			PlanEnabled:        true,
+			PlanTask:           "test task",
+		},
 		mode: appoutput.ModalState{
 			PlanApproval: appoutput.NewPlanPrompt(),
 			Question:     appoutput.NewQuestionPrompt(),
@@ -186,11 +195,11 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 
 	m.handlePlanResponse(msg)
 
-	if m.planEnabled {
+	if m.runtime.PlanEnabled {
 		t.Error("plan.enabled should be false after rejection")
 	}
-	if m.operationMode != setting.ModeNormal {
-		t.Errorf("operationMode should be setting.ModeNormal after rejection, got %d", m.operationMode)
+	if m.runtime.OperationMode != setting.ModeNormal {
+		t.Errorf("operationMode should be setting.ModeNormal after rejection, got %d", m.runtime.OperationMode)
 	}
 	// Should have added a rejection tool result message
 	found := false
@@ -208,8 +217,10 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 	reply := make(chan *tool.QuestionResponse, 1)
 	m := &model{
-		operationMode:        setting.ModePlan,
-		sessionPermissions:   setting.NewSessionPermissions(),
+		runtime: appruntime.Model{
+			OperationMode:      setting.ModePlan,
+			SessionPermissions: setting.NewSessionPermissions(),
+		},
 		pendingQuestion:      &tool.QuestionRequest{ID: "ask-1"},
 		pendingQuestionReply: reply,
 		mode: appoutput.ModalState{
@@ -322,7 +333,9 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 
 func TestStartPromptSuggestionGeneratesCommand(t *testing.T) {
 	m := &model{
-		llmProvider: testLLMProvider{},
+		runtime: appruntime.Model{
+			LLMProvider: testLLMProvider{},
+		},
 		conv: appoutput.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleAssistant, Content: "first"},
@@ -339,7 +352,9 @@ func TestStartPromptSuggestionGeneratesCommand(t *testing.T) {
 
 func TestBuildPromptSuggestionRequest(t *testing.T) {
 	m := &model{
-		llmProvider: testLLMProvider{},
+		runtime: appruntime.Model{
+			LLMProvider: testLLMProvider{},
+		},
 		conv: appoutput.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleUser, Content: "u1"},
@@ -374,7 +389,7 @@ func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing
 			{Role: core.RoleUser, Content: "previous request"},
 		},
 	}
-	m.llmProvider = testLLMProvider{}
+	m.runtime.LLMProvider = testLLMProvider{}
 
 	cmd := m.executeSubmitRequest(submitRequest{Input: "请修复这个 bug"})
 	if cmd == nil {
@@ -396,7 +411,9 @@ func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing
 
 func TestBuildCompactRequest(t *testing.T) {
 	m := &model{
-		sessionSummary: "existing summary",
+		runtime: appruntime.Model{
+			SessionSummary: "existing summary",
+		},
 		conv: appoutput.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleUser, Content: "hello"},
@@ -442,10 +459,12 @@ func TestBuildLoopExtraIncludesSkillInvocation(t *testing.T) {
 
 func TestBuildLoopSystemIncludesSessionSummary(t *testing.T) {
 	m := &model{
-		cwd:                       "/tmp/project",
-		sessionSummary:             "condensed summary",
-		cachedUserInstructions:    "user memory",
-		cachedProjectInstructions: "project memory",
+		cwd: "/tmp/project",
+		runtime: appruntime.Model{
+			SessionSummary:            "condensed summary",
+			CachedUserInstructions:    "user memory",
+			CachedProjectInstructions: "project memory",
+		},
 	}
 
 	sys := m.buildLoopSystem([]string{"extra"}, nil)
@@ -494,24 +513,26 @@ func TestDetectThinkingKeywords(t *testing.T) {
 	t.Run("high thinking keywords", func(t *testing.T) {
 		m := &model{}
 		m.detectThinkingKeywords("Please think carefully before answering")
-		if m.thinkingOverride != llm.ThinkingHigh {
-			t.Fatalf("expected high thinking override, got %v", m.thinkingOverride)
+		if m.runtime.ThinkingOverride != llm.ThinkingHigh {
+			t.Fatalf("expected high thinking override, got %v", m.runtime.ThinkingOverride)
 		}
 	})
 
 	t.Run("ultra keywords win over high", func(t *testing.T) {
 		m := &model{}
 		m.detectThinkingKeywords("Think hard and ultrathink about this")
-		if m.thinkingOverride != llm.ThinkingUltra {
-			t.Fatalf("expected ultra thinking override, got %v", m.thinkingOverride)
+		if m.runtime.ThinkingOverride != llm.ThinkingUltra {
+			t.Fatalf("expected ultra thinking override, got %v", m.runtime.ThinkingOverride)
 		}
 	})
 }
 
 func TestRenderActiveModalPriority(t *testing.T) {
 	m := &model{
-		operationMode:      setting.ModePlan,
-		sessionPermissions: setting.NewSessionPermissions(),
+		runtime: appruntime.Model{
+			OperationMode:      setting.ModePlan,
+			SessionPermissions: setting.NewSessionPermissions(),
+		},
 		mode: appoutput.ModalState{
 			PlanApproval: appoutput.NewPlanPrompt(),
 			Question:     appoutput.NewQuestionPrompt(),
@@ -543,9 +564,11 @@ func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
 	})
 
 	m := &model{
-		width:      80,
-		height:     24,
-		hookEngine: engine,
+		width:  80,
+		height: 24,
+		runtime: appruntime.Model{
+			HookEngine: engine,
+		},
 	}
 	m.userInput.Approval = appuser.NewApproval()
 

@@ -13,17 +13,16 @@ import (
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/mcp"
-	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/plan"
-	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/session"
-	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/filecache"
+	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/setting"
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 const defaultWidth = 80
@@ -49,41 +48,18 @@ type model struct {
 	pendingQuestion      *tool.QuestionRequest
 	pendingQuestionReply chan *tool.QuestionResponse
 
-	// ── Runtime ─────────────────────────────────────────────────────────
+	// ── Runtime (shared state: provider, session, permission, plan, config) ──
+	runtime appruntime.Model
+
+	// ── Infrastructure ──────────────────────────────────────────────
 	cwd           string
 	isGit         bool
 	width         int
 	height        int
 	ready         bool
 	initialPrompt string
-
-	operationMode      setting.OperationMode
-	sessionPermissions *setting.SessionPermissions
-	disabledTools      map[string]bool
-
-	llmProvider      llm.Provider
-	providerStore    *llm.Store
-	currentModel     *llm.CurrentModelInfo
-	inputTokens      int
-	outputTokens     int
-	thinkingLevel    llm.ThinkingLevel
-	thinkingOverride llm.ThinkingLevel
-
-	sessionStore   *session.Store
-	sessionID      string
-	sessionSummary string
-
-	planEnabled bool
-	planTask    string
-	planStore   *plan.Store
-
-	cachedUserInstructions    string
-	cachedProjectInstructions string
-
-	settings    *setting.Settings
-	hookEngine  *hook.Engine
-	fileWatcher *appsystem.FileWatcher
-	fileCache   *filecache.Cache
+	fileWatcher   *appsystem.FileWatcher
+	fileCache     *filecache.Cache
 }
 
 // lastAssistantContent returns the text content of the most recent assistant core.
@@ -94,14 +70,14 @@ func (m *model) lastAssistantContent() string {
 // fireSessionEnd fires the SessionEnd hook synchronously before quitting.
 // Uses Execute (not ExecuteAsync) to ensure the hook completes before the process exits.
 func (m *model) fireSessionEnd(reason string) {
-	if m.hookEngine != nil {
-		m.hookEngine.Execute(context.Background(), hook.SessionEnd, hook.HookInput{
+	if m.runtime.HookEngine != nil {
+		m.runtime.HookEngine.Execute(context.Background(), hook.SessionEnd, hook.HookInput{
 			Reason: reason,
 		})
 		if m.fileWatcher != nil {
 			m.fileWatcher.Stop()
 		}
-		m.hookEngine.ClearSessionHooks()
+		m.runtime.HookEngine.ClearSessionHooks()
 	}
 }
 
@@ -159,16 +135,16 @@ func (m *model) commitMessagesWithCheck(checkReady bool) []tea.Cmd {
 
 // reconfigureAgentTool updates the agent tool with the current session/provider state.
 func (m *model) reconfigureAgentTool() {
-	if m.llmProvider != nil {
+	if m.runtime.LLMProvider != nil {
 		m.ensureMemoryContextLoaded()
-		configureAgentTool(m.llmProvider, m.cwd, m.getModelID(), m.hookEngine, m.sessionStore, m.sessionID,
+		configureAgentTool(m.runtime.LLMProvider, m.cwd, m.getModelID(), m.runtime.HookEngine, m.runtime.SessionStore, m.runtime.SessionID,
 			m.agentToolOpts()...)
 	}
 }
 
 func (m *model) agentToolOpts() []agentToolOption {
 	opts := []agentToolOption{
-		withAgentContext(m.cachedUserInstructions, m.cachedProjectInstructions, m.isGit),
+		withAgentContext(m.runtime.CachedUserInstructions, m.runtime.CachedProjectInstructions, m.isGit),
 	}
 	if mcp.DefaultRegistry != nil {
 		opts = append(opts, withAgentMCP(mcp.DefaultRegistry.GetToolSchemas, mcp.DefaultRegistry))
@@ -177,7 +153,7 @@ func (m *model) agentToolOpts() []agentToolOption {
 }
 
 func (m *model) ensureMemoryContextLoaded() {
-	if m.cachedUserInstructions != "" || m.cachedProjectInstructions != "" {
+	if m.runtime.CachedUserInstructions != "" || m.runtime.CachedProjectInstructions != "" {
 		return
 	}
 	m.refreshMemoryContext("session_start")
@@ -185,13 +161,13 @@ func (m *model) ensureMemoryContextLoaded() {
 
 // effectiveThinkingLevel returns the higher of the persistent level and the per-turn override.
 func (m *model) effectiveThinkingLevel() llm.ThinkingLevel {
-	return max(m.thinkingLevel, m.thinkingOverride)
+	return max(m.runtime.ThinkingLevel, m.runtime.ThinkingOverride)
 }
 
 
 func (m model) getModelID() string {
-	if m.currentModel != nil {
-		return m.currentModel.ModelID
+	if m.runtime.CurrentModel != nil {
+		return m.runtime.CurrentModel.ModelID
 	}
 	return "claude-sonnet-4-20250514"
 }
@@ -222,12 +198,12 @@ type agentSession struct {
 // buildCoreAgent creates a core.Agent and permissionBridge from the model's
 // current state. The agent is not started — call startAgentLoop() for that.
 func (m *model) buildCoreAgent() (*agentSession, error) {
-	if m.llmProvider == nil {
+	if m.runtime.LLMProvider == nil {
 		return nil, errNoProvider
 	}
 
 	// LLM — wraps the current provider as core.LLM
-	client := llm.NewClient(m.llmProvider, m.getModelID(), m.getMaxTokens())
+	client := llm.NewClient(m.runtime.LLMProvider, m.getModelID(), m.getMaxTokens())
 	client.SetThinking(m.effectiveThinkingLevel())
 
 	// System prompt — build layered core.System directly
@@ -235,24 +211,24 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 	sys := m.buildLoopSystem(nil, c)
 
 	// Tools — adapt legacy tool registry to core.Tools
-	toolSchemas := m.buildLoopToolSet().Tools()
-	coreSchemas := make([]core.ToolSchema, len(toolSchemas))
-	for i, ts := range toolSchemas {
-		coreSchemas[i] = core.ToolSchema{
-			Name:        ts.Name,
-			Description: ts.Description,
-			Parameters:  ts.Parameters,
+	schemas := m.buildLoopToolSet().Tools()
+	tools := tool.AdaptToolRegistry(schemas, func() string { return m.cwd })
+
+	// MCP tools — add MCP tool executors so core.Agent can execute them
+	if mcp.DefaultRegistry != nil {
+		mcpCaller := mcp.NewCaller(mcp.DefaultRegistry)
+		for _, t := range mcp.AsCoreTools(schemas, mcpCaller) {
+			tools.Add(t)
 		}
 	}
-	tools := tool.AdaptToolRegistry(coreSchemas, func() string { return m.cwd })
 
 	// Hooks — wrap hook.Engine as core.Hooks
-	coreHooks := hook.AsCoreHooks(m.hookEngine)
+	coreHooks := hook.AsCoreHooks(m.runtime.HookEngine)
 
 	// Permission bridge — blocking PermissionFunc with TUI approval
 	permBridge := appoutput.NewPermissionBridge(
-		func() *setting.Settings { return m.settings },
-		func() *setting.SessionPermissions { return m.sessionPermissions },
+		func() *setting.Settings { return m.runtime.Settings },
+		func() *setting.SessionPermissions { return m.runtime.SessionPermissions },
 		func() string { return m.cwd },
 	)
 

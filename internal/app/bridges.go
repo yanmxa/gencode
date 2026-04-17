@@ -46,8 +46,8 @@ func (m *model) ReloadPluginBackedState() error { return m.reloadPluginBackedSta
 
 // memory.Runtime
 func (m *model) ClearCachedInstructions() {
-	m.cachedUserInstructions = ""
-	m.cachedProjectInstructions = ""
+	m.runtime.CachedUserInstructions = ""
+	m.runtime.CachedProjectInstructions = ""
 }
 func (m *model) RefreshMemoryContext(trigger string) { m.refreshMemoryContext(trigger) }
 func (m *model) FireFileChanged(path, tool string)   { m.fireFileChanged(path, tool) }
@@ -57,18 +57,18 @@ func (m *model) SetInputText(text string) { m.userInput.Textarea.SetValue(text) 
 
 // appuser.ProviderRuntime
 func (m *model) SwitchProvider(p llm.Provider) {
-	m.llmProvider = p
-	if m.hookEngine != nil {
-		m.hookEngine.SetLLMProvider(m.llmProvider, m.getModelID())
+	m.runtime.LLMProvider = p
+	if m.runtime.HookEngine != nil {
+		m.runtime.HookEngine.SetLLMProvider(m.runtime.LLMProvider, m.getModelID())
 	}
 	m.reconfigureAgentTool()
 }
-func (m *model) SetCurrentModel(cm *llm.CurrentModelInfo) { m.currentModel = cm }
+func (m *model) SetCurrentModel(cm *llm.CurrentModelInfo) { m.runtime.CurrentModel = cm }
 
 // user.SessionRuntime
 func (m *model) EnsureSessionStore() error { return m.ensureSessionStore() }
 func (m *model) ForkSession(id string) (string, error) {
-	forked, err := m.sessionStore.Fork(id)
+	forked, err := m.runtime.SessionStore.Fork(id)
 	if err != nil {
 		return "", err
 	}
@@ -95,7 +95,7 @@ func (m *model) handleStreamCancel() tea.Cmd {
 		m.agentSess = nil
 	}
 	m.conv.Stream.Stop()
-	m.thinkingOverride = llm.ThinkingOff
+	m.runtime.ThinkingOverride = llm.ThinkingOff
 	m.cancelPendingToolCalls()
 	m.conv.MarkLastInterrupted()
 
@@ -169,7 +169,7 @@ func (m *model) detectThinkingKeywords(input string) {
 		strings.Contains(lower, "think really hard") ||
 		strings.Contains(lower, "think super hard") ||
 		strings.Contains(lower, "maximum thinking") {
-		m.thinkingOverride = llm.ThinkingUltra
+		m.runtime.ThinkingOverride = llm.ThinkingUltra
 		return
 	}
 
@@ -177,13 +177,13 @@ func (m *model) detectThinkingKeywords(input string) {
 		strings.Contains(lower, "think hard") ||
 		strings.Contains(lower, "think deeply") ||
 		strings.Contains(lower, "think carefully") {
-		m.thinkingOverride = llm.ThinkingHigh
+		m.runtime.ThinkingOverride = llm.ThinkingHigh
 		return
 	}
 }
 
 func (m *model) handleSkillInvocation() tea.Cmd {
-	if m.llmProvider == nil {
+	if m.runtime.LLMProvider == nil {
 		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "No provider connected. Use /provider to connect."})
 		m.userInput.Skill.PendingInstructions = ""
 		m.userInput.Skill.PendingArgs = ""
@@ -263,7 +263,7 @@ func (m *model) injectTaskNotificationContinuation(item appagent.Notification) t
 			Content: item.Notice,
 		})
 	}
-	if m.llmProvider == nil {
+	if m.runtime.LLMProvider == nil {
 		if item.Notice == "" {
 			m.conv.Append(core.ChatMessage{
 				Role:    core.RoleNotice,
@@ -296,7 +296,7 @@ type systemRuntime struct {
 }
 
 func (m *model) updateSystemInput(msg tea.Msg) (tea.Cmd, bool) {
-	return appsystem.Update(systemRuntime{m: m}, &m.systemInput, m.hookEngine, msg)
+	return appsystem.Update(systemRuntime{m: m}, &m.systemInput, m.runtime.HookEngine, msg)
 }
 
 func (m *model) isInputIdle() bool {
@@ -304,7 +304,7 @@ func (m *model) isInputIdle() bool {
 }
 
 func (m *model) handleAsyncHookTick() tea.Cmd {
-	cmd, _ := appsystem.Update(systemRuntime{m: m}, &m.systemInput, m.hookEngine, appsystem.AsyncHookTickMsg{})
+	cmd, _ := appsystem.Update(systemRuntime{m: m}, &m.systemInput, m.runtime.HookEngine, appsystem.AsyncHookTickMsg{})
 	return cmd
 }
 
@@ -338,7 +338,7 @@ func (m *model) injectAsyncHookContinuation(item appsystem.AsyncHookRewake) tea.
 	if len(item.Context) == 0 {
 		return tea.Batch(m.commitMessages()...)
 	}
-	if m.llmProvider == nil {
+	if m.runtime.LLMProvider == nil {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleNotice,
 			Content: "Async hook requested a follow-up, but no provider is connected.",
@@ -356,7 +356,7 @@ func (m *model) injectAsyncHookContinuation(item appsystem.AsyncHookRewake) tea.
 }
 
 func (m *model) injectCronPrompt(prompt string) tea.Cmd {
-	if m.llmProvider == nil {
+	if m.runtime.LLMProvider == nil {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleNotice,
 			Content: fmt.Sprintf("Cron fired but no provider connected: %s", prompt),

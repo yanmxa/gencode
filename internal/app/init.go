@@ -10,6 +10,7 @@ import (
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
@@ -56,8 +57,18 @@ func initInfrastructure() error {
 	// 5. Session
 	session.Initialize(appCwd)
 
-	// 6. Hook engine
-	hook.Initialize(appCwd)
+	// 6. Hook engine — assemble dependencies for the hook package
+	hookSettings := setting.DefaultSetup
+	plugin.MergePluginHooksIntoSettings(hookSettings)
+	hook.Initialize(hook.InitializeConfig{
+		Settings:       hookSettings,
+		SessionID:      session.DefaultSetup.SessionID,
+		CWD:            appCwd,
+		TranscriptPath: session.DefaultSetup.TranscriptPath(),
+		Provider:       llm.DefaultSetup.Provider,
+		ModelID:        llm.DefaultSetup.ModelID(),
+		EnvProvider:    plugin.PluginEnv,
+	})
 
 	return nil
 }
@@ -78,7 +89,7 @@ func newModel(opts setting.RunOptions) (*model, error) {
 	base := newBaseModel()
 	m := &base
 	// TODO: refactor hook bridges to avoid global side-effect registration
-	installHookBridges(m.hookEngine, m.agentInput.Notifications)
+	installHookBridges(m.runtime.HookEngine, m.agentInput.Notifications)
 	m.configureAsyncHookCallback()
 	m.ensureMemoryContextLoaded()
 	m.reconfigureAgentTool()
@@ -93,7 +104,7 @@ func newBaseModel() model {
 	progressHub := appoutput.NewProgressHub(100)
 
 	userInput := appuser.New(appCwd, defaultWidth, commandSuggestionMatcher())
-	userInput.Agent = appuser.NewAgentSelector(subagent.DefaultRegistry)
+	userInput.Agent = appuser.NewAgentSelector(&agentRegistryAdapter{subagent.DefaultRegistry})
 	userInput.Search = appuser.NewSearchSelector()
 	userInput.Skill = appuser.SkillState{Selector: appuser.NewSkillSelector(skill.DefaultRegistry)}
 	userInput.Session = appuser.SessionState{Selector: appuser.NewSessionSelector()}
@@ -110,24 +121,26 @@ func newBaseModel() model {
 		cwd:         appCwd,
 		showTasks:   true,
 
-		operationMode:      setting.ModeNormal,
-		sessionPermissions: setting.NewSessionPermissions(),
-		disabledTools:      setting.GetDisabledTools(),
+		runtime: appruntime.Model{
+			OperationMode:      setting.ModeNormal,
+			SessionPermissions: setting.NewSessionPermissions(),
+			DisabledTools:      setting.GetDisabledTools(),
 
-		llmProvider:   llm.DefaultSetup.Provider,
-		providerStore: llm.DefaultSetup.Store,
-		currentModel:  llm.DefaultSetup.CurrentModel,
+			LLMProvider:   llm.DefaultSetup.Provider,
+			ProviderStore: llm.DefaultSetup.Store,
+			CurrentModel:  llm.DefaultSetup.CurrentModel,
 
-		sessionStore: session.DefaultSetup.Store,
-		sessionID:    session.DefaultSetup.SessionID,
+			SessionStore: session.DefaultSetup.Store,
+			SessionID:    session.DefaultSetup.SessionID,
 
-		mode:     newModeState(),
-		tool:     newToolState(),
-		isGit:    setting.IsGitRepo(appCwd),
+			Settings:   setting.DefaultSetup,
+			HookEngine: hook.DefaultEngine,
+		},
 
+		mode:        newModeState(),
+		tool:        newToolState(),
+		isGit:       setting.IsGitRepo(appCwd),
 		systemInput: appsystem.New(),
-		settings:    setting.DefaultSetup,
-		hookEngine:  hook.DefaultEngine,
 		fileWatcher: appsystem.NewFileWatcher(hook.DefaultEngine, nil),
 		agentInput:  appagent.New(),
 		fileCache:   filecache.New(),
@@ -202,9 +215,10 @@ func (m *model) reloadPluginBackedState() error {
 	mcp.Initialize(m.cwd)
 
 	setting.Initialize(m.cwd)
-	m.settings = setting.DefaultSetup
-	if m.hookEngine != nil {
-		m.hookEngine.SetSettings(setting.DefaultSetup)
+	m.runtime.Settings = setting.DefaultSetup
+	if m.runtime.HookEngine != nil {
+		plugin.MergePluginHooksIntoSettings(setting.DefaultSetup)
+		m.runtime.HookEngine.SetSettings(setting.DefaultSetup)
 	}
 	m.reconfigureAgentTool()
 
@@ -212,15 +226,15 @@ func (m *model) reloadPluginBackedState() error {
 }
 
 func (m *model) enablePlanMode(prompt string) error {
-	m.planEnabled = true
-	m.planTask = prompt
-	m.operationMode = setting.ModePlan
+	m.runtime.PlanEnabled = true
+	m.runtime.PlanTask = prompt
+	m.runtime.OperationMode = setting.ModePlan
 
 	planStore, err := plan.NewStore()
 	if err != nil {
 		return fmt.Errorf("failed to initialize plan store: %w", err)
 	}
-	m.planStore = planStore
+	m.runtime.PlanStore = planStore
 	return nil
 }
 
@@ -229,7 +243,7 @@ func (m *model) applyContinueOption() error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
-	m.sessionStore = sessionStore
+	m.runtime.SessionStore = sessionStore
 
 	sess, err := sessionStore.GetLatest()
 	if err != nil {
@@ -245,7 +259,7 @@ func (m *model) applyResumeOption(resumeID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
-	m.sessionStore = sessionStore
+	m.runtime.SessionStore = sessionStore
 
 	if resumeID != "" {
 		sess, err := sessionStore.Load(resumeID)
@@ -279,5 +293,39 @@ func initExtensions(cwd string) {
 	if err := mcp.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize mcp", zap.Error(err))
 	}
+}
+
+// agentRegistryAdapter adapts *subagent.Registry to the appuser.AgentRegistry
+// interface so app/user doesn't import subagent directly.
+type agentRegistryAdapter struct {
+	reg *subagent.Registry
+}
+
+func (a *agentRegistryAdapter) ListConfigs() []appuser.AgentConfigInfo {
+	configs := a.reg.ListConfigs()
+	out := make([]appuser.AgentConfigInfo, len(configs))
+	for i, cfg := range configs {
+		var tools []string
+		if cfg.Tools != nil {
+			tools = []string(cfg.Tools)
+		}
+		out[i] = appuser.AgentConfigInfo{
+			Name:           cfg.Name,
+			Description:    cfg.Description,
+			Model:          cfg.Model,
+			PermissionMode: string(cfg.PermissionMode),
+			Tools:          tools,
+			SourceFile:     cfg.SourceFile,
+		}
+	}
+	return out
+}
+
+func (a *agentRegistryAdapter) GetDisabledAt(userLevel bool) map[string]bool {
+	return a.reg.GetDisabledAt(userLevel)
+}
+
+func (a *agentRegistryAdapter) SetEnabled(name string, enabled bool, userLevel bool) error {
+	return a.reg.SetEnabled(name, enabled, userLevel)
 }
 

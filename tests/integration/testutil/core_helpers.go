@@ -85,6 +85,39 @@ func buildAllRegisteredTools(cwd string) core.Tools {
 	return core.NewTools(adapted...)
 }
 
+// NewTestAgentWithPermission creates a core.Agent with a custom permission function.
+func NewTestAgentWithPermission(t *testing.T, perm core.PermissionFunc, responses ...core.CompletionResponse) (core.Agent, *FakeLLM) {
+	t.Helper()
+	fakeLLM := &FakeLLM{Responses: responses}
+	cwd := t.TempDir()
+	return core.NewAgent(core.Config{
+		ID:         "test-agent",
+		LLM:        fakeLLM,
+		System:     core.NewSystem(),
+		Tools:      buildAllRegisteredTools(cwd),
+		Hooks:      core.NewHooks(),
+		Permission: perm,
+		CWD:        cwd,
+		MaxTurns:   100,
+	}), fakeLLM
+}
+
+// NewTestAgentWithMaxTurns creates a core.Agent with a specific max turns limit.
+func NewTestAgentWithMaxTurns(t *testing.T, maxTurns int, responses ...core.CompletionResponse) (core.Agent, *FakeLLM) {
+	t.Helper()
+	fakeLLM := &FakeLLM{Responses: responses}
+	cwd := t.TempDir()
+	return core.NewAgent(core.Config{
+		ID:       "test-agent",
+		LLM:      fakeLLM,
+		System:   core.NewSystem(),
+		Tools:    buildAllRegisteredTools(cwd),
+		Hooks:    core.NewHooks(),
+		CWD:      cwd,
+		MaxTurns: maxTurns,
+	}), fakeLLM
+}
+
 // BuildTestTools adapts all globally registered tools into a core.Tools for use in tests.
 func BuildTestTools(t *testing.T) core.Tools {
 	t.Helper()

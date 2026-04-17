@@ -128,7 +128,7 @@ func (m *model) prepareSubmittedUserMessage(input string) (core.ChatMessage, tea
 
 // startProviderTurn starts an LLM turn by sending the user message to the agent.
 func (m *model) startProviderTurn(content string) tea.Cmd {
-	if m.llmProvider == nil {
+	if m.runtime.LLMProvider == nil {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleNotice,
 			Content: "No provider connected. Use /provider to connect.",

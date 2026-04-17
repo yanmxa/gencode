@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/core/system"
 	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -104,9 +104,34 @@ func GetMaxTokens(store *llm.Store, currentModel *llm.CurrentModelInfo, defaultM
 }
 
 // CompactConversation compacts the message history into a summary.
-// Delegates to runtime.Compact as the canonical implementation.
 func CompactConversation(ctx context.Context, c *llm.Client, msgs []core.Message, sessionMemory, focus string) (summary string, count int, err error) {
-	return runtime.Compact(ctx, c, msgs, sessionMemory, focus)
+	count = len(msgs)
+
+	conversationText := core.BuildConversationText(msgs)
+
+	if sessionMemory != "" {
+		conversationText = fmt.Sprintf("Previous session context:\n\n%s\n\n---\n\nRecent conversation:\n\n%s", sessionMemory, conversationText)
+	}
+
+	if focus != "" {
+		conversationText += fmt.Sprintf("\n\n**Important**: Focus the summary on: %s", focus)
+	}
+
+	response, err := c.Complete(ctx,
+		system.CompactPrompt(),
+		[]core.Message{core.UserMessage(conversationText, nil)},
+		2048,
+	)
+	if err != nil {
+		return "", count, fmt.Errorf("failed to generate summary: %w", err)
+	}
+
+	summary = strings.TrimSpace(response.Content)
+	if summary == "" {
+		return "", count, fmt.Errorf("compaction produced empty summary")
+	}
+
+	return summary, count, nil
 }
 
 // --- Command helpers ---

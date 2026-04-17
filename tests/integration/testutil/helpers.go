@@ -6,41 +6,14 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
 // ---------------------------------------------------------------------------
-// Loop construction helpers
+// Client helpers
 // ---------------------------------------------------------------------------
-
-// NewTestLoop creates a runtime.Loop with a FakeClient, PermitAll permission,
-// and a temp cwd. Responses are queued in order.
-func NewTestLoop(t *testing.T, responses ...core.CompletionResponse) (*runtime.Loop, *llm.FakeLLM) {
-	t.Helper()
-	return NewTestLoopWithPermission(t, permission.PermitAll(), responses...)
-}
-
-// NewTestLoopWithPermission creates a Loop with a custom permission checker.
-func NewTestLoopWithPermission(t *testing.T, checker permission.Checker,
-	responses ...core.CompletionResponse,
-) (*runtime.Loop, *llm.FakeLLM) {
-	t.Helper()
-
-	tmpDir := t.TempDir()
-	fake := &llm.FakeLLM{Responses: responses}
-	lp := &runtime.Loop{
-		System:     core.NewSystem(core.Layer{Name: "test", Priority: 0, Content: "test"}),
-		Client:     NewTestClient(fake),
-		Tool:       &tool.Set{},
-		Permission: checker,
-		Cwd:        tmpDir,
-	}
-	return lp, fake
-}
 
 // NewTestClient wraps a FakeLLM in a llm.Client ready for use in loops
 // or compact calls. This avoids repeating the FakeProvider wiring in every test.

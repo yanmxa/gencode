@@ -4,9 +4,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/orchestration"
-	"github.com/yanmxa/gencode/internal/runtime"
 	"go.uber.org/zap"
 )
 
@@ -66,26 +67,52 @@ func (e *Executor) logRunStart(run *preparedRun) {
 	)
 }
 
-func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*runtime.Result, error) {
-	lp, cleanupLoop, err := e.buildLoop(ctx, run.cfg, run.cwd)
+func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*core.Result, error) {
+	ag, cleanupAgent, err := e.buildAgent(ctx, run.cfg, run.cwd)
 	if err != nil {
 		return nil, err
 	}
-	defer cleanupLoop()
+	defer cleanupAgent()
 
-	lp.SetAgentContext(run.hookID, run.req.Agent)
+	// Register per-tool progress hook
+	if run.req.OnProgress != nil {
+		ag.Hooks().Register(core.Hook{
+			Event: core.PreTool,
+			Handle: func(_ context.Context, ev core.Event) (core.Action, error) {
+				if tc, ok := ev.ToolCall(); ok {
+					params, _ := core.ParseToolInput(tc.Input)
+					msg := formatToolProgress(tc.Name, params)
+					run.progress = append(run.progress, msg)
+					run.req.OnProgress(msg)
+				}
+				return core.Action{}, nil
+			},
+		})
+	}
 
-	if err := e.loadConversation(lp, run.req); err != nil {
+	if err := e.loadConversation(ag, ctx, run.req); err != nil {
 		return nil, err
 	}
-	lp.SetQuestionHandler(run.req.OnQuestion)
 
-	onToolStart := e.buildOnToolStart(run.req, &run.progress)
-	return lp.Run(ctx, runtime.RunOptions{
-		MaxTurns:            run.cfg.maxTurns,
-		OnToolStart:         onToolStart,
-		DrainInjectedInputs: e.buildDrainInjectedInputs(run.req),
-	})
+	// Inject pending messages from orchestration (for background agents)
+	drainFn := e.buildDrainInjectedInputs(run.req)
+	if drainFn != nil {
+		for _, injected := range drainFn() {
+			if injected != "" {
+				ag.Append(ctx, core.UserMessage(injected, nil))
+			}
+		}
+	}
+
+	result, err := ag.ThinkAct(ctx)
+	if err != nil {
+		if result != nil {
+			return result, err
+		}
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func (e *Executor) buildDrainInjectedInputs(req AgentRequest) func() []string {
@@ -97,13 +124,13 @@ func (e *Executor) buildDrainInjectedInputs(req AgentRequest) func() []string {
 	}
 }
 
-func (e *Executor) logRunCompletion(run *preparedRun, result *runtime.Result, success bool) {
+func (e *Executor) logRunCompletion(run *preparedRun, result *core.Result, success bool) {
 	logFields := []zap.Field{
 		zap.String("agent", run.cfg.displayName),
-		zap.String("stopReason", result.StopReason),
+		zap.String("stopReason", string(result.StopReason)),
 		zap.Int("turns", result.Turns),
-		zap.Int("inputTokens", result.Tokens.InputTokens),
-		zap.Int("outputTokens", result.Tokens.OutputTokens),
+		zap.Int("inputTokens", result.TokensIn),
+		zap.Int("outputTokens", result.TokensOut),
 	}
 	if success {
 		log.Logger().Info("Agent completed", logFields...)
@@ -112,7 +139,7 @@ func (e *Executor) logRunCompletion(run *preparedRun, result *runtime.Result, su
 	log.Logger().Warn("Agent completed", logFields...)
 }
 
-func (e *Executor) buildAgentResult(run *preparedRun, result *runtime.Result) *AgentResult {
+func (e *Executor) buildAgentResult(run *preparedRun, result *core.Result) *AgentResult {
 	success, errMsg := interpretStopReason(result, run.cfg.maxTurns)
 	e.logRunCompletion(run, result, success)
 
@@ -125,24 +152,24 @@ func (e *Executor) buildAgentResult(run *preparedRun, result *runtime.Result) *A
 	e.fireSubagentStop(run.req, run.hookID, agentSessionID, agentTranscriptPath, result.Content)
 
 	return &AgentResult{
-		AgentID:    agentSessionID,
-		AgentName:  run.cfg.displayName,
+		AgentID:        agentSessionID,
+		AgentName:      run.cfg.displayName,
 		TranscriptPath: agentTranscriptPath,
-		Model:      run.cfg.modelID,
-		Success:    success,
-		Content:    result.Content,
-		Messages:   result.Messages,
-		TurnCount:  result.Turns,
-		ToolUses:   result.ToolUses,
-		TokenUsage: result.Tokens,
-		Duration:   time.Since(run.startedAt),
-		Progress:   append([]string(nil), run.progress...),
-		Error:      errMsg,
+		Model:          run.cfg.modelID,
+		Success:        success,
+		Content:        result.Content,
+		Messages:       result.Messages,
+		TurnCount:      result.Turns,
+		ToolUses:       result.ToolUses,
+		TokenUsage:     llm.TokenUsage{InputTokens: result.TokensIn, OutputTokens: result.TokensOut, TotalTokens: result.TokensIn + result.TokensOut},
+		Duration:       time.Since(run.startedAt),
+		Progress:       append([]string(nil), run.progress...),
+		Error:          errMsg,
 	}
 }
 
-func (e *Executor) buildCancelledAgentResult(run *preparedRun, result *runtime.Result) *AgentResult {
-	if result == nil || result.StopReason != runtime.StopCancelled {
+func (e *Executor) buildCancelledAgentResult(run *preparedRun, result *core.Result) *AgentResult {
+	if result == nil || result.StopReason != core.StopCancelled {
 		return nil
 	}
 
@@ -154,7 +181,7 @@ func (e *Executor) buildCancelledAgentResult(run *preparedRun, result *runtime.R
 		Messages:   result.Messages,
 		TurnCount:  result.Turns,
 		ToolUses:   result.ToolUses,
-		TokenUsage: result.Tokens,
+		TokenUsage: llm.TokenUsage{InputTokens: result.TokensIn, OutputTokens: result.TokensOut, TotalTokens: result.TokensIn + result.TokensOut},
 		Duration:   time.Since(run.startedAt),
 		Progress:   append([]string(nil), run.progress...),
 		Error:      "agent cancelled",

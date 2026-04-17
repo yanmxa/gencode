@@ -53,11 +53,11 @@ func initModel(opts setting.RunOptions) (*model, error) {
 }
 
 func (m *model) configureAsyncHookCallback() {
-	if m.hookEngine == nil || m.systemInput.AsyncHookQueue == nil {
+	if m.runtime.HookEngine == nil || m.systemInput.AsyncHookQueue == nil {
 		return
 	}
 	queue := m.systemInput.AsyncHookQueue
-	m.hookEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
+	m.runtime.HookEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
 		reason := result.BlockReason
 		if reason == "" {
 			reason = "asynchronous hook requested a rewake"
@@ -71,18 +71,18 @@ func (m *model) configureAsyncHookCallback() {
 }
 
 func (m *model) fireStartupHooks() {
-	if m.hookEngine == nil {
+	if m.runtime.HookEngine == nil {
 		return
 	}
-	m.hookEngine.ExecuteAsync(hook.Setup, hook.HookInput{
+	m.runtime.HookEngine.ExecuteAsync(hook.Setup, hook.HookInput{
 		Trigger: "init",
 	})
 
 	source := "startup"
-	if m.sessionID != "" {
+	if m.runtime.SessionID != "" {
 		source = "resume"
 	}
-	outcome := m.hookEngine.Execute(context.Background(), hook.SessionStart, hook.HookInput{
+	outcome := m.runtime.HookEngine.Execute(context.Background(), hook.SessionStart, hook.HookInput{
 		Source: source,
 		Model:  m.getModelID(),
 	})
@@ -96,11 +96,11 @@ func (m *model) fireStartupHooks() {
 }
 
 func printExitMessage(m *model) {
-	if m.sessionID != "" {
+	if m.runtime.SessionID != "" {
 		dim := kit.DimStyle()
 		fmt.Println()
 		fmt.Println(dim.Render("Resume this session with:"))
-		fmt.Println(dim.Render("gen -r " + m.sessionID))
+		fmt.Println(dim.Render("gen -r " + m.runtime.SessionID))
 		fmt.Println()
 	}
 }

@@ -7,14 +7,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/core/system"
-	"github.com/yanmxa/gencode/internal/mcp"
-	"github.com/yanmxa/gencode/internal/hook"
-	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/permission"
+	"github.com/yanmxa/gencode/internal/core/system"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/runtime"
+	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/worktree"
@@ -243,7 +242,7 @@ func (e *Executor) fireSubagentStart(req AgentRequest, agentHookID string) {
 	})
 }
 
-func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string) (*runtime.Loop, func(), error) {
+func (e *Executor) buildAgent(ctx context.Context, rc *runConfig, agentCwd string) (core.Agent, func(), error) {
 	cleanup := func() {}
 
 	if len(rc.config.McpServers) > 0 && e.mcpRegistry != nil {
@@ -256,82 +255,100 @@ func (e *Executor) buildLoop(ctx context.Context, rc *runConfig, agentCwd string
 		}
 	}
 
-	var mcpCaller runtime.MCPCaller
-	if e.mcpRegistry != nil {
-		mcpCaller = mcp.NewCaller(e.mcpRegistry)
-	}
-
-	l, err := runtime.NewLoop(runtime.LoopConfig{
-		System: system.Build(system.Config{
-			ProviderName:        e.provider.Name(),
-			ModelID:             rc.modelID,
-			Cwd:                 agentCwd,
-			IsGit:               e.isGit,
-			PlanMode:            rc.permMode == PermissionPlan,
-			UserInstructions:    e.userInstructions,
-			ProjectInstructions: e.projectInstructions,
-			Extra:               []string{rc.agentPrompt},
-		}),
-		Client:     llm.NewClient(e.provider, rc.modelID, 0),
-		Tool:       newAgentToolSet([]string(rc.config.Tools), []string(rc.config.DisallowedTools), e.mcpGetter),
-		Permission: agentPermission(rc.permMode),
-		Hooks:      e.hooks,
-		MCP:        mcpCaller,
-		Cwd:        agentCwd,
+	// System prompt
+	sys := system.Build(system.Config{
+		ProviderName:        e.provider.Name(),
+		ModelID:             rc.modelID,
+		Cwd:                 agentCwd,
+		IsGit:               e.isGit,
+		PlanMode:            rc.permMode == PermissionPlan,
+		UserInstructions:    e.userInstructions,
+		ProjectInstructions: e.projectInstructions,
+		Extra:               []string{rc.agentPrompt},
 	})
-	if err != nil {
-		cleanup()
-		return nil, cleanup, err
+
+	// Tools — adapt legacy tool registry + MCP tools
+	toolSet := newAgentToolSet([]string(rc.config.Tools), []string(rc.config.DisallowedTools), e.mcpGetter)
+	schemas := toolSet.Tools()
+	tools := tool.AdaptToolRegistry(schemas, func() string { return agentCwd })
+
+	// Add MCP tool executors
+	if e.mcpRegistry != nil {
+		mcpCaller := mcp.NewCaller(e.mcpRegistry)
+		for _, t := range mcp.AsCoreTools(schemas, mcpCaller) {
+			tools.Add(t)
+		}
 	}
 
-	return l, cleanup, nil
+	// Hooks
+	var coreHooks core.Hooks
+	if e.hooks != nil {
+		coreHooks = hook.AsCoreHooks(e.hooks)
+	}
+
+	ag := core.NewAgent(core.Config{
+		LLM:        llm.NewClient(e.provider, rc.modelID, 0),
+		System:     sys,
+		Tools:      tools,
+		Hooks:      coreHooks,
+		Permission: adaptPermission(agentPermission(rc.permMode)),
+		AgentType:  rc.config.Name,
+		CWD:        agentCwd,
+		MaxTurns:   rc.maxTurns,
+		OutboxBuf:  -1, // no outbox: subagents use direct ThinkAct path
+	})
+
+	return ag, cleanup, nil
 }
 
-func (e *Executor) loadConversation(lp *runtime.Loop, req AgentRequest) error {
+// adaptPermission converts a permission.Checker to a core.PermissionFunc.
+func adaptPermission(checker permission.Checker) core.PermissionFunc {
+	if checker == nil {
+		return nil
+	}
+	return func(ctx context.Context, tc core.ToolCall) (bool, string) {
+		params, _ := core.ParseToolInput(tc.Input)
+		decision := checker.Check(tc.Name, params)
+		if decision == permission.Reject {
+			return false, fmt.Sprintf("tool %s is not permitted in this mode", tc.Name)
+		}
+		return true, ""
+	}
+}
+
+func (e *Executor) loadConversation(ag core.Agent, ctx context.Context, req AgentRequest) error {
 	// Fork: inherit parent conversation context
 	if len(req.ParentMessages) > 0 {
-		// Guard against recursive forking
 		if depth := countForkDepth(req.ParentMessages); depth >= maxForkDepth {
 			return fmt.Errorf("maximum fork depth (%d) exceeded — forked agents cannot fork more than %d levels deep", maxForkDepth, maxForkDepth)
 		}
-		lp.SetMessages(prepareForkedMessages(req.ParentMessages))
-		lp.AddUser(req.Prompt, nil)
+		forked := prepareForkedMessages(req.ParentMessages)
+		ag.SetMessages(forked)
+		ag.Append(ctx, core.UserMessage(req.Prompt, nil))
 		return nil
 	}
 
 	// Resume from saved session
 	if req.ResumeID != "" {
-		if err := e.resumeFromSession(lp, req.ResumeID, req.Prompt); err != nil {
+		if err := e.resumeFromSession(ag, ctx, req.ResumeID, req.Prompt); err != nil {
 			return fmt.Errorf("failed to resume agent: %w", err)
 		}
 		return nil
 	}
 
 	// Fresh start
-	lp.AddUser(req.Prompt, nil)
+	ag.Append(ctx, core.UserMessage(req.Prompt, nil))
 	return nil
 }
 
-func (e *Executor) buildOnToolStart(req AgentRequest, allProgress *[]string) func(tc core.ToolCall) bool {
-	return func(tc core.ToolCall) bool {
-		params, _ := core.ParseToolInput(tc.Input)
-		progressMsg := formatToolProgress(tc.Name, params)
-		*allProgress = append(*allProgress, progressMsg)
-		if req.OnProgress != nil {
-			req.OnProgress(progressMsg)
-		}
-		return true
-	}
-}
-
-func interpretStopReason(result *runtime.Result, maxTurns int) (success bool, errMsg string) {
-	success = result.StopReason == runtime.StopEndTurn
+func interpretStopReason(result *core.Result, maxTurns int) (success bool, errMsg string) {
+	success = result.StopReason == core.StopEndTurn
 	switch result.StopReason {
-	case runtime.StopMaxTurns:
+	case core.StopMaxTurns:
 		errMsg = fmt.Sprintf("reached maximum turns (%d)", maxTurns)
-	case runtime.StopMaxOutputRecoveryExhausted:
+	case core.StopMaxOutputRecoveryExhausted:
 		errMsg = "output was repeatedly truncated and recovery was exhausted"
-	case runtime.StopHook:
+	case core.StopHook:
 		errMsg = result.StopDetail
 	}
 	return success, errMsg

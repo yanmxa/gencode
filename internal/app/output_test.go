@@ -40,7 +40,7 @@ func TestHandleTokenLimitCommand_SetAndShowCustomOverride(t *testing.T) {
 		t.Fatalf("unexpected persisted override: in=%d out=%d ok=%v", in, out, ok)
 	}
 
-	m.inputTokens = 50000
+	m.runtime.InputTokens = 50000
 	result, cmd, err = handleTokenLimitCommand(context.Background(), m, "")
 	if err != nil {
 		t.Fatalf("handleTokenLimitCommand(show) error = %v", err)
@@ -131,16 +131,16 @@ func TestHandleTokenLimitCommand_ValidationAndModelFallbacks(t *testing.T) {
 	}
 
 	m = &model{}
-	m.thinkingLevel = llm.ThinkingNormal
-	m.thinkingOverride = llm.ThinkingUltra
+	m.runtime.ThinkingLevel = llm.ThinkingNormal
+	m.runtime.ThinkingOverride = llm.ThinkingUltra
 	if got := m.effectiveThinkingLevel(); got != llm.ThinkingUltra {
 		t.Fatalf("effectiveThinkingLevel() = %v, want %v", got, llm.ThinkingUltra)
 	}
 }
 
 func setProviderDomainForTest(m *model, store *llm.Store, modelID string, p llm.Name, auth llm.AuthMethod) {
-	m.providerStore = store
-	m.currentModel = &llm.CurrentModelInfo{
+	m.runtime.ProviderStore = store
+	m.runtime.CurrentModel = &llm.CurrentModelInfo{
 		ModelID:    modelID,
 		Provider:   p,
 		AuthMethod: auth,

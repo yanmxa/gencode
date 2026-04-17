@@ -8,8 +8,24 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/app/kit"
-	"github.com/yanmxa/gencode/internal/subagent"
 )
+
+// AgentConfigInfo holds display info for a single agent configuration.
+type AgentConfigInfo struct {
+	Name           string
+	Description    string
+	Model          string
+	PermissionMode string
+	Tools          []string // nil = all tools
+	SourceFile     string
+}
+
+// AgentRegistry provides agent display and management for the selector UI.
+type AgentRegistry interface {
+	ListConfigs() []AgentConfigInfo
+	GetDisabledAt(userLevel bool) map[string]bool
+	SetEnabled(name string, enabled bool, userLevel bool) error
+}
 
 type agentItem struct {
 	Name           string
@@ -30,7 +46,7 @@ type AgentToggleMsg struct {
 
 // AgentSelector holds the state for the agent selector overlay.
 type AgentSelector struct {
-	registry       *subagent.Registry
+	registry       AgentRegistry
 	active         bool
 	agents         []agentItem
 	filteredAgents []agentItem
@@ -40,7 +56,7 @@ type AgentSelector struct {
 	saveLevel      kit.SaveLevel
 }
 
-func NewAgentSelector(reg *subagent.Registry) AgentSelector {
+func NewAgentSelector(reg AgentRegistry) AgentSelector {
 	return AgentSelector{
 		registry: reg,
 		agents:   []agentItem{},
@@ -80,31 +96,31 @@ func (s *AgentSelector) EnterSelect(width, height int) error {
 	return nil
 }
 
-func formatAgentPermMode(mode subagent.PermissionMode) string {
+func formatAgentPermMode(mode string) string {
 	switch mode {
-	case subagent.PermissionPlan:
+	case "plan":
 		return "plan"
-	case subagent.PermissionAcceptEdits:
+	case "acceptEdits":
 		return "acceptEdits"
-	case subagent.PermissionDontAsk:
+	case "dontAsk":
 		return "dontAsk"
-	case subagent.PermissionBypassPermissions:
+	case "bypassPermissions":
 		return "bypass"
-	case subagent.PermissionAuto:
+	case "auto":
 		return "auto"
 	default:
 		return "default"
 	}
 }
 
-func formatAgentTools(tools subagent.ToolList) string {
+func formatAgentTools(tools []string) string {
 	if tools == nil {
 		return "all tools"
 	}
 	if len(tools) == 0 {
 		return "none"
 	}
-	return strings.Join([]string(tools), ", ")
+	return strings.Join(tools, ", ")
 }
 
 func (s *AgentSelector) IsActive() bool { return s.active }

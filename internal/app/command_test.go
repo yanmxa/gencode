@@ -7,14 +7,15 @@ import (
 	"strings"
 	"testing"
 
-	appcommand "github.com/yanmxa/gencode/internal/command"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
+	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/setting"
-	"github.com/yanmxa/gencode/internal/cron"
+	appcommand "github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/session"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/skill"
 )
 
@@ -84,7 +85,9 @@ func TestExecuteCommandPlanUsageAndState(t *testing.T) {
 
 	t.Run("plan mode enabled when task provided", func(t *testing.T) {
 		m := &model{
-			sessionPermissions: setting.NewSessionPermissions(),
+			runtime: appruntime.Model{
+				SessionPermissions: setting.NewSessionPermissions(),
+			},
 		}
 
 		result, cmd, handled := executeCommand(context.Background(), m, "/plan audit regression coverage")
@@ -94,19 +97,19 @@ func TestExecuteCommandPlanUsageAndState(t *testing.T) {
 		if cmd != nil {
 			t.Fatal("did not expect follow-up command")
 		}
-		if m.operationMode != setting.ModePlan || !m.planEnabled {
-			t.Fatalf("expected plan mode enabled, got operation=%v enabled=%v", m.operationMode, m.planEnabled)
+		if m.runtime.OperationMode != setting.ModePlan || !m.runtime.PlanEnabled {
+			t.Fatalf("expected plan mode enabled, got operation=%v enabled=%v", m.runtime.OperationMode, m.runtime.PlanEnabled)
 		}
-		if m.planTask != "audit regression coverage" {
-			t.Fatalf("unexpected plan task %q", m.planTask)
+		if m.runtime.PlanTask != "audit regression coverage" {
+			t.Fatalf("unexpected plan task %q", m.runtime.PlanTask)
 		}
-		if m.planStore == nil {
+		if m.runtime.PlanStore == nil {
 			t.Fatal("expected plan store to be initialized")
 		}
 		if !strings.Contains(result, "Entering plan mode for: audit regression coverage") {
 			t.Fatalf("unexpected result: %q", result)
 		}
-		if m.sessionPermissions.AllowAllEdits || m.sessionPermissions.AllowAllWrites || m.sessionPermissions.AllowAllBash || m.sessionPermissions.AllowAllSkills {
+		if m.runtime.SessionPermissions.AllowAllEdits || m.runtime.SessionPermissions.AllowAllWrites || m.runtime.SessionPermissions.AllowAllBash || m.runtime.SessionPermissions.AllowAllSkills {
 			t.Fatal("plan mode should reset permissive session flags")
 		}
 	})
@@ -159,10 +162,12 @@ func TestExecuteCommandOpenSelectors(t *testing.T) {
 		}
 
 		m := &model{
-			cwd:          tmpDir,
-			width:        80,
-			height:       24,
-			sessionStore: store,
+			cwd:    tmpDir,
+			width:  80,
+			height: 24,
+			runtime: appruntime.Model{
+				SessionStore: store,
+			},
 		}
 
 		result, cmd, handled := executeCommand(context.Background(), m, "/resume")

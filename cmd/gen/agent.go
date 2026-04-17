@@ -9,12 +9,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yanmxa/gencode/internal/subagent"
-	"github.com/yanmxa/gencode/internal/setting"
-	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/core/system"
+	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/setting"
+	"github.com/yanmxa/gencode/internal/subagent"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -118,70 +117,46 @@ func runHeadlessAgent() error {
 		toolSet.Allow = []string(agentCfg.Tools)
 	}
 
-	// Set up the loop
 	sys := system.Build(system.Config{
 		Cwd:   cwd,
 		IsGit: setting.IsGitRepo(cwd),
 	})
 
-	loopClient := llm.NewClient(llmProvider, modelID, 16384)
+	client := llm.NewClient(llmProvider, modelID, 16384)
 
-	lp, err := runtime.NewLoop(runtime.LoopConfig{
-		System: sys,
-		Client: loopClient,
-		Tool:   toolSet,
-		Cwd:    cwd,
-	})
-	if err != nil {
-		return err
-	}
+	schemas := toolSet.Tools()
+	tools := tool.AdaptToolRegistry(schemas, func() string { return cwd })
 
-	// Add user prompt
-	lp.AddUser(agentRunOpts.prompt, nil)
-
-	// Print status
-	fmt.Printf("Agent: %s\n", agentRunOpts.agentType)
-	fmt.Printf("Prompt: %s\n", agentRunOpts.prompt)
-	fmt.Println("---")
-
-	// Run turns
 	maxTurns := agentRunOpts.maxTurns
 	if maxTurns <= 0 {
 		maxTurns = 50
 	}
 
-	totalTurns := 0
-	for totalTurns < maxTurns {
-		if ctx.Err() != nil {
-			break
-		}
+	ag := core.NewAgent(core.Config{
+		LLM:      client,
+		System:   sys,
+		Tools:    tools,
+		CWD:      cwd,
+		MaxTurns: maxTurns,
+		OutboxBuf: -1,
+	})
 
-		// Run one turn
-		result, err := lp.Run(ctx, runtime.RunOptions{
-			MaxTurns: 1,
-			OnResponse: func(resp *core.CompletionResponse) {
-				if resp.Content != "" {
-					fmt.Println(resp.Content)
-				}
-			},
-			OnToolStart: func(tc core.ToolCall) bool {
-				fmt.Printf("[%s] %s\n", tc.Name, tc.ID)
-				return true
-			},
-		})
-		totalTurns++
+	ag.Append(ctx, core.UserMessage(agentRunOpts.prompt, nil))
 
-		if err != nil {
-			return fmt.Errorf("agent failed: %w", err)
-		}
+	fmt.Printf("Agent: %s\n", agentRunOpts.agentType)
+	fmt.Printf("Prompt: %s\n", agentRunOpts.prompt)
+	fmt.Println("---")
 
-		// Check for end_turn (agent completed its work)
-		if result.StopReason == "end_turn" {
-			break
-		}
+	result, err := ag.ThinkAct(ctx)
+	if err != nil {
+		return fmt.Errorf("agent failed: %w", err)
 	}
 
-	fmt.Printf("\n---\nDone: %d turns\n", totalTurns)
+	if result.Content != "" {
+		fmt.Println(result.Content)
+	}
+
+	fmt.Printf("\n---\nDone: %d turns, %d tool uses\n", result.Turns, result.ToolUses)
 	return nil
 }
 

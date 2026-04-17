@@ -19,7 +19,7 @@ import (
 )
 
 func (m *model) buildLoopClient() *llm.Client {
-	c := llm.NewClient(m.llmProvider, m.getModelID(), m.getMaxTokens())
+	c := llm.NewClient(m.runtime.LLMProvider, m.getModelID(), m.getMaxTokens())
 	c.SetThinking(m.effectiveThinkingLevel())
 	return c
 }
@@ -36,9 +36,9 @@ func (m *model) buildLoopSystem(extra []string, loopClient *llm.Client) core.Sys
 		ModelID:             modelID,
 		Cwd:                 m.cwd,
 		IsGit:               m.isGit,
-		PlanMode:            m.planEnabled,
-		UserInstructions:    m.cachedUserInstructions,
-		ProjectInstructions: m.cachedProjectInstructions,
+		PlanMode:            m.runtime.PlanEnabled,
+		UserInstructions:    m.runtime.CachedUserInstructions,
+		ProjectInstructions: m.runtime.CachedProjectInstructions,
 		SessionSummary:      m.buildSessionSummaryBlock(),
 		Skills:              m.buildLoopSkillsSection(),
 		Agents:              m.buildLoopAgentsSection(),
@@ -49,8 +49,8 @@ func (m *model) buildLoopSystem(extra []string, loopClient *llm.Client) core.Sys
 
 func (m *model) buildLoopToolSet() *tool.Set {
 	return &tool.Set{
-		Disabled: m.disabledTools,
-		PlanMode: m.planEnabled,
+		Disabled: m.runtime.DisabledTools,
+		PlanMode: m.runtime.PlanEnabled,
 		MCP:      m.buildMCPToolsGetter(),
 	}
 }
@@ -71,10 +71,10 @@ func buildCoordinatorGuidance() string {
 }
 
 func (m *model) buildSessionSummaryBlock() string {
-	if m.sessionSummary == "" {
+	if m.runtime.SessionSummary == "" {
 		return ""
 	}
-	return fmt.Sprintf("<session-summary>\n%s\n</session-summary>", m.sessionSummary)
+	return fmt.Sprintf("<session-summary>\n%s\n</session-summary>", m.runtime.SessionSummary)
 }
 
 func (m *model) buildLoopSkillsSection() string {

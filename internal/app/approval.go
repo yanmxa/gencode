@@ -42,7 +42,7 @@ func (m *model) updateApproval(msg tea.Msg) (tea.Cmd, bool) {
 func (m *model) handlePermissionRequest(msg appuser.ApprovalRequestMsg) tea.Cmd {
 	// If there's a PermissionRequest hook configured, run it asynchronously
 	// to avoid blocking the Bubble Tea event loop (which freezes the TUI).
-	if m.hookEngine != nil && m.hookEngine.HasHooks(hook.PermissionRequest) && msg.Request != nil {
+	if m.runtime.HookEngine != nil && m.runtime.HookEngine.HasHooks(hook.PermissionRequest) && msg.Request != nil {
 		return tea.Batch(
 			m.showApprovalModal(msg.Request),
 			m.dispatchPermissionHookAsync(msg.Request),
@@ -56,7 +56,7 @@ func (m *model) handlePermissionRequest(msg appuser.ApprovalRequestMsg) tea.Cmd 
 // dispatchPermissionHookAsync runs PermissionRequest hooks in a goroutine,
 // keeping the TUI responsive while waiting for external hook responses (e.g. FIFO-based monitors).
 func (m *model) dispatchPermissionHookAsync(req *perm.PermissionRequest) tea.Cmd {
-	hookEngine := m.hookEngine
+	hookEngine := m.runtime.HookEngine
 	ctx := m.tool.Context()
 
 	hookInput := hook.HookInput{
@@ -103,7 +103,7 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 
 		// Hook wants to allow — validate against safety invariant
 		args := m.buildPermissionArgs(msg.Request)
-		if m.settings != nil && m.settings.ResolveHookAllow(msg.Request.ToolName, args, m.sessionPermissions) {
+		if m.runtime.Settings != nil && m.runtime.Settings.ResolveHookAllow(msg.Request.ToolName, args, m.runtime.SessionPermissions) {
 			// Hook allow is valid, skip permission prompt
 			m.userInput.Approval.Hide()
 			return appoutput.ExecuteApproved(m.tool.Context(), m.agentOutput.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
@@ -136,8 +136,8 @@ func (m *model) showApprovalModal(req *perm.PermissionRequest) tea.Cmd {
 	m.userInput.Approval.Show(req, m.width, m.height)
 
 	// Fire Notification hook when permission prompt is shown
-	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
+	if m.runtime.HookEngine != nil {
+		m.runtime.HookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
 			Message:          "Permission required for " + req.ToolName,
 			NotificationType: "permission_prompt",
 		})
@@ -242,22 +242,22 @@ func (m *model) applyPermissionUpdates(updates []hook.PermissionUpdate) {
 	for _, pu := range updates {
 		switch pu.Type {
 		case "setMode":
-			if m.sessionPermissions != nil {
+			if m.runtime.SessionPermissions != nil {
 				switch pu.Mode {
 				case "bypassPermissions":
 					// Hooks cannot escalate to bypassPermissions — ignore
 					log.Logger().Warn("hook attempted to set bypassPermissions mode, denied")
 				case "acceptEdits":
-					m.sessionPermissions.Mode = setting.ModeAutoAccept
-					m.operationMode = setting.ModeAutoAccept
+					m.runtime.SessionPermissions.Mode = setting.ModeAutoAccept
+					m.runtime.OperationMode = setting.ModeAutoAccept
 				case "dontAsk":
-					m.sessionPermissions.Mode = setting.ModeDontAsk
+					m.runtime.SessionPermissions.Mode = setting.ModeDontAsk
 				case "plan":
-					m.sessionPermissions.Mode = setting.ModePlan
-					m.operationMode = setting.ModePlan
+					m.runtime.SessionPermissions.Mode = setting.ModePlan
+					m.runtime.OperationMode = setting.ModePlan
 				case "normal":
-					m.sessionPermissions.Mode = setting.ModeNormal
-					m.operationMode = setting.ModeNormal
+					m.runtime.SessionPermissions.Mode = setting.ModeNormal
+					m.runtime.OperationMode = setting.ModeNormal
 				}
 			}
 
@@ -281,16 +281,16 @@ func (m *model) applyPermissionUpdates(updates []hook.PermissionUpdate) {
 						log.Logger().Warn("failed to persist hook rule", zap.Error(err))
 					}
 					needReload = true
-				} else if m.sessionPermissions != nil {
+				} else if m.runtime.SessionPermissions != nil {
 					// Session-scoped (default)
-					m.sessionPermissions.AllowPattern(ruleStr)
+					m.runtime.SessionPermissions.AllowPattern(ruleStr)
 				}
 			}
 
 		case "addDirectories":
-			if m.sessionPermissions != nil {
+			if m.runtime.SessionPermissions != nil {
 				for _, dir := range pu.Directories {
-					m.sessionPermissions.AddWorkingDirectory(dir)
+					m.runtime.SessionPermissions.AddWorkingDirectory(dir)
 				}
 			}
 		}

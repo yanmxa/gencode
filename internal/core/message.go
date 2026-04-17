@@ -214,6 +214,28 @@ type CompletionResponse struct {
 	Usage             Usage      `json:"usage"`
 }
 
+// Logging accessors — satisfy duck-typed interfaces in the log package so
+// log does not need to import core (foundation-layer contract).
+func (r CompletionResponse) LogStopReason() string  { return r.StopReason }
+func (r CompletionResponse) LogContent() string     { return r.Content }
+func (r CompletionResponse) LogThinking() string    { return r.Thinking }
+func (r CompletionResponse) LogInputTokens() int    { return r.Usage.InputTokens }
+func (r CompletionResponse) LogOutputTokens() int   { return r.Usage.OutputTokens }
+func (r CompletionResponse) LogRawToolCalls() any   { return r.ToolCalls }
+func (r CompletionResponse) LogRawUsage() any       { return r.Usage }
+
+func (r CompletionResponse) LogToolCallSummary(escaper func(string) string) string {
+	if len(r.ToolCalls) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "    ToolCalls(%d):\n", len(r.ToolCalls))
+	for _, tc := range r.ToolCalls {
+		fmt.Fprintf(&sb, "      [%s] %s(%s)\n", tc.ID, tc.Name, escaper(tc.Input))
+	}
+	return sb.String()
+}
+
 // Usage contains token usage information.
 type Usage struct {
 	InputTokens              int `json:"input_tokens"`

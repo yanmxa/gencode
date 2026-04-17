@@ -10,8 +10,6 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/setting"
 )
 
@@ -48,21 +46,26 @@ type Engine struct {
 // DefaultEngine is the singleton hook engine, initialized by Init().
 var DefaultEngine *Engine
 
-// Initialize creates the singleton hook engine from domain singletons.
-// Reads settings, session, LLM, and plugin state — caller only needs to
-// inject AgentRunner afterwards (it lives in the app layer).
-func Initialize(cwd string) {
-	settings := setting.DefaultSetup
-	plugin.MergePluginHooksIntoSettings(settings)
+// InitializeConfig holds the dependencies needed to create the default hook engine.
+// All fields must be supplied by the caller — the hook package does not reach into
+// global singletons.
+type InitializeConfig struct {
+	Settings       *setting.Settings
+	SessionID      string
+	CWD            string
+	TranscriptPath string
+	Provider       llm.Provider
+	ModelID        string
+	EnvProvider    func() []string
+}
 
-	sessionID := session.DefaultSetup.SessionID
-	transcriptPath := session.DefaultSetup.TranscriptPath()
-
-	DefaultEngine = NewEngine(settings, sessionID, cwd, transcriptPath)
-
-	modelID := llm.DefaultSetup.ModelID()
-	DefaultEngine.SetLLMCompleter(buildLLMCompleter(llm.DefaultSetup.Provider), modelID)
-	DefaultEngine.SetEnvProvider(plugin.PluginEnv)
+// Initialize creates the singleton hook engine from the given config.
+func Initialize(cfg InitializeConfig) {
+	DefaultEngine = NewEngine(cfg.Settings, cfg.SessionID, cfg.CWD, cfg.TranscriptPath)
+	DefaultEngine.SetLLMCompleter(buildLLMCompleter(cfg.Provider), cfg.ModelID)
+	if cfg.EnvProvider != nil {
+		DefaultEngine.SetEnvProvider(cfg.EnvProvider)
+	}
 }
 
 // buildLLMCompleter wraps a provider into an LLMCompleter closure.
@@ -156,8 +159,8 @@ func (e *Engine) SetEnvProvider(fn func() []string) {
 }
 
 // SetSettings swaps the settings-backed hook source used by the engine.
+// Callers should merge plugin hooks into settings before calling this.
 func (e *Engine) SetSettings(settings *setting.Settings) {
-	plugin.MergePluginHooksIntoSettings(settings)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.settings = settings

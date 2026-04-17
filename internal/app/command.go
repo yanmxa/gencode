@@ -23,7 +23,6 @@ import (
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -288,8 +287,8 @@ func handleClearCommand(ctx context.Context, m *model, args string) (string, tea
 	m.tool.Reset()
 
 	m.conv.Clear()
-	m.inputTokens = 0
-	m.outputTokens = 0
+	m.runtime.InputTokens = 0
+	m.runtime.OutputTokens = 0
 	tracker.DefaultStore.Reset()
 	tool.ResetFetched()
 	m.systemInput.CronQueue = nil
@@ -312,17 +311,17 @@ func handleForkCommand(ctx context.Context, m *model, args string) (string, tea.
 		return "", nil, fmt.Errorf("failed to save session before fork: %w", err)
 	}
 
-	if m.sessionID == "" {
+	if m.runtime.SessionID == "" {
 		return "No active session to fork.", nil, nil
 	}
 
-	forked, err := m.sessionStore.Fork(m.sessionID)
+	forked, err := m.runtime.SessionStore.Fork(m.runtime.SessionID)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to fork session: %w", err)
 	}
 
-	m.sessionID = forked.Metadata.ID
-	m.sessionSummary = ""
+	m.runtime.SessionID = forked.Metadata.ID
+	m.runtime.SessionSummary = ""
 	tracker.DefaultStore.SetStorageDir("")
 	m.initTaskStorage()
 
@@ -336,7 +335,7 @@ func handleResumeCommand(ctx context.Context, m *model, args string) (string, te
 	if err := m.ensureSessionStore(); err != nil {
 		return "", nil, fmt.Errorf("failed to initialize session store: %w", err)
 	}
-	if err := m.userInput.Session.Selector.EnterSelect(m.width, m.height, m.sessionStore, m.cwd); err != nil {
+	if err := m.userInput.Session.Selector.EnterSelect(m.width, m.height, m.runtime.SessionStore, m.cwd); err != nil {
 		return "", nil, fmt.Errorf("failed to open session selector: %w", err)
 	}
 	return "", nil, nil
@@ -345,7 +344,7 @@ func handleResumeCommand(ctx context.Context, m *model, args string) (string, te
 // --- Config commands: /model, /init, /memory, /mcp, /plugin, /reload-plugins, /search ---
 
 func handleSearchCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if err := m.userInput.Search.Enter(m.providerStore, m.width, m.height); err != nil {
+	if err := m.userInput.Search.Enter(m.runtime.ProviderStore, m.width, m.height); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil
@@ -439,7 +438,7 @@ func handleToolCommand(ctx context.Context, m *model, args string) (string, tea.
 	if mcp.DefaultRegistry != nil {
 		mcpTools = mcp.DefaultRegistry.GetToolSchemas
 	}
-	if err := m.tool.Selector.EnterSelect(m.width, m.height, m.disabledTools, mcpTools); err != nil {
+	if err := m.tool.Selector.EnterSelect(m.width, m.height, m.runtime.DisabledTools, mcpTools); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil
@@ -466,20 +465,20 @@ func handlePlanCommand(ctx context.Context, m *model, args string) (string, tea.
 		return "Usage: /plan <task description>\n\nEnter plan mode to explore the codebase and create an implementation plan before making changes.", nil, nil
 	}
 
-	m.operationMode = setting.ModePlan
-	m.planEnabled = true
-	m.planTask = args
+	m.runtime.OperationMode = setting.ModePlan
+	m.runtime.PlanEnabled = true
+	m.runtime.PlanTask = args
 
-	m.sessionPermissions.AllowAllEdits = false
-	m.sessionPermissions.AllowAllWrites = false
-	m.sessionPermissions.AllowAllBash = false
-	m.sessionPermissions.AllowAllSkills = false
+	m.runtime.SessionPermissions.AllowAllEdits = false
+	m.runtime.SessionPermissions.AllowAllWrites = false
+	m.runtime.SessionPermissions.AllowAllBash = false
+	m.runtime.SessionPermissions.AllowAllSkills = false
 
 	store, err := plan.NewStore()
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to initialize plan store: %w", err)
 	}
-	m.planStore = store
+	m.runtime.PlanStore = store
 
 	return fmt.Sprintf("Entering plan mode for: %s\n\nI will explore the codebase and create an implementation plan. Only read-only tools are available until the plan is approved.", args), nil, nil
 }
@@ -489,20 +488,20 @@ func handleThinkCommand(ctx context.Context, m *model, args string) (string, tea
 
 	switch args {
 	case "off", "0":
-		m.thinkingLevel = llm.ThinkingOff
+		m.runtime.ThinkingLevel = llm.ThinkingOff
 	case "", "toggle":
-		m.thinkingLevel = m.thinkingLevel.Next()
+		m.runtime.ThinkingLevel = m.runtime.ThinkingLevel.Next()
 	case "think", "normal", "1":
-		m.thinkingLevel = llm.ThinkingNormal
+		m.runtime.ThinkingLevel = llm.ThinkingNormal
 	case "think+", "high", "2":
-		m.thinkingLevel = llm.ThinkingHigh
+		m.runtime.ThinkingLevel = llm.ThinkingHigh
 	case "ultra", "ultrathink", "max", "3":
-		m.thinkingLevel = llm.ThinkingUltra
+		m.runtime.ThinkingLevel = llm.ThinkingUltra
 	default:
 		return "Usage: /think [off|think|think+|ultra]\n\nLevels:\n  off        — No extended thinking\n  think      — Moderate thinking budget\n  think+     — Extended thinking budget\n  ultra      — Maximum thinking budget\n\nWithout arguments, cycles to the next level.", nil, nil
 	}
 
-	m.userInput.Provider.StatusMessage = fmt.Sprintf("thinking: %s", m.thinkingLevel.String())
+	m.userInput.Provider.StatusMessage = fmt.Sprintf("thinking: %s", m.runtime.ThinkingLevel.String())
 	return "", kit.StatusTimer(3 * time.Second), nil
 }
 
@@ -636,11 +635,11 @@ func loopUsage() string {
 // --- Compact/TokenLimit commands ---
 
 func handleTokenLimitCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if m.currentModel == nil {
+	if m.runtime.CurrentModel == nil {
 		return "No model selected. Use /model to select a model first.", nil, nil
 	}
 
-	modelID := m.currentModel.ModelID
+	modelID := m.runtime.CurrentModel.ModelID
 	args = strings.TrimSpace(args)
 
 	if args != "" {
@@ -660,8 +659,8 @@ func setTokenLimits(m *model, modelID, args string) (string, tea.Cmd, error) {
 		return "Token limits must be positive integers", nil, nil
 	}
 
-	if m.providerStore != nil {
-		if err := m.providerStore.SetTokenLimit(modelID, inputLimit, outputLimit); err != nil {
+	if m.runtime.ProviderStore != nil {
+		if err := m.runtime.ProviderStore.SetTokenLimit(modelID, inputLimit, outputLimit); err != nil {
 			return "", nil, fmt.Errorf("failed to set token limits: %w", err)
 		}
 	}
@@ -671,15 +670,15 @@ func setTokenLimits(m *model, modelID, args string) (string, tea.Cmd, error) {
 }
 
 func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
-	if m.providerStore != nil {
-		if customInput, customOutput, ok := m.providerStore.GetTokenLimit(modelID); ok {
-			return appoutput.FormatTokenLimitDisplay(modelID, customInput, customOutput, true, m.inputTokens), nil, nil
+	if m.runtime.ProviderStore != nil {
+		if customInput, customOutput, ok := m.runtime.ProviderStore.GetTokenLimit(modelID); ok {
+			return appoutput.FormatTokenLimitDisplay(modelID, customInput, customOutput, true, m.runtime.InputTokens), nil, nil
 		}
 	}
 
-	inputLimit, outputLimit := appoutput.GetModelTokenLimits(m.providerStore, m.currentModel)
+	inputLimit, outputLimit := appoutput.GetModelTokenLimits(m.runtime.ProviderStore, m.runtime.CurrentModel)
 	if inputLimit > 0 || outputLimit > 0 {
-		return appoutput.FormatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m.inputTokens), nil, nil
+		return appoutput.FormatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m.runtime.InputTokens), nil, nil
 	}
 
 	m.userInput.Provider.FetchingLimits = true
@@ -687,13 +686,13 @@ func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
 }
 
 func handleCompactCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if m.llmProvider == nil {
+	if m.runtime.LLMProvider == nil {
 		return "No provider connected. Use /provider to connect.", nil, nil
 	}
 	if len(m.conv.Messages) == 0 {
 		return "No active LLM session. Send a message first to initialize the client.", nil, nil
 	}
-	if !runtime.CanCompactMessages(len(m.conv.Messages)) {
+	if len(m.conv.Messages) < minMessagesForCompaction {
 		return "Not enough conversation history to compact.", nil, nil
 	}
 	if m.conv.Stream.Active {
