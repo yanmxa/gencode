@@ -101,7 +101,7 @@ func runHeadlessAgent() error {
 	}
 
 	// Initialize agent registry
-	if err := subagent.Initialize(cwd); err != nil {
+	if err := subagent.Initialize(cwd, nil); err != nil {
 		return fmt.Errorf("failed to initialize agent registry: %w", err)
 	}
 

@@ -242,7 +242,7 @@ func (e *Executor) fireSubagentStart(req AgentRequest, agentHookID string) {
 	})
 }
 
-func (e *Executor) buildAgent(ctx context.Context, rc *runConfig, agentCwd string) (core.Agent, func(), error) {
+func (e *Executor) buildAgent(ctx context.Context, rc *runConfig, agentCwd string, onToolExec ...func(string, map[string]any)) (core.Agent, func(), error) {
 	cleanup := func() {}
 
 	if len(rc.config.McpServers) > 0 && e.mcpRegistry != nil {
@@ -280,17 +280,15 @@ func (e *Executor) buildAgent(ctx context.Context, rc *runConfig, agentCwd strin
 		}
 	}
 
-	// Hooks
-	var coreHooks core.Hooks
-	if e.hooks != nil {
-		coreHooks = hook.AsCoreHooks(e.hooks)
+	var coreTools core.Tools = tools
+	if len(onToolExec) > 0 && onToolExec[0] != nil {
+		coreTools = &progressTools{inner: tools, onExec: onToolExec[0]}
 	}
 
 	ag := core.NewAgent(core.Config{
 		LLM:        llm.NewClient(e.provider, rc.modelID, 0),
 		System:     sys,
-		Tools:      tools,
-		Hooks:      coreHooks,
+		Tools:      coreTools,
 		Permission: adaptPermission(agentPermission(rc.permMode)),
 		AgentType:  rc.config.Name,
 		CWD:        agentCwd,

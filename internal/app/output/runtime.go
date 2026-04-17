@@ -32,6 +32,7 @@ type StreamController interface {
 
 // ToolSideEffects handles post-tool-execution side effects and hooks.
 type ToolSideEffects interface {
+	PopToolSideEffect(toolCallID string) any
 	ApplyToolSideEffects(toolName string, sideEffect any)
 	FirePostToolHook(tr core.ToolResult, sideEffect any)
 	PersistOverflow(result *core.ToolResult)

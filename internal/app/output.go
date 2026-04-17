@@ -73,6 +73,9 @@ func (rt outputRuntime) ContinueOutbox() tea.Cmd {
 	return rt.model.outputContinueOutbox()
 }
 
+func (m *model) PopToolSideEffect(toolCallID string) any {
+	return tool.PopSideEffect(toolCallID)
+}
 func (m *model) ApplyToolSideEffects(toolName string, sideEffect any) {
 	m.applyAgentToolSideEffects(toolName, sideEffect)
 }
@@ -728,7 +731,6 @@ type tokenLimitFetchRequest struct {
 	LLM          llm.Provider
 	Store        *llm.Store
 	CurrentModel *llm.CurrentModelInfo
-	ModelID      string
 	Cwd          string
 }
 
@@ -760,7 +762,6 @@ func fetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.Cmd {
 		LLM:          req.LLM,
 		Store:        req.Store,
 		CurrentModel: req.CurrentModel,
-		ModelID:      req.ModelID,
 		Cwd:          req.Cwd,
 	}
 	ctx := req.Ctx
@@ -832,7 +833,6 @@ func (m *model) buildTokenLimitFetchRequest() tokenLimitFetchRequest {
 		LLM:          m.runtime.LLMProvider,
 		Store:        m.runtime.ProviderStore,
 		CurrentModel: m.runtime.CurrentModel,
-		ModelID:      m.getModelID(),
 		Cwd:          m.cwd,
 	}
 }

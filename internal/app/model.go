@@ -21,6 +21,7 @@ import (
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -222,24 +223,21 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 		}
 	}
 
-	// Hooks — wrap hook.Engine as core.Hooks
-	coreHooks := hook.AsCoreHooks(m.runtime.HookEngine)
-
 	// Permission bridge — blocking PermissionFunc with TUI approval
 	permBridge := appoutput.NewPermissionBridge(func(name string, args map[string]any) appoutput.PermDecisionResult {
 		settings := m.runtime.Settings
 		if settings == nil {
-			return appoutput.PermDecisionResult{Decision: appoutput.PermAllow}
+			return appoutput.PermDecisionResult{Decision: permission.Permit}
 		}
 		decision := settings.HasPermissionToUseTool(name, args, m.runtime.SessionPermissions)
 		switch decision.Behavior {
 		case setting.Allow:
-			return appoutput.PermDecisionResult{Decision: appoutput.PermAllow, Reason: decision.Reason}
+			return appoutput.PermDecisionResult{Decision: permission.Permit, Reason: decision.Reason}
 		case setting.Deny:
-			return appoutput.PermDecisionResult{Decision: appoutput.PermDeny, Reason: decision.Reason}
+			return appoutput.PermDecisionResult{Decision: permission.Reject, Reason: decision.Reason}
 		default:
 			return appoutput.PermDecisionResult{
-				Decision:    appoutput.PermPrompt,
+				Decision:    permission.Prompt,
 				Reason:      decision.Reason,
 				ToolName:    name,
 				Description: decision.Reason,
@@ -252,7 +250,6 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 		LLM:        client,
 		System:     sys,
 		Tools:      tools,
-		Hooks:      coreHooks,
 		Permission: permBridge.PermissionFunc(),
 		CWD:        m.cwd,
 	})

@@ -17,6 +17,7 @@ type MessageRenderParams struct {
 	MDRenderer              *MDRenderer
 	SpinnerView             string
 	TaskProgress            map[int][]string
+	TaskOwnerMap            map[string]string
 	InteractivePromptActive bool
 }
 
@@ -156,7 +157,7 @@ func renderAssistantWithTools(p MessageRenderParams, msg core.ChatMessage, idx i
 		ResultMap:         resultMap,
 		TaskProgress:      p.TaskProgress,
 		SpinnerView:       p.SpinnerView,
-		TaskOwnerMap:      BuildTaskOwnerMap(),
+		TaskOwnerMap:      p.TaskOwnerMap,
 		MDRenderer:        p.MDRenderer,
 		Width:             p.Width,
 	}))
@@ -221,8 +222,7 @@ func renderPendingToolSpinnerFromParams(p MessageRenderParams, suppressAgentLabe
 }
 
 // BuildTaskOwnerMap builds a map of task ID → owner name for TaskGet display.
-func BuildTaskOwnerMap() map[string]string {
-	tasks := tracker.DefaultStore.List()
+func BuildTaskOwnerMap(tasks []*tracker.Task) map[string]string {
 	if len(tasks) == 0 {
 		return nil
 	}

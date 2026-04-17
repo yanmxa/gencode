@@ -214,7 +214,7 @@ func (m *model) reloadPluginBackedState() error {
 	skill.Initialize(m.cwd)
 	command.SetDynamicInfoProviders(skillCommandInfos)
 	command.Initialize(m.cwd)
-	subagent.Initialize(m.cwd)
+	subagent.Initialize(m.cwd, pluginAgentPaths)
 	mcp.Initialize(m.cwd, pluginMCPServers)
 
 	setting.Initialize(m.cwd)
@@ -290,7 +290,7 @@ func initExtensions(cwd string) {
 	if err := command.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize command", zap.Error(err))
 	}
-	if err := subagent.Initialize(cwd); err != nil {
+	if err := subagent.Initialize(cwd, pluginAgentPaths); err != nil {
 		log.Logger().Warn("Failed to initialize subagent", zap.Error(err))
 	}
 	if err := mcp.Initialize(cwd, pluginMCPServers); err != nil {
@@ -300,6 +300,18 @@ func initExtensions(cwd string) {
 
 // pluginMCPServers adapts plugin.GetPluginMCPServers() to the mcp.PluginServer
 // type so that the mcp package doesn't import plugin directly.
+func pluginAgentPaths() []subagent.PluginAgentPath {
+	pPaths := plugin.GetPluginAgentPaths()
+	paths := make([]subagent.PluginAgentPath, len(pPaths))
+	for i, p := range pPaths {
+		paths[i] = subagent.PluginAgentPath{
+			Path:      p.Path,
+			Namespace: p.Namespace,
+		}
+	}
+	return paths
+}
+
 func pluginMCPServers() []mcp.PluginServer {
 	pServers := plugin.GetPluginMCPServers()
 	servers := make([]mcp.PluginServer, len(pServers))
@@ -312,7 +324,7 @@ func pluginMCPServers() []mcp.PluginServer {
 			Env:     s.Config.Env,
 			URL:     s.Config.URL,
 			Headers: s.Config.Headers,
-			Scope:   mcp.Scope(s.Scope),
+			Scope:   string(s.Scope),
 		}
 	}
 	return servers

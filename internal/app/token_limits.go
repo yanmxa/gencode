@@ -16,7 +16,6 @@ type autoFetchTokenLimitsDeps struct {
 	LLM          llm.Provider
 	Store        *llm.Store
 	CurrentModel *llm.CurrentModelInfo
-	ModelID      string
 	Cwd          string
 }
 
@@ -50,7 +49,7 @@ func autoFetchTokenLimits(ctx context.Context, deps autoFetchTokenLimitsDeps) (s
 
 	for range maxTurns {
 		response, err := llm.Complete(ctx, deps.LLM, llm.CompletionOptions{
-			Model:        deps.ModelID,
+			Model:        deps.CurrentModel.ModelID,
 			SystemPrompt: systemPrompt,
 			Messages:     messages,
 			Tools:        getTokenLimitAgentTools(),

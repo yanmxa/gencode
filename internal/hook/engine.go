@@ -39,7 +39,6 @@ type Engine struct {
 	mu         sync.RWMutex
 	store      *hookStore
 	status     *statusTracker
-	handlers   core.Hooks
 	detachedWg sync.WaitGroup // tracks fire-and-forget goroutines
 }
 
@@ -97,7 +96,6 @@ func NewEngine(settings *setting.Settings, sessionID, cwd, transcriptPath string
 		httpClient:     http.DefaultClient,
 		store:          newHookStore(),
 		status:         newStatusTracker(),
-		handlers:       core.NewHooks(),
 	}
 }
 
@@ -253,162 +251,12 @@ func (e *Engine) getAsyncHookCallback() AsyncHookCallback {
 	return e.asyncCallback
 }
 
-// Wait waits for all async hook goroutines to finish, including both
-// core.Hooks goroutines and engine-level detached goroutines.
+// Wait waits for all detached async hook goroutines to finish.
 func (e *Engine) Wait() {
-	e.handlers.Wait()
 	e.detachedWg.Wait()
 }
 
-// AsCoreHooks returns the Engine as a core.Hooks interface.
-// Engine directly satisfies core.Hooks via Register/Unregister/On/Has/Wait.
-func AsCoreHooks(engine *Engine) core.Hooks {
-	if engine == nil {
-		return nil
-	}
-	return engine
-}
-
-// CurrentStatusMessage returns the most recently-started active hook status core.
+// CurrentStatusMessage returns the most recently-started active hook status.
 func (e *Engine) CurrentStatusMessage() string {
 	return e.status.CurrentMessage()
-}
-
-// Register registers a core.Hook and returns its ID.
-func (e *Engine) Register(hook core.Hook) string {
-	return e.handlers.Register(hook)
-}
-
-// Unregister removes a core.Hook by ID.
-func (e *Engine) Unregister(id string) bool {
-	return e.handlers.Unregister(id)
-}
-
-// On executes Go handlers first, then config-driven hooks if the event maps.
-func (e *Engine) On(ctx context.Context, event core.Event) (core.Action, error) {
-	action, err := e.handlers.On(ctx, event)
-	if err != nil || action.Block {
-		return action, err
-	}
-
-	engineEvent, ok := coreToEngineEvent(event)
-	if !ok {
-		return action, nil
-	}
-
-	input := buildHookInput(event)
-	outcome := e.Execute(ctx, engineEvent, input)
-	engineAction := outcomeToAction(outcome)
-
-	return core.MergeActions(action, engineAction), nil
-}
-
-// Has returns true if any Go handlers or config-driven hooks exist for the event.
-func (e *Engine) Has(event core.EventType) bool {
-	if e.handlers.Has(event) {
-		return true
-	}
-	switch event {
-	case core.PostTool:
-		return e.HasHooks(PostToolUse) || e.HasHooks(PostToolUseFailure)
-	default:
-		if engineEvent, ok := coreToEngineEventType(event); ok {
-			return e.HasHooks(engineEvent)
-		}
-		return false
-	}
-}
-
-var coreToEngineEventMap = map[core.EventType]core.EventType{
-	core.OnStart: SessionStart,
-	core.OnStop:  Stop,
-	core.PreTool: PreToolUse,
-}
-
-func coreToEngineEventType(event core.EventType) (core.EventType, bool) {
-	e, ok := coreToEngineEventMap[event]
-	return e, ok
-}
-
-func coreToEngineEvent(event core.Event) (core.EventType, bool) {
-	if event.Type == core.PostTool {
-		switch tr := event.Data.(type) {
-		case core.ToolResult:
-			if tr.IsError {
-				return PostToolUseFailure, true
-			}
-		}
-		return PostToolUse, true
-	}
-	e, ok := coreToEngineEventMap[event.Type]
-	return e, ok
-}
-
-func buildHookInput(event core.Event) HookInput {
-	input := HookInput{
-		HookEventName: string(event.Type),
-	}
-
-	switch event.Type {
-	case core.PreTool:
-		if tc, ok := event.Data.(core.ToolCall); ok {
-			input.ToolName = tc.Name
-			input.ToolUseID = tc.ID
-			if params, _ := core.ParseToolInput(tc.Input); params != nil {
-				input.ToolInput = params
-			}
-		}
-	case core.PostTool:
-		switch tr := event.Data.(type) {
-		case core.ToolResult:
-			input.ToolName = tr.ToolName
-			input.ToolUseID = tr.ToolCallID
-			input.ToolResponse = tr.Content
-			if tr.IsError {
-				input.Error = tr.Content
-			}
-		}
-	case core.OnStop:
-		if errVal, ok := event.Data.(error); ok && errVal != nil {
-			input.Error = errVal.Error()
-		}
-	}
-
-	return input
-}
-
-func outcomeToAction(outcome HookOutcome) core.Action {
-	var action core.Action
-
-	if outcome.ShouldBlock {
-		action.Block = true
-		action.Reason = outcome.BlockReason
-	}
-
-	if outcome.UpdatedInput != nil {
-		action.Modify = outcome.UpdatedInput
-	}
-
-	if outcome.AdditionalContext != "" {
-		action.Inject = outcome.AdditionalContext
-	}
-
-	meta := make(map[string]any)
-	if len(outcome.UpdatedPermissions) > 0 {
-		meta["updated_permissions"] = outcome.UpdatedPermissions
-	}
-	if len(outcome.WatchPaths) > 0 {
-		meta["watch_paths"] = outcome.WatchPaths
-	}
-	if outcome.InitialUserMessage != "" {
-		meta["initial_user_message"] = outcome.InitialUserMessage
-	}
-	if outcome.Retry {
-		meta["retry"] = true
-	}
-	if len(meta) > 0 {
-		action.Meta = meta
-	}
-
-	return action
 }

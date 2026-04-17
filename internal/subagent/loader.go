@@ -9,10 +9,15 @@ import (
 
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/markdown"
-	"github.com/yanmxa/gencode/internal/plugin"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
+
+// PluginAgentPath represents a plugin agent path with namespace metadata.
+type PluginAgentPath struct {
+	Path      string
+	Namespace string
+}
 
 // agentSearchPath represents an agent search location with optional namespace.
 type agentSearchPath struct {
@@ -190,11 +195,14 @@ func LoadAgentSystemPrompt(filePath string) string {
 }
 
 // Initialize loads custom agents from all sources and initializes state stores.
-func Initialize(cwd string) error {
+// pluginAgentPaths is an optional callback that returns plugin-provided agent paths.
+func Initialize(cwd string, pluginAgentPaths func() []PluginAgentPath) error {
 	ClearPluginAgentPaths()
 
-	for _, pp := range plugin.GetPluginAgentPaths() {
-		AddPluginAgentPath(pp.Path, pp.Namespace)
+	if pluginAgentPaths != nil {
+		for _, pp := range pluginAgentPaths() {
+			AddPluginAgentPath(pp.Path, pp.Namespace)
+		}
 	}
 
 	LoadCustomAgents(cwd)

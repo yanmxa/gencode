@@ -14,6 +14,7 @@ import (
 )
 
 // PluginServer describes an MCP server contributed by a plugin.
+// Fields use primitive types so callers don't need mcp-internal types.
 type PluginServer struct {
 	Name    string
 	Type    string
@@ -22,7 +23,7 @@ type PluginServer struct {
 	Env     map[string]string
 	URL     string
 	Headers map[string]string
-	Scope   Scope
+	Scope   string
 }
 
 // Registry manages multiple MCP server connections
@@ -64,15 +65,15 @@ func newEmptyRegistry() *Registry {
 }
 
 // Initialize initializes the global MCP registry with the given working directory.
-// An optional PluginServers callback can be provided to inject plugin-contributed
-// MCP servers without requiring mcp to import the plugin package.
-func Initialize(cwd string, pluginServers ...func() []PluginServer) error {
+// pluginServers injects plugin-contributed MCP servers without requiring mcp to
+// import the plugin package. Pass nil if no plugin servers are needed.
+func Initialize(cwd string, pluginServers func() []PluginServer) error {
 	reg, err := NewRegistry(cwd)
 	if err != nil {
 		return err
 	}
-	if len(pluginServers) > 0 && pluginServers[0] != nil {
-		reg.PluginServers = pluginServers[0]
+	if pluginServers != nil {
+		reg.PluginServers = pluginServers
 		reg.configs = reg.mergePluginMCPConfigs(reg.configs)
 	}
 	DefaultRegistry = reg
@@ -153,7 +154,7 @@ func (r *Registry) mergePluginMCPConfigs(configs map[string]ServerConfig) map[st
 			Env:     maps.Clone(srv.Env),
 			URL:     srv.URL,
 			Headers: maps.Clone(srv.Headers),
-			Scope:   srv.Scope,
+			Scope:   Scope(srv.Scope),
 		}
 	}
 	return merged

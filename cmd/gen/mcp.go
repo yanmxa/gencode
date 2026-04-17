@@ -161,7 +161,7 @@ var mcpEditCmd = &cobra.Command{
 		name := args[0]
 		cwd, _ := os.Getwd()
 
-		if err := mcp.Initialize(cwd); err != nil {
+		if err := mcp.Initialize(cwd, nil); err != nil {
 			return fmt.Errorf("failed to load MCP configs: %w", err)
 		}
 

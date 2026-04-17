@@ -64,7 +64,7 @@ func NewTestAgent(t *testing.T, responses ...llm.CompletionResponse) (core.Agent
 		LLM:      fakeLLM,
 		System:   core.NewSystem(),
 		Tools:    buildAllRegisteredTools(cwd),
-		Hooks:    core.NewHooks(),
+
 		CWD:      cwd,
 		MaxTurns: 100,
 	}), fakeLLM
@@ -96,7 +96,7 @@ func NewTestAgentWithPermission(t *testing.T, perm core.PermissionFunc, response
 		LLM:        fakeLLM,
 		System:     core.NewSystem(),
 		Tools:      buildAllRegisteredTools(cwd),
-		Hooks:      core.NewHooks(),
+
 		Permission: perm,
 		CWD:        cwd,
 		MaxTurns:   100,
@@ -113,7 +113,7 @@ func NewTestAgentWithMaxTurns(t *testing.T, maxTurns int, responses ...llm.Compl
 		LLM:      fakeLLM,
 		System:   core.NewSystem(),
 		Tools:    buildAllRegisteredTools(cwd),
-		Hooks:    core.NewHooks(),
+
 		CWD:      cwd,
 		MaxTurns: maxTurns,
 	}), fakeLLM

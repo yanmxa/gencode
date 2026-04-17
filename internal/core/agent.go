@@ -11,19 +11,12 @@ type PermissionFunc func(ctx context.Context, tc ToolCall) (allow bool, reason s
 
 // Agent is the core abstraction — an autonomous entity that reasons and acts.
 //
-// Four capabilities, nothing more:
+// Three capabilities, nothing more:
 //  1. System  — WHO it is (composable, mutable identity)
 //  2. Tools   — WHAT it can do (the single action primitive)
-//  3. Hooks   — HOW it's extended (universal extension point)
-//  4. Inbox/Outbox — HOW it communicates (Go channels)
+//  3. Inbox/Outbox — HOW it communicates (Go channels)
 //
-// Everything else is built on hooks or config:
-//   - Permission  → PermissionFunc on Config (injected, runs before hooks)
-//   - UX          → TUI reads Outbox for streaming chunks
-//   - Persistence → OnStop hook saves session
-//   - Compaction  → PreInfer hook checks tokens, compacts
-//   - MCP         → OnStart hook adds tools dynamically
-//   - Subagents   → Agent tool spawns new Agent with its own channels
+// Hooks are app-layer only (hook.Engine), not part of the agent core.
 //
 // Lifecycle control:
 //   - Graceful stop: send Message{Signal: SigStop} to Inbox
@@ -32,7 +25,6 @@ type Agent interface {
 	ID() string
 	System() System
 	Tools() Tools
-	Hooks() Hooks
 
 	// Inbox is the write channel — external world sends messages to the agent.
 	// Messages are integrated into the conversation at turn boundaries.
@@ -98,14 +90,13 @@ type Agent interface {
 // Config holds construction parameters for an agent.
 //
 // Required fields: LLM, System, Tools. NewAgent panics if any is nil.
-// Optional fields: Hooks, Permission, ID, CWD, MaxTurns, InboxBuf, OutboxBuf.
+// Optional fields: Permission, ID, CWD, MaxTurns, InboxBuf, OutboxBuf, AllowedTools, CompactFunc.
 type Config struct {
 	ID                string
 	LLM               LLM            // required: inference backend
 	System             System         // required: system prompt layers
 	Tools              Tools          // required: available tools
-	Hooks              Hooks          // optional: event handlers
-	Permission         PermissionFunc // optional: called before each tool execution (runs before PreTool hooks)
+	Permission         PermissionFunc // optional: called before each tool execution
 	AgentType          string   // optional: agent type identifier for hook events
 	Color              string   // optional: display color for TUI (e.g. "#ff6600", "blue")
 	AllowedTools       []string // optional: tools that skip Permission check
@@ -146,10 +137,6 @@ func NewAgent(cfg Config) Agent {
 		}
 	}
 
-	if cfg.Hooks == nil {
-		cfg.Hooks = NewHooks()
-	}
-
 	var outbox chan Event
 	if cfg.OutboxBuf > 0 {
 		outbox = make(chan Event, cfg.OutboxBuf)
@@ -161,7 +148,6 @@ func NewAgent(cfg Config) Agent {
 		color:             cfg.Color,
 		system:            cfg.System,
 		tools:             cfg.Tools,
-		hooks:             cfg.Hooks,
 		permission:        cfg.Permission,
 		allowedTools:      allowed,
 		compactFunc:       cfg.CompactFunc,

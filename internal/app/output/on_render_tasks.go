@@ -18,9 +18,13 @@ const maxVisibleTasks = 8
 
 // TrackerListParams holds the parameters for rendering a tracker list.
 type TrackerListParams struct {
+	Tasks        []*tracker.Task
+	AllDone      bool
 	StreamActive bool
 	Width        int
 	SpinnerView  string
+	Blockers     func(taskID string) []string
+	WorkerSnap   func(taskID, agentID string) (*orchestration.Snapshot, bool)
 }
 
 // RenderTrackerList renders a compact task list above the input area.
@@ -31,39 +35,36 @@ type TrackerListParams struct {
 // The caller is responsible for resetting the store when appropriate
 // (see tracker.DefaultStore.AllDone).
 func RenderTrackerList(params TrackerListParams) string {
-	tasks := tracker.DefaultStore.List()
-	if len(tasks) == 0 {
+	if len(params.Tasks) == 0 {
 		return ""
 	}
 
-	// Hide the list once every task is done and the LLM is idle.
-	if tracker.DefaultStore.AllDone() && !params.StreamActive {
+	if params.AllDone && !params.StreamActive {
 		return ""
 	}
 
 	completed := 0
-	for _, t := range tasks {
+	for _, t := range params.Tasks {
 		if t.Status == tracker.StatusCompleted {
 			completed++
 		}
 	}
-	total := len(tasks)
+	total := len(params.Tasks)
 
 	var sb strings.Builder
 
-	// Header: Tasks (2/4)
 	headerStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim).Bold(true)
 	mutedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 
 	sb.WriteString("  " + headerStyle.Render("Tasks") + " " + mutedStyle.Render(fmt.Sprintf("(%d/%d)", completed, total)) + "\n")
 
-	sb.WriteString(renderTasksHierarchical(tasks, params.Width, params.SpinnerView))
+	sb.WriteString(renderTasksHierarchical(params.Tasks, params.Width, params.SpinnerView, params.Blockers, params.WorkerSnap))
 
 	return sb.String()
 }
 
 // renderTasksHierarchical renders tracker tasks, grouping background worker batches.
-func renderTasksHierarchical(tasks []*tracker.Task, width int, spinnerView string) string {
+func renderTasksHierarchical(tasks []*tracker.Task, width int, spinnerView string, blockers func(string) []string, workerSnap func(string, string) (*orchestration.Snapshot, bool)) string {
 	childrenByParent := make(map[string][]*tracker.Task)
 	childIDs := make(map[string]bool)
 	for _, t := range tasks {
@@ -83,9 +84,9 @@ func renderTasksHierarchical(tasks []*tracker.Task, width int, spinnerView strin
 			continue
 		}
 		if isBackgroundBatchTask(t) {
-			sb.WriteString(renderBackgroundBatchTask(t, childrenByParent[t.ID], width, spinnerView))
+			sb.WriteString(renderBackgroundBatchTask(t, childrenByParent[t.ID], width, spinnerView, workerSnap))
 		} else {
-			sb.WriteString(renderTrackerTask(t, width, spinnerView))
+			sb.WriteString(renderTrackerTask(t, width, spinnerView, blockers, workerSnap))
 		}
 		renderedRoots++
 	}
@@ -93,17 +94,17 @@ func renderTasksHierarchical(tasks []*tracker.Task, width int, spinnerView strin
 }
 
 // renderTrackerTask renders a single task line.
-func renderTrackerTask(t *tracker.Task, width int, spinnerView string) string {
-	return renderTrackerTaskIndented(t, width, spinnerView, "")
+func renderTrackerTask(t *tracker.Task, width int, spinnerView string, blockers func(string) []string, workerSnap func(string, string) (*orchestration.Snapshot, bool)) string {
+	return renderTrackerTaskIndented(t, width, spinnerView, "", blockers, workerSnap)
 }
 
 // renderTrackerTaskIndented renders a single task line with optional extra indentation.
-func renderTrackerTaskIndented(t *tracker.Task, width int, spinnerView string, extraIndent string) string {
+func renderTrackerTaskIndented(t *tracker.Task, width int, spinnerView string, extraIndent string, blockers func(string) []string, workerSnap func(string, string) (*orchestration.Snapshot, bool)) string {
 	indent := extraIndent + "  "
 	idTag := fmt.Sprintf("#%s ", t.ID)
 	maxTextLen := width - len(indent) - len(idTag) - 6 // icon + spaces + margin
 	subject := truncateText(t.Subject, maxTextLen)
-	worker := backgroundWorkerSnapshot(t)
+	worker := lookupWorkerSnapshot(t, workerSnap)
 
 	mutedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 	idStr := mutedStyle.Render(idTag)
@@ -136,29 +137,31 @@ func renderTrackerTaskIndented(t *tracker.Task, width int, spinnerView string, e
 		return line + "\n"
 
 	default:
-		if blockers := tracker.DefaultStore.OpenBlockers(t.ID); len(blockers) > 0 {
-			blockerRefs := make([]string, len(blockers))
-			for i, b := range blockers {
-				blockerRefs[i] = "#" + b
+		if blockers != nil {
+			if bl := blockers(t.ID); len(bl) > 0 {
+				blockerRefs := make([]string, len(bl))
+				for i, b := range bl {
+					blockerRefs[i] = "#" + b
+				}
+				blockedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error)
+				suffix := " " + blockedStyle.Render("← "+strings.Join(blockerRefs, ", "))
+				return indent + trackerPendingStyle.Render("○") + " " + idStr + trackerPendingStyle.Render(subject) + suffix + "\n"
 			}
-			blockedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error)
-			suffix := " " + blockedStyle.Render("← "+strings.Join(blockerRefs, ", "))
-			return indent + trackerPendingStyle.Render("○") + " " + idStr + trackerPendingStyle.Render(subject) + suffix + "\n"
 		}
 		return indent + trackerPendingStyle.Render("○") + " " + idStr + trackerPendingStyle.Render(subject) + "\n"
 	}
 }
 
-func renderBackgroundBatchTask(batch *tracker.Task, children []*tracker.Task, width int, spinnerView string) string {
+func renderBackgroundBatchTask(batch *tracker.Task, children []*tracker.Task, width int, spinnerView string, workerSnap func(string, string) (*orchestration.Snapshot, bool)) string {
 	var sb strings.Builder
-	sb.WriteString(renderBatchHeader(batch, children, width, spinnerView))
+	sb.WriteString(renderBatchHeader(batch, children, width, spinnerView, workerSnap))
 	for _, child := range children {
-		sb.WriteString(renderTrackerTaskIndented(child, width, spinnerView, "  "))
+		sb.WriteString(renderTrackerTaskIndented(child, width, spinnerView, "  ", nil, workerSnap))
 	}
 	return sb.String()
 }
 
-func renderBatchHeader(t *tracker.Task, children []*tracker.Task, width int, spinnerView string) string {
+func renderBatchHeader(t *tracker.Task, children []*tracker.Task, width int, spinnerView string, workerSnap func(string, string) (*orchestration.Snapshot, bool)) string {
 	indent := "  "
 	idTag := fmt.Sprintf("#%s ", t.ID)
 	mutedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
@@ -167,7 +170,7 @@ func renderBatchHeader(t *tracker.Task, children []*tracker.Task, width int, spi
 	total := trackerMetadataInt(t.Metadata, "background_total")
 	completed := trackerMetadataInt(t.Metadata, "background_completed")
 	failures := trackerMetadataInt(t.Metadata, "background_failures")
-	if snapshot := backgroundBatchSnapshot(children); snapshot != nil {
+	if snapshot := lookupBatchSnapshot(children, workerSnap); snapshot != nil {
 		if snapshot.Subject != "" {
 			subject = snapshot.Subject
 		}
@@ -205,22 +208,25 @@ func isBackgroundBatchTask(t *tracker.Task) bool {
 	return trackerMetadataString(t.Metadata, "background_kind") == "batch"
 }
 
-func backgroundWorkerSnapshot(t *tracker.Task) *orchestration.Snapshot {
+func lookupWorkerSnapshot(t *tracker.Task, workerSnap func(string, string) (*orchestration.Snapshot, bool)) *orchestration.Snapshot {
+	if workerSnap == nil {
+		return nil
+	}
 	taskID := trackerMetadataString(t.Metadata, "background_task_id")
 	agentID := trackerMetadataString(t.Metadata, "background_agent_id")
 	if taskID == "" && agentID == "" {
 		return nil
 	}
-	snapshot, ok := orchestration.DefaultStore.Snapshot(taskID, agentID, "", 1)
+	snapshot, ok := workerSnap(taskID, agentID)
 	if !ok {
 		return nil
 	}
 	return snapshot
 }
 
-func backgroundBatchSnapshot(children []*tracker.Task) *orchestration.BatchSnapshot {
+func lookupBatchSnapshot(children []*tracker.Task, workerSnap func(string, string) (*orchestration.Snapshot, bool)) *orchestration.BatchSnapshot {
 	for _, child := range children {
-		if snapshot := backgroundWorkerSnapshot(child); snapshot != nil && snapshot.Batch != nil {
+		if snapshot := lookupWorkerSnapshot(child, workerSnap); snapshot != nil && snapshot.Batch != nil {
 			return snapshot.Batch
 		}
 	}

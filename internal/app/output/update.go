@@ -122,7 +122,7 @@ func handlePostTool(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	rt.SetBuildingTool("")
 
 	// Retrieve side effects stored by the tool adapter
-	sideEffect := tool.PopSideEffect(tr.ToolCallID)
+	sideEffect := rt.PopToolSideEffect(tr.ToolCallID)
 	if sideEffect != nil {
 		rt.ApplyToolSideEffects(tr.ToolName, sideEffect)
 	}

@@ -1,15 +1,9 @@
 package core
 
-import "context"
-
-// EventType identifies when a hook fires.
-//
-// Core events are defined below. Custom events are first-class:
-//
-//	const MyEvent core.EventType = "MyEvent"
+// EventType identifies an agent lifecycle event.
 type EventType string
 
-// Core agent lifecycle events.
+// Agent lifecycle events — emitted to the Outbox for TUI rendering.
 const (
 	OnStart   EventType = "AgentStart" // agent begins
 	OnStop    EventType = "AgentStop"  // agent ends (error or nil in Data)
@@ -22,60 +16,12 @@ const (
 	OnTurn    EventType = "Turn"       // think+act cycle completed (Result in Data)
 )
 
-// Event carries context for a hook invocation.
-// Also emitted to Outbox for external observation.
+// Event carries context for an agent lifecycle point.
+// Emitted to Outbox for TUI observation.
 type Event struct {
 	Type   EventType // which event
 	Source string    // who triggered (agent ID, tool name, "user")
 	Data   any       // payload — type depends on EventType (see above)
-}
-
-// Action is a hook's response. Zero value = "continue normally."
-//
-// Fields are scoped by event:
-//
-//	Universal:  Block, Reason, Meta
-//	PreInfer:   Inject
-//	PreTool:    Modify
-//
-// Merge semantics (multiple hooks):
-//
-//	Block:  any true wins (short-circuits)
-//	Modify: last writer wins
-//	Inject: concatenate with newline
-//	Meta:   merge maps, last writer wins per key
-type Action struct {
-	Block  bool   // stop the current operation
-	Reason string // why (diagnostics, LLM context)
-
-	Inject string         // [PreInfer] add context for the next LLM call
-	Modify map[string]any // [PreTool] replace tool input parameters
-
-	Meta map[string]any // app-layer extensions (UpdatedPermissions, WatchPaths, etc.)
-}
-
-// Handler is the hook function.
-// Performs side effects and returns an Action.
-// Use Hook.Async=true to run in a background goroutine (observe only).
-type Handler func(ctx context.Context, event Event) (Action, error)
-
-// Hook is a registered event handler with optional filtering.
-type Hook struct {
-	ID      string    // unique (auto-generated if empty)
-	Event   EventType // which event to handle
-	Matcher string    // filter on Event.Source; "" or "*" = match all
-	Handle  Handler
-	Async   bool // run in background goroutine (observe only, cannot block/modify)
-	Once    bool // fire once then automatically remove
-}
-
-// Hooks manages event handlers for an agent.
-type Hooks interface {
-	Register(hook Hook) string                             // register, returns ID
-	Unregister(id string) bool                             // unregister by ID
-	On(ctx context.Context, event Event) (Action, error) // execute matching hooks
-	Has(event EventType) bool                            // any hooks registered?
-	Wait()                                               // wait for all async hook goroutines to finish
 }
 
 // Event.Data type helpers — reduce boilerplate in handlers.

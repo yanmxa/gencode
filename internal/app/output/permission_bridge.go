@@ -4,20 +4,12 @@ import (
 	"context"
 
 	"github.com/yanmxa/gencode/internal/core"
-)
-
-// PermDecision represents a permission decision outcome.
-type PermDecision int
-
-const (
-	PermAllow  PermDecision = iota
-	PermDeny
-	PermPrompt
+	"github.com/yanmxa/gencode/internal/permission"
 )
 
 // PermDecisionResult holds a permission decision and its reason.
 type PermDecisionResult struct {
-	Decision    PermDecision
+	Decision    permission.Decision
 	Reason      string
 	ToolName    string
 	Description string
@@ -56,9 +48,9 @@ func (pb *PermissionBridge) PermissionFunc() core.PermissionFunc {
 		decision := pb.decideFn(tc.Name, args)
 
 		switch decision.Decision {
-		case PermAllow:
+		case permission.Permit:
 			return true, decision.Reason
-		case PermDeny:
+		case permission.Reject:
 			return false, decision.Reason
 		}
 

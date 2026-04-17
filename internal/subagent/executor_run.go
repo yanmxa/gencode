@@ -68,27 +68,19 @@ func (e *Executor) logRunStart(run *preparedRun) {
 }
 
 func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*core.Result, error) {
-	ag, cleanupAgent, err := e.buildAgent(ctx, run.cfg, run.cwd)
+	var onToolExec func(string, map[string]any)
+	if run.req.OnProgress != nil {
+		onToolExec = func(name string, params map[string]any) {
+			msg := formatToolProgress(name, params)
+			run.progress = append(run.progress, msg)
+			run.req.OnProgress(msg)
+		}
+	}
+	ag, cleanupAgent, err := e.buildAgent(ctx, run.cfg, run.cwd, onToolExec)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanupAgent()
-
-	// Register per-tool progress hook
-	if run.req.OnProgress != nil {
-		ag.Hooks().Register(core.Hook{
-			Event: core.PreTool,
-			Handle: func(_ context.Context, ev core.Event) (core.Action, error) {
-				if tc, ok := ev.ToolCall(); ok {
-					params, _ := core.ParseToolInput(tc.Input)
-					msg := formatToolProgress(tc.Name, params)
-					run.progress = append(run.progress, msg)
-					run.req.OnProgress(msg)
-				}
-				return core.Action{}, nil
-			},
-		})
-	}
 
 	if err := e.loadConversation(ag, ctx, run.req); err != nil {
 		return nil, err

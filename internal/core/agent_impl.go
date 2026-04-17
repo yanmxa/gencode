@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -20,7 +19,6 @@ type agent struct {
 	color             string
 	system            System
 	tools             Tools
-	hooks             Hooks
 	permission        PermissionFunc
 	allowedTools      map[string]bool
 	compactFunc       func(ctx context.Context, msgs []Message) (string, error)
@@ -40,7 +38,6 @@ type agent struct {
 func (a *agent) ID() string            { return a.id }
 func (a *agent) System() System        { return a.system }
 func (a *agent) Tools() Tools          { return a.tools }
-func (a *agent) Hooks() Hooks          { return a.hooks }
 func (a *agent) Inbox() chan<- Message { return a.inbox }
 func (a *agent) Outbox() <-chan Event  { return a.outbox }
 func (a *agent) Messages() []Message   { return a.snapshot() }
@@ -69,11 +66,6 @@ func (a *agent) Run(ctx context.Context) error {
 		a.emitFinal(StopEvent(a.id, runErr))
 		a.closed.Store(true)
 
-		// Drain async hooks before closing outbox to prevent
-		// late writes to a closed channel.
-		if a.hooks != nil {
-			a.hooks.Wait()
-		}
 		if a.outbox != nil {
 			close(a.outbox)
 		}
@@ -183,19 +175,7 @@ func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 			}
 		}
 
-		// PreInfer hook — can inject context, block, or compact (via SetMessages)
-		action := a.emitAndFire(ctx, PreInferEvent(a.id))
-		if action.Block {
-			return makeResult("", StopHook, action.Reason), nil
-		}
-		if action.Inject != "" {
-			// Fixed name so each turn's injection replaces the previous one.
-			// Hook-injected context is ephemeral — it applies to the next
-			// LLM call only, not accumulated across turns.
-			a.system.Set(Layer{
-				Name: "hook-inject", Priority: 650, Content: action.Inject, Source: Dynamic,
-			})
-		}
+		a.emit(ctx, PreInferEvent(a.id))
 
 		resp, err := a.streamInfer(ctx)
 		if err != nil {
@@ -243,11 +223,10 @@ func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 }
 
 // execTools runs tool calls in three phases:
-//  1. Permission check (runs first) + PreTool hooks — sequential
+//  1. Permission check — sequential
 //  2. Execute — parallel when multiple tools pass
-//  3. Record results + PostTool hooks — sequential, in original call order
+//  3. Record results — sequential, in original call order
 func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
-	// Phase 1: Permission + PreTool hooks (sequential)
 	type task struct {
 		call ToolCall
 		tool Tool
@@ -257,24 +236,13 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 		if ctx.Err() != nil {
 			break
 		}
-		// Permission check runs before hooks to gate on the original input.
-		// AllowedTools bypass permission — subagents use this for pre-approved tools.
 		if a.permission != nil && !a.allowedTools[tc.Name] {
 			if allow, reason := a.permission(ctx, tc); !allow {
 				a.appendResult(tc, "blocked: "+reason, true)
 				continue
 			}
 		}
-		action := a.emitAndFire(ctx, PreToolEvent(tc))
-		if action.Block {
-			a.appendResult(tc, "blocked: "+action.Reason, true)
-			continue
-		}
-		if action.Modify != nil {
-			if modifiedJSON, err := json.Marshal(action.Modify); err == nil {
-				tc.Input = string(modifiedJSON)
-			}
-		}
+		a.emit(ctx, PreToolEvent(tc))
 		t := a.tools.Get(tc.Name)
 		if t == nil {
 			a.appendResult(tc, fmt.Sprintf("unknown tool: %s", tc.Name), true)
@@ -455,25 +423,6 @@ func (a *agent) emitFinal(event Event) {
 	case <-timer.C:
 		log.Printf("core/agent: failed to deliver %s event (outbox full for 5s)", event.Type)
 	}
-}
-
-// emitAndFire emits the event to the outbox for TUI observation,
-// then fires hooks and returns the merged Action.
-// Hook errors are treated as Block (fail-closed for safety).
-func (a *agent) emitAndFire(ctx context.Context, event Event) Action {
-	a.emit(ctx, event)
-	if a.hooks == nil {
-		return Action{}
-	}
-	action, err := a.hooks.On(ctx, event)
-	if err != nil {
-		log.Printf("core/agent: hook error on %s: %v (treating as block)", event.Type, err)
-		action.Block = true
-		if action.Reason == "" {
-			action.Reason = err.Error()
-		}
-	}
-	return action
 }
 
 // drainInbox non-blocking reads all pending inbox messages.

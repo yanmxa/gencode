@@ -2,14 +2,10 @@
 // Compatible with Claude Code hooks that execute shell commands on events.
 package hook
 
-import (
-	"context"
+import "context"
 
-	"github.com/yanmxa/gencode/internal/core"
-)
-
-// EventType is an alias for core.EventType.
-type EventType = core.EventType
+// EventType identifies a hook event.
+type EventType string
 
 // Application-layer hook events live in the hooks package.
 // They intentionally stay separate from core agent lifecycle events.
