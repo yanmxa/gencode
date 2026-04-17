@@ -308,12 +308,12 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 	}
 
 	want := []string{
-		"*providerui.Model",
+		"*user.ProviderSelector",
 		"*toolui.Model",
 		"*user.SkillSelector",
 		"*user.AgentSelector",
 		"*user.MCPSelector",
-		"*pluginui.Model",
+		"*user.PluginSelector",
 		"*user.SessionSelector",
 		"*user.MemorySelector",
 		"*user.SearchSelector",

@@ -18,8 +18,6 @@ import (
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
-	"github.com/yanmxa/gencode/internal/app/user/pluginui"
-	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/mcp"
@@ -39,9 +37,7 @@ type model struct {
 	mode             appmodal.State
 	promptSuggestion promptSuggestionState
 	showTasks        bool
-	provider         providerui.State
 	tool             toolui.State
-	plugin           pluginui.Model
 
 	// ── Agent Input ─────────────────────────────────────────────────────
 	agentInput appagent.State

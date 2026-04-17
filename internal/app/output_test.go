@@ -102,7 +102,7 @@ func TestHandleTokenLimitCommand_TriggersFetchWhenLimitsUnknown(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected fetch command when no limits are known")
 	}
-	if !m.provider.FetchingLimits {
+	if !m.userInput.Provider.FetchingLimits {
 		t.Fatal("expected FetchingLimits to be set")
 	}
 }

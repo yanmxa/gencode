@@ -12,9 +12,7 @@ import (
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
-	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
@@ -106,6 +104,8 @@ func newBaseModel() model {
 	userInput.Memory = appuser.MemoryState{Selector: appuser.NewMemorySelector()}
 	userInput.Approval = appuser.NewApproval()
 	userInput.MCP = appuser.MCPState{Selector: appuser.NewMCPSelector(mcp.DefaultRegistry)}
+	userInput.Plugin = appuser.NewPluginSelector(plugin.DefaultRegistry)
+	userInput.Provider = appuser.ProviderState{Selector: appuser.NewProviderSelector()}
 
 	return model{
 		userInput:   userInput,
@@ -125,10 +125,8 @@ func newBaseModel() model {
 		sessionStore: session.DefaultSetup.Store,
 		sessionID:    session.DefaultSetup.SessionID,
 
-		provider: newProviderState(),
 		mode:     newModeState(),
 		tool:     newToolState(),
-		plugin:   newPluginState(),
 		isGit:    setting.IsGitRepo(appCwd),
 
 		systemInput: appsystem.New(),
@@ -151,13 +149,6 @@ func commandSuggestionMatcher() func(string) []suggest.Suggestion {
 	}
 }
 
-func newProviderState() providerui.State {
-	return providerui.State{
-		Selector: providerui.New(),
-	}
-}
-
-
 func newModeState() appmodal.State {
 	return appmodal.State{
 		PlanApproval: appmodal.NewPlanPrompt(),
@@ -168,10 +159,6 @@ func newModeState() appmodal.State {
 
 func newToolState() toolui.State {
 	return toolui.State{Selector: toolui.New()}
-}
-
-func newPluginState() pluginui.Model {
-	return pluginui.New(plugin.DefaultRegistry)
 }
 
 func (m *model) applyRunOptions(opts setting.RunOptions) error {

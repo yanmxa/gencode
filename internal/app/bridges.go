@@ -12,8 +12,6 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/app/user/pluginui"
-	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/llm"
@@ -28,10 +26,10 @@ func (m *model) updateMemory(msg tea.Msg) (tea.Cmd, bool) {
 	return appuser.UpdateMemory(m, &m.userInput.Memory, msg)
 }
 func (m *model) updatePlugin(msg tea.Msg) (tea.Cmd, bool) {
-	return pluginui.Update(m, &m.plugin, msg)
+	return appuser.UpdatePlugin(m, &m.userInput.Plugin, msg)
 }
 func (m *model) updateProvider(msg tea.Msg) (tea.Cmd, bool) {
-	return providerui.Update(m, &m.provider, msg)
+	return appuser.UpdateProvider(m, &m.userInput.Provider, msg)
 }
 func (m *model) updateSearch(msg tea.Msg) (tea.Cmd, bool) {
 	return appuser.UpdateSearch(m, &m.userInput.Search, msg)
@@ -42,7 +40,7 @@ func (m *model) updateSession(msg tea.Msg) (tea.Cmd, bool) {
 
 // --- User overlay Runtime interface implementations ---
 
-// pluginui.Runtime
+// user.PluginRuntime
 func (m *model) GetCwd() string                { return m.cwd }
 func (m *model) ReloadPluginBackedState() error { return m.reloadPluginBackedState() }
 
@@ -57,7 +55,7 @@ func (m *model) FireFileChanged(path, tool string)   { m.fireFileChanged(path, t
 // user.MCPRuntime
 func (m *model) SetInputText(text string) { m.userInput.Textarea.SetValue(text) }
 
-// providerui.Runtime
+// appuser.ProviderRuntime
 func (m *model) SwitchProvider(p llm.Provider) {
 	m.llmProvider = p
 	if m.hookEngine != nil {
@@ -81,7 +79,7 @@ func (m *model) ResetCommitIndex()           { m.conv.CommittedCount = 0 }
 func (m *model) CommitAllMessages() []tea.Cmd { return m.commitAllMessages() }
 
 // searchui.Runtime
-func (m *model) SetProviderStatusMessage(msg string) { m.provider.SetStatusMessage(msg) }
+func (m *model) SetProviderStatusMessage(msg string) { m.userInput.Provider.SetStatusMessage(msg) }
 
 func startExternalEditor(filePath string) tea.Cmd {
 	return kit.StartExternalEditor(filePath, func(err error) tea.Msg {

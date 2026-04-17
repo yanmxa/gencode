@@ -17,7 +17,6 @@ import (
 	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
@@ -355,7 +354,7 @@ func handleSearchCommand(ctx context.Context, m *model, args string) (string, te
 }
 
 func handleModelCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	cmd, err := m.provider.Selector.Enter(ctx, m.width, m.height)
+	cmd, err := m.userInput.Provider.Selector.Enter(ctx, m.width, m.height)
 	if err != nil {
 		return "", nil, err
 	}
@@ -397,7 +396,7 @@ func handleMCPCommand(ctx context.Context, m *model, args string) (string, tea.C
 }
 
 func handlePluginCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	result, err := pluginui.HandleCommand(ctx, &m.plugin, m.cwd, m.width, m.height, args)
+	result, err := appuser.HandlePluginCommand(ctx, &m.userInput.Plugin, m.cwd, m.width, m.height, args)
 	return result, nil, err
 }
 
@@ -505,7 +504,7 @@ func handleThinkCommand(ctx context.Context, m *model, args string) (string, tea
 		return "Usage: /think [off|think|think+|ultra]\n\nLevels:\n  off        — No extended thinking\n  think      — Moderate thinking budget\n  think+     — Extended thinking budget\n  ultra      — Maximum thinking budget\n\nWithout arguments, cycles to the next level.", nil, nil
 	}
 
-	m.provider.StatusMessage = fmt.Sprintf("thinking: %s", m.thinkingLevel.String())
+	m.userInput.Provider.StatusMessage = fmt.Sprintf("thinking: %s", m.thinkingLevel.String())
 	return "", kit.StatusTimer(3 * time.Second), nil
 }
 
@@ -685,7 +684,7 @@ func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
 		return appcompact.FormatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m.inputTokens), nil, nil
 	}
 
-	m.provider.FetchingLimits = true
+	m.userInput.Provider.FetchingLimits = true
 	return "", tea.Batch(m.agentOutput.Spinner.Tick, fetchTokenLimitsCmd(m.buildTokenLimitFetchRequest())), nil
 }
 

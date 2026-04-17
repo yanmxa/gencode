@@ -1,4 +1,4 @@
-package providerui
+package user
 
 import (
 	"context"
@@ -11,13 +11,13 @@ import (
 )
 
 func TestCancelClearsTransientState(t *testing.T) {
-	m := New()
+	m := NewProviderSelector()
 	m.active = true
-	m.connectedProviders = []providerItem{{DisplayName: "Anthropic"}}
-	m.allProviders = []providerItem{{DisplayName: "Google"}}
-	m.allModels = []modelItem{{ID: "gpt-5"}}
-	m.filteredModels = []modelItem{{ID: "gpt-5"}}
-	m.visibleItems = []listItem{{Kind: itemModel}}
+	m.connectedProviders = []providerProviderItem{{DisplayName: "Anthropic"}}
+	m.allProviders = []providerProviderItem{{DisplayName: "Google"}}
+	m.allModels = []providerModelItem{{ID: "gpt-5"}}
+	m.filteredModels = []providerModelItem{{ID: "gpt-5"}}
+	m.visibleItems = []providerListItem{{Kind: providerItemModel}}
 	m.expandedProviderIdx = 1
 	m.apiKeyActive = true
 	m.selectedIdx = 2
@@ -53,17 +53,17 @@ func TestCancelClearsTransientState(t *testing.T) {
 }
 
 func TestGoBackCollapsesAuthMethods(t *testing.T) {
-	m := New()
+	m := NewProviderSelector()
 	m.expandedProviderIdx = 2
 	m.lastConnectResult = "Connected"
 	m.lastConnectAuthIdx = 1
 	m.lastConnectSuccess = true
 
 	// Seed minimal data for rebuild
-	m.activeTab = tabProviders
-	m.allProviders = []providerItem{
+	m.activeTab = providerTabProviders
+	m.allProviders = []providerProviderItem{
 		{DisplayName: "A"}, {DisplayName: "B"},
-		{DisplayName: "C", AuthMethods: []authMethodItem{{DisplayName: "API"}}},
+		{DisplayName: "C", AuthMethods: []providerAuthMethodItem{{DisplayName: "API"}}},
 	}
 
 	if !m.GoBack() {
@@ -78,7 +78,7 @@ func TestGoBackCollapsesAuthMethods(t *testing.T) {
 }
 
 func TestGoBackCancelsAPIKeyInput(t *testing.T) {
-	m := New()
+	m := NewProviderSelector()
 	m.apiKeyActive = true
 
 	if !m.GoBack() {
@@ -90,13 +90,13 @@ func TestGoBackCancelsAPIKeyInput(t *testing.T) {
 }
 
 func TestHandleKeypressEscClearsModelSearchBeforeDismiss(t *testing.T) {
-	m := New()
+	m := NewProviderSelector()
 	m.active = true
-	m.allModels = []modelItem{
+	m.allModels = []providerModelItem{
 		{ID: "gpt-5", DisplayName: "GPT-5", ProviderName: "openai"},
 		{ID: "claude", DisplayName: "Claude", ProviderName: "anthropic"},
 	}
-	m.connectedProviders = []providerItem{
+	m.connectedProviders = []providerProviderItem{
 		{Provider: "openai", DisplayName: "OpenAI"},
 		{Provider: "anthropic", DisplayName: "Anthropic"},
 	}
@@ -117,7 +117,7 @@ func TestHandleKeypressEscClearsModelSearchBeforeDismiss(t *testing.T) {
 }
 
 func TestHandleKeypressEscDismissesAfterSearchCleared(t *testing.T) {
-	m := New()
+	m := NewProviderSelector()
 	m.active = true
 
 	cmd := m.HandleKeypress(tea.KeyMsg{Type: tea.KeyEsc})
@@ -134,15 +134,15 @@ func TestHandleKeypressEscDismissesAfterSearchCleared(t *testing.T) {
 }
 
 func TestSelectModelReturnsSelectionMessage(t *testing.T) {
-	m := New()
+	m := NewProviderSelector()
 	m.active = true
-	model := modelItem{
+	model := providerModelItem{
 		ID:           "gpt-5",
 		ProviderName: "openai",
 		AuthMethod:   llm.AuthAPIKey,
 	}
-	m.visibleItems = []listItem{
-		{Kind: itemModel, Model: &model},
+	m.visibleItems = []providerListItem{
+		{Kind: providerItemModel, Model: &model},
 	}
 	m.selectedIdx = 0
 
@@ -151,9 +151,9 @@ func TestSelectModelReturnsSelectionMessage(t *testing.T) {
 		t.Fatal("Select should return command for selected model")
 	}
 	msg := cmd()
-	selected, ok := msg.(ModelSelectedMsg)
+	selected, ok := msg.(ProviderModelSelectedMsg)
 	if !ok {
-		t.Fatalf("selection returned %T, want ModelSelectedMsg", msg)
+		t.Fatalf("selection returned %T, want ProviderModelSelectedMsg", msg)
 	}
 	if selected.ModelID != "gpt-5" || selected.ProviderName != "openai" || selected.AuthMethod != llm.AuthAPIKey {
 		t.Fatalf("unexpected selection: %+v", selected)
@@ -163,7 +163,7 @@ func TestSelectModelReturnsSelectionMessage(t *testing.T) {
 	}
 }
 
-func newTestStore(t *testing.T) *llm.Store {
+func newProviderTestStore(t *testing.T) *llm.Store {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	store, err := llm.NewStore()
@@ -174,7 +174,7 @@ func newTestStore(t *testing.T) *llm.Store {
 }
 
 func TestEnterLoadsCachedModelsAndPutsCurrentFirst(t *testing.T) {
-	store := newTestStore(t)
+	store := newProviderTestStore(t)
 	if err := store.CacheModels(llm.OpenAI, llm.AuthAPIKey, []llm.ModelInfo{
 		{ID: "gpt-5-mini", DisplayName: "GPT-5 mini", InputTokenLimit: 128000, OutputTokenLimit: 16000},
 		{ID: "gpt-5", DisplayName: "GPT-5", InputTokenLimit: 256000, OutputTokenLimit: 32000},
@@ -188,7 +188,7 @@ func TestEnterLoadsCachedModelsAndPutsCurrentFirst(t *testing.T) {
 		t.Fatalf("SetCurrentModel() error = %v", err)
 	}
 
-	m := New()
+	m := NewProviderSelector()
 	if _, err := m.Enter(context.Background(), 80, 24); err != nil {
 		t.Fatalf("Enter() error = %v", err)
 	}
@@ -203,7 +203,7 @@ func TestEnterLoadsCachedModelsAndPutsCurrentFirst(t *testing.T) {
 	// Check visible items contain model rows
 	modelCount := 0
 	for _, item := range m.visibleItems {
-		if item.Kind == itemModel {
+		if item.Kind == providerItemModel {
 			modelCount++
 		}
 	}
@@ -213,12 +213,12 @@ func TestEnterLoadsCachedModelsAndPutsCurrentFirst(t *testing.T) {
 }
 
 func TestUpdateFilterMatchesModelIDDisplayNameAndProvider(t *testing.T) {
-	m := New()
-	m.allModels = []modelItem{
+	m := NewProviderSelector()
+	m.allModels = []providerModelItem{
 		{ID: "gpt-5", DisplayName: "GPT-5", ProviderName: "openai"},
 		{ID: "claude-sonnet", DisplayName: "Claude Sonnet", ProviderName: "anthropic"},
 	}
-	m.connectedProviders = []providerItem{
+	m.connectedProviders = []providerProviderItem{
 		{Provider: "openai", DisplayName: "OpenAI"},
 		{Provider: "anthropic", DisplayName: "Anthropic"},
 	}
@@ -243,8 +243,8 @@ func TestUpdateFilterMatchesModelIDDisplayNameAndProvider(t *testing.T) {
 }
 
 func TestSetModelPersistsSelection(t *testing.T) {
-	store := newTestStore(t)
-	m := New()
+	store := newProviderTestStore(t)
+	m := NewProviderSelector()
 	m.store = store
 
 	result, err := m.SetModel("gpt-5", "openai", llm.AuthAPIKey)
@@ -262,18 +262,18 @@ func TestSetModelPersistsSelection(t *testing.T) {
 }
 
 func TestTabSwitchesBetweenTabs(t *testing.T) {
-	m := New()
+	m := NewProviderSelector()
 	m.active = true
-	m.activeTab = tabModels
-	m.allModels = []modelItem{
+	m.activeTab = providerTabModels
+	m.allModels = []providerModelItem{
 		{ID: "gpt-5", DisplayName: "GPT-5", ProviderName: "openai"},
 	}
-	m.connectedProviders = []providerItem{
+	m.connectedProviders = []providerProviderItem{
 		{Provider: "openai", DisplayName: "OpenAI"},
 	}
-	m.allProviders = []providerItem{
+	m.allProviders = []providerProviderItem{
 		{Provider: "openai", DisplayName: "OpenAI", Connected: true},
-		{Provider: "google", DisplayName: "Google", AuthMethods: []authMethodItem{
+		{Provider: "google", DisplayName: "Google", AuthMethods: []providerAuthMethodItem{
 			{DisplayName: "API Key", Status: llm.StatusNotConfigured},
 		}},
 	}
@@ -281,14 +281,14 @@ func TestTabSwitchesBetweenTabs(t *testing.T) {
 
 	// Press Tab to switch to Providers tab
 	m.HandleKeypress(tea.KeyMsg{Type: tea.KeyTab})
-	if m.activeTab != tabProviders {
+	if m.activeTab != providerTabProviders {
 		t.Fatal("Tab should switch to Providers tab")
 	}
 
 	// Should have provider items now
 	found := false
 	for _, item := range m.visibleItems {
-		if item.Kind == itemProvider {
+		if item.Kind == providerItemProvider {
 			found = true
 			break
 		}
@@ -299,22 +299,22 @@ func TestTabSwitchesBetweenTabs(t *testing.T) {
 
 	// Press Tab again to go back to Models
 	m.HandleKeypress(tea.KeyMsg{Type: tea.KeyTab})
-	if m.activeTab != tabModels {
+	if m.activeTab != providerTabModels {
 		t.Fatal("Tab should switch back to Models tab")
 	}
 }
 
 func TestNavigationSkipsProviderHeaders(t *testing.T) {
-	m := New()
+	m := NewProviderSelector()
 	m.active = true
 
-	model1 := modelItem{ID: "m1", ProviderName: "openai"}
-	model2 := modelItem{ID: "m2", ProviderName: "anthropic"}
-	m.visibleItems = []listItem{
-		{Kind: itemProviderHeader}, // 0 - not selectable
-		{Kind: itemModel, Model: &model1}, // 1
-		{Kind: itemProviderHeader}, // 2 - not selectable
-		{Kind: itemModel, Model: &model2}, // 3
+	model1 := providerModelItem{ID: "m1", ProviderName: "openai"}
+	model2 := providerModelItem{ID: "m2", ProviderName: "anthropic"}
+	m.visibleItems = []providerListItem{
+		{Kind: providerItemProviderHeader}, // 0 - not selectable
+		{Kind: providerItemModel, Model: &model1}, // 1
+		{Kind: providerItemProviderHeader}, // 2 - not selectable
+		{Kind: providerItemModel, Model: &model2}, // 3
 	}
 	m.selectedIdx = 1
 
@@ -332,14 +332,14 @@ func TestNavigationSkipsProviderHeaders(t *testing.T) {
 }
 
 func TestSelectProviderExpandsAuthMethods(t *testing.T) {
-	m := New()
+	m := NewProviderSelector()
 	m.active = true
-	m.activeTab = tabProviders
-	m.allProviders = []providerItem{
+	m.activeTab = providerTabProviders
+	m.allProviders = []providerProviderItem{
 		{
 			Provider:    "anthropic",
 			DisplayName: "Anthropic",
-			AuthMethods: []authMethodItem{
+			AuthMethods: []providerAuthMethodItem{
 				{DisplayName: "API Key", Status: llm.StatusNotConfigured},
 				{DisplayName: "Bedrock", Status: llm.StatusAvailable},
 			},
@@ -349,7 +349,7 @@ func TestSelectProviderExpandsAuthMethods(t *testing.T) {
 
 	// Find the provider item
 	for i, item := range m.visibleItems {
-		if item.Kind == itemProvider {
+		if item.Kind == providerItemProvider {
 			m.selectedIdx = i
 			break
 		}
@@ -367,7 +367,7 @@ func TestSelectProviderExpandsAuthMethods(t *testing.T) {
 	// Check that auth method items are now in visible list
 	authCount := 0
 	for _, item := range m.visibleItems {
-		if item.Kind == itemAuthMethod {
+		if item.Kind == providerItemAuthMethod {
 			authCount++
 		}
 	}
@@ -377,14 +377,14 @@ func TestSelectProviderExpandsAuthMethods(t *testing.T) {
 }
 
 func TestRebuildVisibleItemsStructure(t *testing.T) {
-	m := New()
-	m.activeTab = tabModels
-	m.allModels = []modelItem{
+	m := NewProviderSelector()
+	m.activeTab = providerTabModels
+	m.allModels = []providerModelItem{
 		{ID: "m1", ProviderName: "openai", DisplayName: "Model 1"},
 		{ID: "m2", ProviderName: "openai", DisplayName: "Model 2"},
 		{ID: "m3", ProviderName: "anthropic", DisplayName: "Model 3"},
 	}
-	m.connectedProviders = []providerItem{
+	m.connectedProviders = []providerProviderItem{
 		{Provider: "openai", DisplayName: "OpenAI"},
 		{Provider: "anthropic", DisplayName: "Anthropic"},
 	}
@@ -401,16 +401,16 @@ func TestRebuildVisibleItemsStructure(t *testing.T) {
 	if len(m.visibleItems) != 5 {
 		t.Fatalf("expected 5 visible items, got %d", len(m.visibleItems))
 	}
-	if m.visibleItems[0].Kind != itemProviderHeader {
+	if m.visibleItems[0].Kind != providerItemProviderHeader {
 		t.Fatalf("item 0 should be ProviderHeader, got %v", m.visibleItems[0].Kind)
 	}
-	if m.visibleItems[1].Kind != itemModel || m.visibleItems[2].Kind != itemModel {
+	if m.visibleItems[1].Kind != providerItemModel || m.visibleItems[2].Kind != providerItemModel {
 		t.Fatal("items 1-2 should be Models")
 	}
-	if m.visibleItems[3].Kind != itemProviderHeader {
+	if m.visibleItems[3].Kind != providerItemProviderHeader {
 		t.Fatalf("item 3 should be ProviderHeader, got %v", m.visibleItems[3].Kind)
 	}
-	if m.visibleItems[4].Kind != itemModel {
+	if m.visibleItems[4].Kind != providerItemModel {
 		t.Fatal("item 4 should be Model")
 	}
 

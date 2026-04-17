@@ -38,6 +38,8 @@ type Model struct {
 	Session  SessionState
 	Memory   MemoryState
 	MCP      MCPState
+	Plugin   PluginSelector
+	Provider ProviderState
 }
 
 // PendingImage holds an inline image token and its provider payload.

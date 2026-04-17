@@ -1,4 +1,5 @@
-package pluginui
+// Plugin selector rendering.
+package user
 
 import (
 	"fmt"
@@ -9,14 +10,13 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
-
-func (s *Model) Render() string {
+func (s *PluginSelector) Render() string {
 	if !s.active {
 		return ""
 	}
 
 	switch s.level {
-	case levelDetail:
+	case pluginLevelDetail:
 		if s.detailPlugin != nil {
 			return s.renderInstalledDetail()
 		}
@@ -26,39 +26,39 @@ func (s *Model) Render() string {
 		if s.detailMarketplace != nil {
 			return s.renderMarketplaceDetail()
 		}
-	case levelAddMarketplace:
+	case pluginLevelAddMarketplace:
 		return s.renderAddMarketplaceDialog()
-	case levelBrowsePlugins:
+	case pluginLevelBrowsePlugins:
 		return s.renderBrowsePlugins()
 	}
 
 	return s.renderTabList()
 }
 
-func (s *Model) boxWidth() int {
+func (s *PluginSelector) boxWidth() int {
 	return max(60, s.width-6)
 }
 
-func (s *Model) boxHeight() int {
+func (s *PluginSelector) boxHeight() int {
 	return max(18, s.height-4)
 }
 
-func (s *Model) contentWidth() int {
+func (s *PluginSelector) contentWidth() int {
 	return s.boxWidth() - 4 // padding(1,2) takes 4 chars
 }
 
-func (s *Model) bodyHeight() int {
+func (s *PluginSelector) bodyHeight() int {
 	return max(6, s.boxHeight()-10)
 }
 
-func (s *Model) sepLine() string {
+func (s *PluginSelector) sepLine() string {
 	sepStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 	return sepStyle.Render(strings.Repeat("─", s.contentWidth()-4))
 }
 
 // ── Full-width placement ──────────────────────────────────────────────────
 
-func (s *Model) renderFullWidth(content string) string {
+func (s *PluginSelector) renderFullWidth(content string) string {
 	box := lipgloss.NewStyle().
 		Width(s.boxWidth()).
 		Height(s.boxHeight()).
@@ -69,7 +69,7 @@ func (s *Model) renderFullWidth(content string) string {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 
-func (s *Model) renderTabs() string {
+func (s *PluginSelector) renderTabs() string {
 	activeStyle := lipgloss.NewStyle().
 		Foreground(kit.TabActiveFg).
 		Background(kit.TabActiveBg).
@@ -81,11 +81,11 @@ func (s *Model) renderTabs() string {
 
 	tabs := []struct {
 		name string
-		tab  Tab
+		tab  pluginTab
 	}{
-		{"Discover", tabDiscover},
-		{"Installed", tabInstalled},
-		{"Marketplaces", tabMarketplaces},
+		{"Discover", pluginTabDiscover},
+		{"Installed", pluginTabInstalled},
+		{"Marketplaces", pluginTabMarketplaces},
 	}
 
 	var parts []string
@@ -102,7 +102,7 @@ func (s *Model) renderTabs() string {
 
 // ── Search box ────────────────────────────────────────────────────────────
 
-func (s *Model) renderSearchBox(sb *strings.Builder) {
+func (s *PluginSelector) renderSearchBox(sb *strings.Builder) {
 	innerWidth := max(20, s.contentWidth()-4)
 
 	var text string
@@ -111,11 +111,11 @@ func (s *Model) renderSearchBox(sb *strings.Builder) {
 		text = fmt.Sprintf(" 🔍 %s▏ (%d/%d)", s.searchQuery, pos, total)
 	} else {
 		switch s.activeTab {
-		case tabDiscover:
+		case pluginTabDiscover:
 			text = " 🔍 Type to filter plugins..."
-		case tabInstalled:
+		case pluginTabInstalled:
 			text = " 🔍 Type to filter installed..."
-		case tabMarketplaces:
+		case pluginTabMarketplaces:
 			text = " 🔍 Type to filter marketplaces..."
 		}
 	}
@@ -135,7 +135,7 @@ func (s *Model) renderSearchBox(sb *strings.Builder) {
 
 // ── Tab list (main view) ──────────────────────────────────────────────────
 
-func (s *Model) renderTabList() string {
+func (s *PluginSelector) renderTabList() string {
 	var sb strings.Builder
 
 	// Separator above tabs
@@ -153,11 +153,11 @@ func (s *Model) renderTabList() string {
 	// Tab content
 	var body strings.Builder
 	switch s.activeTab {
-	case tabInstalled:
+	case pluginTabInstalled:
 		s.renderInstalledList(&body)
-	case tabDiscover:
+	case pluginTabDiscover:
 		s.renderDiscoverList(&body)
-	case tabMarketplaces:
+	case pluginTabMarketplaces:
 		s.renderMarketplacesList(&body)
 	}
 	sb.WriteString(s.renderViewport(body.String(), 0))
@@ -171,9 +171,9 @@ func (s *Model) renderTabList() string {
 	return s.renderFullWidth(sb.String())
 }
 
-func (s *Model) getItemCount() (int, int) {
+func (s *PluginSelector) getItemCount() (int, int) {
 	total := len(s.filteredItems)
-	if s.activeTab == tabMarketplaces {
+	if s.activeTab == pluginTabMarketplaces {
 		total++
 	}
 	pos := s.selectedIdx + 1
@@ -183,13 +183,13 @@ func (s *Model) getItemCount() (int, int) {
 	return pos, total
 }
 
-func (s *Model) getTabHint() string {
+func (s *PluginSelector) getTabHint() string {
 	switch s.activeTab {
-	case tabInstalled:
+	case pluginTabInstalled:
 		return "←/→ tabs · ↑/↓ navigate · space toggle · enter details · esc close"
-	case tabDiscover:
+	case pluginTabDiscover:
 		return "←/→ tabs · ↑/↓ navigate · enter details · esc close"
-	case tabMarketplaces:
+	case pluginTabMarketplaces:
 		return "←/→ tabs · ↑/↓ navigate · u update · r remove · esc close"
 	}
 	return ""
@@ -197,7 +197,7 @@ func (s *Model) getTabHint() string {
 
 // ── Installed list ────────────────────────────────────────────────────────
 
-func (s *Model) renderInstalledList(sb *strings.Builder) {
+func (s *PluginSelector) renderInstalledList(sb *strings.Builder) {
 	dimStyle := kit.DimStyle()
 
 	if len(s.filteredItems) == 0 {
@@ -262,7 +262,7 @@ func (s *Model) renderInstalledList(sb *strings.Builder) {
 
 // ── Discover list ─────────────────────────────────────────────────────────
 
-func (s *Model) renderDiscoverList(sb *strings.Builder) {
+func (s *PluginSelector) renderDiscoverList(sb *strings.Builder) {
 	dimStyle := kit.DimStyle()
 
 	if len(s.filteredItems) == 0 {
@@ -288,7 +288,7 @@ func (s *Model) renderDiscoverList(sb *strings.Builder) {
 
 	cw := s.contentWidth()
 	for i := s.scrollOffset; i < endIdx; i++ {
-		p, ok := s.filteredItems[i].(discoverPluginItem)
+		p, ok := s.filteredItems[i].(pluginDiscoverItem)
 		if !ok {
 			continue
 		}
@@ -328,7 +328,7 @@ func (s *Model) renderDiscoverList(sb *strings.Builder) {
 
 // ── Marketplaces list ─────────────────────────────────────────────────────
 
-func (s *Model) renderMarketplacesList(sb *strings.Builder) {
+func (s *PluginSelector) renderMarketplacesList(sb *strings.Builder) {
 	dimStyle := kit.DimStyle()
 	addStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success).Bold(true)
 
@@ -349,7 +349,7 @@ func (s *Model) renderMarketplacesList(sb *strings.Builder) {
 	endIdx := min(s.scrollOffset+visible, len(s.filteredItems))
 
 	for i := s.scrollOffset; i < endIdx; i++ {
-		m, ok := s.filteredItems[i].(marketplaceItem)
+		m, ok := s.filteredItems[i].(pluginMarketplaceItem)
 		if !ok {
 			continue
 		}
@@ -379,7 +379,7 @@ func (s *Model) renderMarketplacesList(sb *strings.Builder) {
 
 // ── Detail views ──────────────────────────────────────────────────────────
 
-func (s *Model) renderInstalledDetail() string {
+func (s *PluginSelector) renderInstalledDetail() string {
 	if s.detailPlugin == nil {
 		return s.renderTabList()
 	}
@@ -423,7 +423,7 @@ func (s *Model) renderInstalledDetail() string {
 		sb.WriteString("\n")
 	}
 
-	components := buildComponentList(p)
+	components := pluginBuildComponentList(p)
 	if len(components) > 0 {
 		sb.WriteString("\n")
 		compLabel := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Text).Bold(true)
@@ -456,7 +456,7 @@ func (s *Model) renderInstalledDetail() string {
 	return s.renderFullWidth(sb.String())
 }
 
-func (s *Model) renderDiscoverDetail() string {
+func (s *PluginSelector) renderDiscoverDetail() string {
 	if s.detailDiscover == nil {
 		return s.renderTabList()
 	}
@@ -507,7 +507,7 @@ func (s *Model) renderDiscoverDetail() string {
 	return s.renderFullWidth(sb.String())
 }
 
-func (s *Model) renderMarketplaceDetail() string {
+func (s *PluginSelector) renderMarketplaceDetail() string {
 	if s.detailMarketplace == nil {
 		return s.renderTabList()
 	}
@@ -558,7 +558,7 @@ func (s *Model) renderMarketplaceDetail() string {
 
 // ── Add marketplace dialog ────────────────────────────────────────────────
 
-func (s *Model) renderAddMarketplaceDialog() string {
+func (s *PluginSelector) renderAddMarketplaceDialog() string {
 	var sb strings.Builder
 	cw := s.contentWidth()
 
@@ -599,7 +599,7 @@ func (s *Model) renderAddMarketplaceDialog() string {
 
 // ── Browse plugins ────────────────────────────────────────────────────────
 
-func (s *Model) renderBrowsePlugins() string {
+func (s *PluginSelector) renderBrowsePlugins() string {
 	var sb strings.Builder
 	dimStyle := kit.DimStyle()
 	brightStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextBright)
@@ -666,7 +666,7 @@ func (s *Model) renderBrowsePlugins() string {
 
 // ── Actions ───────────────────────────────────────────────────────────────
 
-func (s *Model) renderActions(sb *strings.Builder) {
+func (s *PluginSelector) renderActions(sb *strings.Builder) {
 	sb.WriteString("\n")
 	accentStyle := lipgloss.NewStyle().
 		Foreground(kit.CurrentTheme.Primary).
@@ -688,7 +688,7 @@ func (s *Model) renderActions(sb *strings.Builder) {
 
 // ── Footer ────────────────────────────────────────────────────────────────
 
-func (s *Model) renderFooter(sb *strings.Builder, hint string) {
+func (s *PluginSelector) renderFooter(sb *strings.Builder, hint string) {
 	if s.isLoading {
 		spinnerStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Accent)
 		sb.WriteString(spinnerStyle.Render("  ◐ " + s.loadingMsg))
@@ -707,7 +707,7 @@ func (s *Model) renderFooter(sb *strings.Builder, hint string) {
 
 // ── Viewport ──────────────────────────────────────────────────────────────
 
-func (s *Model) renderViewport(content string, scroll int) string {
+func (s *PluginSelector) renderViewport(content string, scroll int) string {
 	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
 	if len(lines) == 1 && lines[0] == "" {
 		lines = nil
@@ -749,7 +749,7 @@ func pluginStatusIconAndStyle(enabled bool) (string, lipgloss.Style) {
 	return "○", kit.SelectorStatusNone()
 }
 
-func buildComponentList(p *pluginItem) []string {
+func pluginBuildComponentList(p *pluginItem) []string {
 	type componentCount struct {
 		icon  string
 		name  string

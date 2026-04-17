@@ -1,4 +1,5 @@
-package providerui
+// Provider selector rendering.
+package user
 
 import (
 	"fmt"
@@ -6,12 +7,12 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/llm"
 )
 
 // Render renders the unified model & provider selector as a full-screen overlay.
-func (s *Model) Render() string {
+func (s *ProviderSelector) Render() string {
 	if !s.active {
 		return ""
 	}
@@ -61,26 +62,26 @@ func (s *Model) Render() string {
 }
 
 // contentWidth returns the usable width for the panel content.
-func (s *Model) contentWidth() int {
+func (s *ProviderSelector) contentWidth() int {
 	// Use full terminal width minus a small margin
 	return max(60, s.width-6)
 }
 
 // boxHeight returns the fixed height for the panel, consistent across tabs.
-func (s *Model) boxHeight() int {
+func (s *ProviderSelector) boxHeight() int {
 	return max(18, s.height-4)
 }
 
 // emptyFilterMsg returns the "no matches" text for the current tab.
-func (s *Model) emptyFilterMsg() string {
-	if s.activeTab == tabModels {
+func (s *ProviderSelector) emptyFilterMsg() string {
+	if s.activeTab == providerTabModels {
 		return kit.DimStyle().PaddingLeft(2).Render("No models match the filter")
 	}
 	return kit.DimStyle().PaddingLeft(2).Render("No providers match the filter")
 }
 
 // renderItemList renders the scrollable item list into the builder.
-func (s *Model) renderItemList(sb *strings.Builder) {
+func (s *ProviderSelector) renderItemList(sb *strings.Builder) {
 	endIdx := min(s.scrollOffset+s.maxVisible, len(s.visibleItems))
 
 	if s.scrollOffset > 0 {
@@ -93,13 +94,13 @@ func (s *Model) renderItemList(sb *strings.Builder) {
 		isSelected := i == s.selectedIdx
 
 		switch item.Kind {
-		case itemProviderHeader:
+		case providerItemProviderHeader:
 			sb.WriteString(s.renderProviderHeader(item))
-		case itemModel:
+		case providerItemModel:
 			sb.WriteString(s.renderModelRow(item, isSelected))
-		case itemProvider:
+		case providerItemProvider:
 			sb.WriteString(s.renderProviderRow(item, isSelected, i))
-		case itemAuthMethod:
+		case providerItemAuthMethod:
 			sb.WriteString(s.renderAuthMethod(item, isSelected, i))
 		}
 		sb.WriteString("\n")
@@ -120,7 +121,7 @@ func (s *Model) renderItemList(sb *strings.Builder) {
 // ── Tab header ──────────────────────────────────────────────────────────────
 
 
-func (s *Model) renderTabs() string {
+func (s *ProviderSelector) renderTabs() string {
 	activeStyle := lipgloss.NewStyle().
 		Foreground(kit.TabActiveFg).
 		Background(kit.TabActiveBg).
@@ -132,10 +133,10 @@ func (s *Model) renderTabs() string {
 
 	tabs := []struct {
 		name string
-		tab  tab
+		tab  providerTab
 	}{
-		{"Models", tabModels},
-		{"Providers", tabProviders},
+		{"Models", providerTabModels},
+		{"Providers", providerTabProviders},
 	}
 
 	var parts []string
@@ -152,18 +153,18 @@ func (s *Model) renderTabs() string {
 
 // ── Search box ──────────────────────────────────────────────────────────────
 
-func (s *Model) renderSearchBox() string {
+func (s *ProviderSelector) renderSearchBox() string {
 	innerWidth := max(20, s.contentWidth()-8)
 
 	var text string
-	if s.activeTab == tabModels && s.searchQuery != "" {
+	if s.activeTab == providerTabModels && s.searchQuery != "" {
 		totalModels := len(s.allModels)
 		filteredCount := len(s.filteredModels)
 		text = fmt.Sprintf(" 🔍 %s▏ (%d/%d)", s.searchQuery, filteredCount, totalModels)
 	} else if s.searchQuery != "" {
 		text = " 🔍 " + s.searchQuery + "▏"
 	} else {
-		if s.activeTab == tabProviders {
+		if s.activeTab == providerTabProviders {
 			text = " 🔍 Type to filter providers..."
 		} else {
 			text = " 🔍 Type to filter models..."
@@ -186,7 +187,7 @@ func (s *Model) renderSearchBox() string {
 
 // ── Empty / no providers ────────────────────────────────────────────────────
 
-func (s *Model) renderEmptyState() string {
+func (s *ProviderSelector) renderEmptyState() string {
 	warningStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Warning).Bold(true)
 	msgStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Text)
 	cmdStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Primary).Bold(true)
@@ -209,7 +210,7 @@ func (s *Model) renderEmptyState() string {
 
 // ── Models tab rows ─────────────────────────────────────────────────────────
 
-func (s *Model) renderProviderHeader(item listItem) string {
+func (s *ProviderSelector) renderProviderHeader(item providerListItem) string {
 	style := lipgloss.NewStyle().
 		Foreground(kit.CurrentTheme.TextDim).
 		Bold(true)
@@ -220,7 +221,7 @@ func (s *Model) renderProviderHeader(item listItem) string {
 	return style.Render(name)
 }
 
-func (s *Model) renderModelRow(item listItem, isSelected bool) string {
+func (s *ProviderSelector) renderModelRow(item providerListItem, isSelected bool) string {
 	m := item.Model
 
 	indicator := "[ ]"
@@ -252,18 +253,18 @@ func (s *Model) renderModelRow(item listItem, isSelected bool) string {
 // providerNameColumnWidth is the fixed width for provider name alignment.
 const providerNameColumnWidth = 16
 
-func (s *Model) renderProviderRow(item listItem, isSelected bool, itemIdx int) string {
+func (s *ProviderSelector) renderProviderRow(item providerListItem, isSelected bool, itemIdx int) string {
 	p := item.Provider
 	if p == nil {
 		return ""
 	}
 
-	bestStatus := bestAuthMethodStatus(p.AuthMethods)
-	statusIcon, statusStyle, _ := getStatusDisplay(bestStatus)
+	bestStatus := providerBestAuthMethodStatus(p.AuthMethods)
+	statusIcon, statusStyle, _ := providerGetStatusDisplay(bestStatus)
 
 	envInfo := ""
 	if len(p.AuthMethods) == 1 {
-		envInfo = kit.RenderEnvVarStatus(firstEnvVar(p.AuthMethods[0].EnvVars))
+		envInfo = kit.RenderEnvVarStatus(providerFirstEnvVar(p.AuthMethods[0].EnvVars))
 	} else if len(p.AuthMethods) > 1 {
 		envInfo = kit.DimStyle().Render(fmt.Sprintf("%d auth methods", len(p.AuthMethods)))
 	}
@@ -272,23 +273,23 @@ func (s *Model) renderProviderRow(item listItem, isSelected bool, itemIdx int) s
 	result := kit.RenderSelectableRow(line, isSelected)
 
 	if s.lastConnectResult != "" && itemIdx == s.lastConnectAuthIdx {
-		result += "\n" + resultIndent + s.renderConnectResult()
+		result += "\n" + providerResultIndent + s.renderConnectResult()
 	}
 
 	return result
 }
 
-func (s *Model) renderAuthMethod(item listItem, isSelected bool, itemIdx int) string {
+func (s *ProviderSelector) renderAuthMethod(item providerListItem, isSelected bool, itemIdx int) string {
 	am := item.AuthMethod
 	if am == nil {
 		return ""
 	}
 
-	statusIcon, statusStyle, statusDesc := getStatusDisplay(am.Status)
+	statusIcon, statusStyle, statusDesc := providerGetStatusDisplay(am.Status)
 
 	envInfo := ""
 	if am.Status != llm.StatusConnected {
-		envInfo = kit.RenderEnvVarStatus(firstEnvVar(am.EnvVars))
+		envInfo = kit.RenderEnvVarStatus(providerFirstEnvVar(am.EnvVars))
 	}
 	if statusDesc != "" && envInfo == "" {
 		envInfo = kit.DimStyle().Render(statusDesc)
@@ -299,7 +300,7 @@ func (s *Model) renderAuthMethod(item listItem, isSelected bool, itemIdx int) st
 	result := kit.RenderSelectableRow(line, isSelected)
 
 	if s.lastConnectResult != "" && itemIdx == s.lastConnectAuthIdx {
-		result += "\n" + resultIndent + "  " + s.renderConnectResult()
+		result += "\n" + providerResultIndent + "  " + s.renderConnectResult()
 	}
 
 	return result
@@ -307,7 +308,7 @@ func (s *Model) renderAuthMethod(item listItem, isSelected bool, itemIdx int) st
 
 // ── API key input ───────────────────────────────────────────────────────────
 
-func (s *Model) renderAPIKeyInput() string {
+func (s *ProviderSelector) renderAPIKeyInput() string {
 	label := kit.DimStyle().Render(s.apiKeyEnvVar + ": ")
 	inputView := label + s.apiKeyInput.View()
 
@@ -322,14 +323,14 @@ func (s *Model) renderAPIKeyInput() string {
 
 // ── Footer hints ────────────────────────────────────────────────────────────
 
-func (s *Model) renderHints() string {
+func (s *ProviderSelector) renderHints() string {
 	if s.apiKeyActive {
 		return kit.DimStyle().Render("Paste API key · Enter confirm · Esc cancel")
 	}
 
 	var parts []string
 	parts = append(parts, "↑/↓ navigate")
-	if s.activeTab == tabProviders {
+	if s.activeTab == providerTabProviders {
 		parts = append(parts, "Enter connect/refresh")
 	} else {
 		parts = append(parts, "Enter select")
@@ -340,11 +341,11 @@ func (s *Model) renderHints() string {
 
 // ── Connection result ───────────────────────────────────────────────────────
 
-// resultIndent is the fixed indent for connection result messages,
+// providerResultIndent is the fixed indent for connection result messages,
 // aligned with the provider name column.
-const resultIndent = "        "
+const providerResultIndent = "        "
 
-func (s *Model) connectResultStyle() lipgloss.Style {
+func (s *ProviderSelector) connectResultStyle() lipgloss.Style {
 	if !s.lastConnectSuccess {
 		if s.lastConnectResult == "Connecting..." || s.lastConnectResult == "Refreshing..." {
 			return kit.DimStyle()
@@ -357,22 +358,6 @@ func (s *Model) connectResultStyle() lipgloss.Style {
 	return kit.SelectorStatusConnected()
 }
 
-func (s *Model) renderConnectResult() string {
+func (s *ProviderSelector) renderConnectResult() string {
 	return s.connectResultStyle().Render(s.lastConnectResult)
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-func bestAuthMethodStatus(methods []authMethodItem) llm.Status {
-	for _, m := range methods {
-		if m.Status == llm.StatusConnected {
-			return llm.StatusConnected
-		}
-	}
-	for _, m := range methods {
-		if m.Status == llm.StatusAvailable {
-			return llm.StatusAvailable
-		}
-	}
-	return llm.StatusNotConfigured
 }

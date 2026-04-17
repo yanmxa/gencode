@@ -547,7 +547,7 @@ func (m *model) resetAfterCompact() {
 }
 
 func (m *model) handleTokenLimitResult(msg appcompact.TokenLimitResultMsg) tea.Cmd {
-	m.provider.FetchingLimits = false
+	m.userInput.Provider.FetchingLimits = false
 
 	var content string
 	if msg.Error != nil {

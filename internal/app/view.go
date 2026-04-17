@@ -96,7 +96,7 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 		parts = append(parts, strings.TrimSuffix(trackerView, "\n"))
 	}
 
-	if m.provider.FetchingLimits {
+	if m.userInput.Provider.FetchingLimits {
 		spinnerView := render.ThinkingStyle.Render(m.agentOutput.Spinner.View() + " Fetching token limits...")
 		parts = append(parts, spinnerView)
 	}
@@ -134,7 +134,7 @@ func (m model) renderWelcome() string {
 }
 
 func (m model) renderModeStatus() string {
-	modelName := appsystem.RenderHookStatus(m.systemInput.HookStatus, m.provider.StatusMessage)
+	modelName := appsystem.RenderHookStatus(m.systemInput.HookStatus, m.userInput.Provider.StatusMessage)
 	return render.RenderModeStatus(render.OperationModeParams{
 		Mode:          m.operationMode,
 		InputTokens:   m.inputTokens,

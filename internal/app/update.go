@@ -25,12 +25,12 @@ type overlaySelector interface {
 
 func (m *model) overlaySelectors() []overlaySelector {
 	return []overlaySelector{
-		&m.provider.Selector,
+		&m.userInput.Provider.Selector,
 		&m.tool.Selector,
 		&m.userInput.Skill.Selector,
 		&m.userInput.Agent,
 		&m.userInput.MCP.Selector,
-		&m.plugin,
+		&m.userInput.Plugin,
 		&m.userInput.Session.Selector,
 		&m.userInput.Memory.Selector,
 		&m.userInput.Search,
@@ -138,7 +138,7 @@ func (m *model) updateTextarea(msg tea.Msg) tea.Cmd {
 		m.promptSuggestion.Clear()
 	}
 
-	if m.conv.Stream.Active || m.provider.FetchingLimits || m.conv.Compact.Active {
+	if m.conv.Stream.Active || m.userInput.Provider.FetchingLimits || m.conv.Compact.Active {
 		var spinnerCmd tea.Cmd
 		m.agentOutput.Spinner, cmd = m.agentOutput.Spinner.Update(msg)
 		spinnerCmd = cmd

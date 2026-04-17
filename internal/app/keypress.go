@@ -48,7 +48,7 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		if !m.conv.Stream.Active && !m.userInput.Approval.IsActive() &&
 			!m.mode.Question.IsActive() &&
 			(m.mode.PlanApproval == nil || !m.mode.PlanApproval.IsActive()) &&
-			!m.provider.Selector.IsActive() && !m.userInput.Suggestions.IsVisible() {
+			!m.userInput.Provider.Selector.IsActive() && !m.userInput.Suggestions.IsVisible() {
 			m.cycleOperationMode()
 			return nil, true
 		}
