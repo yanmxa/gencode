@@ -336,7 +336,7 @@ internal/core/        Agent interface: Inbox/Outbox/Run, Event types, Message
 internal/llm/         LLM providers (Anthropic, OpenAI, Google, ...)
 internal/tool/        Tool registry and execution
 internal/hook/        Event hook system
-internal/config/      Settings and permissions
+internal/setting/      Settings and permissions
 internal/...          ...
 ```
 
