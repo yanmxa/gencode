@@ -212,19 +212,24 @@ agentPermMsg
 
 ## App Structure
 
-### Design Principles
+### First Principle
+
+Root is **pure glue** — it defines the composite Model, routes messages, composes views, and implements Runtime adapters. All business logic lives in sub-models. If a root file can't be named in two words, the logic belongs in a sub-model.
+
+### Sub-model Convention
 
 Each sub-model package is a self-contained MVU unit:
 
-| Convention | Rule |
-|-----------|------|
+| File | Rule |
+|------|------|
 | `model.go` | State definition. All fields the package owns live here. |
-| `update.go` | `Update()` entry point. Routes msgs to handlers. |
+| `update.go` | `Update()` entry point. Routes msgs to handlers. Returns `(tea.Cmd, bool)`. |
 | `view.go` | Pure render. Reads Model, returns string. |
-| `on_*.go` | Component handlers: each `on_` file owns one UI component's state + update + view. |
-| `runtime.go` | Runtime interface. Sub-model calls up to root through this; never imports root. |
+| `runtime.go` | Runtime interface — the only way to call up to root. Never import root. |
+| `on_*.go` | Component files. Each `on_` file owns one component's state + update + view. |
+| `*.go` | Data structures and renderers (no `on_` prefix) in non-input packages like `conv/`. |
 
-Root implements each sub-model's Runtime via adapter structs in `bridges.go`. If a method only reads/writes its own sub-model's state, it belongs inside the sub-model — not in the Runtime interface.
+Root implements each sub-model's Runtime via adapter methods on `*model` in `model.go`.
 
 ### Root Model
 
@@ -238,25 +243,31 @@ type model struct {
 }
 ```
 
-Root `update.go` dispatches by msg type; root `view.go` composes sub-model views.
+### Update — Root is Just a Switch
 
-### Update Dispatch
-
+```go
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.KeyMsg:                 return m, m.input.HandleKey(msg)
+    case input.SubmitMsg:            return m, m.handleSubmit(msg)     // cross-cutting: input → agent
+    case input.CommandMsg:           return m, m.dispatchCommand(msg)  // cross-cutting: input → effect
+    case conv.PermissionRequestMsg:  return m, m.input.ShowApproval(msg.Req)
+    case input.ApprovalResponseMsg:  return m, m.conv.ResolvePermission(msg)
+    case conv.OutboxMsg:             return m, m.conv.HandleOutbox(msg)
+    case notify.TickMsg:             return m, m.notify.HandleTick(msg)
+    case trigger.TickMsg:            return m, m.trigger.HandleTick(msg)
+    // ...
+    }
+}
 ```
-msg type        → sub-model    → handlers
-────────────────────────────────────────────────────
-tea.KeyMsg      → m.input      → handleKeypress, handleSubmit
-notifyTickMsg   → m.notify     → handleTaskNotificationTick
-triggerTickMsg   → m.trigger    → handleCronTick, handleAsyncHookTick
-conv.OutboxMsg  → m.conv       → handlePreInfer, OnChunk, PostTool, OnTurn ...
-runtimeMsg      → m.runtime    → handleConfigReload, modeToggle
-```
 
-### View Composition
+Cross-cutting coordination is **msg routing**, not business logic. Each `case` is 1-2 lines — take a msg from one sub-model, hand it to another.
+
+### View — Just Compose
 
 ```
 View()
-  ├── m.conv.View()       → chat messages, streaming content, tool results
+  ├── m.conv.View()       → chat messages, streaming, tool results
   ├── m.conv.TrackerView()→ background task progress
   ├── m.input.View()      → textarea + image indicators
   └── m.runtime.View()    → status bar: mode, model, tokens
@@ -267,99 +278,86 @@ View()
 ```
 internal/app/
 │
-│  ── Root MVU + cross-cutting ──────────────────────────────────────────────
+│  ── Root: pure glue (4 files) ─────────────────────────────────────────────
+│  No business logic. Model + routing + view + entrypoint.
 │
-├── model.go          # root Model{input, notify, trigger, conv, runtime}, Init()
-├── update.go         # Update(): routes msgs to sub-models by type
-├── view.go           # View(): composes sub-model views into terminal layout
-├── init.go           # newModel(), initInfrastructure(), applyRunOptions()
-├── run.go            # Run(): entrypoint, tea.Program setup
-├── runprint.go       # runPrint(): headless non-interactive mode
-│
-├── bridges.go        # Runtime adapters: root model → sub-model Runtime interfaces
-├── submit.go         # handleSubmit() → prepareUserMessage() → sendToAgent()
-├── command.go        # slash command registry: /help, /clear, /compact, ...
-├── approval.go       # permission approval flow across input ↔ conv sub-models
-├── mode.go           # plan/question/enterplan modal request ↔ response
-├── agent_config.go   # buildLoopClient(), buildLoopSystem(), buildLoopToolSet()
-├── lifecycle.go      # changeCwd(), reloadProjectContext()
-├── tool_exec.go      # executeApproved(): dispatches tool calls
+├── model.go          # Model{5 sub-models}, Init(), buildCoreAgent()
+│                     # Runtime adapter methods: sendToAgent(), saveSession(), ...
+├── update.go         # Update(): msg type switch → delegate to sub-models
+│                     # Cross-cutting = routing: SubmitMsg → agent, PermReq → input, ...
+├── view.go           # View(): compose sub-model views into terminal layout
+├── run.go            # Run(): tea.Program setup, entrypoint
 │
 │  ── input/ ── Source 1: User Input ────────────────────────────────────────
 │  Event: tea.KeyMsg
-│  Flow:  keyboard → handleKeypress() → textarea | selector | approval
-│         Enter    → handleSubmit()   → sendToAgent() → Agent Inbox
+│  Flow:  keyboard → textarea | selector | approval
+│         Enter → SubmitMsg → root routes to agent
+│         /cmd  → CommandMsg → root dispatches effect
 │
 ├── input/
 │   ├── model.go             # Model{Textarea, History, Images, Queue, Selectors}
 │   ├── update.go            # Update(): routes to active overlay or textarea
 │   ├── view.go              # RenderTextarea(), image indicators
+│   ├── runtime.go           # Runtime interface
+│   ├── command.go           # slash command dispatch table
+│   ├── submit.go            # prepareUserMessage(), validate, emit SubmitMsg
 │   ├── on_textarea.go       # HandleTextareaUpdate(), HistoryUp/Down()
 │   ├── on_queue.go          # Enqueue(), Dequeue() — mid-stream input buffer
 │   ├── on_image.go          # HandleImageSelectKey()
 │   ├── on_approval.go       # ApprovalModel: Show() → HandleKeypress() → ResponseMsg
 │   ├── on_approval_bash.go  # bash command preview
 │   ├── on_approval_diff.go  # file diff preview
-│   ├── on_agent.go          # AgentSelector: list/toggle subagent definitions
-│   ├── on_provider.go       # ProviderSelector: switch LLM provider/model
-│   ├── on_provider_view.go  # provider selector rendering
-│   ├── on_plugin.go         # PluginSelector: install/enable/disable plugins
-│   ├── on_plugin_command.go # /plugin subcommand handlers
-│   ├── on_plugin_view.go    # plugin selector rendering
-│   ├── on_mcp.go            # MCPSelector: connect/disconnect MCP servers
-│   ├── on_session.go        # SessionSelector: resume/fork past sessions
-│   ├── on_memory.go         # MemorySelector: edit CLAUDE.md / memory files
-│   ├── on_skill.go          # SkillSelector: browse/toggle skills
-│   ├── on_search.go         # SearchSelector: pick web search backend
-│   └── on_token_limits.go   # HandleTokenLimitCommand()
+│   ├── on_agent.go          # AgentSelector
+│   ├── on_provider.go       # ProviderSelector + rendering
+│   ├── on_plugin.go         # PluginSelector + /plugin commands + rendering
+│   ├── on_mcp.go            # MCPSelector + /mcp commands
+│   ├── on_session.go        # SessionSelector
+│   ├── on_memory.go         # MemorySelector + /init, /memory commands
+│   ├── on_skill.go          # SkillSelector
+│   └── on_search.go         # SearchSelector
 │
 │  ── notify/ ── Source 2: Background Agent Completion ──────────────────────
 │  Event: task.TaskCompleted observer → NotificationQueue.Push()
-│  Flow:  tick → PopReadyNotifications() → BuildContinuationPrompt()
-│              → sendToAgent() → Agent Inbox
+│  Flow:  tick → PopReady() → BuildContinuationPrompt() → sendToAgent()
 │
 ├── notify/
-│   ├── model.go             # Model{NotificationQueue}, Push(), Pop(), PopBatch()
-│   ├── update.go            # Update(), handleTaskNotificationTick()
-│   ├── on_notification.go   # BuildTaskNotification(), MergeNotifications()
-│   └── on_tracker.go        # EnsureBackgroundBatchTracker(), UpdateWorkerTracker()
+│   ├── model.go             # Model{NotificationQueue}, Push(), Pop()
+│   ├── update.go            # Update(), handleTick()
+│   ├── notification.go      # BuildTaskNotification(), MergeNotifications()
+│   └── tracker.go           # EnsureBackgroundBatch(), UpdateWorker()
 │
 │  ── trigger/ ── Source 3: System Events ───────────────────────────────────
 │  Event: cron tick | async hook callback | file watcher
-│  Flow:  event → queue → tick → sendToAgent() → Agent Inbox
+│  Flow:  event → queue → tick → sendToAgent()
 │
 ├── trigger/
 │   ├── model.go             # Model{CronQueue, AsyncHookQueue}
 │   ├── update.go            # Update(), handleCronTick(), handleAsyncHookTick()
 │   ├── view.go              # RenderHookStatus()
-│   └── on_file_watcher.go   # NewFileWatcher(), SetPaths(), poll()
+│   └── file_watcher.go      # NewFileWatcher(), SetPaths(), poll()
 │
 │  ── conv/ ── Agent Outbox → Conversation ──────────────────────────────────
 │  Event: core.Event from Agent Outbox channel
-│  Flow:  DrainAgentOutbox() → OutboxMsg → handleAgentEvent()
-│           PreInfer → OnChunk → PostInfer → PreTool → PostTool → OnTurn
+│  Flow:  DrainOutbox() → OutboxMsg → handleAgentEvent()
+│         PreInfer → OnChunk → PostInfer → PreTool → PostTool → OnTurn
 │
 ├── conv/
 │   ├── model.go             # Model{Conversation, Stream, Compact, Modal, Tool, Progress}
-│   ├── update.go            # handleAgentEvent(), handlePreInfer/.../handleTurn()
-│   ├── runtime.go           # Runtime interface: only cross-cutting operations
+│   ├── update.go            # handleAgentEvent(): PreInfer/.../OnTurn dispatch
+│   ├── runtime.go           # Runtime interface: only truly cross-cutting operations
 │   ├── view.go              # RenderMessageRange(), RenderActiveContent()
-│   │   ── conversation state ──
-│   ├── conversation.go      # ConversationModel: Append(), AppendToLast(), ConvertToProvider()
-│   ├── compact.go           # CompactState: ShouldAutoCompact(), CompactConversation()
-│   ├── stream.go            # StreamState: Activate(), Stop(), BuildingTool
-│   │   ── tool execution ──
-│   ├── tool.go              # ToolExecState: Begin(), Reset(), DrainPendingCalls()
+│   ├── conversation.go      # Append(), AppendToLast(), ConvertToProvider()
+│   ├── compact.go           # ShouldAutoCompact(), CompactConversation()
+│   ├── stream.go            # Activate(), Stop(), BuildingTool
+│   ├── tool.go              # ToolExecState + executeApproved()
 │   ├── tool_selector.go     # ToolSelector: EnterSelect(), Toggle(), Render()
-│   │   ── modals ──
 │   ├── modal.go             # ModalState type definitions
-│   ├── plan.go              # PlanPrompt: Show() → HandleKeypress() → PlanResponseMsg
-│   ├── question.go          # QuestionPrompt: Show() → HandleKeypress() → QuestionResponseMsg
-│   ├── enterplan.go         # EnterPlanPrompt: Show() → HandleKeypress() → EnterPlanResponseMsg
-│   │   ── rendering ──
-│   ├── message.go           # RenderAssistantMessage(), RenderUserMessage(), RenderToolCalls()
-│   ├── markdown.go          # MDRenderer: Render(), splitTables()
-│   ├── progress.go          # ProgressHub: SendForAgent(), Check(), RenderTrackerList()
+│   ├── plan.go              # PlanPrompt: Show() → PlanResponseMsg
+│   ├── question.go          # QuestionPrompt: Show() → QuestionResponseMsg
+│   ├── enterplan.go         # EnterPlanPrompt: Show() → EnterPlanResponseMsg
+│   ├── message.go           # RenderAssistantMessage(), RenderUserMessage()
+│   ├── markdown.go          # MDRenderer: Render()
+│   ├── progress.go          # ProgressHub: SendForAgent(), Check()
 │   └── permission_bridge.go # PermissionBridge: PermissionFunc(), Recv()
 │
 │  ── Shared ────────────────────────────────────────────────────────────────
