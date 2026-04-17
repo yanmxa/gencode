@@ -33,7 +33,7 @@ type TrackerListParams struct {
 //
 // Note: this function is pure — it does not mutate tracker state.
 // The caller is responsible for resetting the store when appropriate
-// (see tracker.DefaultStore.AllDone).
+// (see AllDone field in TrackerListParams).
 func RenderTrackerList(params TrackerListParams) string {
 	if len(params.Tasks) == 0 {
 		return ""

@@ -587,7 +587,7 @@ func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 	m := &model{
 		cwd:         t.TempDir(),
 		conv:        appoutput.NewConversation(),
-		systemInput: appsystem.New(),
+		systemInput: appsystem.New(nil),
 		agentOutput: appoutput.New(80, appoutput.NewProgressHub(10)),
 		runtime: appruntime.Model{
 			LLMProvider: testLLMProvider{},
@@ -633,7 +633,7 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	})
 
 	m := &model{
-		systemInput: appsystem.New(),
+		systemInput: appsystem.New(engine),
 		runtime:     appruntime.Model{HookEngine: engine},
 	}
 

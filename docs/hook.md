@@ -287,38 +287,22 @@ Event-specific fields vary: `tool_name`, `tool_input`, `tool_response`,
 | 2 | Block operation, stderr = reason |
 | other | Non-blocking error, logged |
 
-## Permission Integration
+## Permission-Related Hook Events
 
-Hooks integrate with the permission system at three points:
+Three hook events participate in the permission pipeline (see
+[permission.md](permission.md) for the full decision flow):
 
-```
-Tool call
-  ↓
-PreToolUse hook (sync)
-  ├─ permissionDecision: "allow" → skip permission check
-  ├─ permissionDecision: "deny"  → block tool
-  ├─ permissionDecision: "ask"   → force permission prompt
-  └─ updatedInput: {...}         → rewrite tool params
-  ↓
-Permission rules check (settings.json allow/deny rules)
-  ↓
-PermissionRequest hook (sync)
-  ├─ behavior: "allow" / "deny"
-  ├─ updatedInput: {...}
-  └─ updatedPermissions: [
-       {"type": "setMode", "mode": "bypassPermissions", "destination": "session"},
-       {"type": "addRules", "rules": [...], "behavior": "allow", "destination": "persistent"},
-       {"type": "addDirectories", "directories": [...], "destination": "session"}
-     ]
-  ↓
-User dialog (if needed)
-  ↓
-PermissionDenied hook (if denied)
-  └─ retry: true → resume assistant turn
-```
+| Event | When | What hooks can do |
+|-------|------|-------------------|
+| `PreToolUse` | Before permission check | Return `permissionDecision`: `"allow"` / `"deny"` / `"ask"` to override the decision pipeline |
+| `PermissionRequest` | When decision is Ask, before user dialog | Return `behavior` + `updatedPermissions` to decide on behalf of the user and update rules |
+| `PermissionDenied` | After user denies | Return `retry: true` to resume the assistant turn |
 
-PreToolUse cannot inject `updatedPermissions` — that capability is
-exclusive to PermissionRequest hooks.
+Constraints:
+- `PreToolUse` cannot return `updatedPermissions` — that is exclusive
+  to `PermissionRequest`.
+- `PermissionDecision` merge: deny > ask > allow (most restrictive wins
+  when multiple hooks fire).
 
 ## Configuration
 

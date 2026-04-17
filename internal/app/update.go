@@ -87,13 +87,8 @@ func (m *model) routeFeatureUpdate(msg tea.Msg) (tea.Cmd, bool) {
 		(*model).updateAgentInput,
 		(*model).updateApproval,
 		(*model).updateMode,
-		(*model).updateProvider,
-		(*model).updateMCP,
-		(*model).updatePlugin,
-		(*model).updateSession,
-		(*model).updateMemory,
+		(*model).updateUserOverlays, // provider, MCP, plugin, session, memory, search
 		(*model).updateSystemInput,
-		(*model).updateSearch,
 	} {
 		if cmd, handled := updater(m, msg); handled {
 			return cmd, true

@@ -4,91 +4,45 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"go.uber.org/zap"
 
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/setting"
-	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plan"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
-// ensurePlanStore lazily initializes the plan store if not yet created.
 func (m *model) ensurePlanStore() {
-	if m.runtime.PlanStore != nil {
-		return
-	}
-	store, err := plan.NewStore()
-	if err != nil {
-		log.Logger().Warn("failed to initialize plan store", zap.Error(err))
-	}
-	m.runtime.PlanStore = store
+	m.runtime.EnsurePlanStore()
 }
 
 func (m *model) cycleOperationMode() {
-	m.runtime.OperationMode = m.runtime.OperationMode.NextWithBypass(m.runtime.Settings != nil && m.runtime.Settings.AllowBypass != nil && *m.runtime.Settings.AllowBypass)
+	m.runtime.CycleOperationMode()
 	m.applyOperationModePermissions()
-	m.runtime.PlanEnabled = m.runtime.OperationMode == setting.ModePlan
 
-	// Ensure plan store is initialized when entering plan mode via shift+tab.
 	if m.runtime.PlanEnabled {
 		m.ensurePlanStore()
 	}
 
 	if m.runtime.HookEngine != nil {
-		m.runtime.HookEngine.SetPermissionMode(m.operationModeName())
+		m.runtime.HookEngine.SetPermissionMode(m.runtime.OperationModeName())
 	}
 }
 
-// applyOperationModePermissions configures session permissions based on the current mode.
 func (m *model) applyOperationModePermissions() {
-	// Reset all permissions first
-	m.runtime.SessionPermissions.AllowAllEdits = false
-	m.runtime.SessionPermissions.AllowAllWrites = false
-	m.runtime.SessionPermissions.AllowAllBash = false
-	m.runtime.SessionPermissions.AllowAllSkills = false
-	m.runtime.SessionPermissions.Mode = setting.ModeNormal
+	m.runtime.ResetSessionPermissions()
 
-	// Enable auto-accept permissions
 	if m.runtime.OperationMode == setting.ModeAutoAccept {
-		m.runtime.SessionPermissions.AllowAllEdits = true
-		m.runtime.SessionPermissions.AllowAllWrites = true
-		m.runtime.SessionPermissions.AddWorkingDirectory(m.cwd)
-		for _, pattern := range setting.CommonAllowPatterns {
-			m.runtime.SessionPermissions.AllowPattern(pattern)
-		}
+		m.runtime.ApplyAutoAcceptPermissions(m.cwd)
 	}
 
 	if m.runtime.OperationMode == setting.ModeBypassPermissions {
-		m.runtime.SessionPermissions.Mode = setting.ModeBypassPermissions
+		m.runtime.ApplyBypassPermissions()
 	}
 }
 
-// operationModeName returns the string name of the current operation mode.
-func (m *model) operationModeName() string {
-	switch m.runtime.OperationMode {
-	case setting.ModeAutoAccept:
-		return "auto"
-	case setting.ModePlan:
-		return "plan"
-	case setting.ModeBypassPermissions:
-		return "bypassPermissions"
-	default:
-		return "default"
-	}
-}
-
-// enableAutoAcceptMode enables auto-accept permissions and sets the mode.
 func (m *model) enableAutoAcceptMode() {
-	m.runtime.SessionPermissions.AllowAllEdits = true
-	m.runtime.SessionPermissions.AllowAllWrites = true
-	m.runtime.SessionPermissions.AddWorkingDirectory(m.cwd)
-	for _, pattern := range setting.CommonAllowPatterns {
-		m.runtime.SessionPermissions.AllowPattern(pattern)
-	}
-	m.runtime.OperationMode = setting.ModeAutoAccept
-	m.runtime.PlanEnabled = false
+	m.runtime.EnableAutoAcceptMode(m.cwd)
 }
 
 // updateMode routes interactive prompt request messages (questions, plans, enter-plan).

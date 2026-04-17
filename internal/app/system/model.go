@@ -2,19 +2,25 @@
 // cron scheduled prompts and async hook rewakes.
 package system
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/yanmxa/gencode/internal/hook"
+)
 
 // Model holds all system-event input state: cron prompts and async hook rewakes.
 type Model struct {
 	CronQueue      []string
 	AsyncHookQueue *AsyncHookQueue
 	HookStatus     string // temporary active hook status shown in status bar
+	HookEngine     *hook.Engine
 }
 
 // New creates a Model with an initialized AsyncHookQueue.
-func New() Model {
+func New(hookEngine *hook.Engine) Model {
 	return Model{
 		AsyncHookQueue: NewAsyncHookQueue(),
+		HookEngine:     hookEngine,
 	}
 }
 

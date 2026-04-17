@@ -479,8 +479,7 @@ func mcpStartConnect(reg *coremcp.Registry, name string) tea.Cmd {
 
 // MCPRuntime defines the callbacks the MCP handler needs from the parent app model.
 type MCPRuntime interface {
-	AppendMessage(msg core.ChatMessage)
-	CommitMessages() []tea.Cmd
+	ConvWriter
 	SetInputText(text string)
 }
 

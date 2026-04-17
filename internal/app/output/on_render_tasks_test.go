@@ -43,9 +43,15 @@ func TestRenderTrackerListGroupsBackgroundBatchChildren(t *testing.T) {
 	_ = tracker.DefaultStore.Update(regular.ID, tracker.WithStatus(tracker.StatusPending))
 
 	view := RenderTrackerList(TrackerListParams{
+		Tasks:        tracker.DefaultStore.List(),
+		AllDone:      tracker.DefaultStore.AllDone(),
 		StreamActive: true,
 		Width:        120,
 		SpinnerView:  "•",
+		Blockers:     tracker.DefaultStore.OpenBlockers,
+		WorkerSnap: func(taskID, agentID string) (*orchestration.Snapshot, bool) {
+			return orchestration.DefaultStore.Snapshot(taskID, agentID, "", 1)
+		},
 	})
 
 	for _, want := range []string{
@@ -118,9 +124,15 @@ func TestRenderTrackerListPrefersOrchestrationSnapshotForBatchAndQueueState(t *t
 	orchestration.DefaultStore.QueuePendingMessage("bg-1", "Please focus on import paths")
 
 	view := RenderTrackerList(TrackerListParams{
+		Tasks:        tracker.DefaultStore.List(),
+		AllDone:      tracker.DefaultStore.AllDone(),
 		StreamActive: true,
 		Width:        120,
 		SpinnerView:  "•",
+		Blockers:     tracker.DefaultStore.OpenBlockers,
+		WorkerSnap: func(taskID, agentID string) (*orchestration.Snapshot, bool) {
+			return orchestration.DefaultStore.Snapshot(taskID, agentID, "", 1)
+		},
 	})
 
 	for _, want := range []string{

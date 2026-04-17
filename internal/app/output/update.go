@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -273,10 +272,7 @@ func (m *Model) HandleTick(msg tea.Msg, active, fetching, compacting, interactiv
 	}
 
 	if !active && !hasRunningTasks {
-		// Keep spinner alive when tasks are in-progress (e.g., background agents)
-		if !tracker.DefaultStore.HasInProgress() {
-			return nil
-		}
+		return nil
 	}
 
 	var cmd tea.Cmd

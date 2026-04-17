@@ -140,7 +140,7 @@ func newBaseModel() model {
 		mode:        newModeState(),
 		tool:        newToolState(),
 		isGit:       setting.IsGitRepo(appCwd),
-		systemInput: appsystem.New(),
+		systemInput: appsystem.New(hook.DefaultEngine),
 		fileWatcher: appsystem.NewFileWatcher(hook.DefaultEngine, nil),
 		agentInput:  appagent.New(),
 		fileCache:   filecache.New(),

@@ -9,6 +9,8 @@ import (
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/orchestration"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -121,10 +123,17 @@ func (m model) renderTrackerList() string {
 	if !m.showTasks {
 		return ""
 	}
+	tasks := tracker.DefaultStore.List()
 	return appoutput.RenderTrackerList(appoutput.TrackerListParams{
+		Tasks:        tasks,
+		AllDone:      tracker.DefaultStore.AllDone(),
 		StreamActive: m.conv.Stream.Active,
 		Width:        m.width,
 		SpinnerView:  m.agentOutput.Spinner.View(),
+		Blockers:     tracker.DefaultStore.OpenBlockers,
+		WorkerSnap: func(taskID, agentID string) (*orchestration.Snapshot, bool) {
+			return orchestration.DefaultStore.Snapshot(taskID, agentID, "", 1)
+		},
 	})
 }
 
@@ -169,6 +178,7 @@ func (m model) messageRenderParams() appoutput.MessageRenderParams {
 		MDRenderer:              m.agentOutput.MDRenderer,
 		SpinnerView:             m.agentOutput.Spinner.View(),
 		TaskProgress:            m.agentOutput.TaskProgress,
+		TaskOwnerMap:            appoutput.BuildTaskOwnerMap(tracker.DefaultStore.List()),
 		InteractivePromptActive: (m.mode.Question != nil && m.mode.Question.IsActive()) || (m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive()),
 	}
 }

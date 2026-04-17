@@ -246,28 +246,42 @@ View() → reads Model → renders terminal
 
 ## App Directory Structure
 
-Target layout — files organized by **input source** (who triggered the mutation).
+Files are organized by **input source** (who triggered the mutation).
 
 Each sub-package is flat — no nested sub-packages. Core files (`model.go`,
 `update.go`, `view.go`) handle definition and routing. Component files use
 `on_` prefix (`on_textarea.go`, `on_approval.go`, `on_provider.go`) to
 distinguish from core files and group together in directory listings.
 
-### Target Directory Structure
+### Directory Structure
 
 ```
 internal/app/
 │
-│  ── Core MVU ──────────────────────────────────
+│  ── Core MVU + Cross-cutting Orchestration ────
 ├── model.go                        # Model struct, Init(), agent session builder
 ├── update.go                       # Update() top-level dispatch
 ├── view.go                         # View() layout composition
 ├── init.go                         # Infrastructure initialization
+├── output.go                       # output.Runtime adapter (delegates to sub-models)
+├── bridges.go                      # Hook bridges (task/worktree/tool hooks)
+├── hooks.go                        # Hook firing helpers
+├── submit.go                       # User submit → agent pipeline
+├── keypress.go                     # Key dispatch (delegates to sub-model updates)
+├── mode.go                         # Mode switching (plan/auto-accept/bypass)
+├── lifecycle.go                    # CWD change, config reload, memory refresh
+├── command.go                      # Slash command registry
+├── agent_config.go                 # LLM loop + agent tool wiring
+├── tool_exec.go                    # Tool execution side effects
+├── token_limits.go                 # Token limit fetch logic
+├── approval.go                     # Cross-cutting approval coordination
+├── run.go                          # Non-interactive run mode
+├── runprint.go                     # Headless print mode
 │
-├── user/                           # User Input source
+├── user/                           # Source 1: User Input
 │   ├── model.go                    #   Model definition
-│   ├── update.go                   #   routing: key → component update
-│   ├── view.go                     #   routing: component → render
+│   ├── update.go                   #   routing: overlay messages → handler
+│   ├── view.go                     #   component rendering
 │   ├── on_textarea.go              #   text input, history, suggestions
 │   ├── on_queue.go                 #   message queue
 │   ├── on_image.go                 #   image paste handling
@@ -278,47 +292,43 @@ internal/app/
 │   ├── on_mcp.go                   #   MCP server selector
 │   ├── on_memory.go                #   memory selector
 │   ├── on_plugin.go                #   plugin selector
-│   ├── on_plugin_render.go         #   plugin selector rendering
 │   ├── on_provider.go              #   provider selector
-│   ├── on_provider_render.go       #   provider selector rendering
 │   ├── on_search.go                #   search engine selector
 │   ├── on_session.go               #   session selector
 │   └── on_skill.go                 #   skill selector
 │
-├── agent/                          # Agent Input source
+├── agent/                          # Source 2: Agent Input
 │   ├── model.go                    #   Model: notifications, batch tracking
 │   ├── update.go                   #   routing: notification → handler
 │   ├── view.go                     #   task tracker, background agent progress
 │   ├── on_notification.go          #   notification queue + build logic
 │   └── on_tracker.go               #   background worker/batch tracking
 │
-├── system/                         # System Input source
+├── system/                         # Source 3: System Input
 │   ├── model.go                    #   Model: cron, async hooks
 │   ├── update.go                   #   routing: tick → handler
 │   ├── view.go                     #   cron status rendering
 │   └── on_file_watcher.go          #   file change detection
 │
-├── output/                         # Agent Output (rendering only — no tool dispatch)
+├── output/                         # Agent Output (rendering — no global state access)
 │   ├── model.go                    #   streaming, progress, permission bridge types
 │   ├── update.go                   #   routing: outbox event → handler
 │   ├── view.go                     #   chat messages, streaming, tool results
+│   ├── runtime.go                  #   Runtime interface (injected by app/)
 │   ├── on_conversation.go          #   message history, stream state
-│   ├── on_modal.go                 #   plan approval, question prompts
-│   ├── on_compact.go               #   compact state + token limit helpers (no tool dispatch)
+│   ├── on_modal.go                 #   modal types + msg definitions
+│   ├── on_modal_plan.go            #   plan approval dialog
+│   ├── on_modal_question.go        #   question prompts
+│   ├── on_modal_enterplan.go       #   enter plan mode confirmation
+│   ├── on_compact.go               #   compact state + token limit helpers
 │   ├── on_tool.go                  #   tool selector + execution state
 │   ├── on_progress.go              #   progress hub for background agents
 │   ├── on_message.go               #   message rendering
-│   ├── permission_bridge.go        #   permission bridge (setting-free)
+│   ├── permission_bridge.go        #   permission bridge
 │   └── on_markdown.go              #   markdown rendering
 │
 ├── runtime/                        # Shared Runtime State
-│   ├── model.go                    #   Model: provider, permissions, session, config
-│   ├── update.go                   #   config reload, mode toggle, provider switch
-│   ├── view.go                     #   status bar: mode, model name, thinking, tokens
-│   ├── on_provider.go              #   LLM connection, model info, token tracking
-│   ├── on_session.go               #   session store, ID, summary, compaction
-│   ├── on_permission.go            #   operation mode, session permissions
-│   └── on_plan.go                  #   plan mode state
+│   └── model.go                    #   Model + pure methods (mode, permissions, plan)
 │
 ├── kit/                            # Shared UI utilities
 │   ├── suggest/                    #   autocomplete
@@ -326,7 +336,18 @@ internal/app/
 │
 ```
 
-Agent builder (buildCoreAgent, ensureAgentSession, startAgentLoop) belongs in `model.go` — it's Model initialization, not an Update handler.
+**Why root app/ has orchestration files**: Many operations are cross-cutting — they
+touch fields from multiple sub-models (e.g., `handlePlanClearAutoMode` mutates
+`conv`, `tool`, and `runtime`). Moving these to a sub-package would create circular
+dependencies. The root `app/` package is the composition root where sub-models meet.
+
+**runtime/ is thin by design**: `runtime.Model` holds state and pure methods
+(mode cycling, permission helpers, plan store). Cross-cutting operations that also
+touch `cwd`, `conv`, `userInput`, or `agentSess` stay in root `app/` as thin
+wrappers that delegate to `runtime.Model` methods.
+
+Agent builder (buildCoreAgent, ensureAgentSession, startAgentLoop) belongs in
+`model.go` — it's Model initialization, not an Update handler.
 
 ## Package Dependencies
 
@@ -336,9 +357,18 @@ internal/app/         TUI layer (this document)
 internal/core/        Agent interface: Inbox/Outbox/Run, Event types, Message
 internal/llm/         LLM providers (Anthropic, OpenAI, Google, ...)
 internal/tool/        Tool registry and execution
-internal/hook/        Event hook system
-internal/setting/      Settings and permissions
+internal/hook/        Event hook system (depends on setting/ for env vars, llm/ for prompt hooks)
+internal/setting/     Settings and permissions
 internal/...          ...
 ```
 
-Dependency direction: `cmd/ → app/ → {core/, provider/, tool/, hooks/, config/, ...}`. Domain packages never import app.
+Dependency direction: `cmd/ → app/ → {core/, llm/, tool/, hook/, setting/, ...}`.
+Domain packages never import `app/`.
+
+**Lateral dependencies** (same-layer, documented):
+- `hook/` → `setting/` (env var resolution), `llm/` (prompt/agent hook execution)
+- `session/` → `task/tracker` (serializes tracker tasks into transcripts)
+
+**Decoupled via callback injection** (no direct import):
+- `mcp/` ↔ `plugin/` — `mcp.Initialize(cwd, pluginServersCallback)`
+- `subagent/` ↔ `plugin/` — `subagent.Initialize(cwd, pluginAgentPathsCallback)`

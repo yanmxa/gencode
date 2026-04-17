@@ -44,8 +44,7 @@ type ProviderStatusExpiredMsg = kit.StatusExpiredMsg
 
 // ProviderRuntime defines the callbacks the provider selector needs from the parent app model.
 type ProviderRuntime interface {
-	AppendMessage(msg core.ChatMessage)
-	CommitMessages() []tea.Cmd
+	ConvWriter
 	SwitchProvider(p llm.Provider)
 	SetCurrentModel(m *llm.CurrentModelInfo)
 }

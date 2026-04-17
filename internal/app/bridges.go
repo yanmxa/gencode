@@ -17,25 +17,10 @@ import (
 	"github.com/yanmxa/gencode/internal/llm"
 )
 
-// --- User overlay dispatchers (Source 1) ---
+// --- User overlay dispatcher (Source 1) ---
 
-func (m *model) updateMCP(msg tea.Msg) (tea.Cmd, bool) {
-	return appuser.UpdateMCP(m, &m.userInput.MCP, msg)
-}
-func (m *model) updateMemory(msg tea.Msg) (tea.Cmd, bool) {
-	return appuser.UpdateMemory(m, &m.userInput.Memory, msg)
-}
-func (m *model) updatePlugin(msg tea.Msg) (tea.Cmd, bool) {
-	return appuser.UpdatePlugin(m, &m.userInput.Plugin, msg)
-}
-func (m *model) updateProvider(msg tea.Msg) (tea.Cmd, bool) {
-	return appuser.UpdateProvider(m, &m.userInput.Provider, msg)
-}
-func (m *model) updateSearch(msg tea.Msg) (tea.Cmd, bool) {
-	return appuser.UpdateSearch(m, &m.userInput.Search, msg)
-}
-func (m *model) updateSession(msg tea.Msg) (tea.Cmd, bool) {
-	return appuser.UpdateSession(m, &m.userInput.Session, msg)
+func (m *model) updateUserOverlays(msg tea.Msg) (tea.Cmd, bool) {
+	return appuser.Update(m, &m.userInput, msg)
 }
 
 // --- User overlay Runtime interface implementations ---
@@ -66,14 +51,6 @@ func (m *model) SwitchProvider(p llm.Provider) {
 func (m *model) SetCurrentModel(cm *llm.CurrentModelInfo) { m.runtime.CurrentModel = cm }
 
 // user.SessionRuntime
-func (m *model) EnsureSessionStore() error { return m.ensureSessionStore() }
-func (m *model) ForkSession(id string) (string, error) {
-	forked, err := m.runtime.SessionStore.Fork(id)
-	if err != nil {
-		return "", err
-	}
-	return forked.Metadata.ID, nil
-}
 func (m *model) LoadSession(id string) error { return m.loadSession(id) }
 func (m *model) ResetCommitIndex()           { m.conv.CommittedCount = 0 }
 func (m *model) CommitAllMessages() []tea.Cmd { return m.commitAllMessages() }
@@ -296,7 +273,7 @@ type systemRuntime struct {
 }
 
 func (m *model) updateSystemInput(msg tea.Msg) (tea.Cmd, bool) {
-	return appsystem.Update(systemRuntime{m: m}, &m.systemInput, m.runtime.HookEngine, msg)
+	return appsystem.Update(systemRuntime{m: m}, &m.systemInput, msg)
 }
 
 func (m *model) isInputIdle() bool {
@@ -304,7 +281,7 @@ func (m *model) isInputIdle() bool {
 }
 
 func (m *model) handleAsyncHookTick() tea.Cmd {
-	cmd, _ := appsystem.Update(systemRuntime{m: m}, &m.systemInput, m.runtime.HookEngine, appsystem.AsyncHookTickMsg{})
+	cmd, _ := appsystem.Update(systemRuntime{m: m}, &m.systemInput, appsystem.AsyncHookTickMsg{})
 	return cmd
 }
 

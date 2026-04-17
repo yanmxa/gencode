@@ -6,7 +6,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/cron"
-	"github.com/yanmxa/gencode/internal/hook"
 )
 
 // Runtime defines the app callbacks needed to process system-originated input.
@@ -17,13 +16,13 @@ type Runtime interface {
 	AppendNotice(text string)
 }
 
-// Update routes Source 3 (system -> agent) messages for the app runtime.
-func Update(rt Runtime, state *Model, hookEngine *hook.Engine, msg tea.Msg) (tea.Cmd, bool) {
+// Update routes Source 3 (system -> agent) messages.
+func Update(rt Runtime, state *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg.(type) {
 	case CronTickMsg:
 		return handleCronTick(rt, state), true
 	case AsyncHookTickMsg:
-		return handleAsyncHookTick(rt, state, hookEngine), true
+		return handleAsyncHookTick(rt, state), true
 	default:
 		return nil, false
 	}
@@ -42,10 +41,10 @@ func handleCronTick(rt Runtime, state *Model) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func handleAsyncHookTick(rt Runtime, state *Model, hookEngine *hook.Engine) tea.Cmd {
+func handleAsyncHookTick(rt Runtime, state *Model) tea.Cmd {
 	cmds := []tea.Cmd{StartAsyncHookTicker()}
 
-	item := state.HandleAsyncHookTick(hookEngine, rt.IsInputIdle())
+	item := state.HandleAsyncHookTick(rt.IsInputIdle())
 	if item == nil {
 		return tea.Batch(cmds...)
 	}
@@ -126,10 +125,9 @@ func (s *Model) HandleCronTick(isIdle bool) CronResult {
 }
 
 // HandleAsyncHookTick checks for pending async hook rewakes and returns what action to take.
-// hookEngine may be nil.
-func (s *Model) HandleAsyncHookTick(hookEngine *hook.Engine, isIdle bool) *AsyncHookRewake {
-	if hookEngine != nil {
-		s.HookStatus = hookEngine.CurrentStatusMessage()
+func (s *Model) HandleAsyncHookTick(isIdle bool) *AsyncHookRewake {
+	if s.HookEngine != nil {
+		s.HookStatus = s.HookEngine.CurrentStatusMessage()
 	} else {
 		s.HookStatus = ""
 	}

@@ -160,17 +160,12 @@ func (m *model) ensureMemoryContextLoaded() {
 	m.refreshMemoryContext("session_start")
 }
 
-// effectiveThinkingLevel returns the higher of the persistent level and the per-turn override.
 func (m *model) effectiveThinkingLevel() llm.ThinkingLevel {
-	return max(m.runtime.ThinkingLevel, m.runtime.ThinkingOverride)
+	return m.runtime.EffectiveThinkingLevel()
 }
 
-
 func (m model) getModelID() string {
-	if m.runtime.CurrentModel != nil {
-		return m.runtime.CurrentModel.ModelID
-	}
-	return "claude-sonnet-4-20250514"
+	return m.runtime.GetModelID()
 }
 
 func formatAsyncHookContinuationContext(result hook.AsyncHookResult, reason string) string {

@@ -259,8 +259,7 @@ func (m *MemorySelector) Render() string {
 
 // MemoryRuntime defines the callbacks the memory feature needs from the parent app model.
 type MemoryRuntime interface {
-	AppendMessage(msg core.ChatMessage)
-	CommitMessages() []tea.Cmd
+	ConvWriter
 	GetCwd() string
 	ClearCachedInstructions()
 	RefreshMemoryContext(trigger string)
