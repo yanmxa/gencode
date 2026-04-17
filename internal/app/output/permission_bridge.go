@@ -3,13 +3,12 @@ package output
 import (
 	"context"
 
-	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/permission"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 )
 
 // PermDecisionResult holds a permission decision and its reason.
 type PermDecisionResult struct {
-	Decision    permission.Decision
+	Decision    perm.Decision
 	Reason      string
 	ToolName    string
 	Description string
@@ -19,9 +18,9 @@ type PermDecisionResult struct {
 type PermDecisionFunc func(name string, args map[string]any) PermDecisionResult
 
 type PermBridgeRequest struct {
-	ToolCall    core.ToolCall
 	ToolName    string
 	Description string
+	Input       map[string]any
 	Response    chan PermBridgeResponse
 }
 
@@ -42,22 +41,24 @@ func NewPermissionBridge(decideFn PermDecisionFunc) *PermissionBridge {
 	}
 }
 
-func (pb *PermissionBridge) PermissionFunc() core.PermissionFunc {
-	return func(ctx context.Context, tc core.ToolCall) (bool, string) {
-		args, _ := core.ParseToolInput(tc.Input)
-		decision := pb.decideFn(tc.Name, args)
+// PermissionFunc returns a perm.PermissionFunc that gates tool execution.
+// Safe tools are handled by the WithPermission decorator — this function
+// only deals with Permit/Reject/Prompt logic.
+func (pb *PermissionBridge) PermissionFunc() perm.PermissionFunc {
+	return func(ctx context.Context, name string, input map[string]any) (bool, string) {
+		decision := pb.decideFn(name, input)
 
 		switch decision.Decision {
-		case permission.Permit:
+		case perm.Permit:
 			return true, decision.Reason
-		case permission.Reject:
+		case perm.Reject:
 			return false, decision.Reason
 		}
 
 		req := &PermBridgeRequest{
-			ToolCall:    tc,
 			ToolName:    decision.ToolName,
 			Description: decision.Description,
+			Input:       input,
 			Response:    make(chan PermBridgeResponse, 1),
 		}
 

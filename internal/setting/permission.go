@@ -8,9 +8,7 @@ import (
 
 // safeTools is the allowlist of tools that skip permission checks.
 // This is a local copy to avoid importing the higher-layer tool package.
-// IMPORTANT: keep in sync with tool.safeTools (tool/classification.go) and
-// permission.safeTools (permission/permission.go). The config/permission_test.go
-// TestSafeToolAllowlist test validates a subset of these.
+// IMPORTANT: keep in sync with perm.safeTools (tool/perm/decision.go).
 var safeTools = map[string]bool{
 	"Read": true, "Glob": true, "Grep": true,
 	"WebFetch": true, "WebSearch": true, "LSP": true,

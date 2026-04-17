@@ -11,9 +11,9 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/subagent"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 	_ "github.com/yanmxa/gencode/internal/tool/registry"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
@@ -136,14 +136,12 @@ func TestAgent_ModelResolution(t *testing.T) {
 // The built-in "Explore" agent has PermissionPlan, so its permission checker
 // should reject Write/Edit calls.
 func TestAgent_PlanPermissionMode_BlocksWrites(t *testing.T) {
-	// Verify via the permission package directly: PermissionPlan maps to ReadOnly()
-	// which rejects any non-read-only tool.
-	checker := permission.ReadOnly()
+	checker := perm.ReadOnly()
 
 	writeTools := []string{"Write", "Edit", "NotebookEdit", "Bash"}
 	for _, tool := range writeTools {
 		decision := checker.Check(tool, nil)
-		if decision != permission.Reject {
+		if decision != perm.Reject {
 			t.Errorf("tool %q: expected Reject in plan mode, got %v", tool, decision)
 		}
 	}
@@ -151,7 +149,7 @@ func TestAgent_PlanPermissionMode_BlocksWrites(t *testing.T) {
 	readTools := []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"}
 	for _, tool := range readTools {
 		decision := checker.Check(tool, nil)
-		if decision != permission.Permit {
+		if decision != perm.Permit {
 			t.Errorf("tool %q: expected Permit in plan mode, got %v", tool, decision)
 		}
 	}

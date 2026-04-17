@@ -7,6 +7,7 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 )
 
 // FakeLLM implements core.LLM for testing, returning queued responses.
@@ -86,20 +87,19 @@ func buildAllRegisteredTools(cwd string) core.Tools {
 	return core.NewTools(adapted...)
 }
 
-// NewTestAgentWithPermission creates a core.Agent with a custom permission function.
-func NewTestAgentWithPermission(t *testing.T, perm core.PermissionFunc, responses ...llm.CompletionResponse) (core.Agent, *FakeLLM) {
+// NewTestAgentWithPermission creates a core.Agent with a permission function wrapping tools.
+func NewTestAgentWithPermission(t *testing.T, permFn perm.PermissionFunc, responses ...llm.CompletionResponse) (core.Agent, *FakeLLM) {
 	t.Helper()
 	fakeLLM := &FakeLLM{Responses: responses}
 	cwd := t.TempDir()
+	tools := tool.WithPermission(buildAllRegisteredTools(cwd), permFn)
 	return core.NewAgent(core.Config{
-		ID:         "test-agent",
-		LLM:        fakeLLM,
-		System:     core.NewSystem(),
-		Tools:      buildAllRegisteredTools(cwd),
-
-		Permission: perm,
-		CWD:        cwd,
-		MaxTurns:   100,
+		ID:       "test-agent",
+		LLM:      fakeLLM,
+		System:   core.NewSystem(),
+		Tools:    tools,
+		CWD:      cwd,
+		MaxTurns: 100,
 	}), fakeLLM
 }
 

@@ -829,7 +829,7 @@ func TestSafeToolAllowlist(t *testing.T) {
 	settings := &Settings{}
 
 	// All safe tools, including read-only ones.
-	// Keep in sync with config/permission.go safeTools.
+	// Keep in sync with perm.safeTools (tool/perm/decision.go).
 	allSafeTools := []string{
 		"Read", "Glob", "Grep", "WebFetch", "WebSearch", "LSP",
 		"TaskCreate", "TaskGet", "TaskList", "TaskUpdate",

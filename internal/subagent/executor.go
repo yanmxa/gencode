@@ -13,9 +13,9 @@ import (
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/mcp"
-	"github.com/yanmxa/gencode/internal/permission"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/worktree"
 	"go.uber.org/zap"
 )
@@ -285,34 +285,23 @@ func (e *Executor) buildAgent(ctx context.Context, rc *runConfig, agentCwd strin
 		coreTools = &progressTools{inner: tools, onExec: onToolExec[0]}
 	}
 
+	// Wrap tools with permission decorator
+	permFn := perm.AsPermissionFunc(agentPermission(rc.permMode))
+	coreTools = tool.WithPermission(coreTools, permFn)
+
 	ag := core.NewAgent(core.Config{
-		LLM:        llm.NewClient(e.provider, rc.modelID, 0),
-		System:     sys,
-		Tools:      coreTools,
-		Permission: adaptPermission(agentPermission(rc.permMode)),
-		AgentType:  rc.config.Name,
-		CWD:        agentCwd,
-		MaxTurns:   rc.maxTurns,
-		OutboxBuf:  -1, // no outbox: subagents use direct ThinkAct path
+		LLM:       llm.NewClient(e.provider, rc.modelID, 0),
+		System:    sys,
+		Tools:     coreTools,
+		AgentType: rc.config.Name,
+		CWD:       agentCwd,
+		MaxTurns:  rc.maxTurns,
+		OutboxBuf: -1, // no outbox: subagents use direct ThinkAct path
 	})
 
 	return ag, cleanup, nil
 }
 
-// adaptPermission converts a permission.Checker to a core.PermissionFunc.
-func adaptPermission(checker permission.Checker) core.PermissionFunc {
-	if checker == nil {
-		return nil
-	}
-	return func(ctx context.Context, tc core.ToolCall) (bool, string) {
-		params, _ := core.ParseToolInput(tc.Input)
-		decision := checker.Check(tc.Name, params)
-		if decision == permission.Reject {
-			return false, fmt.Sprintf("tool %s is not permitted in this mode", tc.Name)
-		}
-		return true, ""
-	}
-}
 
 func (e *Executor) loadConversation(ag core.Agent, ctx context.Context, req AgentRequest) error {
 	// Fork: inherit parent conversation context
@@ -380,17 +369,17 @@ func (e *Executor) resolveModelID(requestModel string) string {
 	return e.parentModelID
 }
 
-// agentPermission maps PermissionMode to a permission.Checker.
-func agentPermission(mode PermissionMode) permission.Checker {
+// agentPermission maps PermissionMode to a perm.Checker.
+func agentPermission(mode PermissionMode) perm.Checker {
 	switch mode {
 	case PermissionPlan:
-		return permission.ReadOnly()
+		return perm.ReadOnly()
 	case PermissionAcceptEdits:
-		return permission.AcceptEdits()
+		return perm.AcceptEdits()
 	case PermissionDefault:
-		return permission.PermitAll() // Non-interactive agents auto-approve
+		return perm.PermitAll()
 	default:
-		return permission.PermitAll()
+		return perm.PermitAll()
 	}
 }
 
