@@ -14,7 +14,7 @@ import (
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
-	appmodal "github.com/yanmxa/gencode/internal/app/modal"
+	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
@@ -26,12 +26,10 @@ import (
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"maps"
 
-	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/cron"
-	appcommand "github.com/yanmxa/gencode/internal/command"
+	"github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
@@ -44,73 +42,56 @@ import (
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/subagent"
 	"github.com/yanmxa/gencode/internal/tool/fs"
-	"github.com/yanmxa/gencode/internal/tool/web"
 )
 
-type modelInfra struct {
-	cwd              string
-	store            *llm.Store
-	llmProvider      llm.Provider
-	currentModel     *llm.CurrentModelInfo
-	settings         *config.Settings
-	hookEngine       *hook.Engine
-	sessionStore     *session.Store
-	initialSessionID string
+// appCwd holds the working directory, initialized by initInfrastructure().
+// Other singletons live in their domain packages:
+//   llm.DefaultSetup, session.DefaultSetup, setting.DefaultSetup, hook.DefaultEngine
+var appCwd string
+
+func initInfrastructure() error {
+	appCwd, _ = os.Getwd()
+
+	// 1. LLM — no deps
+	llm.Initialize()
+
+	// 2. Extensions — plugin, skill, command, subagent, MCP
+	initExtensions(appCwd)
+
+	// 3. Settings
+	setting.Initialize(appCwd)
+
+	// 4. Tools — orchestration, cron, cross-cutting wiring
+	if err := initTools(appCwd); err != nil {
+		return err
+	}
+
+	// 5. Session
+	session.Initialize(appCwd)
+
+	// 6. Hook engine
+	hook.Initialize(appCwd)
+
+	return nil
 }
 
-func initInfra() (modelInfra, error) {
-	cwd, _ := os.Getwd()
+func initTools(cwd string) error {
 	orchestration.DefaultStore.Reset()
 	cron.DefaultStore.Reset()
 	cron.DefaultStore.SetStoragePath(filepath.Join(cwd, ".gen", "scheduled_tasks.json"))
 	if err := cron.DefaultStore.LoadDurable(); err != nil {
-		return modelInfra{}, fmt.Errorf("failed to load scheduled tasks: %w", err)
+		return fmt.Errorf("failed to load scheduled tasks: %w", err)
 	}
-
-	store, llmProvider, currentModel := initLLM()
-	initExt(cwd)
-	settings := initSettings(cwd)
-
-	// Wire injected dependencies so tool layer doesn't import upper layers
-	if store != nil {
-		web.SetSearchProviderGetter(store.GetSearchProvider)
-	}
-	fs.SetBashEnvProvider(plugin.PluginEnv)
-
-	sessionID := session.NewSessionID()
-
-	var transcriptPath string
-	sessionStore, err := session.NewStore(cwd)
-	if err != nil {
-		log.Logger().Warn("session store initialization failed, sessions will not be persisted", zap.Error(err))
-	}
-	if sessionStore != nil {
-		transcriptPath = sessionStore.SessionPath(sessionID)
-	}
-	hookEngine := hook.NewEngine(settings, sessionID, cwd, transcriptPath)
-	modelID := ""
-	if currentModel != nil {
-		modelID = currentModel.ModelID
-	}
-	hookEngine.SetLLMCompleter(buildLLMCompleter(llmProvider), modelID)
-	hookEngine.SetAgentRunner(NewHookAgentRunner(llmProvider, settings, cwd, config.IsGitRepo(cwd), mcp.DefaultRegistry, modelID))
-	hookEngine.SetEnvProvider(plugin.PluginEnv)
-
-	return modelInfra{
-		cwd:              cwd,
-		store:            store,
-		llmProvider:      llmProvider,
-		currentModel:     currentModel,
-		settings:         settings,
-		hookEngine:       hookEngine,
-		sessionStore:     sessionStore,
-		initialSessionID: sessionID,
-	}, nil
+	// plugin env vars (e.g., GEN_PLUGIN_<name>_ROOT) injected into Bash child processes
+	fs.SetEnvProvider(plugin.PluginEnv)
+	return nil
 }
 
-func newModel(infra modelInfra, opts config.RunOptions) (*model, error) {
-	base := newBaseModel(infra)
+func newModel(opts setting.RunOptions) (*model, error) {
+	base := newBaseModel()
 	m := &base
+	// TODO: refactor hook bridges to avoid global side-effect registration
+	installHookBridges(m.hookEngine, m.agentInput.Notifications)
 	m.configureAsyncHookCallback()
 	m.ensureMemoryContextLoaded()
 	m.reconfigureAgentTool()
@@ -121,27 +102,26 @@ func newModel(infra modelInfra, opts config.RunOptions) (*model, error) {
 	return m, nil
 }
 
-func newBaseModel(infra modelInfra) model {
-	cwd := infra.cwd
+func newBaseModel() model {
 	progressHub := progress.NewHub(100)
 
 	return model{
-		userInput:   appuser.New(cwd, defaultWidth, commandSuggestionMatcher()),
+		userInput:   appuser.New(appCwd, defaultWidth, commandSuggestionMatcher()),
 		agentOutput: appoutput.New(defaultWidth, progressHub),
 		conv:        appconv.New(),
-		cwd:         cwd,
+		cwd:         appCwd,
 		showTasks:   true,
 
-		operationMode:      config.ModeNormal,
-		sessionPermissions: config.NewSessionPermissions(),
-		disabledTools:      config.GetDisabledTools(),
+		operationMode:      setting.ModeNormal,
+		sessionPermissions: setting.NewSessionPermissions(),
+		disabledTools:      setting.GetDisabledTools(),
 
-		llmProvider:   infra.llmProvider,
-		providerStore: infra.store,
-		currentModel:  infra.currentModel,
+		llmProvider:   llm.DefaultSetup.Provider,
+		providerStore: llm.DefaultSetup.Store,
+		currentModel:  llm.DefaultSetup.CurrentModel,
 
-		sessionStore: infra.sessionStore,
-		sessionID:    infra.initialSessionID,
+		sessionStore: session.DefaultSetup.Store,
+		sessionID:    session.DefaultSetup.SessionID,
 
 		provider: newProviderState(),
 		session:  newSessionState(),
@@ -154,20 +134,20 @@ func newBaseModel(infra modelInfra) model {
 		agent:    newAgentState(),
 		search:   newSearchState(),
 		approval: appapproval.New(),
-		isGit:    config.IsGitRepo(cwd),
+		isGit:    setting.IsGitRepo(appCwd),
 
 		systemInput: appsystem.New(),
-		settings:    infra.settings,
-		hookEngine:  infra.hookEngine,
-		fileWatcher: appsystem.NewFileWatcher(infra.hookEngine, nil),
-		agentInput:  appagent.State{Notifications: infra.notifications},
+		settings:    setting.DefaultSetup,
+		hookEngine:  hook.DefaultEngine,
+		fileWatcher: appsystem.NewFileWatcher(hook.DefaultEngine, nil),
+		agentInput:  appagent.New(),
 		fileCache:   filecache.New(),
 	}
 }
 
 func commandSuggestionMatcher() func(string) []suggest.Suggestion {
 	return func(query string) []suggest.Suggestion {
-		cmds := appcommand.GetMatchingCommands(query)
+		cmds := command.GetMatchingCommands(query)
 		result := make([]suggest.Suggestion, len(cmds))
 		for i, c := range cmds {
 			result[i] = suggest.Suggestion{Name: c.Name, Description: c.Description}
@@ -224,7 +204,7 @@ func newSearchState() searchui.Model {
 	return searchui.New()
 }
 
-func (m *model) applyRunOptions(opts config.RunOptions) error {
+func (m *model) applyRunOptions(opts setting.RunOptions) error {
 	if opts.PluginDir != "" {
 		ctx := context.Background()
 		if err := plugin.DefaultRegistry.LoadFromPath(ctx, opts.PluginDir); err != nil {
@@ -261,25 +241,17 @@ func (m *model) applyRunOptions(opts config.RunOptions) error {
 }
 
 func (m *model) reloadPluginBackedState() error {
-	if err := skill.Initialize(m.cwd); err != nil {
-		return fmt.Errorf("failed to reload skill registry: %w", err)
-	}
-	appcommand.SetDynamicInfoProviders(skillCommandInfos)
-	if err := appcommand.Initialize(m.cwd); err != nil {
-		return fmt.Errorf("failed to reload custom commands: %w", err)
-	}
-	if err := subagent.Initialize(m.cwd); err != nil {
-		return fmt.Errorf("failed to reload agent registry: %w", err)
-	}
-	if err := mcp.Initialize(m.cwd); err != nil {
-		return fmt.Errorf("failed to reload MCP registry: %w", err)
-	}
+	// Plugin already loaded via LoadFromPath — only refresh dependent registries
+	skill.Initialize(m.cwd)
+	command.SetDynamicInfoProviders(skillCommandInfos)
+	command.Initialize(m.cwd)
+	subagent.Initialize(m.cwd)
+	mcp.Initialize(m.cwd)
 
-	settings := initSettings(m.cwd)
-	m.settings = settings
+	setting.Initialize(m.cwd)
+	m.settings = setting.DefaultSetup
 	if m.hookEngine != nil {
-		m.hookEngine.SetSettings(settings)
-		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.llmProvider, settings, m.cwd, m.isGit, mcp.DefaultRegistry, m.getModelID()))
+		m.hookEngine.SetSettings(setting.DefaultSetup)
 	}
 	m.reconfigureAgentTool()
 
@@ -289,7 +261,7 @@ func (m *model) reloadPluginBackedState() error {
 func (m *model) enablePlanMode(prompt string) error {
 	m.planEnabled = true
 	m.planTask = prompt
-	m.operationMode = config.ModePlan
+	m.operationMode = setting.ModePlan
 
 	planStore, err := plan.NewStore()
 	if err != nil {
@@ -335,141 +307,24 @@ func (m *model) applyResumeOption(resumeID string) error {
 	return nil
 }
 
-// buildLLMCompleter wraps a provider into an hook.LLMCompleter closure.
-// The closure owns client construction and streaming, keeping the hooks
-// engine free from direct provider dependencies.
-func buildLLMCompleter(p llm.Provider) hook.LLMCompleter {
-	if p == nil {
-		return nil
-	}
-	return func(ctx context.Context, systemPrompt, userMessage, model string) (string, error) {
-		c := llm.NewClient(p, model, 0)
-		resp, err := c.Complete(ctx, systemPrompt, []core.Message{{
-			Role:    core.RoleUser,
-			Content: userMessage,
-		}}, 4096)
-		if err != nil {
-			return "", err
-		}
-		return resp.Content, nil
-	}
-}
+// --- Extension initialization helpers ---
 
-// --- Low-level initialization helpers ---
-
-func initLLM() (*llm.Store, llm.Provider, *llm.CurrentModelInfo) {
-	store, _ := llm.NewStore()
-	if store == nil {
-		return nil, nil, nil
-	}
-
-	currentModel := store.GetCurrentModel()
-	ctx := context.Background()
-
-	if currentModel != nil {
-		if p, err := llm.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod); err == nil {
-			return store, p, currentModel
-		}
-	}
-
-	for providerName, conn := range store.GetConnections() {
-		if p, err := llm.GetProvider(ctx, llm.Name(providerName), conn.AuthMethod); err == nil {
-			return store, p, currentModel
-		}
-	}
-
-	return store, nil, currentModel
-}
-
-func initExt(cwd string) {
-	ctx := context.Background()
-
-	if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
-		log.Logger().Warn("Failed to load plugins", zap.Error(err))
+func initExtensions(cwd string) {
+	if err := plugin.Initialize(context.Background(), cwd); err != nil {
+		log.Logger().Warn("Failed to initialize plugin", zap.Error(err))
 	}
 	if err := skill.Initialize(cwd); err != nil {
-		log.Logger().Warn("Failed to initialize skill registry", zap.Error(err))
+		log.Logger().Warn("Failed to initialize skill", zap.Error(err))
 	}
-	appcommand.SetDynamicInfoProviders(skillCommandInfos)
-	if err := appcommand.Initialize(cwd); err != nil {
-		log.Logger().Warn("Failed to initialize custom commands", zap.Error(err))
+	command.SetDynamicInfoProviders(skillCommandInfos)
+	if err := command.Initialize(cwd); err != nil {
+		log.Logger().Warn("Failed to initialize command", zap.Error(err))
 	}
 	if err := subagent.Initialize(cwd); err != nil {
-		log.Logger().Warn("Failed to initialize agent registry", zap.Error(err))
+		log.Logger().Warn("Failed to initialize subagent", zap.Error(err))
 	}
 	if err := mcp.Initialize(cwd); err != nil {
-		log.Logger().Warn("Failed to initialize MCP registry", zap.Error(err))
+		log.Logger().Warn("Failed to initialize mcp", zap.Error(err))
 	}
-}
-
-func initSettings(cwd string) *config.Settings {
-	var (
-		settings *config.Settings
-		err      error
-	)
-	if cwd != "" {
-		settings, err = config.LoadForCwd(cwd)
-	} else {
-		settings, err = config.Load()
-	}
-	_ = err
-	if settings == nil {
-		settings = config.Default()
-	}
-	cloned := cloneSettings(settings)
-	plugin.MergePluginHooksIntoSettings(cloned)
-	return cloned
-}
-
-func cloneSettings(src *config.Settings) *config.Settings {
-	if src == nil {
-		return config.Default()
-	}
-	dst := config.NewSettings()
-	dst.Permissions.Allow = append([]string(nil), src.Permissions.Allow...)
-	dst.Permissions.Deny = append([]string(nil), src.Permissions.Deny...)
-	dst.Permissions.Ask = append([]string(nil), src.Permissions.Ask...)
-	dst.Model = src.Model
-	dst.Theme = src.Theme
-	if src.AllowBypass != nil {
-		v := *src.AllowBypass
-		dst.AllowBypass = &v
-	}
-	for k, v := range src.Env {
-		dst.Env[k] = v
-	}
-	for k, v := range src.EnabledPlugins {
-		dst.EnabledPlugins[k] = v
-	}
-	for k, v := range src.DisabledTools {
-		dst.DisabledTools[k] = v
-	}
-	for event, hooks := range src.Hooks {
-		clonedHooks := make([]config.Hook, len(hooks))
-		for i, hook := range hooks {
-			clonedHooks[i].Matcher = hook.Matcher
-			clonedHooks[i].Hooks = make([]config.HookCmd, len(hook.Hooks))
-			for j, cmd := range hook.Hooks {
-				clonedHooks[i].Hooks[j] = config.HookCmd{
-					Type:           cmd.Type,
-					Command:        cmd.Command,
-					Prompt:         cmd.Prompt,
-					URL:            cmd.URL,
-					If:             cmd.If,
-					Shell:          cmd.Shell,
-					Model:          cmd.Model,
-					Async:          cmd.Async,
-					AsyncRewake:    cmd.AsyncRewake,
-					Timeout:        cmd.Timeout,
-					StatusMessage:  cmd.StatusMessage,
-					Once:           cmd.Once,
-					Headers:        maps.Clone(cmd.Headers),
-					AllowedEnvVars: append([]string(nil), cmd.AllowedEnvVars...),
-				}
-			}
-		}
-		dst.Hooks[event] = clonedHooks
-	}
-	return dst
 }
 

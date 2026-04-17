@@ -4,9 +4,8 @@ import (
 	"context"
 
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/system"
-	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 )
@@ -53,7 +52,7 @@ func (m *model) changeCwd(newCwd string) {
 
 	oldCwd := m.cwd
 	m.cwd = newCwd
-	m.isGit = config.IsGitRepo(newCwd)
+	m.isGit = setting.IsGitRepo(newCwd)
 	m.userInput.Suggestions.SetCwd(newCwd)
 	if m.userInput.Suggestions.GetSuggestionType() == suggest.TypeFile {
 		m.userInput.Suggestions.Hide()
@@ -67,7 +66,6 @@ func (m *model) changeCwd(newCwd string) {
 
 	if m.hookEngine != nil {
 		m.hookEngine.SetCwd(newCwd)
-		m.hookEngine.SetAgentRunner(NewHookAgentRunner(m.llmProvider, m.settings, newCwd, m.isGit, mcp.DefaultRegistry, m.getModelID()))
 		outcome := m.hookEngine.Execute(context.Background(), hook.CwdChanged, hook.HookInput{
 			OldCwd: oldCwd,
 			NewCwd: newCwd,
@@ -77,10 +75,10 @@ func (m *model) changeCwd(newCwd string) {
 }
 
 func (m *model) reloadProjectContext(cwd string) {
-	initExt(cwd)
+	initExtensions(cwd)
 
-	settings := initSettings(cwd)
-	m.settings = settings
+	setting.Initialize(cwd)
+	m.settings = setting.DefaultSetup
 	if m.disabledTools == nil {
 		m.disabledTools = make(map[string]bool)
 	} else {
@@ -88,11 +86,11 @@ func (m *model) reloadProjectContext(cwd string) {
 			delete(m.disabledTools, k)
 		}
 	}
-	for k, v := range settings.DisabledTools {
+	for k, v := range setting.DefaultSetup.DisabledTools {
 		m.disabledTools[k] = v
 	}
 	if m.hookEngine != nil {
-		m.hookEngine.SetSettings(settings)
+		m.hookEngine.SetSettings(setting.DefaultSetup)
 	}
 }
 

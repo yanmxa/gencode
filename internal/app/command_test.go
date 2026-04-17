@@ -10,7 +10,7 @@ import (
 	appcommand "github.com/yanmxa/gencode/internal/command"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plugin"
@@ -84,7 +84,7 @@ func TestExecuteCommandPlanUsageAndState(t *testing.T) {
 
 	t.Run("plan mode enabled when task provided", func(t *testing.T) {
 		m := &model{
-			sessionPermissions: config.NewSessionPermissions(),
+			sessionPermissions: setting.NewSessionPermissions(),
 		}
 
 		result, cmd, handled := executeCommand(context.Background(), m, "/plan audit regression coverage")
@@ -94,7 +94,7 @@ func TestExecuteCommandPlanUsageAndState(t *testing.T) {
 		if cmd != nil {
 			t.Fatal("did not expect follow-up command")
 		}
-		if m.operationMode != config.ModePlan || !m.planEnabled {
+		if m.operationMode != setting.ModePlan || !m.planEnabled {
 			t.Fatalf("expected plan mode enabled, got operation=%v enabled=%v", m.operationMode, m.planEnabled)
 		}
 		if m.planTask != "audit regression coverage" {
@@ -440,7 +440,7 @@ func TestHandleCommandSubmit_LoopDeleteAllPreservesLiteralInputAndDeletesJobs(t 
 	}
 
 	tmpDir := t.TempDir()
-	base := newBaseModel(modelInfra{cwd: tmpDir,})
+	appCwd = tmpDir; base := newBaseModel()
 	m := &model{
 		cwd:   tmpDir,
 		userInput: base.userInput,
@@ -470,7 +470,7 @@ func TestHandleCommandSubmit_LoopDeleteAllPreservesLiteralInputAndDeletesJobs(t 
 
 func TestHandleCommandSubmit_ToolsPreservesLiteralInput(t *testing.T) {
 	tmpDir := t.TempDir()
-	base := newBaseModel(modelInfra{cwd: tmpDir,})
+	appCwd = tmpDir; base := newBaseModel()
 	m := &model{
 		cwd:    tmpDir,
 		userInput: base.userInput,
@@ -503,7 +503,7 @@ func TestHandleCommandSubmit_LoopOncePlacesCommandBeforeNotice(t *testing.T) {
 	t.Cleanup(func() { cron.DefaultStore = prevStore })
 
 	tmpDir := t.TempDir()
-	base := newBaseModel(modelInfra{cwd: tmpDir,})
+	appCwd = tmpDir; base := newBaseModel()
 	m := &model{
 		cwd:       tmpDir,
 		userInput: base.userInput,
@@ -534,7 +534,7 @@ func TestHandleCommandSubmit_LoopRecurringPlacesCommandBeforeNoticeAndPrompt(t *
 	t.Cleanup(func() { cron.DefaultStore = prevStore })
 
 	tmpDir := t.TempDir()
-	base := newBaseModel(modelInfra{cwd: tmpDir,})
+	appCwd = tmpDir; base := newBaseModel()
 	m := &model{
 		cwd:       tmpDir,
 		userInput: base.userInput,

@@ -9,18 +9,18 @@ import (
 
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/kit"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
 )
 
 // Run routes to either print mode or interactive TUI.
-func Run(opts config.RunOptions) error {
+func Run(opts setting.RunOptions) error {
 	if opts.Print != "" {
 		return runPrint(opts.Print)
 	}
 
-	if userQuit, err := kit.ResolveTheme(config.LoadTheme(), config.SaveTheme); userQuit || err != nil {
+	if userQuit, err := kit.ResolveTheme(setting.LoadTheme(), setting.SaveTheme); userQuit || err != nil {
 		return err
 	}
 
@@ -40,12 +40,11 @@ func Run(opts config.RunOptions) error {
 	return nil
 }
 
-func initModel(opts config.RunOptions) (*model, error) {
-	infra, err := initInfra()
-	if err != nil {
+func initModel(opts setting.RunOptions) (*model, error) {
+	if err := initInfrastructure(); err != nil {
 		return nil, err
 	}
-	m, err := newModel(infra, opts)
+	m, err := newModel(opts)
 	if err != nil {
 		return nil, err
 	}

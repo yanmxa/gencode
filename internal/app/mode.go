@@ -6,9 +6,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
-	appmodal "github.com/yanmxa/gencode/internal/app/modal"
+	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plan"
@@ -30,7 +30,7 @@ func (m *model) ensurePlanStore() {
 func (m *model) cycleOperationMode() {
 	m.operationMode = m.operationMode.NextWithBypass(m.settings != nil && m.settings.AllowBypass != nil && *m.settings.AllowBypass)
 	m.applyOperationModePermissions()
-	m.planEnabled = m.operationMode == config.ModePlan
+	m.planEnabled = m.operationMode == setting.ModePlan
 
 	// Ensure plan store is initialized when entering plan mode via shift+tab.
 	if m.planEnabled {
@@ -49,31 +49,31 @@ func (m *model) applyOperationModePermissions() {
 	m.sessionPermissions.AllowAllWrites = false
 	m.sessionPermissions.AllowAllBash = false
 	m.sessionPermissions.AllowAllSkills = false
-	m.sessionPermissions.Mode = config.ModeNormal
+	m.sessionPermissions.Mode = setting.ModeNormal
 
 	// Enable auto-accept permissions
-	if m.operationMode == config.ModeAutoAccept {
+	if m.operationMode == setting.ModeAutoAccept {
 		m.sessionPermissions.AllowAllEdits = true
 		m.sessionPermissions.AllowAllWrites = true
 		m.sessionPermissions.AddWorkingDirectory(m.cwd)
-		for _, pattern := range config.CommonAllowPatterns {
+		for _, pattern := range setting.CommonAllowPatterns {
 			m.sessionPermissions.AllowPattern(pattern)
 		}
 	}
 
-	if m.operationMode == config.ModeBypassPermissions {
-		m.sessionPermissions.Mode = config.ModeBypassPermissions
+	if m.operationMode == setting.ModeBypassPermissions {
+		m.sessionPermissions.Mode = setting.ModeBypassPermissions
 	}
 }
 
 // operationModeName returns the string name of the current operation mode.
 func (m *model) operationModeName() string {
 	switch m.operationMode {
-	case config.ModeAutoAccept:
+	case setting.ModeAutoAccept:
 		return "auto"
-	case config.ModePlan:
+	case setting.ModePlan:
 		return "plan"
-	case config.ModeBypassPermissions:
+	case setting.ModeBypassPermissions:
 		return "bypassPermissions"
 	default:
 		return "default"
@@ -85,10 +85,10 @@ func (m *model) enableAutoAcceptMode() {
 	m.sessionPermissions.AllowAllEdits = true
 	m.sessionPermissions.AllowAllWrites = true
 	m.sessionPermissions.AddWorkingDirectory(m.cwd)
-	for _, pattern := range config.CommonAllowPatterns {
+	for _, pattern := range setting.CommonAllowPatterns {
 		m.sessionPermissions.AllowPattern(pattern)
 	}
-	m.operationMode = config.ModeAutoAccept
+	m.operationMode = setting.ModeAutoAccept
 	m.planEnabled = false
 }
 
@@ -160,7 +160,7 @@ func (m *model) handlePlanRequest(msg appmodal.PlanRequestMsg) tea.Cmd {
 func (m *model) handlePlanResponse(msg appmodal.PlanResponseMsg) tea.Cmd {
 	if !msg.Approved {
 		m.planEnabled = false
-		m.operationMode = config.ModeNormal
+		m.operationMode = setting.ModeNormal
 		return m.abortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.", false)
 	}
 
@@ -192,10 +192,10 @@ func (m *model) handlePlanResponse(msg appmodal.PlanResponseMsg) tea.Cmd {
 	case "auto":
 		m.enableAutoAcceptMode()
 	case "manual":
-		m.operationMode = config.ModeNormal
+		m.operationMode = setting.ModeNormal
 		m.planEnabled = false
 	case "modify":
-		m.operationMode = config.ModePlan
+		m.operationMode = setting.ModePlan
 		m.planEnabled = true
 	}
 
@@ -223,7 +223,7 @@ func (m *model) handleEnterPlanRequest(msg appmodal.EnterPlanRequestMsg) tea.Cmd
 func (m *model) handleEnterPlanResponse(msg appmodal.EnterPlanResponseMsg) tea.Cmd {
 	if msg.Approved {
 		m.planEnabled = true
-		m.operationMode = config.ModePlan
+		m.operationMode = setting.ModePlan
 		if msg.Request != nil && msg.Request.Message != "" {
 			m.planTask = msg.Request.Message
 		}

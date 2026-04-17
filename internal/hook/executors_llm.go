@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 )
 
 const (
@@ -15,7 +15,7 @@ const (
 	defaultLLMHookTimeout       = 5 * time.Minute
 )
 
-func (e *Engine) executePromptHook(ctx context.Context, hookCmd config.HookCmd, input HookInput) HookOutcome {
+func (e *Engine) executePromptHook(ctx context.Context, hookCmd setting.HookCmd, input HookInput) HookOutcome {
 	outcome := HookOutcome{ShouldContinue: true}
 
 	// Add timeout if context has no deadline (e.g., detached hooks with context.Background)
@@ -47,7 +47,7 @@ func (e *Engine) executePromptHook(ctx context.Context, hookCmd config.HookCmd, 
 	return e.parseOutput(strings.TrimSpace(resp), outcome)
 }
 
-func (e *Engine) executeAgentHook(ctx context.Context, hookCmd config.HookCmd, input HookInput) HookOutcome {
+func (e *Engine) executeAgentHook(ctx context.Context, hookCmd setting.HookCmd, input HookInput) HookOutcome {
 	outcome := HookOutcome{ShouldContinue: true}
 
 	// Add timeout if context has no deadline (e.g., detached hooks with context.Background)
@@ -65,18 +65,9 @@ func (e *Engine) executeAgentHook(ctx context.Context, hookCmd config.HookCmd, i
 	model := e.resolveModel(hookCmd)
 	prompt := buildHookPrompt(hookCmd.Prompt, string(inputJSON))
 
-	if runner := e.getAgentRunner(); runner != nil {
-		resp, err := runner.RunAgentHook(ctx, prompt, model)
-		if err != nil {
-			outcome.Error = err
-			return outcome
-		}
-		return e.parseOutput(strings.TrimSpace(resp), outcome)
-	}
-
 	completer := e.getLLMCompleter()
 	if completer == nil || model == "" {
-		outcome.Error = fmt.Errorf("agent hook requires an active provider/model or injected agent runner")
+		outcome.Error = fmt.Errorf("agent hook requires an active provider and model")
 		return outcome
 	}
 

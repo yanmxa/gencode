@@ -3,7 +3,17 @@ package search
 import (
 	"net/url"
 	"strings"
+
+	"github.com/yanmxa/gencode/internal/setting"
 )
+
+// Preferred returns the preferred search provider from settings, or the default.
+func Preferred() Provider {
+	if s := setting.DefaultSetup; s != nil && s.SearchProvider != "" {
+		return CreateProvider(ProviderName(s.SearchProvider))
+	}
+	return GetDefaultProvider()
+}
 
 // CreateProvider creates a search provider by name
 func CreateProvider(name ProviderName) Provider {

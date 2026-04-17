@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -36,7 +36,7 @@ func runPrint(userMessage string) error {
 			p, err := llm.GetProvider(ctx, llm.Name(providerName), conn.AuthMethod)
 			if err == nil {
 				llmProvider = p
-				modelID = config.DefaultModel(providerName, conn.AuthMethod)
+				modelID = setting.DefaultModel(providerName, conn.AuthMethod)
 				break
 			}
 		}
@@ -48,8 +48,8 @@ func runPrint(userMessage string) error {
 
 	completionOpts := llm.CompletionOptions{
 		Model:        modelID,
-		MaxTokens:    config.DefaultMaxTokens,
-		SystemPrompt: config.DefaultSystemPrompt,
+		MaxTokens:    setting.DefaultMaxTokens,
+		SystemPrompt: setting.DefaultSystemPrompt,
 		Messages:     []core.Message{core.UserMessage(userMessage, nil)},
 		Tools:        tool.GetToolSchemas(),
 	}

@@ -194,17 +194,21 @@ agentPermMsg
 
 ## Model
 
-Organized by the four mutation sources + config. Pseudo-code showing what each source owns:
+Five sub-Models — four mutation sources + shared runtime:
 
 ```go
-type Model struct {
-    user    UserInput    // textarea, history, images, queue, overlay, modal, mode
-    agent   AgentInput   // background agent notifications, batch tracking
-    system  SystemInput  // cron prompts, async hook state
-    outbox  OutboxState  // conversation, stream, tokens, provider, session, compact
-    config  Config       // settings, hookEngine, fileCache, cwd, isGit
+type model struct {
+    userInput   user.Model      // textarea, history, overlays, approval, modal
+    agentInput  agent.Model     // background agent notifications, batch tracking
+    systemInput system.Model    // cron scheduler, async hooks, file watcher
+    agentOutput output.Model    // conversation, streaming, tool results, agent session
+    runtime     runtime.Model   // shared state: provider, permissions, session, config
 }
 ```
+
+Each sub-Model owns its component state, update routing, and view rendering.
+The root `update.go` dispatches messages to the appropriate sub-Model;
+the root `view.go` composes their views into the final layout.
 
 ## Update
 
@@ -217,13 +221,13 @@ msg → Update(msg) → handler mutates Model → return tea.Cmd
                                                     ↓
                                           tea.Cmd produces new msg → loop
 
-  msg type      → updates    → handler
-  ──────────────────────────────────────────────
-  user msgs     → m.user    → handleKey, handleSubmit, ...
-  agent msgs    → m.agent   → handleTaskNotif, ...
-  system msgs   → m.system  → handleCronTick, handleAsyncHook, ...
-  outbox msgs   → m.outbox  → handleOutboxEvent, handlePermRequest, ...
-  config msgs   → m.config  → handleConfigReload
+  msg type      → updates      → handler
+  ──────────────────────────────────────────────────
+  user msgs     → m.userInput   → handleKey, handleSubmit, ...
+  agent msgs    → m.agentInput  → handleTaskNotif, ...
+  system msgs   → m.systemInput → handleCronTick, handleAsyncHook, ...
+  outbox msgs   → m.agentOutput → handleOutboxEvent, handlePermRequest, ...
+  runtime msgs  → m.runtime     → handleConfigReload, modeToggle, providerSwitch
 ```
 
 ## View
@@ -231,46 +235,85 @@ msg → Update(msg) → handler mutates Model → return tea.Cmd
 ```
 View() → reads Model → renders terminal
 
-  Model field  → renders
-  ──────────────────────────────────────────────
-  user         → input textarea, overlay selector, modal dialog, status bar
-  agent        → task tracker (background agent progress)
-  system       → (inline notices when cron/hook injects)
-  outbox       → chat messages, streaming content, tool results, token counts
-  config       → mode indicator, model name, thinking level
+  Model field   → renders
+  ──────────────────────────────────────────────────
+  userInput     → input textarea, overlay selector, modal dialog
+  agentInput    → task tracker (background agent progress)
+  systemInput   → (inline notices when cron/hook injects)
+  agentOutput   → chat messages, streaming content, tool results
+  runtime       → status bar: mode, model name, thinking level, tokens
 ```
 
 ## App Directory Structure
 
 Target layout — files organized by **input source** (who triggered the mutation).
 
+Each sub-package uses a flat component pattern: `update.go` and `view.go` only
+do routing, each component lives in its own `_xxx.go` file containing its model,
+update, and view logic. No nested sub-packages for individual UI components.
+
 ```
 internal/app/
 │
 │  ── Core MVU ──────────────────────────────────
-├── model.go                    # Model struct, state types, NewModel(), Init()
+├── model.go                    # Model struct, Init(), agent session builder
 ├── update.go                   # Update() top-level dispatch
 ├── view.go                     # View() layout composition
+├── init.go                     # Infrastructure initialization
 │
-├── user/                       # userInput: handlers + view + overlays
-│   ├── update.go               #   handleKey, handleSubmit, command dispatch
-│   └── view.go                 #   input textarea, overlay, modal, status bar
+├── user/                       # User Input source
+│   ├── model.go                #   main Model (textarea, history, images, queue)
+│   ├── update.go               #   routing: key → component update
+│   ├── view.go                 #   routing: component → render
+│   ├── _approval.go            #   Approval: model + update + view
+│   ├── _provider.go            #   Provider selector: model + update + view
+│   ├── _session.go             #   Session selector: model + update + view
+│   ├── _search.go              #   Search engine selector: model + update + view
+│   ├── _skill.go               #   Skill selector
+│   ├── _memory.go              #   Memory selector
+│   ├── _mcp.go                 #   MCP server selector
+│   ├── _plugin.go              #   Plugin selector
+│   └── _agent.go               #   Agent/subagent selector
 │
-├── agent/                      # agent: handlers + view
-│   ├── update.go               #   task notification, SendMessage, self-inject
-│   └── view.go                 #   task tracker, progress
+├── agent/                      # Agent Input source
+│   ├── model.go                #   State: notifications, batch tracking
+│   ├── update.go               #   routing: notification → handler
+│   ├── _notification.go        #   notification queue + build logic
+│   └── _tracker.go             #   background worker/batch tracking
 │
-├── system/                     # system: handlers + view
-│   ├── update.go               #   cron tick, async hook rewake
-│   └── view.go                 #   cron status, hook indicators
+├── system/                     # System Input source
+│   ├── model.go                #   State: cron, async hooks
+│   ├── update.go               #   routing: tick → handler
+│   ├── view.go                 #   cron status rendering
+│   └── _file_watcher.go        #   file change detection
 │
-├── output/                     # agentOutput: handlers + view + rendering
-│   ├── update.go               #   outbox events, OnTurn, permission bridge, side effects
-│   |── view.go                 #   chat messages, streaming, tool results, tokens
-│   
+├── output/                     # Agent Output
+│   ├── model.go                #   streaming, progress, permission bridge
+│   ├── update.go               #   routing: outbox event → handler
+│   ├── view.go                 #   chat messages, streaming, tool results
+│   ├── _conversation.go        #   message history, stream state
+│   ├── _modal.go               #   plan approval, question prompts
+│   ├── _compact.go             #   context compaction
+│   ├── _toolui.go              #   tool selector + execution state
+│   ├── _progress.go            #   progress hub for background agents
+│   └── _render.go              #   markdown rendering, message formatting
+│
+├── runtime/                    # Shared Runtime State
+│   ├── model.go                #   Model: provider, permissions, session, plan, config
+│   ├── update.go               #   config reload, mode toggle, provider switch
+│   ├── view.go                 #   status bar: mode, model name, thinking, tokens
+│   ├── _provider.go            #   LLM connection, model info, token tracking
+│   ├── _session.go             #   session store, ID, summary, compaction
+│   ├── _permission.go          #   operation mode, session permissions, disabled tools
+│   └── _plan.go                #   plan mode state
+│
+├── kit/                        # Shared UI utilities
+│   ├── suggest/                #   autocomplete
+│   └── history/                #   input history
+│
 ```
 
-Agent builder（buildCoreAgent, ensureAgentSession, startAgentLoop）belongs in `model.go` — it's Model initialization, not an Update handler.
+Agent builder (buildCoreAgent, ensureAgentSession, startAgentLoop) belongs in `model.go` — it's Model initialization, not an Update handler.
 
 ## Package Dependencies
 

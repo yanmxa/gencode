@@ -5,7 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 )
 
 type functionHookRegistration struct {
@@ -15,7 +15,7 @@ type functionHookRegistration struct {
 
 type hookSource struct {
 	Matcher string
-	Hooks   []config.HookCmd
+	Hooks   []setting.HookCmd
 	Source  string
 }
 
@@ -27,8 +27,8 @@ type functionHookSource struct {
 
 type hookStore struct {
 	mu            sync.RWMutex
-	sessionHooks  map[EventType][]config.Hook
-	runtimeHooks  map[EventType][]config.Hook
+	sessionHooks  map[EventType][]setting.Hook
+	runtimeHooks  map[EventType][]setting.Hook
 	sessionFuncs  map[EventType][]functionHookRegistration
 	runtimeFuncs  map[EventType][]functionHookRegistration
 	executedOnce  map[string]struct{}
@@ -37,29 +37,29 @@ type hookStore struct {
 
 func newHookStore() *hookStore {
 	return &hookStore{
-		sessionHooks: make(map[EventType][]config.Hook),
-		runtimeHooks: make(map[EventType][]config.Hook),
+		sessionHooks: make(map[EventType][]setting.Hook),
+		runtimeHooks: make(map[EventType][]setting.Hook),
 		sessionFuncs: make(map[EventType][]functionHookRegistration),
 		runtimeFuncs: make(map[EventType][]functionHookRegistration),
 		executedOnce: make(map[string]struct{}),
 	}
 }
 
-func (s *hookStore) AddSessionHook(event EventType, matcher string, hook config.HookCmd) {
+func (s *hookStore) AddSessionHook(event EventType, matcher string, hook setting.HookCmd) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.sessionHooks[event] = append(s.sessionHooks[event], config.Hook{
+	s.sessionHooks[event] = append(s.sessionHooks[event], setting.Hook{
 		Matcher: matcher,
-		Hooks:   []config.HookCmd{hook},
+		Hooks:   []setting.HookCmd{hook},
 	})
 }
 
-func (s *hookStore) AddRuntimeHook(event EventType, matcher string, hook config.HookCmd) {
+func (s *hookStore) AddRuntimeHook(event EventType, matcher string, hook setting.HookCmd) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.runtimeHooks[event] = append(s.runtimeHooks[event], config.Hook{
+	s.runtimeHooks[event] = append(s.runtimeHooks[event], setting.Hook{
 		Matcher: matcher,
-		Hooks:   []config.HookCmd{hook},
+		Hooks:   []setting.HookCmd{hook},
 	})
 }
 
@@ -100,12 +100,12 @@ func (s *hookStore) RemoveRuntimeFunctionHook(event EventType, id string) bool {
 func (s *hookStore) ClearSessionHooks() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.sessionHooks = make(map[EventType][]config.Hook)
+	s.sessionHooks = make(map[EventType][]setting.Hook)
 	s.sessionFuncs = make(map[EventType][]functionHookRegistration)
 	s.executedOnce = make(map[string]struct{})
 }
 
-func (s *hookStore) CollectHooks(event EventType, settings *config.Settings) []hookSource {
+func (s *hookStore) CollectHooks(event EventType, settings *setting.Settings) []hookSource {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -170,7 +170,7 @@ func (s *hookStore) CheckOnce(key string) bool {
 	return true
 }
 
-func (s *hookStore) HasHooks(event EventType, settings *config.Settings) bool {
+func (s *hookStore) HasHooks(event EventType, settings *setting.Settings) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

@@ -366,20 +366,17 @@ func readTrackedCwd(path, fallback string) string {
 	return newCwd
 }
 
-var bashEnvProviderVal atomic.Value // stores func() []string
+var extraEnvProvider atomic.Value // stores func() []string
 
-// SetBashEnvProvider injects additional environment variables for bash child
-// processes (e.g., plugin root variables). This avoids importing the plugin
-// package from the tool layer.
-func SetBashEnvProvider(fn func() []string) {
-	bashEnvProviderVal.Store(fn)
+// SetEnvProvider registers a provider of additional environment variables
+// for Bash child processes (e.g., plugin-injected variables).
+func SetEnvProvider(fn func() []string) {
+	extraEnvProvider.Store(fn)
 }
 
-// bashEnv returns the environment for bash child processes:
-// the current process env plus any injected variables.
 func bashEnv() []string {
 	env := os.Environ()
-	if fn, ok := bashEnvProviderVal.Load().(func() []string); ok && fn != nil {
+	if fn, ok := extraEnvProvider.Load().(func() []string); ok && fn != nil {
 		env = append(env, fn()...)
 	}
 	return env

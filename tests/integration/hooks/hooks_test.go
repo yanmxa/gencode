@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/hook"
 )
 
@@ -14,12 +14,12 @@ func TestHooks_BlockToolCall(t *testing.T) {
 		t.Skip("skipping on windows (no sh)")
 	}
 
-	settings := &config.Settings{
-		Hooks: map[string][]config.Hook{
+	settings := &setting.Settings{
+		Hooks: map[string][]setting.Hook{
 			"PreToolUse": {
 				{
 					Matcher: "Bash",
-					Hooks: []config.HookCmd{
+					Hooks: []setting.HookCmd{
 						{Type: "command", Command: "echo 'blocked' >&2; exit 2"},
 					},
 				},
@@ -50,12 +50,12 @@ func TestHooks_ModifyToolInput(t *testing.T) {
 		t.Skip("skipping on windows (no sh)")
 	}
 
-	settings := &config.Settings{
-		Hooks: map[string][]config.Hook{
+	settings := &setting.Settings{
+		Hooks: map[string][]setting.Hook{
 			"PreToolUse": {
 				{
 					Matcher: "Read",
-					Hooks: []config.HookCmd{
+					Hooks: []setting.HookCmd{
 						{Type: "command", Command: `echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{"file_path":"/modified"}}}'`},
 					},
 				},
@@ -86,7 +86,7 @@ func TestHooks_ModifyToolInput(t *testing.T) {
 
 func TestHooks_NoHooks_PassThrough(t *testing.T) {
 	// No hooks configured
-	engine := hook.NewEngine(&config.Settings{}, "test-session", t.TempDir(), "")
+	engine := hook.NewEngine(&setting.Settings{}, "test-session", t.TempDir(), "")
 
 	input := hook.HookInput{
 		ToolName:  "Read",
@@ -118,10 +118,10 @@ func TestHooks_NilSettings(t *testing.T) {
 }
 
 func TestHooks_HasHooks(t *testing.T) {
-	settings := &config.Settings{
-		Hooks: map[string][]config.Hook{
+	settings := &setting.Settings{
+		Hooks: map[string][]setting.Hook{
 			"PreToolUse": {
-				{Hooks: []config.HookCmd{{Command: "echo ok"}}},
+				{Hooks: []setting.HookCmd{{Command: "echo ok"}}},
 			},
 		},
 	}

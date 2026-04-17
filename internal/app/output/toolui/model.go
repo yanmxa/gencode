@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	coretool "github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/app/kit"
@@ -108,7 +108,7 @@ func (s *Model) updateFilter() {
 
 // reloadToolStates reloads the enabled/disabled states from the current save level
 func (s *Model) reloadToolStates() {
-	levelDisabled := config.GetDisabledToolsAt(s.saveLevel == kit.SaveLevelUser)
+	levelDisabled := setting.GetDisabledToolsAt(s.saveLevel == kit.SaveLevelUser)
 
 	for k := range s.disabledTools {
 		delete(s.disabledTools, k)
@@ -147,7 +147,7 @@ func (s *Model) Toggle() tea.Cmd {
 		s.disabledTools[selected.Name] = true
 	}
 
-	_ = config.UpdateDisabledToolsAt(s.disabledTools, s.saveLevel == kit.SaveLevelUser)
+	_ = setting.UpdateDisabledToolsAt(s.disabledTools, s.saveLevel == kit.SaveLevelUser)
 
 	return func() tea.Msg {
 		return ToggleMsg{

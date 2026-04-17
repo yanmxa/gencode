@@ -199,11 +199,6 @@ type FunctionHook struct {
 	Callback      FunctionHookCallback
 }
 
-// AgentRunner executes an agent hook using a multi-turn verifier runtime.
-type AgentRunner interface {
-	RunAgentHook(ctx context.Context, prompt string, model string) (string, error)
-}
-
 // --- Bidirectional prompt protocol types ---
 
 // PromptRequest is sent by a hook process via stdout to request user input.

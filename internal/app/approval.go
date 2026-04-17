@@ -9,7 +9,7 @@ import (
 
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/core"
@@ -130,7 +130,7 @@ func (m *model) isCurrentPermissionRequest(req *perm.PermissionRequest) bool {
 func (m *model) showApprovalModal(req *perm.PermissionRequest) tea.Cmd {
 	// Generate smart allow rule suggestions for the approval UI
 	if req != nil {
-		req.SuggestedRules = config.GenerateSuggestions(req.ToolName, m.buildPermissionArgs(req), 5)
+		req.SuggestedRules = setting.GenerateSuggestions(req.ToolName, m.buildPermissionArgs(req), 5)
 	}
 
 	m.approval.Show(req, m.width, m.height)
@@ -248,16 +248,16 @@ func (m *model) applyPermissionUpdates(updates []hook.PermissionUpdate) {
 					// Hooks cannot escalate to bypassPermissions — ignore
 					log.Logger().Warn("hook attempted to set bypassPermissions mode, denied")
 				case "acceptEdits":
-					m.sessionPermissions.Mode = config.ModeAutoAccept
-					m.operationMode = config.ModeAutoAccept
+					m.sessionPermissions.Mode = setting.ModeAutoAccept
+					m.operationMode = setting.ModeAutoAccept
 				case "dontAsk":
-					m.sessionPermissions.Mode = config.ModeDontAsk
+					m.sessionPermissions.Mode = setting.ModeDontAsk
 				case "plan":
-					m.sessionPermissions.Mode = config.ModePlan
-					m.operationMode = config.ModePlan
+					m.sessionPermissions.Mode = setting.ModePlan
+					m.operationMode = setting.ModePlan
 				case "normal":
-					m.sessionPermissions.Mode = config.ModeNormal
-					m.operationMode = config.ModeNormal
+					m.sessionPermissions.Mode = setting.ModeNormal
+					m.operationMode = setting.ModeNormal
 				}
 			}
 
@@ -277,7 +277,7 @@ func (m *model) applyPermissionUpdates(updates []hook.PermissionUpdate) {
 					continue
 				}
 				if pu.Destination == "persistent" {
-					if err := config.AddAllowRuleDirectlyAt(ruleStr, m.cwd); err != nil {
+					if err := setting.AddAllowRuleDirectlyAt(ruleStr, m.cwd); err != nil {
 						log.Logger().Warn("failed to persist hook rule", zap.Error(err))
 					}
 					needReload = true

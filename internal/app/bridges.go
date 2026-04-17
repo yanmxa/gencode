@@ -65,7 +65,7 @@ func (m *model) SetInputText(text string) { m.userInput.Textarea.SetValue(text) 
 func (m *model) SwitchProvider(p llm.Provider) {
 	m.llmProvider = p
 	if m.hookEngine != nil {
-		m.hookEngine.SetLLMCompleter(buildLLMCompleter(m.llmProvider), m.getModelID())
+		m.hookEngine.SetLLMProvider(m.llmProvider, m.getModelID())
 	}
 	m.reconfigureAgentTool()
 }

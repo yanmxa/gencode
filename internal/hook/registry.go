@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 )
 
 type matchedHook struct {
 	Event   EventType
 	Matcher string
 	Source  string
-	Command *config.HookCmd
+	Command *setting.HookCmd
 	Func    *FunctionHook
 }
 
@@ -82,19 +82,19 @@ func (e *Engine) populateInputFields(input *HookInput, event EventType) {
 	}
 }
 
-func (e *Engine) matchesIfCondition(cmd config.HookCmd, input HookInput) bool {
+func (e *Engine) matchesIfCondition(cmd setting.HookCmd, input HookInput) bool {
 	if cmd.If == "" {
 		return true
 	}
 	switch input.HookEventName {
 	case string(PreToolUse), string(PostToolUse), string(PostToolUseFailure), string(PermissionRequest), string(PermissionDenied):
-		rule := config.BuildRule(input.ToolName, input.ToolInput)
-		if config.MatchesToolPattern(input.ToolName, input.ToolInput, rule, cmd.If) {
+		rule := setting.BuildRule(input.ToolName, input.ToolInput)
+		if setting.MatchesToolPattern(input.ToolName, input.ToolInput, rule, cmd.If) {
 			return true
 		}
 		if input.ToolName == "Bash" {
 			if raw, ok := input.ToolInput["command"].(string); ok {
-				return config.MatchRule("Bash("+strings.TrimSpace(raw)+")", cmd.If)
+				return setting.MatchRule("Bash("+strings.TrimSpace(raw)+")", cmd.If)
 			}
 		}
 		return false
@@ -152,14 +152,14 @@ func matchedHookStatusMessage(hook matchedHook) string {
 	return ""
 }
 
-func normalizedHookType(cmd config.HookCmd) string {
+func normalizedHookType(cmd setting.HookCmd) string {
 	if cmd.Type == "" {
 		return "command"
 	}
 	return cmd.Type
 }
 
-func hookIdentity(cmd config.HookCmd) string {
+func hookIdentity(cmd setting.HookCmd) string {
 	switch normalizedHookType(cmd) {
 	case "prompt", "agent":
 		return cmd.Prompt + "|" + cmd.If + "|" + cmd.Model

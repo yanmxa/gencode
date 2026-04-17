@@ -8,7 +8,14 @@
 //  6. .gen/settings.local.json (Gen local level)
 //  7. Environment variables / CLI arguments
 //  8. managed-settings.json (system level - cannot be overridden)
-package config
+package setting
+
+import (
+	"encoding/json"
+	"maps"
+	"os"
+	"path/filepath"
+)
 
 // Settings represents the complete GenCode configuration.
 type Settings struct {
@@ -19,6 +26,7 @@ type Settings struct {
 	EnabledPlugins map[string]bool    `json:"enabledPlugins,omitempty"`
 	DisabledTools  map[string]bool    `json:"disabledTools,omitempty"`
 	Theme          string             `json:"theme,omitempty"`
+	SearchProvider string             `json:"searchProvider,omitempty"`
 	AllowBypass    *bool              `json:"allowBypass,omitempty"`
 }
 
@@ -194,4 +202,112 @@ func NewSettings() *Settings {
 		EnabledPlugins: make(map[string]bool),
 		DisabledTools:  make(map[string]bool),
 	}
+}
+
+// DefaultSetup is the singleton app settings, initialized by Initialize().
+var DefaultSetup *Settings
+
+// Initialize loads settings for cwd and sets DefaultSetup.
+func Initialize(cwd string) {
+	DefaultSetup = InitForApp(cwd)
+}
+
+// InitForApp loads settings for cwd, deep-clones them, and returns
+// an isolated copy safe for mutation by the app layer.
+// It also merges external provider preferences (e.g., search provider
+// from providers.json) into the unified Settings struct.
+func InitForApp(cwd string) *Settings {
+	var (
+		settings *Settings
+		err      error
+	)
+	if cwd != "" {
+		settings, err = LoadForCwd(cwd)
+	} else {
+		settings, err = Load()
+	}
+	_ = err
+	if settings == nil {
+		settings = Default()
+	}
+	mergeProviderPreferences(settings)
+	return settings.Clone()
+}
+
+// mergeProviderPreferences reads external provider config files and merges
+// relevant preferences into Settings. Currently reads searchProvider from
+// ~/.gen/providers.json (owned by the llm package) so that search config
+// is accessible via the unified Settings struct.
+func mergeProviderPreferences(s *Settings) {
+	if s.SearchProvider != "" {
+		return
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(homeDir, ".gen", "providers.json"))
+	if err != nil {
+		return
+	}
+	var raw struct {
+		SearchProvider *string `json:"searchProvider"`
+	}
+	if json.Unmarshal(data, &raw) == nil && raw.SearchProvider != nil {
+		s.SearchProvider = *raw.SearchProvider
+	}
+}
+
+// Clone returns a deep copy of the Settings.
+func (s *Settings) Clone() *Settings {
+	if s == nil {
+		return Default()
+	}
+	dst := NewSettings()
+	dst.Permissions.Allow = append([]string(nil), s.Permissions.Allow...)
+	dst.Permissions.Deny = append([]string(nil), s.Permissions.Deny...)
+	dst.Permissions.Ask = append([]string(nil), s.Permissions.Ask...)
+	dst.Model = s.Model
+	dst.Theme = s.Theme
+	dst.SearchProvider = s.SearchProvider
+	if s.AllowBypass != nil {
+		v := *s.AllowBypass
+		dst.AllowBypass = &v
+	}
+	for k, v := range s.Env {
+		dst.Env[k] = v
+	}
+	for k, v := range s.EnabledPlugins {
+		dst.EnabledPlugins[k] = v
+	}
+	for k, v := range s.DisabledTools {
+		dst.DisabledTools[k] = v
+	}
+	for event, hooks := range s.Hooks {
+		clonedHooks := make([]Hook, len(hooks))
+		for i, hook := range hooks {
+			clonedHooks[i].Matcher = hook.Matcher
+			clonedHooks[i].Hooks = make([]HookCmd, len(hook.Hooks))
+			for j, cmd := range hook.Hooks {
+				clonedHooks[i].Hooks[j] = HookCmd{
+					Type:           cmd.Type,
+					Command:        cmd.Command,
+					Prompt:         cmd.Prompt,
+					URL:            cmd.URL,
+					If:             cmd.If,
+					Shell:          cmd.Shell,
+					Model:          cmd.Model,
+					Async:          cmd.Async,
+					AsyncRewake:    cmd.AsyncRewake,
+					Timeout:        cmd.Timeout,
+					StatusMessage:  cmd.StatusMessage,
+					Once:           cmd.Once,
+					Headers:        maps.Clone(cmd.Headers),
+					AllowedEnvVars: append([]string(nil), cmd.AllowedEnvVars...),
+				}
+			}
+		}
+		dst.Hooks[event] = clonedHooks
+	}
+	return dst
 }

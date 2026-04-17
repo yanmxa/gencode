@@ -7,9 +7,12 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/yanmxa/gencode/internal/config"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/plugin"
+	"github.com/yanmxa/gencode/internal/session"
+	"github.com/yanmxa/gencode/internal/setting"
 )
 
 // LLMCompleter performs a single-turn LLM completion for hook execution.
@@ -22,7 +25,7 @@ const defaultTimeout = 600
 
 // Engine executes hooks from settings, plugins, and runtime/session registration.
 type Engine struct {
-	settings       *config.Settings
+	settings       *setting.Settings
 	sessionID      string
 	cwd            string
 	transcriptPath string
@@ -32,7 +35,6 @@ type Engine struct {
 	llmCompleter   LLMCompleter
 	hookModel      string
 	httpClient     *http.Client
-	agentRunner    AgentRunner
 	asyncCallback  AsyncHookCallback
 	envProvider    func() []string
 
@@ -43,8 +45,46 @@ type Engine struct {
 	detachedWg sync.WaitGroup // tracks fire-and-forget goroutines
 }
 
+// DefaultEngine is the singleton hook engine, initialized by Init().
+var DefaultEngine *Engine
+
+// Initialize creates the singleton hook engine from domain singletons.
+// Reads settings, session, LLM, and plugin state — caller only needs to
+// inject AgentRunner afterwards (it lives in the app layer).
+func Initialize(cwd string) {
+	settings := setting.DefaultSetup
+	plugin.MergePluginHooksIntoSettings(settings)
+
+	sessionID := session.DefaultSetup.SessionID
+	transcriptPath := session.DefaultSetup.TranscriptPath()
+
+	DefaultEngine = NewEngine(settings, sessionID, cwd, transcriptPath)
+
+	modelID := llm.DefaultSetup.ModelID()
+	DefaultEngine.SetLLMCompleter(buildLLMCompleter(llm.DefaultSetup.Provider), modelID)
+	DefaultEngine.SetEnvProvider(plugin.PluginEnv)
+}
+
+// buildLLMCompleter wraps a provider into an LLMCompleter closure.
+func buildLLMCompleter(p llm.Provider) LLMCompleter {
+	if p == nil {
+		return nil
+	}
+	return func(ctx context.Context, systemPrompt, userMessage, model string) (string, error) {
+		c := llm.NewClient(p, model, 0)
+		resp, err := c.Complete(ctx, systemPrompt, []core.Message{{
+			Role:    core.RoleUser,
+			Content: userMessage,
+		}}, 4096)
+		if err != nil {
+			return "", err
+		}
+		return resp.Content, nil
+	}
+}
+
 // NewEngine creates a new hook execution engine.
-func NewEngine(settings *config.Settings, sessionID, cwd, transcriptPath string) *Engine {
+func NewEngine(settings *setting.Settings, sessionID, cwd, transcriptPath string) *Engine {
 	return &Engine{
 		settings:       settings,
 		sessionID:      sessionID,
@@ -95,11 +135,9 @@ func (e *Engine) SetLLMCompleter(fn LLMCompleter, model string) {
 	e.hookModel = model
 }
 
-// SetAgentRunner configures the multi-turn runner used by agent hooks.
-func (e *Engine) SetAgentRunner(runner AgentRunner) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.agentRunner = runner
+// SetLLMProvider configures the LLM provider and model for hook execution.
+func (e *Engine) SetLLMProvider(p llm.Provider, model string) {
+	e.SetLLMCompleter(buildLLMCompleter(p), model)
 }
 
 // SetAsyncHookCallback configures delivery of background asyncRewake hook results.
@@ -118,7 +156,8 @@ func (e *Engine) SetEnvProvider(fn func() []string) {
 }
 
 // SetSettings swaps the settings-backed hook source used by the engine.
-func (e *Engine) SetSettings(settings *config.Settings) {
+func (e *Engine) SetSettings(settings *setting.Settings) {
+	plugin.MergePluginHooksIntoSettings(settings)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.settings = settings
@@ -203,12 +242,6 @@ func (e *Engine) HasHooks(event EventType) bool {
 func (e *Engine) StopHookActive() *bool {
 	active := e.HasHooks(Stop)
 	return &active
-}
-
-func (e *Engine) getAgentRunner() AgentRunner {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	return e.agentRunner
 }
 
 func (e *Engine) getAsyncHookCallback() AsyncHookCallback {

@@ -12,7 +12,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app"
 	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/session"
 
 	// Import providers for registration
@@ -92,7 +92,7 @@ Non-interactive mode:
 
 		prompt := strings.Join(args, " ")
 
-		opts := config.RunOptions{
+		opts := setting.RunOptions{
 			Print:     printPrompt,
 			Prompt:    prompt,
 			PluginDir: cliOpts.pluginDir,

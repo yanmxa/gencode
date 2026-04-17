@@ -3,7 +3,7 @@
 //
 // Every GEN_* variable automatically gets a CLAUDE_* alias so that Claude Code
 // plugins work without modification.
-package config
+package setting
 
 import "fmt"
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 )
 
 // InitPlugins initializes the plugin system and loads all enabled plugins.
@@ -70,10 +70,10 @@ type PluginPath struct {
 	Scope     Scope
 }
 
-// GetPluginHooks returns all hooks from enabled plugins in config.Hook format.
+// GetPluginHooks returns all hooks from enabled plugins in setting.Hook format.
 // This can be merged with the application's settings.Hooks.
-func GetPluginHooks() map[string][]config.Hook {
-	result := make(map[string][]config.Hook)
+func GetPluginHooks() map[string][]setting.Hook {
+	result := make(map[string][]setting.Hook)
 
 	for _, p := range DefaultRegistry.GetEnabled() {
 		if p.Components.Hooks == nil {
@@ -81,7 +81,7 @@ func GetPluginHooks() map[string][]config.Hook {
 		}
 		for event, matchers := range p.Components.Hooks.Hooks {
 			for _, matcher := range matchers {
-				hook := config.Hook{
+				hook := setting.Hook{
 					Matcher: matcher.Matcher,
 					Hooks:   matcher.Hooks,
 				}
@@ -95,9 +95,9 @@ func GetPluginHooks() map[string][]config.Hook {
 
 // MergePluginHooksIntoSettings merges plugin hooks into application settings.
 // Plugin hooks are appended after the existing hooks for each event.
-func MergePluginHooksIntoSettings(settings *config.Settings) {
+func MergePluginHooksIntoSettings(settings *setting.Settings) {
 	if settings.Hooks == nil {
-		settings.Hooks = make(map[string][]config.Hook)
+		settings.Hooks = make(map[string][]setting.Hook)
 	}
 
 	pluginHooks := GetPluginHooks()
@@ -202,7 +202,7 @@ func PluginEnv() []string {
 
 	var out []string
 	for _, p := range enabled {
-		out = append(out, config.EnvPairF("PLUGIN_ROOT_%s", envSafeName(p.Name()), p.Path)...)
+		out = append(out, setting.EnvPairF("PLUGIN_ROOT_%s", envSafeName(p.Name()), p.Path)...)
 	}
 
 	root := getActivePluginRoot()
@@ -210,7 +210,7 @@ func PluginEnv() []string {
 		root = enabled[0].Path
 	}
 	if root != "" {
-		out = append(out, config.EnvPair("PLUGIN_ROOT", root)...)
+		out = append(out, setting.EnvPair("PLUGIN_ROOT", root)...)
 	}
 	return out
 }

@@ -1,5 +1,5 @@
 // Package options defines configuration types shared across app and tui packages.
-package config
+package setting
 
 // RunOptions contains all options for running the application.
 type RunOptions struct {

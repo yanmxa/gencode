@@ -3,7 +3,7 @@ package output
 import (
 	"context"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 )
@@ -21,14 +21,14 @@ type PermBridgeResponse struct {
 
 type PermissionBridge struct {
 	requests   chan *PermBridgeRequest
-	settingsFn func() *config.Settings
-	sessionFn  func() *config.SessionPermissions
+	settingsFn func() *setting.Settings
+	sessionFn  func() *setting.SessionPermissions
 	cwdFn      func() string
 }
 
 func NewPermissionBridge(
-	settingsFn func() *config.Settings,
-	sessionFn func() *config.SessionPermissions,
+	settingsFn func() *setting.Settings,
+	sessionFn func() *setting.SessionPermissions,
 	cwdFn func() string,
 ) *PermissionBridge {
 	return &PermissionBridge{
@@ -50,9 +50,9 @@ func (pb *PermissionBridge) PermissionFunc() core.PermissionFunc {
 		decision := settings.HasPermissionToUseTool(tc.Name, args, pb.sessionFn())
 
 		switch decision.Behavior {
-		case config.Allow:
+		case setting.Allow:
 			return true, decision.Reason
-		case config.Deny:
+		case setting.Deny:
 			return false, decision.Reason
 		}
 

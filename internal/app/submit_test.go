@@ -7,7 +7,8 @@ import (
 )
 
 func TestDrainInputQueueRestoresQueuedInlineImages(t *testing.T) {
-	m := newBaseModel(modelInfra{cwd: t.TempDir(),})
+	appCwd = t.TempDir()
+	m := newBaseModel()
 	label := m.userInput.AddPendingImage(core.Image{FileName: "queued.png"})
 	m.userInput.Queue.Enqueue(label+" describe this", []core.Image{{FileName: "queued.png"}})
 	m.userInput.ClearImages()
@@ -41,7 +42,8 @@ func TestDrainInputQueueRestoresQueuedInlineImages(t *testing.T) {
 }
 
 func TestSaveCurrentQueueEditPreservesImages(t *testing.T) {
-	m := newBaseModel(modelInfra{cwd: t.TempDir(),})
+	appCwd = t.TempDir()
+	m := newBaseModel()
 	images := []core.Image{{FileName: "queued.png"}}
 	m.userInput.Queue.Enqueue("[Image #1] prompt", images)
 	m.userInput.QueueSelectIdx = 0

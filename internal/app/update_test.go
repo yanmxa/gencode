@@ -8,11 +8,11 @@ import (
 
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
-	appmodal "github.com/yanmxa/gencode/internal/app/modal"
+	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/system"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
@@ -27,8 +27,8 @@ import (
 // via option 4 (modify), the model stays in plan mode for plan revision.
 func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 	m := &model{
-		operationMode:      config.ModePlan,
-		sessionPermissions: config.NewSessionPermissions(),
+		operationMode:      setting.ModePlan,
+		sessionPermissions: setting.NewSessionPermissions(),
 		planEnabled: true,
 		planTask:    "test task",
 		mode: appmodal.State{
@@ -65,16 +65,16 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 	if !m.planEnabled {
 		t.Error("plan.enabled should remain true after modify feedback")
 	}
-	if m.operationMode != config.ModePlan {
-		t.Errorf("operationMode should be config.ModePlan, got %d", m.operationMode)
+	if m.operationMode != setting.ModePlan {
+		t.Errorf("operationMode should be setting.ModePlan, got %d", m.operationMode)
 	}
 }
 
 // TestPlanResponse_ManualExitsPlanMode verifies that manual approval exits plan mode.
 func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 	m := &model{
-		operationMode:      config.ModePlan,
-		sessionPermissions: config.NewSessionPermissions(),
+		operationMode:      setting.ModePlan,
+		sessionPermissions: setting.NewSessionPermissions(),
 		planEnabled: true,
 		planTask:    "test task",
 		mode: appmodal.State{
@@ -108,16 +108,16 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 	if m.planEnabled {
 		t.Error("plan.enabled should be false after manual approval")
 	}
-	if m.operationMode != config.ModeNormal {
-		t.Errorf("operationMode should be config.ModeNormal, got %d", m.operationMode)
+	if m.operationMode != setting.ModeNormal {
+		t.Errorf("operationMode should be setting.ModeNormal, got %d", m.operationMode)
 	}
 }
 
 // TestPlanResponse_AutoExitsPlanMode verifies that auto approval exits plan mode.
 func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 	m := &model{
-		operationMode:      config.ModePlan,
-		sessionPermissions: config.NewSessionPermissions(),
+		operationMode:      setting.ModePlan,
+		sessionPermissions: setting.NewSessionPermissions(),
 		planEnabled: true,
 		planTask:    "test task",
 		mode: appmodal.State{
@@ -151,8 +151,8 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 	if m.planEnabled {
 		t.Error("plan.enabled should be false after auto approval")
 	}
-	if m.operationMode != config.ModeAutoAccept {
-		t.Errorf("operationMode should be config.ModeAutoAccept, got %d", m.operationMode)
+	if m.operationMode != setting.ModeAutoAccept {
+		t.Errorf("operationMode should be setting.ModeAutoAccept, got %d", m.operationMode)
 	}
 	if !m.sessionPermissions.AllowAllEdits {
 		t.Error("auto mode should enable AllowAllEdits")
@@ -162,8 +162,8 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 // TestPlanResponse_RejectedExitsPlanMode verifies that rejection exits plan mode.
 func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 	m := &model{
-		operationMode:      config.ModePlan,
-		sessionPermissions: config.NewSessionPermissions(),
+		operationMode:      setting.ModePlan,
+		sessionPermissions: setting.NewSessionPermissions(),
 		planEnabled: true,
 		planTask:    "test task",
 		mode: appmodal.State{
@@ -195,8 +195,8 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 	if m.planEnabled {
 		t.Error("plan.enabled should be false after rejection")
 	}
-	if m.operationMode != config.ModeNormal {
-		t.Errorf("operationMode should be config.ModeNormal after rejection, got %d", m.operationMode)
+	if m.operationMode != setting.ModeNormal {
+		t.Errorf("operationMode should be setting.ModeNormal after rejection, got %d", m.operationMode)
 	}
 	// Should have added a rejection tool result message
 	found := false
@@ -214,8 +214,8 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 	reply := make(chan *tool.QuestionResponse, 1)
 	m := &model{
-		operationMode:        config.ModePlan,
-		sessionPermissions:   config.NewSessionPermissions(),
+		operationMode:        setting.ModePlan,
+		sessionPermissions:   setting.NewSessionPermissions(),
 		pendingQuestion:      &tool.QuestionRequest{ID: "ask-1"},
 		pendingQuestionReply: reply,
 		mode: appmodal.State{
@@ -372,7 +372,7 @@ func TestBuildPromptSuggestionRequest(t *testing.T) {
 }
 
 func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing.T) {
-	base := newBaseModel(modelInfra{cwd: t.TempDir(),})
+	appCwd = t.TempDir(); base := newBaseModel()
 	m := &base
 	m.agentOutput = appoutput.New(80, progress.NewHub(16))
 	m.conv = appconv.Model{
@@ -527,8 +527,8 @@ func TestDetectThinkingKeywords(t *testing.T) {
 
 func TestRenderActiveModalPriority(t *testing.T) {
 	m := &model{
-		operationMode:      config.ModePlan,
-		sessionPermissions: config.NewSessionPermissions(),
+		operationMode:      setting.ModePlan,
+		sessionPermissions: setting.NewSessionPermissions(),
 		mode: appmodal.State{
 			PlanApproval: appmodal.NewPlanPrompt(),
 			Question:     appmodal.NewQuestionPrompt(),
@@ -552,7 +552,7 @@ func TestRenderActiveModalPriority(t *testing.T) {
 }
 
 func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
-	engine := hook.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine := hook.NewEngine(setting.NewSettings(), "test-session", t.TempDir(), "")
 	engine.AddSessionFunctionHook(hook.PermissionRequest, "", hook.FunctionHook{
 		Callback: func(_ context.Context, _ hook.HookInput) (hook.HookOutput, error) {
 			return hook.HookOutput{}, nil

@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 )
 
-func (e *Engine) executeCommand(ctx context.Context, hookCmd config.HookCmd, input HookInput) HookOutcome {
+func (e *Engine) executeCommand(ctx context.Context, hookCmd setting.HookCmd, input HookInput) HookOutcome {
 	outcome := HookOutcome{ShouldContinue: true}
 	if hookCmd.Command == "" {
 		return outcome
@@ -65,7 +65,7 @@ func (e *Engine) executeCommand(ctx context.Context, hookCmd config.HookCmd, inp
 	return e.parseOutput(strings.TrimSpace(stdout.String()), outcome)
 }
 
-func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd config.HookCmd, input HookInput) HookOutcome {
+func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd setting.HookCmd, input HookInput) HookOutcome {
 	outcome := HookOutcome{ShouldContinue: true}
 	if hookCmd.Command == "" {
 		return outcome
@@ -181,7 +181,7 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd config
 	return e.parseOutput(finalOutput, outcome)
 }
 
-func buildShellCommand(ctx context.Context, hookCmd config.HookCmd, cwd string) *exec.Cmd {
+func buildShellCommand(ctx context.Context, hookCmd setting.HookCmd, cwd string) *exec.Cmd {
 	switch strings.ToLower(strings.TrimSpace(hookCmd.Shell)) {
 	case "powershell", "pwsh":
 		cmd := exec.CommandContext(ctx, "pwsh", "-NoProfile", "-Command", hookCmd.Command)

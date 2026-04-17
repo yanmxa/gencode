@@ -11,12 +11,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 )
 
 var envInterpolationPattern = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?`)
 
-func (e *Engine) executeHTTPHook(ctx context.Context, hookCmd config.HookCmd, input HookInput) HookOutcome {
+func (e *Engine) executeHTTPHook(ctx context.Context, hookCmd setting.HookCmd, input HookInput) HookOutcome {
 	outcome := HookOutcome{ShouldContinue: true}
 	if hookCmd.URL == "" {
 		outcome.Error = fmt.Errorf("http hook missing url")

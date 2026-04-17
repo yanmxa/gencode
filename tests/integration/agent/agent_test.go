@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/subagent"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
@@ -205,12 +205,12 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 
 	// Build a settings object with SubagentStart and SubagentStop hooks.
 	// Each hook writes to a temp file so we can verify it fired.
-	settings := &config.Settings{
-		Hooks: map[string][]config.Hook{
+	settings := &setting.Settings{
+		Hooks: map[string][]setting.Hook{
 			string(hook.SubagentStart): {
 				{
 					Matcher: "",
-					Hooks: []config.HookCmd{
+					Hooks: []setting.HookCmd{
 						{Type: "command", Command: "touch " + startFile, Async: false},
 					},
 				},
@@ -218,7 +218,7 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 			string(hook.SubagentStop): {
 				{
 					Matcher: "",
-					Hooks: []config.HookCmd{
+					Hooks: []setting.HookCmd{
 						{Type: "command", Command: "touch " + stopFile, Async: false},
 					},
 				},

@@ -18,7 +18,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -458,7 +458,7 @@ func (m *model) getEffectiveInputLimit() int {
 }
 
 func (m *model) getMaxTokens() int {
-	return appcompact.GetMaxTokens(m.providerStore, m.currentModel, config.DefaultMaxTokens)
+	return appcompact.GetMaxTokens(m.providerStore, m.currentModel, setting.DefaultMaxTokens)
 }
 
 func (m *model) getContextUsagePercent() float64 {
@@ -703,7 +703,7 @@ func (m *model) currentSessionMode() string {
 		return "plan"
 	}
 	switch m.operationMode {
-	case config.ModeAutoAccept:
+	case setting.ModeAutoAccept:
 		return "auto-accept"
 	default:
 		return "normal"

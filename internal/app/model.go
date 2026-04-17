@@ -22,13 +22,13 @@ import (
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
-	appmodal "github.com/yanmxa/gencode/internal/app/modal"
+	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
 	"github.com/yanmxa/gencode/internal/app/user/searchui"
 	"github.com/yanmxa/gencode/internal/app/user/sessionui"
 	"github.com/yanmxa/gencode/internal/app/user/skillui"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -50,29 +50,48 @@ const (
 )
 
 type model struct {
-	// Source 1: userInput — textarea, history, images, queue, overlay, modal, mode
+	// ── User Input ──────────────────────────────────────────────────────
 	userInput        appuser.Model
-	mode             appmodal.State
 	approval         appapproval.Model
+	mode             appmodal.State
 	promptSuggestion promptSuggestionState
-	showTasks        bool // Ctrl+T toggles task list visibility
+	showTasks        bool
+	provider         providerui.State
+	session          sessionui.State
+	skill            skillui.State
+	memory           appmemory.State
+	tool             toolui.State
+	mcp              mcpui.State
+	plugin           pluginui.Model
+	agent            agentui.Model
+	search           searchui.Model
 
-	// Operation mode and permissions — runtime configuration, not UI state
-	operationMode      config.OperationMode
-	sessionPermissions *config.SessionPermissions
-	disabledTools      map[string]bool
+	// ── Agent Input ─────────────────────────────────────────────────────
+	agentInput appagent.State
 
-	// Plan mode domain state
-	planEnabled bool
-	planTask    string
-	planStore   *plan.Store
+	// ── System Input ────────────────────────────────────────────────────
+	systemInput appsystem.State
 
-	// Question channel — synchronization primitive for tool question/answer flow.
+	// ── Agent Output ────────────────────────────────────────────────────
+	conv                 appconv.Model
+	agentOutput          appoutput.Model
+	agentSess            *agentSession
 	pendingQuestion      *tool.QuestionRequest
 	pendingQuestionReply chan *tool.QuestionResponse
 
-	// Provider domain state — LLM connection, model info, token tracking, thinking
-	llmProvider llm.Provider
+	// ── Runtime ─────────────────────────────────────────────────────────
+	cwd           string
+	isGit         bool
+	width         int
+	height        int
+	ready         bool
+	initialPrompt string
+
+	operationMode      setting.OperationMode
+	sessionPermissions *setting.SessionPermissions
+	disabledTools      map[string]bool
+
+	llmProvider      llm.Provider
 	providerStore    *llm.Store
 	currentModel     *llm.CurrentModelInfo
 	inputTokens      int
@@ -80,50 +99,21 @@ type model struct {
 	thinkingLevel    llm.ThinkingLevel
 	thinkingOverride llm.ThinkingLevel
 
-	// Cached system prompt instructions (loaded from GEN.md/CLAUDE.md files)
-	cachedUserInstructions    string
-	cachedProjectInstructions string
-
-	// Session domain state — persistence and compaction
 	sessionStore   *session.Store
 	sessionID      string
 	sessionSummary string
 
-	// Source 1 overlays — each selector is user-triggered
-	provider providerui.State
-	session  sessionui.State
-	skill    skillui.State
-	memory   appmemory.State
-	tool     toolui.State
-	mcp      mcpui.State
-	plugin   pluginui.Model
-	agent    agentui.Model
-	search   searchui.Model
+	planEnabled bool
+	planTask    string
+	planStore   *plan.Store
 
-	// Source 2: agentInput — background agent notifications, batch tracking
-	agentInput appagent.State
+	cachedUserInstructions    string
+	cachedProjectInstructions string
 
-	// Source 3: systemInput — cron scheduler and async hook rewakes
-	systemInput appsystem.State
-
-	// Agent Output — conversation, stream, tokens, provider, session, compact
-	conv        appconv.Model
-	agentOutput appoutput.Model
-
-	// Config — settings, hookEngine, fileCache, cwd, isGit
-	width         int
-	height        int
-	ready         bool
-	cwd           string
-	isGit         bool
-	initialPrompt string
-	settings      *config.Settings
-	hookEngine    *hook.Engine
-	fileWatcher   *appsystem.FileWatcher
-	fileCache     *filecache.Cache
-
-	// Agent session
-	agentSess *agentSession
+	settings    *setting.Settings
+	hookEngine  *hook.Engine
+	fileWatcher *appsystem.FileWatcher
+	fileCache   *filecache.Cache
 }
 
 // lastAssistantContent returns the text content of the most recent assistant core.
@@ -325,8 +315,8 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 
 	// Permission bridge — blocking PermissionFunc with TUI approval
 	permBridge := appoutput.NewPermissionBridge(
-		func() *config.Settings { return m.settings },
-		func() *config.SessionPermissions { return m.sessionPermissions },
+		func() *setting.Settings { return m.settings },
+		func() *setting.SessionPermissions { return m.sessionPermissions },
 		func() string { return m.cwd },
 	)
 

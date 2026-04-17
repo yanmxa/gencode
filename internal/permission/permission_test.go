@@ -3,19 +3,19 @@ package permission
 import (
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 )
 
 func TestPermission_GlobPattern_MatchesCorrectly(t *testing.T) {
-	settings := &config.Settings{
-		Permissions: config.PermissionSettings{
+	settings := &setting.Settings{
+		Permissions: setting.PermissionSettings{
 			Deny: []string{
 				"Read(**/.env)",
 				"Read(*.env)",
 			},
 		},
 	}
-	session := config.NewSessionPermissions()
+	session := setting.NewSessionPermissions()
 
 	tests := []struct {
 		name      string
@@ -58,7 +58,7 @@ func TestPermission_GlobPattern_MatchesCorrectly(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			decision := settings.HasPermissionToUseTool(tt.toolName, tt.args, session)
-			isDenied := decision.Behavior == config.Deny
+			isDenied := decision.Behavior == setting.Deny
 			if isDenied != tt.wantDeny {
 				t.Errorf("HasPermissionToUseTool(%q, %v): got Deny=%v, want Deny=%v (reason: %s)",
 					tt.toolName, tt.args, isDenied, tt.wantDeny, decision.Reason)

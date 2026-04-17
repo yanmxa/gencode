@@ -396,8 +396,8 @@ func (r *Registry) GetAllHooks() map[string][]HookMatcher {
 // DefaultRegistry is the global plugin registry.
 var DefaultRegistry = NewRegistry()
 
-// Load loads plugins into the default registry.
-func Load(ctx context.Context, cwd string) error {
+// Initialize loads plugins into the default registry.
+func Initialize(ctx context.Context, cwd string) error {
 	return DefaultRegistry.Load(ctx, cwd)
 }
 

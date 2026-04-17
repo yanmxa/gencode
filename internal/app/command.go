@@ -20,7 +20,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/command"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/mcp"
@@ -470,7 +470,7 @@ func handlePlanCommand(ctx context.Context, m *model, args string) (string, tea.
 		return "Usage: /plan <task description>\n\nEnter plan mode to explore the codebase and create an implementation plan before making changes.", nil, nil
 	}
 
-	m.operationMode = config.ModePlan
+	m.operationMode = setting.ModePlan
 	m.planEnabled = true
 	m.planTask = args
 

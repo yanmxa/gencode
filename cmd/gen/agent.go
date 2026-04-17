@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/yanmxa/gencode/internal/subagent"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
@@ -121,7 +121,7 @@ func runHeadlessAgent() error {
 	// Set up the loop
 	sys := system.Build(system.Config{
 		Cwd:   cwd,
-		IsGit: config.IsGitRepo(cwd),
+		IsGit: setting.IsGitRepo(cwd),
 	})
 
 	loopClient := llm.NewClient(llmProvider, modelID, 16384)

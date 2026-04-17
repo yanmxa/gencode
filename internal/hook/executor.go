@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 )
 
@@ -163,14 +163,14 @@ func (e *Engine) buildEnv(input HookInput) []string {
 	defer e.mu.RUnlock()
 
 	result := append(os.Environ(),
-		config.EnvPairs(
+		setting.EnvPairs(
 			"PROJECT_DIR", e.cwd,
 			"SESSION_ID", e.sessionID,
 			"EVENT_TYPE", input.HookEventName,
 		)...,
 	)
 	if input.ToolName != "" {
-		result = append(result, config.EnvPair("TOOL_NAME", input.ToolName)...)
+		result = append(result, setting.EnvPair("TOOL_NAME", input.ToolName)...)
 	}
 	if fn := e.envProvider; fn != nil {
 		result = append(result, fn()...)
@@ -395,7 +395,7 @@ func (e *Engine) getLLMCompleter() LLMCompleter {
 	return e.llmCompleter
 }
 
-func (e *Engine) resolveModel(cmd config.HookCmd) string {
+func (e *Engine) resolveModel(cmd setting.HookCmd) string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	if cmd.Model != "" {

@@ -15,7 +15,7 @@ import (
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/skill"
@@ -23,6 +23,7 @@ import (
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/orchestration"
+	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/task/tracker"
@@ -41,7 +42,7 @@ func (testLLMProvider) ListModels(_ context.Context) ([]llm.ModelInfo, error) { 
 func (testLLMProvider) Name() string { return "test" }
 
 func TestFireSessionEndClearsSessionHooks(t *testing.T) {
-	engine := hook.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine := hook.NewEngine(setting.NewSettings(), "test-session", t.TempDir(), "")
 	engine.AddSessionFunctionHook(hook.Stop, "", hook.FunctionHook{
 		Callback: func(_ context.Context, _ hook.HookInput) (hook.HookOutput, error) {
 			return hook.HookOutput{}, nil
@@ -57,7 +58,7 @@ func TestFireSessionEndClearsSessionHooks(t *testing.T) {
 }
 
 func TestInitFiresSetupHook(t *testing.T) {
-	engine := hook.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine := hook.NewEngine(setting.NewSettings(), "test-session", t.TempDir(), "")
 	triggered := make(chan string, 1)
 	engine.AddSessionFunctionHook(hook.Setup, "init", hook.FunctionHook{
 		Callback: func(_ context.Context, input hook.HookInput) (hook.HookOutput, error) {
@@ -104,7 +105,8 @@ func TestHasAllToolResultsAllowsInterleavedNotices(t *testing.T) {
 }
 
 func TestViewRendersCompactStatusCard(t *testing.T) {
-	m := newBaseModel(modelInfra{cwd: t.TempDir(),})
+	appCwd = t.TempDir()
+	m := newBaseModel()
 	m.ready = true
 	m.width = 100
 	m.conv.Compact.Active = true
@@ -149,7 +151,11 @@ func TestFreshSessionInitializesTaskStorageAndOutputDir(t *testing.T) {
 	_ = tracker.DefaultStore.SetStorageDir("")
 	_ = task.SetOutputDir("")
 
-	m := newBaseModel(modelInfra{cwd: t.TempDir(),initialSessionID: "session-fresh-123"})
+	appCwd = t.TempDir()
+	prevSessionID := session.DefaultSetup.SessionID
+	session.DefaultSetup.SessionID = "session-fresh-123"
+	t.Cleanup(func() { session.DefaultSetup.SessionID = prevSessionID })
+	m := newBaseModel()
 	if m.sessionID != "session-fresh-123" {
 		t.Fatalf("expected initial session id to propagate, got %q", m.sessionID)
 	}
@@ -182,9 +188,9 @@ func TestApplyRunOptionsPluginDirReloadsPluginComponents(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_ = os.Setenv("HOME", prevHome)
-		_, _ = config.Reload()
+		_, _ = setting.Reload()
 	})
-	_, _ = config.Reload()
+	_, _ = setting.Reload()
 
 	prevPluginRegistry := plugin.DefaultRegistry
 	prevSkillRegistry := skill.DefaultRegistry
@@ -252,7 +258,7 @@ You are a verifier.`), 0o644); err != nil {
 		t.Fatalf("WriteFile(.mcp.json) error = %v", err)
 	}
 
-	settings := config.NewSettings()
+	settings := setting.NewSettings()
 	m := &model{
 		cwd:        cwd,
 		settings:   settings,
@@ -260,7 +266,7 @@ You are a verifier.`), 0o644); err != nil {
 		mcp:        mcpui.State{},
 	}
 
-	if err := m.applyRunOptions(config.RunOptions{PluginDir: pluginDir}); err != nil {
+	if err := m.applyRunOptions(setting.RunOptions{PluginDir: pluginDir}); err != nil {
 		t.Fatalf("applyRunOptions() error = %v", err)
 	}
 
@@ -302,7 +308,7 @@ func TestRefreshMemoryContextFiresInstructionsLoaded(t *testing.T) {
 	}
 	defer func() { _ = os.Setenv("HOME", prevHome) }()
 
-	engine := hook.NewEngine(config.NewSettings(), "test-session", tmpDir, "")
+	engine := hook.NewEngine(setting.NewSettings(), "test-session", tmpDir, "")
 	triggered := make(chan hook.HookInput, 1)
 	engine.AddSessionFunctionHook(hook.InstructionsLoaded, projectFile, hook.FunctionHook{
 		Callback: func(_ context.Context, input hook.HookInput) (hook.HookOutput, error) {
@@ -334,7 +340,7 @@ func TestChangeCwdFiresCwdChanged(t *testing.T) {
 	oldCwd := t.TempDir()
 	newCwd := t.TempDir()
 
-	engine := hook.NewEngine(config.NewSettings(), "test-session", oldCwd, "")
+	engine := hook.NewEngine(setting.NewSettings(), "test-session", oldCwd, "")
 	triggered := make(chan hook.HookInput, 1)
 	engine.AddSessionFunctionHook(hook.CwdChanged, newCwd, hook.FunctionHook{
 		Callback: func(_ context.Context, input hook.HookInput) (hook.HookOutput, error) {
@@ -373,7 +379,7 @@ func TestApplyAgentToolSideEffectsFiresFileChanged(t *testing.T) {
 	cwd := t.TempDir()
 	filePath := filepath.Join(cwd, "file.txt")
 
-	engine := hook.NewEngine(config.NewSettings(), "test-session", cwd, "")
+	engine := hook.NewEngine(setting.NewSettings(), "test-session", cwd, "")
 	triggered := make(chan hook.HookInput, 1)
 	engine.AddSessionFunctionHook(hook.FileChanged, filePath, hook.FunctionHook{
 		Callback: func(_ context.Context, input hook.HookInput) (hook.HookOutput, error) {
@@ -405,7 +411,7 @@ func TestApplyAgentToolSideEffectsUpdatesCwdFromBash(t *testing.T) {
 	oldCwd := t.TempDir()
 	newCwd := t.TempDir()
 
-	engine := hook.NewEngine(config.NewSettings(), "test-session", oldCwd, "")
+	engine := hook.NewEngine(setting.NewSettings(), "test-session", oldCwd, "")
 	triggered := make(chan hook.HookInput, 1)
 	engine.AddSessionFunctionHook(hook.CwdChanged, newCwd, hook.FunctionHook{
 		Callback: func(_ context.Context, input hook.HookInput) (hook.HookOutput, error) {
@@ -448,9 +454,9 @@ func TestChangeCwdReloadsProjectScopedSettings(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_ = os.Setenv("HOME", prevHome)
-		_, _ = config.Reload()
+		_, _ = setting.Reload()
 	})
-	_, _ = config.Reload()
+	_, _ = setting.Reload()
 
 	oldCwd := t.TempDir()
 	newCwd := t.TempDir()
@@ -469,8 +475,8 @@ func TestChangeCwdReloadsProjectScopedSettings(t *testing.T) {
 
 	m := &model{
 		cwd:                oldCwd,
-		settings:           initSettings(oldCwd),
-		sessionPermissions: config.NewSessionPermissions(),
+		settings:           setting.InitForApp(oldCwd),
+		sessionPermissions: setting.NewSessionPermissions(),
 		disabledTools:      map[string]bool{"Bash": true},
 	}
 
@@ -491,7 +497,7 @@ func TestChangeCwdReloadsProjectScopedSettings(t *testing.T) {
 }
 
 func TestInitRegistersWatchPathsFromSessionStart(t *testing.T) {
-	engine := hook.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine := hook.NewEngine(setting.NewSettings(), "test-session", t.TempDir(), "")
 	watchPath := filepath.Join(t.TempDir(), ".env")
 	engine.AddSessionFunctionHook(hook.SessionStart, "", hook.FunctionHook{
 		Callback: func(_ context.Context, _ hook.HookInput) (hook.HookOutput, error) {
@@ -526,7 +532,7 @@ func TestFileWatcherFiresFileChangedForWatchedPath(t *testing.T) {
 		t.Fatalf("write initial file: %v", err)
 	}
 
-	engine := hook.NewEngine(config.NewSettings(), "test-session", cwd, "")
+	engine := hook.NewEngine(setting.NewSettings(), "test-session", cwd, "")
 	triggered := make(chan hook.HookInput, 1)
 	engine.AddSessionFunctionHook(hook.FileChanged, filePath, hook.FunctionHook{
 		Callback: func(_ context.Context, input hook.HookInput) (hook.HookOutput, error) {
@@ -609,7 +615,7 @@ func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 }
 
 func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
-	engine := hook.NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine := hook.NewEngine(setting.NewSettings(), "test-session", t.TempDir(), "")
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
 	engine.AddSessionFunctionHook(hook.Notification, "", hook.FunctionHook{

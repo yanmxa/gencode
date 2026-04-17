@@ -11,16 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 )
-
-type stubAgentRunner struct {
-	response string
-}
-
-func (s stubAgentRunner) RunAgentHook(_ context.Context, prompt string, model string) (string, error) {
-	return s.response, nil
-}
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -131,7 +123,7 @@ func Test_eventSupportsMatcher(t *testing.T) {
 }
 
 func TestEngineNoHooks(t *testing.T) {
-	settings := config.NewSettings()
+	settings := setting.NewSettings()
 	engine := NewEngine(settings, "test-session", "/tmp", "")
 
 	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
@@ -155,9 +147,9 @@ func TestEngineNilSettings(t *testing.T) {
 }
 
 func TestEngineHasHooks(t *testing.T) {
-	settings := config.NewSettings()
-	settings.Hooks["Stop"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: "echo done"}}},
+	settings := setting.NewSettings()
+	settings.Hooks["Stop"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: "echo done"}}},
 	}
 
 	engine := NewEngine(settings, "test-session", "/tmp", "")
@@ -171,8 +163,8 @@ func TestEngineHasHooks(t *testing.T) {
 }
 
 func TestMatchesIfConditionMatchesBashSubcommands(t *testing.T) {
-	engine := NewEngine(config.NewSettings(), "test-session", "/tmp/repo", "")
-	cmd := config.HookCmd{If: "Bash(git:*)"}
+	engine := NewEngine(setting.NewSettings(), "test-session", "/tmp/repo", "")
+	cmd := setting.HookCmd{If: "Bash(git:*)"}
 	input := HookInput{
 		HookEventName: string(PreToolUse),
 		ToolName:      "Bash",
@@ -185,9 +177,9 @@ func TestMatchesIfConditionMatchesBashSubcommands(t *testing.T) {
 }
 
 func TestEngineRuntimeAndSessionHooks(t *testing.T) {
-	engine := NewEngine(config.NewSettings(), "test-session", "/tmp", "")
-	engine.store.AddRuntimeHook(PreToolUse, "Bash", config.HookCmd{Type: "command", Command: "echo runtime"})
-	engine.store.AddSessionHook(Stop, "", config.HookCmd{Type: "command", Command: "echo session"})
+	engine := NewEngine(setting.NewSettings(), "test-session", "/tmp", "")
+	engine.store.AddRuntimeHook(PreToolUse, "Bash", setting.HookCmd{Type: "command", Command: "echo runtime"})
+	engine.store.AddSessionHook(Stop, "", setting.HookCmd{Type: "command", Command: "echo session"})
 	engine.AddRuntimeFunctionHook(StopFailure, "", FunctionHook{
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
 			msg := "runtime function"
@@ -227,7 +219,7 @@ func TestEngineRuntimeAndSessionHooks(t *testing.T) {
 }
 
 func TestEngineSessionFunctionHook(t *testing.T) {
-	engine := NewEngine(config.NewSettings(), "test-session", "/tmp", "")
+	engine := NewEngine(setting.NewSettings(), "test-session", "/tmp", "")
 	id := engine.AddSessionFunctionHook(PreToolUse, "Bash", FunctionHook{
 		Callback: func(_ context.Context, input HookInput) (HookOutput, error) {
 			if input.ToolName != "Bash" {
@@ -253,7 +245,7 @@ func TestEngineSessionFunctionHook(t *testing.T) {
 }
 
 func TestEngineRemoveSessionFunctionHook(t *testing.T) {
-	engine := NewEngine(config.NewSettings(), "test-session", "/tmp", "")
+	engine := NewEngine(setting.NewSettings(), "test-session", "/tmp", "")
 	id := engine.AddSessionFunctionHook(Stop, "", FunctionHook{
 		ID: "fn-stop",
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
@@ -285,11 +277,11 @@ echo '{"systemMessage":"hook executed"}'
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
 		{
 			Matcher: "Bash",
-			Hooks:   []config.HookCmd{{Type: "command", Command: scriptPath}},
+			Hooks:   []setting.HookCmd{{Type: "command", Command: scriptPath}},
 		},
 	}
 
@@ -318,10 +310,10 @@ echo '{"systemMessage":"hook executed"}'
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
 		{
-			Hooks: []config.HookCmd{{
+			Hooks: []setting.HookCmd{{
 				Type:    "command",
 				Command: scriptPath,
 				If:      "Bash(git *)",
@@ -359,9 +351,9 @@ exit 2
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -390,9 +382,9 @@ echo '{"continue":false,"stopReason":"Denied by hook"}'
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -424,9 +416,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":` + str
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -455,9 +447,9 @@ echo "{\"systemMessage\":\"GEN=$GEN_PROJECT_DIR CLAUDE=$CLAUDE_PROJECT_DIR\"}"
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["Stop"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["Stop"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -471,7 +463,7 @@ echo "{\"systemMessage\":\"GEN=$GEN_PROJECT_DIR CLAUDE=$CLAUDE_PROJECT_DIR\"}"
 }
 
 func TestEnginePermissionMode(t *testing.T) {
-	engine := NewEngine(config.NewSettings(), "test-session", "/tmp", "")
+	engine := NewEngine(setting.NewSettings(), "test-session", "/tmp", "")
 
 	engine.SetPermissionMode("auto")
 
@@ -490,10 +482,10 @@ exec sleep 30
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
+	settings := setting.NewSettings()
 	// Timeout of 1 second — the sleep process will be killed after 1s
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath, Timeout: 1}}},
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath, Timeout: 1}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -529,9 +521,9 @@ echo -n "x" >> `+counterFile+`
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath, Once: true}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath, Once: true}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -563,9 +555,9 @@ cat > `+captureFile+`
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	const sessionID = "test-session-xyz"
@@ -608,9 +600,9 @@ cat > `+captureFile+`
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PermissionDenied"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PermissionDenied"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -647,9 +639,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"R
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -664,7 +656,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"R
 }
 
 func TestHooks_ExtractWatchPaths(t *testing.T) {
-	settings := config.NewSettings()
+	settings := setting.NewSettings()
 	engine := NewEngine(settings, "test-session", t.TempDir(), "")
 	engine.AddSessionFunctionHook(SessionStart, "", FunctionHook{
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
@@ -687,7 +679,7 @@ func TestHooks_ExtractWatchPaths(t *testing.T) {
 }
 
 func TestHooks_MergeWatchPathsFromMultipleHooks(t *testing.T) {
-	engine := NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine := NewEngine(setting.NewSettings(), "test-session", t.TempDir(), "")
 	engine.AddSessionFunctionHook(SessionStart, "", FunctionHook{
 		ID: "watch-a",
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
@@ -724,7 +716,7 @@ func TestHooks_MergeWatchPathsFromMultipleHooks(t *testing.T) {
 }
 
 func TestHooks_ExtractInitialUserMessage(t *testing.T) {
-	engine := NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine := NewEngine(setting.NewSettings(), "test-session", t.TempDir(), "")
 	engine.AddSessionFunctionHook(SessionStart, "", FunctionHook{
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
 			return HookOutput{
@@ -743,7 +735,7 @@ func TestHooks_ExtractInitialUserMessage(t *testing.T) {
 }
 
 func TestHooks_CurrentStatusMessageTracksActiveHook(t *testing.T) {
-	engine := NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine := NewEngine(setting.NewSettings(), "test-session", t.TempDir(), "")
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
 	engine.AddSessionFunctionHook(Notification, "", FunctionHook{
@@ -784,7 +776,7 @@ func TestHooks_CurrentStatusMessageTracksActiveHook(t *testing.T) {
 }
 
 func TestHooks_ExtractPermissionDeniedRetry(t *testing.T) {
-	engine := NewEngine(config.NewSettings(), "test-session", t.TempDir(), "")
+	engine := NewEngine(setting.NewSettings(), "test-session", t.TempDir(), "")
 	engine.AddSessionFunctionHook(PermissionDenied, "", FunctionHook{
 		Callback: func(_ context.Context, _ HookInput) (HookOutput, error) {
 			return HookOutput{
@@ -812,9 +804,9 @@ echo '{"systemMessage":"injected context from hook"}'
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -837,9 +829,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -857,9 +849,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"
 }
 
 func TestHooks_PromptHook(t *testing.T) {
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{
 			Type:   "prompt",
 			Prompt: `Evaluate $ARGUMENTS and allow.`,
 		}}},
@@ -877,9 +869,9 @@ func TestHooks_PromptHook(t *testing.T) {
 }
 
 func TestHooks_AgentHook(t *testing.T) {
-	settings := config.NewSettings()
-	settings.Hooks["PermissionRequest"] = []config.Hook{
-		{Matcher: "*", Hooks: []config.HookCmd{{
+	settings := setting.NewSettings()
+	settings.Hooks["PermissionRequest"] = []setting.Hook{
+		{Matcher: "*", Hooks: []setting.HookCmd{{
 			Type:   "agent",
 			Prompt: `Review $ARGUMENTS and return a permission decision.`,
 		}}},
@@ -899,9 +891,9 @@ func TestHooks_AgentHook(t *testing.T) {
 func TestHooks_HTTPHook(t *testing.T) {
 	t.Setenv("HOOK_TOKEN", "token-123")
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{
 			Type:           "http",
 			URL:            "https://hooks.example.test/pre-tool",
 			Headers:        map[string]string{"Authorization": "Bearer $HOOK_TOKEN"},
@@ -941,9 +933,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -954,28 +946,6 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"
 	}
 	if outcome.BlockReason != "audit policy violation" {
 		t.Errorf("expected deny reason, got %q", outcome.BlockReason)
-	}
-}
-
-func TestHooks_AgentHook_UsesInjectedRunner(t *testing.T) {
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{
-			Hooks: []config.HookCmd{{
-				Type:   "agent",
-				Prompt: "Verify tool call",
-			}},
-		},
-	}
-
-	engine := NewEngine(settings, "test-session", t.TempDir(), "")
-	engine.SetAgentRunner(stubAgentRunner{
-		response: `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}`,
-	})
-
-	outcome := engine.Execute(context.Background(), PreToolUse, HookInput{ToolName: "Bash"})
-	if !outcome.PermissionAllow {
-		t.Fatal("expected agent runner to allow execution")
 	}
 }
 
@@ -991,9 +961,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PermissionRequest"] = []config.Hook{
-		{Matcher: "*", Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PermissionRequest"] = []setting.Hook{
+		{Matcher: "*", Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1017,9 +987,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PermissionRequest"] = []config.Hook{
-		{Matcher: "*", Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PermissionRequest"] = []setting.Hook{
+		{Matcher: "*", Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1043,9 +1013,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PermissionRequest"] = []config.Hook{
-		{Matcher: "*", Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PermissionRequest"] = []setting.Hook{
+		{Matcher: "*", Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1079,9 +1049,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PermissionRequest"] = []config.Hook{
-		{Matcher: "*", Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PermissionRequest"] = []setting.Hook{
+		{Matcher: "*", Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1115,9 +1085,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PermissionRequest"] = []config.Hook{
-		{Matcher: "*", Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PermissionRequest"] = []setting.Hook{
+		{Matcher: "*", Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1148,9 +1118,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"be
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PermissionRequest"] = []config.Hook{
-		{Matcher: "*", Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PermissionRequest"] = []setting.Hook{
+		{Matcher: "*", Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1195,9 +1165,9 @@ fi
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1247,9 +1217,9 @@ fi
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1281,9 +1251,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1326,9 +1296,9 @@ fi
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1372,9 +1342,9 @@ echo "async_done" > `+markerFile+`
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1418,9 +1388,9 @@ exit 2
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath, AsyncRewake: true}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath, AsyncRewake: true}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1459,9 +1429,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1491,9 +1461,9 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","decision":{"behavior"
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["PreToolUse"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["PreToolUse"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1519,9 +1489,9 @@ cat > `+captureFile+`
 		t.Fatal(err)
 	}
 
-	settings := config.NewSettings()
-	settings.Hooks["SessionStart"] = []config.Hook{
-		{Hooks: []config.HookCmd{{Type: "command", Command: scriptPath}}},
+	settings := setting.NewSettings()
+	settings.Hooks["SessionStart"] = []setting.Hook{
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")

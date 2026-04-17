@@ -11,6 +11,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/search"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
@@ -120,6 +121,9 @@ func (s *Model) Select() tea.Cmd {
 		return nil // can't select unavailable provider
 	}
 
+	if setting.DefaultSetup != nil {
+		setting.DefaultSetup.SearchProvider = string(selected.Name)
+	}
 	if s.store != nil {
 		_ = s.store.SetSearchProvider(string(selected.Name))
 	}
