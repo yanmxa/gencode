@@ -21,34 +21,22 @@ The loop: `Init → Cmd → Msg → Update → Cmd → Msg → ...`, with `View(
 3. **Message types are routing keys.** Define concrete msg types — the more precise, the cleaner the switch. No string/int dispatch.
 4. **State machine over bool flags.** Use explicit mode enums to control UI behavior. Both Update and View branch on mode, avoiding combinatorial flag explosion.
 5. **Sub-models call up via Runtime interfaces, never import root.** The root implements each sub-model's Runtime interface through an adapter struct.
-6. **Project structure mirrors the architecture:**
+6. **Cmd factories live with their handlers.** Each sub-model owns its Cmd factories (e.g. `conv/` owns `DrainAgentOutbox()`). Cross-cutting Cmds (e.g. `sendToAgent()`) live in root files. No central `cmd.go` — co-location beats centralization at scale.
+7. **Project structure mirrors the architecture:**
 
 ```
 app/
-  model.go     root Model definition + Init
-  update.go    Update dispatch (routes by msg type)
-  view.go      View layout composition
-  command.go   tea.Cmd factory functions
+  model.go     root Model{input, notify, trigger, conv, runtime} + Init()
+  update.go    Update(): routes msgs to sub-models by type
+  view.go      View(): composes sub-model views
+  bridges.go   Runtime adapters: root → sub-model interfaces
   run.go       entrypoint / lifecycle
-  user/        user input sub-model (keyboard → state → textarea)
-  output/      agent outbox sub-model (outbox events → state → chat rendering)
+  input/       keyboard → input state → textarea render
+  notify/      task completion → notification queue → inject into conversation
+  trigger/     cron / hook / watcher → event queue → inject into conversation
+  conv/        outbox events → conversation state → chat render
+  runtime/     shared state: provider, session, permission, config
 ```
-
-Best Practices :
-1. sub-model分治：把 Model 拆成多个子 model，每个子 model 有自己的 Update() 和 View()。父 model 做路由分发
-2. 消息即事件，用类型作路由：类型越精准，update 里面分支月干净
-3. Cmd是唯一的副作用出口：所有的 I/O都通过tea.cmd触发，每次收到一个事件，返回一个新的listen Cmd,形成链式监听
-4. View 椿萱软，不持有状态
-5. 状态机管理模式切换；用显示state mode枚举控制ui行为，update, view都根据mode分支，避免一堆bool flag组合爆炸
-6.  实际项目结构建议
-
-  app/
-    model.go          # 主 model 定义 + Init/Update/View 入口
-    update.go         # Update 路由（按 msg 类型分发）
-    command.go        # 所有 tea.Cmd 工厂函数
-    run.go            # 启动/lifecycle
-    output/           # 各类输出渲染（View 侧）
-    user/             # 用户输入处理（Update 侧）
 
 ## Three-Source MVU
 
@@ -222,131 +210,170 @@ agentPermMsg
 
 **OnTurn is the feedback hub**: when the agent finishes a think+act cycle, the TUI drains queued Source 1, 2, and 3 items back into the Inbox. This continues until all queues are empty and no hooks block.
 
-## Model
+## App Structure
 
-Five sub-Models — four mutation sources + shared runtime. Each sub-Model's
-fields are defined in its own `model.go`; the root model only holds references.
+### Design Principles
+
+Each sub-model package is a self-contained MVU unit:
+
+| Convention | Rule |
+|-----------|------|
+| `model.go` | State definition. All fields the package owns live here. |
+| `update.go` | `Update()` entry point. Routes msgs to handlers. |
+| `view.go` | Pure render. Reads Model, returns string. |
+| `on_*.go` | Component handlers: each `on_` file owns one UI component's state + update + view. |
+| `runtime.go` | Runtime interface. Sub-model calls up to root through this; never imports root. |
+
+Root implements each sub-model's Runtime via adapter structs in `bridges.go`. If a method only reads/writes its own sub-model's state, it belongs inside the sub-model — not in the Runtime interface.
+
+### Root Model
 
 ```go
 type model struct {
-    userInput   user.Model      // user/model.go
-    agentInput  agent.Model     // agent/model.go
-    systemInput system.Model    // system/model.go
-    agentOutput output.Model    // output/model.go
-    runtime     runtime.Model   // runtime/model.go
+    input    input.Model       // Source 1: user keyboard → textarea, selectors, approval
+    notify   notify.Model      // Source 2: background agent completion → notification queue
+    trigger  trigger.Model     // Source 3: cron / async hook / file watcher → event queue
+    conv     conv.Model        // Agent Outbox: outbox events → conversation state → chat render
+    runtime  runtime.Model     // Shared: provider, session, permission, plan, config
 }
 ```
 
-The root `update.go` dispatches messages to the appropriate sub-Model;
-the root `view.go` composes their views into the final layout.
+Root `update.go` dispatches by msg type; root `view.go` composes sub-model views.
 
-## Update
-
-```
-msg → Update(msg) → handler mutates Model → return tea.Cmd
-                                                    ↓
-                                          framework calls View()
-                                                    ↓
-                                          View() reads Model → render → terminal
-                                                    ↓
-                                          tea.Cmd produces new msg → loop
-
-  msg type      → updates      → handler
-  ──────────────────────────────────────────────────
-  user msgs     → m.userInput   → handleKey, handleSubmit, ...
-  agent msgs    → m.agentInput  → handleTaskNotif, ...
-  system msgs   → m.systemInput → handleCronTick, handleAsyncHook, ...
-  outbox msgs   → m.agentOutput → handleOutboxEvent, handlePermRequest, ...
-  runtime msgs  → m.runtime     → handleConfigReload, modeToggle, providerSwitch
-```
-
-## View
+### Update Dispatch
 
 ```
-View() → reads Model → renders terminal
+msg type        → sub-model    → handlers
+────────────────────────────────────────────────────
+tea.KeyMsg      → m.input      → handleKeypress, handleSubmit
+notifyTickMsg   → m.notify     → handleTaskNotificationTick
+triggerTickMsg   → m.trigger    → handleCronTick, handleAsyncHookTick
+conv.OutboxMsg  → m.conv       → handlePreInfer, OnChunk, PostTool, OnTurn ...
+runtimeMsg      → m.runtime    → handleConfigReload, modeToggle
+```
 
-  Model field   → renders
-  ──────────────────────────────────────────────────
-  userInput     → input textarea, overlay selector, modal dialog
-  agentInput    → task tracker (background agent progress)
-  systemInput   → (inline notices when cron/hook injects)
-  agentOutput   → chat messages, streaming content, tool results
-  runtime       → status bar: mode, model name, thinking level, tokens
+### View Composition
+
+```
+View()
+  ├── m.conv.View()       → chat messages, streaming content, tool results
+  ├── m.conv.TrackerView()→ background task progress
+  ├── m.input.View()      → textarea + image indicators
+  └── m.runtime.View()    → status bar: mode, model, tokens
 ```
 
 ### Directory Structure
 
-Organized by **input source** (who triggers mutation) and **responsibility**. Sub-packages stay flat. `on_` prefix for component files in input-source packages (`user/`, `agent/`, `system/`).
-
 ```
 internal/app/
 │
-│  ── Core MVU ──────────────────────────────────
-├── model.go              # root Model (5 sub-model refs), Init()
-├── update.go             # Update() top-level dispatch
-├── view.go               # View() layout composition
-├── init.go               # infrastructure init (newModel, provider, hooks)
+│  ── Root MVU + cross-cutting ──────────────────────────────────────────────
 │
-│  ── Cross-cutting (spans multiple sub-models) ─
-├── bridges.go            # Runtime adapters: root → sub-model interfaces
-├── output_adapter.go     # output.Runtime implementation
-├── submit.go             # user submit → agent pipeline
-├── command.go            # slash command registry
-├── mode.go               # mode switching (plan/auto-accept/bypass)
-├── lifecycle.go          # cwd change, config reload, memory refresh
-├── agent_config.go       # LLM loop + agent tool wiring
-├── approval.go           # cross-sub-model permission approval
-├── tool_exec.go          # tool execution dispatch
-├── run.go                # entrypoint, TUI program setup
-├── runprint.go           # headless print mode
+├── model.go          # root Model{input, notify, trigger, conv, runtime}, Init()
+├── update.go         # Update(): routes msgs to sub-models by type
+├── view.go           # View(): composes sub-model views into terminal layout
+├── init.go           # newModel(), initInfrastructure(), applyRunOptions()
+├── run.go            # Run(): entrypoint, tea.Program setup
+├── runprint.go       # runPrint(): headless non-interactive mode
 │
-├── user/                 # Source 1: User Input
-│   ├── model.go          #   textarea, history, images, queue, selectors
-│   ├── update.go         #   overlay message routing
-│   ├── view.go           #   textarea + image rendering
-│   ├── on_textarea.go    #   text input, history, suggestion
-│   ├── on_queue.go       #   message queue (mid-stream buffer)
-│   ├── on_image.go       #   image paste
-│   ├── on_approval.go    #   tool approval dialog
-│   ├── on_approval_bash.go, on_approval_diff.go
-│   ├── on_agent.go       #   agent selector
-│   ├── on_mcp.go         #   MCP server selector
-│   ├── on_memory.go      #   memory editor
-│   ├── on_plugin.go, on_plugin_command.go, on_plugin_view.go
-│   ├── on_provider.go, on_provider_view.go
-│   ├── on_search.go, on_session.go, on_skill.go
-│   └── on_token_limits.go
+├── bridges.go        # Runtime adapters: root model → sub-model Runtime interfaces
+├── submit.go         # handleSubmit() → prepareUserMessage() → sendToAgent()
+├── command.go        # slash command registry: /help, /clear, /compact, ...
+├── approval.go       # permission approval flow across input ↔ conv sub-models
+├── mode.go           # plan/question/enterplan modal request ↔ response
+├── agent_config.go   # buildLoopClient(), buildLoopSystem(), buildLoopToolSet()
+├── lifecycle.go      # changeCwd(), reloadProjectContext()
+├── tool_exec.go      # executeApproved(): dispatches tool calls
 │
-├── agent/                # Source 2: Agent Input
-│   ├── model.go          #   notification queue, batch tracking
-│   ├── update.go         #   tick → notification routing
-│   ├── on_notification.go
-│   └── on_tracker.go     #   background worker/batch tracking
+│  ── input/ ── Source 1: User Input ────────────────────────────────────────
+│  Event: tea.KeyMsg
+│  Flow:  keyboard → handleKeypress() → textarea | selector | approval
+│         Enter    → handleSubmit()   → sendToAgent() → Agent Inbox
 │
-├── system/               # Source 3: System Input
-│   ├── model.go          #   cron queue, async hook queue
-│   ├── update.go         #   tick → handler routing
-│   ├── view.go           #   hook status rendering
-│   └── on_file_watcher.go
+├── input/
+│   ├── model.go             # Model{Textarea, History, Images, Queue, Selectors}
+│   ├── update.go            # Update(): routes to active overlay or textarea
+│   ├── view.go              # RenderTextarea(), image indicators
+│   ├── on_textarea.go       # HandleTextareaUpdate(), HistoryUp/Down()
+│   ├── on_queue.go          # Enqueue(), Dequeue() — mid-stream input buffer
+│   ├── on_image.go          # HandleImageSelectKey()
+│   ├── on_approval.go       # ApprovalModel: Show() → HandleKeypress() → ResponseMsg
+│   ├── on_approval_bash.go  # bash command preview
+│   ├── on_approval_diff.go  # file diff preview
+│   ├── on_agent.go          # AgentSelector: list/toggle subagent definitions
+│   ├── on_provider.go       # ProviderSelector: switch LLM provider/model
+│   ├── on_provider_view.go  # provider selector rendering
+│   ├── on_plugin.go         # PluginSelector: install/enable/disable plugins
+│   ├── on_plugin_command.go # /plugin subcommand handlers
+│   ├── on_plugin_view.go    # plugin selector rendering
+│   ├── on_mcp.go            # MCPSelector: connect/disconnect MCP servers
+│   ├── on_session.go        # SessionSelector: resume/fork past sessions
+│   ├── on_memory.go         # MemorySelector: edit CLAUDE.md / memory files
+│   ├── on_skill.go          # SkillSelector: browse/toggle skills
+│   ├── on_search.go         # SearchSelector: pick web search backend
+│   └── on_token_limits.go   # HandleTokenLimitCommand()
 │
-├── output/               # Agent Output (outbox → Model → View)
-│   ├── model.go          #   conv, modal, tool state, spinner, progress
-│   ├── update.go         #   outbox event dispatch
-│   ├── runtime.go        #   Runtime interface definition
-│   ├── view.go           #   message + streaming + tool result rendering
-│   ├── on_conversation.go, on_compact.go
-│   ├── on_modal.go, on_modal_plan.go, on_modal_question.go, on_modal_enterplan.go
-│   ├── on_tool.go, on_progress.go
-│   ├── on_message.go, on_markdown.go
-│   └── permission_bridge.go
+│  ── notify/ ── Source 2: Background Agent Completion ──────────────────────
+│  Event: task.TaskCompleted observer → NotificationQueue.Push()
+│  Flow:  tick → PopReadyNotifications() → BuildContinuationPrompt()
+│              → sendToAgent() → Agent Inbox
 │
-├── runtime/              # Shared Runtime State
-│   └── model.go          #   provider, session, permission, plan, config
+├── notify/
+│   ├── model.go             # Model{NotificationQueue}, Push(), Pop(), PopBatch()
+│   ├── update.go            # Update(), handleTaskNotificationTick()
+│   ├── on_notification.go   # BuildTaskNotification(), MergeNotifications()
+│   └── on_tracker.go        # EnsureBackgroundBatchTracker(), UpdateWorkerTracker()
 │
-└── kit/                  # Shared UI Utilities
-    ├── suggest/, history/
-    ├── theme.go, theme_selector.go, styles.go
-    ├── listnav.go, editor.go, msg.go, save_level.go, util.go
+│  ── trigger/ ── Source 3: System Events ───────────────────────────────────
+│  Event: cron tick | async hook callback | file watcher
+│  Flow:  event → queue → tick → sendToAgent() → Agent Inbox
+│
+├── trigger/
+│   ├── model.go             # Model{CronQueue, AsyncHookQueue}
+│   ├── update.go            # Update(), handleCronTick(), handleAsyncHookTick()
+│   ├── view.go              # RenderHookStatus()
+│   └── on_file_watcher.go   # NewFileWatcher(), SetPaths(), poll()
+│
+│  ── conv/ ── Agent Outbox → Conversation ──────────────────────────────────
+│  Event: core.Event from Agent Outbox channel
+│  Flow:  DrainAgentOutbox() → OutboxMsg → handleAgentEvent()
+│           PreInfer → OnChunk → PostInfer → PreTool → PostTool → OnTurn
+│
+├── conv/
+│   ├── model.go             # Model{Conversation, Stream, Compact, Modal, Tool, Progress}
+│   ├── update.go            # handleAgentEvent(), handlePreInfer/.../handleTurn()
+│   ├── runtime.go           # Runtime interface: only cross-cutting operations
+│   ├── view.go              # RenderMessageRange(), RenderActiveContent()
+│   │   ── conversation state ──
+│   ├── conversation.go      # ConversationModel: Append(), AppendToLast(), ConvertToProvider()
+│   ├── compact.go           # CompactState: ShouldAutoCompact(), CompactConversation()
+│   ├── stream.go            # StreamState: Activate(), Stop(), BuildingTool
+│   │   ── tool execution ──
+│   ├── tool.go              # ToolExecState: Begin(), Reset(), DrainPendingCalls()
+│   ├── tool_selector.go     # ToolSelector: EnterSelect(), Toggle(), Render()
+│   │   ── modals ──
+│   ├── modal.go             # ModalState type definitions
+│   ├── plan.go              # PlanPrompt: Show() → HandleKeypress() → PlanResponseMsg
+│   ├── question.go          # QuestionPrompt: Show() → HandleKeypress() → QuestionResponseMsg
+│   ├── enterplan.go         # EnterPlanPrompt: Show() → HandleKeypress() → EnterPlanResponseMsg
+│   │   ── rendering ──
+│   ├── message.go           # RenderAssistantMessage(), RenderUserMessage(), RenderToolCalls()
+│   ├── markdown.go          # MDRenderer: Render(), splitTables()
+│   ├── progress.go          # ProgressHub: SendForAgent(), Check(), RenderTrackerList()
+│   └── permission_bridge.go # PermissionBridge: PermissionFunc(), Recv()
+│
+│  ── Shared ────────────────────────────────────────────────────────────────
+│
+├── runtime/
+│   └── model.go             # Model{Provider, Session, Permission, Plan, Config, Tokens}
+│
+└── kit/
+    ├── suggest/             # autocomplete engine
+    ├── history/             # input history
+    ├── theme.go, styles.go  # colors, lipgloss styles
+    ├── listnav.go           # list navigation helpers
+    ├── editor.go            # external editor integration
+    └── msg.go, save_level.go, util.go
 ```
 
 ## Package Dependencies
