@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/app/output/toolui"
+	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/log"
@@ -106,7 +106,7 @@ func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd 
 		if m.settings != nil && m.settings.ResolveHookAllow(msg.Request.ToolName, args, m.sessionPermissions) {
 			// Hook allow is valid, skip permission prompt
 			m.userInput.Approval.Hide()
-			return toolui.ExecuteApproved(m.tool.Context(), m.agentOutput.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
+			return appoutput.ExecuteApproved(m.tool.Context(), m.agentOutput.ProgressHub, m.tool.PendingCalls, m.tool.CurrentIdx, m.cwd)
 		}
 		// Safety invariant denied the hook allow — fall through to normal approval modal
 	}

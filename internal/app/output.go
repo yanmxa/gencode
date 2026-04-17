@@ -17,7 +17,6 @@ import (
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/filecache"
@@ -125,10 +124,10 @@ func (m *model) StopAgentSession() {
 
 // --- output.Runtime: CompactHandler ---
 
-func (m *model) HandleCompactResult(msg appcompact.ResultMsg) tea.Cmd {
+func (m *model) HandleCompactResult(msg appoutput.CompactResultMsg) tea.Cmd {
 	return m.handleCompactResult(msg)
 }
-func (m *model) HandleTokenLimitResult(msg appcompact.TokenLimitResultMsg) tea.Cmd {
+func (m *model) HandleTokenLimitResult(msg appoutput.TokenLimitResultMsg) tea.Cmd {
 	return m.handleTokenLimitResult(msg)
 }
 
@@ -452,32 +451,32 @@ func getHookResponseString(resp map[string]any, key string) string {
 // --- Compact helpers ---
 
 func (m *model) getEffectiveInputLimit() int {
-	return appcompact.GetEffectiveInputLimit(m.providerStore, m.currentModel)
+	return appoutput.GetEffectiveInputLimit(m.providerStore, m.currentModel)
 }
 
 func (m *model) getMaxTokens() int {
-	return appcompact.GetMaxTokens(m.providerStore, m.currentModel, setting.DefaultMaxTokens)
+	return appoutput.GetMaxTokens(m.providerStore, m.currentModel, setting.DefaultMaxTokens)
 }
 
 func (m *model) getContextUsagePercent() float64 {
-	return appcompact.GetContextUsagePercent(m.inputTokens, m.providerStore, m.currentModel)
+	return appoutput.GetContextUsagePercent(m.inputTokens, m.providerStore, m.currentModel)
 }
 
 func (m *model) shouldAutoCompact() bool {
-	return appcompact.ShouldAutoCompact(m.llmProvider, len(m.conv.Messages), m.inputTokens, m.providerStore, m.currentModel)
+	return appoutput.ShouldAutoCompact(m.llmProvider, len(m.conv.Messages), m.inputTokens, m.providerStore, m.currentModel)
 }
 
 func (m *model) triggerAutoCompact() tea.Cmd {
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = ""
-	m.conv.Compact.Phase = appcompact.PhaseSummarizing
+	m.conv.Compact.Phase = appoutput.PhaseSummarizing
 	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()))
 	commitCmds := m.commitMessages()
 	commitCmds = append(commitCmds, m.agentOutput.Spinner.Tick, compactCmd(m.buildCompactRequest("", "auto")))
 	return tea.Batch(commitCmds...)
 }
 
-func (m *model) handleCompactResult(msg appcompact.ResultMsg) tea.Cmd {
+func (m *model) handleCompactResult(msg appoutput.CompactResultMsg) tea.Cmd {
 	shouldContinue := m.conv.Compact.AutoContinue
 
 	if msg.Error != nil {
@@ -546,7 +545,7 @@ func (m *model) resetAfterCompact() {
 	m.outputTokens = 0
 }
 
-func (m *model) handleTokenLimitResult(msg appcompact.TokenLimitResultMsg) tea.Cmd {
+func (m *model) handleTokenLimitResult(msg appoutput.TokenLimitResultMsg) tea.Cmd {
 	m.userInput.Provider.FetchingLimits = false
 
 	var content string
@@ -751,7 +750,7 @@ func suggestPromptCmd(req promptSuggestionRequest) tea.Cmd {
 }
 
 func fetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.Cmd {
-	deps := appcompact.AutoFetchTokenLimitsDeps{
+	deps := appoutput.AutoFetchTokenLimitsDeps{
 		LLM:          req.LLM,
 		Store:        req.Store,
 		CurrentModel: req.CurrentModel,
@@ -760,8 +759,8 @@ func fetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.Cmd {
 	}
 	ctx := req.Ctx
 	return func() tea.Msg {
-		result, err := appcompact.AutoFetchTokenLimits(ctx, deps)
-		return appcompact.TokenLimitResultMsg{Result: result, Error: err}
+		result, err := appoutput.AutoFetchTokenLimits(ctx, deps)
+		return appoutput.TokenLimitResultMsg{Result: result, Error: err}
 	}
 }
 
@@ -782,8 +781,8 @@ func compactCmd(req compactRequest) tea.Cmd {
 				}
 			}
 		}
-		summary, count, err := appcompact.CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
-		return appcompact.ResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
+		summary, count, err := appoutput.CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
+		return appoutput.CompactResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
 	}
 }
 

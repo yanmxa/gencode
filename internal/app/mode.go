@@ -6,7 +6,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
-	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/log"
@@ -97,32 +96,32 @@ func (m *model) enableAutoAcceptMode() {
 func (m *model) updateMode(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case appoutput.ProgressQuestionMsg:
-		c := m.handleQuestionRequest(appmodal.QuestionRequestMsg{
+		c := m.handleQuestionRequest(appoutput.QuestionRequestMsg{
 			Request: msg.Request,
 			Reply:   msg.Reply,
 		})
 		return c, true
-	case appmodal.QuestionRequestMsg:
+	case appoutput.QuestionRequestMsg:
 		c := m.handleQuestionRequest(msg)
 		return c, true
-	case appmodal.PlanRequestMsg:
+	case appoutput.PlanRequestMsg:
 		c := m.handlePlanRequest(msg)
 		return c, true
-	case appmodal.EnterPlanRequestMsg:
+	case appoutput.EnterPlanRequestMsg:
 		c := m.handleEnterPlanRequest(msg)
 		return c, true
 	}
 	return nil, false
 }
 
-func (m *model) handleQuestionRequest(msg appmodal.QuestionRequestMsg) tea.Cmd {
+func (m *model) handleQuestionRequest(msg appoutput.QuestionRequestMsg) tea.Cmd {
 	m.pendingQuestion = msg.Request
 	m.pendingQuestionReply = msg.Reply
 	m.mode.Question.Show(msg.Request, m.width)
 	return tea.Batch(m.commitMessages()...)
 }
 
-func (m *model) handleQuestionResponse(msg appmodal.QuestionResponseMsg) tea.Cmd {
+func (m *model) handleQuestionResponse(msg appoutput.QuestionResponseMsg) tea.Cmd {
 	reply := m.pendingQuestionReply
 	m.pendingQuestionReply = nil
 	defer func() { m.pendingQuestion = nil }()
@@ -142,7 +141,7 @@ func (m *model) handleQuestionResponse(msg appmodal.QuestionResponseMsg) tea.Cmd
 	return nil
 }
 
-func (m *model) handlePlanRequest(msg appmodal.PlanRequestMsg) tea.Cmd {
+func (m *model) handlePlanRequest(msg appoutput.PlanRequestMsg) tea.Cmd {
 	var planPath string
 	if m.planStore != nil {
 		planPath = m.planStore.GetPath(plan.GeneratePlanName(m.planTask))
@@ -157,7 +156,7 @@ func (m *model) handlePlanRequest(msg appmodal.PlanRequestMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m *model) handlePlanResponse(msg appmodal.PlanResponseMsg) tea.Cmd {
+func (m *model) handlePlanResponse(msg appoutput.PlanResponseMsg) tea.Cmd {
 	if !msg.Approved {
 		m.planEnabled = false
 		m.operationMode = setting.ModeNormal
@@ -215,12 +214,12 @@ func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
 	return m.sendToAgent(userMsg, nil)
 }
 
-func (m *model) handleEnterPlanRequest(msg appmodal.EnterPlanRequestMsg) tea.Cmd {
+func (m *model) handleEnterPlanRequest(msg appoutput.EnterPlanRequestMsg) tea.Cmd {
 	m.mode.PlanEntry.Show(msg.Request, m.width)
 	return tea.Batch(m.commitMessages()...)
 }
 
-func (m *model) handleEnterPlanResponse(msg appmodal.EnterPlanResponseMsg) tea.Cmd {
+func (m *model) handleEnterPlanResponse(msg appoutput.EnterPlanResponseMsg) tea.Cmd {
 	if msg.Approved {
 		m.planEnabled = true
 		m.operationMode = setting.ModePlan

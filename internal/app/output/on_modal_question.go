@@ -1,4 +1,4 @@
-package modal
+package output
 
 import (
 	"fmt"
@@ -8,8 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 // QuestionPrompt manages the question prompt UI for AskUserQuestion tool
@@ -17,12 +17,12 @@ type QuestionPrompt struct {
 	active          bool
 	request         *tool.QuestionRequest
 	width           int
-	currentQuestion int             // Current question index
-	selectedOption map[int]int    // Per-question highlighted option index
-	selected       map[int][]int  // Question index -> selected option indices
-	customAnswers  map[int]string // Question index -> custom "Other" answer text
-	customInput     textinput.Model // For "Other" option
-	showingCustom   bool            // Whether custom input is visible
+	currentQuestion int
+	selectedOption  map[int]int
+	selected        map[int][]int
+	customAnswers   map[int]string
+	customInput     textinput.Model
+	showingCustom   bool
 }
 
 // NewQuestionPrompt creates a new QuestionPrompt
@@ -68,7 +68,6 @@ func (p *QuestionPrompt) IsActive() bool {
 	return p.active
 }
 
-// isAnswered returns whether a question has been answered (via selection or custom input).
 func (p *QuestionPrompt) isAnswered(questionIdx int) bool {
 	return len(p.selected[questionIdx]) > 0 || p.customAnswers[questionIdx] != ""
 }
@@ -81,7 +80,6 @@ func (p *QuestionPrompt) restoreCustomInput() {
 }
 
 // HandleKeypress handles keyboard input for the question prompt.
-// Returns (cmd, response): cmd for UI updates, response when user makes a decision.
 func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionResponseMsg) {
 	if !p.active || p.request == nil {
 		return nil, nil
@@ -103,7 +101,7 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 	}
 
 	currentQ := p.request.Questions[p.currentQuestion]
-	numOptions := len(currentQ.Options) + 1 // +1 for "Other"
+	numOptions := len(currentQ.Options) + 1
 	curOption := p.selectedOption[p.currentQuestion]
 
 	switch msg.Type {
@@ -195,7 +193,6 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 	return nil, nil
 }
 
-// toggleSelection toggles the current option in multi-select mode
 func (p *QuestionPrompt) toggleSelection() {
 	current := p.selected[p.currentQuestion]
 	curOption := p.selectedOption[p.currentQuestion]
@@ -217,7 +214,6 @@ func (p *QuestionPrompt) toggleSelection() {
 	p.selected[p.currentQuestion] = newSelection
 }
 
-// submitCustomInput handles submitting custom "Other" input.
 func (p *QuestionPrompt) submitCustomInput() (tea.Cmd, *QuestionResponseMsg) {
 	customText := strings.TrimSpace(p.customInput.Value())
 	if customText == "" {
@@ -232,12 +228,9 @@ func (p *QuestionPrompt) submitCustomInput() (tea.Cmd, *QuestionResponseMsg) {
 	return p.tryFinishOrAdvance()
 }
 
-// tryFinishOrAdvance checks if all questions are answered. If so, builds the response.
-// Otherwise, advances to the next unanswered question.
 func (p *QuestionPrompt) tryFinishOrAdvance() (tea.Cmd, *QuestionResponseMsg) {
 	n := len(p.request.Questions)
 
-	// Find next unanswered question, starting forward from current position
 	nextUnanswered := -1
 	for offset := 1; offset < n; offset++ {
 		idx := (p.currentQuestion + offset) % n
@@ -247,13 +240,11 @@ func (p *QuestionPrompt) tryFinishOrAdvance() (tea.Cmd, *QuestionResponseMsg) {
 		}
 	}
 
-	// If we found an unanswered question, navigate to it
 	if nextUnanswered >= 0 {
 		p.currentQuestion = nextUnanswered
 		return nil, nil
 	}
 
-	// Check if the current question itself is unanswered (single-question case)
 	if !p.isAnswered(p.currentQuestion) {
 		return nil, nil
 	}
@@ -289,8 +280,6 @@ func (p *QuestionPrompt) tryFinishOrAdvance() (tea.Cmd, *QuestionResponseMsg) {
 	}
 }
 
-// Question prompt styles - use functions to get current theme dynamically
-// This ensures styles update when theme changes
 func getQuestionSeparatorStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Separator)
 }
@@ -350,12 +339,10 @@ func (p *QuestionPrompt) Render() string {
 
 	currentQ := p.request.Questions[p.currentQuestion]
 
-	// Solid separator
 	solidSep := strings.Repeat("\u2500", contentWidth)
 	sb.WriteString(getQuestionSeparatorStyle().Render(solidSep))
 	sb.WriteString("\n")
 
-	// Tab bar (only when multiple questions)
 	if len(p.request.Questions) > 1 {
 		sb.WriteString(" ")
 		for i, q := range p.request.Questions {
@@ -386,18 +373,15 @@ func (p *QuestionPrompt) Render() string {
 		sb.WriteString("\n")
 	}
 
-	// Header badge
 	header := getQuestionHeaderStyle().Render(currentQ.Header)
 	sb.WriteString(" ")
 	sb.WriteString(header)
 	sb.WriteString("\n")
 
-	// Question text
 	sb.WriteString(" ")
 	sb.WriteString(getQuestionTextStyle().Render(currentQ.Question))
 	sb.WriteString("\n\n")
 
-	// Options
 	isMulti := currentQ.MultiSelect
 	curOption := p.selectedOption[p.currentQuestion]
 	selectedSet := make(map[int]bool)
@@ -443,7 +427,6 @@ func (p *QuestionPrompt) Render() string {
 		sb.WriteString("\n")
 	}
 
-	// "Other" option
 	otherIdx := len(currentQ.Options)
 	isOtherHighlighted := curOption == otherIdx
 
@@ -467,7 +450,6 @@ func (p *QuestionPrompt) Render() string {
 	sb.WriteString(getQuestionDescStyle().Render("Type custom response"))
 	sb.WriteString("\n")
 
-	// Custom input (if showing)
 	if p.showingCustom {
 		sb.WriteString("\n")
 		sb.WriteString("   ")
@@ -475,7 +457,6 @@ func (p *QuestionPrompt) Render() string {
 		sb.WriteString("\n")
 	}
 
-	// Show custom answer if already set for this question
 	if !p.showingCustom {
 		if customText, ok := p.customAnswers[p.currentQuestion]; ok {
 			sb.WriteString("   ")
@@ -484,12 +465,10 @@ func (p *QuestionPrompt) Render() string {
 		}
 	}
 
-	// Dotted separator
 	dottedSep := strings.Repeat("\u254C", contentWidth)
 	sb.WriteString(getQuestionSeparatorStyle().Render(dottedSep))
 	sb.WriteString("\n")
 
-	// Footer with hints
 	var hints []string
 	if len(p.request.Questions) > 1 {
 		hints = append(hints, "\u2190/\u2192 switch question")

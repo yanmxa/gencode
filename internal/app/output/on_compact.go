@@ -1,5 +1,6 @@
-// Standalone helper functions for token-limit and conversation-compact commands.
-package compact
+// Compact state, message types, and helper functions for conversation compaction
+// and token-limit management.
+package output
 
 import (
 	"context"
@@ -10,8 +11,106 @@ import (
 	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/runtime"
 	"github.com/yanmxa/gencode/internal/tool"
 )
+
+// --- Message types ---
+
+// CompactResultMsg is sent when a compaction operation completes.
+type CompactResultMsg struct {
+	Summary       string
+	OriginalCount int
+	Trigger       string // "manual" or "auto"
+	Error         error
+}
+
+// TokenLimitResultMsg is sent when a token limit fetch completes.
+type TokenLimitResultMsg struct {
+	Result string
+	Error  error
+}
+
+// --- Compact state ---
+
+const PhaseSummarizing = "Summarizing conversation history"
+
+// CompactState holds all compact-related state for the TUI model.
+type CompactState struct {
+	Active            bool
+	Focus             string
+	AutoContinue      bool
+	LastResult        string
+	LastError         bool
+	Phase             string
+	WarningSuppressed bool
+}
+
+// Reset clears all compact state.
+func (c *CompactState) Reset() {
+	c.Active = false
+	c.Focus = ""
+	c.AutoContinue = false
+	c.LastResult = ""
+	c.LastError = false
+	c.Phase = ""
+	c.WarningSuppressed = false
+}
+
+// ClearResult dismisses the last visible compact status.
+func (c *CompactState) ClearResult() {
+	c.LastResult = ""
+	c.LastError = false
+}
+
+// Complete transitions compact state from running to a visible result state.
+func (c *CompactState) Complete(result string, isError bool) {
+	c.Active = false
+	c.Focus = ""
+	c.AutoContinue = false
+	c.LastResult = result
+	c.LastError = isError
+	c.Phase = ""
+	if !isError {
+		c.WarningSuppressed = true
+	}
+}
+
+// --- Update helpers ---
+
+// ShouldAutoCompact returns true when context usage is high enough to trigger
+// automatic compaction.
+func ShouldAutoCompact(p llm.Provider, messageCount, inputTokens int, store *llm.Store, currentModel *llm.CurrentModelInfo) bool {
+	if p == nil || messageCount < 3 {
+		return false
+	}
+	return core.NeedsCompaction(inputTokens, GetEffectiveInputLimit(store, currentModel))
+}
+
+// GetContextUsagePercent returns what percentage of the context window is used.
+func GetContextUsagePercent(inputTokens int, store *llm.Store, currentModel *llm.CurrentModelInfo) float64 {
+	inputLimit := GetEffectiveInputLimit(store, currentModel)
+	if inputLimit == 0 || inputTokens == 0 {
+		return 0
+	}
+	return float64(inputTokens) / float64(inputLimit) * 100
+}
+
+// GetMaxTokens returns the effective output limit, falling back to defaultMaxTokens.
+func GetMaxTokens(store *llm.Store, currentModel *llm.CurrentModelInfo, defaultMaxTokens int) int {
+	if limit := getEffectiveOutputLimit(store, currentModel); limit > 0 {
+		return limit
+	}
+	return defaultMaxTokens
+}
+
+// CompactConversation compacts the message history into a summary.
+// Delegates to runtime.Compact as the canonical implementation.
+func CompactConversation(ctx context.Context, c *llm.Client, msgs []core.Message, sessionMemory, focus string) (summary string, count int, err error) {
+	return runtime.Compact(ctx, c, msgs, sessionMemory, focus)
+}
+
+// --- Command helpers ---
 
 // buildTokenLimitAgentPrompt returns the system prompt for the token-limit agent.
 func buildTokenLimitAgentPrompt(modelID, providerName, authMethod string) string {

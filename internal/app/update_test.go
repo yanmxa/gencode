@@ -6,11 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
-	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core/system"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -28,22 +25,22 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 		sessionPermissions: setting.NewSessionPermissions(),
 		planEnabled: true,
 		planTask:    "test task",
-		mode: appmodal.State{
-			PlanApproval: appmodal.NewPlanPrompt(),
-			Question:     appmodal.NewQuestionPrompt(),
+		mode: appoutput.ModalState{
+			PlanApproval: appoutput.NewPlanPrompt(),
+			Question:     appoutput.NewQuestionPrompt(),
 		},
-		tool: toolui.State{
-			ExecState: toolui.ExecState{
+		tool: appoutput.ToolState{
+			ToolExecState: appoutput.ToolExecState{
 				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
 			},
 		},
-		conv: appconv.New(),
+		conv: appoutput.NewConversation(),
 	}
 
-	msg := appmodal.PlanResponseMsg{
+	msg := appoutput.PlanResponseMsg{
 		Request:      &tool.PlanRequest{ID: "plan-1", Plan: "## Original Plan\nDo something"},
 		Approved:     true,
 		ApproveMode:  "modify",
@@ -74,22 +71,22 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 		sessionPermissions: setting.NewSessionPermissions(),
 		planEnabled: true,
 		planTask:    "test task",
-		mode: appmodal.State{
-			PlanApproval: appmodal.NewPlanPrompt(),
-			Question:     appmodal.NewQuestionPrompt(),
+		mode: appoutput.ModalState{
+			PlanApproval: appoutput.NewPlanPrompt(),
+			Question:     appoutput.NewQuestionPrompt(),
 		},
-		tool: toolui.State{
-			ExecState: toolui.ExecState{
+		tool: appoutput.ToolState{
+			ToolExecState: appoutput.ToolExecState{
 				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
 			},
 		},
-		conv: appconv.New(),
+		conv: appoutput.NewConversation(),
 	}
 
-	msg := appmodal.PlanResponseMsg{
+	msg := appoutput.PlanResponseMsg{
 		Request:     &tool.PlanRequest{ID: "plan-1", Plan: "## Plan\nSome plan"},
 		Approved:    true,
 		ApproveMode: "manual",
@@ -117,22 +114,22 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 		sessionPermissions: setting.NewSessionPermissions(),
 		planEnabled: true,
 		planTask:    "test task",
-		mode: appmodal.State{
-			PlanApproval: appmodal.NewPlanPrompt(),
-			Question:     appmodal.NewQuestionPrompt(),
+		mode: appoutput.ModalState{
+			PlanApproval: appoutput.NewPlanPrompt(),
+			Question:     appoutput.NewQuestionPrompt(),
 		},
-		tool: toolui.State{
-			ExecState: toolui.ExecState{
+		tool: appoutput.ToolState{
+			ToolExecState: appoutput.ToolExecState{
 				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
 			},
 		},
-		conv: appconv.New(),
+		conv: appoutput.NewConversation(),
 	}
 
-	msg := appmodal.PlanResponseMsg{
+	msg := appoutput.PlanResponseMsg{
 		Request:     &tool.PlanRequest{ID: "plan-1", Plan: "## Plan\nSome plan"},
 		Approved:    true,
 		ApproveMode: "auto",
@@ -163,22 +160,22 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 		sessionPermissions: setting.NewSessionPermissions(),
 		planEnabled: true,
 		planTask:    "test task",
-		mode: appmodal.State{
-			PlanApproval: appmodal.NewPlanPrompt(),
-			Question:     appmodal.NewQuestionPrompt(),
+		mode: appoutput.ModalState{
+			PlanApproval: appoutput.NewPlanPrompt(),
+			Question:     appoutput.NewQuestionPrompt(),
 		},
-		tool: toolui.State{
-			ExecState: toolui.ExecState{
+		tool: appoutput.ToolState{
+			ToolExecState: appoutput.ToolExecState{
 				PendingCalls: []core.ToolCall{
 					{ID: "tc-1", Name: "ExitPlanMode"},
 				},
 				CurrentIdx: 0,
 			},
 		},
-		conv: appconv.New(),
+		conv: appoutput.NewConversation(),
 	}
 
-	msg := appmodal.PlanResponseMsg{
+	msg := appoutput.PlanResponseMsg{
 		Request:  &tool.PlanRequest{ID: "plan-1", Plan: "## Plan\nSome plan"},
 		Approved: false,
 		Response: &tool.PlanResponse{
@@ -215,8 +212,8 @@ func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 		sessionPermissions:   setting.NewSessionPermissions(),
 		pendingQuestion:      &tool.QuestionRequest{ID: "ask-1"},
 		pendingQuestionReply: reply,
-		mode: appmodal.State{
-			Question: appmodal.NewQuestionPrompt(),
+		mode: appoutput.ModalState{
+			Question: appoutput.NewQuestionPrompt(),
 		},
 	}
 
@@ -226,7 +223,7 @@ func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 			0: {"Patch"},
 		},
 	}
-	cmd := m.handleQuestionResponse(appmodal.QuestionResponseMsg{
+	cmd := m.handleQuestionResponse(appoutput.QuestionResponseMsg{
 		Request:  &tool.QuestionRequest{ID: "ask-1"},
 		Response: resp,
 	})
@@ -308,7 +305,7 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 
 	want := []string{
 		"*user.ProviderSelector",
-		"*toolui.Model",
+		"*output.ToolSelector",
 		"*user.SkillSelector",
 		"*user.AgentSelector",
 		"*user.MCPSelector",
@@ -326,7 +323,7 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 func TestStartPromptSuggestionGeneratesCommand(t *testing.T) {
 	m := &model{
 		llmProvider: testLLMProvider{},
-		conv: appconv.Model{
+		conv: appoutput.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleAssistant, Content: "first"},
 				{Role: core.RoleAssistant, Content: "second"},
@@ -343,7 +340,7 @@ func TestStartPromptSuggestionGeneratesCommand(t *testing.T) {
 func TestBuildPromptSuggestionRequest(t *testing.T) {
 	m := &model{
 		llmProvider: testLLMProvider{},
-		conv: appconv.Model{
+		conv: appoutput.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleUser, Content: "u1"},
 				{Role: core.RoleAssistant, Content: "a1"},
@@ -372,7 +369,7 @@ func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing
 	appCwd = t.TempDir(); base := newBaseModel()
 	m := &base
 	m.agentOutput = appoutput.New(80, appoutput.NewProgressHub(16))
-	m.conv = appconv.Model{
+	m.conv = appoutput.ConversationModel{
 		Messages: []core.ChatMessage{
 			{Role: core.RoleUser, Content: "previous request"},
 		},
@@ -400,7 +397,7 @@ func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing
 func TestBuildCompactRequest(t *testing.T) {
 	m := &model{
 		sessionSummary: "existing summary",
-		conv: appconv.Model{
+		conv: appoutput.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleUser, Content: "hello"},
 			},
@@ -515,10 +512,10 @@ func TestRenderActiveModalPriority(t *testing.T) {
 	m := &model{
 		operationMode:      setting.ModePlan,
 		sessionPermissions: setting.NewSessionPermissions(),
-		mode: appmodal.State{
-			PlanApproval: appmodal.NewPlanPrompt(),
-			Question:     appmodal.NewQuestionPrompt(),
-			PlanEntry:    appmodal.NewEnterPlanPrompt(),
+		mode: appoutput.ModalState{
+			PlanApproval: appoutput.NewPlanPrompt(),
+			Question:     appoutput.NewQuestionPrompt(),
+			PlanEntry:    appoutput.NewEnterPlanPrompt(),
 		},
 	}
 	m.userInput.Approval = appuser.NewApproval()

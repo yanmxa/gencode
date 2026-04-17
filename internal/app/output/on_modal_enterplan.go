@@ -1,4 +1,4 @@
-package modal
+package output
 
 import (
 	"strings"
@@ -6,8 +6,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 // EnterPlanPrompt manages the enter plan mode confirmation UI
@@ -15,7 +15,7 @@ type EnterPlanPrompt struct {
 	active      bool
 	request     *tool.EnterPlanRequest
 	width       int
-	selectedIdx int // 0 = Yes, 1 = No
+	selectedIdx int
 }
 
 // NewEnterPlanPrompt creates a new EnterPlanPrompt
@@ -28,7 +28,7 @@ func (p *EnterPlanPrompt) Show(req *tool.EnterPlanRequest, width int) {
 	p.active = true
 	p.request = req
 	p.width = width
-	p.selectedIdx = 0 // Default to "Yes"
+	p.selectedIdx = 0
 }
 
 // Hide hides the prompt
@@ -43,7 +43,6 @@ func (p *EnterPlanPrompt) IsActive() bool {
 }
 
 // HandleKeypress handles keyboard input.
-// Returns (cmd, response): cmd for UI updates, response when user makes a decision.
 func (p *EnterPlanPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *EnterPlanResponseMsg) {
 	if !p.active {
 		return nil, nil
@@ -69,7 +68,6 @@ func (p *EnterPlanPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *EnterPlanRes
 	return nil, nil
 }
 
-// respond creates a response and hides the prompt.
 func (p *EnterPlanPrompt) respond(approved bool) (tea.Cmd, *EnterPlanResponseMsg) {
 	req := p.request
 	p.Hide()
@@ -91,13 +89,11 @@ func (p *EnterPlanPrompt) Render() string {
 
 	var sb strings.Builder
 
-	// Title
 	titleStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Primary).Bold(true)
 	sb.WriteString("\n ")
 	sb.WriteString(titleStyle.Render("\U0001F4CB Enter Plan Mode?"))
 	sb.WriteString("\n\n")
 
-	// Description
 	descStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 	desc := "The assistant wants to enter plan mode to explore the codebase and create an implementation plan before making changes."
 	if p.request.Message != "" {
@@ -107,7 +103,6 @@ func (p *EnterPlanPrompt) Render() string {
 	sb.WriteString(descStyle.Render(desc))
 	sb.WriteString("\n\n")
 
-	// Options
 	selectedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success).Bold(true)
 	unselectedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 
@@ -123,7 +118,6 @@ func (p *EnterPlanPrompt) Render() string {
 	}
 	sb.WriteString("\n\n")
 
-	// Footer hint
 	hintStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted).Italic(true)
 	sb.WriteString(" ")
 	sb.WriteString(hintStyle.Render("\u2190/\u2192 or Tab to switch \u00B7 Enter to confirm \u00B7 y/n for quick select \u00B7 Esc to decline"))
@@ -131,4 +125,3 @@ func (p *EnterPlanPrompt) Render() string {
 
 	return sb.String()
 }
-

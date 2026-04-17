@@ -1,4 +1,4 @@
-package modal
+package output
 
 import (
 	"fmt"
@@ -8,8 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 // PlanPrompt manages the plan approval UI
@@ -18,21 +18,20 @@ type PlanPrompt struct {
 	request     *tool.PlanRequest
 	width       int
 	height      int
-	selectedIdx int            // Current menu selection (0-3)
-	editing     bool           // Whether in edit mode
-	editor      textarea.Model // For modifying plan
-	planPath    string         // Path to the plan file (displayed in footer)
-	inlineInput textarea.Model // Inline input for option 4
+	selectedIdx int
+	editing     bool
+	editor      textarea.Model
+	planPath    string
+	inlineInput textarea.Model
 }
 
 // NewPlanPrompt creates a new PlanPrompt
 func NewPlanPrompt() *PlanPrompt {
 	ta := textarea.New()
 	ta.Placeholder = "Modify the plan here..."
-	ta.CharLimit = 0 // No limit
+	ta.CharLimit = 0
 	ta.ShowLineNumbers = true
 
-	// Inline input for option 4 (single line)
 	inlineTA := textarea.New()
 	inlineTA.Placeholder = ""
 	inlineTA.CharLimit = 0
@@ -55,7 +54,6 @@ func (p *PlanPrompt) Show(req *tool.PlanRequest, planPath string, width, height 
 	p.selectedIdx = 0
 	p.editing = false
 
-	// Initialize editor with plan content
 	editorHeight := height - 13
 	if editorHeight < 5 {
 		editorHeight = 5
@@ -64,7 +62,6 @@ func (p *PlanPrompt) Show(req *tool.PlanRequest, planPath string, width, height 
 	p.editor.SetWidth(width - 6)
 	p.editor.SetHeight(editorHeight - 2)
 
-	// Initialize inline input
 	p.inlineInput.SetValue("")
 	p.inlineInput.SetWidth(width - 20)
 }
@@ -85,13 +82,11 @@ func (p *PlanPrompt) IsActive() bool {
 }
 
 // HandleKeypress handles keyboard input for the plan prompt.
-// Returns (cmd, response): cmd for UI updates, response when user makes a decision.
 func (p *PlanPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *PlanResponseMsg) {
 	if !p.active {
 		return nil, nil
 	}
 
-	// Edit mode: forward to full editor
 	if p.editing {
 		switch msg.Type {
 		case tea.KeyCtrlS:
@@ -107,7 +102,6 @@ func (p *PlanPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *PlanResponseMsg) 
 		}
 	}
 
-	// Inline input mode (option 4)
 	if p.selectedIdx == 3 {
 		switch msg.Type {
 		case tea.KeyEnter:
@@ -128,7 +122,6 @@ func (p *PlanPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *PlanResponseMsg) 
 		}
 	}
 
-	// Menu navigation
 	switch msg.Type {
 	case tea.KeyUp, tea.KeyCtrlP:
 		if p.selectedIdx > 0 {
@@ -180,7 +173,6 @@ func (p *PlanPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *PlanResponseMsg) 
 	return nil, nil
 }
 
-// selectOption handles selection of a specific option.
 func (p *PlanPrompt) selectOption(idx int) (tea.Cmd, *PlanResponseMsg) {
 	if idx == 3 {
 		p.selectedIdx = 3
@@ -209,7 +201,6 @@ func (p *PlanPrompt) selectOption(idx int) (tea.Cmd, *PlanResponseMsg) {
 	}
 }
 
-// submitModifiedPlan submits the edited plan.
 func (p *PlanPrompt) submitModifiedPlan() (tea.Cmd, *PlanResponseMsg) {
 	req := p.request
 	modifiedPlan := p.editor.Value()
@@ -229,7 +220,6 @@ func (p *PlanPrompt) submitModifiedPlan() (tea.Cmd, *PlanResponseMsg) {
 	}
 }
 
-// submitInlineInput submits the inline feedback for plan modification.
 func (p *PlanPrompt) submitInlineInput() (tea.Cmd, *PlanResponseMsg) {
 	req := p.request
 	feedback := strings.TrimSpace(p.inlineInput.Value())
@@ -254,7 +244,6 @@ func (p *PlanPrompt) submitInlineInput() (tea.Cmd, *PlanResponseMsg) {
 	}
 }
 
-// Plan prompt styles
 func getPlanSelectedStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success).Bold(true)
 }
@@ -279,19 +268,16 @@ func (p *PlanPrompt) RenderMenu() string {
 
 	var sb strings.Builder
 
-	// Question with blank line after
 	sb.WriteString("\n")
 	sb.WriteString(" ")
 	sb.WriteString(getPlanUnselectedStyle().Render("Would you like to proceed?"))
 	sb.WriteString("\n\n")
 
-	// Menu options
 	if !p.editing {
 		sb.WriteString(p.renderMenu())
 	}
 	sb.WriteString("\n")
 
-	// Footer: simple hint + plan path
 	footer := " Esc to reject"
 	if p.planPath != "" {
 		footer += " · " + kit.ShortenPath(p.planPath)
@@ -301,7 +287,6 @@ func (p *PlanPrompt) RenderMenu() string {
 	return sb.String()
 }
 
-// renderMenu renders the selection menu
 func (p *PlanPrompt) renderMenu() string {
 	var sb strings.Builder
 
@@ -327,7 +312,6 @@ func (p *PlanPrompt) renderMenu() string {
 		sb.WriteString("\n")
 	}
 
-	// Option 4: Inline input prompt
 	if p.selectedIdx == 3 {
 		sb.WriteString(getPlanSelectedStyle().Render(" \u276F 4. "))
 		sb.WriteString(p.inlineInput.View())

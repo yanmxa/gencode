@@ -13,11 +13,8 @@ import (
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
-	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/mcp"
@@ -34,10 +31,10 @@ const defaultWidth = 80
 type model struct {
 	// ── User Input ──────────────────────────────────────────────────────
 	userInput        appuser.Model
-	mode             appmodal.State
+	mode             appoutput.ModalState
 	promptSuggestion promptSuggestionState
 	showTasks        bool
-	tool             toolui.State
+	tool             appoutput.ToolState
 
 	// ── Agent Input ─────────────────────────────────────────────────────
 	agentInput appagent.Model
@@ -46,7 +43,7 @@ type model struct {
 	systemInput appsystem.Model
 
 	// ── Agent Output ────────────────────────────────────────────────────
-	conv                 appconv.Model
+	conv                 appoutput.ConversationModel
 	agentOutput          appoutput.Model
 	agentSess            *agentSession
 	pendingQuestion      *tool.QuestionRequest

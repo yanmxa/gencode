@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
-	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
@@ -151,18 +149,18 @@ func setProviderDomainForTest(m *model, store *llm.Store, modelID string, p llm.
 
 func TestHandleCompactResultStoresVisibleSuccessState(t *testing.T) {
 	m := &model{
-		conv: appconv.Model{
+		conv: appoutput.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleUser, Content: "one"},
 				{Role: core.RoleAssistant, Content: "two"},
 			},
-			Compact: appcompact.State{
+			Compact: appoutput.CompactState{
 				Active: true,
 			},
 		},
 	}
 
-	cmd := m.handleCompactResult(appcompact.ResultMsg{
+	cmd := m.handleCompactResult(appoutput.CompactResultMsg{
 		Summary:       "summary",
 		OriginalCount: 2,
 		Trigger:       "manual",
@@ -186,12 +184,12 @@ func TestHandleCompactResultStoresVisibleSuccessState(t *testing.T) {
 
 func TestHandleCompactResultStoresVisibleErrorState(t *testing.T) {
 	m := &model{
-		conv: appconv.Model{
-			Compact: appcompact.State{Active: true},
+		conv: appoutput.ConversationModel{
+			Compact: appoutput.CompactState{Active: true},
 		},
 	}
 
-	cmd := m.handleCompactResult(appcompact.ResultMsg{
+	cmd := m.handleCompactResult(appoutput.CompactResultMsg{
 		Error: context.DeadlineExceeded,
 	})
 	_ = cmd

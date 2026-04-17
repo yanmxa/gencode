@@ -9,12 +9,9 @@ import (
 	"go.uber.org/zap"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
-	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
-	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 
 	"github.com/yanmxa/gencode/internal/setting"
@@ -109,7 +106,7 @@ func newBaseModel() model {
 	return model{
 		userInput:   userInput,
 		agentOutput: appoutput.New(defaultWidth, progressHub),
-		conv:        appconv.New(),
+		conv:        appoutput.NewConversation(),
 		cwd:         appCwd,
 		showTasks:   true,
 
@@ -148,16 +145,16 @@ func commandSuggestionMatcher() func(string) []suggest.Suggestion {
 	}
 }
 
-func newModeState() appmodal.State {
-	return appmodal.State{
-		PlanApproval: appmodal.NewPlanPrompt(),
-		PlanEntry:    appmodal.NewEnterPlanPrompt(),
-		Question:     appmodal.NewQuestionPrompt(),
+func newModeState() appoutput.ModalState {
+	return appoutput.ModalState{
+		PlanApproval: appoutput.NewPlanPrompt(),
+		PlanEntry:    appoutput.NewEnterPlanPrompt(),
+		Question:     appoutput.NewQuestionPrompt(),
 	}
 }
 
-func newToolState() toolui.State {
-	return toolui.State{Selector: toolui.New()}
+func newToolState() appoutput.ToolState {
+	return appoutput.ToolState{Selector: appoutput.NewToolSelector()}
 }
 
 func (m *model) applyRunOptions(opts setting.RunOptions) error {

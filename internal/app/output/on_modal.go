@@ -1,8 +1,15 @@
-package modal
+package output
 
 import (
 	"github.com/yanmxa/gencode/internal/tool"
 )
+
+// ModalState holds plan mode modal prompt UI components.
+type ModalState struct {
+	PlanApproval *PlanPrompt
+	PlanEntry    *EnterPlanPrompt
+	Question     *QuestionPrompt
+}
 
 // PlanRequestMsg is sent when ExitPlanMode tool is called
 type PlanRequestMsg struct {
@@ -15,7 +22,7 @@ type PlanResponseMsg struct {
 	Response     *tool.PlanResponse
 	Approved     bool
 	ApproveMode  string // "clear-auto" | "auto" | "manual" | "modify"
-	ModifiedPlan string // Modified plan if edited
+	ModifiedPlan string
 }
 
 // EnterPlanRequestMsg is sent when EnterPlanMode tool is called

@@ -1,28 +1,59 @@
-package conversation
+package output
 
 import (
 	"github.com/yanmxa/gencode/internal/core"
 )
 
+// --- Conversation model ---
+
+// ConversationModel holds the conversation message history, commit tracking,
+// stream and compact state.
+type ConversationModel struct {
+	Messages       []core.ChatMessage
+	CommittedCount int
+	Stream         StreamState
+	Compact        CompactState
+}
+
+// NewConversation returns an empty conversation model.
+func NewConversation() ConversationModel {
+	return ConversationModel{Messages: []core.ChatMessage{}}
+}
+
+// --- Stream state ---
+
+// StreamState holds streaming-related display state for the TUI.
+type StreamState struct {
+	Active       bool
+	BuildingTool string
+}
+
+// Stop clears streaming state.
+func (s *StreamState) Stop() {
+	s.Active = false
+	s.BuildingTool = ""
+}
+
+// --- Conversation methods ---
+
 // Append adds a message to the conversation.
-func (m *Model) Append(msg core.ChatMessage) {
+func (m *ConversationModel) Append(msg core.ChatMessage) {
 	m.Messages = append(m.Messages, msg)
 }
 
 // Clear resets the conversation to empty.
-// Also used after compaction since the summary now lives in transcript state.
-func (m *Model) Clear() {
+func (m *ConversationModel) Clear() {
 	m.Messages = []core.ChatMessage{}
 	m.CommittedCount = 0
 }
 
 // AddNotice appends a notice message to the conversation.
-func (m *Model) AddNotice(content string) {
+func (m *ConversationModel) AddNotice(content string) {
 	m.Messages = append(m.Messages, core.ChatMessage{Role: core.RoleNotice, Content: content})
 }
 
-// AppendToLast appends text and thinking content to the last assistant core.
-func (m *Model) AppendToLast(text, thinking string) {
+// AppendToLast appends text and thinking content to the last assistant message.
+func (m *ConversationModel) AppendToLast(text, thinking string) {
 	if len(m.Messages) == 0 {
 		return
 	}
@@ -38,30 +69,30 @@ func (m *Model) AppendToLast(text, thinking string) {
 	}
 }
 
-// SetLastToolCalls sets tool calls on the last core.
-func (m *Model) SetLastToolCalls(calls []core.ToolCall) {
+// SetLastToolCalls sets tool calls on the last message.
+func (m *ConversationModel) SetLastToolCalls(calls []core.ToolCall) {
 	if len(m.Messages) > 0 {
 		m.Messages[len(m.Messages)-1].ToolCalls = calls
 	}
 }
 
-// SetLastThinkingSignature sets the thinking signature on the last core.
-func (m *Model) SetLastThinkingSignature(sig string) {
+// SetLastThinkingSignature sets the thinking signature on the last message.
+func (m *ConversationModel) SetLastThinkingSignature(sig string) {
 	if len(m.Messages) > 0 && sig != "" {
 		m.Messages[len(m.Messages)-1].ThinkingSignature = sig
 	}
 }
 
 // AppendErrorToLast appends an error to the last message content.
-func (m *Model) AppendErrorToLast(err error) {
+func (m *ConversationModel) AppendErrorToLast(err error) {
 	if len(m.Messages) > 0 {
 		idx := len(m.Messages) - 1
 		m.Messages[idx].Content += "\n[Error: " + err.Error() + "]"
 	}
 }
 
-// RemoveEmptyLastAssistant removes the last message if it's an empty assistant core.
-func (m *Model) RemoveEmptyLastAssistant() {
+// RemoveEmptyLastAssistant removes the last message if it's an empty assistant message.
+func (m *ConversationModel) RemoveEmptyLastAssistant() {
 	if len(m.Messages) > 0 {
 		last := m.Messages[len(m.Messages)-1]
 		if last.Role == core.RoleAssistant && last.Content == "" {
@@ -71,7 +102,7 @@ func (m *Model) RemoveEmptyLastAssistant() {
 }
 
 // MarkLastInterrupted marks the last assistant message as interrupted if it has no tool calls.
-func (m *Model) MarkLastInterrupted() {
+func (m *ConversationModel) MarkLastInterrupted() {
 	for i := len(m.Messages) - 1; i >= 0; i-- {
 		msg := &m.Messages[i]
 		if msg.Role != core.RoleAssistant {
@@ -88,8 +119,8 @@ func (m *Model) MarkLastInterrupted() {
 	}
 }
 
-// ToggleMostRecentExpandable toggles the expansion state of the most recent expandable core.
-func (m *Model) ToggleMostRecentExpandable() {
+// ToggleMostRecentExpandable toggles the expansion state of the most recent expandable message.
+func (m *ConversationModel) ToggleMostRecentExpandable() {
 	for i := len(m.Messages) - 1; i >= 0; i-- {
 		msg := &m.Messages[i]
 		switch {
@@ -104,7 +135,7 @@ func (m *Model) ToggleMostRecentExpandable() {
 }
 
 // HasAllToolResults checks if all tool calls at the given index have results.
-func (m *Model) HasAllToolResults(idx int) bool {
+func (m *ConversationModel) HasAllToolResults(idx int) bool {
 	if idx < 0 || idx >= len(m.Messages) {
 		return true
 	}
@@ -145,12 +176,12 @@ func (m *Model) HasAllToolResults(idx int) bool {
 }
 
 // ConvertToProvider converts chat messages to provider format, skipping notices.
-func (m Model) ConvertToProvider() []core.Message {
+func (m ConversationModel) ConvertToProvider() []core.Message {
 	return m.ConvertToProviderFrom(0)
 }
 
 // ConvertToProviderFrom converts chat messages starting from startIdx to provider format.
-func (m Model) ConvertToProviderFrom(startIdx int) []core.Message {
+func (m ConversationModel) ConvertToProviderFrom(startIdx int) []core.Message {
 	if startIdx < 0 {
 		startIdx = 0
 	}

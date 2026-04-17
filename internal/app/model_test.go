@@ -10,7 +10,6 @@ import (
 	"time"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
@@ -82,7 +81,7 @@ func TestInitFiresSetupHook(t *testing.T) {
 }
 
 func TestHasAllToolResultsAllowsInterleavedNotices(t *testing.T) {
-	m := appconv.Model{
+	m := appoutput.ConversationModel{
 		Messages: []core.ChatMessage{
 			{
 				Role: core.RoleAssistant,
@@ -582,7 +581,7 @@ func TestApplyRuntimeHookOutcomeSetsInitialPrompt(t *testing.T) {
 func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 	m := &model{
 		cwd:         t.TempDir(),
-		conv:        appconv.New(),
+		conv:        appoutput.NewConversation(),
 		systemInput: appsystem.New(),
 		llmProvider: testLLMProvider{},
 		agentOutput:      appoutput.New(80, appoutput.NewProgressHub(10)),
@@ -664,10 +663,10 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 	m := &model{
 		cwd:        t.TempDir(),
-		conv:       appconv.New(),
+		conv:       appoutput.NewConversation(),
 		agentInput: appagent.New(),
 		llmProvider: testLLMProvider{},
-		agentOutput:     appoutput.New(80, progress.NewHub(10)),
+		agentOutput:     appoutput.New(80, appoutput.NewProgressHub(10)),
 	}
 	info := task.TaskInfo{
 		ID:          "a123",
@@ -724,10 +723,10 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 func TestTaskNotificationTickBatchesDrainsQueue(t *testing.T) {
 	m := &model{
 		cwd:        t.TempDir(),
-		conv:       appconv.New(),
+		conv:       appoutput.NewConversation(),
 		agentInput: appagent.New(),
 		llmProvider: testLLMProvider{},
-		agentOutput:     appoutput.New(80, progress.NewHub(10)),
+		agentOutput:     appoutput.New(80, appoutput.NewProgressHub(10)),
 	}
 
 	batch := &orchestration.Batch{

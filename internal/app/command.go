@@ -12,8 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
-	appcompact "github.com/yanmxa/gencode/internal/app/output/compact"
+	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/app/output/render"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
@@ -530,7 +529,7 @@ func handleLoopCommand(_ context.Context, m *model, args string) (string, tea.Cm
 		}
 
 		if m.conv.Messages == nil {
-			m.conv = appconv.New()
+			m.conv = appoutput.NewConversation()
 		}
 		m.conv.AddNotice(fmt.Sprintf(
 			"Scheduled one-shot task %s (%s, cron `%s`).%s It will fire once and auto-delete.",
@@ -553,7 +552,7 @@ func handleLoopCommand(_ context.Context, m *model, args string) (string, tea.Cm
 	}
 
 	if m.conv.Messages == nil {
-		m.conv = appconv.New()
+		m.conv = appoutput.NewConversation()
 	}
 
 	m.conv.AddNotice(fmt.Sprintf(
@@ -675,13 +674,13 @@ func setTokenLimits(m *model, modelID, args string) (string, tea.Cmd, error) {
 func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
 	if m.providerStore != nil {
 		if customInput, customOutput, ok := m.providerStore.GetTokenLimit(modelID); ok {
-			return appcompact.FormatTokenLimitDisplay(modelID, customInput, customOutput, true, m.inputTokens), nil, nil
+			return appoutput.FormatTokenLimitDisplay(modelID, customInput, customOutput, true, m.inputTokens), nil, nil
 		}
 	}
 
-	inputLimit, outputLimit := appcompact.GetModelTokenLimits(m.providerStore, m.currentModel)
+	inputLimit, outputLimit := appoutput.GetModelTokenLimits(m.providerStore, m.currentModel)
 	if inputLimit > 0 || outputLimit > 0 {
-		return appcompact.FormatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m.inputTokens), nil, nil
+		return appoutput.FormatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m.inputTokens), nil, nil
 	}
 
 	m.userInput.Provider.FetchingLimits = true
@@ -703,6 +702,6 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	}
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = strings.TrimSpace(args)
-	m.conv.Compact.Phase = appcompact.PhaseSummarizing
+	m.conv.Compact.Phase = appoutput.PhaseSummarizing
 	return "", tea.Batch(m.agentOutput.Spinner.Tick, compactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
 }
