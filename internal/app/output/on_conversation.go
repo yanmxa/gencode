@@ -91,6 +91,21 @@ func (m *ConversationModel) AppendErrorToLast(err error) {
 	}
 }
 
+// AppendCancelledToolResults appends error tool results for each cancelled tool call.
+func (m *ConversationModel) AppendCancelledToolResults(calls []core.ToolCall, contentFn func(core.ToolCall) string) {
+	for _, tc := range calls {
+		m.Append(core.ChatMessage{
+			Role:     core.RoleUser,
+			ToolName: tc.Name,
+			ToolResult: &core.ToolResult{
+				ToolCallID: tc.ID,
+				Content:    contentFn(tc),
+				IsError:    true,
+			},
+		})
+	}
+}
+
 // RemoveEmptyLastAssistant removes the last message if it's an empty assistant message.
 func (m *ConversationModel) RemoveEmptyLastAssistant() {
 	if len(m.Messages) > 0 {
@@ -130,6 +145,28 @@ func (m *ConversationModel) ToggleMostRecentExpandable() {
 		case len(msg.ToolCalls) > 0:
 			msg.ToolCallsExpanded = !msg.ToolCallsExpanded
 			return
+		}
+	}
+}
+
+// ToggleAllExpandable toggles expand/collapse for all tool results and tool calls.
+// Returns true if any content was toggled (caller should reflow).
+func (m *ConversationModel) ToggleAllExpandable() {
+	anyExpanded := false
+	for i := 0; i < len(m.Messages); i++ {
+		msg := m.Messages[i]
+		if (msg.ToolResult != nil && msg.Expanded) ||
+			(len(msg.ToolCalls) > 0 && msg.ToolCallsExpanded) {
+			anyExpanded = true
+			break
+		}
+	}
+	for i := 0; i < len(m.Messages); i++ {
+		if m.Messages[i].ToolResult != nil {
+			m.Messages[i].Expanded = !anyExpanded
+		}
+		if len(m.Messages[i].ToolCalls) > 0 {
+			m.Messages[i].ToolCallsExpanded = !anyExpanded
 		}
 	}
 }

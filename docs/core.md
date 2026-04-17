@@ -20,7 +20,7 @@
 │             (chan Message)  (chan Event)                      │
 │                     └─────────┘                              │
 │                                                             │
-│  Optional: Permission, AllowedTools, CWD, MaxTurns          │
+│  Optional: CWD, MaxTurns, CompactFunc                       │
 └─────────────────────────────────────────────────────────────┘
 ```
 

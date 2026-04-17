@@ -1,22 +1,19 @@
 package app
 
 import (
+	"context"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/core"
 	appcommand "github.com/yanmxa/gencode/internal/command"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plugin"
 )
 
 type submitRequest struct {
 	Input string
-}
-
-func (m *model) resetInputField() {
-	m.userInput.Reset()
 }
 
 func (m *model) handleSubmit() tea.Cmd {
@@ -27,7 +24,7 @@ func (m *model) handleSubmit() tea.Cmd {
 		return nil
 	}
 
-	if m.isTurnActive() {
+	if m.conv.Stream.Active {
 		m.enqueueCurrentInput(input)
 		return nil
 	}
@@ -37,18 +34,13 @@ func (m *model) handleSubmit() tea.Cmd {
 	return m.executeSubmitRequest(submitRequest{Input: input})
 }
 
-// isTurnActive returns true when the LLM is streaming or tools are executing.
-func (m *model) isTurnActive() bool {
-	return m.conv.Stream.Active
-}
-
 // enqueueCurrentInput captures the current input field content into the queue.
 func (m *model) enqueueCurrentInput(input string) {
 	if m.userInput.Queue.Enqueue(input, m.userInput.PendingImages()) < 0 {
 		m.conv.AddNotice("Input queue is full. Please wait for the current turn to complete.")
 		return
 	}
-	m.resetInputField()
+	m.userInput.Reset()
 }
 
 // drainInputQueue dequeues the next pending input and starts a new turn.
@@ -73,7 +65,7 @@ func (m *model) executeSubmitRequest(req submitRequest) tea.Cmd {
 		return cmd
 	}
 
-	if blocked, reason := m.checkPromptHook(req.Input); blocked {
+	if blocked, reason := m.runtime.CheckPromptHook(context.Background(), req.Input); blocked {
 		return m.blockPromptSubmission(reason)
 	}
 
@@ -91,7 +83,7 @@ func (m *model) executeSubmitRequest(req submitRequest) tea.Cmd {
 		return cmd
 	}
 	m.conv.Append(userMsg)
-	m.resetInputField()
+	m.userInput.Reset()
 	return m.startProviderTurn(userMsg.Content)
 }
 
@@ -100,7 +92,7 @@ func (m *model) blockPromptSubmission(reason string) tea.Cmd {
 		Role:    core.RoleNotice,
 		Content: "Prompt blocked: " + reason,
 	})
-	m.resetInputField()
+	m.userInput.Reset()
 	return tea.Batch(m.commitMessages()...)
 }
 
@@ -145,8 +137,7 @@ func (m *model) startProviderTurn(content string) tea.Cmd {
 		return tea.Batch(m.commitMessages()...)
 	}
 
-	// Detect thinking keywords for per-turn override
-	m.detectThinkingKeywords(content)
+	m.runtime.DetectThinkingKeywords(content)
 
 	// Get images from the last appended user message
 	var images []core.Image
@@ -187,3 +178,4 @@ func shouldPreserveBeforeCommandExecution(input string) bool {
 	}
 	return name == "loop"
 }
+

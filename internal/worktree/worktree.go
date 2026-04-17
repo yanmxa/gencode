@@ -56,7 +56,7 @@ func Create(baseCwd, slug string) (*Result, func(), error) {
 				zap.Error(err))
 		}
 	}
-	notifyWorktreeCreated(slug, worktreePath)
+	fireWorktreeCreated(slug, worktreePath)
 
 	return &Result{Path: worktreePath}, cleanup, nil
 }
@@ -68,7 +68,7 @@ func Remove(baseCwd, worktreePath string) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git worktree remove failed: %s: %w", strings.TrimSpace(string(out)), err)
 	}
-	notifyWorktreeRemoved(worktreePath)
+	fireWorktreeRemoved(worktreePath)
 	return nil
 }
 

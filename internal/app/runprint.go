@@ -36,7 +36,7 @@ func runPrint(userMessage string) error {
 			p, err := llm.GetProvider(ctx, llm.Name(providerName), conn.AuthMethod)
 			if err == nil {
 				llmProvider = p
-				modelID = setting.DefaultModel(providerName, conn.AuthMethod)
+				modelID = setting.DefaultModel(providerName, string(conn.AuthMethod))
 				break
 			}
 		}

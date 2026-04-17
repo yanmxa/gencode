@@ -63,22 +63,10 @@ type model struct {
 	fileCache     *filecache.Cache
 }
 
-// lastAssistantContent returns the text content of the most recent assistant core.
-func (m *model) lastAssistantContent() string {
-	return core.LastAssistantChatContent(m.conv.Messages)
-}
-
-// fireSessionEnd fires the SessionEnd hook synchronously before quitting.
-// Uses Execute (not ExecuteAsync) to ensure the hook completes before the process exits.
 func (m *model) fireSessionEnd(reason string) {
-	if m.runtime.HookEngine != nil {
-		m.runtime.HookEngine.Execute(context.Background(), hook.SessionEnd, hook.HookInput{
-			Reason: reason,
-		})
-		if m.fileWatcher != nil {
-			m.fileWatcher.Stop()
-		}
-		m.runtime.HookEngine.ClearSessionHooks()
+	m.runtime.FireSessionEnd(context.Background(), reason)
+	if m.fileWatcher != nil {
+		m.fileWatcher.Stop()
 	}
 }
 
@@ -157,7 +145,7 @@ func (m *model) ensureMemoryContextLoaded() {
 	if m.runtime.CachedUserInstructions != "" || m.runtime.CachedProjectInstructions != "" {
 		return
 	}
-	m.refreshMemoryContext("session_start")
+	m.runtime.RefreshMemoryContext(m.cwd, "session_start")
 }
 
 func (m *model) effectiveThinkingLevel() llm.ThinkingLevel {

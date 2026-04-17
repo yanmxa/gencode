@@ -49,7 +49,7 @@ func TestSaveCurrentQueueEditPreservesImages(t *testing.T) {
 	m.userInput.QueueSelectIdx = 0
 	m.userInput.Textarea.SetValue("[Image #1] updated prompt")
 
-	m.saveCurrentQueueEdit()
+	m.userInput.SaveCurrentQueueEdit()
 
 	item, ok := m.userInput.Queue.At(0)
 	if !ok {

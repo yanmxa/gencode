@@ -322,7 +322,7 @@ func TestRefreshMemoryContextFiresInstructionsLoaded(t *testing.T) {
 		cwd:     tmpDir,
 		runtime: appruntime.Model{HookEngine: engine},
 	}
-	m.refreshMemoryContext("session_start")
+	m.runtime.RefreshMemoryContext(m.cwd, "session_start")
 
 	select {
 	case input := <-triggered:
@@ -689,7 +689,7 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 	}
 	item, ok := appagent.BuildTaskNotification(appagent.TaskNotificationInput{
 		Info:    info,
-		Subject: taskSubject(info),
+		Subject: appagent.TaskSubject(info),
 		Batch:   appagent.SnapshotBackgroundBatchForTask(info.ID),
 	})
 	if !ok {

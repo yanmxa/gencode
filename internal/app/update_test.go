@@ -512,7 +512,7 @@ func TestBuildCoordinatorGuidanceEncouragesParallelAuditFanout(t *testing.T) {
 func TestDetectThinkingKeywords(t *testing.T) {
 	t.Run("high thinking keywords", func(t *testing.T) {
 		m := &model{}
-		m.detectThinkingKeywords("Please think carefully before answering")
+		m.runtime.DetectThinkingKeywords("Please think carefully before answering")
 		if m.runtime.ThinkingOverride != llm.ThinkingHigh {
 			t.Fatalf("expected high thinking override, got %v", m.runtime.ThinkingOverride)
 		}
@@ -520,7 +520,7 @@ func TestDetectThinkingKeywords(t *testing.T) {
 
 	t.Run("ultra keywords win over high", func(t *testing.T) {
 		m := &model{}
-		m.detectThinkingKeywords("Think hard and ultrathink about this")
+		m.runtime.DetectThinkingKeywords("Think hard and ultrathink about this")
 		if m.runtime.ThinkingOverride != llm.ThinkingUltra {
 			t.Fatalf("expected ultra thinking override, got %v", m.runtime.ThinkingOverride)
 		}

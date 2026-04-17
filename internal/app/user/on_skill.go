@@ -54,6 +54,27 @@ type SkillState struct {
 	ActiveInvocation    string
 }
 
+// ConsumeInvocation extracts the pending skill invocation, activating any
+// pending instructions and clearing pending state. Returns the user message.
+func (s *SkillState) ConsumeInvocation() string {
+	userMsg := s.PendingArgs
+	if userMsg == "" {
+		userMsg = "Execute the skill."
+	}
+	if s.PendingInstructions != "" {
+		s.ActiveInvocation = s.PendingInstructions
+		s.PendingInstructions = ""
+	}
+	s.PendingArgs = ""
+	return userMsg
+}
+
+// ClearPending resets pending skill state without activating.
+func (s *SkillState) ClearPending() {
+	s.PendingInstructions = ""
+	s.PendingArgs = ""
+}
+
 func NewSkillSelector(reg *coreskill.Registry) SkillSelector {
 	return SkillSelector{
 		registry: reg,

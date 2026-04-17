@@ -32,8 +32,8 @@ Sensitive paths and destructive commands remain bypass-immune even in `BypassPer
 ## Automated Tests
 
 ```bash
-go test ./internal/config/... -v -run TestPermission
-go test ./internal/permission/... -v
+go test ./internal/setting/... -v -run TestPermission
+go test ./internal/tool/perm/... -v
 go test ./tests/integration/permission/... -v
 ```
 

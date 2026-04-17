@@ -88,8 +88,7 @@ func initTools(cwd string) error {
 func newModel(opts setting.RunOptions) (*model, error) {
 	base := newBaseModel()
 	m := &base
-	// TODO: refactor hook bridges to avoid global side-effect registration
-	installHookBridges(m.runtime.HookEngine, m.agentInput.Notifications)
+	appagent.InstallCompletionObserver(m.agentInput.Notifications)
 	m.configureAsyncHookCallback()
 	m.ensureMemoryContextLoaded()
 	m.reconfigureAgentTool()

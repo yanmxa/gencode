@@ -19,10 +19,10 @@ func (o *testTaskObserver) TaskCompleted(info TaskInfo) {
 	o.completed = append(o.completed, info)
 }
 
-func TestTaskHookObserver(t *testing.T) {
+func TestTaskCompletionObserver(t *testing.T) {
 	observer := &testTaskObserver{}
-	SetHookObserver(observer)
-	defer SetHookObserver(nil)
+	SetCompletionObserver(observer)
+	defer SetCompletionObserver(nil)
 
 	mgr := NewManager()
 	ctx, cancel := context.WithCancel(context.Background())

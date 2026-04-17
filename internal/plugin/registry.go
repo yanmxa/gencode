@@ -259,7 +259,7 @@ func (r *Registry) saveEnabledState(name string, enabled bool, scope Scope) erro
 		os.Remove(tmp)
 		return err
 	}
-	notifyConfigChanged(scopeConfigSource(scope), settingsPath)
+	fireConfigChanged(scopeConfigSource(scope), settingsPath)
 	return nil
 }
 

@@ -133,7 +133,7 @@ func (l *ConfigLoader) SaveServer(name string, config ServerConfig, scope Scope)
 		os.Remove(tmp)
 		return err
 	}
-	notifyConfigChanged(scopeConfigSource(scope), filePath)
+	fireConfigChanged(scopeConfigSource(scope), filePath)
 	return nil
 }
 
@@ -171,7 +171,7 @@ func (l *ConfigLoader) RemoveServer(name string, scope Scope) error {
 		os.Remove(tmp)
 		return err
 	}
-	notifyConfigChanged(scopeConfigSource(scope), filePath)
+	fireConfigChanged(scopeConfigSource(scope), filePath)
 	return nil
 }
 
@@ -213,7 +213,7 @@ func (l *ConfigLoader) removeServerFromFile(filePath, name string) {
 		os.Remove(tmp)
 		return
 	}
-	notifyConfigChanged(configSourceFromFilePath(filePath), filePath)
+	fireConfigChanged(configSourceFromFilePath(filePath), filePath)
 }
 
 func configSourceFromFilePath(filePath string) string {
@@ -242,4 +242,15 @@ func configSourceFromFilePath(filePath string) string {
 // GetProjectDir returns the project config directory
 func (l *ConfigLoader) GetProjectDir() string {
 	return l.projectDir
+}
+
+func scopeConfigSource(scope Scope) string {
+	switch scope {
+	case ScopeProject:
+		return "project_settings"
+	case ScopeLocal:
+		return "local_settings"
+	default:
+		return "user_settings"
+	}
 }

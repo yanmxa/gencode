@@ -325,7 +325,7 @@ func renderTrackerTaskIndented(t *tracker.Task, width int, spinnerView string, e
 	indent := extraIndent + "  "
 	idTag := fmt.Sprintf("#%s ", t.ID)
 	maxTextLen := width - len(indent) - len(idTag) - 6 // icon + spaces + margin
-	subject := truncateText(t.Subject, maxTextLen)
+	subject := kit.TruncateText(t.Subject, maxTextLen)
 	worker := lookupWorkerSnapshot(t, workerSnap)
 
 	mutedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
@@ -350,7 +350,7 @@ func renderTrackerTaskIndented(t *tracker.Task, width int, spinnerView string, e
 	case tracker.StatusInProgress:
 		displayText := subject
 		if t.ActiveForm != "" {
-			displayText = truncateText(t.ActiveForm, maxTextLen)
+			displayText = kit.TruncateText(t.ActiveForm, maxTextLen)
 		}
 		line := indent + trackerInProgressStyle.Render(spinnerView) + " " + idStr + trackerInProgressStyle.Render(displayText) + queueSuffix
 		if elapsed := formatElapsedTime(t.StatusChangedAt); elapsed != "" {
@@ -410,7 +410,7 @@ func renderBatchHeader(t *tracker.Task, children []*tracker.Task, width int, spi
 	}
 
 	maxTextLen := width - len(indent) - len(idTag) - 10
-	subject = truncateText(subject, maxTextLen)
+	subject = kit.TruncateText(subject, maxTextLen)
 
 	switch t.Status {
 	case tracker.StatusCompleted:
@@ -501,16 +501,4 @@ func formatElapsedTime(since time.Time) string {
 		return fmt.Sprintf("%dm %ds", minutes, seconds)
 	}
 	return fmt.Sprintf("%ds", seconds)
-}
-
-// truncateText shortens text to maxLen runes with ellipsis if needed.
-func truncateText(text string, maxLen int) string {
-	runes := []rune(text)
-	if maxLen <= 0 || len(runes) <= maxLen {
-		return text
-	}
-	if maxLen <= 3 {
-		return string(runes[:maxLen])
-	}
-	return string(runes[:maxLen-3]) + "..."
 }

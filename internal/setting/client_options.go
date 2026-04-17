@@ -1,17 +1,13 @@
 package setting
 
-import (
-	"github.com/yanmxa/gencode/internal/llm"
-)
-
 const (
 	DefaultMaxTokens    = 8192
 	DefaultSystemPrompt = "You are a helpful AI coding assistant."
 )
 
 // DefaultModel returns the default model ID for a given provider and auth method.
-func DefaultModel(providerName string, authMethod llm.AuthMethod) string {
-	if providerName == "anthropic" && authMethod == llm.AuthVertex {
+func DefaultModel(providerName string, authMethod string) string {
+	if providerName == "anthropic" && authMethod == "vertex" {
 		return "claude-sonnet-4-5@20250929"
 	}
 	switch providerName {

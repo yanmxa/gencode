@@ -297,9 +297,6 @@ var (
 	PendingImageStyle = lipgloss.NewStyle().
 				Foreground(kit.CurrentTheme.Primary)
 
-	pendingImageHintStyle = lipgloss.NewStyle().
-				Foreground(kit.CurrentTheme.Muted)
-
 	SelectedImageStyle = lipgloss.NewStyle().
 				Foreground(kit.CurrentTheme.TextBright).
 				Background(kit.CurrentTheme.Primary).
@@ -1118,7 +1115,7 @@ func truncateToolLabel(label string, width int) string {
 	if lipgloss.Width(label) <= maxWidth {
 		return label
 	}
-	return truncateText(label, maxWidth)
+	return kit.TruncateText(label, maxWidth)
 }
 
 func maxToolLabelWidth(width int) int {

@@ -4,7 +4,6 @@ package app
 
 import (
 	"fmt"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -30,11 +29,8 @@ func (m *model) GetCwd() string                { return m.cwd }
 func (m *model) ReloadPluginBackedState() error { return m.reloadPluginBackedState() }
 
 // memory.Runtime
-func (m *model) ClearCachedInstructions() {
-	m.runtime.CachedUserInstructions = ""
-	m.runtime.CachedProjectInstructions = ""
-}
-func (m *model) RefreshMemoryContext(trigger string) { m.refreshMemoryContext(trigger) }
+func (m *model) ClearCachedInstructions()            { m.runtime.ClearCachedInstructions() }
+func (m *model) RefreshMemoryContext(trigger string) { m.runtime.RefreshMemoryContext(m.cwd, trigger) }
 func (m *model) FireFileChanged(path, tool string)   { m.fireFileChanged(path, tool) }
 
 // user.MCPRuntime
@@ -42,10 +38,7 @@ func (m *model) SetInputText(text string) { m.userInput.Textarea.SetValue(text) 
 
 // appuser.ProviderRuntime
 func (m *model) SwitchProvider(p llm.Provider) {
-	m.runtime.LLMProvider = p
-	if m.runtime.HookEngine != nil {
-		m.runtime.HookEngine.SetLLMProvider(m.runtime.LLMProvider, m.getModelID())
-	}
+	m.runtime.SwitchProvider(p)
 	m.reconfigureAgentTool()
 }
 func (m *model) SetCurrentModel(cm *llm.CurrentModelInfo) { m.runtime.CurrentModel = cm }
@@ -72,7 +65,7 @@ func (m *model) handleStreamCancel() tea.Cmd {
 		m.agentSess = nil
 	}
 	m.conv.Stream.Stop()
-	m.runtime.ThinkingOverride = llm.ThinkingOff
+	m.runtime.ClearThinkingOverride()
 	m.cancelPendingToolCalls()
 	m.conv.MarkLastInterrupted()
 
@@ -84,50 +77,20 @@ func (m *model) handleStreamCancel() tea.Cmd {
 }
 
 func (m *model) cancelPendingToolCalls() {
-	var toolCalls []core.ToolCall
-
-	if m.tool.Cancel != nil {
-		m.tool.Cancel()
-	}
-
-	if m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls) {
-		toolCalls = m.tool.PendingCalls[m.tool.CurrentIdx:]
-		m.tool.Reset()
-	} else if len(m.conv.Messages) > 0 {
+	toolCalls := m.tool.DrainPendingCalls()
+	if toolCalls == nil && len(m.conv.Messages) > 0 {
 		lastMsg := m.conv.Messages[len(m.conv.Messages)-1]
 		if lastMsg.Role == core.RoleAssistant {
 			toolCalls = lastMsg.ToolCalls
 		}
 	}
-
-	for _, tc := range toolCalls {
-		m.conv.Append(core.ChatMessage{
-			Role:     core.RoleUser,
-			ToolName: tc.Name,
-			ToolResult: &core.ToolResult{
-				ToolCallID: tc.ID,
-				Content:    pendingToolCancellationContent(tc),
-				IsError:    true,
-			},
-		})
-	}
+	m.conv.AppendCancelledToolResults(toolCalls, pendingToolCancellationContent)
 }
 
 func (m *model) cancelRemainingToolCalls(startIdx int) {
-	if m.tool.PendingCalls == nil || startIdx >= len(m.tool.PendingCalls) {
-		return
-	}
-	for _, tc := range m.tool.PendingCalls[startIdx:] {
-		m.conv.Append(core.ChatMessage{
-			Role:     core.RoleUser,
-			ToolName: tc.Name,
-			ToolResult: &core.ToolResult{
-				ToolCallID: tc.ID,
-				Content:    "Tool execution skipped.",
-				IsError:    true,
-			},
-		})
-	}
+	m.conv.AppendCancelledToolResults(m.tool.RemainingCalls(startIdx), func(core.ToolCall) string {
+		return "Tool execution skipped."
+	})
 }
 
 func pendingToolCancellationContent(tc core.ToolCall) string {
@@ -139,46 +102,14 @@ func pendingToolCancellationContent(tc core.ToolCall) string {
 	}
 }
 
-func (m *model) detectThinkingKeywords(input string) {
-	lower := strings.ToLower(input)
-
-	if strings.Contains(lower, "ultrathink") ||
-		strings.Contains(lower, "think really hard") ||
-		strings.Contains(lower, "think super hard") ||
-		strings.Contains(lower, "maximum thinking") {
-		m.runtime.ThinkingOverride = llm.ThinkingUltra
-		return
-	}
-
-	if strings.Contains(lower, "think harder") ||
-		strings.Contains(lower, "think hard") ||
-		strings.Contains(lower, "think deeply") ||
-		strings.Contains(lower, "think carefully") {
-		m.runtime.ThinkingOverride = llm.ThinkingHigh
-		return
-	}
-}
-
 func (m *model) handleSkillInvocation() tea.Cmd {
 	if m.runtime.LLMProvider == nil {
-		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "No provider connected. Use /provider to connect."})
-		m.userInput.Skill.PendingInstructions = ""
-		m.userInput.Skill.PendingArgs = ""
+		m.conv.AddNotice("No provider connected. Use /provider to connect.")
+		m.userInput.Skill.ClearPending()
 		return tea.Batch(m.commitMessages()...)
 	}
-
-	userMsg := m.userInput.Skill.PendingArgs
-	if userMsg == "" {
-		userMsg = "Execute the skill."
-	}
+	userMsg := m.userInput.Skill.ConsumeInvocation()
 	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: userMsg})
-
-	if m.userInput.Skill.PendingInstructions != "" {
-		m.userInput.Skill.ActiveInvocation = m.userInput.Skill.PendingInstructions
-		m.userInput.Skill.PendingInstructions = ""
-	}
-	m.userInput.Skill.PendingArgs = ""
-
 	return m.sendToAgent(userMsg, nil)
 }
 

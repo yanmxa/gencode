@@ -12,37 +12,17 @@ import (
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
-func (m *model) ensurePlanStore() {
-	m.runtime.EnsurePlanStore()
-}
-
 func (m *model) cycleOperationMode() {
 	m.runtime.CycleOperationMode()
-	m.applyOperationModePermissions()
+	m.runtime.ApplyModePermissions(m.cwd)
 
 	if m.runtime.PlanEnabled {
-		m.ensurePlanStore()
+		m.runtime.EnsurePlanStore()
 	}
 
 	if m.runtime.HookEngine != nil {
 		m.runtime.HookEngine.SetPermissionMode(m.runtime.OperationModeName())
 	}
-}
-
-func (m *model) applyOperationModePermissions() {
-	m.runtime.ResetSessionPermissions()
-
-	if m.runtime.OperationMode == setting.ModeAutoAccept {
-		m.runtime.ApplyAutoAcceptPermissions(m.cwd)
-	}
-
-	if m.runtime.OperationMode == setting.ModeBypassPermissions {
-		m.runtime.ApplyBypassPermissions()
-	}
-}
-
-func (m *model) enableAutoAcceptMode() {
-	m.runtime.EnableAutoAcceptMode(m.cwd)
 }
 
 // updateMode routes interactive prompt request messages (questions, plans, enter-plan).
@@ -123,7 +103,7 @@ func (m *model) handlePlanResponse(msg appoutput.PlanResponseMsg) tea.Cmd {
 	}
 
 	if msg.ApproveMode != "modify" {
-		m.ensurePlanStore()
+		m.runtime.EnsurePlanStore()
 		if m.runtime.PlanStore != nil {
 			savedPlan := &plan.Plan{
 				Task:    m.runtime.PlanTask,
@@ -143,7 +123,7 @@ func (m *model) handlePlanResponse(msg appoutput.PlanResponseMsg) tea.Cmd {
 	case "clear-auto":
 		return m.handlePlanClearAutoMode(planContent)
 	case "auto":
-		m.enableAutoAcceptMode()
+		m.runtime.EnableAutoAcceptMode(m.cwd)
 	case "manual":
 		m.runtime.OperationMode = setting.ModeNormal
 		m.runtime.PlanEnabled = false
@@ -159,7 +139,7 @@ func (m *model) handlePlanResponse(msg appoutput.PlanResponseMsg) tea.Cmd {
 // Clears conversation, enables auto-accept, and starts implementation.
 func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
 	m.conv.Clear()
-	m.enableAutoAcceptMode()
+	m.runtime.EnableAutoAcceptMode(m.cwd)
 	m.tool.Reset()
 
 	userMsg := fmt.Sprintf("Implement the following approved plan step by step. Start coding immediately — do NOT explore or investigate further.\n\n%s", planContent)
@@ -180,7 +160,7 @@ func (m *model) handleEnterPlanResponse(msg appoutput.EnterPlanResponseMsg) tea.
 		if msg.Request != nil && msg.Request.Message != "" {
 			m.runtime.PlanTask = msg.Request.Message
 		}
-		m.ensurePlanStore()
+		m.runtime.EnsurePlanStore()
 	}
 
 	return tea.Batch(m.commitMessages()...)

@@ -1,4 +1,4 @@
-package app
+package user
 
 import (
 	"context"
@@ -6,12 +6,90 @@ import (
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+
+	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
-// autoFetchTokenLimitsDeps holds the dependencies needed by autoFetchTokenLimits.
+// TokenLimitDeps holds the state needed by token limit commands.
+type TokenLimitDeps struct {
+	CurrentModel *llm.CurrentModelInfo
+	Provider     llm.Provider
+	Store        *llm.Store
+	InputTokens  int
+	Cwd          string
+	SpinnerTick  tea.Cmd
+}
+
+// HandleTokenLimitCommand processes the /tokenlimit slash command.
+func HandleTokenLimitCommand(deps TokenLimitDeps, args string) (string, tea.Cmd, error) {
+	if deps.CurrentModel == nil {
+		return "No model selected. Use /model to select a model first.", nil, nil
+	}
+
+	modelID := deps.CurrentModel.ModelID
+	args = strings.TrimSpace(args)
+
+	if args != "" {
+		return setTokenLimits(deps, modelID, args)
+	}
+
+	return showOrFetchTokenLimits(deps, modelID)
+}
+
+func setTokenLimits(deps TokenLimitDeps, modelID, args string) (string, tea.Cmd, error) {
+	var inputLimit, outputLimit int
+	if _, err := fmt.Sscanf(args, "%d %d", &inputLimit, &outputLimit); err != nil {
+		return "Usage:\n  /tokenlimit              - Show or auto-fetch limits\n  /tokenlimit <input> <output> - Set custom limits", nil, nil
+	}
+
+	if inputLimit <= 0 || outputLimit <= 0 {
+		return "Token limits must be positive integers", nil, nil
+	}
+
+	if deps.Store != nil {
+		if err := deps.Store.SetTokenLimit(modelID, inputLimit, outputLimit); err != nil {
+			return "", nil, fmt.Errorf("failed to set token limits: %w", err)
+		}
+	}
+
+	return fmt.Sprintf("Set token limits for %s:\n  Input:  %s tokens\n  Output: %s tokens",
+		modelID, appoutput.FormatTokenCount(inputLimit), appoutput.FormatTokenCount(outputLimit)), nil, nil
+}
+
+func showOrFetchTokenLimits(deps TokenLimitDeps, modelID string) (string, tea.Cmd, error) {
+	if deps.Store != nil {
+		if customInput, customOutput, ok := deps.Store.GetTokenLimit(modelID); ok {
+			return formatTokenLimitDisplay(modelID, customInput, customOutput, true, deps.InputTokens), nil, nil
+		}
+	}
+
+	inputLimit, outputLimit := appoutput.GetModelTokenLimits(deps.Store, deps.CurrentModel)
+	if inputLimit > 0 || outputLimit > 0 {
+		return formatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, deps.InputTokens), nil, nil
+	}
+
+	return "", tea.Batch(deps.SpinnerTick, fetchTokenLimitsCmd(deps)), nil
+}
+
+func fetchTokenLimitsCmd(deps TokenLimitDeps) tea.Cmd {
+	fetchDeps := autoFetchTokenLimitsDeps{
+		LLM:          deps.Provider,
+		Store:        deps.Store,
+		CurrentModel: deps.CurrentModel,
+		Cwd:          deps.Cwd,
+	}
+	return func() tea.Msg {
+		result, err := autoFetchTokenLimits(context.Background(), fetchDeps)
+		return appoutput.TokenLimitResultMsg{Result: result, Error: err}
+	}
+}
+
+// --- Auto-fetch agent ---
+
 type autoFetchTokenLimitsDeps struct {
 	LLM          llm.Provider
 	Store        *llm.Store
@@ -19,9 +97,6 @@ type autoFetchTokenLimitsDeps struct {
 	Cwd          string
 }
 
-// autoFetchTokenLimits fetches token limits for the current model.
-// It first tries the provider's direct API (ModelLimitsFetcher) before
-// falling back to a sub-agent discovery approach.
 func autoFetchTokenLimits(ctx context.Context, deps autoFetchTokenLimitsDeps) (string, error) {
 	if deps.LLM == nil {
 		return "No provider connected. Use /tokenlimit <input> <output> to set manually.", nil

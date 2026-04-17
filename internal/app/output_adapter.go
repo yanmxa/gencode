@@ -16,6 +16,7 @@ import (
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
@@ -70,7 +71,7 @@ func (m *model) SetTokenCounts(in, out int) {
 func (m *model) ClearWarningSuppressed() { m.conv.Compact.WarningSuppressed = false }
 func (m *model) ClearThinkingOverride()  { m.runtime.ThinkingOverride = llm.ThinkingOff }
 func (rt outputRuntime) ContinueOutbox() tea.Cmd {
-	return rt.model.outputContinueOutbox()
+	return rt.model.continueOutbox()
 }
 
 func (m *model) PopToolSideEffect(toolCallID string) any {
@@ -80,7 +81,7 @@ func (m *model) ApplyToolSideEffects(toolName string, sideEffect any) {
 	m.applyAgentToolSideEffects(toolName, sideEffect)
 }
 func (m *model) FirePostToolHook(tr core.ToolResult, sideEffect any) {
-	m.fireAgentPostToolHook(tr, sideEffect)
+	m.runtime.FirePostToolHook(tr, sideEffect)
 }
 func (m *model) PersistOverflow(result *core.ToolResult) { m.persistToolResultOverflow(result) }
 func (m *model) FireIdleHooks() bool                     { return m.fireIdleHooks() }
@@ -112,13 +113,7 @@ func (m *model) DrainTurnQueues() tea.Cmd {
 func (m *model) HasRunningTasks() bool { return tracker.DefaultStore.HasInProgress() }
 
 func (m *model) FireStopFailureHook(err error) {
-	if m.runtime.HookEngine != nil {
-		m.runtime.HookEngine.ExecuteAsync(hook.StopFailure, hook.HookInput{
-			LastAssistantMessage: m.lastAssistantContent(),
-			Error:                err.Error(),
-			StopHookActive:       m.runtime.HookEngine.StopHookActive(),
-		})
-	}
+	m.runtime.FireStopFailureHook(core.LastAssistantChatContent(m.conv.Messages), err)
 }
 
 func (m *model) StopAgentSession() {
@@ -260,59 +255,17 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 	}
 }
 
-func (m *model) fireAgentPostToolHook(tr core.ToolResult, sideEffect any) {
-	if m.runtime.HookEngine == nil {
-		return
-	}
-	eventType := hook.PostToolUse
-	if tr.IsError {
-		eventType = hook.PostToolUseFailure
-	}
-	toolResponse := any(tr.Content)
-	if sideEffect != nil {
-		toolResponse = sideEffect
-	}
-	input := hook.HookInput{
-		ToolName:     tr.ToolName,
-		ToolUseID:    tr.ToolCallID,
-		ToolResponse: toolResponse,
-	}
-	if tr.IsError {
-		input.Error = tr.Content
-	}
-	m.runtime.HookEngine.ExecuteAsync(eventType, input)
-}
 
 func (m *model) fireIdleHooks() bool {
-	if m.runtime.HookEngine == nil {
-		return false
-	}
-
-	blocked := false
-	if m.runtime.HookEngine.HasHooks(hook.Stop) {
-		outcome := m.runtime.HookEngine.Execute(context.Background(), hook.Stop, hook.HookInput{
-			LastAssistantMessage: m.lastAssistantContent(),
-			StopHookActive:       m.runtime.HookEngine.StopHookActive(),
-		})
-		if outcome.ShouldBlock {
-			m.conv.Append(core.ChatMessage{
-				Role:    core.RoleUser,
-				Content: "Stop hook blocked: " + outcome.BlockReason,
-			})
-			if m.agentSess != nil {
-				m.agentSess.agent.Inbox() <- core.Message{
-					Role:    core.RoleUser,
-					Content: "Stop hook blocked: " + outcome.BlockReason,
-				}
-			}
-			blocked = true
+	lastContent := core.LastAssistantChatContent(m.conv.Messages)
+	blocked, reason := m.runtime.ExecuteIdleHooks(context.Background(), lastContent)
+	if blocked {
+		msg := "Stop hook blocked: " + reason
+		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: msg})
+		if m.agentSess != nil {
+			m.agentSess.agent.Inbox() <- core.Message{Role: core.RoleUser, Content: msg}
 		}
 	}
-
-	m.runtime.HookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
-		Message:          "Claude is waiting for your input",
-		NotificationType: "idle_prompt",
-	})
 	return blocked
 }
 
@@ -411,9 +364,6 @@ func (m *model) continueOutbox() tea.Cmd {
 	return appoutput.DrainAgentOutbox(m.agentSess.agent.Outbox())
 }
 
-func (m *model) outputContinueOutbox() tea.Cmd {
-	return m.continueOutbox()
-}
 
 // --- Overflow persistence ---
 
@@ -437,7 +387,7 @@ func (m *model) persistToolResultOverflow(result *core.ToolResult) {
 	preview := result.Content[:cutoff]
 
 	persisted := false
-	if err := m.ensureSessionStore(); err == nil && m.runtime.SessionID != "" {
+	if err := m.runtime.EnsureSessionStore(m.cwd); err == nil && m.runtime.SessionID != "" {
 		if err := m.runtime.SessionStore.PersistToolResult(m.runtime.SessionID, result.ToolCallID, result.Content); err == nil {
 			persisted = true
 		}
@@ -550,8 +500,7 @@ func (m *model) handleCompactResult(msg appoutput.CompactResultMsg) tea.Cmd {
 
 func (m *model) resetAfterCompact() {
 	m.conv.Clear()
-	m.runtime.InputTokens = 0
-	m.runtime.OutputTokens = 0
+	m.runtime.ResetTokens()
 }
 
 func (m *model) handleTokenLimitResult(msg appoutput.TokenLimitResultMsg) tea.Cmd {
@@ -570,19 +519,8 @@ func (m *model) handleTokenLimitResult(msg appoutput.TokenLimitResultMsg) tea.Cm
 
 // --- Session lifecycle ---
 
-func (m *model) ensureSessionStore() error {
-	if m.runtime.SessionStore == nil {
-		store, err := session.NewStore(m.cwd)
-		if err != nil {
-			return err
-		}
-		m.runtime.SessionStore = store
-	}
-	return nil
-}
-
 func (m *model) saveSession() error {
-	if err := m.ensureSessionStore(); err != nil {
+	if err := m.runtime.EnsureSessionStore(m.cwd); err != nil {
 		return err
 	}
 
@@ -607,7 +545,7 @@ func (m *model) saveSession() error {
 			Cwd:        m.cwd,
 			LastPrompt: session.ExtractLastUserText(entries),
 			Summary:    m.runtime.SessionSummary,
-			Mode:       m.currentSessionMode(),
+			Mode:       m.runtime.SessionMode(),
 		},
 		Entries: entries,
 		Tasks:   tracker.DefaultStore.Export(),
@@ -634,7 +572,7 @@ func (m *model) saveSession() error {
 }
 
 func (m *model) loadSession(id string) error {
-	if err := m.ensureSessionStore(); err != nil {
+	if err := m.runtime.EnsureSessionStore(m.cwd); err != nil {
 		return err
 	}
 
@@ -703,15 +641,63 @@ func (m *model) initTaskStorage() {
 	_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
 }
 
-func (m *model) currentSessionMode() string {
-	if m.runtime.PlanEnabled {
-		return "plan"
+
+// --- Prompt suggestion (ghost text) ---
+
+type promptSuggestionMsg struct {
+	text string
+	err  error
+}
+
+type promptSuggestionState struct {
+	text   string
+	cancel context.CancelFunc
+}
+
+func (s *promptSuggestionState) Clear() {
+	s.text = ""
+	if s.cancel != nil {
+		s.cancel()
+		s.cancel = nil
 	}
-	switch m.runtime.OperationMode {
-	case setting.ModeAutoAccept:
-		return "auto-accept"
-	default:
-		return "normal"
+}
+
+const suggestionSystemPrompt = `You predict what the user will type next in a coding assistant CLI.
+Reply with ONLY the predicted text (2-12 words). No quotes, no explanation.
+If unsure, reply with nothing.`
+
+const suggestionUserPrompt = `[PREDICTION MODE] Based on this conversation, predict what the user will type next.
+Stay silent if the next step isn't obvious. Match the user's language and style.`
+
+const maxSuggestionMessages = 20
+
+func (m *model) startPromptSuggestion() tea.Cmd {
+	req, ok := m.buildPromptSuggestionRequest()
+	if !ok {
+		return nil
+	}
+
+	m.promptSuggestion.Clear()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.promptSuggestion.cancel = cancel
+	req.Ctx = ctx
+
+	return suggestPromptCmd(req)
+}
+
+func (m *model) handlePromptSuggestion(msg promptSuggestionMsg) {
+	if msg.err != nil {
+		return
+	}
+	if m.userInput.Textarea.Value() != "" {
+		return
+	}
+	if m.conv.Stream.Active {
+		return
+	}
+	if text := suggest.FilterSuggestion(msg.text); text != "" {
+		m.promptSuggestion.text = text
 	}
 }
 
@@ -724,14 +710,6 @@ type promptSuggestionRequest struct {
 	SystemPrompt string
 	UserPrompt   string
 	MaxTokens    int
-}
-
-type tokenLimitFetchRequest struct {
-	Ctx          context.Context
-	LLM          llm.Provider
-	Store        *llm.Store
-	CurrentModel *llm.CurrentModelInfo
-	Cwd          string
 }
 
 type compactRequest struct {
@@ -754,20 +732,6 @@ func suggestPromptCmd(req promptSuggestionRequest) tea.Cmd {
 			return promptSuggestionMsg{err: err}
 		}
 		return promptSuggestionMsg{text: resp.Content}
-	}
-}
-
-func fetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.Cmd {
-	deps := autoFetchTokenLimitsDeps{
-		LLM:          req.LLM,
-		Store:        req.Store,
-		CurrentModel: req.CurrentModel,
-		Cwd:          req.Cwd,
-	}
-	ctx := req.Ctx
-	return func() tea.Msg {
-		result, err := autoFetchTokenLimits(ctx, deps)
-		return appoutput.TokenLimitResultMsg{Result: result, Error: err}
 	}
 }
 
@@ -825,16 +789,6 @@ func (m *model) buildPromptSuggestionRequest() (promptSuggestionRequest, bool) {
 		UserPrompt:   suggestionUserPrompt,
 		MaxTokens:    60,
 	}, true
-}
-
-func (m *model) buildTokenLimitFetchRequest() tokenLimitFetchRequest {
-	return tokenLimitFetchRequest{
-		Ctx:          context.Background(),
-		LLM:          m.runtime.LLMProvider,
-		Store:        m.runtime.ProviderStore,
-		CurrentModel: m.runtime.CurrentModel,
-		Cwd:          m.cwd,
-	}
 }
 
 func (m *model) buildCompactRequest(focus, trigger string) compactRequest {

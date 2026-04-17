@@ -58,6 +58,28 @@ func (t *ToolExecState) Reset() {
 	t.Cancel = nil
 }
 
+// DrainPendingCalls cancels the current context and returns any remaining
+// pending tool calls (from CurrentIdx onward), then resets state.
+func (t *ToolExecState) DrainPendingCalls() []core.ToolCall {
+	if t.Cancel != nil {
+		t.Cancel()
+	}
+	if t.PendingCalls == nil || t.CurrentIdx >= len(t.PendingCalls) {
+		return nil
+	}
+	calls := t.PendingCalls[t.CurrentIdx:]
+	t.Reset()
+	return calls
+}
+
+// RemainingCalls returns pending tool calls from startIdx onward without modifying state.
+func (t *ToolExecState) RemainingCalls(startIdx int) []core.ToolCall {
+	if t.PendingCalls == nil || startIdx >= len(t.PendingCalls) {
+		return nil
+	}
+	return t.PendingCalls[startIdx:]
+}
+
 // --- Tool selector ---
 
 type toolItem struct {

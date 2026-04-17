@@ -211,7 +211,7 @@ func (c commandController) handleSubmit(input string) (tea.Cmd, bool) {
 		return nil, false
 	}
 
-	c.model.resetInputField()
+	c.model.userInput.Reset()
 
 	if preserve && !preAppended {
 		c.insertConversationMessage(insertAt, core.ChatMessage{Role: core.RoleUser, Content: input})
@@ -332,7 +332,7 @@ func handleForkCommand(ctx context.Context, m *model, args string) (string, tea.
 }
 
 func handleResumeCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if err := m.ensureSessionStore(); err != nil {
+	if err := m.runtime.EnsureSessionStore(m.cwd); err != nil {
 		return "", nil, fmt.Errorf("failed to initialize session store: %w", err)
 	}
 	if err := m.userInput.Session.Selector.EnterSelect(m.width, m.height, m.runtime.SessionStore, m.cwd); err != nil {
@@ -635,54 +635,18 @@ func loopUsage() string {
 // --- Compact/TokenLimit commands ---
 
 func handleTokenLimitCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if m.runtime.CurrentModel == nil {
-		return "No model selected. Use /model to select a model first.", nil, nil
+	result, cmd, err := appuser.HandleTokenLimitCommand(appuser.TokenLimitDeps{
+		CurrentModel: m.runtime.CurrentModel,
+		Provider:     m.runtime.LLMProvider,
+		Store:        m.runtime.ProviderStore,
+		InputTokens:  m.runtime.InputTokens,
+		Cwd:          m.cwd,
+		SpinnerTick:  m.agentOutput.Spinner.Tick,
+	}, args)
+	if cmd != nil {
+		m.userInput.Provider.FetchingLimits = true
 	}
-
-	modelID := m.runtime.CurrentModel.ModelID
-	args = strings.TrimSpace(args)
-
-	if args != "" {
-		return setTokenLimits(m, modelID, args)
-	}
-
-	return showOrFetchTokenLimits(m, modelID)
-}
-
-func setTokenLimits(m *model, modelID, args string) (string, tea.Cmd, error) {
-	var inputLimit, outputLimit int
-	if _, err := fmt.Sscanf(args, "%d %d", &inputLimit, &outputLimit); err != nil {
-		return "Usage:\n  /tokenlimit              - Show or auto-fetch limits\n  /tokenlimit <input> <output> - Set custom limits", nil, nil
-	}
-
-	if inputLimit <= 0 || outputLimit <= 0 {
-		return "Token limits must be positive integers", nil, nil
-	}
-
-	if m.runtime.ProviderStore != nil {
-		if err := m.runtime.ProviderStore.SetTokenLimit(modelID, inputLimit, outputLimit); err != nil {
-			return "", nil, fmt.Errorf("failed to set token limits: %w", err)
-		}
-	}
-
-	return fmt.Sprintf("Set token limits for %s:\n  Input:  %s tokens\n  Output: %s tokens",
-		modelID, appoutput.FormatTokenCount(inputLimit), appoutput.FormatTokenCount(outputLimit)), nil, nil
-}
-
-func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
-	if m.runtime.ProviderStore != nil {
-		if customInput, customOutput, ok := m.runtime.ProviderStore.GetTokenLimit(modelID); ok {
-			return formatTokenLimitDisplay(modelID, customInput, customOutput, true, m.runtime.InputTokens), nil, nil
-		}
-	}
-
-	inputLimit, outputLimit := appoutput.GetModelTokenLimits(m.runtime.ProviderStore, m.runtime.CurrentModel)
-	if inputLimit > 0 || outputLimit > 0 {
-		return formatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m.runtime.InputTokens), nil, nil
-	}
-
-	m.userInput.Provider.FetchingLimits = true
-	return "", tea.Batch(m.agentOutput.Spinner.Tick, fetchTokenLimitsCmd(m.buildTokenLimitFetchRequest())), nil
+	return result, cmd, err
 }
 
 func handleCompactCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {

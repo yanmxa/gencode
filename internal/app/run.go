@@ -71,21 +71,7 @@ func (m *model) configureAsyncHookCallback() {
 }
 
 func (m *model) fireStartupHooks() {
-	if m.runtime.HookEngine == nil {
-		return
-	}
-	m.runtime.HookEngine.ExecuteAsync(hook.Setup, hook.HookInput{
-		Trigger: "init",
-	})
-
-	source := "startup"
-	if m.runtime.SessionID != "" {
-		source = "resume"
-	}
-	outcome := m.runtime.HookEngine.Execute(context.Background(), hook.SessionStart, hook.HookInput{
-		Source: source,
-		Model:  m.getModelID(),
-	})
+	outcome := m.runtime.ExecuteStartupHooks(context.Background())
 	m.applyRuntimeHookOutcome(outcome)
 	if outcome.AdditionalContext != "" {
 		m.conv.Append(core.ChatMessage{
