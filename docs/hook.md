@@ -3,7 +3,7 @@
 ## What It Does
 
 Hook Engine lets external code react to agent lifecycle events — intercept
-operations before they happen (block a tool call, modify its input, inject
+operations before they happen (deny a tool call, rewrite its input, set
 LLM context) or observe them after the fact (log, notify, audit).
 
 External code can be a shell command, HTTP endpoint, LLM prompt, or
@@ -12,8 +12,8 @@ in-memory Go function.
 ## Design Principles
 
 **Generic engine, no domain knowledge.** The hook engine provides generic
-capabilities (Block, Modify, Inject, Meta). It does not understand the
-semantics of any specific application built on top of it. For example,
+capabilities (Deny, Rewrite, SetContext, Extra). It does not understand
+the semantics of any specific application built on top of it. For example,
 permission automation is an app-layer application of hooks — the hook
 engine has no knowledge of allow/deny/ask/setMode. Domain-specific
 interpretation stays in the caller.
@@ -32,8 +32,8 @@ internal/core/                        internal/hook/
 │   Register / On / Wait   │         │                                  │
 │                          │         │  On(event):                      │
 │ Event { Type, Source }   │         │    match → execute → merge       │
-│ Action { Block, Inject,  │         │    → return Action               │
-│          Modify, Meta }  │         │                                  │
+│ Action { Deny, SetContext,│        │    → return Action               │
+│      Rewrite, Extra }    │         │                                  │
 └──────────────────────────┘         │  ExecuteAsync(event):            │
                                      │    fire-and-forget, no result    │
                                      ├──────────────────────────────────┤
@@ -68,10 +68,10 @@ All other lifecycle points use `emit()` (Outbox only, no hook).
 
 ```
 ThinkAct() loop
-  emitAndFire(PreInfer)   → Action: Block | Inject
+  emitAndFire(PreInfer)   → Deny | SetContext
   streamInfer()
   execTools()
-    emitAndFire(PreTool)  → Action: Block | Modify
+    emitAndFire(PreTool)  → Deny | Rewrite
     tool.Execute()
 ```
 
@@ -119,13 +119,24 @@ Execute ────────────────────────
     HTTP     → POST JSON to URL, response body=JSON
     Prompt   → single LLM completion, response=JSON
 
+  Bidirectional mode (Command executor only):
+    During execution, a hook process can request input from the
+    caller by writing a PromptRequest to stdout. The engine pauses,
+    delegates to a PromptCallback (provided by app layer), writes
+    the response back to the hook's stdin, and the hook continues.
+    The hook decides the final Action based on the response.
+
+    Example: a PreTool hook asks "Allow rm -rf?" → app shows a
+    dialog → user says No → hook returns Deny. The hook controls
+    the outcome, not the engine.
+
   Output JSON is parsed and converted to core.Action.
 ───────────────────────────────────────────
   │
   ▼
 Merge ─────────────────────────────────────
   MergeActions() across all sync hooks.
-  If any hook sets Block=true, remaining hooks are skipped.
+  If any hook sets Deny=true, remaining hooks are skipped.
 ───────────────────────────────────────────
 ```
 
@@ -134,28 +145,30 @@ Merge ────────────────────────�
 The pipeline returns an `Action`. Zero value = continue normally.
 
 ```
-Field           When used        What it does
+Field              When used      What it does
 ──────────────────────────────────────────────────────────────────
-Block + Reason  any event        Stop the operation. Reason is fed
-                                 back to the LLM as an error.
+Deny + Reason      any event      Reject the operation. The Reason
+                                  is fed back to the LLM as an error.
 
-Inject          PreInfer         Add temporary context to the system
-                                 prompt. Ephemeral — replaced each turn.
+SetContext         PreInfer        Set temporary context in the system
+                                  prompt for the next LLM call.
+                                  Replaces previous value each turn.
 
-Modify          PreTool          Replace tool input parameters.
-                                 e.g. rewrite a dangerous command.
+Rewrite            PreTool         Replace tool input parameters
+                                  before execution. e.g. rewrite
+                                  "rm -rf /" to "echo blocked".
 
-Meta            any event        Opaque map for app-layer extensions.
-                                 core.Agent ignores it. App reads it
-                                 for domain-specific behavior.
+Extra              any event       Opaque map for app-layer extensions.
+                                  core.Agent ignores it. App reads it
+                                  for domain-specific behavior.
 ```
 
 Merge semantics (when multiple hooks fire):
 
-- `Block` — any true wins, short-circuits remaining hooks
-- `Inject` — concatenate with newline
-- `Modify` — last writer wins
-- `Meta` — merge maps, last writer wins per key
+- `Deny` — any true wins, short-circuits remaining hooks
+- `SetContext` — concatenate (final result overwrites previous turn's slot)
+- `Rewrite` — last writer wins
+- `Extra` — merge maps, last writer wins per key
 
 ## Hook Registration
 
@@ -173,7 +186,7 @@ Session-scoped hooks are cleared on session change.
 ## Sync vs Async
 
 **Sync** — caller blocks, results merge. Used when the caller needs a
-decision. Any hook can short-circuit the chain via `Block=true`.
+decision. Any hook can short-circuit the chain via `Deny=true`.
 
 **Async** — background goroutine, result discarded. Used for observation
 (logging, notifications, auditing).
