@@ -568,7 +568,7 @@ func TestExecuteSkillCommand_PreservesFullSlashInvocation(t *testing.T) {
 
 	executeSkillCommand(m, sk, "fix release notes")
 
-	if got := m.skill.PendingArgs; got != "/git:commit fix release notes" {
+	if got := m.userInput.Skill.PendingArgs; got != "/git:commit fix release notes" {
 		t.Fatalf("expected full slash invocation, got %q", got)
 	}
 }

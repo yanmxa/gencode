@@ -10,16 +10,15 @@ import (
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/user/skillui"
+	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	"github.com/yanmxa/gencode/internal/setting"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/core/system"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
-	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
 )
 
@@ -312,13 +311,13 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 	want := []string{
 		"*providerui.Model",
 		"*toolui.Model",
-		"*skillui.Model",
-		"*agentui.Model",
+		"*user.SkillSelector",
+		"*user.AgentSelector",
 		"*mcpui.Model",
 		"*pluginui.Model",
 		"*sessionui.Model",
 		"*memory.Model",
-		"*searchui.Model",
+		"*user.SearchSelector",
 	}
 
 	if strings.Join(got, ",") != strings.Join(want, ",") {
@@ -425,23 +424,15 @@ func TestBuildCompactRequest(t *testing.T) {
 	}
 }
 
-func TestBuildLoopExtraIncludesSkillInvocationAndTaskReminder(t *testing.T) {
-	tracker.DefaultStore.Reset()
-	t.Cleanup(tracker.DefaultStore.Reset)
-	tracker.DefaultStore.Create("Write tests", "Cover loop builder", "Writing tests", nil)
-
-	m := &model{
-		skill: skillui.State{
-			ActiveInvocation: "<skill>Use the active skill</skill>",
-		},
-		conv: appconv.Model{
-			TurnsSinceLastTaskTool: taskReminderThreshold,
-		},
+func TestBuildLoopExtraIncludesSkillInvocation(t *testing.T) {
+	m := &model{}
+	m.userInput.Skill = appuser.SkillState{
+		ActiveInvocation: "<skill>Use the active skill</skill>",
 	}
 
 	extra := m.buildLoopExtra([]string{"base"})
-	if len(extra) != 4 {
-		t.Fatalf("expected 4 extra entries, got %d: %#v", len(extra), extra)
+	if len(extra) != 3 {
+		t.Fatalf("expected 3 extra entries, got %d: %#v", len(extra), extra)
 	}
 	if extra[0] != "base" {
 		t.Fatalf("unexpected first extra entry: %#v", extra)
@@ -451,9 +442,6 @@ func TestBuildLoopExtraIncludesSkillInvocationAndTaskReminder(t *testing.T) {
 	}
 	if extra[2] != "<skill>Use the active skill</skill>" {
 		t.Fatalf("unexpected extra ordering: %#v", extra)
-	}
-	if !strings.Contains(extra[3], "<task-reminder>") || !strings.Contains(extra[3], "Write tests") {
-		t.Fatalf("expected task reminder entry, got %#v", extra[3])
 	}
 }
 

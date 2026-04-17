@@ -13,7 +13,7 @@ import (
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/session"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/core/system"
 	"github.com/yanmxa/gencode/internal/tool"
 	toolagent "github.com/yanmxa/gencode/internal/tool/agent"
 )
@@ -60,11 +60,8 @@ func (m *model) buildLoopExtra(extra []string) []string {
 	if coordinator := buildCoordinatorGuidance(); coordinator != "" {
 		allExtra = append(allExtra, coordinator)
 	}
-	if m.skill.ActiveInvocation != "" {
-		allExtra = append(allExtra, m.skill.ActiveInvocation)
-	}
-	if reminder := m.buildTaskReminder(); reminder != "" {
-		allExtra = append(allExtra, reminder)
+	if m.userInput.Skill.ActiveInvocation != "" {
+		allExtra = append(allExtra, m.userInput.Skill.ActiveInvocation)
 	}
 	return allExtra
 }

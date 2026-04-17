@@ -5,9 +5,8 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/user/agentui"
 	"github.com/yanmxa/gencode/internal/app/kit"
-	"github.com/yanmxa/gencode/internal/app/user/skillui"
+	appuser "github.com/yanmxa/gencode/internal/app/user"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	"github.com/yanmxa/gencode/internal/skill"
 )
@@ -28,13 +27,13 @@ func (m *model) overlaySelectors() []overlaySelector {
 	return []overlaySelector{
 		&m.provider.Selector,
 		&m.tool.Selector,
-		&m.skill.Selector,
-		&m.agent,
+		&m.userInput.Skill.Selector,
+		&m.userInput.Agent,
 		&m.mcp.Selector,
 		&m.plugin,
 		&m.session.Selector,
 		&m.memory.Selector,
-		&m.search,
+		&m.userInput.Search,
 	}
 }
 
@@ -57,7 +56,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.agentOutput.Spinner, cmd = m.agentOutput.Spinner.Update(msg)
 		return m, cmd
-	case skillui.InvokeMsg:
+	case appuser.SkillInvokeMsg:
 		if sk, ok := skill.DefaultRegistry.Get(msg.SkillName); ok {
 			executeSkillCommand(m, sk, "")
 			return m, m.handleSkillInvocation()
@@ -68,7 +67,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case promptSuggestionMsg:
 		m.handlePromptSuggestion(msg)
 		return m, nil
-	case kit.DismissedMsg, toolui.ToggleMsg, skillui.CycleMsg, agentui.ToggleMsg:
+	case kit.DismissedMsg, toolui.ToggleMsg, appuser.SkillCycleMsg, appuser.AgentToggleMsg:
 		return m, nil
 	}
 

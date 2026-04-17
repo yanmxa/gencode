@@ -70,15 +70,15 @@ func executeCommand(ctx context.Context, m *model, input string) (string, tea.Cm
 
 func executeSkillCommand(m *model, sk *skill.Skill, args string) {
 	if skill.DefaultRegistry != nil {
-		m.skill.PendingInstructions = skill.DefaultRegistry.GetSkillInvocationPrompt(sk.FullName())
+		m.userInput.Skill.PendingInstructions = skill.DefaultRegistry.GetSkillInvocationPrompt(sk.FullName())
 	}
 
 	plugin.SetActivePluginRoot(plugin.FindPluginRootForPath(sk.SkillDir))
 
 	if args != "" {
-		m.skill.PendingArgs = fmt.Sprintf("/%s %s", sk.FullName(), args)
+		m.userInput.Skill.PendingArgs = fmt.Sprintf("/%s %s", sk.FullName(), args)
 	} else {
-		m.skill.PendingArgs = fmt.Sprintf("/%s", sk.FullName())
+		m.userInput.Skill.PendingArgs = fmt.Sprintf("/%s", sk.FullName())
 	}
 }
 
@@ -148,15 +148,15 @@ func skillCommandInfos() []command.Info {
 func executeCustomCommand(m *model, pc *command.CustomCommand, args string) string {
 	instructions := pc.GetInstructions()
 	if instructions != "" {
-		m.skill.PendingInstructions = fmt.Sprintf("<custom-command name=%q>\n%s\n</custom-command>", pc.FullName(), instructions)
+		m.userInput.Skill.PendingInstructions = fmt.Sprintf("<custom-command name=%q>\n%s\n</custom-command>", pc.FullName(), instructions)
 	}
 
 	plugin.SetActivePluginRoot(plugin.FindPluginRootForPath(pc.FilePath))
 
 	if args != "" {
-		m.skill.PendingArgs = fmt.Sprintf("/%s %s", pc.FullName(), args)
+		m.userInput.Skill.PendingArgs = fmt.Sprintf("/%s %s", pc.FullName(), args)
 	} else {
-		m.skill.PendingArgs = fmt.Sprintf("/%s", pc.FullName())
+		m.userInput.Skill.PendingArgs = fmt.Sprintf("/%s", pc.FullName())
 	}
 	return ""
 }
@@ -349,7 +349,7 @@ func handleResumeCommand(ctx context.Context, m *model, args string) (string, te
 // --- Config commands: /model, /init, /memory, /mcp, /plugin, /reload-plugins, /search ---
 
 func handleSearchCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if err := m.search.Enter(m.providerStore, m.width, m.height); err != nil {
+	if err := m.userInput.Search.Enter(m.providerStore, m.width, m.height); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil
@@ -450,14 +450,14 @@ func handleToolCommand(ctx context.Context, m *model, args string) (string, tea.
 }
 
 func handleSkillCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if err := m.skill.Selector.EnterSelect(m.width, m.height); err != nil {
+	if err := m.userInput.Skill.Selector.EnterSelect(m.width, m.height); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil
 }
 
 func handleAgentCommand(ctx context.Context, m *model, args string) (string, tea.Cmd, error) {
-	if err := m.agent.EnterSelect(m.width, m.height); err != nil {
+	if err := m.userInput.Agent.EnterSelect(m.width, m.height); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil

@@ -7,7 +7,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,16 +17,13 @@ import (
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/app/user/agentui"
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
 	appmodal "github.com/yanmxa/gencode/internal/app/output/modal"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
-	"github.com/yanmxa/gencode/internal/app/user/searchui"
 	"github.com/yanmxa/gencode/internal/app/user/sessionui"
-	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/mcp"
@@ -35,19 +31,11 @@ import (
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/session"
-	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tool/tasktools"
 	"github.com/yanmxa/gencode/internal/filecache"
 )
 
-const (
-	defaultWidth = 80
-
-	// taskReminderThreshold is the number of LLM turns without any Task* tool use
-	// before a reminder is injected into the system prompt.
-	taskReminderThreshold = 5
-)
+const defaultWidth = 80
 
 type model struct {
 	// ── User Input ──────────────────────────────────────────────────────
@@ -58,13 +46,10 @@ type model struct {
 	showTasks        bool
 	provider         providerui.State
 	session          sessionui.State
-	skill            skillui.State
 	memory           appmemory.State
 	tool             toolui.State
 	mcp              mcpui.State
 	plugin           pluginui.Model
-	agent            agentui.Model
-	search           searchui.Model
 
 	// ── Agent Input ─────────────────────────────────────────────────────
 	agentInput appagent.State
@@ -218,40 +203,6 @@ func (m *model) effectiveThinkingLevel() llm.ThinkingLevel {
 	return max(m.thinkingLevel, m.thinkingOverride)
 }
 
-// buildTaskReminder returns a task reminder string if tasks exist and haven't
-// been updated for taskReminderThreshold turns. Returns empty string otherwise.
-func (m *model) buildTaskReminder() string {
-	if m.conv.TurnsSinceLastTaskTool < taskReminderThreshold {
-		return ""
-	}
-	tasks := tracker.DefaultStore.List()
-	if len(tasks) == 0 {
-		return ""
-	}
-
-	// Check if all tasks are completed
-	allDone := true
-	for _, t := range tasks {
-		if t.Status != tracker.StatusCompleted {
-			allDone = false
-			break
-		}
-	}
-	if allDone {
-		return ""
-	}
-
-	// Build reminder with current task list
-	var sb strings.Builder
-	sb.WriteString("<task-reminder>\n")
-	sb.WriteString("You have active tasks that haven't been updated recently. Consider updating task status:\n")
-	for _, t := range tasks {
-		sb.WriteString(fmt.Sprintf("  %s #%s: %s [%s]\n", tasktools.TaskIcon(t), t.ID, t.Subject, t.Status))
-	}
-	sb.WriteString("Use TaskUpdate to mark tasks as in_progress when starting or completed when done.\n")
-	sb.WriteString("</task-reminder>")
-	return sb.String()
-}
 
 func (m model) getModelID() string {
 	if m.currentModel != nil {

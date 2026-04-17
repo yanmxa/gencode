@@ -15,7 +15,7 @@ type PastedChunk struct {
 	LineCount int    // total line count
 }
 
-// Model holds all input-related state: textarea, history, suggestions, and images.
+// Model holds all input-related state: textarea, history, suggestions, images, and selectors.
 type Model struct {
 	Textarea       textarea.Model
 	History        []string
@@ -29,6 +29,11 @@ type Model struct {
 	QueueSelectIdx int    // -1 = no selection, 0+ = selected queue item index
 	QueueTempInput string // stashed input when navigating into queue
 	Queue          Queue
+
+	// Selectors / overlays
+	Agent    AgentSelector
+	Search   SearchSelector
+	Skill    SkillState
 }
 
 // PendingImage holds an inline image token and its provider payload.

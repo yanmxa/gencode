@@ -9,7 +9,6 @@ import (
 	"go.uber.org/zap"
 
 	appagent "github.com/yanmxa/gencode/internal/app/agent"
-	"github.com/yanmxa/gencode/internal/app/user/agentui"
 	appapproval "github.com/yanmxa/gencode/internal/app/user/approval"
 	appconv "github.com/yanmxa/gencode/internal/app/output/conversation"
 	"github.com/yanmxa/gencode/internal/app/user/mcpui"
@@ -19,9 +18,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/output/progress"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
-	"github.com/yanmxa/gencode/internal/app/user/searchui"
 	"github.com/yanmxa/gencode/internal/app/user/sessionui"
-	"github.com/yanmxa/gencode/internal/app/user/skillui"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	appsystem "github.com/yanmxa/gencode/internal/app/system"
 	"github.com/yanmxa/gencode/internal/app/output/toolui"
@@ -105,8 +102,13 @@ func newModel(opts setting.RunOptions) (*model, error) {
 func newBaseModel() model {
 	progressHub := progress.NewHub(100)
 
+	userInput := appuser.New(appCwd, defaultWidth, commandSuggestionMatcher())
+	userInput.Agent = appuser.NewAgentSelector(subagent.DefaultRegistry)
+	userInput.Search = appuser.NewSearchSelector()
+	userInput.Skill = appuser.SkillState{Selector: appuser.NewSkillSelector(skill.DefaultRegistry)}
+
 	return model{
-		userInput:   appuser.New(appCwd, defaultWidth, commandSuggestionMatcher()),
+		userInput:   userInput,
 		agentOutput: appoutput.New(defaultWidth, progressHub),
 		conv:        appconv.New(),
 		cwd:         appCwd,
@@ -125,14 +127,11 @@ func newBaseModel() model {
 
 		provider: newProviderState(),
 		session:  newSessionState(),
-		skill:    newSkillState(),
 		memory:   newMemoryState(),
 		mode:     newModeState(),
 		tool:     newToolState(),
 		mcp:      newMCPState(),
 		plugin:   newPluginState(),
-		agent:    newAgentState(),
-		search:   newSearchState(),
 		approval: appapproval.New(),
 		isGit:    setting.IsGitRepo(appCwd),
 
@@ -168,10 +167,6 @@ func newSessionState() sessionui.State {
 	}
 }
 
-func newSkillState() skillui.State {
-	return skillui.State{Selector: skillui.New(skill.DefaultRegistry)}
-}
-
 func newMemoryState() appmemory.State {
 	return appmemory.State{Selector: appmemory.New()}
 }
@@ -194,14 +189,6 @@ func newMCPState() mcpui.State {
 
 func newPluginState() pluginui.Model {
 	return pluginui.New(plugin.DefaultRegistry)
-}
-
-func newAgentState() agentui.Model {
-	return agentui.New(subagent.DefaultRegistry)
-}
-
-func newSearchState() searchui.Model {
-	return searchui.New()
 }
 
 func (m *model) applyRunOptions(opts setting.RunOptions) error {

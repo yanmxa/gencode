@@ -1,5 +1,4 @@
-// Package skill provides the skill selector feature.
-package skillui
+package user
 
 import (
 	"fmt"
@@ -8,63 +7,63 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	coreskill "github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	coreskill "github.com/yanmxa/gencode/internal/skill"
 )
 
-// item represents a skill in the kit.
-type item struct {
-	Name        string // Base name
-	Namespace   string // Optional namespace
+type skillItem struct {
+	Name        string
+	Namespace   string
 	Description string
-	Hint        string // argument-hint
+	Hint        string
 	State       coreskill.SkillState
 	Scope       coreskill.SkillScope
 }
 
-// FullName returns the namespaced skill name (namespace:name or just name).
-func (s *item) FullName() string {
+func (s *skillItem) FullName() string {
 	if s.Namespace != "" {
 		return s.Namespace + ":" + s.Name
 	}
 	return s.Name
 }
 
-// Model holds state for the skill selector.
-type Model struct {
+type SkillCycleMsg struct {
+	SkillName string
+	NewState  coreskill.SkillState
+}
+
+type SkillInvokeMsg struct {
+	SkillName string
+}
+
+type SkillSelector struct {
 	registry       *coreskill.Registry
 	active         bool
-	skills         []item
-	filteredSkills []item
+	skills         []skillItem
+	filteredSkills []skillItem
 	nav            kit.ListNav
 	width          int
 	height         int
 	saveLevel      kit.SaveLevel
 }
 
-// CycleMsg is sent when a skill's state is cycled.
-type CycleMsg struct {
-	SkillName string
-	NewState  coreskill.SkillState
+type SkillState struct {
+	Selector            SkillSelector
+	PendingInstructions string
+	PendingArgs         string
+	ActiveInvocation    string
 }
 
-// InvokeMsg is sent when a skill is invoked from the kit.
-type InvokeMsg struct {
-	SkillName string
-}
-
-// New creates a new skill selector Model.
-func New(reg *coreskill.Registry) Model {
-	return Model{
+func NewSkillSelector(reg *coreskill.Registry) SkillSelector {
+	return SkillSelector{
 		registry: reg,
 		active:   false,
-		skills:   []item{},
+		skills:   []skillItem{},
 		nav:      kit.ListNav{MaxVisible: 10},
 	}
 }
 
-// EnterSelect enters skill selection mode.
-func (s *Model) EnterSelect(width, height int) error {
+func (s *SkillSelector) EnterSelect(width, height int) error {
 	if s.registry == nil {
 		return fmt.Errorf("skill registry not initialized")
 	}
@@ -72,13 +71,13 @@ func (s *Model) EnterSelect(width, height int) error {
 	allSkills := s.registry.List()
 	levelStates := s.registry.GetStatesAt(s.saveLevel == kit.SaveLevelUser)
 
-	s.skills = make([]item, 0, len(allSkills))
+	s.skills = make([]skillItem, 0, len(allSkills))
 	for _, sk := range allSkills {
 		state := sk.State
 		if levelState, ok := levelStates[sk.FullName()]; ok {
 			state = levelState
 		}
-		s.skills = append(s.skills, item{
+		s.skills = append(s.skills, skillItem{
 			Name:        sk.Name,
 			Namespace:   sk.Namespace,
 			Description: sk.Description,
@@ -98,8 +97,7 @@ func (s *Model) EnterSelect(width, height int) error {
 	return nil
 }
 
-// reloadSkillStates reloads skill states from the current save level.
-func (s *Model) reloadSkillStates() {
+func (s *SkillSelector) reloadSkillStates() {
 	if s.registry == nil {
 		return
 	}
@@ -117,27 +115,24 @@ func (s *Model) reloadSkillStates() {
 	s.updateFilter()
 }
 
-// IsActive returns whether the selector is active.
-func (s *Model) IsActive() bool {
+func (s *SkillSelector) IsActive() bool {
 	return s.active
 }
 
-// Cancel cancels the kit.
-func (s *Model) Cancel() {
+func (s *SkillSelector) Cancel() {
 	s.active = false
-	s.skills = []item{}
-	s.filteredSkills = []item{}
+	s.skills = []skillItem{}
+	s.filteredSkills = []skillItem{}
 	s.nav.Reset()
 	s.nav.Total = 0
 }
 
-// updateFilter filters skills based on search query (fuzzy match).
-func (s *Model) updateFilter() {
+func (s *SkillSelector) updateFilter() {
 	if s.nav.Search == "" {
 		s.filteredSkills = s.skills
 	} else {
 		query := strings.ToLower(s.nav.Search)
-		s.filteredSkills = make([]item, 0)
+		s.filteredSkills = make([]skillItem, 0)
 		for _, sk := range s.skills {
 			if kit.FuzzyMatch(strings.ToLower(sk.FullName()), query) ||
 				kit.FuzzyMatch(strings.ToLower(sk.Name), query) ||
@@ -150,8 +145,7 @@ func (s *Model) updateFilter() {
 	s.nav.Total = len(s.filteredSkills)
 }
 
-// CycleState cycles the state of the currently selected skill.
-func (s *Model) CycleState() tea.Cmd {
+func (s *SkillSelector) CycleState() tea.Cmd {
 	if len(s.filteredSkills) == 0 || s.nav.Selected >= len(s.filteredSkills) {
 		return nil
 	}
@@ -174,16 +168,14 @@ func (s *Model) CycleState() tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		return CycleMsg{
+		return SkillCycleMsg{
 			SkillName: fullName,
 			NewState:  newState,
 		}
 	}
 }
 
-// HandleKeypress handles a keypress and returns a command if needed.
-func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
-	// Tab toggles save level
+func (s *SkillSelector) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	if key.Type == tea.KeyTab {
 		if s.saveLevel == kit.SaveLevelProject {
 			s.saveLevel = kit.SaveLevelUser
@@ -194,12 +186,10 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	// Enter cycles the state
 	if key.Type == tea.KeyEnter {
 		return s.CycleState()
 	}
 
-	// Delegate navigation and search to ListNav
 	searchChanged, consumed := s.nav.HandleKey(key)
 	if searchChanged {
 		s.updateFilter()
@@ -208,7 +198,6 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	// Esc with empty search — dismiss
 	if key.Type == tea.KeyEsc {
 		s.Cancel()
 		return func() tea.Msg { return kit.DismissedMsg{} }
@@ -217,29 +206,20 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// calculateSkillBoxWidth returns the constrained box width for skill kit.
-func calculateSkillBoxWidth(screenWidth int) int {
-	boxWidth := screenWidth * 80 / 100
-	return max(60, boxWidth)
-}
-
-// Render renders the skill kit.
-func (s *Model) Render() string {
+func (s *SkillSelector) Render() string {
 	if !s.active {
 		return ""
 	}
 
 	var sb strings.Builder
 
-	boxWidth := calculateSkillBoxWidth(s.width)
+	boxWidth := max(60, s.width*80/100)
 
-	// Title with count and save level indicator
 	levelIndicator := fmt.Sprintf("[%s]", s.saveLevel.String())
 	title := fmt.Sprintf("Manage Skills (%d/%d)  %s", len(s.filteredSkills), len(s.skills), levelIndicator)
 	sb.WriteString(kit.SelectorTitleStyle().Render(title))
 	sb.WriteString("\n")
 
-	// Search input box
 	searchPrompt := "\U0001f50d "
 	if s.nav.Search == "" {
 		sb.WriteString(kit.SelectorHintStyle().Render(searchPrompt + "Type to filter..."))
@@ -254,10 +234,8 @@ func (s *Model) Render() string {
 	} else {
 		startIdx, endIdx := s.nav.VisibleRange()
 
-		// Content width is box width minus border (2) and padding (4)
 		contentWidth := boxWidth - 6
 
-		// Calculate max name width from visible skills for proper alignment
 		maxNameWidth := 0
 		for i := startIdx; i < endIdx; i++ {
 			nameLen := len(s.filteredSkills[i].FullName())
@@ -265,7 +243,7 @@ func (s *Model) Render() string {
 				maxNameWidth = nameLen
 			}
 		}
-		maxNameWidth += 5 // space for [P] indicator
+		maxNameWidth += 5
 		maxNameWidth = max(15, min(30, maxNameWidth))
 
 		if startIdx > 0 {

@@ -91,7 +91,6 @@ func handlePostInfer(rt Runtime, ev core.Event) tea.Cmd {
 
 	rt.SetTokenCounts(resp.TokensIn, resp.TokensOut)
 	rt.ClearWarningSuppressed()
-	rt.IncrementTurnCounter()
 
 	if resp.ThinkingSignature != "" {
 		rt.SetLastThinkingSignature(resp.ThinkingSignature)
@@ -128,11 +127,6 @@ func handlePostTool(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	sideEffect := tool.PopSideEffect(tr.ToolCallID)
 	if sideEffect != nil {
 		rt.ApplyToolSideEffects(tr.ToolName, sideEffect)
-	}
-
-	// Track task tools for reminder nudges
-	if isTaskTool(tr.ToolName) {
-		rt.ResetTurnCounter()
 	}
 
 	// Clean up agent progress display
@@ -232,14 +226,6 @@ func handleAgentStopped(rt Runtime, m *Model, err error) tea.Cmd {
 
 // --- Utilities ---
 
-// isTaskTool returns true if the tool name is a task management tool.
-func isTaskTool(name string) bool {
-	switch name {
-	case tool.ToolTaskCreate, tool.ToolTaskGet, tool.ToolTaskUpdate, tool.ToolTaskList:
-		return true
-	}
-	return false
-}
 
 // --- Progress handling (operates on output Model directly) ---
 

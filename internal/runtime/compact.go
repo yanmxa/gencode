@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/core/system"
 	"github.com/yanmxa/gencode/internal/llm"
 )
 

@@ -1,22 +1,21 @@
-// Package searchui provides the search engine provider kit.
-package searchui
+package user
 
 import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/search"
 	"github.com/yanmxa/gencode/internal/setting"
-	"github.com/yanmxa/gencode/internal/app/kit"
 )
 
-// item represents a search provider in the kit.
-type item struct {
+type searchItem struct {
 	Name        search.ProviderName
 	DisplayName string
 	EnvVars     []string
@@ -24,28 +23,24 @@ type item struct {
 	IsCurrent   bool
 }
 
-// SelectedMsg is sent when a search provider is selected.
-type SelectedMsg struct {
+type SearchSelectedMsg struct {
 	Provider search.ProviderName
 }
 
-// Model holds state for the search engine kit.
-type Model struct {
+type SearchSelector struct {
 	active      bool
-	items       []item
+	items       []searchItem
 	selectedIdx int
 	width       int
 	height      int
 	store       *llm.Store
 }
 
-// New creates a new search selector Model.
-func New() Model {
-	return Model{}
+func NewSearchSelector() SearchSelector {
+	return SearchSelector{}
 }
 
-// Enter activates the search kit.
-func (s *Model) Enter(store *llm.Store, width, height int) error {
+func (s *SearchSelector) Enter(store *llm.Store, width, height int) error {
 	if store == nil {
 		var err error
 		store, err = llm.NewStore()
@@ -56,11 +51,11 @@ func (s *Model) Enter(store *llm.Store, width, height int) error {
 
 	currentName := store.GetSearchProvider()
 	if currentName == "" {
-		currentName = string(search.ProviderExa) // default
+		currentName = string(search.ProviderExa)
 	}
 
 	allMeta := search.AllProviders()
-	s.items = make([]item, 0, len(allMeta))
+	s.items = make([]searchItem, 0, len(allMeta))
 	for _, meta := range allMeta {
 		available := !meta.RequiresAPIKey
 		if !available {
@@ -71,7 +66,7 @@ func (s *Model) Enter(store *llm.Store, width, height int) error {
 				}
 			}
 		}
-		s.items = append(s.items, item{
+		s.items = append(s.items, searchItem{
 			Name:        meta.Name,
 			DisplayName: meta.DisplayName,
 			EnvVars:     meta.EnvVars,
@@ -86,7 +81,6 @@ func (s *Model) Enter(store *llm.Store, width, height int) error {
 	s.height = height
 	s.store = store
 
-	// Pre-select current provider
 	for i, item := range s.items {
 		if item.IsCurrent {
 			s.selectedIdx = i
@@ -97,28 +91,25 @@ func (s *Model) Enter(store *llm.Store, width, height int) error {
 	return nil
 }
 
-// IsActive returns whether the selector is active.
-func (s *Model) IsActive() bool {
+func (s *SearchSelector) IsActive() bool {
 	return s.active
 }
 
-// Cancel closes the kit.
-func (s *Model) Cancel() {
+func (s *SearchSelector) Cancel() {
 	s.active = false
 	s.items = nil
 	s.selectedIdx = 0
 	s.store = nil
 }
 
-// Select selects the current provider and persists the choice.
-func (s *Model) Select() tea.Cmd {
+func (s *SearchSelector) Select() tea.Cmd {
 	if s.selectedIdx >= len(s.items) {
 		return nil
 	}
 
 	selected := s.items[s.selectedIdx]
 	if !selected.Available {
-		return nil // can't select unavailable provider
+		return nil
 	}
 
 	if setting.DefaultSetup != nil {
@@ -128,18 +119,16 @@ func (s *Model) Select() tea.Cmd {
 		_ = s.store.SetSearchProvider(string(selected.Name))
 	}
 
-	// Update current markers
 	for i := range s.items {
 		s.items[i].IsCurrent = s.items[i].Name == selected.Name
 	}
 
 	return func() tea.Msg {
-		return SelectedMsg{Provider: selected.Name}
+		return SearchSelectedMsg{Provider: selected.Name}
 	}
 }
 
-// HandleKeypress handles keyboard input.
-func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
+func (s *SearchSelector) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	switch key.Type {
 	case tea.KeyUp, tea.KeyCtrlP:
 		if s.selectedIdx > 0 {
@@ -160,7 +149,6 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		}
 	}
 
-	// Vim keys
 	switch key.String() {
 	case "j":
 		if s.selectedIdx < len(s.items)-1 {
@@ -175,8 +163,7 @@ func (s *Model) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// Render renders the search engine kit.
-func (s *Model) Render() string {
+func (s *SearchSelector) Render() string {
 	if !s.active {
 		return ""
 	}
@@ -185,11 +172,9 @@ func (s *Model) Render() string {
 
 	dimStyle := kit.DimStyle()
 
-	// Title
 	sb.WriteString(kit.SelectorTitleStyle().Render("Search Engine"))
 	sb.WriteString("\n\n")
 
-	// Provider list
 	const nameCol = 20
 	for i, item := range s.items {
 		isSelected := i == s.selectedIdx
@@ -221,4 +206,20 @@ func (s *Model) Render() string {
 	box := kit.SelectorBorderStyle().Width(boxWidth).Render(content)
 
 	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)
+}
+
+// --- Search Runtime ---
+
+type SearchRuntime interface {
+	SetProviderStatusMessage(msg string)
+}
+
+func UpdateSearch(rt SearchRuntime, state *SearchSelector, msg tea.Msg) (tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case SearchSelectedMsg:
+		state.Cancel()
+		rt.SetProviderStatusMessage(fmt.Sprintf("Search engine: %s", msg.Provider))
+		return kit.StatusTimer(3 * time.Second), true
+	}
+	return nil, false
 }

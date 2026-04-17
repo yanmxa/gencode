@@ -16,7 +16,6 @@ import (
 	appmemory "github.com/yanmxa/gencode/internal/app/user/memory"
 	"github.com/yanmxa/gencode/internal/app/user/pluginui"
 	"github.com/yanmxa/gencode/internal/app/user/providerui"
-	"github.com/yanmxa/gencode/internal/app/user/searchui"
 	"github.com/yanmxa/gencode/internal/app/user/sessionui"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/image"
@@ -38,7 +37,7 @@ func (m *model) updateProvider(msg tea.Msg) (tea.Cmd, bool) {
 	return providerui.Update(m, &m.provider, msg)
 }
 func (m *model) updateSearch(msg tea.Msg) (tea.Cmd, bool) {
-	return searchui.Update(m, &m.search, msg)
+	return appuser.UpdateSearch(m, &m.userInput.Search, msg)
 }
 func (m *model) updateSession(msg tea.Msg) (tea.Cmd, bool) {
 	return sessionui.Update(m, &m.session, msg)
@@ -191,22 +190,22 @@ func (m *model) detectThinkingKeywords(input string) {
 func (m *model) handleSkillInvocation() tea.Cmd {
 	if m.llmProvider == nil {
 		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "No provider connected. Use /provider to connect."})
-		m.skill.PendingInstructions = ""
-		m.skill.PendingArgs = ""
+		m.userInput.Skill.PendingInstructions = ""
+		m.userInput.Skill.PendingArgs = ""
 		return tea.Batch(m.commitMessages()...)
 	}
 
-	userMsg := m.skill.PendingArgs
+	userMsg := m.userInput.Skill.PendingArgs
 	if userMsg == "" {
 		userMsg = "Execute the skill."
 	}
 	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: userMsg})
 
-	if m.skill.PendingInstructions != "" {
-		m.skill.ActiveInvocation = m.skill.PendingInstructions
-		m.skill.PendingInstructions = ""
+	if m.userInput.Skill.PendingInstructions != "" {
+		m.userInput.Skill.ActiveInvocation = m.userInput.Skill.PendingInstructions
+		m.userInput.Skill.PendingInstructions = ""
 	}
-	m.skill.PendingArgs = ""
+	m.userInput.Skill.PendingArgs = ""
 
 	return m.sendToAgent(userMsg, nil)
 }

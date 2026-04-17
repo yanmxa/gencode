@@ -39,12 +39,10 @@ type ToolSideEffects interface {
 	PersistOverflow(result *core.ToolResult)
 }
 
-// TurnMetrics tracks token counts, turn counters, and transient per-turn state.
+// TurnMetrics tracks token counts and transient per-turn state.
 type TurnMetrics interface {
 	SetTokenCounts(in, out int)
 	ClearWarningSuppressed()
-	IncrementTurnCounter()
-	ResetTurnCounter()
 	ClearThinkingOverride()
 }
 

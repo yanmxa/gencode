@@ -66,8 +66,6 @@ func (m *model) SetTokenCounts(in, out int) {
 	m.outputTokens = out
 }
 func (m *model) ClearWarningSuppressed() { m.conv.Compact.WarningSuppressed = false }
-func (m *model) IncrementTurnCounter()   { m.conv.TurnsSinceLastTaskTool++ }
-func (m *model) ResetTurnCounter()       { m.conv.TurnsSinceLastTaskTool = 0 }
 func (m *model) ClearThinkingOverride()  { m.thinkingOverride = llm.ThinkingOff }
 func (rt outputRuntime) ContinueOutbox() tea.Cmd {
 	return rt.model.outputContinueOutbox()
@@ -647,7 +645,6 @@ func (m *model) loadSession(id string) error {
 
 	m.inputTokens = 0
 	m.outputTokens = 0
-	m.conv.TurnsSinceLastTaskTool = 0
 
 	return nil
 }

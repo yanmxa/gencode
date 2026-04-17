@@ -83,7 +83,7 @@ func (m *model) executeSubmitRequest(req submitRequest) tea.Cmd {
 		return cmd
 	}
 
-	m.skill.ActiveInvocation = ""
+	m.userInput.Skill.ActiveInvocation = ""
 	plugin.ClearActivePluginRoot()
 
 	userMsg, cmd, handled := m.prepareSubmittedUserMessage(req.Input)
