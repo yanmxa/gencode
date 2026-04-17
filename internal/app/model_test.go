@@ -104,7 +104,7 @@ func TestHasAllToolResultsAllowsInterleavedNotices(t *testing.T) {
 }
 
 func TestViewRendersCompactStatusCard(t *testing.T) {
-	m := newBaseModel(t.TempDir(), modelInfra{})
+	m := newBaseModel(modelInfra{cwd: t.TempDir(),})
 	m.ready = true
 	m.width = 100
 	m.conv.Compact.Active = true
@@ -149,7 +149,7 @@ func TestFreshSessionInitializesTaskStorageAndOutputDir(t *testing.T) {
 	_ = tracker.DefaultStore.SetStorageDir("")
 	_ = task.SetOutputDir("")
 
-	m := newBaseModel(t.TempDir(), modelInfra{initialSessionID: "session-fresh-123"})
+	m := newBaseModel(modelInfra{cwd: t.TempDir(),initialSessionID: "session-fresh-123"})
 	if m.sessionID != "session-fresh-123" {
 		t.Fatalf("expected initial session id to propagate, got %q", m.sessionID)
 	}

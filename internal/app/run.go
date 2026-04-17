@@ -45,52 +45,55 @@ func initModel(opts config.RunOptions) (*model, error) {
 	if err != nil {
 		return nil, err
 	}
-	base := newBaseModel(infra)
-	m := &base
-	if m.hookEngine != nil && m.systemInput.AsyncHookQueue != nil {
-		queue := m.systemInput.AsyncHookQueue
-		m.hookEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
-			reason := result.BlockReason
-			if reason == "" {
-				reason = "asynchronous hook requested a rewake"
-			}
-			queue.Push(appsystem.AsyncHookRewake{
-				Notice:             fmt.Sprintf("Async hook blocked: %s", reason),
-				Context:            []string{formatAsyncHookContinuationContext(result, reason)},
-				ContinuationPrompt: "A background policy hook reported a blocking condition. Re-evaluate the plan and choose a safer next step.",
-			})
-		})
-	}
-
-	m.ensureMemoryContextLoaded()
-	m.reconfigureAgentTool()
-	if err := m.applyRunOptions(opts); err != nil {
+	m, err := newModel(infra, opts)
+	if err != nil {
 		return nil, err
 	}
-	m.initTaskStorage()
-
-	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hook.Setup, hook.HookInput{
-			Trigger: "init",
-		})
-		source := "startup"
-		if m.sessionID != "" {
-			source = "resume"
-		}
-		outcome := m.hookEngine.Execute(context.Background(), hook.SessionStart, hook.HookInput{
-			Source: source,
-			Model:  m.getModelID(),
-		})
-		m.applyRuntimeHookOutcome(outcome)
-		if outcome.AdditionalContext != "" {
-			m.conv.Append(core.ChatMessage{
-				Role:    core.RoleUser,
-				Content: outcome.AdditionalContext,
-			})
-		}
-	}
-
+	m.fireStartupHooks()
 	return m, nil
+}
+
+func (m *model) configureAsyncHookCallback() {
+	if m.hookEngine == nil || m.systemInput.AsyncHookQueue == nil {
+		return
+	}
+	queue := m.systemInput.AsyncHookQueue
+	m.hookEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
+		reason := result.BlockReason
+		if reason == "" {
+			reason = "asynchronous hook requested a rewake"
+		}
+		queue.Push(appsystem.AsyncHookRewake{
+			Notice:             fmt.Sprintf("Async hook blocked: %s", reason),
+			Context:            []string{formatAsyncHookContinuationContext(result, reason)},
+			ContinuationPrompt: "A background policy hook reported a blocking condition. Re-evaluate the plan and choose a safer next step.",
+		})
+	})
+}
+
+func (m *model) fireStartupHooks() {
+	if m.hookEngine == nil {
+		return
+	}
+	m.hookEngine.ExecuteAsync(hook.Setup, hook.HookInput{
+		Trigger: "init",
+	})
+
+	source := "startup"
+	if m.sessionID != "" {
+		source = "resume"
+	}
+	outcome := m.hookEngine.Execute(context.Background(), hook.SessionStart, hook.HookInput{
+		Source: source,
+		Model:  m.getModelID(),
+	})
+	m.applyRuntimeHookOutcome(outcome)
+	if outcome.AdditionalContext != "" {
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleUser,
+			Content: outcome.AdditionalContext,
+		})
+	}
 }
 
 func printExitMessage(m *model) {

@@ -372,7 +372,7 @@ func TestBuildPromptSuggestionRequest(t *testing.T) {
 }
 
 func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing.T) {
-	base := newBaseModel(t.TempDir(), modelInfra{})
+	base := newBaseModel(modelInfra{cwd: t.TempDir(),})
 	m := &base
 	m.agentOutput = appoutput.New(80, progress.NewHub(16))
 	m.conv = appconv.Model{

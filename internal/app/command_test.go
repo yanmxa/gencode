@@ -440,7 +440,7 @@ func TestHandleCommandSubmit_LoopDeleteAllPreservesLiteralInputAndDeletesJobs(t 
 	}
 
 	tmpDir := t.TempDir()
-	base := newBaseModel(tmpDir, modelInfra{})
+	base := newBaseModel(modelInfra{cwd: tmpDir,})
 	m := &model{
 		cwd:   tmpDir,
 		userInput: base.userInput,
@@ -470,7 +470,7 @@ func TestHandleCommandSubmit_LoopDeleteAllPreservesLiteralInputAndDeletesJobs(t 
 
 func TestHandleCommandSubmit_ToolsPreservesLiteralInput(t *testing.T) {
 	tmpDir := t.TempDir()
-	base := newBaseModel(tmpDir, modelInfra{})
+	base := newBaseModel(modelInfra{cwd: tmpDir,})
 	m := &model{
 		cwd:    tmpDir,
 		userInput: base.userInput,
@@ -503,7 +503,7 @@ func TestHandleCommandSubmit_LoopOncePlacesCommandBeforeNotice(t *testing.T) {
 	t.Cleanup(func() { cron.DefaultStore = prevStore })
 
 	tmpDir := t.TempDir()
-	base := newBaseModel(tmpDir, modelInfra{})
+	base := newBaseModel(modelInfra{cwd: tmpDir,})
 	m := &model{
 		cwd:       tmpDir,
 		userInput: base.userInput,
@@ -534,7 +534,7 @@ func TestHandleCommandSubmit_LoopRecurringPlacesCommandBeforeNoticeAndPrompt(t *
 	t.Cleanup(func() { cron.DefaultStore = prevStore })
 
 	tmpDir := t.TempDir()
-	base := newBaseModel(tmpDir, modelInfra{})
+	base := newBaseModel(modelInfra{cwd: tmpDir,})
 	m := &model{
 		cwd:       tmpDir,
 		userInput: base.userInput,
