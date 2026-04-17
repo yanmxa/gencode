@@ -7,7 +7,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/kit"
 	appuser "github.com/yanmxa/gencode/internal/app/user"
-	"github.com/yanmxa/gencode/internal/app/output/toolui"
+	appoutput "github.com/yanmxa/gencode/internal/app/output"
 	"github.com/yanmxa/gencode/internal/skill"
 )
 
@@ -67,7 +67,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case promptSuggestionMsg:
 		m.handlePromptSuggestion(msg)
 		return m, nil
-	case kit.DismissedMsg, toolui.ToggleMsg, appuser.SkillCycleMsg, appuser.AgentToggleMsg:
+	case kit.DismissedMsg, appoutput.ToggleMsg, appuser.SkillCycleMsg, appuser.AgentToggleMsg:
 		return m, nil
 	}
 
