@@ -115,22 +115,55 @@ Execute ────────────────────────
 
   Executors:
     Function → callback(ctx, input)
-    Command  → sh -c subprocess, stdin=JSON, stdout=JSON
+    Command  → sh -c subprocess (see below)
     HTTP     → POST JSON to URL, response body=JSON
     Prompt   → single LLM completion, response=JSON
 
-  Bidirectional mode (Command executor only):
-    During execution, a hook process can request input from the
-    caller by writing a PromptRequest to stdout. The engine pauses,
-    delegates to a PromptCallback (provided by app layer), writes
-    the response back to the hook's stdin, and the hook continues.
-    The hook decides the final Action based on the response.
-
-    Example: a PreTool hook asks "Allow rm -rf?" → app shows a
-    dialog → user says No → hook returns Deny. The hook controls
-    the outcome, not the engine.
-
   Output JSON is parsed and converted to core.Action.
+
+  Command executor modes:
+
+    Simple (one-shot):
+      engine starts process, pipes HookInput JSON to stdin,
+      waits for exit. stdout = final HookOutput JSON.
+
+    Bidirectional (interactive):
+      The hook process stays alive and communicates via a
+      stdin/stdout pipe protocol. Each stdout line is either
+      a PromptRequest (mid-execution interaction) or the final
+      HookOutput (last line before exit).
+
+      engine starts process, pipes HookInput JSON to stdin
+        │
+        ▼
+      hook reads input, decides it needs user confirmation
+        │
+        ▼
+      hook writes PromptRequest to stdout:
+        {"prompt":"confirm","message":"Allow rm -rf?",
+         "options":[{"key":"yes"},{"key":"no"}]}
+        │
+        ▼
+      engine reads PromptRequest, calls PromptCallback
+      (provided by app layer — TUI dialog, API, auto-approve)
+        │
+        ▼
+      engine writes PromptResponse to hook's stdin:
+        {"prompt_response":"confirm","selected":"no"}
+        │
+        ▼
+      hook reads response, makes its decision
+        │
+        ▼
+      hook writes final HookOutput to stdout:
+        {"continue":false,"stopReason":"User denied rm -rf"}
+        │
+        ▼
+      hook exits. engine parses output → Action{Deny, Reason}
+
+      The hook controls the outcome. The engine is just a
+      messenger between hook and caller. Multiple prompt
+      rounds are allowed before the final output.
 ───────────────────────────────────────────
   │
   ▼
