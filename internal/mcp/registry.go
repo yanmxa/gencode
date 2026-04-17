@@ -11,8 +11,19 @@ import (
 	"sync"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/plugin"
 )
+
+// PluginServer describes an MCP server contributed by a plugin.
+type PluginServer struct {
+	Name    string
+	Type    string
+	Command string
+	Args    []string
+	Env     map[string]string
+	URL     string
+	Headers map[string]string
+	Scope   Scope
+}
 
 // Registry manages multiple MCP server connections
 type Registry struct {
@@ -24,6 +35,10 @@ type Registry struct {
 	connectErr map[string]string // last connection error for servers without a client
 	loader     *ConfigLoader
 	cwd        string
+
+	// PluginServers returns MCP servers contributed by plugins. Injected by
+	// the app layer to avoid mcp importing plugin (same-layer dependency).
+	PluginServers func() []PluginServer
 
 	// Callback when tool schemas change
 	onToolsChanged func()
@@ -48,11 +63,17 @@ func newEmptyRegistry() *Registry {
 	}
 }
 
-// Initialize initializes the global MCP registry with the given working directory
-func Initialize(cwd string) error {
+// Initialize initializes the global MCP registry with the given working directory.
+// An optional PluginServers callback can be provided to inject plugin-contributed
+// MCP servers without requiring mcp to import the plugin package.
+func Initialize(cwd string, pluginServers ...func() []PluginServer) error {
 	reg, err := NewRegistry(cwd)
 	if err != nil {
 		return err
+	}
+	if len(pluginServers) > 0 && pluginServers[0] != nil {
+		reg.PluginServers = pluginServers[0]
+		reg.configs = reg.mergePluginMCPConfigs(reg.configs)
 	}
 	DefaultRegistry = reg
 	return nil
@@ -77,7 +98,6 @@ func NewRegistry(cwd string) (*Registry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load MCP configs: %w", err)
 	}
-	configs = mergePluginMCPConfigs(configs)
 
 	reg := &Registry{
 		clients:    make(map[string]*Client),
@@ -88,6 +108,7 @@ func NewRegistry(cwd string) (*Registry, error) {
 		loader:     loader,
 		cwd:        cwd,
 	}
+	reg.configs = reg.mergePluginMCPConfigs(configs)
 	reg.loadState()
 	return reg, nil
 }
@@ -100,7 +121,7 @@ func (r *Registry) Reload() error {
 	if err != nil {
 		return err
 	}
-	configs = mergePluginMCPConfigs(configs)
+	configs = r.mergePluginMCPConfigs(configs)
 
 	r.mu.Lock()
 	// Disconnect clients whose config was removed.
@@ -117,33 +138,25 @@ func (r *Registry) Reload() error {
 	return nil
 }
 
-func mergePluginMCPConfigs(configs map[string]ServerConfig) map[string]ServerConfig {
+func (r *Registry) mergePluginMCPConfigs(configs map[string]ServerConfig) map[string]ServerConfig {
 	merged := make(map[string]ServerConfig, len(configs))
 	maps.Copy(merged, configs)
-	for _, srv := range plugin.GetPluginMCPServers() {
+	if r.PluginServers == nil {
+		return merged
+	}
+	for _, srv := range r.PluginServers() {
 		merged[srv.Name] = ServerConfig{
 			Name:    srv.Name,
-			Type:    TransportType(srv.Config.Type),
-			Command: srv.Config.Command,
-			Args:    append([]string(nil), srv.Config.Args...),
-			Env:     maps.Clone(srv.Config.Env),
-			URL:     srv.Config.URL,
-			Headers: maps.Clone(srv.Config.Headers),
-			Scope:   pluginScopeToMCPScope(srv.Scope),
+			Type:    TransportType(srv.Type),
+			Command: srv.Command,
+			Args:    append([]string(nil), srv.Args...),
+			Env:     maps.Clone(srv.Env),
+			URL:     srv.URL,
+			Headers: maps.Clone(srv.Headers),
+			Scope:   srv.Scope,
 		}
 	}
 	return merged
-}
-
-func pluginScopeToMCPScope(scope plugin.Scope) Scope {
-	switch scope {
-	case plugin.ScopeProject:
-		return ScopeProject
-	case plugin.ScopeLocal:
-		return ScopeLocal
-	default:
-		return ScopeUser
-	}
 }
 
 // AddServer adds a new server configuration

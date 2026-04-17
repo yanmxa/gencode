@@ -2,19 +2,14 @@
 
 ## What It Does
 
-Hook Engine lets external code react to agent lifecycle events — intercept
-operations before they happen (deny a tool call, rewrite its input, set
-LLM context) or observe them after the fact (log, notify, audit).
+Hook Engine lets external code react to application events — intercept
+operations before they happen (deny a tool call, rewrite its input,
+control permissions) or observe them after the fact (log, notify, audit).
 
 External code can be a shell command, HTTP endpoint, LLM prompt, or
 in-memory Go function.
 
 ## Design Principles
-
-**Dual event pathway.** Agent lifecycle has two independent channels:
-`emit()` sends events to the Outbox for TUI rendering; `hooks.On()`
-fires extensibility hooks and returns `HookOutcome` to control behavior.
-They serve different purposes and do not interfere with each other.
 
 **Engine understands permissions.** The engine directly parses and returns
 permission-related fields (`PermissionDecision`, `UpdatedPermissions`).
@@ -24,77 +19,46 @@ is generic.
 ## Structure
 
 ```
-internal/core/                        internal/hook/
-┌──────────────────────────┐         ┌──────────────────────────────────┐
-│ Hooks interface          │◄─impl──│ Engine                           │
-│   Register / On / Wait   │         │                                  │
-│                          │         │  On(event):                      │
-│ Event { Type, Source }   │         │    match → execute → merge       │
-│                          │         │    → return HookOutcome          │
-│ HookOutcome:             │         │                                  │
-│   ShouldBlock bool       │         │                                  │
-│   BlockReason string     │         │                                  │
-│   AdditionalContext str  │         │                                  │
-│   UpdatedInput map       │         │                                  │
-│   PermissionDecision str │         │  "allow" | "deny" | "ask"       │
-│   UpdatedPermissions []  │         │  setMode/addRules/addDirs       │
-│   WatchPaths []string    │         │                                  │
-│   InitialUserMessage str │         │                                  │
-│   Retry bool             │         │                                  │
-└──────────────────────────┘         │  ExecuteAsync(event):            │
-                                     │    fire-and-forget, no result    │
-                                     ├──────────────────────────────────┤
-                                     │ Store     config + session hooks │
-                                     │ Matcher   2-layer filter         │
-                                     │ Status    active hook tracking   │
-                                     ├──────────────────────────────────┤
-                                     │ Executors                        │
-                                     │  Command  sh -c, stdin/stdout    │
-                                     │  HTTP     POST JSON to URL       │
-                                     │  Prompt   single LLM completion  │
-                                     │  Function in-memory callback     │
-                                     └──────────────────────────────────┘
+internal/hook/
+┌──────────────────────────────────────────┐
+│ Engine                                   │
+│                                          │
+│  Execute(event, input) → HookOutcome     │
+│  ExecuteAsync(event, input)              │
+│                                          │
+│ HookOutcome:                             │
+│   ShouldBlock bool                       │
+│   BlockReason string                     │
+│   AdditionalContext string               │
+│   UpdatedInput map[string]any            │
+│   PermissionDecision string              │
+│   UpdatedPermissions []PermissionUpdate  │
+│   WatchPaths []string                    │
+│   InitialUserMessage string              │
+│   Retry bool                             │
+├──────────────────────────────────────────┤
+│ Store     config + session hooks         │
+│ Matcher   2-layer filter                 │
+│ Status    active hook tracking           │
+├──────────────────────────────────────────┤
+│ Executors                                │
+│  Command  sh -c, stdin/stdout            │
+│  HTTP     POST JSON to URL               │
+│  Prompt   single LLM completion          │
+│  Function in-memory callback             │
+└──────────────────────────────────────────┘
 ```
 
-- `core/` defines the interface (`Hooks`, `Event`, `Action`). Zero external
-  imports. The Agent depends only on this.
-- `hook/` provides the implementation (`Engine`). Handles matching, execution,
-  output parsing. Depends on `setting/`, `llm/`, `plugin/`, `session/`.
-- `app/` wires them together: injects the Engine as `core.Hooks` into
-  the Agent. TUI rendering is driven by the Outbox (emit), not hooks.
+- `hook/` is a self-contained app-layer package. Handles matching,
+  execution, output parsing, permission field extraction.
+  Depends on `setting/`, `llm/`, `plugin/`, `session/`.
+- `app/` calls `hook.Engine` directly at app-layer event points
+  (tool execution, session lifecycle, permissions, etc.).
+- `core.Agent` has no dependency on hooks. Agent lifecycle events
+  (streaming, inference, tool progress) flow through the Outbox
+  for TUI rendering — a separate mechanism.
 
-## Agent Lifecycle Events
-
-The Agent has two event channels at each lifecycle point:
-
-- `emit(event)` — sends to Outbox for TUI rendering (always fires)
-- `hooks.On(event)` — fires extensibility hooks, returns HookOutcome (only at decision points)
-
-```
-core.Agent Run Loop
-  emit(PreInfer)                        → TUI: show "thinking..."
-  hooks.On(PreInfer)                    → HookOutcome: inject context
-  streamInfer()
-    emit(OnChunk)                       → TUI: render streaming tokens
-  emit(PostInfer)                       → TUI: update state
-  execTools()
-    emit(PreTool)                       → TUI: show tool name
-    hooks.On(PreTool)                   → HookOutcome: block | modify input
-    tool.Execute()
-    emit(PostTool)                      → TUI: show tool result
-  emit(OnTurn)                          → TUI: turn complete
-```
-
-`emit` is fire-and-forget to the Outbox channel — the TUI observes.
-`hooks.On` is synchronous — the returned HookOutcome controls agent behavior.
-
-## App-Layer Events
-
-Beyond agent lifecycle events, the app layer fires its own events via the
-hook engine. These cover session lifecycle, permissions, compaction, and
-system-level concerns.
-
-### Event Types
+## Event Types
 
 **24 hook event types:**
 
@@ -130,7 +94,7 @@ system-level concerns.
 Events that need a decision use sync execution (caller blocks).
 Events for observation use async execution (fire-and-forget).
 
-| Sync (blocks, returns Action) | Async (fire-and-forget) |
+| Sync (blocks, returns HookOutcome) | Async (fire-and-forget) |
 |-------------------------------|------------------------|
 | `PreToolUse` | `PostToolUse` |
 | `PermissionRequest` | `PostToolUseFailure` |
@@ -146,7 +110,7 @@ Events for observation use async execution (fire-and-forget).
 
 ## Execution Pipeline
 
-When `On(event)` is called, the engine runs three phases:
+When `Execute(event, input)` is called, the engine runs three phases:
 
 ```
 Match ─────────────────────────────────────
@@ -247,31 +211,35 @@ engine.ClearSessionHooks()
 There is no runtime-scoped hook layer. All non-config hooks are
 session-scoped and cleared when the session ends.
 
-## Async Hooks
+## Execution Modes
 
-Three modes:
+| Mode | Config | Behavior |
+|------|--------|----------|
+| **Sync** | (default) | Caller blocks. Results merge. Can short-circuit via `ShouldBlock=true`. |
+| **Async** | `async: true` | Background goroutine, result discarded. For observation only. |
+| **AsyncRewake** | `asyncRewake: true` | Background, but if it blocks (exit code 2), queues a notice for the model (see below). |
 
-**Sync** (default) — caller blocks, results merge. Used when the caller
-needs a decision. Any hook can short-circuit the chain via `ShouldBlock=true`.
+**AsyncRewake** solves a specific problem: hooks that are too slow to
+block the conversation, but whose results matter if they find issues.
 
-**Async** (`async: true`) — background goroutine, result discarded. Used
-for observation (logging, notifications, auditing).
-
-**AsyncRewake** (`asyncRewake: true`) — async variant where a blocking
-result (exit code 2) feeds back into the agent. Driven by Bubble Tea's
-constraint that external goroutines cannot push into the MVU loop directly:
+Example — a security scan hook on `Stop`:
 
 ```
-background hook blocks (exit 2) → AsyncHookCallback → TUI queue
-  → ticker polls (500ms) → pop when idle → inject into agent conversation
+1. Model completes response, about to idle
+2. AsyncRewake hook runs security scan in background (30s)
+3. User can keep typing — conversation not blocked
+4. Scan finishes:
+   - Clean → silent, same as async
+   - Found vulnerability (exit 2) → notice queued → model wakes up and fixes it
 ```
 
-First-line async detection: if a command hook's first stdout line is
-`{"async": true}`, the engine detaches it to run in background.
+Sync would freeze the conversation for 30s. Async would discard the
+result. AsyncRewake is the middle ground.
 
-`asyncRewake` differs from first-line `{"async":true}` detach: it is
-configured declaratively in settings and only triggers a re-wake when
-the background hook finishes with a blocking result.
+Implementation: the TUI polls a queue every 500ms. When the model is
+idle, it pops the notice and injects it as a user message to resume
+the conversation. This indirection exists because Bubble Tea's MVU
+loop does not allow external goroutines to push messages directly.
 
 ## Hook Input/Output
 
@@ -409,9 +377,9 @@ defines `Stop` hooks, all user-level `Stop` hooks are replaced.
 ## Dependencies
 
 ```
-app/ → hook/ → core/
-                 ↑
-                 zero deps — Agent depends only on this
+app/ → hook/
+         ↓
+       setting/, llm/, plugin/, session/
 
-hook/ also depends on: setting/, llm/, plugin/, session/
+core.Agent has no hook dependency.
 ```

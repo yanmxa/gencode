@@ -672,13 +672,13 @@ func setTokenLimits(m *model, modelID, args string) (string, tea.Cmd, error) {
 func showOrFetchTokenLimits(m *model, modelID string) (string, tea.Cmd, error) {
 	if m.runtime.ProviderStore != nil {
 		if customInput, customOutput, ok := m.runtime.ProviderStore.GetTokenLimit(modelID); ok {
-			return appoutput.FormatTokenLimitDisplay(modelID, customInput, customOutput, true, m.runtime.InputTokens), nil, nil
+			return formatTokenLimitDisplay(modelID, customInput, customOutput, true, m.runtime.InputTokens), nil, nil
 		}
 	}
 
 	inputLimit, outputLimit := appoutput.GetModelTokenLimits(m.runtime.ProviderStore, m.runtime.CurrentModel)
 	if inputLimit > 0 || outputLimit > 0 {
-		return appoutput.FormatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m.runtime.InputTokens), nil, nil
+		return formatTokenLimitDisplay(modelID, inputLimit, outputLimit, false, m.runtime.InputTokens), nil, nil
 	}
 
 	m.userInput.Provider.FetchingLimits = true

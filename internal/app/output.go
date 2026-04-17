@@ -756,7 +756,7 @@ func suggestPromptCmd(req promptSuggestionRequest) tea.Cmd {
 }
 
 func fetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.Cmd {
-	deps := appoutput.AutoFetchTokenLimitsDeps{
+	deps := autoFetchTokenLimitsDeps{
 		LLM:          req.LLM,
 		Store:        req.Store,
 		CurrentModel: req.CurrentModel,
@@ -765,7 +765,7 @@ func fetchTokenLimitsCmd(req tokenLimitFetchRequest) tea.Cmd {
 	}
 	ctx := req.Ctx
 	return func() tea.Msg {
-		result, err := appoutput.AutoFetchTokenLimits(ctx, deps)
+		result, err := autoFetchTokenLimits(ctx, deps)
 		return appoutput.TokenLimitResultMsg{Result: result, Error: err}
 	}
 }

@@ -304,7 +304,7 @@ internal/app/
 │   ├── view.go                     #   chat messages, streaming, tool results
 │   ├── on_conversation.go          #   message history, stream state
 │   ├── on_modal.go                 #   plan approval, question prompts
-│   ├── on_compact.go               #   context compaction
+│   ├── on_compact.go               #   compact state + token limit helpers (no tool dispatch)
 │   ├── on_tool.go                  #   tool selector + execution state
 │   ├── on_progress.go              #   progress hub for background agents
 │   ├── on_message.go               #   message rendering

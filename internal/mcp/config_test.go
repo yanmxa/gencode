@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/yanmxa/gencode/internal/plugin"
 )
 
 func TestConfigLoader_SaveAndLoad(t *testing.T) {
@@ -324,24 +322,17 @@ func TestConfigLoader_RemoveServerFromAll_RemovesEveryScope(t *testing.T) {
 }
 
 func TestNewRegistry_IncludesPluginServers(t *testing.T) {
-	prevRegistry := plugin.DefaultRegistry
-	plugin.DefaultRegistry = plugin.NewRegistry()
-	t.Cleanup(func() { plugin.DefaultRegistry = prevRegistry })
-
-	plugin.DefaultRegistry.Register(&plugin.Plugin{
-		Manifest: plugin.Manifest{Name: "demo"},
-		Enabled:  true,
-		Components: plugin.Components{
-			MCP: map[string]plugin.MCPServerConfig{
-				"db": {Command: "echo"},
-			},
-		},
-	})
-
 	reg, err := NewRegistry(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewRegistry() error = %v", err)
 	}
+
+	reg.PluginServers = func() []PluginServer {
+		return []PluginServer{
+			{Name: "demo:db", Command: "echo"},
+		}
+	}
+	reg.configs = reg.mergePluginMCPConfigs(reg.configs)
 
 	cfg, ok := reg.GetConfig("demo:db")
 	if !ok {

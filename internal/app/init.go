@@ -215,7 +215,7 @@ func (m *model) reloadPluginBackedState() error {
 	command.SetDynamicInfoProviders(skillCommandInfos)
 	command.Initialize(m.cwd)
 	subagent.Initialize(m.cwd)
-	mcp.Initialize(m.cwd)
+	mcp.Initialize(m.cwd, pluginMCPServers)
 
 	setting.Initialize(m.cwd)
 	m.runtime.Settings = setting.DefaultSetup
@@ -293,9 +293,29 @@ func initExtensions(cwd string) {
 	if err := subagent.Initialize(cwd); err != nil {
 		log.Logger().Warn("Failed to initialize subagent", zap.Error(err))
 	}
-	if err := mcp.Initialize(cwd); err != nil {
+	if err := mcp.Initialize(cwd, pluginMCPServers); err != nil {
 		log.Logger().Warn("Failed to initialize mcp", zap.Error(err))
 	}
+}
+
+// pluginMCPServers adapts plugin.GetPluginMCPServers() to the mcp.PluginServer
+// type so that the mcp package doesn't import plugin directly.
+func pluginMCPServers() []mcp.PluginServer {
+	pServers := plugin.GetPluginMCPServers()
+	servers := make([]mcp.PluginServer, len(pServers))
+	for i, s := range pServers {
+		servers[i] = mcp.PluginServer{
+			Name:    s.Name,
+			Type:    string(s.Config.Type),
+			Command: s.Config.Command,
+			Args:    append([]string(nil), s.Config.Args...),
+			Env:     s.Config.Env,
+			URL:     s.Config.URL,
+			Headers: s.Config.Headers,
+			Scope:   mcp.Scope(s.Scope),
+		}
+	}
+	return servers
 }
 
 // agentRegistryAdapter adapts *subagent.Registry to the appuser.AgentRegistry
