@@ -13,16 +13,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/conv"
-	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/app/input"
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/command"
-	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/cron"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -665,5 +665,5 @@ func handleCompactCommand(ctx context.Context, m *model, args string) (string, t
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = strings.TrimSpace(args)
 	m.conv.Compact.Phase = conv.PhaseSummarizing
-	return "", tea.Batch(m.agentOutput.Spinner.Tick, compactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
+	return "", tea.Batch(m.agentOutput.Spinner.Tick, conv.CompactCmd(m.buildCompactRequest(m.conv.Compact.Focus, "manual"))), nil
 }

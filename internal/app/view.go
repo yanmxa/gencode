@@ -7,8 +7,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/app/conv"
-	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -79,9 +79,9 @@ func (m *model) View() string {
 
 func (m model) renderInputView() string {
 	prompt := conv.InputPromptStyle.Render("❯ ")
-	if m.promptSuggestion.text != "" && m.userInput.Textarea.Value() == "" &&
+	if m.userInput.PromptSuggestion.Text != "" && m.userInput.Textarea.Value() == "" &&
 		!m.conv.Stream.Active && !m.userInput.Suggestions.IsVisible() {
-		return prompt + ghostTextStyle.Render(m.promptSuggestion.text)
+		return prompt + ghostTextStyle.Render(m.userInput.PromptSuggestion.Text)
 	}
 	return prompt + m.userInput.RenderTextarea()
 }

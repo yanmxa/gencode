@@ -10,9 +10,9 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/app/input"
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/setting"
@@ -73,8 +73,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case ctrlOSingleTickMsg:
 		return m, m.handleCtrlOSingleTick()
-	case promptSuggestionMsg:
-		m.handlePromptSuggestion(msg)
+	case input.PromptSuggestionMsg:
+		input.HandlePromptSuggestion(&m.userInput, m.conv.Stream.Active, m.userInput.Textarea.Value(), msg)
 		return m, nil
 	case kit.DismissedMsg, input.ToolToggleMsg, input.SkillCycleMsg, input.AgentToggleMsg:
 		return m, nil
@@ -139,7 +139,7 @@ func (m *model) updateTextarea(msg tea.Msg) tea.Cmd {
 	cmd, changed := m.userInput.HandleTextareaUpdate(msg)
 	cmds := []tea.Cmd{cmd}
 	if changed {
-		m.promptSuggestion.Clear()
+		m.userInput.PromptSuggestion.Clear()
 	}
 
 	if m.conv.Stream.Active || m.userInput.Provider.FetchingLimits || m.conv.Compact.Active {
@@ -176,10 +176,10 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Cmd, bool) {
 func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	switch msg.Type {
 	case tea.KeyTab, tea.KeyRight:
-		if m.promptSuggestion.text != "" && m.userInput.Textarea.Value() == "" {
-			m.userInput.Textarea.SetValue(m.promptSuggestion.text)
+		if m.userInput.PromptSuggestion.Text != "" && m.userInput.Textarea.Value() == "" {
+			m.userInput.Textarea.SetValue(m.userInput.PromptSuggestion.Text)
 			m.userInput.Textarea.CursorEnd()
-			m.promptSuggestion.Clear()
+			m.userInput.PromptSuggestion.Clear()
 			return nil, true
 		}
 
@@ -236,8 +236,8 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return cmd, true
 
 	case tea.KeyEsc:
-		if m.promptSuggestion.text != "" {
-			m.promptSuggestion.Clear()
+		if m.userInput.PromptSuggestion.Text != "" {
+			m.userInput.PromptSuggestion.Clear()
 			return nil, true
 		}
 		if m.userInput.Suggestions.IsVisible() {

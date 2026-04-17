@@ -23,12 +23,39 @@ import (
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
+	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
+
+// --- MCP executor bridge ---
+
+type defaultMCPExecutor struct{}
+
+func (defaultMCPExecutor) IsMCPTool(name string) bool {
+	return mcp.IsMCPTool(name)
+}
+
+func (defaultMCPExecutor) ExecuteMCP(ctx context.Context, name string, params map[string]any) (toolresult.ToolResult, error) {
+	if mcp.DefaultRegistry == nil {
+		return toolresult.NewErrorResult(name, "MCP registry not initialized"), nil
+	}
+
+	result, err := mcp.DefaultRegistry.CallTool(ctx, name, params)
+	if err != nil {
+		return toolresult.NewErrorResult(name, err.Error()), nil
+	}
+
+	return toolresult.ToolResult{
+		Success:  !result.IsError,
+		Output:   mcp.ExtractContent(result.Content),
+		Metadata: toolresult.ResultMetadata{Title: name, Icon: "🔌"},
+	}, nil
+}
 
 // --- User overlay dispatcher (Source 1) ---
 
@@ -39,7 +66,7 @@ func (m *model) updateUserOverlays(msg tea.Msg) (tea.Cmd, bool) {
 // --- User overlay Runtime interface implementations ---
 
 // user.PluginRuntime
-func (m *model) GetCwd() string                { return m.cwd }
+func (m *model) GetCwd() string                 { return m.cwd }
 func (m *model) ReloadPluginBackedState() error { return m.reloadPluginBackedState() }
 
 // memory.Runtime
@@ -58,8 +85,8 @@ func (m *model) SwitchProvider(p llm.Provider) {
 func (m *model) SetCurrentModel(cm *llm.CurrentModelInfo) { m.runtime.CurrentModel = cm }
 
 // user.SessionRuntime
-func (m *model) LoadSession(id string) error { return m.loadSession(id) }
-func (m *model) ResetCommitIndex()           { m.conv.CommittedCount = 0 }
+func (m *model) LoadSession(id string) error  { return m.loadSession(id) }
+func (m *model) ResetCommitIndex()            { m.conv.CommittedCount = 0 }
 func (m *model) CommitAllMessages() []tea.Cmd { return m.commitAllMessages() }
 
 // searchui.Runtime
@@ -171,8 +198,8 @@ func (m *model) handleTaskNotificationTick() tea.Cmd {
 	return cmd
 }
 
-func (rt agentRuntime) IsInputIdle() bool    { return rt.m.isInputIdle() }
-func (rt agentRuntime) StreamActive() bool   { return rt.m.conv.Stream.Active }
+func (rt agentRuntime) IsInputIdle() bool  { return rt.m.isInputIdle() }
+func (rt agentRuntime) StreamActive() bool { return rt.m.conv.Stream.Active }
 
 func (rt agentRuntime) InjectTaskNotificationContinuation(item notify.Notification) tea.Cmd {
 	return rt.m.injectTaskNotificationContinuation(item)
@@ -386,12 +413,12 @@ func (m *model) updateOutput(msg tea.Msg) (tea.Cmd, bool) {
 
 var _ conv.Runtime = outputRuntime{}
 
-func (m *model) CommitMessages() []tea.Cmd             { return m.commitMessages() }
-func (m *model) AppendMessage(msg core.ChatMessage)    { m.conv.Append(msg) }
-func (m *model) AppendToLast(text, thinking string)    { m.conv.AppendToLast(text, thinking) }
+func (m *model) CommitMessages() []tea.Cmd              { return m.commitMessages() }
+func (m *model) AppendMessage(msg core.ChatMessage)     { m.conv.Append(msg) }
+func (m *model) AppendToLast(text, thinking string)     { m.conv.AppendToLast(text, thinking) }
 func (m *model) SetLastToolCalls(calls []core.ToolCall) { m.conv.SetLastToolCalls(calls) }
-func (m *model) SetLastThinkingSignature(sig string)   { m.conv.SetLastThinkingSignature(sig) }
-func (m *model) AddNotice(text string)                 { m.conv.AddNotice(text) }
+func (m *model) SetLastThinkingSignature(sig string)    { m.conv.SetLastThinkingSignature(sig) }
+func (m *model) AddNotice(text string)                  { m.conv.AddNotice(text) }
 
 func (m *model) ActivateStream() {
 	m.conv.Stream.Active = true
@@ -743,7 +770,7 @@ func (m *model) triggerAutoCompact() tea.Cmd {
 	m.conv.Compact.Phase = conv.PhaseSummarizing
 	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", m.getContextUsagePercent()))
 	commitCmds := m.commitMessages()
-	commitCmds = append(commitCmds, m.agentOutput.Spinner.Tick, compactCmd(m.buildCompactRequest("", "auto")))
+	commitCmds = append(commitCmds, m.agentOutput.Spinner.Tick, conv.CompactCmd(m.buildCompactRequest("", "auto")))
 	return tea.Batch(commitCmds...)
 }
 
@@ -828,4 +855,3 @@ func (m *model) handleTokenLimitResult(msg kit.TokenLimitResultMsg) tea.Cmd {
 
 	return tea.Batch(m.commitMessages()...)
 }
-

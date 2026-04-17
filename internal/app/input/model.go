@@ -20,18 +20,19 @@ type PastedChunk struct {
 
 // Model holds all input-related state: textarea, history, suggestions, images, and selectors.
 type Model struct {
-	Textarea       textarea.Model
-	History        []string
-	HistoryIdx     int
-	TempInput      string
-	Suggestions    suggest.State
-	LastCtrlO      time.Time
-	Images         ImageState
-	TerminalHeight int
-	PastedChunks   []PastedChunk
-	QueueSelectIdx int    // -1 = no selection, 0+ = selected queue item index
-	QueueTempInput string // stashed input when navigating into queue
-	Queue          Queue
+	Textarea         textarea.Model
+	History          []string
+	HistoryIdx       int
+	TempInput        string
+	PromptSuggestion PromptSuggestionState
+	Suggestions      suggest.State
+	LastCtrlO        time.Time
+	Images           ImageState
+	TerminalHeight   int
+	PastedChunks     []PastedChunk
+	QueueSelectIdx   int    // -1 = no selection, 0+ = selected queue item index
+	QueueTempInput   string // stashed input when navigating into queue
+	Queue            Queue
 
 	// Selectors / overlays
 	Approval ApprovalModel

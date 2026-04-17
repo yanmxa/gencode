@@ -14,12 +14,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
-	"github.com/yanmxa/gencode/internal/app/notify"
 	"github.com/yanmxa/gencode/internal/app/conv"
-	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
-	"github.com/yanmxa/gencode/internal/app/kit/suggest"
-	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/app/input"
+	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/app/kit/suggest"
+	"github.com/yanmxa/gencode/internal/app/notify"
+	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
+	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/system"
@@ -44,13 +45,19 @@ import (
 
 const defaultWidth = 80
 
+const (
+	suggestionSystemPrompt = input.SuggestionSystemPrompt
+	suggestionUserPrompt   = input.SuggestionUserPrompt
+)
+
+type submitRequest = input.SubmitRequest
+
 type model struct {
 	// ── User Input ──────────────────────────────────────────────────────
-	userInput        input.Model
-	mode             conv.ModalState
-	promptSuggestion promptSuggestionState
-	showTasks        bool
-	tool             conv.ToolState
+	userInput input.Model
+	mode      conv.ModalState
+	showTasks bool
+	tool      conv.ToolState
 
 	// ── Agent Input ─────────────────────────────────────────────────────
 	agentInput notify.Model
@@ -170,6 +177,22 @@ func (m *model) effectiveThinkingLevel() llm.ThinkingLevel {
 
 func (m model) getModelID() string {
 	return m.runtime.GetModelID()
+}
+
+func (m *model) getEffectiveInputLimit() int {
+	return kit.GetEffectiveInputLimit(m.runtime.ProviderStore, m.runtime.CurrentModel)
+}
+
+func (m *model) getMaxTokens() int {
+	return kit.GetMaxTokens(m.runtime.ProviderStore, m.runtime.CurrentModel, setting.DefaultMaxTokens)
+}
+
+func (m *model) getContextUsagePercent() float64 {
+	return kit.GetContextUsagePercent(m.runtime.InputTokens, m.runtime.ProviderStore, m.runtime.CurrentModel)
+}
+
+func (m *model) shouldAutoCompact() bool {
+	return kit.ShouldAutoCompact(m.runtime.LLMProvider, len(m.conv.Messages), m.runtime.InputTokens, m.runtime.ProviderStore, m.runtime.CurrentModel)
 }
 
 func formatAsyncHookContinuationContext(result hook.AsyncHookResult, reason string) string {
@@ -336,6 +359,65 @@ func (m *model) buildLoopClient() *llm.Client {
 	c := llm.NewClient(m.runtime.LLMProvider, m.getModelID(), m.getMaxTokens())
 	c.SetThinking(m.effectiveThinkingLevel())
 	return c
+}
+
+func (m *model) buildPromptSuggestionRequest() (input.PromptSuggestionRequest, bool) {
+	return input.BuildPromptSuggestionRequest(input.PromptSuggestionDeps{
+		Input:        &m.userInput,
+		Conversation: &m.conv,
+		Runtime:      &m.runtime,
+		BuildClient:  m.buildLoopClient,
+	})
+}
+
+func (m *model) startPromptSuggestion() tea.Cmd {
+	return input.StartPromptSuggestion(input.PromptSuggestionDeps{
+		Input:        &m.userInput,
+		Conversation: &m.conv,
+		Runtime:      &m.runtime,
+		BuildClient:  m.buildLoopClient,
+	})
+}
+
+func (m *model) buildCompactRequest(focus, trigger string) conv.CompactRequest {
+	return conv.CompactRequest{
+		Ctx:            context.Background(),
+		Client:         m.buildLoopClient(),
+		Messages:       m.conv.ConvertToProvider(),
+		SessionSummary: m.runtime.SessionSummary,
+		Focus:          focus,
+		HookEngine:     m.runtime.HookEngine,
+		Trigger:        trigger,
+	}
+}
+
+func (m *model) saveSession() error {
+	return appruntime.SaveSession(appruntime.SessionSaveDeps{
+		Runtime:         &m.runtime,
+		Cwd:             m.cwd,
+		Messages:        m.conv.Messages,
+		ReconfigureTool: m.reconfigureAgentTool,
+	})
+}
+
+func (m *model) loadSession(id string) error {
+	return appruntime.LoadSession(appruntime.SessionLoadDeps{
+		Runtime: &m.runtime,
+		Cwd:     m.cwd,
+		RestoreMessages: func(msgs []core.ChatMessage) {
+			m.conv.Messages = msgs
+		},
+	}, id)
+}
+
+func (m *model) initTaskStorage() {
+	appruntime.InitTaskStorage(m.runtime.SessionID)
+}
+
+func (m *model) restoreSessionData(sess *session.Snapshot) {
+	appruntime.RestoreSessionData(&m.runtime, sess, func(msgs []core.ChatMessage) {
+		m.conv.Messages = msgs
+	})
 }
 
 func (m *model) buildLoopSystem(extra []string, loopClient *llm.Client) core.System {
@@ -547,7 +629,7 @@ func newBaseModel() model {
 		},
 
 		mode:        newModeState(),
-		tool:        newToolState(),
+		tool:        conv.ToolState{},
 		isGit:       setting.IsGitRepo(appCwd),
 		systemInput: trigger.New(hook.DefaultEngine),
 		fileWatcher: trigger.NewFileWatcher(hook.DefaultEngine, nil),
@@ -573,10 +655,6 @@ func newModeState() conv.ModalState {
 		PlanEntry:    conv.NewEnterPlanPrompt(),
 		Question:     conv.NewQuestionPrompt(),
 	}
-}
-
-func newToolState() conv.ToolState {
-	return conv.ToolState{}
 }
 
 func (m *model) applyRunOptions(opts setting.RunOptions) error {
