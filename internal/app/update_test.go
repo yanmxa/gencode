@@ -315,15 +315,15 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 	}
 
 	want := []string{
-		"*user.ProviderSelector",
-		"*output.ToolSelector",
-		"*user.SkillSelector",
-		"*user.AgentSelector",
-		"*user.MCPSelector",
-		"*user.PluginSelector",
-		"*user.SessionSelector",
-		"*user.MemorySelector",
-		"*user.SearchSelector",
+		"*input.ProviderSelector",
+		"*conv.ToolSelector",
+		"*input.SkillSelector",
+		"*input.AgentSelector",
+		"*input.MCPSelector",
+		"*input.PluginSelector",
+		"*input.SessionSelector",
+		"*input.MemorySelector",
+		"*input.SearchSelector",
 	}
 
 	if strings.Join(got, ",") != strings.Join(want, ",") {

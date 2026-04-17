@@ -3,17 +3,22 @@
 package app
 
 import (
+	"context"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/notify"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/plugin"
+	"github.com/yanmxa/gencode/internal/setting"
 )
 
 // --- User overlay dispatcher (Source 1) ---
@@ -282,4 +287,76 @@ func (m *model) injectCronPrompt(prompt string) tea.Cmd {
 	})
 
 	return m.sendToAgent(prompt, nil)
+}
+
+// --- Lifecycle helpers (file changes, cwd changes, project reload, hook outcomes) ---
+
+func (m *model) fireFileChanged(filePath, source string) {
+	if m.runtime.HookEngine == nil || filePath == "" {
+		return
+	}
+	outcome := m.runtime.HookEngine.Execute(context.Background(), hook.FileChanged, hook.HookInput{
+		FilePath: filePath,
+		Source:   source,
+		Event:    "change",
+	})
+	m.applyRuntimeHookOutcome(outcome)
+}
+
+func (m *model) changeCwd(newCwd string) {
+	if newCwd == "" || newCwd == m.cwd {
+		return
+	}
+
+	oldCwd := m.cwd
+	m.cwd = newCwd
+	m.isGit = setting.IsGitRepo(newCwd)
+	m.userInput.Suggestions.SetCwd(newCwd)
+	if m.userInput.Suggestions.GetSuggestionType() == suggest.TypeFile {
+		m.userInput.Suggestions.Hide()
+	}
+
+	m.runtime.ClearCachedInstructions()
+	m.runtime.RefreshMemoryContext(newCwd, "cwd_changed")
+	m.reloadProjectContext(newCwd)
+	m.reconfigureAgentTool()
+
+	if m.runtime.HookEngine != nil {
+		m.runtime.HookEngine.SetCwd(newCwd)
+		outcome := m.runtime.HookEngine.Execute(context.Background(), hook.CwdChanged, hook.HookInput{
+			OldCwd: oldCwd,
+			NewCwd: newCwd,
+		})
+		m.applyRuntimeHookOutcome(outcome)
+	}
+}
+
+func (m *model) reloadProjectContext(cwd string) {
+	initExtensions(cwd)
+	setting.Initialize(cwd)
+	if m.runtime.HookEngine != nil {
+		plugin.MergePluginHooksIntoSettings(setting.DefaultSetup)
+	}
+	m.runtime.ApplySettings(setting.DefaultSetup)
+}
+
+func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
+	if outcome.InitialUserMessage != "" && m.initialPrompt == "" && len(m.conv.Messages) == 0 {
+		m.initialPrompt = outcome.InitialUserMessage
+	}
+	if len(outcome.WatchPaths) == 0 {
+		return
+	}
+	if m.fileWatcher == nil {
+		queue := m.systemInput.AsyncHookQueue
+		m.fileWatcher = trigger.NewFileWatcher(m.runtime.HookEngine, func(outcome hook.HookOutcome) {
+			if queue != nil && outcome.InitialUserMessage != "" {
+				queue.Push(trigger.AsyncHookRewake{
+					Notice:  "File watcher hook triggered",
+					Context: []string{outcome.InitialUserMessage},
+				})
+			}
+		})
+	}
+	m.fileWatcher.SetPaths(outcome.WatchPaths)
 }

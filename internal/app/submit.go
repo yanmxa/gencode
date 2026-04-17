@@ -97,8 +97,8 @@ func (m *model) blockPromptSubmission(reason string) tea.Cmd {
 }
 
 
-func (m *model) prepareSubmittedUserMessage(input string) (core.ChatMessage, tea.Cmd, bool) {
-	content, fileImages, err := input.ProcessImageRefs(m.cwd, input)
+func (m *model) prepareSubmittedUserMessage(rawInput string) (core.ChatMessage, tea.Cmd, bool) {
+	content, fileImages, err := input.ProcessImageRefs(m.cwd, rawInput)
 	if err != nil {
 		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Image error: " + err.Error()})
 		return core.ChatMessage{}, tea.Batch(m.commitMessages()...), true
