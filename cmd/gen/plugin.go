@@ -57,12 +57,12 @@ var pluginListCmd = &cobra.Command{
 		ctx := context.Background()
 		cwd, _ := os.Getwd()
 
-		if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
+		if err := plugin.Default().Load(ctx, cwd); err != nil {
 			return fmt.Errorf("failed to load plugins: %w", err)
 		}
-		_ = plugin.DefaultRegistry.LoadClaudePlugins(ctx)
+		_ = plugin.Default().LoadClaudePlugins(ctx)
 
-		plugins := plugin.DefaultRegistry.List()
+		plugins := plugin.Default().List()
 		if len(plugins) == 0 {
 			fmt.Println("No plugins installed.")
 			fmt.Println("\nInstall a plugin with:")
@@ -71,8 +71,8 @@ var pluginListCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Plugins (%d installed, %d enabled):\n\n",
-			plugin.DefaultRegistry.Count(),
-			plugin.DefaultRegistry.EnabledCount())
+			plugin.Default().Count(),
+			plugin.Default().EnabledCount())
 
 		for _, p := range plugins {
 			printPluginSummary(p)
@@ -143,11 +143,11 @@ Examples:
 		ref := args[0]
 
 		// Create installer
-		if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
+		if err := plugin.Default().Load(ctx, cwd); err != nil {
 			return fmt.Errorf("failed to load registry: %w", err)
 		}
 
-		installer := plugin.NewInstaller(plugin.DefaultRegistry, cwd)
+		installer := plugin.Default().NewInstaller(cwd)
 		_ = installer.LoadMarketplaces() // Non-fatal, continue with empty marketplaces
 
 		scope := parsePluginScope(pluginScope)
@@ -170,11 +170,11 @@ var pluginUninstallCmd = &cobra.Command{
 		name := args[0]
 
 		// Create installer
-		if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
+		if err := plugin.Default().Load(ctx, cwd); err != nil {
 			return fmt.Errorf("failed to load registry: %w", err)
 		}
 
-		installer := plugin.NewInstaller(plugin.DefaultRegistry, cwd)
+		installer := plugin.Default().NewInstaller(cwd)
 		scope := parsePluginScope(pluginScope)
 
 		if err := installer.Uninstall(name, scope); err != nil {
@@ -195,12 +195,12 @@ var pluginEnableCmd = &cobra.Command{
 		cwd, _ := os.Getwd()
 		name := args[0]
 
-		if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
+		if err := plugin.Default().Load(ctx, cwd); err != nil {
 			return fmt.Errorf("failed to load registry: %w", err)
 		}
 
 		scope := parsePluginScope(pluginScope)
-		if err := plugin.DefaultRegistry.Enable(name, scope); err != nil {
+		if err := plugin.Default().Enable(name, scope); err != nil {
 			return fmt.Errorf("failed to enable plugin: %w", err)
 		}
 
@@ -218,12 +218,12 @@ var pluginDisableCmd = &cobra.Command{
 		cwd, _ := os.Getwd()
 		name := args[0]
 
-		if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
+		if err := plugin.Default().Load(ctx, cwd); err != nil {
 			return fmt.Errorf("failed to load registry: %w", err)
 		}
 
 		scope := parsePluginScope(pluginScope)
-		if err := plugin.DefaultRegistry.Disable(name, scope); err != nil {
+		if err := plugin.Default().Disable(name, scope); err != nil {
 			return fmt.Errorf("failed to disable plugin: %w", err)
 		}
 
@@ -261,11 +261,11 @@ var pluginInfoCmd = &cobra.Command{
 		cwd, _ := os.Getwd()
 		name := args[0]
 
-		if err := plugin.DefaultRegistry.Load(ctx, cwd); err != nil {
+		if err := plugin.Default().Load(ctx, cwd); err != nil {
 			return fmt.Errorf("failed to load registry: %w", err)
 		}
 
-		p, ok := plugin.DefaultRegistry.Get(name)
+		p, ok := plugin.Default().Get(name)
 		if !ok {
 			return fmt.Errorf("plugin not found: %s", name)
 		}

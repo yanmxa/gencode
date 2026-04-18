@@ -8,8 +8,8 @@ import (
 )
 
 func TestWorktreeHooksFire(t *testing.T) {
-	hook.DefaultEngine = hook.NewEngine(&setting.Settings{}, "test", t.TempDir(), "")
-	defer func() { hook.DefaultEngine = nil }()
+	hook.SetDefault(hook.NewEngine(&setting.Settings{}, "test", t.TempDir(), ""))
+	defer hook.ResetService()
 
 	repo := makeRepo(t)
 

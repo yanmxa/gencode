@@ -3,8 +3,8 @@ package worktree
 import "github.com/yanmxa/gencode/internal/hook"
 
 func fireWorktreeCreated(name, path string) {
-	if hook.DefaultEngine != nil {
-		hook.DefaultEngine.ExecuteAsync(hook.WorktreeCreate, hook.HookInput{
+	if h := hook.DefaultIfInit(); h != nil {
+		h.ExecuteAsync(hook.WorktreeCreate, hook.HookInput{
 			Name:         name,
 			WorktreePath: path,
 		})
@@ -12,8 +12,8 @@ func fireWorktreeCreated(name, path string) {
 }
 
 func fireWorktreeRemoved(path string) {
-	if hook.DefaultEngine != nil {
-		hook.DefaultEngine.ExecuteAsync(hook.WorktreeRemove, hook.HookInput{
+	if h := hook.DefaultIfInit(); h != nil {
+		h.ExecuteAsync(hook.WorktreeRemove, hook.HookInput{
 			WorktreePath: path,
 		})
 	}

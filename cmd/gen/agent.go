@@ -106,7 +106,7 @@ func runHeadlessAgent() error {
 	}
 
 	// Get agent configuration
-	agentCfg, ok := subagent.DefaultRegistry.Get(agentRunOpts.agentType)
+	agentCfg, ok := subagent.Default().Get(agentRunOpts.agentType)
 	if !ok {
 		return fmt.Errorf("unknown agent type: %s", agentRunOpts.agentType)
 	}

@@ -10,13 +10,12 @@ import (
 
 func useTestTrackerStore(t *testing.T) *tracker.Store {
 	t.Helper()
-	prev := tracker.DefaultStore
 	store := tracker.NewStore()
 	if err := store.SetStorageDir(t.TempDir()); err != nil {
 		t.Fatalf("SetStorageDir(): %v", err)
 	}
-	tracker.DefaultStore = store
-	t.Cleanup(func() { tracker.DefaultStore = prev })
+	tracker.SetDefault(store)
+	t.Cleanup(func() { tracker.SetDefault(store) })
 	return store
 }
 

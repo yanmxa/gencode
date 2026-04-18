@@ -351,8 +351,8 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 
 		if m.userInput.Session.PendingSelector {
 			m.userInput.Session.PendingSelector = false
-			if session.DefaultSetup.Store != nil {
-				_ = m.userInput.Session.Selector.EnterSelect(m.width, m.height, session.DefaultSetup.Store, m.cwd)
+			if session.Default().GetStore() != nil {
+				_ = m.userInput.Session.Selector.EnterSelect(m.width, m.height, session.Default().GetStore(), m.cwd)
 			}
 		}
 
@@ -453,14 +453,14 @@ func (m *model) commandDeps() input.CommandDeps {
 		Height:       m.height,
 		Cwd:          m.cwd,
 
-		DisabledTools: setting.DefaultSetup.DisabledTools,
-		ProviderStore: llm.DefaultSetup.Store,
+		DisabledTools: setting.Default().DisabledTools(),
+		ProviderStore: llm.Default().Store(),
 		LLMProvider:   m.env.LLMProvider,
 		InputTokens:   m.env.InputTokens,
 		CurrentModel:  m.env.CurrentModel,
 
-		GetSessionID:     func() string { return session.DefaultSetup.SessionID },
-		GetSessionStore:  func() *session.Store { return session.DefaultSetup.Store },
+		GetSessionID:     func() string { return session.Default().ID() },
+		GetSessionStore:  func() *session.Store { return session.Default().GetStore() },
 		GetThinkingLevel: func() llm.ThinkingLevel { return m.env.ThinkingLevel },
 
 		ResetTokens:        m.env.ResetTokens,
@@ -498,7 +498,7 @@ func (m *model) approvalDeps() input.ApprovalFlowDeps {
 		Actions:            m,
 		Input:              &m.userInput,
 		HookEngine:         hook.DefaultEngine,
-		Settings:           setting.DefaultSetup,
+		Settings:           setting.Default().Snapshot(),
 		SessionPermissions: m.env.SessionPermissions,
 		SetOperationMode:   func(mode setting.OperationMode) { m.env.OperationMode = mode },
 		Tool:               &m.conv.Tool,
@@ -539,8 +539,8 @@ func (m *model) cycleOperationMode() {
 		m.env.EnsurePlanStore()
 	}
 
-	if hook.DefaultEngine != nil {
-		hook.DefaultEngine.SetPermissionMode(m.env.OperationModeName())
+	if svc := hook.DefaultIfInit(); svc != nil {
+		svc.SetPermissionMode(m.env.OperationModeName())
 	}
 }
 

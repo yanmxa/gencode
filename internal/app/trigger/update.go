@@ -86,11 +86,11 @@ func (s *Model) HandleCronTick(isIdle bool) CronResult {
 	var result CronResult
 
 	// Skip when no jobs exist and queue is empty
-	if cron.DefaultStore.Empty() && len(s.CronQueue) == 0 {
+	if cron.Default().Empty() && len(s.CronQueue) == 0 {
 		return result
 	}
 
-	fired := cron.DefaultStore.Tick()
+	fired := cron.Default().Tick()
 	injected := false
 
 	for i, f := range fired {

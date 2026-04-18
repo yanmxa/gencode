@@ -51,6 +51,15 @@ func Default() Service {
 	return s
 }
 
+// DefaultIfInit returns the singleton Service instance, or nil if not yet
+// initialized. Useful for nil-guards that used to check DefaultRegistry == nil.
+func DefaultIfInit() Service {
+	mu.RLock()
+	s := instance
+	mu.RUnlock()
+	return s
+}
+
 // SetDefault replaces the singleton instance. Intended for tests.
 func SetDefault(s Service) {
 	mu.Lock()

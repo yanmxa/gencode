@@ -9,48 +9,48 @@ import (
 )
 
 func TestRenderTrackerListGroupsBackgroundBatchChildren(t *testing.T) {
-	tracker.DefaultStore.Reset()
-	orchestration.DefaultStore.Reset()
+	tracker.Default().Reset()
+	orchestration.Default().Reset()
 	t.Cleanup(func() {
-		tracker.DefaultStore.Reset()
-		orchestration.DefaultStore.Reset()
+		tracker.Default().Reset()
+		orchestration.Default().Reset()
 	})
 
-	batch := tracker.DefaultStore.Create("2 background agents launched", "", "", map[string]any{
+	batch := tracker.Default().Create("2 background agents launched", "", "", map[string]any{
 		"background_kind":      "batch",
 		"background_completed": 1,
 		"background_total":     2,
 		"background_failures":  0,
 	})
-	_ = tracker.DefaultStore.Update(batch.ID, tracker.WithStatus(tracker.StatusInProgress))
+	_ = tracker.Default().Update(batch.ID, tracker.WithStatus(tracker.StatusInProgress))
 
-	child1 := tracker.DefaultStore.Create("dir-audit: Directory structure audit", "", "", map[string]any{
+	child1 := tracker.Default().Create("dir-audit: Directory structure audit", "", "", map[string]any{
 		"background_kind":      "worker",
 		"background_parent_id": batch.ID,
 		"background_task_id":   "bg-1",
 	})
-	_ = tracker.DefaultStore.Update(child1.ID, tracker.WithStatus(tracker.StatusInProgress))
+	_ = tracker.Default().Update(child1.ID, tracker.WithStatus(tracker.StatusInProgress))
 
-	child2 := tracker.DefaultStore.Create("naming-audit: Package naming audit", "", "", map[string]any{
+	child2 := tracker.Default().Create("naming-audit: Package naming audit", "", "", map[string]any{
 		"background_kind":          "worker",
 		"background_parent_id":     batch.ID,
 		"background_task_id":       "bg-2",
 		"background_status_detail": "failed",
 	})
-	_ = tracker.DefaultStore.Update(child2.ID, tracker.WithStatus(tracker.StatusCompleted))
+	_ = tracker.Default().Update(child2.ID, tracker.WithStatus(tracker.StatusCompleted))
 
-	regular := tracker.DefaultStore.Create("Write tests", "", "", nil)
-	_ = tracker.DefaultStore.Update(regular.ID, tracker.WithStatus(tracker.StatusPending))
+	regular := tracker.Default().Create("Write tests", "", "", nil)
+	_ = tracker.Default().Update(regular.ID, tracker.WithStatus(tracker.StatusPending))
 
 	view := RenderTrackerList(TrackerListParams{
-		Tasks:        tracker.DefaultStore.List(),
-		AllDone:      tracker.DefaultStore.AllDone(),
+		Tasks:        tracker.Default().List(),
+		AllDone:      tracker.Default().AllDone(),
 		StreamActive: true,
 		Width:        120,
 		SpinnerView:  "•",
-		Blockers:     tracker.DefaultStore.OpenBlockers,
+		Blockers:     tracker.Default().OpenBlockers,
 		WorkerSnap: func(taskID, agentID string) (*orchestration.Snapshot, bool) {
-			return orchestration.DefaultStore.Snapshot(taskID, agentID, "", 1)
+			return orchestration.Default().Snapshot(taskID, agentID, "", 1)
 		},
 	})
 
@@ -73,30 +73,30 @@ func TestRenderTrackerListGroupsBackgroundBatchChildren(t *testing.T) {
 }
 
 func TestRenderTrackerListPrefersOrchestrationSnapshotForBatchAndQueueState(t *testing.T) {
-	tracker.DefaultStore.Reset()
-	orchestration.DefaultStore.Reset()
+	tracker.Default().Reset()
+	orchestration.Default().Reset()
 	t.Cleanup(func() {
-		tracker.DefaultStore.Reset()
-		orchestration.DefaultStore.Reset()
+		tracker.Default().Reset()
+		orchestration.Default().Reset()
 	})
 
-	batch := tracker.DefaultStore.Create("stale batch title", "", "", map[string]any{
+	batch := tracker.Default().Create("stale batch title", "", "", map[string]any{
 		"background_kind":      "batch",
 		"background_completed": 0,
 		"background_total":     2,
 		"background_failures":  0,
 	})
-	_ = tracker.DefaultStore.Update(batch.ID, tracker.WithStatus(tracker.StatusInProgress))
+	_ = tracker.Default().Update(batch.ID, tracker.WithStatus(tracker.StatusInProgress))
 
-	child := tracker.DefaultStore.Create("dir-audit: Directory structure audit", "", "", map[string]any{
+	child := tracker.Default().Create("dir-audit: Directory structure audit", "", "", map[string]any{
 		"background_kind":      "worker",
 		"background_parent_id": batch.ID,
 		"background_task_id":   "bg-1",
 		"background_agent_id":  "agent-1",
 	})
-	_ = tracker.DefaultStore.Update(child.ID, tracker.WithStatus(tracker.StatusInProgress))
+	_ = tracker.Default().Update(child.ID, tracker.WithStatus(tracker.StatusInProgress))
 
-	orchestration.DefaultStore.RecordLaunch(orchestration.Launch{
+	orchestration.Default().RecordLaunch(orchestration.Launch{
 		TaskID:       "bg-1",
 		AgentID:      "agent-1",
 		AgentType:    "Explore",
@@ -109,7 +109,7 @@ func TestRenderTrackerListPrefersOrchestrationSnapshotForBatchAndQueueState(t *t
 		BatchSubject: "2 background agents launched",
 		BatchTotal:   2,
 	})
-	orchestration.DefaultStore.UpdateBatch(orchestration.Batch{
+	orchestration.Default().UpdateBatch(orchestration.Batch{
 		ID:        batch.ID,
 		Key:       "call-1,call-2",
 		Subject:   "2 background agents launched",
@@ -121,17 +121,17 @@ func TestRenderTrackerListPrefersOrchestrationSnapshotForBatchAndQueueState(t *t
 			{TaskID: "bg-1", Subject: "dir-audit: Directory structure audit", Status: "running", AgentType: "Explore"},
 		},
 	})
-	orchestration.DefaultStore.QueuePendingMessage("bg-1", "Please focus on import paths")
+	orchestration.Default().QueuePendingMessage("bg-1", "Please focus on import paths")
 
 	view := RenderTrackerList(TrackerListParams{
-		Tasks:        tracker.DefaultStore.List(),
-		AllDone:      tracker.DefaultStore.AllDone(),
+		Tasks:        tracker.Default().List(),
+		AllDone:      tracker.Default().AllDone(),
 		StreamActive: true,
 		Width:        120,
 		SpinnerView:  "•",
-		Blockers:     tracker.DefaultStore.OpenBlockers,
+		Blockers:     tracker.Default().OpenBlockers,
 		WorkerSnap: func(taskID, agentID string) (*orchestration.Snapshot, bool) {
-			return orchestration.DefaultStore.Snapshot(taskID, agentID, "", 1)
+			return orchestration.Default().Snapshot(taskID, agentID, "", 1)
 		},
 	})
 

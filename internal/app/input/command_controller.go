@@ -184,8 +184,8 @@ func (c CommandController) executeExitCommand(cmdName string) (string, tea.Cmd, 
 }
 
 func (c CommandController) executeSkillSlashCommand(sk *skill.Skill, args string) string {
-	if skill.DefaultRegistry != nil {
-		c.deps.Input.Skill.PendingInstructions = skill.DefaultRegistry.GetSkillInvocationPrompt(sk.FullName())
+	if svc := skill.DefaultIfInit(); svc != nil {
+		c.deps.Input.Skill.PendingInstructions = svc.GetSkillInvocationPrompt(sk.FullName())
 	}
 	plugin.SetActivePluginRoot(plugin.FindPluginRootForPath(sk.SkillDir))
 	if args != "" {
@@ -197,8 +197,8 @@ func (c CommandController) executeSkillSlashCommand(sk *skill.Skill, args string
 }
 
 func ApplySkillInvocation(state *Model, sk *skill.Skill, args string) {
-	if skill.DefaultRegistry != nil {
-		state.Skill.PendingInstructions = skill.DefaultRegistry.GetSkillInvocationPrompt(sk.FullName())
+	if svc := skill.DefaultIfInit(); svc != nil {
+		state.Skill.PendingInstructions = svc.GetSkillInvocationPrompt(sk.FullName())
 	}
 	plugin.SetActivePluginRoot(plugin.FindPluginRootForPath(sk.SkillDir))
 	if args != "" {
@@ -271,7 +271,7 @@ func (c *CommandController) handleClearCommand(_ context.Context, _ string) (str
 	c.deps.Tool.Reset()
 	c.deps.Conversation.Clear()
 	c.deps.ResetTokens()
-	tracker.DefaultStore.Reset()
+	tracker.Default().Reset()
 	tool.ResetFetched()
 	c.deps.ResetCronQueue()
 	cmds := []tea.Cmd{tea.ClearScreen}
@@ -401,8 +401,8 @@ func (c *CommandController) handleGlobCommand(ctx context.Context, args string) 
 
 func (c *CommandController) handleToolCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	var mcpTools func() []core.ToolSchema
-	if mcp.DefaultRegistry != nil {
-		mcpTools = mcp.DefaultRegistry.GetToolSchemas
+	if svc := mcp.DefaultIfInit(); svc != nil {
+		mcpTools = svc.ListTools
 	}
 	if err := c.deps.Input.Tool.EnterSelect(c.deps.Width, c.deps.Height, c.deps.DisabledTools, mcpTools); err != nil {
 		return "", nil, err
@@ -506,7 +506,7 @@ func handleLoopAdminCommand(args string) (string, bool, error) {
 			return "Usage: /loop delete <job-id>", true, nil
 		}
 		if strings.EqualFold(fields[1], "all") {
-			jobs := cron.DefaultStore.List()
+			jobs := cron.Default().List()
 			for _, job := range jobs {
 				if err := cron.DefaultStore.Delete(job.ID); err != nil {
 					return "", true, err
@@ -528,7 +528,7 @@ func handleLoopAdminCommand(args string) (string, bool, error) {
 }
 
 func renderLoopJobList() string {
-	jobs := cron.DefaultStore.List()
+	jobs := cron.Default().List()
 	if len(jobs) == 0 {
 		return "No scheduled loop tasks."
 	}
@@ -589,10 +589,11 @@ func (c *CommandController) handleCompactCommand(_ context.Context, args string)
 }
 
 func LookupSkillCommand(cmd string) (*skill.Skill, bool) {
-	if skill.DefaultRegistry == nil {
+	svc := skill.DefaultIfInit()
+	if svc == nil {
 		return nil, false
 	}
-	sk, ok := skill.DefaultRegistry.Get(cmd)
+	sk, ok := svc.Get(cmd)
 	if !ok || !sk.IsEnabled() {
 		return nil, false
 	}
@@ -604,10 +605,11 @@ func unknownCommandResult(cmd string) string {
 }
 
 func SkillCommandInfos() []command.Info {
-	if skill.DefaultRegistry == nil {
+	svc := skill.DefaultIfInit()
+	if svc == nil {
 		return nil
 	}
-	enabled := skill.DefaultRegistry.GetEnabled()
+	enabled := svc.GetEnabled()
 	infos := make([]command.Info, 0, len(enabled))
 	for _, sk := range enabled {
 		description := sk.Description

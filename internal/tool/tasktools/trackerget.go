@@ -24,13 +24,13 @@ func (t *TrackerGetTool) Execute(ctx context.Context, params map[string]any, cwd
 	}
 
 	// Reload from disk to pick up changes from other processes
-	tracker.DefaultStore.ReloadFromDisk()
+	tracker.Default().ReloadFromDisk()
 
-	task, ok := tracker.DefaultStore.Get(taskID)
+	task, ok := tracker.Default().Get(taskID)
 	if !ok {
-		// Fallback: background agent tasks use hex IDs from task.DefaultManager,
+		// Fallback: background agent tasks use hex IDs from the task manager,
 		// stored as "background_task_id" metadata in tracker entries.
-		task = tracker.DefaultStore.FindByMetadata("background_task_id", taskID)
+		task = tracker.Default().FindByMetadata("background_task_id", taskID)
 		if task == nil {
 			return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("task %s not found", taskID))
 		}
@@ -51,7 +51,7 @@ func (t *TrackerGetTool) Execute(ctx context.Context, params map[string]any, cwd
 	if len(task.Blocks) > 0 {
 		fmt.Fprintf(&sb, "Blocks: %s\n", strings.Join(task.Blocks, ", "))
 	}
-	if openBlockers := tracker.DefaultStore.OpenBlockers(task.ID); len(openBlockers) > 0 {
+	if openBlockers := tracker.Default().OpenBlockers(task.ID); len(openBlockers) > 0 {
 		fmt.Fprintf(&sb, "Blocked by (open): %s\n", strings.Join(openBlockers, ", "))
 	}
 

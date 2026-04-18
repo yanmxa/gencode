@@ -1,7 +1,7 @@
 // Shared mutable app state: provider, session, permissions, plan, and cache.
 //
-// Singletons (hook.DefaultEngine, setting.DefaultSetup, llm.DefaultSetup.Store)
-// are accessed directly — not copied here.
+// Singletons are accessed via Default() service accessors (e.g. hook.Default(),
+// setting.Default(), llm.Default()) — not copied here.
 package app
 
 import (
@@ -47,8 +47,8 @@ func newEnv() Env {
 		OperationMode:      setting.ModeNormal,
 		SessionPermissions: setting.NewSessionPermissions(),
 
-		LLMProvider:  llm.DefaultSetup.Provider,
-		CurrentModel: llm.DefaultSetup.CurrentModel,
+		LLMProvider:  llm.Default().Provider(),
+		CurrentModel: llm.Default().CurrentModel(),
 
 		FileCache: filecache.New(),
 	}
@@ -79,8 +79,7 @@ func (m *Env) OperationModeName() string {
 }
 
 func (m *Env) CycleOperationMode() {
-	s := setting.DefaultSetup
-	allowBypass := s != nil && s.AllowBypass != nil && *s.AllowBypass
+	allowBypass := setting.DefaultIfInit() != nil && setting.Default().AllowBypass()
 	m.OperationMode = m.OperationMode.NextWithBypass(allowBypass)
 	m.PlanEnabled = m.OperationMode == setting.ModePlan
 }
@@ -170,8 +169,8 @@ func (m *Env) RefreshMemoryContext(cwd, loadReason string) {
 		case "project", "local":
 			projectParts = append(projectParts, f.Content)
 		}
-		if hook.DefaultEngine != nil {
-			hook.DefaultEngine.ExecuteAsync(hook.InstructionsLoaded, hook.HookInput{
+		if svc := hook.DefaultIfInit(); svc != nil {
+			svc.ExecuteAsync(hook.InstructionsLoaded, hook.HookInput{
 				FilePath:   f.Path,
 				MemoryType: memoryTypeForLevel(f.Level),
 				LoadReason: loadReason,
@@ -183,23 +182,23 @@ func (m *Env) RefreshMemoryContext(cwd, loadReason string) {
 }
 
 func syncSettingsToHookEngine() {
-	if hook.DefaultEngine != nil && setting.DefaultSetup != nil {
-		hook.DefaultEngine.SetSettings(setting.DefaultSetup)
+	if svc := hook.DefaultIfInit(); svc != nil && setting.DefaultIfInit() != nil {
+		svc.SetSettings(setting.Default().Snapshot())
 	}
 }
 
 func (m *Env) CheckPromptHook(ctx context.Context, prompt string) (bool, string) {
-	if hook.DefaultEngine == nil {
-		return false, ""
+	if svc := hook.DefaultIfInit(); svc != nil {
+		outcome := svc.Execute(ctx, hook.UserPromptSubmit, hook.HookInput{Prompt: prompt})
+		return outcome.ShouldBlock, outcome.BlockReason
 	}
-	outcome := hook.DefaultEngine.Execute(ctx, hook.UserPromptSubmit, hook.HookInput{Prompt: prompt})
-	return outcome.ShouldBlock, outcome.BlockReason
+	return false, ""
 }
 
 func (m *Env) SwitchProvider(p llm.Provider) {
 	m.LLMProvider = p
-	if hook.DefaultEngine != nil {
-		hook.DefaultEngine.SetLLMCompleter(buildHookCompleter(p), m.GetModelID())
+	if svc := hook.DefaultIfInit(); svc != nil {
+		svc.SetLLMCompleter(buildHookCompleter(p), m.GetModelID())
 	}
 }
 
@@ -243,7 +242,8 @@ func (m *Env) ResetTokens() {
 
 
 func (m *Env) FirePostToolHook(tr core.ToolResult, sideEffect any) {
-	if hook.DefaultEngine == nil {
+	svc := hook.DefaultIfInit()
+	if svc == nil {
 		return
 	}
 	eventType := hook.PostToolUse
@@ -262,62 +262,66 @@ func (m *Env) FirePostToolHook(tr core.ToolResult, sideEffect any) {
 	if tr.IsError {
 		input.Error = tr.Content
 	}
-	hook.DefaultEngine.ExecuteAsync(eventType, input)
+	svc.ExecuteAsync(eventType, input)
 }
 
 func (m *Env) FireStopFailureHook(lastAssistantContent string, err error) {
-	if hook.DefaultEngine == nil {
+	svc := hook.DefaultIfInit()
+	if svc == nil {
 		return
 	}
-	hook.DefaultEngine.ExecuteAsync(hook.StopFailure, hook.HookInput{
+	svc.ExecuteAsync(hook.StopFailure, hook.HookInput{
 		LastAssistantMessage: lastAssistantContent,
 		Error:                err.Error(),
-		StopHookActive:       hook.DefaultEngine.StopHookActive(),
+		StopHookActive:       svc.StopHookActive(),
 	})
 }
 
 func (m *Env) FireSessionEnd(ctx context.Context, reason string) {
-	if hook.DefaultEngine == nil {
+	svc := hook.DefaultIfInit()
+	if svc == nil {
 		return
 	}
-	hook.DefaultEngine.Execute(ctx, hook.SessionEnd, hook.HookInput{
+	svc.Execute(ctx, hook.SessionEnd, hook.HookInput{
 		Reason: reason,
 	})
-	hook.DefaultEngine.ClearSessionHooks()
+	svc.ClearSessionHooks()
 }
 
 func (m *Env) ExecuteStartupHooks(ctx context.Context) hook.HookOutcome {
-	if hook.DefaultEngine == nil {
+	svc := hook.DefaultIfInit()
+	if svc == nil {
 		return hook.HookOutcome{}
 	}
-	hook.DefaultEngine.ExecuteAsync(hook.Setup, hook.HookInput{
+	svc.ExecuteAsync(hook.Setup, hook.HookInput{
 		Trigger: "init",
 	})
 	source := "startup"
-	if session.DefaultSetup.SessionID != "" {
+	if session.Default().ID() != "" {
 		source = "resume"
 	}
-	return hook.DefaultEngine.Execute(ctx, hook.SessionStart, hook.HookInput{
+	return svc.Execute(ctx, hook.SessionStart, hook.HookInput{
 		Source: source,
 		Model:  m.GetModelID(),
 	})
 }
 
 func (m *Env) ExecuteIdleHooks(ctx context.Context, lastAssistantContent string) (blocked bool, reason string) {
-	if hook.DefaultEngine == nil {
+	svc := hook.DefaultIfInit()
+	if svc == nil {
 		return false, ""
 	}
-	if hook.DefaultEngine.HasHooks(hook.Stop) {
-		outcome := hook.DefaultEngine.Execute(ctx, hook.Stop, hook.HookInput{
+	if svc.HasHooks(hook.Stop) {
+		outcome := svc.Execute(ctx, hook.Stop, hook.HookInput{
 			LastAssistantMessage: lastAssistantContent,
-			StopHookActive:       hook.DefaultEngine.StopHookActive(),
+			StopHookActive:       svc.StopHookActive(),
 		})
 		if outcome.ShouldBlock {
 			blocked = true
 			reason = outcome.BlockReason
 		}
 	}
-	hook.DefaultEngine.ExecuteAsync(hook.Notification, hook.HookInput{
+	svc.ExecuteAsync(hook.Notification, hook.HookInput{
 		Message:          "Claude is waiting for your input",
 		NotificationType: "idle_prompt",
 	})

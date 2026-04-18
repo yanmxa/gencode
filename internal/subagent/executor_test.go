@@ -149,8 +149,8 @@ func TestFormatToolProgressFallsBackToTaskOutputID(t *testing.T) {
 }
 
 func TestBuildSystemPrompt_IncludesAdditionalInstructionsAndPreloadedSkills(t *testing.T) {
-	prev := skill.DefaultRegistry
-	t.Cleanup(func() { skill.DefaultRegistry = prev })
+	prev := skill.DefaultIfInit()
+	t.Cleanup(func() { skill.SetDefault(prev) })
 
 	tmpDir := t.TempDir()
 	skillFile := filepath.Join(tmpDir, "SKILL.md")
@@ -172,7 +172,7 @@ Use conventional commits.
 		t.Fatalf("NewStore(project): %v", err)
 	}
 
-	skill.DefaultRegistry = skill.NewRegistryForTest(map[string]*skill.Skill{
+	skill.SetDefault(skill.NewRegistryForTest(map[string]*skill.Skill{
 		"git:commit": {
 			Name:      "commit",
 			Namespace: "git",
@@ -180,7 +180,7 @@ Use conventional commits.
 			SkillDir:  tmpDir,
 			State:     skill.StateActive,
 		},
-	}, userStore, projectStore)
+	}, userStore, projectStore))
 
 	executor := &Executor{}
 	prompt := executor.buildSystemPrompt(&AgentConfig{

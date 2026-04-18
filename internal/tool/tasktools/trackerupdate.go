@@ -25,7 +25,7 @@ func (t *TrackerUpdateTool) Execute(ctx context.Context, params map[string]any, 
 
 	// Handle deletion separately
 	if status := tool.GetString(params, "status"); status == tracker.StatusDeleted {
-		if err := tracker.DefaultStore.Delete(taskID); err != nil {
+		if err := tracker.Default().Delete(taskID); err != nil {
 			return toolresult.NewErrorResult(t.Name(), err.Error())
 		}
 		return toolresult.ToolResult{
@@ -48,7 +48,7 @@ func (t *TrackerUpdateTool) Execute(ctx context.Context, params map[string]any, 
 		return toolresult.NewErrorResult(t.Name(), "no updates specified")
 	}
 
-	if err := tracker.DefaultStore.Update(taskID, opts...); err != nil {
+	if err := tracker.Default().Update(taskID, opts...); err != nil {
 		return toolresult.NewErrorResult(t.Name(), err.Error())
 	}
 

@@ -22,7 +22,7 @@ func (t *CronDeleteTool) Execute(ctx context.Context, params map[string]any, cwd
 		return toolresult.NewErrorResult(t.Name(), "job id is required")
 	}
 
-	if err := cron.DefaultStore.Delete(id); err != nil {
+	if err := cron.Default().Delete(id); err != nil {
 		return toolresult.NewErrorResult(t.Name(), err.Error())
 	}
 

@@ -168,7 +168,7 @@ func (t *ContinueAgentTool) execute(ctx context.Context, params map[string]any, 
 	req := tool.AgentExecRequest{
 		Agent:       target.agentType,
 		Name:        agentName,
-		Prompt:      composeContinuationPrompt(prompt, orchestration.DefaultStore.DrainPendingMessages(resolvedTaskID, target.agentID)),
+		Prompt:      composeContinuationPrompt(prompt, orchestration.Default().DrainPendingMessages(resolvedTaskID, target.agentID)),
 		Description: description,
 		Background:  tool.GetBool(params, "run_in_background"),
 		Model:       tool.GetString(params, "model"),
@@ -264,7 +264,7 @@ func resolveContinuationTarget(params map[string]any) (continuedAgentTarget, err
 		return target, nil
 	}
 
-	bgTask, found := task.DefaultManager.Get(taskID)
+	bgTask, found := task.Default().Get(taskID)
 	if !found {
 		return continuedAgentTarget{}, fmt.Errorf("task not found: %s", taskID)
 	}
@@ -289,7 +289,7 @@ func resolveContinuationTarget(params map[string]any) (continuedAgentTarget, err
 }
 
 func ensureContinuationTaskStopped(taskID, toolName string) error {
-	bgTask, found := task.DefaultManager.Get(taskID)
+	bgTask, found := task.Default().Get(taskID)
 	if !found {
 		return fmt.Errorf("task not found: %s", taskID)
 	}

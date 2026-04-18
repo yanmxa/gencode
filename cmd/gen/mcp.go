@@ -165,7 +165,7 @@ var mcpEditCmd = &cobra.Command{
 			return fmt.Errorf("failed to load MCP configs: %w", err)
 		}
 
-		info, err := mcp.PrepareServerEdit(mcp.DefaultRegistry, name)
+		info, err := mcp.Default().EditConfig(name)
 		if err != nil {
 			return err
 		}
@@ -181,7 +181,7 @@ var mcpEditCmd = &cobra.Command{
 			return fmt.Errorf("editor failed: %w", err)
 		}
 
-		if err := mcp.ApplyServerEdit(mcp.DefaultRegistry, info); err != nil {
+		if err := mcp.Default().SaveConfig(info); err != nil {
 			return err
 		}
 

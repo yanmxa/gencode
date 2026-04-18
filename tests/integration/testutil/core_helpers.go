@@ -76,7 +76,7 @@ func NewTestAgent(t *testing.T, responses ...llm.CompletionResponse) (core.Agent
 // tools that have schemas in GetToolSchemas(), this walks the entire registry directly.
 func buildAllRegisteredTools(cwd string) core.Tools {
 	var adapted []core.Tool
-	for _, name := range tool.DefaultRegistry.List() {
+	for _, name := range tool.Default().List() {
 		t, ok := tool.Get(name)
 		if !ok {
 			continue

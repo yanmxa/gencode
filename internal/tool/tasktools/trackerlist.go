@@ -19,9 +19,9 @@ func (t *TrackerListTool) Icon() string        { return "📋" }
 
 func (t *TrackerListTool) Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
 	// Reload from disk to pick up changes from other processes
-	tracker.DefaultStore.ReloadFromDisk()
+	tracker.Default().ReloadFromDisk()
 
-	tasks := tracker.DefaultStore.List()
+	tasks := tracker.Default().List()
 
 	if len(tasks) == 0 {
 		return toolresult.ToolResult{
@@ -72,7 +72,7 @@ func TaskIcon(task *tracker.Task) string {
 	case tracker.StatusInProgress:
 		return "⠋"
 	default:
-		if tracker.DefaultStore.IsBlocked(task.ID) {
+		if tracker.Default().IsBlocked(task.ID) {
 			return "▸"
 		}
 		return "☐"

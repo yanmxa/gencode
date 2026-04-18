@@ -39,9 +39,9 @@ func (e *Executor) buildSystemPrompt(config *AgentConfig, permMode PermissionMod
 	}
 
 	// Preload skills into agent system prompt
-	if len(config.Skills) > 0 && skill.DefaultRegistry != nil {
+	if len(config.Skills) > 0 && skill.DefaultIfInit() != nil {
 		for _, skillName := range config.Skills {
-			prompt := skill.DefaultRegistry.GetSkillInvocationPrompt(skillName)
+			prompt := skill.Default().GetSkillInvocationPrompt(skillName)
 			if prompt != "" {
 				sb.WriteString("\n")
 				sb.WriteString(prompt)
@@ -125,7 +125,7 @@ func formatTaskToolProgress(toolName string, params map[string]any) string {
 			return ""
 		}
 		subject := ""
-		if t, ok := tracker.DefaultStore.Get(taskID); ok {
+		if t, ok := tracker.Default().Get(taskID); ok {
 			subject = t.Subject
 		}
 		if subject != "" {

@@ -39,7 +39,7 @@ func (t *TaskStopTool) Execute(ctx context.Context, params map[string]any, cwd s
 	}
 
 	// Get task to check status before stopping
-	bgTask, found := task.DefaultManager.Get(taskID)
+	bgTask, found := task.Default().Get(taskID)
 	if !found {
 		return toolresult.ToolResult{
 			Success: false,
@@ -69,7 +69,7 @@ func (t *TaskStopTool) Execute(ctx context.Context, params map[string]any, cwd s
 	info := bgTask.GetStatus()
 
 	// Stop the task using the interface method
-	err := task.DefaultManager.Kill(taskID)
+	err := task.Default().Kill(taskID)
 	duration := time.Since(start)
 
 	if err != nil {
@@ -120,5 +120,5 @@ func (t *TaskStopTool) Execute(ctx context.Context, params map[string]any, cwd s
 func init() {
 	t := &TaskStopTool{}
 	tool.Register(t)
-	tool.DefaultRegistry.RegisterAlias("AgentStop", t)
+	tool.Default().RegisterAlias("AgentStop", t)
 }

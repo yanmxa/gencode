@@ -10,8 +10,8 @@ import (
 )
 
 func TestSendMessageTool_ResumesCompletedTask(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -19,8 +19,8 @@ func TestSendMessageTool_ResumesCompletedTask(t *testing.T) {
 	agentTask := task.NewAgentTask("task-sendmessage-1", "Explore Worker", "Initial task", ctx, cancel)
 	agentTask.SetIdentity("Explore", "agent-session-321")
 	agentTask.Complete(nil)
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("task-sendmessage-1")
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("task-sendmessage-1")
 
 	executor := &stubContinueAgentExecutor{}
 	toolInst := NewSendMessageTool()
@@ -44,17 +44,17 @@ func TestSendMessageTool_ResumesCompletedTask(t *testing.T) {
 }
 
 func TestSendMessageTool_RejectsRunningTask(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	agentTask := task.NewAgentTask("task-sendmessage-2", "Explore Worker", "Initial task", ctx, cancel)
 	agentTask.SetIdentity("Explore", "agent-session-654")
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("task-sendmessage-2")
-	orchestration.DefaultStore.RecordLaunch(orchestration.Launch{
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("task-sendmessage-2")
+	orchestration.Default().RecordLaunch(orchestration.Launch{
 		TaskID:    "task-sendmessage-2",
 		AgentID:   "agent-session-654",
 		AgentType: "Explore",
@@ -79,14 +79,14 @@ func TestSendMessageTool_RejectsRunningTask(t *testing.T) {
 	if strings.Contains(result.Output, "Use TaskOutput") {
 		t.Fatalf("should not encourage immediate TaskOutput polling: %s", result.Output)
 	}
-	if orchestration.DefaultStore.PendingMessageCount("task-sendmessage-2", "") != 1 {
+	if orchestration.Default().PendingMessageCount("task-sendmessage-2", "") != 1 {
 		t.Fatalf("expected queued message count to be 1")
 	}
 }
 
 func TestSendMessageTool_BackgroundMessageByAgentID(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	executor := &stubContinueAgentExecutor{}
 	toolInst := NewSendMessageTool()
@@ -118,8 +118,8 @@ func TestSendMessageTool_BackgroundMessageByAgentID(t *testing.T) {
 }
 
 func TestSendMessageTool_RequiresAgentTypeForDirectAgentID(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	toolInst := NewSendMessageTool()
 	toolInst.SetExecutor(&stubContinueAgentExecutor{})
@@ -138,8 +138,8 @@ func TestSendMessageTool_RequiresAgentTypeForDirectAgentID(t *testing.T) {
 }
 
 func TestSendMessageTool_DrainsQueuedMessagesOnResume(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -147,18 +147,18 @@ func TestSendMessageTool_DrainsQueuedMessagesOnResume(t *testing.T) {
 	agentTask := task.NewAgentTask("task-sendmessage-3", "Explore Worker", "Initial task", ctx, cancel)
 	agentTask.SetIdentity("Explore", "agent-session-888")
 	agentTask.Complete(nil)
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("task-sendmessage-3")
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("task-sendmessage-3")
 
-	orchestration.DefaultStore.RecordLaunch(orchestration.Launch{
+	orchestration.Default().RecordLaunch(orchestration.Launch{
 		TaskID:    "task-sendmessage-3",
 		AgentID:   "agent-session-888",
 		AgentType: "Explore",
 		Running:   false,
 		Status:    string(task.StatusCompleted),
 	})
-	orchestration.DefaultStore.QueuePendingMessage("task-sendmessage-3", "First queued update")
-	orchestration.DefaultStore.QueuePendingMessage("task-sendmessage-3", "Second queued update")
+	orchestration.Default().QueuePendingMessage("task-sendmessage-3", "First queued update")
+	orchestration.Default().QueuePendingMessage("task-sendmessage-3", "Second queued update")
 
 	executor := &stubContinueAgentExecutor{}
 	toolInst := NewSendMessageTool()
@@ -178,24 +178,24 @@ func TestSendMessageTool_DrainsQueuedMessagesOnResume(t *testing.T) {
 	if !strings.Contains(executor.lastRun.Prompt, "Latest instruction") {
 		t.Fatalf("expected prompt to include latest instruction, got: %q", executor.lastRun.Prompt)
 	}
-	if got := orchestration.DefaultStore.PendingMessageCount("task-sendmessage-3", ""); got != 0 {
+	if got := orchestration.Default().PendingMessageCount("task-sendmessage-3", ""); got != 0 {
 		t.Fatalf("expected pending messages to drain, got %d", got)
 	}
 }
 
 func TestSendMessageTool_QueuesRunningTaskByAgentID(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	agentTask := task.NewAgentTask("task-sendmessage-4", "Explore Worker", "Initial task", ctx, cancel)
 	agentTask.SetIdentity("Explore", "agent-session-running")
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("task-sendmessage-4")
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("task-sendmessage-4")
 
-	orchestration.DefaultStore.RecordLaunch(orchestration.Launch{
+	orchestration.Default().RecordLaunch(orchestration.Launch{
 		TaskID:    "task-sendmessage-4",
 		AgentID:   "agent-session-running",
 		AgentType: "Explore",
@@ -215,7 +215,7 @@ func TestSendMessageTool_QueuesRunningTaskByAgentID(t *testing.T) {
 	if !result.Success {
 		t.Fatalf("expected queued success, got: %s", result.Error)
 	}
-	if got := orchestration.DefaultStore.PendingMessageCount("task-sendmessage-4", ""); got != 1 {
+	if got := orchestration.Default().PendingMessageCount("task-sendmessage-4", ""); got != 1 {
 		t.Fatalf("expected queued message count to be 1, got %d", got)
 	}
 }

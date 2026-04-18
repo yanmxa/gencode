@@ -138,10 +138,10 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 			return toolresult.NewErrorResult(t.Name(), err.Error())
 		}
 		if running {
-			if !orchestration.DefaultStore.QueuePendingMessage(resolvedTaskID, messageText) {
+			if !orchestration.Default().QueuePendingMessage(resolvedTaskID, messageText) {
 				return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("failed to queue message for running task %s", resolvedTaskID))
 			}
-			queuedCount := orchestration.DefaultStore.PendingMessageCount(resolvedTaskID, "")
+			queuedCount := orchestration.Default().PendingMessageCount(resolvedTaskID, "")
 			return toolresult.ToolResult{
 				Success: true,
 				Output: fmt.Sprintf("Worker is still running. The message was queued for delivery at the worker's next safe turn boundary.\nTask ID: %s\nQueued messages: %d\n\nYou will be automatically notified when the worker completes. Continue with other work or respond to the user instead.",
@@ -181,7 +181,7 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 	req := tool.AgentExecRequest{
 		Agent:       target.agentType,
 		Name:        agentName,
-		Prompt:      composeContinuationPrompt(messageText, orchestration.DefaultStore.DrainPendingMessages(resolvedTaskID, target.agentID)),
+		Prompt:      composeContinuationPrompt(messageText, orchestration.Default().DrainPendingMessages(resolvedTaskID, target.agentID)),
 		Description: description,
 		Background:  tool.GetBool(normalized, "run_in_background"),
 		Model:       tool.GetString(normalized, "model"),
@@ -275,7 +275,7 @@ func resolveContinuationTargetForMessage(params map[string]any) (continuedAgentT
 }
 
 func ensureContinuationTaskExists(taskID string) error {
-	bgTask, found := task.DefaultManager.Get(taskID)
+	bgTask, found := task.Default().Get(taskID)
 	if !found {
 		return fmt.Errorf("task not found: %s", taskID)
 	}
@@ -287,7 +287,7 @@ func ensureContinuationTaskExists(taskID string) error {
 }
 
 func ensureContinuationTaskReady(taskID string) error {
-	bgTask, found := task.DefaultManager.Get(taskID)
+	bgTask, found := task.Default().Get(taskID)
 	if !found {
 		return fmt.Errorf("task not found: %s", taskID)
 	}
@@ -305,7 +305,7 @@ func ensureContinuationTaskReady(taskID string) error {
 }
 
 func isContinuationTaskRunning(taskID string) (bool, error) {
-	bgTask, found := task.DefaultManager.Get(taskID)
+	bgTask, found := task.Default().Get(taskID)
 	if !found {
 		return false, fmt.Errorf("task not found: %s", taskID)
 	}
@@ -316,7 +316,7 @@ func resolveLiveTaskID(target continuedAgentTarget) string {
 	if target.taskID != "" {
 		return target.taskID
 	}
-	taskID, _ := orchestration.DefaultStore.ResolveTaskID(target.agentID)
+	taskID, _ := orchestration.Default().ResolveTaskID(target.agentID)
 	return taskID
 }
 

@@ -18,7 +18,7 @@ func (t *CronListTool) Description() string { return "List all scheduled cron jo
 func (t *CronListTool) Icon() string        { return "clock" }
 
 func (t *CronListTool) Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
-	jobs := cron.DefaultStore.List()
+	jobs := cron.Default().List()
 	if len(jobs) == 0 {
 		return toolresult.ToolResult{
 			Success: true,

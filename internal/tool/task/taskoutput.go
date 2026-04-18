@@ -52,7 +52,7 @@ func (t *TaskOutputTool) Execute(ctx context.Context, params map[string]any, cwd
 	timeout := min(time.Duration(tool.GetFloat64(params, "timeout", 30000))*time.Millisecond, 600*time.Second)
 
 	// Get task
-	bgTask, found := task.DefaultManager.Get(taskID)
+	bgTask, found := task.Default().Get(taskID)
 	if !found {
 		return toolresult.ToolResult{
 			Success: false,
@@ -128,7 +128,7 @@ func (t *TaskOutputTool) Execute(ctx context.Context, params map[string]any, cwd
 	if info.Error != "" {
 		output += fmt.Sprintf("\nError: %s", info.Error)
 	}
-	if snapshot, ok := orchestration.DefaultStore.Snapshot(info.ID, info.AgentSessionID, string(info.Status), 1); ok {
+	if snapshot, ok := orchestration.Default().Snapshot(info.ID, info.AgentSessionID, string(info.Status), 1); ok {
 		output += formatOrchestrationSnapshot(snapshot)
 	}
 

@@ -49,18 +49,18 @@ func (m *model) buildCoreAgent() (*agentSession, error) {
 		return nil, errNoProvider
 	}
 
-	client := llm.NewClient(m.env.LLMProvider, m.env.GetModelID(), kit.GetMaxTokens(llm.DefaultSetup.Store, m.env.CurrentModel, setting.DefaultMaxTokens))
+	client := llm.NewClient(m.env.LLMProvider, m.env.GetModelID(), kit.GetMaxTokens(llm.Default().Store(), m.env.CurrentModel, setting.DefaultMaxTokens))
 	client.SetThinking(m.env.EffectiveThinkingLevel())
 
 	sys := m.buildSystemPrompt(nil, client)
 	tools := m.buildAgentTools()
 
 	permBridge := conv.NewPermissionBridge(func(name string, args map[string]any) conv.PermDecisionResult {
-		settings := setting.DefaultSetup
-		if settings == nil {
+		settingSvc := setting.DefaultIfInit()
+		if settingSvc == nil {
 			return conv.PermDecisionResult{Decision: perm.Permit}
 		}
-		decision := settings.HasPermissionToUseTool(name, args, m.env.SessionPermissions)
+		decision := settingSvc.HasPermissionToUseTool(name, args, m.env.SessionPermissions)
 		switch decision.Behavior {
 		case setting.Allow:
 			return conv.PermDecisionResult{Decision: perm.Permit, Reason: decision.Reason}
@@ -196,8 +196,8 @@ func (m *model) ReconfigureAgentTool() {
 	m.ensureMemoryContextLoaded()
 
 	executor := subagent.NewExecutor(m.env.LLMProvider, m.cwd, m.env.GetModelID(), hook.DefaultEngine)
-	if session.DefaultSetup.Store != nil && session.DefaultSetup.SessionID != "" {
-		executor.SetSessionStore(session.DefaultSetup.Store, session.DefaultSetup.SessionID)
+	if session.Default().GetStore() != nil && session.Default().ID() != "" {
+		executor.SetSessionStore(session.Default().GetStore(), session.Default().ID())
 	}
 	executor.SetContext(m.env.CachedUserInstructions, m.env.CachedProjectInstructions, m.isGit)
 	if mcp.DefaultRegistry != nil {
@@ -235,17 +235,12 @@ func (m *model) buildSystemPrompt(extra []string, loopClient *llm.Client) core.S
 	}
 
 	var sessionSummary string
-	if session.DefaultSetup.Summary != "" {
-		sessionSummary = fmt.Sprintf("<session-summary>\n%s\n</session-summary>", session.DefaultSetup.Summary)
+	if summary := session.Default().GetSummary(); summary != "" {
+		sessionSummary = fmt.Sprintf("<session-summary>\n%s\n</session-summary>", summary)
 	}
 
-	var skills, agents string
-	if skill.DefaultRegistry != nil {
-		skills = skill.DefaultRegistry.GetSkillsSection()
-	}
-	if subagent.DefaultRegistry != nil {
-		agents = subagent.DefaultRegistry.GetAgentsSection()
-	}
+	skills := skill.Default().PromptSection()
+	agents := subagent.Default().PromptSection()
 
 	return system.Build(system.Config{
 		ProviderName:        providerName,
@@ -269,7 +264,7 @@ func (m *model) buildAgentTools() core.Tools {
 		mcpGetter = mcp.DefaultRegistry.GetToolSchemas
 	}
 	schemas := (&tool.Set{
-		Disabled: setting.DefaultSetup.DisabledTools,
+		Disabled: setting.Default().DisabledTools(),
 		PlanMode: m.env.PlanEnabled,
 		MCP:      mcpGetter,
 	}).Tools()
@@ -289,7 +284,7 @@ func (m *model) buildAgentTools() core.Tools {
 // ============================================================
 
 func (m *model) buildLLMClient() *llm.Client {
-	c := llm.NewClient(m.env.LLMProvider, m.env.GetModelID(), kit.GetMaxTokens(llm.DefaultSetup.Store, m.env.CurrentModel, setting.DefaultMaxTokens))
+	c := llm.NewClient(m.env.LLMProvider, m.env.GetModelID(), kit.GetMaxTokens(llm.Default().Store(), m.env.CurrentModel, setting.DefaultMaxTokens))
 	c.SetThinking(m.env.EffectiveThinkingLevel())
 	return c
 }

@@ -9,8 +9,8 @@ import (
 
 // Preferred returns the preferred search provider from settings, or the default.
 func Preferred() Provider {
-	if s := setting.DefaultSetup; s != nil && s.SearchProvider != "" {
-		return CreateProvider(ProviderName(s.SearchProvider))
+	if s := setting.DefaultIfInit(); s != nil && s.SearchProvider() != "" {
+		return CreateProvider(ProviderName(s.SearchProvider()))
 	}
 	return GetDefaultProvider()
 }

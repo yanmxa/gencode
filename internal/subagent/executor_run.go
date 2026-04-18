@@ -112,7 +112,7 @@ func (e *Executor) buildDrainInjectedInputs(req AgentRequest) func() []string {
 		return nil
 	}
 	return func() []string {
-		return orchestration.DefaultStore.DrainPendingMessages(req.LiveTaskID, req.ResumeID)
+		return orchestration.Default().DrainPendingMessages(req.LiveTaskID, req.ResumeID)
 	}
 }
 

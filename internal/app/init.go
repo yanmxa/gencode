@@ -38,15 +38,15 @@ func initInfrastructure() error {
 	}
 	session.Initialize(appCwd)
 
-	hookSettings := setting.DefaultSetup
+	hookSettings := setting.Default().Snapshot()
 	plugin.MergePluginHooksIntoSettings(hookSettings)
 	hook.Initialize(hook.InitializeConfig{
 		Settings:       hookSettings,
-		SessionID:      session.DefaultSetup.SessionID,
+		SessionID:      session.Default().ID(),
 		CWD:            appCwd,
-		TranscriptPath: session.DefaultSetup.TranscriptPath(),
-		Completer:      buildHookCompleter(llm.DefaultSetup.Provider),
-		ModelID:        llm.DefaultSetup.ModelID(),
+		TranscriptPath: session.Default().TranscriptPath(),
+		Completer:      buildHookCompleter(llm.Default().Provider()),
+		ModelID:        llm.Default().ModelID(),
 		EnvProvider:    plugin.PluginEnv,
 	})
 
@@ -54,8 +54,8 @@ func initInfrastructure() error {
 }
 
 func initTools(cwd string) error {
-	orchestration.DefaultStore.Reset()
-	cron.DefaultStore.Reset()
+	orchestration.Default().Reset()
+	cron.Default().Reset()
 	cron.DefaultStore.SetStoragePath(filepath.Join(cwd, ".gen", "scheduled_tasks.json"))
 	if err := cron.DefaultStore.LoadDurable(); err != nil {
 		return fmt.Errorf("failed to load scheduled tasks: %w", err)

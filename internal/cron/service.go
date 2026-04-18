@@ -7,6 +7,8 @@ type Service interface {
 	// CRUD
 	Add(job Job) error
 	Remove(id string) bool
+	Create(cronExpr, prompt string, recurring, durable bool) (*Job, error)
+	Delete(id string) error
 	List() []*Job
 
 	// runtime

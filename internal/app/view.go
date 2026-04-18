@@ -43,7 +43,7 @@ func (m *model) View() string {
 	chatSection := m.renderChatSection(activeContent, trackerView)
 	statusLine := m.renderModeStatus()
 	suggestions := m.userInput.Suggestions.Render(m.width)
-	tokenWarning := conv.RenderTokenWarning(m.env.InputTokens, kit.GetEffectiveInputLimit(llm.DefaultSetup.Store, m.env.CurrentModel), m.conv.Compact.WarningSuppressed)
+	tokenWarning := conv.RenderTokenWarning(m.env.InputTokens, kit.GetEffectiveInputLimit(llm.Default().Store(), m.env.CurrentModel), m.conv.Compact.WarningSuppressed)
 	queuePreview := m.renderQueuePreview()
 
 	var view strings.Builder
@@ -142,31 +142,31 @@ func (m model) renderTrackerList() string {
 	if !m.conv.ShowTasks {
 		return ""
 	}
-	tasks := tracker.DefaultStore.List()
+	tasks := tracker.Default().List()
 	return conv.RenderTrackerList(conv.TrackerListParams{
 		Tasks:        tasks,
-		AllDone:      tracker.DefaultStore.AllDone(),
+		AllDone:      tracker.Default().AllDone(),
 		StreamActive: m.conv.Stream.Active,
 		Width:        m.width,
 		SpinnerView:  m.conv.Spinner.View(),
-		Blockers:     tracker.DefaultStore.OpenBlockers,
+		Blockers:     tracker.Default().OpenBlockers,
 		WorkerSnap: func(taskID, agentID string) (*orchestration.Snapshot, bool) {
-			return orchestration.DefaultStore.Snapshot(taskID, agentID, "", 1)
+			return orchestration.Default().Snapshot(taskID, agentID, "", 1)
 		},
 	})
 }
 
 func (m model) renderModeStatus() string {
 	modelName := m.userInput.Provider.StatusMessage
-	if hook.DefaultEngine != nil {
-		if status := hook.DefaultEngine.CurrentStatusMessage(); status != "" {
+	if svc := hook.DefaultIfInit(); svc != nil {
+		if status := svc.CurrentStatusMessage(); status != "" {
 			modelName = status
 		}
 	}
 	return conv.RenderModeStatus(conv.OperationModeParams{
 		Mode:          conv.OperationMode(m.env.OperationMode),
 		InputTokens:   m.env.InputTokens,
-		InputLimit:    kit.GetEffectiveInputLimit(llm.DefaultSetup.Store, m.env.CurrentModel),
+		InputLimit:    kit.GetEffectiveInputLimit(llm.Default().Store(), m.env.CurrentModel),
 		ModelName:     modelName,
 		Width:         m.width,
 		ThinkingLevel: m.env.EffectiveThinkingLevel(),
@@ -196,7 +196,7 @@ func (m model) messageRenderParams() conv.MessageRenderParams {
 		MDRenderer:              m.conv.MDRenderer,
 		SpinnerView:             m.conv.Spinner.View(),
 		TaskProgress:            m.conv.TaskProgress,
-		TaskOwnerMap:            buildTaskOwnerMap(tracker.DefaultStore.List()),
+		TaskOwnerMap:            buildTaskOwnerMap(tracker.Default().List()),
 		InteractivePromptActive: (m.conv.Modal.Question != nil && m.conv.Modal.Question.IsActive()) || (m.conv.Modal.PlanApproval != nil && m.conv.Modal.PlanApproval.IsActive()),
 	}
 }

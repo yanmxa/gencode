@@ -56,11 +56,12 @@ func initModel(opts setting.RunOptions) (*model, error) {
 }
 
 func (m *model) configureAsyncHookCallback() {
-	if hook.DefaultEngine == nil || m.systemInput.AsyncHookQueue == nil {
+	svc := hook.DefaultIfInit()
+	if svc == nil || m.systemInput.AsyncHookQueue == nil {
 		return
 	}
 	queue := m.systemInput.AsyncHookQueue
-	hook.DefaultEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
+	svc.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
 		reason := result.BlockReason
 		if reason == "" {
 			reason = "asynchronous hook requested a rewake"
@@ -85,11 +86,11 @@ func (m *model) fireStartupHooks() {
 }
 
 func printExitMessage(m *model) {
-	if session.DefaultSetup.SessionID != "" {
+	if sessionID := session.Default().ID(); sessionID != "" {
 		dim := kit.DimStyle()
 		fmt.Println()
 		fmt.Println(dim.Render("Resume this session with:"))
-		fmt.Println(dim.Render("gen -r " + session.DefaultSetup.SessionID))
+		fmt.Println(dim.Render("gen -r " + sessionID))
 		fmt.Println()
 	}
 }

@@ -56,8 +56,8 @@ func (s *stubContinueAgentExecutor) GetParentModelID() string {
 }
 
 func TestContinueAgentTool_ResolvesTaskIDToResumeID(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -65,8 +65,8 @@ func TestContinueAgentTool_ResolvesTaskIDToResumeID(t *testing.T) {
 	agentTask := task.NewAgentTask("task-agent-continue", "Explore Worker", "Initial task", ctx, cancel)
 	agentTask.SetIdentity("Explore", "agent-session-123")
 	agentTask.Complete(nil)
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("task-agent-continue")
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("task-agent-continue")
 
 	executor := &stubContinueAgentExecutor{}
 	tool := NewContinueAgentTool()
@@ -93,8 +93,8 @@ func TestContinueAgentTool_ResolvesTaskIDToResumeID(t *testing.T) {
 }
 
 func TestContinueAgentTool_BackgroundContinuation(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	executor := &stubContinueAgentExecutor{}
 	tool := NewContinueAgentTool()
@@ -123,8 +123,8 @@ func TestContinueAgentTool_BackgroundContinuation(t *testing.T) {
 }
 
 func TestContinueAgentTool_RequiresAgentTypeForDirectAgentID(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	tool := NewContinueAgentTool()
 	tool.SetExecutor(&stubContinueAgentExecutor{})
@@ -143,8 +143,8 @@ func TestContinueAgentTool_RequiresAgentTypeForDirectAgentID(t *testing.T) {
 }
 
 func TestContinueAgentTool_DrainsQueuedMessages(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -152,17 +152,17 @@ func TestContinueAgentTool_DrainsQueuedMessages(t *testing.T) {
 	agentTask := task.NewAgentTask("task-agent-continue-queued", "Explore Worker", "Initial task", ctx, cancel)
 	agentTask.SetIdentity("Explore", "agent-session-queued")
 	agentTask.Complete(nil)
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("task-agent-continue-queued")
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("task-agent-continue-queued")
 
-	orchestration.DefaultStore.RecordLaunch(orchestration.Launch{
+	orchestration.Default().RecordLaunch(orchestration.Launch{
 		TaskID:    "task-agent-continue-queued",
 		AgentID:   "agent-session-queued",
 		AgentType: "Explore",
 		Running:   false,
 		Status:    string(task.StatusCompleted),
 	})
-	orchestration.DefaultStore.QueuePendingMessage("task-agent-continue-queued", "Review the failing edge case")
+	orchestration.Default().QueuePendingMessage("task-agent-continue-queued", "Review the failing edge case")
 
 	executor := &stubContinueAgentExecutor{}
 	tool := NewContinueAgentTool()

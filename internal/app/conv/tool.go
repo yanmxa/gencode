@@ -79,10 +79,11 @@ func (defaultMCPExecutor) IsMCPTool(name string) bool {
 }
 
 func (defaultMCPExecutor) ExecuteMCP(ctx context.Context, name string, params map[string]any) (toolresult.ToolResult, error) {
-	if mcp.DefaultRegistry == nil {
+	svc := mcp.DefaultIfInit()
+	if svc == nil {
 		return toolresult.NewErrorResult(name, "MCP registry not initialized"), nil
 	}
-	result, err := mcp.DefaultRegistry.CallTool(ctx, name, params)
+	result, err := svc.Registry().CallTool(ctx, name, params)
 	if err != nil {
 		return toolresult.NewErrorResult(name, err.Error()), nil
 	}

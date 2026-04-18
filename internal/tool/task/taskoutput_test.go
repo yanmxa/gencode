@@ -11,8 +11,8 @@ import (
 )
 
 func TestTaskOutputTool_StillRunning(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	// Create a test agent task that stays running
 	ctx, cancel := context.WithCancel(context.Background())
@@ -23,8 +23,8 @@ func TestTaskOutputTool_StillRunning(t *testing.T) {
 	agentTask.AppendOutput([]byte("Some partial output\n"))
 
 	// Register the task
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("test-agent-123")
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("test-agent-123")
 
 	// Execute TaskOutput with short timeout
 	tool := &TaskOutputTool{}
@@ -62,8 +62,8 @@ func TestTaskOutputTool_StillRunning(t *testing.T) {
 }
 
 func TestTaskOutputTool_Completed(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	// Create a test agent task and complete it
 	ctx, cancel := context.WithCancel(context.Background())
@@ -77,8 +77,8 @@ func TestTaskOutputTool_Completed(t *testing.T) {
 	cancel()
 
 	// Register the task
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("test-agent-456")
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("test-agent-456")
 
 	// Execute TaskOutput
 	tool := &TaskOutputTool{}
@@ -115,8 +115,8 @@ func TestTaskOutputTool_Completed(t *testing.T) {
 }
 
 func TestTaskOutputTool_NotFound(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	tool := &TaskOutputTool{}
 	result := tool.Execute(context.Background(), map[string]any{
@@ -134,8 +134,8 @@ func TestTaskOutputTool_NotFound(t *testing.T) {
 }
 
 func TestTaskOutputTool_NonBlocking(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	// Create a running task
 	ctx, cancel := context.WithCancel(context.Background())
@@ -144,8 +144,8 @@ func TestTaskOutputTool_NonBlocking(t *testing.T) {
 	agentTask := task.NewAgentTask("test-agent-789", "Explore", "Test task", ctx, cancel)
 	agentTask.UpdateProgress(3, 500)
 
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("test-agent-789")
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("test-agent-789")
 
 	// Execute with block=false
 	tool := &TaskOutputTool{}
@@ -175,8 +175,8 @@ func TestTaskOutputTool_NonBlocking(t *testing.T) {
 }
 
 func TestTaskOutputTool_DefaultsToNonBlocking(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -184,8 +184,8 @@ func TestTaskOutputTool_DefaultsToNonBlocking(t *testing.T) {
 	agentTask := task.NewAgentTask("test-agent-default", "Explore", "Test task", ctx, cancel)
 	agentTask.UpdateProgress(2, 300)
 
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("test-agent-default")
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("test-agent-default")
 
 	tool := &TaskOutputTool{}
 	start := time.Now()
@@ -208,8 +208,8 @@ func TestTaskOutputTool_DefaultsToNonBlocking(t *testing.T) {
 }
 
 func TestTaskOutputTool_AllowsOlderRunningTaskInspection(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -218,8 +218,8 @@ func TestTaskOutputTool_AllowsOlderRunningTaskInspection(t *testing.T) {
 	agentTask.UpdateProgress(7, 900)
 	agentTask.StartTime = time.Now().Add(-recentLaunchPollingCooldown - time.Second)
 
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("test-agent-older")
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("test-agent-older")
 
 	tool := &TaskOutputTool{}
 	result := tool.Execute(context.Background(), map[string]any{
@@ -235,8 +235,8 @@ func TestTaskOutputTool_AllowsOlderRunningTaskInspection(t *testing.T) {
 }
 
 func TestTaskOutputTool_RendersOrchestrationSnapshot(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	orchestration.Default().Reset()
+	t.Cleanup(orchestration.Default().Reset)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -244,10 +244,10 @@ func TestTaskOutputTool_RendersOrchestrationSnapshot(t *testing.T) {
 	agentTask := task.NewAgentTask("test-agent-orch", "Explore", "Test task", ctx, cancel)
 	agentTask.SetIdentity("Explore", "agent-session-orch")
 	agentTask.Complete(nil)
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("test-agent-orch")
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("test-agent-orch")
 
-	orchestration.DefaultStore.RecordLaunch(orchestration.Launch{
+	orchestration.Default().RecordLaunch(orchestration.Launch{
 		TaskID:       "test-agent-orch",
 		AgentID:      "agent-session-orch",
 		AgentType:    "Explore",
@@ -260,7 +260,7 @@ func TestTaskOutputTool_RendersOrchestrationSnapshot(t *testing.T) {
 		BatchSubject: "2 background agents launched",
 		BatchTotal:   2,
 	})
-	orchestration.DefaultStore.UpdateBatch(orchestration.Batch{
+	orchestration.Default().UpdateBatch(orchestration.Batch{
 		ID:        "batch-orch",
 		Key:       "batch-orch",
 		Subject:   "2 background agents launched",
@@ -269,7 +269,7 @@ func TestTaskOutputTool_RendersOrchestrationSnapshot(t *testing.T) {
 		Total:     2,
 		Failures:  1,
 	})
-	orchestration.DefaultStore.QueuePendingMessage("test-agent-orch", "follow up later")
+	orchestration.Default().QueuePendingMessage("test-agent-orch", "follow up later")
 
 	tool := &TaskOutputTool{}
 	result := tool.Execute(context.Background(), map[string]any{

@@ -112,8 +112,8 @@ func (s *SearchSelector) Select() tea.Cmd {
 		return nil
 	}
 
-	if setting.DefaultSetup != nil {
-		setting.DefaultSetup.SearchProvider = string(selected.Name)
+	if svc := setting.DefaultIfInit(); svc != nil {
+		svc.SetSearchProvider(string(selected.Name))
 	}
 	if s.store != nil {
 		_ = s.store.SetSearchProvider(string(selected.Name))

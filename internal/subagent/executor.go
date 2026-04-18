@@ -139,7 +139,7 @@ func (e *Executor) RunBackground(req AgentRequest) (*task.AgentTask, error) {
 	req.LiveTaskID = agentTask.GetID()
 
 	// Register with task manager
-	task.DefaultManager.RegisterTask(agentTask)
+	task.Default().RegisterTask(agentTask)
 
 	// Set up progress callback to forward to task
 	req.OnProgress = func(msg string) {
