@@ -64,7 +64,14 @@ func newStore() *Store {
 	}
 }
 
+// Compile-time assertion: *Store implements Service.
+var _ Service = (*Store)(nil)
+
 var DefaultStore = newStore()
+
+func init() {
+	instance = DefaultStore
+}
 
 func (s *Store) Reset() {
 	s.mu.Lock()

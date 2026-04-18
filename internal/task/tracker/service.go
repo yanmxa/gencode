@@ -1,0 +1,75 @@
+package tracker
+
+import "sync"
+
+// Service is the public contract for the tracker module.
+type Service interface {
+	// CRUD
+	Create(subject, description, activeForm string, metadata map[string]any) *Task
+	Get(id string) (*Task, bool)
+	Update(id string, opts ...UpdateOption) error
+	Delete(id string) error
+	List() []*Task
+
+	// query
+	IsBlocked(id string) bool
+	OpenBlockers(id string) []string
+	HasInProgress() bool
+	AllDone() bool
+	FindByMetadata(key, want string) *Task
+
+	// persistence
+	SetStorageDir(dir string) error
+	GetStorageDir() string
+	ReloadFromDisk()
+	Export() []Task
+	Import(tasks []Task)
+
+	// lifecycle
+	Reset()
+}
+
+// Compile-time check: *Store implements Service.
+var _ Service = (*Store)(nil)
+
+// ── singleton ──────────────────────────────────────────────
+
+var (
+	svcMu    sync.RWMutex
+	instance Service
+)
+
+// Default returns the singleton Service instance.
+// Panics if not initialized.
+func Default() Service {
+	svcMu.RLock()
+	s := instance
+	svcMu.RUnlock()
+	if s == nil {
+		panic("tracker: not initialized")
+	}
+	return s
+}
+
+// SetDefault replaces the singleton instance. Intended for tests.
+func SetDefault(s Service) {
+	svcMu.Lock()
+	instance = s
+	svcMu.Unlock()
+}
+
+// Reset clears the singleton instance. Intended for tests.
+func ResetService() {
+	svcMu.Lock()
+	instance = nil
+	svcMu.Unlock()
+}
+
+// initDefault sets the singleton to DefaultStore if not already set.
+func init() {
+	svcMu.Lock()
+	defer svcMu.Unlock()
+	if instance == nil {
+		instance = DefaultStore
+	}
+}

@@ -53,8 +53,18 @@ type Store struct {
 	storagePath string // file path for durable job persistence (empty = disabled)
 }
 
+// Compile-time check that *Store implements Service.
+var _ Service = (*Store)(nil)
+
 // DefaultStore is the global cron store singleton.
+// Deprecated: Use Default() to access the Service interface instead.
 var DefaultStore = NewStore()
+
+func init() {
+	mu.Lock()
+	instance = DefaultStore
+	mu.Unlock()
+}
 
 // NewStore creates a new in-memory cron store.
 func NewStore() *Store {
@@ -219,6 +229,71 @@ func (s *Store) Tick() []FiredJob {
 type FiredJob struct {
 	ID     string
 	Prompt string
+}
+
+// Add adds a pre-built job to the store, satisfying the Service interface.
+// The job must have a valid cron expression in the Cron field.
+func (s *Store) Add(job Job) error {
+	expr, err := parse(job.Cron)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.jobs) >= maxJobs {
+		return fmt.Errorf("cron: maximum number of jobs (%d) reached", maxJobs)
+	}
+
+	j := &Job{
+		ID:        job.ID,
+		Cron:      job.Cron,
+		Prompt:    job.Prompt,
+		Recurring: job.Recurring,
+		Durable:   job.Durable,
+		CreatedAt: now,
+		ExpiresAt: job.ExpiresAt,
+		expr:      expr,
+	}
+	if j.ID == "" {
+		j.ID = generateID()
+	}
+	if j.Recurring && j.ExpiresAt.IsZero() {
+		j.ExpiresAt = now.Add(defaultExpiry)
+	}
+	j.NextFire = computeNextFire(expr, now, j.ID, j.Recurring)
+	if j.NextFire.IsZero() {
+		return fmt.Errorf("cron: no valid fire time found for %q", job.Cron)
+	}
+
+	s.jobs[j.ID] = j
+
+	if j.Durable {
+		s.saveDurableLocked()
+	}
+	return nil
+}
+
+// Remove removes a job by ID, satisfying the Service interface.
+// Returns true if the job was found and removed.
+func (s *Store) Remove(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	job, ok := s.jobs[id]
+	if !ok {
+		return false
+	}
+	wasDurable := job.Durable
+	delete(s.jobs, id)
+
+	if wasDurable {
+		s.saveDurableLocked()
+	}
+	return true
 }
 
 // Reset removes all jobs.

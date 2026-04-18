@@ -63,6 +63,7 @@ func Initialize(cfg InitializeConfig) {
 	if cfg.EnvProvider != nil {
 		DefaultEngine.SetEnvProvider(cfg.EnvProvider)
 	}
+	SetDefault(DefaultEngine)
 }
 
 // NewEngine creates a new hook execution engine.

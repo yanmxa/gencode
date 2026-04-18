@@ -49,18 +49,9 @@ func builtinCommands() []Info {
 	}
 }
 
-// BuiltinNames returns the set of built-in command names for registry lookup.
-func BuiltinNames() map[string]Info {
-	cmds := builtinCommands()
-	m := make(map[string]Info, len(cmds))
-	for _, c := range cmds {
-		m[c.Name] = c
-	}
-	return m
-}
-
 // ParseCommand splits a slash-command input into the command name, arguments,
 // and a boolean indicating whether the input was a command at all.
+// This is a pure function with no state dependency.
 func ParseCommand(input string) (cmd string, args string, isCmd bool) {
 	input = strings.TrimSpace(input)
 	if !strings.HasPrefix(input, "/") {
@@ -76,46 +67,55 @@ func ParseCommand(input string) (cmd string, args string, isCmd bool) {
 	return cmd, args, true
 }
 
+// ── backward-compat package-level functions ───────────────
+
+// BuiltinNames returns the set of built-in command names for registry lookup.
+// Delegates to Default().
+func BuiltinNames() map[string]Info {
+	return Default().BuiltinNames()
+}
+
 // GetMatchingCommands returns all commands (builtin + skills + plugin commands)
 // whose names fuzzy-match the given query. Results are sorted alphabetically.
+// Delegates to Default().
 func GetMatchingCommands(query string) []Info {
-	query = strings.ToLower(strings.TrimPrefix(query, "/"))
-	matches := make([]Info, 0)
-	seen := make(map[string]bool)
-
-	builtins := BuiltinNames()
-	for name, cmd := range builtins {
-		if fuzzyMatch(name, query) {
-			matches = append(matches, cmd)
-			seen[name] = true
-		}
-	}
-
-	for _, provider := range getDynamicInfoProviders() {
-		for _, cmd := range provider() {
-			if fuzzyMatch(strings.ToLower(cmd.Name), query) && !seen[cmd.Name] {
-				matches = append(matches, cmd)
-				seen[cmd.Name] = true
-			}
-		}
-	}
-
-	customCmds := GetCustomCommands()
-	for _, cmd := range customCmds {
-		if fuzzyMatch(strings.ToLower(cmd.Name), query) {
-			if !seen[cmd.Name] {
-				matches = append(matches, cmd)
-				seen[cmd.Name] = true
-			}
-		}
-	}
-
-	sort.Slice(matches, func(i, j int) bool {
-		return matches[i].Name < matches[j].Name
-	})
-
-	return matches
+	return Default().GetMatching(query)
 }
+
+// GetCustomCommands returns Info entries for all custom commands
+// (user, plugin, and project level).
+// Delegates to Default().
+func GetCustomCommands() []Info {
+	return Default().GetCustomCommands()
+}
+
+// IsCustomCommand checks whether the given command name matches a custom command.
+// Delegates to Default().
+func IsCustomCommand(cmd string) (*CustomCommand, bool) {
+	return Default().IsCustomCommand(cmd)
+}
+
+// SetDynamicInfoProviders configures additional command metadata sources that
+// are composed above this package, such as skill-backed slash commands.
+// Delegates to Default().
+func SetDynamicInfoProviders(providers ...func() []Info) {
+	Default().(*service).setDynamicInfoProviders(providers...)
+}
+
+// Initialize sets the working directory for resolving project-level commands,
+// creates the service, and sets the singleton.
+// Sources: ~/.gen/commands/, .gen/commands/, and plugin command paths.
+func Initialize(cwd string) error {
+	s := &service{
+		cwd: cwd,
+	}
+	mu.Lock()
+	instance = s
+	mu.Unlock()
+	return nil
+}
+
+// ── implementation ─────────────────────────────────────────
 
 // commandScope represents where a custom command was loaded from.
 // Higher values have higher priority.
@@ -123,8 +123,8 @@ type commandScope int
 
 const (
 	scopeUser         commandScope = iota // ~/.gen/commands/
-	scopeUserPlugin                        // ~/.gen/plugins/*/commands/
-	scopeProjectPlugin                     // .gen/plugins/*/commands/
+	scopeUserPlugin                       // ~/.gen/plugins/*/commands/
+	scopeProjectPlugin                    // .gen/plugins/*/commands/
 	scopeProject                          // .gen/commands/
 )
 
@@ -157,43 +157,132 @@ func (cc *CustomCommand) GetInstructions() string {
 	return body
 }
 
-// commandCwd stores the working directory for resolving project-level commands.
-var (
-	commandMu            sync.RWMutex
-	commandCwd           string
+// service is the internal implementation of Service.
+type service struct {
+	mu                   sync.RWMutex
+	cwd                  string
 	cachedCustomCommands []CustomCommand
 	dynamicInfoProviders []func() []Info
-)
-
-// Initialize sets the working directory for resolving project-level commands
-// and invalidates the cached command list.
-// Sources: ~/.gen/commands/, .gen/commands/, and plugin command paths.
-func Initialize(cwd string) error {
-	commandMu.Lock()
-	defer commandMu.Unlock()
-	commandCwd = cwd
-	cachedCustomCommands = nil
-	return nil
 }
 
-// SetDynamicInfoProviders configures additional command metadata sources that
-// are composed above this package, such as skill-backed slash commands.
-func SetDynamicInfoProviders(providers ...func() []Info) {
-	commandMu.Lock()
-	defer commandMu.Unlock()
-	dynamicInfoProviders = append([]func() []Info(nil), providers...)
+func (s *service) BuiltinNames() map[string]Info {
+	cmds := builtinCommands()
+	m := make(map[string]Info, len(cmds))
+	for _, c := range cmds {
+		m[c.Name] = c
+	}
+	return m
 }
 
-func getDynamicInfoProviders() []func() []Info {
-	commandMu.RLock()
-	defer commandMu.RUnlock()
-	return append([]func() []Info(nil), dynamicInfoProviders...)
+func (s *service) Get(name string) (Info, bool) {
+	// Check builtins first.
+	builtins := s.BuiltinNames()
+	if info, ok := builtins[name]; ok {
+		return info, true
+	}
+	// Check dynamic providers.
+	for _, provider := range s.getDynamicInfoProviders() {
+		for _, cmd := range provider() {
+			if cmd.Name == name {
+				return cmd, true
+			}
+		}
+	}
+	// Check custom commands.
+	for _, cmd := range s.loadAllCustomCommands() {
+		if cmd.FullName() == name || cmd.Name == name {
+			return Info{Name: cmd.FullName(), Description: cmd.Description}, true
+		}
+	}
+	return Info{}, false
 }
 
-// GetCustomCommands returns Info entries for all custom commands
-// (user, plugin, and project level).
-func GetCustomCommands() []Info {
-	cmds := loadAllCustomCommands()
+func (s *service) List() []Info {
+	seen := make(map[string]bool)
+	var all []Info
+
+	for _, cmd := range builtinCommands() {
+		all = append(all, cmd)
+		seen[cmd.Name] = true
+	}
+
+	for _, provider := range s.getDynamicInfoProviders() {
+		for _, cmd := range provider() {
+			if !seen[cmd.Name] {
+				all = append(all, cmd)
+				seen[cmd.Name] = true
+			}
+		}
+	}
+
+	for _, cmd := range s.loadAllCustomCommands() {
+		name := cmd.FullName()
+		if !seen[name] {
+			all = append(all, Info{Name: name, Description: cmd.Description})
+			seen[name] = true
+		}
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].Name < all[j].Name
+	})
+	return all
+}
+
+func (s *service) ListCustom() []CustomCommand {
+	return s.loadAllCustomCommands()
+}
+
+func (s *service) GetMatching(prefix string) []Info {
+	query := strings.ToLower(strings.TrimPrefix(prefix, "/"))
+	matches := make([]Info, 0)
+	seen := make(map[string]bool)
+
+	builtins := s.BuiltinNames()
+	for name, cmd := range builtins {
+		if fuzzyMatch(name, query) {
+			matches = append(matches, cmd)
+			seen[name] = true
+		}
+	}
+
+	for _, provider := range s.getDynamicInfoProviders() {
+		for _, cmd := range provider() {
+			if fuzzyMatch(strings.ToLower(cmd.Name), query) && !seen[cmd.Name] {
+				matches = append(matches, cmd)
+				seen[cmd.Name] = true
+			}
+		}
+	}
+
+	customCmds := s.GetCustomCommands()
+	for _, cmd := range customCmds {
+		if fuzzyMatch(strings.ToLower(cmd.Name), query) {
+			if !seen[cmd.Name] {
+				matches = append(matches, cmd)
+				seen[cmd.Name] = true
+			}
+		}
+	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Name < matches[j].Name
+	})
+
+	return matches
+}
+
+func (s *service) IsCustomCommand(cmd string) (*CustomCommand, bool) {
+	for _, c := range s.loadAllCustomCommands() {
+		if c.FullName() == cmd || c.Name == cmd {
+			return &c, true
+		}
+	}
+	return nil, false
+}
+
+func (s *service) GetCustomCommands() []Info {
+	cmds := s.loadAllCustomCommands()
 	infos := make([]Info, 0, len(cmds))
 	for _, c := range cmds {
 		infos = append(infos, Info{
@@ -204,33 +293,36 @@ func GetCustomCommands() []Info {
 	return infos
 }
 
-// IsCustomCommand checks whether the given command name matches a custom command.
-func IsCustomCommand(cmd string) (*CustomCommand, bool) {
-	for _, c := range loadAllCustomCommands() {
-		if c.FullName() == cmd || c.Name == cmd {
-			return &c, true
-		}
-	}
-	return nil, false
+// setDynamicInfoProviders replaces the dynamic info providers.
+func (s *service) setDynamicInfoProviders(providers ...func() []Info) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dynamicInfoProviders = append([]func() []Info(nil), providers...)
+}
+
+func (s *service) getDynamicInfoProviders() []func() []Info {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]func() []Info(nil), s.dynamicInfoProviders...)
 }
 
 // loadAllCustomCommands returns custom commands from all sources, using cache
 // when available. The cache is invalidated by Initialize.
-func loadAllCustomCommands() []CustomCommand {
-	commandMu.RLock()
-	if cachedCustomCommands != nil {
-		defer commandMu.RUnlock()
-		return cachedCustomCommands
+func (s *service) loadAllCustomCommands() []CustomCommand {
+	s.mu.RLock()
+	if s.cachedCustomCommands != nil {
+		defer s.mu.RUnlock()
+		return s.cachedCustomCommands
 	}
-	commandMu.RUnlock()
+	s.mu.RUnlock()
 
-	commandMu.Lock()
-	defer commandMu.Unlock()
-	if cachedCustomCommands != nil {
-		return cachedCustomCommands
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cachedCustomCommands != nil {
+		return s.cachedCustomCommands
 	}
-	cachedCustomCommands = loadCustomCommandsFromDisk()
-	return cachedCustomCommands
+	s.cachedCustomCommands = s.loadCustomCommandsFromDisk()
+	return s.cachedCustomCommands
 }
 
 // loadCustomCommandsFromDisk loads custom commands from all sources in priority order:
@@ -239,7 +331,7 @@ func loadAllCustomCommands() []CustomCommand {
 // 3. .gen/plugins/*/commands/   (project-plugin)
 // 4. .gen/commands/          (project level, highest priority)
 // Higher-priority commands override lower-priority ones with the same full name.
-func loadCustomCommandsFromDisk() []CustomCommand {
+func (s *service) loadCustomCommandsFromDisk() []CustomCommand {
 	cmdMap := make(map[string]CustomCommand)
 
 	homeDir, _ := os.UserHomeDir()
@@ -261,8 +353,8 @@ func loadCustomCommandsFromDisk() []CustomCommand {
 		}
 	}
 
-	if commandCwd != "" {
-		projectDir := filepath.Join(commandCwd, ".gen", "commands")
+	if s.cwd != "" {
+		projectDir := filepath.Join(s.cwd, ".gen", "commands")
 		for _, pc := range loadCommandsFromDir(projectDir, "", scopeProject) {
 			cmdMap[pc.FullName()] = pc
 		}

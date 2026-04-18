@@ -77,6 +77,9 @@ func Initialize(cwd string, pluginServers func() []PluginServer) error {
 		reg.configs = reg.mergePluginMCPConfigs(reg.configs)
 	}
 	DefaultRegistry = reg
+
+	// Set the Service singleton wrapping this registry.
+	SetDefault(&service{reg: reg})
 	return nil
 }
 

@@ -210,5 +210,9 @@ func Initialize(cwd string, pluginAgentPaths func() []PluginAgentPath) error {
 	if err := DefaultRegistry.InitStores(cwd); err != nil {
 		return fmt.Errorf("failed to initialize agent stores: %w", err)
 	}
+
+	// Set the singleton service to the global registry.
+	SetDefault(DefaultRegistry)
+
 	return nil
 }

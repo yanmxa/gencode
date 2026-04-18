@@ -8,11 +8,36 @@ import (
 	"github.com/yanmxa/gencode/internal/plugin"
 )
 
-func TestGetMatchingCommands_IncludesDynamicProviders(t *testing.T) {
-	prevProviders := getDynamicInfoProviders()
-	t.Cleanup(func() { SetDynamicInfoProviders(prevProviders...) })
+// saveAndRestore saves current singleton state and restores it on cleanup.
+func saveAndRestore(t *testing.T) {
+	t.Helper()
+	mu.RLock()
+	prev := instance
+	mu.RUnlock()
+	t.Cleanup(func() {
+		mu.Lock()
+		instance = prev
+		mu.Unlock()
+	})
+}
 
-	SetDynamicInfoProviders(func() []Info {
+// initTestService creates a fresh service and sets it as the singleton.
+func initTestService(t *testing.T, cwd string, providers ...func() []Info) *service {
+	t.Helper()
+	s := &service{cwd: cwd}
+	if len(providers) > 0 {
+		s.dynamicInfoProviders = append([]func() []Info(nil), providers...)
+	}
+	mu.Lock()
+	instance = s
+	mu.Unlock()
+	return s
+}
+
+func TestGetMatchingCommands_IncludesDynamicProviders(t *testing.T) {
+	saveAndRestore(t)
+
+	initTestService(t, "", func() []Info {
 		return []Info{
 			{Name: "search", Description: "Search files <pattern>"},
 			{Name: "review", Description: "Review code"},
@@ -127,13 +152,11 @@ func setupPluginRegistryWithCommands(t *testing.T) string {
 }
 
 func TestIsCustomCommand_MatchesCustomCommands(t *testing.T) {
+	saveAndRestore(t)
 	prevReg := plugin.DefaultRegistry
-	prevCache := cachedCustomCommands
 	t.Cleanup(func() {
 		plugin.DefaultRegistry = prevReg
-		cachedCustomCommands = prevCache
 	})
-	cachedCustomCommands = nil
 
 	tmpDir := setupPluginRegistryWithCommands(t)
 
@@ -141,6 +164,8 @@ func TestIsCustomCommand_MatchesCustomCommands(t *testing.T) {
 	if err := plugin.DefaultRegistry.LoadFromPath(nil, filepath.Join(tmpDir, "myplugin")); err != nil {
 		t.Fatal(err)
 	}
+
+	initTestService(t, "")
 
 	pc, ok := IsCustomCommand("myplugin:greet")
 	if !ok {
@@ -164,16 +189,11 @@ func TestIsCustomCommand_MatchesCustomCommands(t *testing.T) {
 }
 
 func TestGetMatchingCommands_IncludesCustomCommands(t *testing.T) {
+	saveAndRestore(t)
 	prevReg := plugin.DefaultRegistry
-	prevProviders := getDynamicInfoProviders()
-	prevCache := cachedCustomCommands
 	t.Cleanup(func() {
 		plugin.DefaultRegistry = prevReg
-		SetDynamicInfoProviders(prevProviders...)
-		cachedCustomCommands = prevCache
 	})
-	SetDynamicInfoProviders()
-	cachedCustomCommands = nil
 
 	tmpDir := setupPluginRegistryWithCommands(t)
 
@@ -181,6 +201,8 @@ func TestGetMatchingCommands_IncludesCustomCommands(t *testing.T) {
 	if err := plugin.DefaultRegistry.LoadFromPath(nil, filepath.Join(tmpDir, "myplugin")); err != nil {
 		t.Fatal(err)
 	}
+
+	initTestService(t, "")
 
 	matches := GetMatchingCommands("gre")
 	found := false
@@ -233,19 +255,12 @@ func TestLoadCommandsFromDir_NonexistentDir(t *testing.T) {
 }
 
 func TestProjectCommandOverridesUser(t *testing.T) {
+	saveAndRestore(t)
 	prevReg := plugin.DefaultRegistry
-	prevProviders := getDynamicInfoProviders()
-	prevCwd := commandCwd
-	prevCache := cachedCustomCommands
 	t.Cleanup(func() {
 		plugin.DefaultRegistry = prevReg
-		SetDynamicInfoProviders(prevProviders...)
-		commandCwd = prevCwd
-		cachedCustomCommands = prevCache
 	})
-	cachedCustomCommands = nil
 	plugin.DefaultRegistry = nil
-	SetDynamicInfoProviders()
 
 	root := t.TempDir()
 
@@ -269,13 +284,13 @@ func TestProjectCommandOverridesUser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	commandCwd = projectDir
+	svc := initTestService(t, projectDir)
 
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", homeDir)
 	t.Cleanup(func() { os.Setenv("HOME", origHome) })
 
-	cmds := loadAllCustomCommands()
+	cmds := svc.loadAllCustomCommands()
 	if len(cmds) != 1 {
 		t.Fatalf("expected 1 command (project overrides user), got %d: %+v", len(cmds), cmds)
 	}
@@ -308,19 +323,12 @@ func TestUserCommandWithoutNamespace(t *testing.T) {
 }
 
 func TestIsCustomCommand_MatchesUserAndProjectCommands(t *testing.T) {
+	saveAndRestore(t)
 	prevReg := plugin.DefaultRegistry
-	prevProviders := getDynamicInfoProviders()
-	prevCwd := commandCwd
-	prevCache := cachedCustomCommands
 	t.Cleanup(func() {
 		plugin.DefaultRegistry = prevReg
-		SetDynamicInfoProviders(prevProviders...)
-		commandCwd = prevCwd
-		cachedCustomCommands = prevCache
 	})
-	cachedCustomCommands = nil
 	plugin.DefaultRegistry = nil
-	SetDynamicInfoProviders()
 
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "project")
@@ -333,7 +341,7 @@ func TestIsCustomCommand_MatchesUserAndProjectCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	commandCwd = projectDir
+	initTestService(t, projectDir)
 
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", filepath.Join(root, "empty-home"))
@@ -370,27 +378,21 @@ func TestPluginScopeMapping(t *testing.T) {
 }
 
 func TestCustomcommandScopeFromRegistry(t *testing.T) {
+	saveAndRestore(t)
 	prevReg := plugin.DefaultRegistry
-	prevProviders := getDynamicInfoProviders()
-	prevCwd := commandCwd
-	prevCache := cachedCustomCommands
 	t.Cleanup(func() {
 		plugin.DefaultRegistry = prevReg
-		SetDynamicInfoProviders(prevProviders...)
-		commandCwd = prevCwd
-		cachedCustomCommands = prevCache
 	})
-	cachedCustomCommands = nil
-	SetDynamicInfoProviders()
-	commandCwd = ""
 
 	tmpDir := setupPluginRegistryWithCommands(t)
 
 	plugin.DefaultRegistry = plugin.NewRegistry()
-	// LoadFromPath uses ScopeLocal → should map to scopeProjectPlugin
+	// LoadFromPath uses ScopeLocal -> should map to scopeProjectPlugin
 	if err := plugin.DefaultRegistry.LoadFromPath(nil, filepath.Join(tmpDir, "myplugin")); err != nil {
 		t.Fatal(err)
 	}
+
+	initTestService(t, "")
 
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", filepath.Join(tmpDir, "empty-home"))

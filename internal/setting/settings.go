@@ -207,9 +207,11 @@ func NewSettings() *Settings {
 // DefaultSetup is the singleton app settings, initialized by Initialize().
 var DefaultSetup *Settings
 
-// Initialize loads settings for cwd and sets DefaultSetup.
+// Initialize loads settings for cwd and sets both DefaultSetup and the Service singleton.
 func Initialize(cwd string) {
-	DefaultSetup = InitForApp(cwd)
+	s := InitForApp(cwd)
+	DefaultSetup = s
+	SetDefault(&settingsService{settings: s})
 }
 
 // InitForApp loads settings for cwd, deep-clones them, and returns
@@ -228,7 +230,7 @@ func InitForApp(cwd string) *Settings {
 	}
 	_ = err
 	if settings == nil {
-		settings = Default()
+		settings = defaultSettings()
 	}
 	mergeProviderPreferences(settings)
 	return settings.Clone()
@@ -261,7 +263,7 @@ func mergeProviderPreferences(s *Settings) {
 // Clone returns a deep copy of the Settings.
 func (s *Settings) Clone() *Settings {
 	if s == nil {
-		return Default()
+		return defaultSettings()
 	}
 	dst := NewSettings()
 	dst.Permissions.Allow = append([]string(nil), s.Permissions.Allow...)

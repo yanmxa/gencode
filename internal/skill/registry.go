@@ -165,6 +165,11 @@ func Initialize(cwd string) error {
 	}
 
 	DefaultRegistry = registry
+
+	mu.Lock()
+	instance = registry
+	mu.Unlock()
+
 	return nil
 }
 
@@ -437,6 +442,45 @@ func (r *Registry) Count() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.skills)
+}
+
+// IsEnabled returns true if the named skill exists and is enabled or active.
+func (r *Registry) IsEnabled(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	skill, ok := r.skills[name]
+	if !ok {
+		return false
+	}
+	return skill.IsEnabled()
+}
+
+// SetEnabled sets the enabled state for a skill and persists it.
+// When enabled is true the skill moves to StateEnable; when false it moves to StateDisable.
+func (r *Registry) SetEnabled(name string, enabled bool, userLevel bool) error {
+	state := StateEnable
+	if !enabled {
+		state = StateDisable
+	}
+	return r.SetState(name, state, userLevel)
+}
+
+// GetDisabledAt returns a map of skill names that are disabled at the given level.
+func (r *Registry) GetDisabledAt(userLevel bool) map[string]bool {
+	states := r.GetStatesAt(userLevel)
+	result := make(map[string]bool)
+	for name, state := range states {
+		if state == StateDisable {
+			result[name] = true
+		}
+	}
+	return result
+}
+
+// PromptSection returns the rendered skills section for the system prompt.
+// This is an alias for GetSkillsSection to satisfy the Service interface.
+func (r *Registry) PromptSection() string {
+	return r.GetSkillsSection()
 }
 
 // NewRegistryForTest creates a Registry with pre-populated skills and stores.

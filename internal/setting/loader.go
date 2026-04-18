@@ -252,8 +252,8 @@ func LoadForCwd(cwd string) (*Settings, error) {
 	return NewLoaderForCwd(cwd).Load()
 }
 
-// Default returns default settings without loading from disk.
-func Default() *Settings {
+// defaultSettings returns default settings without loading from disk.
+func defaultSettings() *Settings {
 	return NewSettings()
 }
 

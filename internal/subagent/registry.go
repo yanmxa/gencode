@@ -3,6 +3,9 @@ package subagent
 import (
 	"strings"
 	"sync"
+
+	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/llm"
 )
 
 // Registry manages agent type definitions
@@ -257,4 +260,16 @@ func (r *Registry) GetAgentsSection() string {
 	sb.WriteString("</available-agents>")
 
 	return sb.String()
+}
+
+// PromptSection returns the rendered prompt section for available agents.
+// Implements Service.PromptSection by delegating to GetAgentsSection.
+func (r *Registry) PromptSection() string {
+	return r.GetAgentsSection()
+}
+
+// NewExecutor creates a new agent executor.
+// Implements Service.NewExecutor by delegating to the package-level constructor.
+func (r *Registry) NewExecutor(provider llm.Provider, cwd string, parentModelID string, hookEngine *hook.Engine) *Executor {
+	return NewExecutor(provider, cwd, parentModelID, hookEngine)
 }

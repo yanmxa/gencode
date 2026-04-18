@@ -14,7 +14,14 @@ var (
 )
 
 // SetOutputDir configures the directory used for stable task output files.
+// It delegates to the internal implementation, keeping backward compatibility
+// for callers that call task.SetOutputDir() directly.
 func SetOutputDir(dir string) error {
+	return setOutputDir(dir)
+}
+
+// setOutputDir is the internal implementation.
+func setOutputDir(dir string) error {
 	outputDirMu.Lock()
 	defer outputDirMu.Unlock()
 
