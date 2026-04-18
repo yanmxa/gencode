@@ -24,6 +24,9 @@ type Service interface {
 // Compile-time check: *service implements Service.
 var _ Service = (*service)(nil)
 
+// Options holds configuration for Initialize.
+type Options struct{}
+
 // -- singleton ---------------------------------------------------------------
 
 var (

@@ -72,18 +72,23 @@ func (t *ToolExecState) RemainingCalls(startIdx int) []core.ToolCall {
 
 // --- Tool execution dispatching ---
 
-type defaultMCPExecutor struct{}
+type DefaultMCPExecutor struct {
+	svc mcp.Service
+}
 
-func (defaultMCPExecutor) IsMCPTool(name string) bool {
+func NewMCPExecutor(svc mcp.Service) DefaultMCPExecutor {
+	return DefaultMCPExecutor{svc: svc}
+}
+
+func (e DefaultMCPExecutor) IsMCPTool(name string) bool {
 	return mcp.IsMCPTool(name)
 }
 
-func (defaultMCPExecutor) ExecuteMCP(ctx context.Context, name string, params map[string]any) (toolresult.ToolResult, error) {
-	svc := mcp.DefaultIfInit()
-	if svc == nil {
+func (e DefaultMCPExecutor) ExecuteMCP(ctx context.Context, name string, params map[string]any) (toolresult.ToolResult, error) {
+	if e.svc == nil {
 		return toolresult.NewErrorResult(name, "MCP registry not initialized"), nil
 	}
-	result, err := svc.Registry().CallTool(ctx, name, params)
+	result, err := e.svc.Registry().CallTool(ctx, name, params)
 	if err != nil {
 		return toolresult.NewErrorResult(name, err.Error()), nil
 	}
@@ -122,9 +127,11 @@ func ExecuteApproved(ctx context.Context, hub *ProgressHub, toolCalls []core.Too
 	}
 
 	tc := toolCalls[idx]
-	executor := coretool.MCPExecutor(defaultMCPExecutor{})
+	var executor coretool.MCPExecutor
 	if len(mcpExec) > 0 && mcpExec[0] != nil {
 		executor = mcpExec[0]
+	} else {
+		executor = NewMCPExecutor(nil)
 	}
 
 	return func() tea.Msg {

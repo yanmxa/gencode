@@ -36,10 +36,22 @@ type Service interface {
 
 	// ResolveHookAllow checks if a hook's "allow" decision should be honored.
 	ResolveHookAllow(toolName string, args map[string]any, session *SessionPermissions) bool
+
+	// GetDisabledToolsAt returns disabled tools from a single settings file.
+	// userLevel=true reads from ~/.gen/settings.json; false reads from .gen/settings.json.
+	GetDisabledToolsAt(userLevel bool) map[string]bool
+
+	// UpdateDisabledToolsAt updates disabled tools at user level (true) or project level (false).
+	UpdateDisabledToolsAt(disabledTools map[string]bool, userLevel bool) error
 }
 
 // Compile-time check: *settingsService implements Service.
 var _ Service = (*settingsService)(nil)
+
+// Options holds configuration for Initialize.
+type Options struct {
+	CWD string
+}
 
 // ── singleton ──────────────────────────────────────────────
 
@@ -198,4 +210,12 @@ func (s *settingsService) ResolveHookAllow(toolName string, args map[string]any,
 		return true
 	}
 	return s.settings.ResolveHookAllow(toolName, args, session)
+}
+
+func (s *settingsService) GetDisabledToolsAt(userLevel bool) map[string]bool {
+	return GetDisabledToolsAt(userLevel)
+}
+
+func (s *settingsService) UpdateDisabledToolsAt(disabledTools map[string]bool, userLevel bool) error {
+	return UpdateDisabledToolsAt(disabledTools, userLevel)
 }

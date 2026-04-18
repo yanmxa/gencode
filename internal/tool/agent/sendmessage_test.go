@@ -10,8 +10,8 @@ import (
 )
 
 func TestSendMessageTool_ResumesCompletedTask(t *testing.T) {
-	orchestration.Default().Reset()
-	t.Cleanup(orchestration.Default().Reset)
+	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -44,8 +44,8 @@ func TestSendMessageTool_ResumesCompletedTask(t *testing.T) {
 }
 
 func TestSendMessageTool_RejectsRunningTask(t *testing.T) {
-	orchestration.Default().Reset()
-	t.Cleanup(orchestration.Default().Reset)
+	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -85,8 +85,8 @@ func TestSendMessageTool_RejectsRunningTask(t *testing.T) {
 }
 
 func TestSendMessageTool_BackgroundMessageByAgentID(t *testing.T) {
-	orchestration.Default().Reset()
-	t.Cleanup(orchestration.Default().Reset)
+	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(orchestration.ResetService)
 
 	executor := &stubContinueAgentExecutor{}
 	toolInst := NewSendMessageTool()
@@ -118,8 +118,8 @@ func TestSendMessageTool_BackgroundMessageByAgentID(t *testing.T) {
 }
 
 func TestSendMessageTool_RequiresAgentTypeForDirectAgentID(t *testing.T) {
-	orchestration.Default().Reset()
-	t.Cleanup(orchestration.Default().Reset)
+	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(orchestration.ResetService)
 
 	toolInst := NewSendMessageTool()
 	toolInst.SetExecutor(&stubContinueAgentExecutor{})
@@ -138,8 +138,8 @@ func TestSendMessageTool_RequiresAgentTypeForDirectAgentID(t *testing.T) {
 }
 
 func TestSendMessageTool_DrainsQueuedMessagesOnResume(t *testing.T) {
-	orchestration.Default().Reset()
-	t.Cleanup(orchestration.Default().Reset)
+	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -184,8 +184,8 @@ func TestSendMessageTool_DrainsQueuedMessagesOnResume(t *testing.T) {
 }
 
 func TestSendMessageTool_QueuesRunningTaskByAgentID(t *testing.T) {
-	orchestration.Default().Reset()
-	t.Cleanup(orchestration.Default().Reset)
+	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

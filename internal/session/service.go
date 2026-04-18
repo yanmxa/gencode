@@ -5,17 +5,18 @@ import "sync"
 // Service is the public contract for the session module.
 type Service interface {
 	// identity
-	ID() string              // current session ID
-	SetID(id string)         // update current session ID
-	TranscriptPath() string  // path to transcript file
+	ID() string
+	SetID(id string)
+	TranscriptPath() string
 
 	// summary
-	GetSummary() string      // compaction summary
+	GetSummary() string
 	SetSummary(summary string)
 
 	// store access
-	GetStore() *Store        // underlying session store (may be nil)
-	SetStore(s *Store)       // replace session store
+	GetStore() *Store
+	SetStore(s *Store)
+	EnsureStore(cwd string) error
 
 	// persistence (delegates to store)
 	Save(snap *Snapshot) error
@@ -29,6 +30,11 @@ type Service interface {
 
 // Compile-time check: *Setup implements Service.
 var _ Service = (*Setup)(nil)
+
+// Options holds configuration for Initialize.
+type Options struct {
+	CWD string
+}
 
 // ── singleton ──────────────────────────────────────────────
 
@@ -56,8 +62,8 @@ func SetDefault(s Service) {
 	svcMu.Unlock()
 }
 
-// Reset clears the singleton instance. Intended for tests.
-func Reset() {
+// ResetService clears the singleton instance. Intended for tests.
+func ResetService() {
 	svcMu.Lock()
 	instance = nil
 	svcMu.Unlock()

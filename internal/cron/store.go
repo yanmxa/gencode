@@ -56,16 +56,6 @@ type Store struct {
 // Compile-time check that *Store implements Service.
 var _ Service = (*Store)(nil)
 
-// DefaultStore is the global cron store singleton.
-// Deprecated: Use Default() to access the Service interface instead.
-var DefaultStore = NewStore()
-
-func init() {
-	mu.Lock()
-	instance = DefaultStore
-	mu.Unlock()
-}
-
 // NewStore creates a new in-memory cron store.
 func NewStore() *Store {
 	return &Store{

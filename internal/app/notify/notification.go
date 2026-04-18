@@ -436,6 +436,7 @@ func describeBatch(batch *orchestration.Batch) string {
 type taskCompletionObserver struct {
 	notifications *NotificationQueue
 	hookEngine    *hook.Engine
+	bgTracker     *BackgroundTracker
 }
 
 func (o taskCompletionObserver) fireHook(event hook.EventType, info task.TaskInfo) {
@@ -456,15 +457,21 @@ func (o taskCompletionObserver) TaskCreated(info task.TaskInfo) {
 
 func (o taskCompletionObserver) TaskCompleted(info task.TaskInfo) {
 	o.fireHook(hook.TaskCompleted, info)
-	UpdateBackgroundWorkerTracker(info)
+	if o.bgTracker != nil {
+		o.bgTracker.UpdateWorkerTracker(info)
+	}
 	if o.notifications == nil {
 		return
 	}
 	subject := TaskSubject(info)
+	var batch *orchestration.Batch
+	if o.bgTracker != nil {
+		batch = o.bgTracker.SnapshotBatchForTask(info.ID)
+	}
 	notifInput := TaskNotificationInput{
 		Info:    info,
 		Subject: subject,
-		Batch:   SnapshotBackgroundBatchForTask(info.ID),
+		Batch:   batch,
 	}
 	if item, ok := BuildTaskNotification(notifInput); ok {
 		o.notifications.Push(item)
@@ -487,6 +494,6 @@ func TaskSubject(info task.TaskInfo) string {
 
 // InstallCompletionObserver registers the task completion observer that
 // handles hook firing, tracker updates, and notification queue pushes.
-func InstallCompletionObserver(notifications *NotificationQueue, hookEngine *hook.Engine) {
-	task.SetCompletionObserver(taskCompletionObserver{notifications: notifications, hookEngine: hookEngine})
+func InstallCompletionObserver(notifications *NotificationQueue, hookEngine *hook.Engine, bgTracker *BackgroundTracker) {
+	task.SetCompletionObserver(taskCompletionObserver{notifications: notifications, hookEngine: hookEngine, bgTracker: bgTracker})
 }

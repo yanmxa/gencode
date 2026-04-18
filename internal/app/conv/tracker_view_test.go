@@ -10,10 +10,10 @@ import (
 
 func TestRenderTrackerListGroupsBackgroundBatchChildren(t *testing.T) {
 	tracker.Default().Reset()
-	orchestration.Default().Reset()
+	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(func() {
 		tracker.Default().Reset()
-		orchestration.Default().Reset()
+		orchestration.ResetService()
 	})
 
 	batch := tracker.Default().Create("2 background agents launched", "", "", map[string]any{
@@ -74,10 +74,10 @@ func TestRenderTrackerListGroupsBackgroundBatchChildren(t *testing.T) {
 
 func TestRenderTrackerListPrefersOrchestrationSnapshotForBatchAndQueueState(t *testing.T) {
 	tracker.Default().Reset()
-	orchestration.Default().Reset()
+	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(func() {
 		tracker.Default().Reset()
-		orchestration.Default().Reset()
+		orchestration.ResetService()
 	})
 
 	batch := tracker.Default().Create("stale batch title", "", "", map[string]any{

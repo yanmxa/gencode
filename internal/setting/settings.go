@@ -208,8 +208,8 @@ func NewSettings() *Settings {
 var DefaultSetup *Settings
 
 // Initialize loads settings for cwd and sets both DefaultSetup and the Service singleton.
-func Initialize(cwd string) {
-	s := InitForApp(cwd)
+func Initialize(opts Options) {
+	s := InitForApp(opts.CWD)
 	DefaultSetup = s
 	SetDefault(&settingsService{settings: s})
 }

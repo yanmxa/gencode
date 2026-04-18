@@ -17,6 +17,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/notify"
 	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/plan"
@@ -407,6 +408,7 @@ func (m *model) submitDeps() input.SubmitDeps {
 			ctrl := input.NewCommandController(m.commandDeps())
 			return ctrl.HandleSubmit(text)
 		},
+		ClearPluginRoot: m.services.Plugin.ClearActivePluginRoot,
 	}
 }
 
@@ -458,6 +460,13 @@ func (m *model) commandDeps() input.CommandDeps {
 		InputTokens:   m.env.InputTokens,
 		CurrentModel:  m.env.CurrentModel,
 
+		Skill:   m.services.Skill,
+		Plugin:  m.services.Plugin,
+		MCP:     m.services.MCP,
+		Tracker: m.services.Tracker,
+		Cron:    m.services.Cron,
+		ToolSvc: m.services.Tool,
+
 		GetSessionID:     func() string { return m.services.Session.ID() },
 		GetSessionStore:  func() *session.Store { return m.services.Session.GetStore() },
 		GetThinkingLevel: func() llm.ThinkingLevel { return m.env.ThinkingLevel },
@@ -465,8 +474,9 @@ func (m *model) commandDeps() input.CommandDeps {
 		ResetTokens:        m.env.ResetTokens,
 		SetThinkingLevel:   func(level llm.ThinkingLevel) { m.env.ThinkingLevel = level },
 		EnterPlanMode:      m.enterPlanModeForCommand,
-		EnsureSessionStore: func(cwd string) error { return session.EnsureStore(cwd) },
+		EnsureSessionStore: func(cwd string) error { return m.services.Session.EnsureStore(cwd) },
 		ForkSession:        m.forkSession,
+		ResetFetched:       m.services.Tool.ResetFetched,
 
 		CommitMessages:          m.CommitMessages,
 		StartProviderTurn:       m.StartProviderTurn,
@@ -493,10 +503,14 @@ func (m *model) executeCommand(ctx context.Context, inputText string) (string, t
 // ============================================================
 
 func (m *model) approvalDeps() input.ApprovalFlowDeps {
+	var hookEngine *hook.Engine
+	if m.services.Hook != nil {
+		hookEngine = m.services.Hook.Engine()
+	}
 	return input.ApprovalFlowDeps{
 		Actions:            m,
 		Input:              &m.userInput,
-		HookEngine:         m.services.Hook.Engine(),
+		HookEngine:         hookEngine,
 		Settings:           m.services.Setting.Snapshot(),
 		SessionPermissions: m.env.SessionPermissions,
 		SetOperationMode:   func(mode setting.OperationMode) { m.env.OperationMode = mode },
@@ -505,6 +519,7 @@ func (m *model) approvalDeps() input.ApprovalFlowDeps {
 		Height:             m.height,
 		Cwd:                m.cwd,
 		ProgressHub:        m.conv.ProgressHub,
+		MCPExecutor:        conv.NewMCPExecutor(m.services.MCP),
 	}
 }
 

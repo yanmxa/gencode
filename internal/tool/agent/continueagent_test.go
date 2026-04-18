@@ -56,8 +56,8 @@ func (s *stubContinueAgentExecutor) GetParentModelID() string {
 }
 
 func TestContinueAgentTool_ResolvesTaskIDToResumeID(t *testing.T) {
-	orchestration.Default().Reset()
-	t.Cleanup(orchestration.Default().Reset)
+	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -93,8 +93,8 @@ func TestContinueAgentTool_ResolvesTaskIDToResumeID(t *testing.T) {
 }
 
 func TestContinueAgentTool_BackgroundContinuation(t *testing.T) {
-	orchestration.Default().Reset()
-	t.Cleanup(orchestration.Default().Reset)
+	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(orchestration.ResetService)
 
 	executor := &stubContinueAgentExecutor{}
 	tool := NewContinueAgentTool()
@@ -123,8 +123,8 @@ func TestContinueAgentTool_BackgroundContinuation(t *testing.T) {
 }
 
 func TestContinueAgentTool_RequiresAgentTypeForDirectAgentID(t *testing.T) {
-	orchestration.Default().Reset()
-	t.Cleanup(orchestration.Default().Reset)
+	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(orchestration.ResetService)
 
 	tool := NewContinueAgentTool()
 	tool.SetExecutor(&stubContinueAgentExecutor{})
@@ -143,8 +143,8 @@ func TestContinueAgentTool_RequiresAgentTypeForDirectAgentID(t *testing.T) {
 }
 
 func TestContinueAgentTool_DrainsQueuedMessages(t *testing.T) {
-	orchestration.Default().Reset()
-	t.Cleanup(orchestration.Default().Reset)
+	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

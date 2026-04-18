@@ -10,14 +10,16 @@ import (
 
 func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 	tracker.Default().Reset()
-	orchestration.Default().Reset()
+	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(func() {
 		tracker.Default().Reset()
-		orchestration.Default().Reset()
+		orchestration.ResetService()
 	})
 
+	bt := NewBackgroundTracker(tracker.Default(), orchestration.Default())
+
 	batchKey := "call-1,call-2"
-	parentID := ensureBackgroundBatchTracker(batchKey, 2)
+	parentID := bt.ensureBatchTracker(batchKey, 2)
 	if parentID == "" {
 		t.Fatal("expected batch tracker to be created")
 	}
@@ -28,11 +30,11 @@ func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 		AgentType:   "Explore",
 		Description: "Directory structure audit",
 	}
-	childID1 := EnsureBackgroundWorkerTracker(launch1, parentID, batchKey)
+	childID1 := bt.EnsureWorkerTracker(launch1, parentID, batchKey)
 	if childID1 == "" {
 		t.Fatal("expected worker tracker for bg-1")
 	}
-	RecordBackgroundTaskLaunch(launch1, parentID, batchKey, 2)
+	bt.RecordLaunch(launch1, parentID, batchKey, 2)
 
 	launch2 := BackgroundTaskLaunch{
 		TaskID:      "bg-2",
@@ -41,19 +43,19 @@ func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 		Description: "Package naming audit",
 		ResumeID:    "agent-2",
 	}
-	childID2 := EnsureBackgroundWorkerTracker(launch2, parentID, batchKey)
+	childID2 := bt.EnsureWorkerTracker(launch2, parentID, batchKey)
 	if childID2 == "" {
 		t.Fatal("expected worker tracker for bg-2")
 	}
-	reconcileBackgroundBatch(parentID)
-	RecordBackgroundTaskLaunch(launch2, parentID, batchKey, 2)
+	bt.reconcileBatch(parentID)
+	bt.RecordLaunch(launch2, parentID, batchKey, 2)
 
 	tasks := tracker.Default().List()
 	if len(tasks) != 3 {
 		t.Fatalf("expected 3 tracker tasks, got %d", len(tasks))
 	}
 
-	batch := findTrackerByMetadata(BackgroundTrackerKindKey, BackgroundTrackerKindBatch)
+	batch := bt.findByMetadata(BackgroundTrackerKindKey, BackgroundTrackerKindBatch)
 	if batch == nil {
 		t.Fatal("expected batch tracker")
 	}
@@ -61,7 +63,7 @@ func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 		t.Fatalf("batch status = %q, want %q", batch.Status, tracker.StatusInProgress)
 	}
 
-	child := findTrackerByMetadata(BackgroundTrackerTaskID, "bg-2")
+	child := bt.findByMetadata(BackgroundTrackerTaskID, "bg-2")
 	if child == nil {
 		t.Fatal("expected child tracker for bg-2")
 	}
@@ -86,11 +88,13 @@ func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 
 func TestUpdateBackgroundWorkerTrackerReconcilesBatch(t *testing.T) {
 	tracker.Default().Reset()
-	orchestration.Default().Reset()
+	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(func() {
 		tracker.Default().Reset()
-		orchestration.Default().Reset()
+		orchestration.ResetService()
 	})
+
+	bt := NewBackgroundTracker(tracker.Default(), orchestration.Default())
 
 	batch := tracker.Default().Create("2 background agents launched", "", "", map[string]any{
 		BackgroundTrackerKindKey:   BackgroundTrackerKindBatch,
@@ -116,7 +120,7 @@ func TestUpdateBackgroundWorkerTrackerReconcilesBatch(t *testing.T) {
 	})
 	_ = tracker.Default().Update(child2.ID, tracker.WithStatus(tracker.StatusInProgress))
 
-	UpdateBackgroundWorkerTracker(task.TaskInfo{ID: "bg-1", Type: task.TaskTypeAgent, Status: task.StatusCompleted})
+	bt.UpdateWorkerTracker(task.TaskInfo{ID: "bg-1", Type: task.TaskTypeAgent, Status: task.StatusCompleted})
 	batchAfterFirst, _ := tracker.Default().Get(batch.ID)
 	if batchAfterFirst.Status != tracker.StatusInProgress {
 		t.Fatalf("batch status after first completion = %q", batchAfterFirst.Status)
@@ -125,7 +129,7 @@ func TestUpdateBackgroundWorkerTrackerReconcilesBatch(t *testing.T) {
 		t.Fatalf("batch completed count = %q", metadataString(batchAfterFirst.Metadata, BackgroundTrackerCompleted))
 	}
 
-	UpdateBackgroundWorkerTracker(task.TaskInfo{ID: "bg-2", Type: task.TaskTypeAgent, Status: task.StatusFailed, Error: "boom"})
+	bt.UpdateWorkerTracker(task.TaskInfo{ID: "bg-2", Type: task.TaskTypeAgent, Status: task.StatusFailed, Error: "boom"})
 	batchAfterSecond, _ := tracker.Default().Get(batch.ID)
 	if batchAfterSecond.Status != tracker.StatusCompleted {
 		t.Fatalf("batch status after second completion = %q", batchAfterSecond.Status)

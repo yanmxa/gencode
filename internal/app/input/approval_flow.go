@@ -12,6 +12,7 @@ import (
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/setting"
+	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 )
 
@@ -41,6 +42,7 @@ type ApprovalFlowDeps struct {
 	Height             int
 	Cwd                string
 	ProgressHub        *conv.ProgressHub
+	MCPExecutor        tool.MCPExecutor
 }
 
 func UpdateApproval(deps ApprovalFlowDeps, msg tea.Msg) (tea.Cmd, bool) {
@@ -97,7 +99,7 @@ func HandleHookPermissionResult(deps ApprovalFlowDeps, msg HookPermissionResultM
 		args := buildPermissionArgs(msg.Request)
 		if deps.Settings != nil && deps.Settings.ResolveHookAllow(msg.Request.ToolName, args, deps.SessionPermissions) {
 			deps.Input.Approval.Hide()
-			return conv.ExecuteApproved(deps.Tool.Context(), deps.ProgressHub, deps.Tool.PendingCalls, deps.Tool.CurrentIdx, deps.Cwd)
+			return conv.ExecuteApproved(deps.Tool.Context(), deps.ProgressHub, deps.Tool.PendingCalls, deps.Tool.CurrentIdx, deps.Cwd, deps.MCPExecutor)
 		}
 	}
 	return ShowApprovalModal(deps, msg.Request)

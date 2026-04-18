@@ -25,12 +25,6 @@ func StartTicker() tea.Cmd {
 	})
 }
 
-func ResetTrackerIfIdle(streamActive bool) {
-	if !streamActive && tracker.Default().AllDone() {
-		tracker.Default().Reset()
-	}
-}
-
 func PopReadyNotifications(queue *NotificationQueue, idle bool) []Notification {
 	if queue == nil || !idle {
 		return nil
@@ -63,12 +57,27 @@ type BackgroundTaskLaunch struct {
 	ResumeID    string
 }
 
-func ensureBackgroundBatchTracker(batchKey string, total int) string {
+type BackgroundTracker struct {
+	tracker       tracker.Service
+	orchestration orchestration.Service
+}
+
+func NewBackgroundTracker(t tracker.Service, o orchestration.Service) *BackgroundTracker {
+	return &BackgroundTracker{tracker: t, orchestration: o}
+}
+
+func (bt *BackgroundTracker) ResetIfIdle(streamActive bool) {
+	if !streamActive && bt.tracker.AllDone() {
+		bt.tracker.Reset()
+	}
+}
+
+func (bt *BackgroundTracker) ensureBatchTracker(batchKey string, total int) string {
 	if batchKey == "" || total <= 1 {
 		return ""
 	}
-	if existing := findBatchTracker(batchKey); existing != nil {
-		_ = tracker.Default().Update(existing.ID,
+	if existing := bt.findBatchTracker(batchKey); existing != nil {
+		_ = bt.tracker.Update(existing.ID,
 			tracker.WithStatus(tracker.StatusInProgress),
 			tracker.WithMetadata(map[string]any{
 				BackgroundTrackerKindKey:  BackgroundTrackerKindBatch,
@@ -76,7 +85,7 @@ func ensureBackgroundBatchTracker(batchKey string, total int) string {
 				BackgroundTrackerTotal:    total,
 			}),
 		)
-		orchestration.Default().UpdateBatch(orchestration.Batch{
+		bt.orchestration.UpdateBatch(orchestration.Batch{
 			ID:        existing.ID,
 			Key:       batchKey,
 			Subject:   existing.Subject,
@@ -88,7 +97,7 @@ func ensureBackgroundBatchTracker(batchKey string, total int) string {
 		return existing.ID
 	}
 
-	batch := tracker.Default().Create(
+	batch := bt.tracker.Create(
 		fmt.Sprintf("%d background agents launched", total),
 		"Coordinator background worker batch",
 		"",
@@ -100,8 +109,8 @@ func ensureBackgroundBatchTracker(batchKey string, total int) string {
 			BackgroundTrackerFailures:  0,
 		},
 	)
-	_ = tracker.Default().Update(batch.ID, tracker.WithStatus(tracker.StatusInProgress))
-	orchestration.Default().UpdateBatch(orchestration.Batch{
+	_ = bt.tracker.Update(batch.ID, tracker.WithStatus(tracker.StatusInProgress))
+	bt.orchestration.UpdateBatch(orchestration.Batch{
 		ID:        batch.ID,
 		Key:       batchKey,
 		Subject:   batch.Subject,
@@ -113,9 +122,9 @@ func ensureBackgroundBatchTracker(batchKey string, total int) string {
 	return batch.ID
 }
 
-func EnsureBackgroundWorkerTracker(launch BackgroundTaskLaunch, parentID, batchKey string) string {
-	if existing := findTrackerByMetadata(BackgroundTrackerTaskID, launch.TaskID); existing != nil {
-		_ = tracker.Default().Update(existing.ID,
+func (bt *BackgroundTracker) EnsureWorkerTracker(launch BackgroundTaskLaunch, parentID, batchKey string) string {
+	if existing := bt.findByMetadata(BackgroundTrackerTaskID, launch.TaskID); existing != nil {
+		_ = bt.tracker.Update(existing.ID,
 			tracker.WithSubject(backgroundWorkerSubject(launch)),
 			tracker.WithDescription(launch.Description),
 			tracker.WithStatus(tracker.StatusInProgress),
@@ -132,7 +141,7 @@ func EnsureBackgroundWorkerTracker(launch BackgroundTaskLaunch, parentID, batchK
 		return existing.ID
 	}
 
-	trackerEntry := tracker.Default().Create(
+	trackerEntry := bt.tracker.Create(
 		backgroundWorkerSubject(launch),
 		launch.Description,
 		"",
@@ -152,14 +161,14 @@ func EnsureBackgroundWorkerTracker(launch BackgroundTaskLaunch, parentID, batchK
 	if launch.AgentType != "" {
 		opts = append(opts, tracker.WithOwner(launch.AgentType))
 	}
-	_ = tracker.Default().Update(trackerEntry.ID, opts...)
+	_ = bt.tracker.Update(trackerEntry.ID, opts...)
 	return trackerEntry.ID
 }
 
-func UpdateBackgroundWorkerTracker(info task.TaskInfo) {
-	trackerTask := findTrackerByMetadata(BackgroundTrackerTaskID, info.ID)
+func (bt *BackgroundTracker) UpdateWorkerTracker(info task.TaskInfo) {
+	trackerTask := bt.findByMetadata(BackgroundTrackerTaskID, info.ID)
 	if trackerTask == nil {
-		orchestration.Default().RecordCompletion(info.ID, string(info.Status), info.AgentSessionID)
+		bt.orchestration.RecordCompletion(info.ID, string(info.Status), info.AgentSessionID)
 		return
 	}
 
@@ -193,8 +202,8 @@ func UpdateBackgroundWorkerTracker(info task.TaskInfo) {
 		tracker.WithStatus(tracker.StatusCompleted),
 		tracker.WithMetadata(metadata),
 	}
-	_ = tracker.Default().Update(trackerTask.ID, opts...)
-	orchestration.Default().RecordLaunch(orchestration.Launch{
+	_ = bt.tracker.Update(trackerTask.ID, opts...)
+	bt.orchestration.RecordLaunch(orchestration.Launch{
 		TaskID:       info.ID,
 		AgentID:      firstNonEmpty(info.AgentSessionID, metadataString(trackerTask.Metadata, BackgroundTrackerAgentID)),
 		AgentType:    firstNonEmpty(info.AgentType, metadataString(trackerTask.Metadata, BackgroundTrackerAgentType)),
@@ -204,22 +213,22 @@ func UpdateBackgroundWorkerTracker(info task.TaskInfo) {
 		Running:      info.Status == task.StatusRunning,
 		BatchID:      metadataString(trackerTask.Metadata, BackgroundTrackerParentID),
 		BatchKey:     metadataString(trackerTask.Metadata, BackgroundTrackerBatchKey),
-		BatchSubject: backgroundBatchSubject(metadataString(trackerTask.Metadata, BackgroundTrackerParentID)),
+		BatchSubject: bt.batchSubject(metadataString(trackerTask.Metadata, BackgroundTrackerParentID)),
 	})
-	orchestration.Default().RecordCompletion(info.ID, statusDetail, firstNonEmpty(info.AgentSessionID, metadataString(trackerTask.Metadata, BackgroundTrackerAgentID)))
+	bt.orchestration.RecordCompletion(info.ID, statusDetail, firstNonEmpty(info.AgentSessionID, metadataString(trackerTask.Metadata, BackgroundTrackerAgentID)))
 
 	if parentID := metadataString(trackerTask.Metadata, BackgroundTrackerParentID); parentID != "" {
-		reconcileBackgroundBatch(parentID)
+		bt.reconcileBatch(parentID)
 	}
 }
 
-func reconcileBackgroundBatch(parentID string) {
-	parent, ok := tracker.Default().Get(parentID)
+func (bt *BackgroundTracker) reconcileBatch(parentID string) {
+	parent, ok := bt.tracker.Get(parentID)
 	if !ok {
 		return
 	}
 
-	children := childTrackers(parentID)
+	children := bt.childTrackers(parentID)
 	total := len(children)
 	if total == 0 {
 		return
@@ -242,7 +251,7 @@ func reconcileBackgroundBatch(parentID string) {
 		status = tracker.StatusCompleted
 	}
 
-	_ = tracker.Default().Update(parent.ID,
+	_ = bt.tracker.Update(parent.ID,
 		tracker.WithStatus(status),
 		tracker.WithMetadata(map[string]any{
 			BackgroundTrackerKindKey:   BackgroundTrackerKindBatch,
@@ -261,7 +270,7 @@ func reconcileBackgroundBatch(parentID string) {
 			AgentType: metadataString(child.Metadata, BackgroundTrackerAgentType),
 		})
 	}
-	orchestration.Default().UpdateBatch(orchestration.Batch{
+	bt.orchestration.UpdateBatch(orchestration.Batch{
 		ID:        parent.ID,
 		Key:       metadataString(parent.Metadata, BackgroundTrackerBatchKey),
 		Subject:   parent.Subject,
@@ -273,12 +282,12 @@ func reconcileBackgroundBatch(parentID string) {
 	})
 }
 
-func SnapshotBackgroundBatchForTask(taskID string) *orchestration.Batch {
-	if batch, ok := orchestration.Default().SnapshotBatchForTask(taskID); ok {
+func (bt *BackgroundTracker) SnapshotBatchForTask(taskID string) *orchestration.Batch {
+	if batch, ok := bt.orchestration.SnapshotBatchForTask(taskID); ok {
 		return batch
 	}
 
-	child := findTrackerByMetadata(BackgroundTrackerTaskID, taskID)
+	child := bt.findByMetadata(BackgroundTrackerTaskID, taskID)
 	if child == nil {
 		return nil
 	}
@@ -287,12 +296,12 @@ func SnapshotBackgroundBatchForTask(taskID string) *orchestration.Batch {
 		return nil
 	}
 
-	parent, ok := tracker.Default().Get(parentID)
+	parent, ok := bt.tracker.Get(parentID)
 	if !ok {
 		return nil
 	}
 
-	children := childTrackers(parentID)
+	children := bt.childTrackers(parentID)
 	workers := make([]orchestration.BatchWorker, 0, len(children))
 	for _, c := range children {
 		status := metadataString(c.Metadata, BackgroundTrackerStatusDetail)
@@ -323,8 +332,8 @@ func SnapshotBackgroundBatchForTask(taskID string) *orchestration.Batch {
 	}
 }
 
-func RecordBackgroundTaskLaunch(launch BackgroundTaskLaunch, parentID, batchKey string, batchTotal int) {
-	orchestration.Default().RecordLaunch(orchestration.Launch{
+func (bt *BackgroundTracker) RecordLaunch(launch BackgroundTaskLaunch, parentID, batchKey string, batchTotal int) {
+	bt.orchestration.RecordLaunch(orchestration.Launch{
 		TaskID:       launch.TaskID,
 		AgentID:      launch.ResumeID,
 		AgentType:    launch.AgentType,
@@ -334,7 +343,7 @@ func RecordBackgroundTaskLaunch(launch BackgroundTaskLaunch, parentID, batchKey 
 		Running:      true,
 		BatchID:      parentID,
 		BatchKey:     batchKey,
-		BatchSubject: backgroundBatchSubject(parentID),
+		BatchSubject: bt.batchSubject(parentID),
 		BatchTotal:   batchTotal,
 	})
 }
@@ -351,12 +360,12 @@ func backgroundWorkerSubject(launch BackgroundTaskLaunch) string {
 	return launch.TaskID
 }
 
-func findTrackerByMetadata(key, want string) *tracker.Task {
-	return tracker.Default().FindByMetadata(key, want)
+func (bt *BackgroundTracker) findByMetadata(key, want string) *tracker.Task {
+	return bt.tracker.FindByMetadata(key, want)
 }
 
-func findBatchTracker(batchKey string) *tracker.Task {
-	for _, t := range tracker.Default().List() {
+func (bt *BackgroundTracker) findBatchTracker(batchKey string) *tracker.Task {
+	for _, t := range bt.tracker.List() {
 		if metadataString(t.Metadata, BackgroundTrackerKindKey) == BackgroundTrackerKindBatch &&
 			metadataString(t.Metadata, BackgroundTrackerBatchKey) == batchKey {
 			return t
@@ -365,9 +374,9 @@ func findBatchTracker(batchKey string) *tracker.Task {
 	return nil
 }
 
-func childTrackers(parentID string) []*tracker.Task {
+func (bt *BackgroundTracker) childTrackers(parentID string) []*tracker.Task {
 	var children []*tracker.Task
-	for _, t := range tracker.Default().List() {
+	for _, t := range bt.tracker.List() {
 		if metadataString(t.Metadata, BackgroundTrackerParentID) == parentID {
 			children = append(children, t)
 		}
@@ -387,11 +396,11 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func backgroundBatchSubject(parentID string) string {
+func (bt *BackgroundTracker) batchSubject(parentID string) string {
 	if parentID == "" {
 		return ""
 	}
-	parent, ok := tracker.Default().Get(parentID)
+	parent, ok := bt.tracker.Get(parentID)
 	if !ok {
 		return ""
 	}

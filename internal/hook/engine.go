@@ -43,10 +43,10 @@ type Engine struct {
 // DefaultEngine is the singleton hook engine, initialized by Init().
 var DefaultEngine *Engine
 
-// InitializeConfig holds the dependencies needed to create the default hook engine.
+// Options holds the dependencies needed to create the default hook engine.
 // All fields must be supplied by the caller — the hook package does not reach into
 // global singletons.
-type InitializeConfig struct {
+type Options struct {
 	Settings       *setting.Settings
 	SessionID      string
 	CWD            string
@@ -56,12 +56,12 @@ type InitializeConfig struct {
 	EnvProvider    func() []string
 }
 
-// Initialize creates the singleton hook engine from the given config.
-func Initialize(cfg InitializeConfig) {
-	DefaultEngine = NewEngine(cfg.Settings, cfg.SessionID, cfg.CWD, cfg.TranscriptPath)
-	DefaultEngine.SetLLMCompleter(cfg.Completer, cfg.ModelID)
-	if cfg.EnvProvider != nil {
-		DefaultEngine.SetEnvProvider(cfg.EnvProvider)
+// Initialize creates the singleton hook engine from the given options.
+func Initialize(opts Options) {
+	DefaultEngine = NewEngine(opts.Settings, opts.SessionID, opts.CWD, opts.TranscriptPath)
+	DefaultEngine.SetLLMCompleter(opts.Completer, opts.ModelID)
+	if opts.EnvProvider != nil {
+		DefaultEngine.SetEnvProvider(opts.EnvProvider)
 	}
 	SetDefault(DefaultEngine)
 }

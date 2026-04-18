@@ -8,7 +8,6 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/plugin"
 )
 
 type SubmitRequest struct {
@@ -23,12 +22,13 @@ type SubmitRuntime interface {
 }
 
 type SubmitDeps struct {
-	Actions        SubmitRuntime
-	Input          *Model
-	Conversation   *conv.ConversationModel
+	Actions         SubmitRuntime
+	Input           *Model
+	Conversation    *conv.ConversationModel
 	CheckPromptHook func(context.Context, string) (bool, string)
-	Cwd            string
-	HandleCommand  func(string) (tea.Cmd, bool)
+	Cwd             string
+	HandleCommand   func(string) (tea.Cmd, bool)
+	ClearPluginRoot func()
 }
 
 func HandleSubmit(deps SubmitDeps) tea.Cmd {
@@ -84,7 +84,9 @@ func ExecuteSubmitRequest(deps SubmitDeps, req SubmitRequest) tea.Cmd {
 	}
 
 	deps.Input.Skill.ActiveInvocation = ""
-	plugin.ClearActivePluginRoot()
+	if deps.ClearPluginRoot != nil {
+		deps.ClearPluginRoot()
+	}
 
 	userMsg, cmd, handled := PrepareSubmittedUserMessage(deps, req.Input)
 	if handled {

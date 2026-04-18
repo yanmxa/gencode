@@ -10,17 +10,27 @@ import (
 // Service is the public contract for the tool module.
 type Service interface {
 	// registration
-	Register(t Tool)                                   // add a tool
-	RegisterAlias(alias string, t Tool)                // add an alias for a tool
-	Get(name string) (Tool, bool)                      // lookup by name
-	List() []string                                    // all registered tool names
+	Register(t Tool)
+	RegisterAlias(alias string, t Tool)
+	Get(name string) (Tool, bool)
+	List() []string
 
 	// execution
 	Execute(ctx context.Context, name string, params map[string]any, cwd string) toolresult.ToolResult
+
+	// deferred tools
+	ResetFetched()
+	FormatDeferredToolsPrompt() string
+
+	// side effects
+	PopSideEffect(toolCallID string) any
 }
 
 // Compile-time check: *Registry implements Service.
 var _ Service = (*Registry)(nil)
+
+// Options holds all dependencies for initialization.
+type Options struct{}
 
 // ── singleton ──────────────────────────────────────────────
 
@@ -28,6 +38,13 @@ var (
 	svcMu      sync.RWMutex
 	svcInstance Service
 )
+
+// Initialize sets the singleton to the DefaultRegistry.
+func Initialize(opts Options) {
+	svcMu.Lock()
+	svcInstance = DefaultRegistry
+	svcMu.Unlock()
+}
 
 // Default returns the singleton Service instance.
 // Falls back to DefaultRegistry if no explicit instance has been set,

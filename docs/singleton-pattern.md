@@ -58,8 +58,8 @@ func Default() Service {
     return s
 }
 
-func SetDefault(s Service)  { mu.Lock(); instance = s; mu.Unlock() }  // test
-func Reset()                { mu.Lock(); instance = nil; mu.Unlock() } // test
+func SetDefault(s Service)  { mu.Lock(); instance = s; mu.Unlock() }      // test
+func ResetService()         { mu.Lock(); instance = nil; mu.Unlock() }    // test
 
 // ── implementation ─────────────────────────────────────────
 

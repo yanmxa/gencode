@@ -27,6 +27,9 @@ type Service interface {
 	Reset()
 }
 
+// Options holds all dependencies for initialization.
+type Options struct{}
+
 // ── singleton ──────────────────────────────────────────────
 
 var (
@@ -34,12 +37,19 @@ var (
 	instance Service
 )
 
+func init() {
+	mu.Lock()
+	if instance == nil {
+		instance = newStore()
+	}
+	mu.Unlock()
+}
+
 // Initialize sets up the orchestration singleton. Call once at startup.
-func Initialize() {
+func Initialize(opts Options) {
 	s := newStore()
 	mu.Lock()
 	instance = s
-	DefaultStore = s
 	mu.Unlock()
 }
 
@@ -62,8 +72,8 @@ func SetDefault(s Service) {
 	mu.Unlock()
 }
 
-// ResetSingleton clears the singleton (for tests).
-func ResetSingleton() {
+// ResetService clears the singleton (for tests).
+func ResetService() {
 	mu.Lock()
 	instance = nil
 	mu.Unlock()

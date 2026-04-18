@@ -32,6 +32,12 @@ type Service interface {
 // Compile-time check: *Registry implements Service.
 var _ Service = (*Registry)(nil)
 
+// Options holds all dependencies for initialization.
+type Options struct {
+	CWD              string
+	PluginAgentPaths func() []PluginAgentPath
+}
+
 // ── singleton ──────────────────────────────────────────────
 
 var (

@@ -12,6 +12,7 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	coremcp "github.com/yanmxa/gencode/internal/mcp"
 	coreplugin "github.com/yanmxa/gencode/internal/plugin"
+	coresetting "github.com/yanmxa/gencode/internal/setting"
 	coreskill "github.com/yanmxa/gencode/internal/skill"
 )
 
@@ -90,6 +91,7 @@ type SelectorDeps struct {
 	SkillRegistry  *coreskill.Registry
 	MCPRegistry    *coremcp.Registry
 	PluginRegistry *coreplugin.Registry
+	Setting        coresetting.Service
 	LoadDisabled   func(userLevel bool) map[string]bool
 	UpdateDisabled func(disabled map[string]bool, userLevel bool) error
 }
@@ -105,7 +107,7 @@ func New(cwd string, width int, matchFunc suggest.Matcher, deps SelectorDeps) Mo
 
 		Approval: NewApproval(),
 		Agent:    NewAgentSelector(deps.AgentRegistry),
-		Search:   NewSearchSelector(),
+		Search:   NewSearchSelector(deps.Setting),
 		Skill:    SkillState{Selector: NewSkillSelector(deps.SkillRegistry)},
 		Session:  SessionState{Selector: NewSessionSelector()},
 		Memory:   MemoryState{Selector: NewMemorySelector()},

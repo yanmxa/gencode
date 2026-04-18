@@ -27,28 +27,45 @@ type Setup struct {
 
 // Initialize creates a session store and generates a fresh session ID.
 // Sets DefaultSetup and the singleton as a side effect.
-func Initialize(cwd string) {
-	DefaultSetup.SessionID = NewSessionID()
-	store, err := NewStore(cwd)
+func Initialize(opts Options) {
+	store, err := NewStore(opts.CWD)
 	if err != nil {
 		log.Logger().Warn("session store initialization failed, sessions will not be persisted", zap.Error(err))
 	}
-	DefaultSetup.Store = store
 
-	// Set the singleton.
+	DefaultSetup.mu.Lock()
+	DefaultSetup.SessionID = NewSessionID()
+	DefaultSetup.Store = store
+	DefaultSetup.mu.Unlock()
+
 	SetDefault(DefaultSetup)
 }
 
 // EnsureStore lazily initializes the session store for the given cwd.
+// Deprecated: use Service.EnsureStore instead.
 func EnsureStore(cwd string) error {
-	if DefaultSetup.Store != nil {
+	return DefaultSetup.EnsureStore(cwd)
+}
+
+// EnsureStore lazily initializes the session store for the given cwd.
+func (s *Setup) EnsureStore(cwd string) error {
+	s.mu.RLock()
+	if s.Store != nil {
+		s.mu.RUnlock()
 		return nil
 	}
+	s.mu.RUnlock()
+
 	store, err := NewStore(cwd)
 	if err != nil {
 		return err
 	}
-	DefaultSetup.Store = store
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Store == nil {
+		s.Store = store
+	}
 	return nil
 }
 

@@ -397,8 +397,8 @@ func (r *Registry) GetAllHooks() map[string][]HookMatcher {
 var DefaultRegistry = NewRegistry()
 
 // Initialize loads plugins into the default registry and sets the singleton Service.
-func Initialize(ctx context.Context, cwd string) error {
-	if err := DefaultRegistry.Load(ctx, cwd); err != nil {
+func Initialize(ctx context.Context, opts Options) error {
+	if err := DefaultRegistry.Load(ctx, opts.CWD); err != nil {
 		return err
 	}
 	SetDefault(&service{registry: DefaultRegistry})

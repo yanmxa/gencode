@@ -32,8 +32,6 @@ import (
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/subagent"
-	"github.com/yanmxa/gencode/internal/task"
-	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -49,13 +47,14 @@ type model struct {
 	agentInput  notify.Model   // Source 2: background agent completion
 	systemInput trigger.Model  // Source 3: system events (cron/hooks/watcher)
 	conv        conv.Model     // Agent Outbox: conversation + output rendering
-	env      Env      // Shared app state: provider, session, permission, plan, config
-	services Services // Domain service singletons, injected at construction
+	env      env      // Shared app state: provider, session, permission, plan, config
+	services services // Domain service singletons, injected at construction
 
 	// ── Agent session ───────────────────────────────────────────
 	agentSess *agentSession
 
 	// ── Infrastructure ──────────────────────────────────────────
+	bgTracker     *notify.BackgroundTracker
 	cwd           string
 	isGit         bool
 	width         int
@@ -94,7 +93,12 @@ func (m *model) Init() tea.Cmd {
 func newModel(opts setting.RunOptions) (*model, error) {
 	base := newBaseModel()
 	m := &base
-	notify.InstallCompletionObserver(m.agentInput.Notifications, m.services.Hook.Engine())
+	m.bgTracker = notify.NewBackgroundTracker(m.services.Tracker, m.services.Orchestration)
+	var hookEngine *hook.Engine
+	if m.services.Hook != nil {
+		hookEngine = m.services.Hook.Engine()
+	}
+	notify.InstallCompletionObserver(m.agentInput.Notifications, hookEngine, m.bgTracker)
 	m.configureAsyncHookCallback()
 	m.ensureMemoryContextLoaded()
 	m.ReconfigureAgentTool()
@@ -106,30 +110,32 @@ func newModel(opts setting.RunOptions) (*model, error) {
 }
 
 func newBaseModel() model {
+	svc := newServices()
 	return model{
-		userInput: input.New(appCwd, defaultWidth, commandSuggestionMatcher(), input.SelectorDeps{
-			AgentRegistry:  &agentRegistryAdapter{subagent.Default().Registry()},
-			SkillRegistry:  skill.Default().Registry(),
-			MCPRegistry:    mcp.Default().Registry(),
-			PluginRegistry: plugin.Default().Registry(),
-			LoadDisabled:   setting.GetDisabledToolsAt,
-			UpdateDisabled: setting.UpdateDisabledToolsAt,
+		userInput: input.New(appCwd, defaultWidth, commandSuggestionMatcher(svc.Command), input.SelectorDeps{
+			AgentRegistry:  &agentRegistryAdapter{svc.Subagent.Registry()},
+			SkillRegistry:  svc.Skill.Registry(),
+			MCPRegistry:    svc.MCP.Registry(),
+			PluginRegistry: svc.Plugin.Registry(),
+			Setting:        svc.Setting,
+			LoadDisabled:   svc.Setting.GetDisabledToolsAt,
+			UpdateDisabled: svc.Setting.UpdateDisabledToolsAt,
 		}),
 		conv:        conv.NewModel(defaultWidth),
 		agentInput:  notify.New(),
 		systemInput: trigger.New(),
-		env: newEnv(),
+		env:         newEnv(svc.LLM),
 
-		services: newServices(),
+		services: svc,
 		cwd:      appCwd,
-		isGit:    setting.IsGitRepo(appCwd),
+		isGit:    svc.Setting.IsGitRepo(appCwd),
 	}
 }
 
 func (m *model) applyRunOptions(opts setting.RunOptions) error {
 	if opts.PluginDir != "" {
 		ctx := context.Background()
-		if err := plugin.Default().LoadFromPath(ctx, opts.PluginDir); err != nil {
+		if err := m.services.Plugin.LoadFromPath(ctx, opts.PluginDir); err != nil {
 			return fmt.Errorf("failed to load plugins from %s: %w", opts.PluginDir, err)
 		}
 		if err := m.ReloadPluginBackedState(); err != nil {
@@ -163,13 +169,17 @@ func (m *model) applyRunOptions(opts setting.RunOptions) error {
 }
 
 func (m *model) ReloadPluginBackedState() error {
-	skill.Initialize(m.cwd)
-	command.SetDynamicInfoProviders(skillCommandInfos)
-	command.Initialize(m.cwd)
-	subagent.Initialize(m.cwd, pluginAgentPaths)
-	mcp.Initialize(m.cwd, pluginMCPServers)
+	skill.Initialize(skill.Options{CWD: m.cwd})
+	command.Initialize(command.Options{
+		CWD:              m.cwd,
+		DynamicProviders: []func() []command.Info{skillCommandInfos},
+	})
+	subagent.Initialize(subagent.Options{CWD: m.cwd, PluginAgentPaths: pluginAgentPaths})
+	mcp.Initialize(mcp.Options{CWD: m.cwd, PluginServers: pluginMCPServers})
+	setting.Initialize(setting.Options{CWD: m.cwd})
 
-	setting.Initialize(m.cwd)
+	m.services.refreshAfterReload()
+
 	if m.services.Hook != nil {
 		plugin.MergePluginHooksIntoSettings(m.services.Setting.Snapshot())
 	}
@@ -193,13 +203,11 @@ func (m *model) enablePlanMode(prompt string) error {
 }
 
 func (m *model) applyContinueOption() error {
-	sessionStore, err := session.NewStore(m.cwd)
-	if err != nil {
+	if err := m.services.Session.EnsureStore(m.cwd); err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
-	m.services.Session.SetStore(sessionStore)
 
-	sess, err := sessionStore.GetLatest()
+	sess, err := m.services.Session.LoadLatest()
 	if err != nil {
 		return fmt.Errorf("no previous session to continue: %w", err)
 	}
@@ -209,14 +217,12 @@ func (m *model) applyContinueOption() error {
 }
 
 func (m *model) applyResumeOption(resumeID string) error {
-	sessionStore, err := session.NewStore(m.cwd)
-	if err != nil {
+	if err := m.services.Session.EnsureStore(m.cwd); err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
-	m.services.Session.SetStore(sessionStore)
 
 	if resumeID != "" {
-		sess, err := sessionStore.Load(resumeID)
+		sess, err := m.services.Session.Load(resumeID)
 		if err != nil {
 			return fmt.Errorf("failed to load session %s: %w", resumeID, err)
 		}
@@ -229,13 +235,17 @@ func (m *model) applyResumeOption(resumeID string) error {
 }
 
 func (m *model) BuildCompactRequest(focus, trigger string) conv.CompactRequest {
+	var hookEngine *hook.Engine
+	if m.services.Hook != nil {
+		hookEngine = m.services.Hook.Engine()
+	}
 	return conv.CompactRequest{
 		Ctx:            context.Background(),
 		Client:         m.buildLLMClient(),
 		Messages:       m.conv.ConvertToProvider(),
 		SessionSummary: m.services.Session.GetSummary(),
 		Focus:          focus,
-		HookEngine:     m.services.Hook.Engine(),
+		HookEngine:     hookEngine,
 		Trigger:        trigger,
 	}
 }
@@ -293,11 +303,11 @@ func (m *model) renderAndCommit(checkReady bool) []tea.Cmd {
 // ============================================================
 
 func (m *model) InitTaskStorage() {
-	initTaskStorage(m.services.Session.ID())
+	m.initTaskStorage(m.services.Session.ID())
 }
 
 func (m *model) PersistSession() error {
-	if err := session.EnsureStore(m.cwd); err != nil {
+	if err := m.services.Session.EnsureStore(m.cwd); err != nil {
 		return err
 	}
 	if len(m.conv.Messages) == 0 {
@@ -335,7 +345,7 @@ func (m *model) PersistSession() error {
 	}
 
 	m.services.Session.SetID(sess.Metadata.ID)
-	initTaskStorage(m.services.Session.ID())
+	m.initTaskStorage(m.services.Session.ID())
 
 	if m.services.Hook != nil {
 		m.services.Hook.SetTranscriptPath(m.services.Session.GetStore().SessionPath(sess.Metadata.ID))
@@ -346,7 +356,7 @@ func (m *model) PersistSession() error {
 }
 
 func (m *model) loadSessionByID(id string) error {
-	if err := session.EnsureStore(m.cwd); err != nil {
+	if err := m.services.Session.EnsureStore(m.cwd); err != nil {
 		return err
 	}
 
@@ -361,7 +371,7 @@ func (m *model) loadSessionByID(id string) error {
 	if len(sess.Tasks) == 0 {
 		m.services.Tracker.Reset()
 	}
-	tool.ResetFetched()
+	m.services.Tool.ResetFetched()
 
 	m.env.InputTokens = 0
 	m.env.OutputTokens = 0
@@ -381,15 +391,15 @@ func (m *model) restoreSessionData(sess *session.Snapshot) {
 		}
 	}
 
-	initTaskStorage(m.services.Session.ID())
+	m.initTaskStorage(m.services.Session.ID())
 
 	if len(sess.Tasks) > 0 {
 		m.services.Tracker.Import(sess.Tasks)
 	}
 }
 
-func initTaskStorage(sessionID string) {
-	if tracker.Default().GetStorageDir() != "" {
+func (m *model) initTaskStorage(sessionID string) {
+	if m.services.Tracker.GetStorageDir() != "" {
 		return
 	}
 
@@ -402,8 +412,8 @@ func initTaskStorage(sessionID string) {
 	taskListID := os.Getenv("GEN_TASK_LIST_ID")
 	if taskListID != "" {
 		dir := filepath.Join(homeDir, ".gen", "tasks", taskListID)
-		tracker.Default().SetStorageDir(dir)
-		_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
+		m.services.Tracker.SetStorageDir(dir)
+		_ = m.services.Task.SetOutputDir(filepath.Join(dir, "outputs"))
 		return
 	}
 
@@ -411,8 +421,8 @@ func initTaskStorage(sessionID string) {
 		return
 	}
 	dir := filepath.Join(homeDir, ".gen", "tasks", sessionID)
-	tracker.Default().SetStorageDir(dir)
-	_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
+	m.services.Tracker.SetStorageDir(dir)
+	_ = m.services.Task.SetOutputDir(filepath.Join(dir, "outputs"))
 }
 
 // ============================================================
@@ -427,7 +437,7 @@ func (m *model) SetTokenCounts(in, out int) {
 func (m *model) HasRunningTasks() bool { return m.services.Tracker.HasInProgress() }
 
 func (m *model) ProcessToolResult(tr core.ToolResult) *core.ToolResult {
-	sideEffect := tool.PopSideEffect(tr.ToolCallID)
+	sideEffect := m.services.Tool.PopSideEffect(tr.ToolCallID)
 	if sideEffect != nil {
 		m.applyToolSideEffects(tr.ToolName, sideEffect)
 	}
@@ -610,9 +620,9 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 	if launch.TaskID == "" {
 		return
 	}
-	childID := notify.EnsureBackgroundWorkerTracker(launch, "", "")
+	childID := m.bgTracker.EnsureWorkerTracker(launch, "", "")
 	if childID != "" {
-		notify.RecordBackgroundTaskLaunch(launch, "", "", 0)
+		m.bgTracker.RecordLaunch(launch, "", "", 0)
 	}
 }
 
@@ -632,7 +642,7 @@ func (m *model) persistOverflow(result *core.ToolResult) {
 	}
 	preview := result.Content[:cutoff]
 	persisted := false
-	if err := session.EnsureStore(m.cwd); err == nil && m.services.Session.ID() != "" {
+	if err := m.services.Session.EnsureStore(m.cwd); err == nil && m.services.Session.ID() != "" {
 		if err := m.services.Session.GetStore().PersistToolResult(m.services.Session.ID(), result.ToolCallID, result.Content); err == nil {
 			persisted = true
 		}
@@ -650,7 +660,7 @@ func (m *model) changeCwd(newCwd string) {
 	}
 	oldCwd := m.cwd
 	m.cwd = newCwd
-	m.isGit = setting.IsGitRepo(newCwd)
+	m.isGit = m.services.Setting.IsGitRepo(newCwd)
 	m.userInput.HandleCwdChange(newCwd)
 	m.env.ClearCachedInstructions()
 	m.refreshMemoryContext(newCwd, "cwd_changed")
@@ -673,7 +683,8 @@ func (m *model) fireFileChanged(filePath, source string) {
 
 func (m *model) ReloadProjectContext(cwd string) {
 	initExtensions(cwd)
-	setting.Initialize(cwd)
+	setting.Initialize(setting.Options{CWD: cwd})
+	m.services.refreshAfterReload()
 	if m.services.Hook != nil {
 		plugin.MergePluginHooksIntoSettings(m.services.Setting.Snapshot())
 	}
@@ -835,12 +846,14 @@ func (m *model) notifyDeps() notify.Deps {
 	return notify.Deps{
 		StreamActive: m.conv.Stream.Active,
 		Inject:       m.injectTaskNotification,
+		BGTracker:    m.bgTracker,
 	}
 }
 
 func (m *model) triggerDeps() trigger.Deps {
 	return trigger.Deps{
 		StreamActive: m.conv.Stream.Active,
+		Cron:         m.services.Cron,
 		InjectCron:   m.injectCronPrompt,
 		InjectHook:   m.injectAsyncHookContinuation,
 		AppendNotice: func(text string) {

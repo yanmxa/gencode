@@ -31,6 +31,12 @@ type Service interface {
 // Compile-time check: *service implements Service.
 var _ Service = (*service)(nil)
 
+// Options holds all dependencies for initialization.
+type Options struct {
+	CWD           string
+	PluginServers func() []PluginServer
+}
+
 // ── singleton ──────────────────────────────────────────────
 
 var (

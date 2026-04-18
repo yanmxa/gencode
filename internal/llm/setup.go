@@ -15,7 +15,7 @@ type Setup struct {
 
 // Initialize discovers and connects to the best available LLM provider.
 // Sets DefaultSetup and the singleton Service as a side effect.
-func Initialize() {
+func Initialize(opts Options) {
 	store, _ := NewStore()
 	if store == nil {
 		return

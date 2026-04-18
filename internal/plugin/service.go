@@ -31,6 +31,11 @@ type Service interface {
 	// access
 	Registry() *Registry                 // return the underlying *Registry
 
+	// plugin root management
+	SetActivePluginRoot(path string)
+	ClearActivePluginRoot()
+	FindPluginRootForPath(path string) string
+
 	// cross-domain (consumed by other services at init)
 	AgentPaths() []PluginPath            // agent file paths from enabled plugins
 	SkillPaths() []PluginPath            // skill directory paths from enabled plugins
@@ -42,6 +47,11 @@ type Service interface {
 
 // Compile-time check: *service implements Service.
 var _ Service = (*service)(nil)
+
+// Options holds all dependencies for initialization.
+type Options struct {
+	CWD string
+}
 
 // ── singleton ──────────────────────────────────────────────
 
@@ -96,6 +106,10 @@ func (s *service) EnabledCount() int               { return s.registry.EnabledCo
 
 func (s *service) Enable(name string, scope Scope) error  { return s.registry.Enable(name, scope) }
 func (s *service) Disable(name string, scope Scope) error { return s.registry.Disable(name, scope) }
+
+func (s *service) SetActivePluginRoot(path string)          { SetActivePluginRoot(path) }
+func (s *service) ClearActivePluginRoot()                   { ClearActivePluginRoot() }
+func (s *service) FindPluginRootForPath(path string) string { return FindPluginRootForPath(path) }
 
 func (s *service) AgentPaths() []PluginPath   { return GetPluginAgentPaths() }
 func (s *service) SkillPaths() []PluginPath   { return GetPluginSkillPaths() }

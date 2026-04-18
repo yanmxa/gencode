@@ -22,6 +22,7 @@ type TokenLimitDeps struct {
 	InputTokens  int
 	Cwd          string
 	SpinnerTick  tea.Cmd
+	ToolSvc      tool.Service
 }
 
 // HandleTokenLimitCommand processes the /tokenlimit slash command.
@@ -81,6 +82,7 @@ func fetchTokenLimitsCmd(deps TokenLimitDeps) tea.Cmd {
 		Store:        deps.Store,
 		CurrentModel: deps.CurrentModel,
 		Cwd:          deps.Cwd,
+		ToolSvc:      deps.ToolSvc,
 	}
 	return func() tea.Msg {
 		result, err := autoFetchTokenLimits(context.Background(), fetchDeps)
@@ -95,6 +97,7 @@ type autoFetchTokenLimitsDeps struct {
 	Store        *llm.Store
 	CurrentModel *llm.CurrentModelInfo
 	Cwd          string
+	ToolSvc      tool.Service
 }
 
 func autoFetchTokenLimits(ctx context.Context, deps autoFetchTokenLimitsDeps) (string, error) {
@@ -135,7 +138,7 @@ func autoFetchTokenLimits(ctx context.Context, deps autoFetchTokenLimitsDeps) (s
 		}
 
 		if len(response.ToolCalls) > 0 {
-			messages = appendToolCallMessages(ctx, messages, response.ToolCalls, deps.Cwd)
+			messages = appendToolCallMessages(ctx, messages, response.ToolCalls, deps.Cwd, deps.ToolSvc)
 			continue
 		}
 
@@ -200,7 +203,7 @@ func getTokenLimitAgentTools() []llm.ToolSchema {
 	}
 }
 
-func appendToolCallMessages(ctx context.Context, messages []core.Message, toolCalls []core.ToolCall, cwd string) []core.Message {
+func appendToolCallMessages(ctx context.Context, messages []core.Message, toolCalls []core.ToolCall, cwd string, toolSvc tool.Service) []core.Message {
 	messages = append(messages, core.AssistantMessage("", "", toolCalls))
 
 	for _, tc := range toolCalls {
@@ -209,7 +212,7 @@ func appendToolCallMessages(ctx context.Context, messages []core.Message, toolCa
 			params = map[string]any{}
 		}
 
-		result := tool.Execute(ctx, tc.Name, params, cwd)
+		result := toolSvc.Execute(ctx, tc.Name, params, cwd)
 		messages = append(messages, core.ToolResultMessage(core.ToolResult{
 			ToolCallID: tc.ID,
 			ToolName:   tc.Name,

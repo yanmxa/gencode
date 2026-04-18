@@ -1,10 +1,11 @@
 // Hook-forwarding model methods and related helpers.
 // These methods use m.services.Hook to fire lifecycle events,
-// replacing the former Env hook methods that used singletons directly.
+// replacing the former env hook methods that used singletons directly.
 package app
 
 import (
 	"context"
+	"strings"
 
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/system"
@@ -125,6 +126,21 @@ func (m *model) syncSettingsToHookEngine() {
 	if m.services.Hook != nil && m.services.Setting != nil {
 		m.services.Hook.SetSettings(m.services.Setting.Snapshot())
 	}
+}
+
+func memoryTypeForLevel(level string) string {
+	switch level {
+	case "global":
+		return "User"
+	case "local":
+		return "Local"
+	default:
+		return "Project"
+	}
+}
+
+func joinSections(parts []string) string {
+	return strings.Join(parts, "\n\n")
 }
 
 func buildHookCompleter(p llm.Provider) hook.LLMCompleter {

@@ -11,6 +11,7 @@ import (
 // Deps holds the app-level state and callbacks needed to process Source 3 input.
 type Deps struct {
 	StreamActive bool
+	Cron         cron.Service
 	InjectCron   func(string) tea.Cmd
 	InjectHook   func(AsyncHookRewake) tea.Cmd
 	AppendNotice func(string)
@@ -29,7 +30,7 @@ func Update(deps Deps, state *Model, msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func handleCronTick(deps Deps, state *Model) tea.Cmd {
-	result := state.HandleCronTick(!deps.StreamActive)
+	result := state.HandleCronTick(deps.Cron, !deps.StreamActive)
 
 	cmds := []tea.Cmd{StartCronTicker()}
 	if result.InjectPrompt != "" {
@@ -82,15 +83,14 @@ type CronResult struct {
 	Notices      []string
 }
 
-func (s *Model) HandleCronTick(isIdle bool) CronResult {
+func (s *Model) HandleCronTick(cronSvc cron.Service, isIdle bool) CronResult {
 	var result CronResult
 
-	// Skip when no jobs exist and queue is empty
-	if cron.Default().Empty() && len(s.CronQueue) == 0 {
+	if cronSvc == nil || (cronSvc.Empty() && len(s.CronQueue) == 0) {
 		return result
 	}
 
-	fired := cron.Default().Tick()
+	fired := cronSvc.Tick()
 	injected := false
 
 	for i, f := range fired {

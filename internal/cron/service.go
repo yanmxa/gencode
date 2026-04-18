@@ -30,6 +30,30 @@ var (
 	instance Service
 )
 
+// Options configures the cron service singleton.
+type Options struct {
+	StoragePath string // file path for durable job persistence
+}
+
+func init() {
+	mu.Lock()
+	if instance == nil {
+		instance = NewStore()
+	}
+	mu.Unlock()
+}
+
+// Initialize creates and configures the cron service singleton.
+func Initialize(opts Options) {
+	s := NewStore()
+	if opts.StoragePath != "" {
+		s.SetStoragePath(opts.StoragePath)
+	}
+	mu.Lock()
+	instance = s
+	mu.Unlock()
+}
+
 // Default returns the singleton Service instance.
 // Panics if not initialized.
 func Default() Service {
@@ -49,8 +73,8 @@ func SetDefault(s Service) {
 	mu.Unlock()
 }
 
-// Reset resets the singleton Service instance to nil (for tests).
-func ResetDefault() {
+// ResetService clears the singleton (for tests).
+func ResetService() {
 	mu.Lock()
 	instance = nil
 	mu.Unlock()

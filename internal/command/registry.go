@@ -105,9 +105,10 @@ func SetDynamicInfoProviders(providers ...func() []Info) {
 // Initialize sets the working directory for resolving project-level commands,
 // creates the service, and sets the singleton.
 // Sources: ~/.gen/commands/, .gen/commands/, and plugin command paths.
-func Initialize(cwd string) error {
+func Initialize(opts Options) error {
 	s := &service{
-		cwd: cwd,
+		cwd:                  opts.CWD,
+		dynamicInfoProviders: opts.DynamicProviders,
 	}
 	mu.Lock()
 	instance = s

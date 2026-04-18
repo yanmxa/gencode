@@ -126,7 +126,8 @@ func (s *Store) SetState(name string, state SkillState) error {
 
 // Initialize loads all skills and applies persisted states.
 // This should be called at application startup.
-func Initialize(cwd string) error {
+func Initialize(opts Options) error {
+	cwd := opts.CWD
 	loader := newLoader(cwd)
 
 	skills, err := loader.loadAll()

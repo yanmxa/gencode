@@ -22,6 +22,9 @@ import (
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/subagent"
+	"github.com/yanmxa/gencode/internal/task"
+	"github.com/yanmxa/gencode/internal/task/tracker"
+	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/fs"
 )
 
@@ -30,17 +33,17 @@ var appCwd string
 func initInfrastructure() error {
 	appCwd, _ = os.Getwd()
 
-	llm.Initialize()
+	llm.Initialize(llm.Options{})
 	initExtensions(appCwd)
-	setting.Initialize(appCwd)
+	setting.Initialize(setting.Options{CWD: appCwd})
 	if err := initTools(appCwd); err != nil {
 		return err
 	}
-	session.Initialize(appCwd)
+	session.Initialize(session.Options{CWD: appCwd})
 
 	hookSettings := setting.Default().Snapshot()
 	plugin.MergePluginHooksIntoSettings(hookSettings)
-	hook.Initialize(hook.InitializeConfig{
+	hook.Initialize(hook.Options{
 		Settings:       hookSettings,
 		SessionID:      session.Default().ID(),
 		CWD:            appCwd,
@@ -54,9 +57,13 @@ func initInfrastructure() error {
 }
 
 func initTools(cwd string) error {
-	orchestration.Default().Reset()
-	cron.Default().Reset()
-	cron.Default().SetStoragePath(filepath.Join(cwd, ".gen", "scheduled_tasks.json"))
+	tool.Initialize(tool.Options{})
+	task.Initialize(task.Options{})
+	tracker.Initialize(tracker.Options{})
+	orchestration.Initialize(orchestration.Options{})
+	cron.Initialize(cron.Options{
+		StoragePath: filepath.Join(cwd, ".gen", "scheduled_tasks.json"),
+	})
 	if err := cron.Default().LoadDurable(); err != nil {
 		return fmt.Errorf("failed to load scheduled tasks: %w", err)
 	}
@@ -65,20 +72,22 @@ func initTools(cwd string) error {
 }
 
 func initExtensions(cwd string) {
-	if err := plugin.Initialize(context.Background(), cwd); err != nil {
+	if err := plugin.Initialize(context.Background(), plugin.Options{CWD: cwd}); err != nil {
 		log.Logger().Warn("Failed to initialize plugin", zap.Error(err))
 	}
-	if err := skill.Initialize(cwd); err != nil {
+	if err := skill.Initialize(skill.Options{CWD: cwd}); err != nil {
 		log.Logger().Warn("Failed to initialize skill", zap.Error(err))
 	}
-	command.SetDynamicInfoProviders(skillCommandInfos)
-	if err := command.Initialize(cwd); err != nil {
+	if err := command.Initialize(command.Options{
+		CWD:              cwd,
+		DynamicProviders: []func() []command.Info{skillCommandInfos},
+	}); err != nil {
 		log.Logger().Warn("Failed to initialize command", zap.Error(err))
 	}
-	if err := subagent.Initialize(cwd, pluginAgentPaths); err != nil {
+	if err := subagent.Initialize(subagent.Options{CWD: cwd, PluginAgentPaths: pluginAgentPaths}); err != nil {
 		log.Logger().Warn("Failed to initialize subagent", zap.Error(err))
 	}
-	if err := mcp.Initialize(cwd, pluginMCPServers); err != nil {
+	if err := mcp.Initialize(mcp.Options{CWD: cwd, PluginServers: pluginMCPServers}); err != nil {
 		log.Logger().Warn("Failed to initialize mcp", zap.Error(err))
 	}
 }
@@ -113,9 +122,9 @@ func pluginMCPServers() []mcp.PluginServer {
 	return servers
 }
 
-func commandSuggestionMatcher() func(string) []suggest.Suggestion {
+func commandSuggestionMatcher(cmdSvc command.Service) func(string) []suggest.Suggestion {
 	return func(query string) []suggest.Suggestion {
-		cmds := command.GetMatchingCommands(query)
+		cmds := cmdSvc.GetMatching(query)
 		result := make([]suggest.Suggestion, len(cmds))
 		for i, c := range cmds {
 			result[i] = suggest.Suggestion{Name: c.Name, Description: c.Description}

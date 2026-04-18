@@ -195,19 +195,18 @@ func LoadAgentSystemPrompt(filePath string) string {
 }
 
 // Initialize loads custom agents from all sources and initializes state stores.
-// pluginAgentPaths is an optional callback that returns plugin-provided agent paths.
-func Initialize(cwd string, pluginAgentPaths func() []PluginAgentPath) error {
+func Initialize(opts Options) error {
 	ClearPluginAgentPaths()
 
-	if pluginAgentPaths != nil {
-		for _, pp := range pluginAgentPaths() {
+	if opts.PluginAgentPaths != nil {
+		for _, pp := range opts.PluginAgentPaths() {
 			AddPluginAgentPath(pp.Path, pp.Namespace)
 		}
 	}
 
-	LoadCustomAgents(cwd)
+	LoadCustomAgents(opts.CWD)
 
-	if err := DefaultRegistry.InitStores(cwd); err != nil {
+	if err := DefaultRegistry.InitStores(opts.CWD); err != nil {
 		return fmt.Errorf("failed to initialize agent stores: %w", err)
 	}
 

@@ -34,10 +34,11 @@ type SearchSelector struct {
 	width       int
 	height      int
 	store       *llm.Store
+	settingSvc  setting.Service
 }
 
-func NewSearchSelector() SearchSelector {
-	return SearchSelector{}
+func NewSearchSelector(settingSvc setting.Service) SearchSelector {
+	return SearchSelector{settingSvc: settingSvc}
 }
 
 func (s *SearchSelector) Enter(store *llm.Store, width, height int) error {
@@ -112,8 +113,8 @@ func (s *SearchSelector) Select() tea.Cmd {
 		return nil
 	}
 
-	if svc := setting.DefaultIfInit(); svc != nil {
-		svc.SetSearchProvider(string(selected.Name))
+	if s.settingSvc != nil {
+		s.settingSvc.SetSearchProvider(string(selected.Name))
 	}
 	if s.store != nil {
 		_ = s.store.SetSearchProvider(string(selected.Name))

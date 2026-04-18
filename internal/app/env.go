@@ -11,7 +11,7 @@ import (
 	"github.com/yanmxa/gencode/internal/setting"
 )
 
-type Env struct {
+type env struct {
 	// ── Provider (mutable — changes via SwitchProvider) ─────────
 	LLMProvider      llm.Provider
 	CurrentModel     *llm.CurrentModelInfo
@@ -35,30 +35,30 @@ type Env struct {
 	CachedProjectInstructions string
 }
 
-func newEnv() Env {
-	return Env{
+func newEnv(llmSvc llm.Service) env {
+	return env{
 		OperationMode:      setting.ModeNormal,
 		SessionPermissions: setting.NewSessionPermissions(),
 
-		LLMProvider:  llm.Default().Provider(),
-		CurrentModel: llm.Default().CurrentModel(),
+		LLMProvider:  llmSvc.Provider(),
+		CurrentModel: llmSvc.CurrentModel(),
 
 		FileCache: filecache.New(),
 	}
 }
 
-func (m *Env) GetModelID() string {
+func (m *env) GetModelID() string {
 	if m.CurrentModel != nil {
 		return m.CurrentModel.ModelID
 	}
 	return "claude-sonnet-4-20250514"
 }
 
-func (m *Env) EffectiveThinkingLevel() llm.ThinkingLevel {
+func (m *env) EffectiveThinkingLevel() llm.ThinkingLevel {
 	return max(m.ThinkingLevel, m.ThinkingOverride)
 }
 
-func (m *Env) OperationModeName() string {
+func (m *env) OperationModeName() string {
 	switch m.OperationMode {
 	case setting.ModeAutoAccept:
 		return "auto"
@@ -71,7 +71,7 @@ func (m *Env) OperationModeName() string {
 	}
 }
 
-func (m *Env) ResetSessionPermissions() {
+func (m *env) ResetSessionPermissions() {
 	m.SessionPermissions.AllowAllEdits = false
 	m.SessionPermissions.AllowAllWrites = false
 	m.SessionPermissions.AllowAllBash = false
@@ -79,7 +79,7 @@ func (m *Env) ResetSessionPermissions() {
 	m.SessionPermissions.Mode = setting.ModeNormal
 }
 
-func (m *Env) ApplyAutoAcceptPermissions(cwd string) {
+func (m *env) ApplyAutoAcceptPermissions(cwd string) {
 	m.SessionPermissions.AllowAllEdits = true
 	m.SessionPermissions.AllowAllWrites = true
 	m.SessionPermissions.AddWorkingDirectory(cwd)
@@ -88,17 +88,17 @@ func (m *Env) ApplyAutoAcceptPermissions(cwd string) {
 	}
 }
 
-func (m *Env) ApplyBypassPermissions() {
+func (m *env) ApplyBypassPermissions() {
 	m.SessionPermissions.Mode = setting.ModeBypassPermissions
 }
 
-func (m *Env) EnableAutoAcceptMode(cwd string) {
+func (m *env) EnableAutoAcceptMode(cwd string) {
 	m.ApplyAutoAcceptPermissions(cwd)
 	m.OperationMode = setting.ModeAutoAccept
 	m.PlanEnabled = false
 }
 
-func (m *Env) DetectThinkingKeywords(input string) {
+func (m *env) DetectThinkingKeywords(input string) {
 	lower := strings.ToLower(input)
 
 	if strings.Contains(lower, "ultrathink") ||
@@ -118,7 +118,7 @@ func (m *Env) DetectThinkingKeywords(input string) {
 	}
 }
 
-func (m *Env) ApplyModePermissions(cwd string) {
+func (m *env) ApplyModePermissions(cwd string) {
 	m.ResetSessionPermissions()
 
 	if m.OperationMode == setting.ModeAutoAccept {
@@ -130,7 +130,7 @@ func (m *Env) ApplyModePermissions(cwd string) {
 	}
 }
 
-func (m *Env) EnsurePlanStore() {
+func (m *env) EnsurePlanStore() {
 	if m.PlanStore != nil {
 		return
 	}
@@ -141,12 +141,12 @@ func (m *Env) EnsurePlanStore() {
 	m.PlanStore = store
 }
 
-func (m *Env) ClearCachedInstructions() {
+func (m *env) ClearCachedInstructions() {
 	m.CachedUserInstructions = ""
 	m.CachedProjectInstructions = ""
 }
 
-func (m *Env) SessionMode() string {
+func (m *env) SessionMode() string {
 	if m.PlanEnabled {
 		return "plan"
 	}
@@ -158,35 +158,11 @@ func (m *Env) SessionMode() string {
 	}
 }
 
-func (m *Env) ClearThinkingOverride() {
+func (m *env) ClearThinkingOverride() {
 	m.ThinkingOverride = llm.ThinkingOff
 }
 
-func (m *Env) ResetTokens() {
+func (m *env) ResetTokens() {
 	m.InputTokens = 0
 	m.OutputTokens = 0
-}
-
-
-
-func memoryTypeForLevel(level string) string {
-	switch level {
-	case "global":
-		return "User"
-	case "local":
-		return "Local"
-	default:
-		return "Project"
-	}
-}
-
-func joinSections(parts []string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	result := parts[0]
-	for i := 1; i < len(parts); i++ {
-		result += "\n\n" + parts[i]
-	}
-	return result
 }

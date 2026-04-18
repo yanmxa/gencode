@@ -65,15 +65,13 @@ func newEmptyRegistry() *Registry {
 }
 
 // Initialize initializes the global MCP registry with the given working directory.
-// pluginServers injects plugin-contributed MCP servers without requiring mcp to
-// import the plugin package. Pass nil if no plugin servers are needed.
-func Initialize(cwd string, pluginServers func() []PluginServer) error {
-	reg, err := NewRegistry(cwd)
+func Initialize(opts Options) error {
+	reg, err := NewRegistry(opts.CWD)
 	if err != nil {
 		return err
 	}
-	if pluginServers != nil {
-		reg.PluginServers = pluginServers
+	if opts.PluginServers != nil {
+		reg.PluginServers = opts.PluginServers
 		reg.configs = reg.mergePluginMCPConfigs(reg.configs)
 	}
 	DefaultRegistry = reg

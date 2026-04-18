@@ -35,6 +35,11 @@ type Service interface {
 // Compile-time check: *Registry implements Service.
 var _ Service = (*Registry)(nil)
 
+// Options holds all dependencies for initialization.
+type Options struct {
+	CWD string
+}
+
 // ── singleton ──────────────────────────────────────────────
 
 var (
@@ -70,8 +75,8 @@ func SetDefault(s Service) {
 	mu.Unlock()
 }
 
-// Reset clears the singleton instance. Intended for tests.
-func Reset() {
+// ResetService clears the singleton instance. Intended for tests.
+func ResetService() {
 	mu.Lock()
 	instance = nil
 	mu.Unlock()

@@ -6,6 +6,7 @@ import tea "github.com/charmbracelet/bubbletea"
 type Deps struct {
 	StreamActive bool
 	Inject       func(Notification) tea.Cmd
+	BGTracker    *BackgroundTracker
 }
 
 // Update routes Source 2 (agent -> agent) task-notification messages.
@@ -19,7 +20,9 @@ func Update(deps Deps, state *Model, msg tea.Msg) (tea.Cmd, bool) {
 func handleTick(deps Deps, state *Model) tea.Cmd {
 	cmds := []tea.Cmd{StartTicker()}
 
-	ResetTrackerIfIdle(deps.StreamActive)
+	if deps.BGTracker != nil {
+		deps.BGTracker.ResetIfIdle(deps.StreamActive)
+	}
 
 	items := PopReadyNotifications(state.Notifications, !deps.StreamActive)
 	if len(items) == 0 {

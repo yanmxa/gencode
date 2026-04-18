@@ -32,12 +32,22 @@ type Service interface {
 // Compile-time check: *Store implements Service.
 var _ Service = (*Store)(nil)
 
+// Options holds all dependencies for initialization.
+type Options struct{}
+
 // ── singleton ──────────────────────────────────────────────
 
 var (
 	svcMu    sync.RWMutex
 	instance Service
 )
+
+// Initialize sets the singleton to the DefaultStore.
+func Initialize(opts Options) {
+	svcMu.Lock()
+	instance = DefaultStore
+	svcMu.Unlock()
+}
 
 // Default returns the singleton Service instance.
 // Panics if not initialized.
@@ -58,7 +68,7 @@ func SetDefault(s Service) {
 	svcMu.Unlock()
 }
 
-// Reset clears the singleton instance. Intended for tests.
+// ResetService clears the singleton instance. Intended for tests.
 func ResetService() {
 	svcMu.Lock()
 	instance = nil

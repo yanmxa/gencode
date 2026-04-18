@@ -42,6 +42,14 @@ type CommandDeps struct {
 	InputTokens   int
 	CurrentModel  *llm.CurrentModelInfo
 
+	// Domain services
+	Skill   skill.Service
+	Plugin  plugin.Service
+	MCP     mcp.Service
+	Tracker tracker.Service
+	Cron    cron.Service
+	ToolSvc tool.Service
+
 	// State getters (values that may change during command execution)
 	GetSessionID     func() string
 	GetSessionStore  func() *session.Store
@@ -53,6 +61,7 @@ type CommandDeps struct {
 	EnterPlanMode      func(task string) error
 	EnsureSessionStore func(cwd string) error
 	ForkSession        func() (originalSessionID string, err error)
+	ResetFetched       func()
 
 	// Existing callbacks
 	CommitMessages          func() []tea.Cmd
@@ -117,7 +126,7 @@ func (c CommandController) Execute(ctx context.Context, inputText string) (strin
 		return result, followUp, true
 	}
 
-	if sk, ok := LookupSkillCommand(cmdName); ok {
+	if sk, ok := lookupSkill(c.deps.Skill, cmdName); ok {
 		return c.executeSkillSlashCommand(sk, args), c.deps.HandleSkillInvocation(), true
 	}
 
@@ -184,10 +193,12 @@ func (c CommandController) executeExitCommand(cmdName string) (string, tea.Cmd, 
 }
 
 func (c CommandController) executeSkillSlashCommand(sk *skill.Skill, args string) string {
-	if svc := skill.DefaultIfInit(); svc != nil {
-		c.deps.Input.Skill.PendingInstructions = svc.GetSkillInvocationPrompt(sk.FullName())
+	if c.deps.Skill != nil {
+		c.deps.Input.Skill.PendingInstructions = c.deps.Skill.GetSkillInvocationPrompt(sk.FullName())
 	}
-	plugin.SetActivePluginRoot(plugin.FindPluginRootForPath(sk.SkillDir))
+	if c.deps.Plugin != nil {
+		c.deps.Plugin.SetActivePluginRoot(c.deps.Plugin.FindPluginRootForPath(sk.SkillDir))
+	}
 	if args != "" {
 		c.deps.Input.Skill.PendingArgs = fmt.Sprintf("/%s %s", sk.FullName(), args)
 	} else {
@@ -196,11 +207,13 @@ func (c CommandController) executeSkillSlashCommand(sk *skill.Skill, args string
 	return ""
 }
 
-func ApplySkillInvocation(state *Model, sk *skill.Skill, args string) {
-	if svc := skill.DefaultIfInit(); svc != nil {
-		state.Skill.PendingInstructions = svc.GetSkillInvocationPrompt(sk.FullName())
+func ApplySkillInvocation(state *Model, sk *skill.Skill, args string, skillSvc skill.Service, pluginSvc plugin.Service) {
+	if skillSvc != nil {
+		state.Skill.PendingInstructions = skillSvc.GetSkillInvocationPrompt(sk.FullName())
 	}
-	plugin.SetActivePluginRoot(plugin.FindPluginRootForPath(sk.SkillDir))
+	if pluginSvc != nil {
+		pluginSvc.SetActivePluginRoot(pluginSvc.FindPluginRootForPath(sk.SkillDir))
+	}
 	if args != "" {
 		state.Skill.PendingArgs = fmt.Sprintf("/%s %s", sk.FullName(), args)
 	} else {
@@ -213,7 +226,9 @@ func (c CommandController) executeCustomCommand(pc *command.CustomCommand, args 
 	if instructions != "" {
 		c.deps.Input.Skill.PendingInstructions = fmt.Sprintf("<custom-command name=%q>\n%s\n</custom-command>", pc.FullName(), instructions)
 	}
-	plugin.SetActivePluginRoot(plugin.FindPluginRootForPath(pc.FilePath))
+	if c.deps.Plugin != nil {
+		c.deps.Plugin.SetActivePluginRoot(c.deps.Plugin.FindPluginRootForPath(pc.FilePath))
+	}
 	if args != "" {
 		c.deps.Input.Skill.PendingArgs = fmt.Sprintf("/%s %s", pc.FullName(), args)
 	} else {
@@ -271,8 +286,10 @@ func (c *CommandController) handleClearCommand(_ context.Context, _ string) (str
 	c.deps.Tool.Reset()
 	c.deps.Conversation.Clear()
 	c.deps.ResetTokens()
-	tracker.Default().Reset()
-	tool.ResetFetched()
+	c.deps.Tracker.Reset()
+	if c.deps.ResetFetched != nil {
+		c.deps.ResetFetched()
+	}
 	c.deps.ResetCronQueue()
 	cmds := []tea.Cmd{tea.ClearScreen}
 	if os.Getenv("TMUX") != "" {
@@ -375,10 +392,10 @@ func (c *CommandController) handleReloadPluginsCommand(ctx context.Context, args
 	if strings.TrimSpace(args) != "" {
 		return "Usage: /reload-plugins", nil, nil
 	}
-	if err := plugin.Default().Load(ctx, c.deps.Cwd); err != nil {
+	if err := c.deps.Plugin.Load(ctx, c.deps.Cwd); err != nil {
 		return "", nil, fmt.Errorf("failed to reload plugin registry: %w", err)
 	}
-	_ = plugin.Default().LoadClaudePlugins(ctx)
+	_ = c.deps.Plugin.LoadClaudePlugins(ctx)
 	if err := c.deps.ReloadPluginBackedState(); err != nil {
 		return "", nil, err
 	}
@@ -395,14 +412,14 @@ func (c *CommandController) handleGlobCommand(ctx context.Context, args string) 
 		params["pattern"] = parts[0]
 		params["path"] = parts[1]
 	}
-	result := tool.Execute(ctx, "glob", params, c.deps.Cwd)
+	result := c.deps.ToolSvc.Execute(ctx, "glob", params, c.deps.Cwd)
 	return conv.RenderToolResult(result, c.deps.Width), nil, nil
 }
 
 func (c *CommandController) handleToolCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	var mcpTools func() []core.ToolSchema
-	if svc := mcp.DefaultIfInit(); svc != nil {
-		mcpTools = svc.ListTools
+	if c.deps.MCP != nil {
+		mcpTools = c.deps.MCP.ListTools
 	}
 	if err := c.deps.Input.Tool.EnterSelect(c.deps.Width, c.deps.Height, c.deps.DisabledTools, mcpTools); err != nil {
 		return "", nil, err
@@ -459,7 +476,7 @@ func (c *CommandController) handleLoopCommand(_ context.Context, args string) (s
 	if args == "" {
 		return loopUsage(), nil, nil
 	}
-	if result, handled, err := handleLoopAdminCommand(args); handled {
+	if result, handled, err := handleLoopAdminCommand(c.deps.Cron, args); handled {
 		return result, nil, err
 	}
 	if strings.HasPrefix(strings.ToLower(args), "once ") {
@@ -467,7 +484,7 @@ func (c *CommandController) handleLoopCommand(_ context.Context, args string) (s
 		if err != nil {
 			return loopUsage(), nil, nil
 		}
-		job, err := cron.Default().Create(parsed.Cron, parsed.Prompt, false, false)
+		job, err := c.deps.Cron.Create(parsed.Cron, parsed.Prompt, false, false)
 		if err != nil {
 			return "", nil, err
 		}
@@ -481,7 +498,7 @@ func (c *CommandController) handleLoopCommand(_ context.Context, args string) (s
 	if err != nil {
 		return loopUsage(), nil, nil
 	}
-	job, err := cron.Default().Create(parsed.Cron, parsed.Prompt, true, false)
+	job, err := c.deps.Cron.Create(parsed.Cron, parsed.Prompt, true, false)
 	if err != nil {
 		return "", nil, err
 	}
@@ -493,22 +510,22 @@ func (c *CommandController) handleLoopCommand(_ context.Context, args string) (s
 	return "", c.deps.StartProviderTurn(parsed.Prompt), nil
 }
 
-func handleLoopAdminCommand(args string) (string, bool, error) {
+func handleLoopAdminCommand(cronSvc cron.Service, args string) (string, bool, error) {
 	fields := strings.Fields(args)
 	if len(fields) == 0 {
 		return "", false, nil
 	}
 	switch strings.ToLower(fields[0]) {
 	case "list", "ls":
-		return renderLoopJobList(), true, nil
+		return renderLoopJobList(cronSvc), true, nil
 	case "delete", "del", "rm", "remove", "cancel":
 		if len(fields) < 2 {
 			return "Usage: /loop delete <job-id>", true, nil
 		}
 		if strings.EqualFold(fields[1], "all") {
-			jobs := cron.Default().List()
+			jobs := cronSvc.List()
 			for _, job := range jobs {
-				if err := cron.Default().Delete(job.ID); err != nil {
+				if err := cronSvc.Delete(job.ID); err != nil {
 					return "", true, err
 				}
 			}
@@ -518,7 +535,7 @@ func handleLoopAdminCommand(args string) (string, bool, error) {
 		if id == "" {
 			return "Usage: /loop delete <job-id>", true, nil
 		}
-		if err := cron.Default().Delete(id); err != nil {
+		if err := cronSvc.Delete(id); err != nil {
 			return "", true, err
 		}
 		return fmt.Sprintf("Cancelled scheduled task %s.", id), true, nil
@@ -527,8 +544,8 @@ func handleLoopAdminCommand(args string) (string, bool, error) {
 	}
 }
 
-func renderLoopJobList() string {
-	jobs := cron.Default().List()
+func renderLoopJobList(cronSvc cron.Service) string {
+	jobs := cronSvc.List()
 	if len(jobs) == 0 {
 		return "No scheduled loop tasks."
 	}
@@ -562,6 +579,7 @@ func (c *CommandController) handleTokenLimitCommand(_ context.Context, args stri
 		InputTokens:  c.deps.InputTokens,
 		Cwd:          c.deps.Cwd,
 		SpinnerTick:  c.deps.SpinnerTickCmd(),
+		ToolSvc:      c.deps.ToolSvc,
 	}, args)
 	if cmd != nil {
 		c.deps.Input.Provider.FetchingLimits = true
@@ -588,8 +606,7 @@ func (c *CommandController) handleCompactCommand(_ context.Context, args string)
 	return "", tea.Batch(c.deps.SpinnerTickCmd(), conv.CompactCmd(c.deps.BuildCompactRequest(c.deps.Conversation.Compact.Focus, "manual"))), nil
 }
 
-func LookupSkillCommand(cmd string) (*skill.Skill, bool) {
-	svc := skill.DefaultIfInit()
+func lookupSkill(svc skill.Service, cmd string) (*skill.Skill, bool) {
 	if svc == nil {
 		return nil, false
 	}
@@ -598,6 +615,10 @@ func LookupSkillCommand(cmd string) (*skill.Skill, bool) {
 		return nil, false
 	}
 	return sk, true
+}
+
+func LookupSkillCommand(cmd string) (*skill.Skill, bool) {
+	return lookupSkill(skill.DefaultIfInit(), cmd)
 }
 
 func unknownCommandResult(cmd string) string {

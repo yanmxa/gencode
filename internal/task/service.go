@@ -27,12 +27,28 @@ type Service interface {
 // Compile-time check: *Manager implements Service.
 var _ Service = (*Manager)(nil)
 
+// Options holds all dependencies for initialization.
+type Options struct {
+	OutputDir string
+}
+
 // ── singleton ──────────────────────────────────────────────
 
 var (
 	svcMu    sync.RWMutex
 	instance Service
 )
+
+// Initialize creates a new Manager, applies options, and sets the singleton.
+func Initialize(opts Options) {
+	m := NewManager()
+	if opts.OutputDir != "" {
+		m.SetOutputDir(opts.OutputDir)
+	}
+	svcMu.Lock()
+	instance = m
+	svcMu.Unlock()
+}
 
 // Default returns the singleton Service instance.
 // Panics if not initialized.
@@ -53,8 +69,8 @@ func SetDefault(s Service) {
 	svcMu.Unlock()
 }
 
-// Reset clears the singleton instance. Intended for tests.
-func Reset() {
+// ResetService clears the singleton instance. Intended for tests.
+func ResetService() {
 	svcMu.Lock()
 	instance = nil
 	svcMu.Unlock()

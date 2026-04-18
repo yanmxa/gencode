@@ -68,6 +68,15 @@ func (r *Registry) Execute(ctx context.Context, name string, params map[string]a
 	return tool.Execute(ctx, params, cwd)
 }
 
+// ResetFetched clears all fetched deferred tools (delegates to package-level).
+func (r *Registry) ResetFetched() { ResetFetched() }
+
+// FormatDeferredToolsPrompt returns the deferred tools system prompt section.
+func (r *Registry) FormatDeferredToolsPrompt() string { return FormatDeferredToolsPrompt() }
+
+// PopSideEffect retrieves and removes the side effect for a tool call.
+func (r *Registry) PopSideEffect(toolCallID string) any { return PopSideEffect(toolCallID) }
+
 // DefaultRegistry is the global default tool registry
 var DefaultRegistry = NewRegistry()
 

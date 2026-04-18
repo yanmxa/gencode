@@ -12,6 +12,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/system"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/setting"
@@ -191,19 +192,23 @@ func (m *model) ReconfigureAgentTool() {
 	}
 	m.ensureMemoryContextLoaded()
 
-	executor := subagent.NewExecutor(m.env.LLMProvider, m.cwd, m.env.GetModelID(), m.services.Hook.Engine())
+	var hookEngine *hook.Engine
+	if m.services.Hook != nil {
+		hookEngine = m.services.Hook.Engine()
+	}
+	executor := subagent.NewExecutor(m.env.LLMProvider, m.cwd, m.env.GetModelID(), hookEngine)
 	if m.services.Session.GetStore() != nil && m.services.Session.ID() != "" {
 		executor.SetSessionStore(m.services.Session.GetStore(), m.services.Session.ID())
 	}
 	executor.SetContext(m.env.CachedUserInstructions, m.env.CachedProjectInstructions, m.isGit)
-	if mcp.Default().Registry() != nil {
-		executor.SetMCP(mcp.Default().Registry().GetToolSchemas, mcp.Default().Registry())
+	if m.services.MCP.Registry() != nil {
+		executor.SetMCP(m.services.MCP.Registry().GetToolSchemas, m.services.MCP.Registry())
 	}
 
 	adapter := subagent.NewExecutorAdapter(executor)
 	type executorSetter interface{ SetExecutor(tool.AgentExecutor) }
 	for _, name := range []string{tool.ToolAgent, tool.ToolContinueAgent, tool.ToolSendMessage} {
-		if t, ok := tool.Get(name); ok {
+		if t, ok := m.services.Tool.Get(name); ok {
 			if setter, ok := t.(executorSetter); ok {
 				setter.SetExecutor(adapter)
 			}
@@ -249,15 +254,15 @@ func (m *model) buildSystemPrompt(extra []string, loopClient *llm.Client) core.S
 		SessionSummary:      sessionSummary,
 		Skills:              skills,
 		Agents:              agents,
-		DeferredTools:       tool.FormatDeferredToolsPrompt(),
+		DeferredTools:       m.services.Tool.FormatDeferredToolsPrompt(),
 		Extra:               allExtra,
 	})
 }
 
 func (m *model) buildAgentTools() core.Tools {
 	var mcpGetter func() []core.ToolSchema
-	if mcp.Default().Registry() != nil {
-		mcpGetter = mcp.Default().Registry().GetToolSchemas
+	if m.services.MCP.Registry() != nil {
+		mcpGetter = m.services.MCP.Registry().GetToolSchemas
 	}
 	schemas := (&tool.Set{
 		Disabled: m.services.Setting.DisabledTools(),
@@ -266,8 +271,8 @@ func (m *model) buildAgentTools() core.Tools {
 	}).Tools()
 
 	tools := tool.AdaptToolRegistry(schemas, func() string { return m.cwd })
-	if mcp.Default().Registry() != nil {
-		mcpCaller := mcp.NewCaller(mcp.Default().Registry())
+	if m.services.MCP.Registry() != nil {
+		mcpCaller := mcp.NewCaller(m.services.MCP.Registry())
 		for _, t := range mcp.AsCoreTools(schemas, mcpCaller) {
 			tools.Add(t)
 		}
