@@ -7,7 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/conv"
-	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/plugin"
 )
@@ -24,12 +23,12 @@ type SubmitRuntime interface {
 }
 
 type SubmitDeps struct {
-	Actions       SubmitRuntime
-	Input         *Model
-	Conversation  *conv.ConversationModel
-	Runtime       *appruntime.Env
-	Cwd           string
-	HandleCommand func(string) (tea.Cmd, bool)
+	Actions        SubmitRuntime
+	Input          *Model
+	Conversation   *conv.ConversationModel
+	CheckPromptHook func(context.Context, string) (bool, string)
+	Cwd            string
+	HandleCommand  func(string) (tea.Cmd, bool)
 }
 
 func HandleSubmit(deps SubmitDeps) tea.Cmd {
@@ -74,7 +73,7 @@ func ExecuteSubmitRequest(deps SubmitDeps, req SubmitRequest) tea.Cmd {
 		return cmd
 	}
 
-	if blocked, reason := deps.Runtime.CheckPromptHook(context.Background(), req.Input); blocked {
+	if blocked, reason := deps.CheckPromptHook(context.Background(), req.Input); blocked {
 		return BlockPromptSubmission(deps, reason)
 	}
 

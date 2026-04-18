@@ -41,7 +41,7 @@ func (m *model) View() string {
 	chatSection := m.renderChatSection(activeContent, trackerView)
 	statusLine := m.renderModeStatus()
 	suggestions := m.userInput.Suggestions.Render(m.width)
-	tokenWarning := conv.RenderTokenWarning(m.runtime.InputTokens, kit.GetEffectiveInputLimit(m.runtime.ProviderStore, m.runtime.CurrentModel), m.conv.Compact.WarningSuppressed)
+	tokenWarning := conv.RenderTokenWarning(m.env.InputTokens, kit.GetEffectiveInputLimit(m.env.ProviderStore, m.env.CurrentModel), m.conv.Compact.WarningSuppressed)
 	queuePreview := m.renderQueuePreview()
 
 	var view strings.Builder
@@ -156,18 +156,18 @@ func (m model) renderTrackerList() string {
 
 func (m model) renderModeStatus() string {
 	modelName := m.userInput.Provider.StatusMessage
-	if m.runtime.HookEngine != nil {
-		if status := m.runtime.HookEngine.CurrentStatusMessage(); status != "" {
+	if m.env.HookEngine != nil {
+		if status := m.env.HookEngine.CurrentStatusMessage(); status != "" {
 			modelName = status
 		}
 	}
 	return conv.RenderModeStatus(conv.OperationModeParams{
-		Mode:          conv.OperationMode(m.runtime.OperationMode),
-		InputTokens:   m.runtime.InputTokens,
-		InputLimit:    kit.GetEffectiveInputLimit(m.runtime.ProviderStore, m.runtime.CurrentModel),
+		Mode:          conv.OperationMode(m.env.OperationMode),
+		InputTokens:   m.env.InputTokens,
+		InputLimit:    kit.GetEffectiveInputLimit(m.env.ProviderStore, m.env.CurrentModel),
 		ModelName:     modelName,
 		Width:         m.width,
-		ThinkingLevel: m.runtime.EffectiveThinkingLevel(),
+		ThinkingLevel: m.env.EffectiveThinkingLevel(),
 		QueueCount:    m.userInput.Queue.Len(),
 	})
 }

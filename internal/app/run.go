@@ -55,11 +55,11 @@ func initModel(opts setting.RunOptions) (*model, error) {
 }
 
 func (m *model) configureAsyncHookCallback() {
-	if m.runtime.HookEngine == nil || m.systemInput.AsyncHookQueue == nil {
+	if m.env.HookEngine == nil || m.systemInput.AsyncHookQueue == nil {
 		return
 	}
 	queue := m.systemInput.AsyncHookQueue
-	m.runtime.HookEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
+	m.env.HookEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
 		reason := result.BlockReason
 		if reason == "" {
 			reason = "asynchronous hook requested a rewake"
@@ -73,7 +73,7 @@ func (m *model) configureAsyncHookCallback() {
 }
 
 func (m *model) fireStartupHooks() {
-	outcome := m.runtime.ExecuteStartupHooks(context.Background())
+	outcome := m.env.ExecuteStartupHooks(context.Background())
 	m.applyRuntimeHookOutcome(outcome)
 	if outcome.AdditionalContext != "" {
 		m.conv.Append(core.ChatMessage{
@@ -84,11 +84,11 @@ func (m *model) fireStartupHooks() {
 }
 
 func printExitMessage(m *model) {
-	if m.runtime.SessionID != "" {
+	if m.env.SessionID != "" {
 		dim := kit.DimStyle()
 		fmt.Println()
 		fmt.Println(dim.Render("Resume this session with:"))
-		fmt.Println(dim.Render("gen -r " + m.runtime.SessionID))
+		fmt.Println(dim.Render("gen -r " + m.env.SessionID))
 		fmt.Println()
 	}
 }

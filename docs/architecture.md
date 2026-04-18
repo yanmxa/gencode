@@ -353,7 +353,7 @@ Domain packages never import `app/`.
 - `session/` → `task/tracker` (serializes tracker tasks into transcripts)
 
 **Decoupled via function injection** (no direct import):
-- `hook/` ← `app/` — `hook.LLMCompleter` injected at init via `runtime.BuildHookCompleter`
+- `hook/` ← `app/` — `hook.LLMCompleter` injected at init via `buildHookCompleter`
 
 **Decoupled via callback injection** (no direct import):
 - `mcp/` ↔ `plugin/` — `mcp.Initialize(cwd, pluginServersCallback)`

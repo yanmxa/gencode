@@ -18,7 +18,9 @@ import (
 	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/image"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/plan"
+	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
@@ -348,8 +350,8 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 
 		if m.userInput.Session.PendingSelector {
 			m.userInput.Session.PendingSelector = false
-			if m.runtime.SessionStore != nil {
-				_ = m.userInput.Session.Selector.EnterSelect(m.width, m.height, m.runtime.SessionStore, m.cwd)
+			if m.env.SessionStore != nil {
+				_ = m.userInput.Session.Selector.EnterSelect(m.width, m.height, m.env.SessionStore, m.cwd)
 			}
 		}
 
@@ -396,11 +398,11 @@ func (m *model) handleSubmit() tea.Cmd {
 
 func (m *model) submitDeps() input.SubmitDeps {
 	return input.SubmitDeps{
-		Actions:      m,
-		Input:        &m.userInput,
-		Conversation: &m.conv.ConversationModel,
-		Runtime:      &m.runtime,
-		Cwd:          m.cwd,
+		Actions:         m,
+		Input:           &m.userInput,
+		Conversation:    &m.conv.ConversationModel,
+		CheckPromptHook: m.env.CheckPromptHook,
+		Cwd:             m.cwd,
 		HandleCommand: func(text string) (tea.Cmd, bool) {
 			ctrl := input.NewCommandController(m.commandDeps())
 			return ctrl.HandleSubmit(text)
@@ -409,7 +411,7 @@ func (m *model) submitDeps() input.SubmitDeps {
 }
 
 func (m *model) StartProviderTurn(content string) tea.Cmd {
-	if m.runtime.LLMProvider == nil {
+	if m.env.LLMProvider == nil {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleNotice,
 			Content: "No provider connected. Use /provider to connect.",
@@ -426,7 +428,7 @@ func (m *model) StartProviderTurn(content string) tea.Cmd {
 		return tea.Batch(m.CommitMessages()...)
 	}
 
-	m.runtime.DetectThinkingKeywords(content)
+	m.env.DetectThinkingKeywords(content)
 
 	var images []core.Image
 	if len(m.conv.Messages) > 0 {
@@ -445,11 +447,26 @@ func (m *model) commandDeps() input.CommandDeps {
 	return input.CommandDeps{
 		Input:        &m.userInput,
 		Conversation: &m.conv.ConversationModel,
-		Runtime:      &m.runtime,
 		Tool:         &m.conv.Tool,
 		Width:        m.width,
 		Height:       m.height,
 		Cwd:          m.cwd,
+
+		DisabledTools: m.env.DisabledTools,
+		ProviderStore: m.env.ProviderStore,
+		LLMProvider:   m.env.LLMProvider,
+		InputTokens:   m.env.InputTokens,
+		CurrentModel:  m.env.CurrentModel,
+
+		GetSessionID:     func() string { return m.env.SessionID },
+		GetSessionStore:  func() *session.Store { return m.env.SessionStore },
+		GetThinkingLevel: func() llm.ThinkingLevel { return m.env.ThinkingLevel },
+
+		ResetTokens:        m.env.ResetTokens,
+		SetThinkingLevel:   func(level llm.ThinkingLevel) { m.env.ThinkingLevel = level },
+		EnterPlanMode:      m.enterPlanModeForCommand,
+		EnsureSessionStore: m.env.EnsureSessionStore,
+		ForkSession:        m.forkSession,
 
 		CommitMessages:          m.CommitMessages,
 		StartProviderTurn:       m.StartProviderTurn,
@@ -477,14 +494,17 @@ func (m *model) executeCommand(ctx context.Context, inputText string) (string, t
 
 func (m *model) approvalDeps() input.ApprovalFlowDeps {
 	return input.ApprovalFlowDeps{
-		Actions:     m,
-		Input:       &m.userInput,
-		Runtime:     &m.runtime,
-		Tool:        &m.conv.Tool,
-		Width:       m.width,
-		Height:      m.height,
-		Cwd:         m.cwd,
-		ProgressHub: m.conv.ProgressHub,
+		Actions:            m,
+		Input:              &m.userInput,
+		HookEngine:         m.env.HookEngine,
+		Settings:           m.env.Settings,
+		SessionPermissions: m.env.SessionPermissions,
+		SetOperationMode:   func(mode setting.OperationMode) { m.env.OperationMode = mode },
+		Tool:               &m.conv.Tool,
+		Width:              m.width,
+		Height:             m.height,
+		Cwd:                m.cwd,
+		ProgressHub:        m.conv.ProgressHub,
 	}
 }
 
@@ -511,15 +531,15 @@ func (m *model) AbortToolWithError(errorMsg string, retry bool) tea.Cmd {
 // ============================================================
 
 func (m *model) cycleOperationMode() {
-	m.runtime.CycleOperationMode()
-	m.runtime.ApplyModePermissions(m.cwd)
+	m.env.CycleOperationMode()
+	m.env.ApplyModePermissions(m.cwd)
 
-	if m.runtime.PlanEnabled {
-		m.runtime.EnsurePlanStore()
+	if m.env.PlanEnabled {
+		m.env.EnsurePlanStore()
 	}
 
-	if m.runtime.HookEngine != nil {
-		m.runtime.HookEngine.SetPermissionMode(m.runtime.OperationModeName())
+	if m.env.HookEngine != nil {
+		m.env.HookEngine.SetPermissionMode(m.env.OperationModeName())
 	}
 }
 
@@ -569,8 +589,8 @@ func (m *model) handleQuestionResponse(msg conv.QuestionResponseMsg) tea.Cmd {
 
 func (m *model) handlePlanRequest(msg conv.PlanRequestMsg) tea.Cmd {
 	var planPath string
-	if m.runtime.PlanStore != nil {
-		planPath = m.runtime.PlanStore.GetPath(plan.GeneratePlanName(m.runtime.PlanTask))
+	if m.env.PlanStore != nil {
+		planPath = m.env.PlanStore.GetPath(plan.GeneratePlanName(m.env.PlanTask))
 	}
 
 	cmds := m.CommitMessages()
@@ -584,8 +604,8 @@ func (m *model) handlePlanRequest(msg conv.PlanRequestMsg) tea.Cmd {
 
 func (m *model) handlePlanResponse(msg conv.PlanResponseMsg) tea.Cmd {
 	if !msg.Approved {
-		m.runtime.PlanEnabled = false
-		m.runtime.OperationMode = setting.ModeNormal
+		m.env.PlanEnabled = false
+		m.env.OperationMode = setting.ModeNormal
 		return m.AbortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.", false)
 	}
 
@@ -595,14 +615,14 @@ func (m *model) handlePlanResponse(msg conv.PlanResponseMsg) tea.Cmd {
 	}
 
 	if msg.ApproveMode != "modify" {
-		m.runtime.EnsurePlanStore()
-		if m.runtime.PlanStore != nil {
+		m.env.EnsurePlanStore()
+		if m.env.PlanStore != nil {
 			savedPlan := &plan.Plan{
-				Task:    m.runtime.PlanTask,
+				Task:    m.env.PlanTask,
 				Status:  plan.StatusApproved,
 				Content: planContent,
 			}
-			if _, err := m.runtime.PlanStore.Save(savedPlan); err != nil {
+			if _, err := m.env.PlanStore.Save(savedPlan); err != nil {
 				m.conv.Append(core.ChatMessage{
 					Role:    core.RoleNotice,
 					Content: fmt.Sprintf("Warning: failed to save plan: %v", err),
@@ -615,13 +635,13 @@ func (m *model) handlePlanResponse(msg conv.PlanResponseMsg) tea.Cmd {
 	case "clear-auto":
 		return m.handlePlanClearAutoMode(planContent)
 	case "auto":
-		m.runtime.EnableAutoAcceptMode(m.cwd)
+		m.env.EnableAutoAcceptMode(m.cwd)
 	case "manual":
-		m.runtime.OperationMode = setting.ModeNormal
-		m.runtime.PlanEnabled = false
+		m.env.OperationMode = setting.ModeNormal
+		m.env.PlanEnabled = false
 	case "modify":
-		m.runtime.OperationMode = setting.ModePlan
-		m.runtime.PlanEnabled = true
+		m.env.OperationMode = setting.ModePlan
+		m.env.PlanEnabled = true
 	}
 
 	return tea.Batch(m.CommitMessages()...)
@@ -629,7 +649,7 @@ func (m *model) handlePlanResponse(msg conv.PlanResponseMsg) tea.Cmd {
 
 func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
 	m.conv.Clear()
-	m.runtime.EnableAutoAcceptMode(m.cwd)
+	m.env.EnableAutoAcceptMode(m.cwd)
 	m.conv.Tool.Reset()
 
 	userMsg := fmt.Sprintf("Implement the following approved plan step by step. Start coding immediately — do NOT explore or investigate further.\n\n%s", planContent)
@@ -645,12 +665,12 @@ func (m *model) handleEnterPlanRequest(msg conv.EnterPlanRequestMsg) tea.Cmd {
 
 func (m *model) handleEnterPlanResponse(msg conv.EnterPlanResponseMsg) tea.Cmd {
 	if msg.Approved {
-		m.runtime.PlanEnabled = true
-		m.runtime.OperationMode = setting.ModePlan
+		m.env.PlanEnabled = true
+		m.env.OperationMode = setting.ModePlan
 		if msg.Request != nil && msg.Request.Message != "" {
-			m.runtime.PlanTask = msg.Request.Message
+			m.env.PlanTask = msg.Request.Message
 		}
-		m.runtime.EnsurePlanStore()
+		m.env.EnsurePlanStore()
 	}
 
 	return tea.Batch(m.CommitMessages()...)
@@ -666,7 +686,7 @@ func (m *model) handleStreamCancel() tea.Cmd {
 		m.agentSess = nil
 	}
 	m.conv.Stream.Stop()
-	m.runtime.ClearThinkingOverride()
+	m.env.ClearThinkingOverride()
 	m.cancelPendingToolCalls()
 	m.conv.MarkLastInterrupted()
 
@@ -700,7 +720,7 @@ func (m *model) cancelRemainingToolCalls(startIdx int) {
 }
 
 func (m *model) HandleSkillInvocation() tea.Cmd {
-	if m.runtime.LLMProvider == nil {
+	if m.env.LLMProvider == nil {
 		m.conv.AddNotice("No provider connected. Use /provider to connect.")
 		m.userInput.Skill.ClearPending()
 		return tea.Batch(m.CommitMessages()...)
@@ -760,8 +780,8 @@ func (m *model) handlePermBridgeDecision(decision permissionDecision) tea.Cmd {
 	}
 	resp := conv.PermBridgeResponse{Allow: decision.Approved, Reason: "user decision"}
 	if decision.Approved {
-		if decision.AllowAll && m.runtime.SessionPermissions != nil && decision.Request != nil {
-			m.runtime.SessionPermissions.AllowTool(decision.Request.ToolName)
+		if decision.AllowAll && m.env.SessionPermissions != nil && decision.Request != nil {
+			m.env.SessionPermissions.AllowTool(decision.Request.ToolName)
 		}
 		resp.Reason = "user approved"
 	} else {

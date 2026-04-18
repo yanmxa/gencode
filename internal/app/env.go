@@ -1,5 +1,5 @@
-// Shared runtime state: provider, session, permissions, plan, and config.
-package runtime
+// Shared app state: provider, session, permissions, plan, and config.
+package app
 
 import (
 	"context"
@@ -50,7 +50,7 @@ type Env struct {
 	CachedProjectInstructions string
 }
 
-func New(cwd string) Env {
+func newEnv(cwd string) Env {
 	return Env{
 		OperationMode:      setting.ModeNormal,
 		SessionPermissions: setting.NewSessionPermissions(),
@@ -224,11 +224,11 @@ func (m *Env) CheckPromptHook(ctx context.Context, prompt string) (bool, string)
 func (m *Env) SwitchProvider(p llm.Provider) {
 	m.LLMProvider = p
 	if m.HookEngine != nil {
-		m.HookEngine.SetLLMCompleter(BuildHookCompleter(p), m.GetModelID())
+		m.HookEngine.SetLLMCompleter(buildHookCompleter(p), m.GetModelID())
 	}
 }
 
-func BuildHookCompleter(p llm.Provider) hook.LLMCompleter {
+func buildHookCompleter(p llm.Provider) hook.LLMCompleter {
 	if p == nil {
 		return nil
 	}
@@ -338,8 +338,6 @@ func (m *Env) ExecuteStartupHooks(ctx context.Context) hook.HookOutcome {
 	})
 }
 
-// ExecuteIdleHooks fires Stop and Notification hooks. Returns whether execution
-// was blocked and the block reason.
 func (m *Env) ExecuteIdleHooks(ctx context.Context, lastAssistantContent string) (blocked bool, reason string) {
 	if m.HookEngine == nil {
 		return false, ""

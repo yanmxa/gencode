@@ -299,13 +299,13 @@ func handleMemoryEditorFinished(deps OverlayDeps, state *MemoryState, msg Memory
 	filePath := state.EditingFile
 	state.EditingFile = ""
 
-	deps.Runtime.ClearCachedInstructions()
+	deps.ClearCachedInstructions()
 
 	content := fmt.Sprintf("Saved: %s", filePath)
 	if msg.Err != nil {
 		content = fmt.Sprintf("Editor error: %v", msg.Err)
 	} else {
-		deps.Runtime.RefreshMemoryContext(deps.Cwd, "memory_edit")
+		deps.RefreshMemoryContext(deps.Cwd, "memory_edit")
 		deps.FireFileChanged(filePath, "memory_editor")
 	}
 

@@ -8,7 +8,6 @@ import (
 	gozap "go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/app/conv"
-	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/log"
@@ -31,14 +30,17 @@ type ApprovalRuntime interface {
 }
 
 type ApprovalFlowDeps struct {
-	Actions     ApprovalRuntime
-	Input       *Model
-	Runtime     *appruntime.Env
-	Tool        *conv.ToolExecState
-	Width       int
-	Height      int
-	Cwd         string
-	ProgressHub *conv.ProgressHub
+	Actions            ApprovalRuntime
+	Input              *Model
+	HookEngine         *hook.Engine
+	Settings           *setting.Settings
+	SessionPermissions *setting.SessionPermissions
+	SetOperationMode   func(setting.OperationMode)
+	Tool               *conv.ToolExecState
+	Width              int
+	Height             int
+	Cwd                string
+	ProgressHub        *conv.ProgressHub
 }
 
 func UpdateApproval(deps ApprovalFlowDeps, msg tea.Msg) (tea.Cmd, bool) {
@@ -53,7 +55,7 @@ func UpdateApproval(deps ApprovalFlowDeps, msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func HandlePermissionRequest(deps ApprovalFlowDeps, msg ApprovalRequestMsg) tea.Cmd {
-	if deps.Runtime.HookEngine != nil && deps.Runtime.HookEngine.HasHooks(hook.PermissionRequest) && msg.Request != nil {
+	if deps.HookEngine != nil && deps.HookEngine.HasHooks(hook.PermissionRequest) && msg.Request != nil {
 		return tea.Batch(
 			ShowApprovalModal(deps, msg.Request),
 			DispatchPermissionHookAsync(deps, msg.Request),
@@ -63,7 +65,7 @@ func HandlePermissionRequest(deps ApprovalFlowDeps, msg ApprovalRequestMsg) tea.
 }
 
 func DispatchPermissionHookAsync(deps ApprovalFlowDeps, req *perm.PermissionRequest) tea.Cmd {
-	hookEngine := deps.Runtime.HookEngine
+	hookEngine := deps.HookEngine
 	ctx := deps.Tool.Context()
 	hookInput := hook.HookInput{ToolName: req.ToolName, ToolInput: fullToolInputForHook(deps, req)}
 	hookInput.PermissionSuggestions = buildPermissionSuggestions(req)
@@ -93,7 +95,7 @@ func HandleHookPermissionResult(deps ApprovalFlowDeps, msg HookPermissionResultM
 			ApplyUpdatedToolInput(deps.Tool, msg.Outcome.UpdatedInput)
 		}
 		args := buildPermissionArgs(msg.Request)
-		if deps.Runtime.Settings != nil && deps.Runtime.Settings.ResolveHookAllow(msg.Request.ToolName, args, deps.Runtime.SessionPermissions) {
+		if deps.Settings != nil && deps.Settings.ResolveHookAllow(msg.Request.ToolName, args, deps.SessionPermissions) {
 			deps.Input.Approval.Hide()
 			return conv.ExecuteApproved(deps.Tool.Context(), deps.ProgressHub, deps.Tool.PendingCalls, deps.Tool.CurrentIdx, deps.Cwd)
 		}
@@ -106,8 +108,8 @@ func ShowApprovalModal(deps ApprovalFlowDeps, req *perm.PermissionRequest) tea.C
 		req.SuggestedRules = setting.GenerateSuggestions(req.ToolName, buildPermissionArgs(req), 5)
 	}
 	deps.Input.Approval.Show(req, deps.Width, deps.Height)
-	if deps.Runtime.HookEngine != nil {
-		deps.Runtime.HookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
+	if deps.HookEngine != nil {
+		deps.HookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
 			Message:          "Permission required for " + req.ToolName,
 			NotificationType: "permission_prompt",
 		})
@@ -175,21 +177,21 @@ func applyPermissionUpdates(deps ApprovalFlowDeps, updates []hook.PermissionUpda
 	for _, pu := range updates {
 		switch pu.Type {
 		case "setMode":
-			if deps.Runtime.SessionPermissions != nil {
+			if deps.SessionPermissions != nil {
 				switch pu.Mode {
 				case "bypassPermissions":
 					log.Logger().Warn("hook attempted to set bypassPermissions mode, denied")
 				case "acceptEdits":
-					deps.Runtime.SessionPermissions.Mode = setting.ModeAutoAccept
-					deps.Runtime.OperationMode = setting.ModeAutoAccept
+					deps.SessionPermissions.Mode = setting.ModeAutoAccept
+					deps.SetOperationMode(setting.ModeAutoAccept)
 				case "dontAsk":
-					deps.Runtime.SessionPermissions.Mode = setting.ModeDontAsk
+					deps.SessionPermissions.Mode = setting.ModeDontAsk
 				case "plan":
-					deps.Runtime.SessionPermissions.Mode = setting.ModePlan
-					deps.Runtime.OperationMode = setting.ModePlan
+					deps.SessionPermissions.Mode = setting.ModePlan
+					deps.SetOperationMode(setting.ModePlan)
 				case "normal":
-					deps.Runtime.SessionPermissions.Mode = setting.ModeNormal
-					deps.Runtime.OperationMode = setting.ModeNormal
+					deps.SessionPermissions.Mode = setting.ModeNormal
+					deps.SetOperationMode(setting.ModeNormal)
 				}
 			}
 		case "addRules":
@@ -211,14 +213,14 @@ func applyPermissionUpdates(deps ApprovalFlowDeps, updates []hook.PermissionUpda
 						log.Logger().Warn("failed to persist hook rule", gozap.Error(err))
 					}
 					needReload = true
-				} else if deps.Runtime.SessionPermissions != nil {
-					deps.Runtime.SessionPermissions.AllowPattern(ruleStr)
+				} else if deps.SessionPermissions != nil {
+					deps.SessionPermissions.AllowPattern(ruleStr)
 				}
 			}
 		case "addDirectories":
-			if deps.Runtime.SessionPermissions != nil {
+			if deps.SessionPermissions != nil {
 				for _, dir := range pu.Directories {
-					deps.Runtime.SessionPermissions.AddWorkingDirectory(dir)
+					deps.SessionPermissions.AddWorkingDirectory(dir)
 				}
 			}
 		}

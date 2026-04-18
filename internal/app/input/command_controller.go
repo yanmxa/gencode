@@ -13,15 +13,13 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/app/kit"
-	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
 	"github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/mcp"
-	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/setting"
+	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -32,12 +30,31 @@ type commandHandler func(*CommandController, context.Context, string) (string, t
 type CommandDeps struct {
 	Input        *Model
 	Conversation *conv.ConversationModel
-	Runtime      *appruntime.Env
 	Tool         *conv.ToolExecState
 	Width        int
 	Height       int
 	Cwd          string
 
+	// Read-only state
+	DisabledTools map[string]bool
+	ProviderStore *llm.Store
+	LLMProvider   llm.Provider
+	InputTokens   int
+	CurrentModel  *llm.CurrentModelInfo
+
+	// State getters (values that may change during command execution)
+	GetSessionID     func() string
+	GetSessionStore  func() *session.Store
+	GetThinkingLevel func() llm.ThinkingLevel
+
+	// Mutation callbacks
+	ResetTokens        func()
+	SetThinkingLevel   func(llm.ThinkingLevel)
+	EnterPlanMode      func(task string) error
+	EnsureSessionStore func(cwd string) error
+	ForkSession        func() (originalSessionID string, err error)
+
+	// Existing callbacks
 	CommitMessages          func() []tea.Cmd
 	StartProviderTurn       func(content string) tea.Cmd
 	HandleSkillInvocation   func() tea.Cmd
@@ -253,8 +270,7 @@ func (c *CommandController) handleClearCommand(_ context.Context, _ string) (str
 	}
 	c.deps.Tool.Reset()
 	c.deps.Conversation.Clear()
-	c.deps.Runtime.InputTokens = 0
-	c.deps.Runtime.OutputTokens = 0
+	c.deps.ResetTokens()
 	tracker.DefaultStore.Reset()
 	tool.ResetFetched()
 	c.deps.ResetCronQueue()
@@ -279,34 +295,30 @@ func (c *CommandController) handleForkCommand(_ context.Context, _ string) (stri
 	if err := c.deps.PersistSession(); err != nil {
 		return "", nil, fmt.Errorf("failed to save session before fork: %w", err)
 	}
-	if c.deps.Runtime.SessionID == "" {
+	if c.deps.GetSessionID() == "" {
 		return "No active session to fork.", nil, nil
 	}
-	forked, err := c.deps.Runtime.SessionStore.Fork(c.deps.Runtime.SessionID)
+	originalID, err := c.deps.ForkSession()
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to fork session: %w", err)
 	}
-	c.deps.Runtime.SessionID = forked.Metadata.ID
-	c.deps.Runtime.SessionSummary = ""
-	tracker.DefaultStore.SetStorageDir("")
 	c.deps.InitTaskStorage()
 	c.deps.ReconfigureAgentTool()
-	originalID := forked.Metadata.ParentSessionID
 	return fmt.Sprintf("Forked conversation. You are now in the fork.\nTo resume the original: gen -r %s", originalID), nil, nil
 }
 
 func (c *CommandController) handleResumeCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
-	if err := c.deps.Runtime.EnsureSessionStore(c.deps.Cwd); err != nil {
+	if err := c.deps.EnsureSessionStore(c.deps.Cwd); err != nil {
 		return "", nil, fmt.Errorf("failed to initialize session store: %w", err)
 	}
-	if err := c.deps.Input.Session.Selector.EnterSelect(c.deps.Width, c.deps.Height, c.deps.Runtime.SessionStore, c.deps.Cwd); err != nil {
+	if err := c.deps.Input.Session.Selector.EnterSelect(c.deps.Width, c.deps.Height, c.deps.GetSessionStore(), c.deps.Cwd); err != nil {
 		return "", nil, fmt.Errorf("failed to open session selector: %w", err)
 	}
 	return "", nil, nil
 }
 
 func (c *CommandController) handleSearchCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
-	if err := c.deps.Input.Search.Enter(c.deps.Runtime.ProviderStore, c.deps.Width, c.deps.Height); err != nil {
+	if err := c.deps.Input.Search.Enter(c.deps.ProviderStore, c.deps.Width, c.deps.Height); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil
@@ -392,7 +404,7 @@ func (c *CommandController) handleToolCommand(_ context.Context, _ string) (stri
 	if mcp.DefaultRegistry != nil {
 		mcpTools = mcp.DefaultRegistry.GetToolSchemas
 	}
-	if err := c.deps.Input.Tool.EnterSelect(c.deps.Width, c.deps.Height, c.deps.Runtime.DisabledTools, mcpTools); err != nil {
+	if err := c.deps.Input.Tool.EnterSelect(c.deps.Width, c.deps.Height, c.deps.DisabledTools, mcpTools); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil
@@ -416,18 +428,9 @@ func (c *CommandController) handlePlanCommand(_ context.Context, args string) (s
 	if args == "" {
 		return "Usage: /plan <task description>\n\nEnter plan mode to explore the codebase and create an implementation plan before making changes.", nil, nil
 	}
-	c.deps.Runtime.OperationMode = setting.ModePlan
-	c.deps.Runtime.PlanEnabled = true
-	c.deps.Runtime.PlanTask = args
-	c.deps.Runtime.SessionPermissions.AllowAllEdits = false
-	c.deps.Runtime.SessionPermissions.AllowAllWrites = false
-	c.deps.Runtime.SessionPermissions.AllowAllBash = false
-	c.deps.Runtime.SessionPermissions.AllowAllSkills = false
-	store, err := plan.NewStore()
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to initialize plan store: %w", err)
+	if err := c.deps.EnterPlanMode(args); err != nil {
+		return "", nil, err
 	}
-	c.deps.Runtime.PlanStore = store
 	return fmt.Sprintf("Entering plan mode for: %s\n\nI will explore the codebase and create an implementation plan. Only read-only tools are available until the plan is approved.", args), nil, nil
 }
 
@@ -435,19 +438,19 @@ func (c *CommandController) handleThinkCommand(_ context.Context, args string) (
 	args = strings.TrimSpace(strings.ToLower(args))
 	switch args {
 	case "off", "0":
-		c.deps.Runtime.ThinkingLevel = llm.ThinkingOff
+		c.deps.SetThinkingLevel(llm.ThinkingOff)
 	case "", "toggle":
-		c.deps.Runtime.ThinkingLevel = c.deps.Runtime.ThinkingLevel.Next()
+		c.deps.SetThinkingLevel(c.deps.GetThinkingLevel().Next())
 	case "think", "normal", "1":
-		c.deps.Runtime.ThinkingLevel = llm.ThinkingNormal
+		c.deps.SetThinkingLevel(llm.ThinkingNormal)
 	case "think+", "high", "2":
-		c.deps.Runtime.ThinkingLevel = llm.ThinkingHigh
+		c.deps.SetThinkingLevel(llm.ThinkingHigh)
 	case "ultra", "ultrathink", "max", "3":
-		c.deps.Runtime.ThinkingLevel = llm.ThinkingUltra
+		c.deps.SetThinkingLevel(llm.ThinkingUltra)
 	default:
 		return "Usage: /think [off|think|think+|ultra]\n\nLevels:\n  off        — No extended thinking\n  think      — Moderate thinking budget\n  think+     — Extended thinking budget\n  ultra      — Maximum thinking budget\n\nWithout arguments, cycles to the next level.", nil, nil
 	}
-	c.deps.Input.Provider.StatusMessage = fmt.Sprintf("thinking: %s", c.deps.Runtime.ThinkingLevel.String())
+	c.deps.Input.Provider.StatusMessage = fmt.Sprintf("thinking: %s", c.deps.GetThinkingLevel().String())
 	return "", kit.StatusTimer(3 * time.Second), nil
 }
 
@@ -553,10 +556,10 @@ func loopUsage() string {
 
 func (c *CommandController) handleTokenLimitCommand(_ context.Context, args string) (string, tea.Cmd, error) {
 	result, cmd, err := HandleTokenLimitCommand(TokenLimitDeps{
-		CurrentModel: c.deps.Runtime.CurrentModel,
-		Provider:     c.deps.Runtime.LLMProvider,
-		Store:        c.deps.Runtime.ProviderStore,
-		InputTokens:  c.deps.Runtime.InputTokens,
+		CurrentModel: c.deps.CurrentModel,
+		Provider:     c.deps.LLMProvider,
+		Store:        c.deps.ProviderStore,
+		InputTokens:  c.deps.InputTokens,
 		Cwd:          c.deps.Cwd,
 		SpinnerTick:  c.deps.SpinnerTickCmd(),
 	}, args)
@@ -567,7 +570,7 @@ func (c *CommandController) handleTokenLimitCommand(_ context.Context, args stri
 }
 
 func (c *CommandController) handleCompactCommand(_ context.Context, args string) (string, tea.Cmd, error) {
-	if c.deps.Runtime.LLMProvider == nil {
+	if c.deps.LLMProvider == nil {
 		return "No provider connected. Use /provider to connect.", nil, nil
 	}
 	if len(c.deps.Conversation.Messages) == 0 {

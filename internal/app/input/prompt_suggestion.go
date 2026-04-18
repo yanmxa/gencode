@@ -7,7 +7,6 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
-	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 )
@@ -51,7 +50,7 @@ type PromptSuggestionRequest struct {
 type PromptSuggestionDeps struct {
 	Input        *Model
 	Conversation *conv.ConversationModel
-	Runtime      *appruntime.Env
+	HasProvider  bool
 	BuildClient  func() *llm.Client
 }
 
@@ -96,7 +95,7 @@ func SuggestPromptCmd(req PromptSuggestionRequest) tea.Cmd {
 }
 
 func BuildPromptSuggestionRequest(deps PromptSuggestionDeps) (PromptSuggestionRequest, bool) {
-	if deps.Runtime == nil || deps.Runtime.LLMProvider == nil {
+	if !deps.HasProvider {
 		return PromptSuggestionRequest{}, false
 	}
 

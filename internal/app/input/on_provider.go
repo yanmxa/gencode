@@ -66,11 +66,11 @@ func handleProviderModelSelected(deps OverlayDeps, state *ProviderState, msg Pro
 		return tea.Batch(deps.CommitMessages()...)
 	}
 
-	deps.Runtime.CurrentModel = &llm.CurrentModelInfo{
+	deps.SetCurrentModel(&llm.CurrentModelInfo{
 		ModelID:    msg.ModelID,
 		Provider:   llm.Name(msg.ProviderName),
 		AuthMethod: msg.AuthMethod,
-	}
+	})
 	ctx := context.Background()
 	providerRefreshConnection(deps, state, ctx, llm.Name(msg.ProviderName), msg.AuthMethod)
 

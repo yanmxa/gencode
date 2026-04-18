@@ -1,4 +1,4 @@
-package runtime
+package app
 
 import (
 	"os"
@@ -13,46 +13,46 @@ import (
 	gozap "go.uber.org/zap"
 )
 
-type SessionSaveDeps struct {
-	Runtime         *Env
-	Cwd             string
-	Messages        []core.ChatMessage
-	ReconfigureTool func()
+type sessionSaveDeps struct {
+	env             *Env
+	cwd             string
+	messages        []core.ChatMessage
+	reconfigureTool func()
 }
 
-type SessionLoadDeps struct {
-	Runtime         *Env
-	Cwd             string
-	RestoreMessages func([]core.ChatMessage)
+type sessionLoadDeps struct {
+	env             *Env
+	cwd             string
+	restoreMessages func([]core.ChatMessage)
 }
 
-func SaveSession(deps SessionSaveDeps) error {
-	if err := deps.Runtime.EnsureSessionStore(deps.Cwd); err != nil {
+func saveSession(deps sessionSaveDeps) error {
+	if err := deps.env.EnsureSessionStore(deps.cwd); err != nil {
 		return err
 	}
 
-	if len(deps.Messages) == 0 {
+	if len(deps.messages) == 0 {
 		return nil
 	}
 
-	entries := session.ConvertToEntries(deps.Messages)
+	entries := session.ConvertToEntries(deps.messages)
 
 	providerName := ""
 	modelID := ""
-	if deps.Runtime.CurrentModel != nil {
-		providerName = string(deps.Runtime.CurrentModel.Provider)
-		modelID = deps.Runtime.CurrentModel.ModelID
+	if deps.env.CurrentModel != nil {
+		providerName = string(deps.env.CurrentModel.Provider)
+		modelID = deps.env.CurrentModel.ModelID
 	}
 
 	sess := &session.Snapshot{
 		Metadata: session.SessionMetadata{
-			ID:         deps.Runtime.SessionID,
+			ID:         deps.env.SessionID,
 			Provider:   providerName,
 			Model:      modelID,
-			Cwd:        deps.Cwd,
+			Cwd:        deps.cwd,
 			LastPrompt: session.ExtractLastUserText(entries),
-			Summary:    deps.Runtime.SessionSummary,
-			Mode:       deps.Runtime.SessionMode(),
+			Summary:    deps.env.SessionSummary,
+			Mode:       deps.env.SessionMode(),
 		},
 		Entries: entries,
 		Tasks:   tracker.DefaultStore.Export(),
@@ -62,67 +62,67 @@ func SaveSession(deps SessionSaveDeps) error {
 		sess.Metadata.Title = session.GenerateTitle(sess.Entries)
 	}
 
-	if err := deps.Runtime.SessionStore.Save(sess); err != nil {
+	if err := deps.env.SessionStore.Save(sess); err != nil {
 		return err
 	}
 
-	deps.Runtime.SessionID = sess.Metadata.ID
-	InitTaskStorage(deps.Runtime.SessionID)
+	deps.env.SessionID = sess.Metadata.ID
+	initTaskStorage(deps.env.SessionID)
 
-	if deps.Runtime.HookEngine != nil {
-		deps.Runtime.HookEngine.SetTranscriptPath(deps.Runtime.SessionStore.SessionPath(sess.Metadata.ID))
+	if deps.env.HookEngine != nil {
+		deps.env.HookEngine.SetTranscriptPath(deps.env.SessionStore.SessionPath(sess.Metadata.ID))
 	}
-	if deps.ReconfigureTool != nil {
-		deps.ReconfigureTool()
+	if deps.reconfigureTool != nil {
+		deps.reconfigureTool()
 	}
 
 	return nil
 }
 
-func LoadSession(deps SessionLoadDeps, id string) error {
-	if err := deps.Runtime.EnsureSessionStore(deps.Cwd); err != nil {
+func loadSession(deps sessionLoadDeps, id string) error {
+	if err := deps.env.EnsureSessionStore(deps.cwd); err != nil {
 		return err
 	}
 
-	sess, err := deps.Runtime.SessionStore.Load(id)
+	sess, err := deps.env.SessionStore.Load(id)
 	if err != nil {
 		return err
 	}
 
 	tracker.DefaultStore.SetStorageDir("")
-	RestoreSessionData(deps.Runtime, sess, deps.RestoreMessages)
+	restoreSessionData(deps.env, sess, deps.restoreMessages)
 
 	if len(sess.Tasks) == 0 {
 		tracker.DefaultStore.Reset()
 	}
 	tool.ResetFetched()
 
-	deps.Runtime.InputTokens = 0
-	deps.Runtime.OutputTokens = 0
+	deps.env.InputTokens = 0
+	deps.env.OutputTokens = 0
 
 	return nil
 }
 
-func RestoreSessionData(rt *Env, sess *session.Snapshot, restoreMessages func([]core.ChatMessage)) {
+func restoreSessionData(e *Env, sess *session.Snapshot, restoreMessages func([]core.ChatMessage)) {
 	restoreMessages(session.ConvertFromEntries(sess.Entries))
-	rt.SessionID = sess.Metadata.ID
+	e.SessionID = sess.Metadata.ID
 
 	if sess.Metadata.Summary != "" {
-		rt.SessionSummary = sess.Metadata.Summary
-	} else if rt.SessionStore != nil {
-		if mem, err := rt.SessionStore.LoadSessionMemory(sess.Metadata.ID); err == nil && mem != "" {
-			rt.SessionSummary = mem
+		e.SessionSummary = sess.Metadata.Summary
+	} else if e.SessionStore != nil {
+		if mem, err := e.SessionStore.LoadSessionMemory(sess.Metadata.ID); err == nil && mem != "" {
+			e.SessionSummary = mem
 		}
 	}
 
-	InitTaskStorage(rt.SessionID)
+	initTaskStorage(e.SessionID)
 
 	if len(sess.Tasks) > 0 {
 		tracker.DefaultStore.Import(sess.Tasks)
 	}
 }
 
-func InitTaskStorage(sessionID string) {
+func initTaskStorage(sessionID string) {
 	if tracker.DefaultStore.GetStorageDir() != "" {
 		return
 	}
