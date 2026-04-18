@@ -50,8 +50,6 @@ const (
 	suggestionUserPrompt   = input.SuggestionUserPrompt
 )
 
-type submitRequest = input.SubmitRequest
-
 type model struct {
 	// ── User Input ──────────────────────────────────────────────────────
 	userInput input.Model

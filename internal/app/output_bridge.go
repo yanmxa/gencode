@@ -17,15 +17,13 @@ import (
 const autoCompactResumePrompt = "Continue with the task. The conversation was auto-compacted to free up context."
 const minMessagesForCompaction = 3
 
-type outputRuntime struct{ *model }
-
 type permissionDecision struct {
 	Approved bool
 	AllowAll bool
 	Request  *perm.PermissionRequest
 }
 
-var _ conv.Runtime = outputRuntime{}
+var _ conv.Runtime = (*model)(nil)
 
 func (m *model) CommitMessages() []tea.Cmd              { return m.commitMessages() }
 func (m *model) AppendMessage(msg core.ChatMessage)     { m.conv.Append(msg) }
@@ -43,11 +41,9 @@ func (m *model) SetTokenCounts(in, out int) {
 	m.runtime.InputTokens = in
 	m.runtime.OutputTokens = out
 }
-func (m *model) ClearWarningSuppressed() { m.conv.Compact.WarningSuppressed = false }
-func (m *model) ClearThinkingOverride()  { m.runtime.ThinkingOverride = llm.ThinkingOff }
-func (rt outputRuntime) ContinueOutbox() tea.Cmd {
-	return rt.model.continueOutbox()
-}
+func (m *model) ClearWarningSuppressed()                 { m.conv.Compact.WarningSuppressed = false }
+func (m *model) ClearThinkingOverride()                  { m.runtime.ThinkingOverride = llm.ThinkingOff }
+func (m *model) ContinueOutbox() tea.Cmd                 { return m.continueOutbox() }
 func (m *model) PopToolSideEffect(toolCallID string) any { return tool.PopSideEffect(toolCallID) }
 func (m *model) ApplyToolSideEffects(toolName string, sideEffect any) {
 	m.applyAgentToolSideEffects(toolName, sideEffect)

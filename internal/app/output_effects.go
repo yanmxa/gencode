@@ -148,7 +148,7 @@ func (m *model) drainTaskNotificationsToAgent() tea.Cmd {
 	if len(items) == 0 {
 		return nil
 	}
-	return m.injectTaskNotificationContinuation(notify.MergeNotifications(items))
+	return m.InjectTaskNotificationContinuation(notify.MergeNotifications(items))
 }
 
 func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {

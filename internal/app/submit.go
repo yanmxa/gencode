@@ -1,12 +1,9 @@
 package app
 
 import (
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/input"
-	appcommand "github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/core"
 )
 
@@ -18,7 +15,7 @@ func (m *model) drainInputQueue() tea.Cmd {
 	return input.DrainInputQueue(m.submitDeps())
 }
 
-func (m *model) executeSubmitRequest(req submitRequest) tea.Cmd {
+func (m *model) executeSubmitRequest(req input.SubmitRequest) tea.Cmd {
 	return input.ExecuteSubmitRequest(m.submitDeps(), req)
 }
 
@@ -72,34 +69,4 @@ func (m *model) startProviderTurn(content string) tea.Cmd {
 	}
 
 	return m.sendToAgent(content, images)
-}
-
-func shouldPreserveCommandInConversation(text string) bool {
-	name, _, isCmd := appcommand.ParseCommand(text)
-	if !isCmd {
-		return false
-	}
-	switch name {
-	case "clear", "exit":
-		return false
-	}
-	if _, ok := input.LookupSkillCommand(name); ok {
-		return false
-	}
-	if _, ok := appcommand.IsCustomCommand(name); ok {
-		return false
-	}
-	return true
-}
-
-func shouldPreserveBeforeCommandExecution(text string) bool {
-	name, _, isCmd := appcommand.ParseCommand(text)
-	if !isCmd {
-		return false
-	}
-	return name == "loop"
-}
-
-func isExitRequest(input string) bool {
-	return strings.EqualFold(input, "exit")
 }

@@ -7,8 +7,6 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 )
 
-type hookPermissionResultMsg = input.HookPermissionResultMsg
-
 func (m *model) approvalDeps() input.ApprovalFlowDeps {
 	return input.ApprovalFlowDeps{
 		Input:                &m.userInput,
@@ -28,7 +26,7 @@ func (m *model) handlePermissionRequest(msg input.ApprovalRequestMsg) tea.Cmd {
 	return input.HandlePermissionRequest(m.approvalDeps(), msg)
 }
 
-func (m *model) handleHookPermissionResult(msg hookPermissionResultMsg) tea.Cmd {
+func (m *model) handleHookPermissionResult(msg input.HookPermissionResultMsg) tea.Cmd {
 	return input.HandleHookPermissionResult(m.approvalDeps(), msg)
 }
 

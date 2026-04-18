@@ -109,11 +109,11 @@ func (m *model) routeFeatureUpdate(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (m *model) updateOutput(msg tea.Msg) (tea.Cmd, bool) {
-	return conv.Update(outputRuntime{m}, &m.agentOutput, msg)
+	return conv.Update(m, &m.agentOutput, msg)
 }
 
 func (m *model) updateAgentInput(msg tea.Msg) (tea.Cmd, bool) {
-	return notify.Update(agentRuntime{m: m}, &m.agentInput, msg)
+	return notify.Update(m, &m.agentInput, msg)
 }
 
 func (m *model) updateApproval(msg tea.Msg) (tea.Cmd, bool) {
@@ -125,7 +125,79 @@ func (m *model) updateUserOverlays(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (m *model) updateSystemInput(msg tea.Msg) (tea.Cmd, bool) {
-	return trigger.Update(systemRuntime{m: m}, &m.systemInput, msg)
+	return trigger.Update(m, &m.systemInput, msg)
+}
+
+func (m *model) IsInputIdle() bool {
+	return !m.conv.Stream.Active && !m.isToolPhaseActive()
+}
+
+func (m *model) StreamActive() bool {
+	return m.conv.Stream.Active
+}
+
+func (m *model) AppendNotice(text string) {
+	if text == "" {
+		return
+	}
+	m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: text})
+}
+
+func (m *model) handleTaskNotificationTick() tea.Cmd {
+	cmd, _ := notify.Update(m, &m.agentInput, notify.TickMsg{})
+	return cmd
+}
+
+func (m *model) InjectTaskNotificationContinuation(item notify.Notification) tea.Cmd {
+	if item.Notice != "" {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: item.Notice})
+	}
+	if m.runtime.LLMProvider == nil {
+		if item.Notice == "" {
+			m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "A background task completed, but no provider is connected."})
+		}
+		return tea.Batch(m.commitMessages()...)
+	}
+	if item.ContinuationPrompt == "" {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "A background task completed, but no task notification payload was available."})
+		return tea.Batch(m.commitMessages()...)
+	}
+	for _, ctx := range notify.ContinuationContext(item) {
+		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: ctx})
+	}
+	return m.sendToAgent(notify.BuildContinuationPrompt(item), nil)
+}
+
+func (m *model) handleAsyncHookTick() tea.Cmd {
+	cmd, _ := trigger.Update(m, &m.systemInput, trigger.AsyncHookTickMsg{})
+	return cmd
+}
+
+func (m *model) InjectAsyncHookContinuation(item trigger.AsyncHookRewake) tea.Cmd {
+	if item.Notice != "" {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: item.Notice})
+	}
+	if len(item.Context) == 0 {
+		return tea.Batch(m.commitMessages()...)
+	}
+	if m.runtime.LLMProvider == nil {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Async hook requested a follow-up, but no provider is connected."})
+		return tea.Batch(m.commitMessages()...)
+	}
+	for _, ctx := range item.Context {
+		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: ctx})
+	}
+	return m.sendToAgent(item.ContinuationPrompt, nil)
+}
+
+func (m *model) InjectCronPrompt(prompt string) tea.Cmd {
+	if m.runtime.LLMProvider == nil {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Cron fired but no provider connected: %s", prompt)})
+		return tea.Batch(m.commitMessages()...)
+	}
+	m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Scheduled task fired"})
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: prompt})
+	return m.sendToAgent(prompt, nil)
 }
 
 // updateTextarea forwards unhandled messages to the textarea and spinner.

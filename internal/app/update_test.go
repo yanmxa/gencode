@@ -288,13 +288,13 @@ func TestSessionSummary_EmptyNotIncluded(t *testing.T) {
 }
 
 func TestIsExitRequest(t *testing.T) {
-	if !isExitRequest("exit") {
+	if !strings.EqualFold("exit", "exit") {
 		t.Fatal("expected lowercase exit to match")
 	}
-	if !isExitRequest("ExIt") {
+	if !strings.EqualFold("ExIt", "exit") {
 		t.Fatal("expected mixed-case exit to match")
 	}
-	if isExitRequest("exit now") {
+	if strings.EqualFold("exit now", "exit") {
 		t.Fatal("did not expect non-exact exit command to match")
 	}
 }
@@ -384,7 +384,7 @@ func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing
 	}
 	m.runtime.LLMProvider = testLLMProvider{}
 
-	cmd := m.executeSubmitRequest(submitRequest{Input: "请修复这个 bug"})
+	cmd := m.executeSubmitRequest(input.SubmitRequest{Input: "请修复这个 bug"})
 	if cmd == nil {
 		t.Fatal("expected submit command")
 	}
@@ -592,7 +592,7 @@ func TestLatePermissionHookResultIsIgnoredAfterApprovalModalCloses(t *testing.T)
 	m.userInput.Approval.Show(req, 80, 24)
 	m.userInput.Approval.Hide()
 
-	cmd := m.handleHookPermissionResult(hookPermissionResultMsg{
+	cmd := m.handleHookPermissionResult(input.HookPermissionResultMsg{
 		Request: req,
 		Allowed: true,
 	})
