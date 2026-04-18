@@ -115,12 +115,6 @@ func (s *Model) HandleCronTick(isIdle bool) CronResult {
 }
 
 func (s *Model) HandleAsyncHookTick(isIdle bool) *AsyncHookRewake {
-	if s.HookEngine != nil {
-		s.HookStatus = s.HookEngine.CurrentStatusMessage()
-	} else {
-		s.HookStatus = ""
-	}
-
 	if !isIdle {
 		return nil
 	}

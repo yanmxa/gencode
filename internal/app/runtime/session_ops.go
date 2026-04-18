@@ -14,14 +14,14 @@ import (
 )
 
 type SessionSaveDeps struct {
-	Runtime         *Model
+	Runtime         *Env
 	Cwd             string
 	Messages        []core.ChatMessage
 	ReconfigureTool func()
 }
 
 type SessionLoadDeps struct {
-	Runtime         *Model
+	Runtime         *Env
 	Cwd             string
 	RestoreMessages func([]core.ChatMessage)
 }
@@ -103,7 +103,7 @@ func LoadSession(deps SessionLoadDeps, id string) error {
 	return nil
 }
 
-func RestoreSessionData(rt *Model, sess *session.Snapshot, restoreMessages func([]core.ChatMessage)) {
+func RestoreSessionData(rt *Env, sess *session.Snapshot, restoreMessages func([]core.ChatMessage)) {
 	restoreMessages(session.ConvertFromEntries(sess.Entries))
 	rt.SessionID = sess.Metadata.ID
 

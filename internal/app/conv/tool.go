@@ -127,11 +127,17 @@ func ExecuteApproved(ctx context.Context, hub *ProgressHub, toolCalls []core.Too
 	}
 
 	return func() tea.Msg {
-		ctx = execContext(ctx)
+		if ctx == nil {
+			ctx = context.Background()
+		}
 
 		prepared, err := coretool.PrepareToolCall(tc, executor)
 		if err != nil {
-			return newExecResult(tc, idx, formatExecPrepareError(err), true)
+			errMsg := "Error parsing tool input: " + err.Error()
+			if strings.HasPrefix(err.Error(), "unknown tool: ") {
+				errMsg = "Unknown tool: " + strings.TrimPrefix(err.Error(), "unknown tool: ")
+			}
+			return newExecResult(tc, idx, errMsg, true)
 		}
 
 		attachExecAgentCallbacks(ctx, hub, idx, prepared)
@@ -155,7 +161,9 @@ func attachExecAgentCallbacks(ctx context.Context, hub *ProgressHub, idx int, pr
 	}
 
 	prepared.Params["_onProgress"] = coretool.ProgressFunc(func(msg string) {
-		sendExecAgentProgress(hub, idx, msg)
+		if hub != nil {
+			hub.SendForAgent(idx, msg)
+		}
 	})
 	prepared.Params["_onQuestion"] = coretool.AskQuestionFunc(func(qctx context.Context, req *coretool.QuestionRequest) (*coretool.QuestionResponse, error) {
 		if qctx == nil {
@@ -176,26 +184,3 @@ func askExecAgentQuestion(ctx context.Context, hub *ProgressHub, idx int, req *c
 	return hub.Ask(ctx, idx, req)
 }
 
-func formatExecPrepareError(err error) string {
-	if err == nil {
-		return ""
-	}
-	if strings.HasPrefix(err.Error(), "unknown tool: ") {
-		return "Unknown tool: " + strings.TrimPrefix(err.Error(), "unknown tool: ")
-	}
-	return "Error parsing tool input: " + err.Error()
-}
-
-func execContext(ctx context.Context) context.Context {
-	if ctx != nil {
-		return ctx
-	}
-	return context.Background()
-}
-
-func sendExecAgentProgress(hub *ProgressHub, index int, msg string) {
-	if hub == nil {
-		return
-	}
-	hub.SendForAgent(index, msg)
-}

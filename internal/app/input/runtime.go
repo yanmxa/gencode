@@ -12,7 +12,7 @@ import (
 type OverlayDeps struct {
 	State   *Model
 	Conv    *conv.ConversationModel
-	Runtime *appruntime.Model
+	Runtime *appruntime.Env
 	Cwd     string
 
 	CommitMessages    func() []tea.Cmd

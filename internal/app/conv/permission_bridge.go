@@ -3,8 +3,24 @@ package conv
 import (
 	"context"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/yanmxa/gencode/internal/tool/perm"
 )
+
+type PermBridgeMsg struct {
+	Request *PermBridgeRequest
+}
+
+func PollPermBridge(pb *PermissionBridge) tea.Cmd {
+	return func() tea.Msg {
+		req, ok := pb.Recv()
+		if !ok {
+			return nil
+		}
+		return PermBridgeMsg{Request: req}
+	}
+}
 
 // PermDecisionResult holds a permission decision and its reason.
 type PermDecisionResult struct {

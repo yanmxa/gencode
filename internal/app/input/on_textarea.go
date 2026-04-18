@@ -346,6 +346,13 @@ func (m *Model) Reset() {
 	m.Queue.Stashed = ""
 }
 
+func (m *Model) HandleCwdChange(newCwd string) {
+	m.Suggestions.SetCwd(newCwd)
+	if m.Suggestions.GetSuggestionType() == suggest.TypeFile {
+		m.Suggestions.Hide()
+	}
+}
+
 func (m *Model) RecordSubmission(cwd, input string) {
 	if input == "" {
 		return

@@ -15,7 +15,6 @@ import (
 	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/app/kit"
-	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	"github.com/yanmxa/gencode/internal/app/notify"
 	appruntime "github.com/yanmxa/gencode/internal/app/runtime"
 	"github.com/yanmxa/gencode/internal/app/trigger"
@@ -44,11 +43,11 @@ const defaultWidth = 80
 
 type model struct {
 	// ── Sub-models (one per event source / concern) ─────────────
-	userInput   input.Model      // Source 1: user keyboard input
-	agentInput  notify.Model     // Source 2: background agent completion
-	systemInput trigger.Model    // Source 3: system events (cron/hooks/watcher)
-	conv        conv.Model       // Agent Outbox: conversation + output rendering
-	runtime     appruntime.Model // Shared: provider, session, permission, config
+	userInput   input.Model    // Source 1: user keyboard input
+	agentInput  notify.Model   // Source 2: background agent completion
+	systemInput trigger.Model  // Source 3: system events (cron/hooks/watcher)
+	conv        conv.Model     // Agent Outbox: conversation + output rendering
+	runtime     appruntime.Env // Shared: provider, session, permission, config
 
 	// ── Agent session ───────────────────────────────────────────
 	agentSess *agentSession
@@ -62,13 +61,22 @@ type model struct {
 	initialPrompt string
 }
 
-var _ conv.Runtime = (*model)(nil)
-var _ input.CommandRuntime = (*model)(nil)
-var _ input.SubmitRuntime = (*model)(nil)
-var _ input.ApprovalRuntime = (*model)(nil)
+var (
+	_ conv.Runtime          = (*model)(nil)
+	_ input.SubmitRuntime   = (*model)(nil)
+	_ input.ApprovalRuntime = (*model)(nil)
+)
 
 func (m *model) Init() tea.Cmd {
-	cmds := []tea.Cmd{textarea.Blink, m.conv.Spinner.Tick, m.userInput.MCP.Selector.AutoConnect(), trigger.TriggerCronTickNow(), trigger.StartCronTicker(), trigger.StartAsyncHookTicker(), notify.StartTicker()}
+	cmds := []tea.Cmd{
+		textarea.Blink,
+		m.conv.Spinner.Tick,
+		m.userInput.MCP.Selector.AutoConnect(),
+		trigger.TriggerCronTickNow(),
+		trigger.StartCronTicker(),
+		trigger.StartAsyncHookTicker(),
+		notify.StartTicker(),
+	}
 	if m.initialPrompt != "" {
 		prompt := m.initialPrompt
 		cmds = append(cmds, func() tea.Msg { return initialPromptMsg(prompt) })
@@ -83,7 +91,7 @@ func (m *model) Init() tea.Cmd {
 func newModel(opts setting.RunOptions) (*model, error) {
 	base := newBaseModel()
 	m := &base
-	notify.InstallCompletionObserver(m.agentInput.Notifications)
+	notify.InstallCompletionObserver(m.agentInput.Notifications, m.runtime.HookEngine)
 	m.configureAsyncHookCallback()
 	m.ensureMemoryContextLoaded()
 	m.ReconfigureAgentTool()
@@ -106,7 +114,7 @@ func newBaseModel() model {
 		}),
 		conv:        conv.NewModel(defaultWidth),
 		agentInput:  notify.New(),
-		systemInput: trigger.New(hook.DefaultEngine),
+		systemInput: trigger.New(),
 		runtime:     appruntime.New(appCwd),
 
 		cwd:   appCwd,
@@ -342,8 +350,12 @@ func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 	m.runtime.ClearThinkingOverride()
 	commitCmds := m.CommitMessages()
 
-	if m.fireIdleHooks() {
-		return tea.Batch(append(commitCmds, m.ContinueOutbox())...)
+	if blocked, sendCmd := m.fireIdleHooks(); blocked {
+		cmds := append(commitCmds, m.ContinueOutbox())
+		if sendCmd != nil {
+			cmds = append(cmds, sendCmd)
+		}
+		return tea.Batch(cmds...)
 	}
 
 	if err := m.PersistSession(); err != nil {
@@ -456,19 +468,19 @@ func (m *model) applyToolSideEffects(toolName string, sideEffect any) {
 	m.syncBackgroundTaskTrackerFromAgent(toolName, resp)
 	switch toolName {
 	case "Bash":
-		if newCwd := hookResponseString(resp, "cwd"); newCwd != "" {
+		if newCwd := kit.MapString(resp, "cwd"); newCwd != "" {
 			m.changeCwd(newCwd)
 		}
 	case tool.ToolEnterWorktree:
-		if worktreePath := hookResponseString(resp, "worktreePath"); worktreePath != "" {
+		if worktreePath := kit.MapString(resp, "worktreePath"); worktreePath != "" {
 			m.changeCwd(worktreePath)
 		}
 	case tool.ToolExitWorktree:
-		if restoredPath := hookResponseString(resp, "restoredPath"); restoredPath != "" {
+		if restoredPath := kit.MapString(resp, "restoredPath"); restoredPath != "" {
 			m.changeCwd(restoredPath)
 		}
 	case "Write", "Edit":
-		if filePath := hookResponseString(resp, "filePath"); filePath != "" {
+		if filePath := kit.MapString(resp, "filePath"); filePath != "" {
 			m.fireFileChanged(filePath, toolName)
 			if m.runtime.FileCache != nil {
 				m.runtime.FileCache.Touch(filePath)
@@ -476,7 +488,7 @@ func (m *model) applyToolSideEffects(toolName string, sideEffect any) {
 		}
 	case "Read":
 		if fileData, ok := resp["file"].(map[string]any); ok {
-			if filePath := hookResponseString(fileData, "filePath"); filePath != "" && m.runtime.FileCache != nil {
+			if filePath := kit.MapString(fileData, "filePath"); filePath != "" && m.runtime.FileCache != nil {
 				m.runtime.FileCache.Touch(filePath)
 			}
 		}
@@ -492,11 +504,11 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 		return
 	}
 	launch := notify.BackgroundTaskLaunch{
-		TaskID:      notify.MetadataString(bg, "taskId"),
-		AgentName:   notify.MetadataString(bg, "agentName"),
-		AgentType:   notify.MetadataString(bg, "agentType"),
-		Description: notify.MetadataString(bg, "description"),
-		ResumeID:    notify.MetadataString(bg, "resumeId"),
+		TaskID:      kit.MapString(bg, "taskId"),
+		AgentName:   kit.MapString(bg, "agentName"),
+		AgentType:   kit.MapString(bg, "agentType"),
+		Description: kit.MapString(bg, "description"),
+		ResumeID:    kit.MapString(bg, "resumeId"),
 	}
 	if launch.TaskID == "" {
 		return
@@ -542,10 +554,7 @@ func (m *model) changeCwd(newCwd string) {
 	oldCwd := m.cwd
 	m.cwd = newCwd
 	m.isGit = setting.IsGitRepo(newCwd)
-	m.userInput.Suggestions.SetCwd(newCwd)
-	if m.userInput.Suggestions.GetSuggestionType() == suggest.TypeFile {
-		m.userInput.Suggestions.Hide()
-	}
+	m.userInput.HandleCwdChange(newCwd)
 	m.runtime.ClearCachedInstructions()
 	m.runtime.RefreshMemoryContext(newCwd, "cwd_changed")
 	m.ReloadProjectContext(newCwd)
@@ -582,10 +591,9 @@ func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
 		return
 	}
 	if m.systemInput.FileWatcher == nil {
-		queue := m.systemInput.AsyncHookQueue
 		m.systemInput.FileWatcher = trigger.NewFileWatcher(m.runtime.HookEngine, func(outcome hook.HookOutcome) {
-			if queue != nil && outcome.InitialUserMessage != "" {
-				queue.Push(trigger.AsyncHookRewake{Notice: "File watcher hook triggered", Context: []string{outcome.InitialUserMessage}})
+			if m.systemInput.AsyncHookQueue != nil && outcome.InitialUserMessage != "" {
+				m.systemInput.AsyncHookQueue.Push(trigger.AsyncHookRewake{Notice: "File watcher hook triggered", Context: []string{outcome.InitialUserMessage}})
 			}
 		})
 	}
@@ -596,17 +604,15 @@ func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
 // Internal: turn lifecycle and queue drain
 // ============================================================
 
-func (m *model) fireIdleHooks() bool {
+func (m *model) fireIdleHooks() (bool, tea.Cmd) {
 	lastContent := core.LastAssistantChatContent(m.conv.Messages)
 	blocked, reason := m.runtime.ExecuteIdleHooks(context.Background(), lastContent)
 	if blocked {
 		msg := "Stop hook blocked: " + reason
 		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: msg})
-		if m.agentSess != nil {
-			m.agentSess.agent.Inbox() <- core.Message{Role: core.RoleUser, Content: msg}
-		}
+		return true, m.sendToAgent(msg, nil)
 	}
-	return blocked
+	return false, nil
 }
 
 func (m *model) triggerAutoCompact() tea.Cmd {
@@ -759,15 +765,3 @@ func (m *model) FireSessionEnd(reason string) {
 		m.systemInput.FileWatcher.Stop()
 	}
 }
-
-// ============================================================
-// Internal helpers
-// ============================================================
-
-func hookResponseString(resp map[string]any, key string) string {
-	if value, ok := resp[key].(string); ok {
-		return value
-	}
-	return ""
-}
-

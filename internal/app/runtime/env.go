@@ -15,7 +15,7 @@ import (
 	"github.com/yanmxa/gencode/internal/setting"
 )
 
-type Model struct {
+type Env struct {
 	// ── Provider ────────────────────────────────────────────────
 	LLMProvider      llm.Provider
 	ProviderStore    *llm.Store
@@ -50,8 +50,8 @@ type Model struct {
 	CachedProjectInstructions string
 }
 
-func New(cwd string) Model {
-	return Model{
+func New(cwd string) Env {
+	return Env{
 		OperationMode:      setting.ModeNormal,
 		SessionPermissions: setting.NewSessionPermissions(),
 		DisabledTools:      setting.GetDisabledTools(),
@@ -69,18 +69,18 @@ func New(cwd string) Model {
 	}
 }
 
-func (m *Model) GetModelID() string {
+func (m *Env) GetModelID() string {
 	if m.CurrentModel != nil {
 		return m.CurrentModel.ModelID
 	}
 	return "claude-sonnet-4-20250514"
 }
 
-func (m *Model) EffectiveThinkingLevel() llm.ThinkingLevel {
+func (m *Env) EffectiveThinkingLevel() llm.ThinkingLevel {
 	return max(m.ThinkingLevel, m.ThinkingOverride)
 }
 
-func (m *Model) OperationModeName() string {
+func (m *Env) OperationModeName() string {
 	switch m.OperationMode {
 	case setting.ModeAutoAccept:
 		return "auto"
@@ -93,13 +93,13 @@ func (m *Model) OperationModeName() string {
 	}
 }
 
-func (m *Model) CycleOperationMode() {
+func (m *Env) CycleOperationMode() {
 	allowBypass := m.Settings != nil && m.Settings.AllowBypass != nil && *m.Settings.AllowBypass
 	m.OperationMode = m.OperationMode.NextWithBypass(allowBypass)
 	m.PlanEnabled = m.OperationMode == setting.ModePlan
 }
 
-func (m *Model) ResetSessionPermissions() {
+func (m *Env) ResetSessionPermissions() {
 	m.SessionPermissions.AllowAllEdits = false
 	m.SessionPermissions.AllowAllWrites = false
 	m.SessionPermissions.AllowAllBash = false
@@ -107,7 +107,7 @@ func (m *Model) ResetSessionPermissions() {
 	m.SessionPermissions.Mode = setting.ModeNormal
 }
 
-func (m *Model) ApplyAutoAcceptPermissions(cwd string) {
+func (m *Env) ApplyAutoAcceptPermissions(cwd string) {
 	m.SessionPermissions.AllowAllEdits = true
 	m.SessionPermissions.AllowAllWrites = true
 	m.SessionPermissions.AddWorkingDirectory(cwd)
@@ -116,17 +116,17 @@ func (m *Model) ApplyAutoAcceptPermissions(cwd string) {
 	}
 }
 
-func (m *Model) ApplyBypassPermissions() {
+func (m *Env) ApplyBypassPermissions() {
 	m.SessionPermissions.Mode = setting.ModeBypassPermissions
 }
 
-func (m *Model) EnableAutoAcceptMode(cwd string) {
+func (m *Env) EnableAutoAcceptMode(cwd string) {
 	m.ApplyAutoAcceptPermissions(cwd)
 	m.OperationMode = setting.ModeAutoAccept
 	m.PlanEnabled = false
 }
 
-func (m *Model) DetectThinkingKeywords(input string) {
+func (m *Env) DetectThinkingKeywords(input string) {
 	lower := strings.ToLower(input)
 
 	if strings.Contains(lower, "ultrathink") ||
@@ -146,7 +146,7 @@ func (m *Model) DetectThinkingKeywords(input string) {
 	}
 }
 
-func (m *Model) ApplyModePermissions(cwd string) {
+func (m *Env) ApplyModePermissions(cwd string) {
 	m.ResetSessionPermissions()
 
 	if m.OperationMode == setting.ModeAutoAccept {
@@ -158,7 +158,7 @@ func (m *Model) ApplyModePermissions(cwd string) {
 	}
 }
 
-func (m *Model) EnsurePlanStore() {
+func (m *Env) EnsurePlanStore() {
 	if m.PlanStore != nil {
 		return
 	}
@@ -169,12 +169,12 @@ func (m *Model) EnsurePlanStore() {
 	m.PlanStore = store
 }
 
-func (m *Model) ClearCachedInstructions() {
+func (m *Env) ClearCachedInstructions() {
 	m.CachedUserInstructions = ""
 	m.CachedProjectInstructions = ""
 }
 
-func (m *Model) RefreshMemoryContext(cwd, loadReason string) {
+func (m *Env) RefreshMemoryContext(cwd, loadReason string) {
 	files := system.LoadMemoryFiles(cwd)
 	var userParts, projectParts []string
 	for _, f := range files {
@@ -196,7 +196,7 @@ func (m *Model) RefreshMemoryContext(cwd, loadReason string) {
 	m.CachedProjectInstructions = joinSections(projectParts)
 }
 
-func (m *Model) ApplySettings(s *setting.Settings) {
+func (m *Env) ApplySettings(s *setting.Settings) {
 	m.Settings = s
 	if m.DisabledTools == nil {
 		m.DisabledTools = make(map[string]bool)
@@ -213,7 +213,7 @@ func (m *Model) ApplySettings(s *setting.Settings) {
 	}
 }
 
-func (m *Model) CheckPromptHook(ctx context.Context, prompt string) (bool, string) {
+func (m *Env) CheckPromptHook(ctx context.Context, prompt string) (bool, string) {
 	if m.HookEngine == nil {
 		return false, ""
 	}
@@ -221,14 +221,31 @@ func (m *Model) CheckPromptHook(ctx context.Context, prompt string) (bool, strin
 	return outcome.ShouldBlock, outcome.BlockReason
 }
 
-func (m *Model) SwitchProvider(p llm.Provider) {
+func (m *Env) SwitchProvider(p llm.Provider) {
 	m.LLMProvider = p
 	if m.HookEngine != nil {
-		m.HookEngine.SetLLMProvider(m.LLMProvider, m.GetModelID())
+		m.HookEngine.SetLLMCompleter(BuildHookCompleter(p), m.GetModelID())
 	}
 }
 
-func (m *Model) SessionMode() string {
+func BuildHookCompleter(p llm.Provider) hook.LLMCompleter {
+	if p == nil {
+		return nil
+	}
+	return func(ctx context.Context, systemPrompt, userMessage, model string) (string, error) {
+		c := llm.NewClient(p, model, 0)
+		resp, err := c.Complete(ctx, systemPrompt, []core.Message{{
+			Role:    core.RoleUser,
+			Content: userMessage,
+		}}, 4096)
+		if err != nil {
+			return "", err
+		}
+		return resp.Content, nil
+	}
+}
+
+func (m *Env) SessionMode() string {
 	if m.PlanEnabled {
 		return "plan"
 	}
@@ -240,16 +257,16 @@ func (m *Model) SessionMode() string {
 	}
 }
 
-func (m *Model) ClearThinkingOverride() {
+func (m *Env) ClearThinkingOverride() {
 	m.ThinkingOverride = llm.ThinkingOff
 }
 
-func (m *Model) ResetTokens() {
+func (m *Env) ResetTokens() {
 	m.InputTokens = 0
 	m.OutputTokens = 0
 }
 
-func (m *Model) EnsureSessionStore(cwd string) error {
+func (m *Env) EnsureSessionStore(cwd string) error {
 	if m.SessionStore == nil {
 		store, err := session.NewStore(cwd)
 		if err != nil {
@@ -260,7 +277,7 @@ func (m *Model) EnsureSessionStore(cwd string) error {
 	return nil
 }
 
-func (m *Model) FirePostToolHook(tr core.ToolResult, sideEffect any) {
+func (m *Env) FirePostToolHook(tr core.ToolResult, sideEffect any) {
 	if m.HookEngine == nil {
 		return
 	}
@@ -283,7 +300,7 @@ func (m *Model) FirePostToolHook(tr core.ToolResult, sideEffect any) {
 	m.HookEngine.ExecuteAsync(eventType, input)
 }
 
-func (m *Model) FireStopFailureHook(lastAssistantContent string, err error) {
+func (m *Env) FireStopFailureHook(lastAssistantContent string, err error) {
 	if m.HookEngine == nil {
 		return
 	}
@@ -294,7 +311,7 @@ func (m *Model) FireStopFailureHook(lastAssistantContent string, err error) {
 	})
 }
 
-func (m *Model) FireSessionEnd(ctx context.Context, reason string) {
+func (m *Env) FireSessionEnd(ctx context.Context, reason string) {
 	if m.HookEngine == nil {
 		return
 	}
@@ -304,7 +321,7 @@ func (m *Model) FireSessionEnd(ctx context.Context, reason string) {
 	m.HookEngine.ClearSessionHooks()
 }
 
-func (m *Model) ExecuteStartupHooks(ctx context.Context) hook.HookOutcome {
+func (m *Env) ExecuteStartupHooks(ctx context.Context) hook.HookOutcome {
 	if m.HookEngine == nil {
 		return hook.HookOutcome{}
 	}
@@ -323,7 +340,7 @@ func (m *Model) ExecuteStartupHooks(ctx context.Context) hook.HookOutcome {
 
 // ExecuteIdleHooks fires Stop and Notification hooks. Returns whether execution
 // was blocked and the block reason.
-func (m *Model) ExecuteIdleHooks(ctx context.Context, lastAssistantContent string) (blocked bool, reason string) {
+func (m *Env) ExecuteIdleHooks(ctx context.Context, lastAssistantContent string) (blocked bool, reason string) {
 	if m.HookEngine == nil {
 		return false, ""
 	}

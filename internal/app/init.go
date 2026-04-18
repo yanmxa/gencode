@@ -10,6 +10,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
+	"github.com/yanmxa/gencode/internal/app/runtime"
 	"github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -45,7 +46,7 @@ func initInfrastructure() error {
 		SessionID:      session.DefaultSetup.SessionID,
 		CWD:            appCwd,
 		TranscriptPath: session.DefaultSetup.TranscriptPath(),
-		Provider:       llm.DefaultSetup.Provider,
+		Completer:      runtime.BuildHookCompleter(llm.DefaultSetup.Provider),
 		ModelID:        llm.DefaultSetup.ModelID(),
 		EnvProvider:    plugin.PluginEnv,
 	})
@@ -159,3 +160,4 @@ func (a *agentRegistryAdapter) SetEnabled(name string, enabled bool, userLevel b
 func skillCommandInfos() []command.Info {
 	return input.SkillCommandInfos()
 }
+

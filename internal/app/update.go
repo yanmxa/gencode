@@ -294,7 +294,7 @@ type ctrlOSingleTickMsg struct{}
 
 func (m *model) handleCtrlO() tea.Cmd {
 	if m.userInput.Approval.IsActive() {
-		input.TogglePermissionPreview(&m.userInput)
+		m.userInput.Approval.TogglePreview()
 		return nil
 	}
 
@@ -417,7 +417,8 @@ func (m *model) StartProviderTurn(content string) tea.Cmd {
 		return tea.Batch(m.CommitMessages()...)
 	}
 
-	if err := m.ensureAgentSession(); err != nil {
+	startCmd, err := m.ensureAgentSession()
+	if err != nil {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleNotice,
 			Content: "Failed to start agent: " + err.Error(),
@@ -433,12 +434,15 @@ func (m *model) StartProviderTurn(content string) tea.Cmd {
 		images = lastMsg.Images
 	}
 
-	return m.sendToAgent(content, images)
+	sendCmd := m.sendToAgent(content, images)
+	if startCmd != nil {
+		return tea.Sequence(startCmd, sendCmd)
+	}
+	return sendCmd
 }
 
 func (m *model) commandDeps() input.CommandDeps {
 	return input.CommandDeps{
-		Actions:      m,
 		Input:        &m.userInput,
 		Conversation: &m.conv.ConversationModel,
 		Runtime:      &m.runtime,
@@ -446,6 +450,20 @@ func (m *model) commandDeps() input.CommandDeps {
 		Width:        m.width,
 		Height:       m.height,
 		Cwd:          m.cwd,
+
+		CommitMessages:          m.CommitMessages,
+		StartProviderTurn:       m.StartProviderTurn,
+		HandleSkillInvocation:   m.HandleSkillInvocation,
+		StartExternalEditor:     m.StartExternalEditor,
+		ReloadPluginBackedState: m.ReloadPluginBackedState,
+		PersistSession:          m.PersistSession,
+		InitTaskStorage:         m.InitTaskStorage,
+		ReconfigureAgentTool:    m.ReconfigureAgentTool,
+		StopAgentSession:        m.StopAgentSession,
+		FireSessionEnd:          m.FireSessionEnd,
+		BuildCompactRequest:     m.BuildCompactRequest,
+		SpinnerTickCmd:          m.SpinnerTickCmd,
+		ResetCronQueue:          m.ResetCronQueue,
 	}
 }
 

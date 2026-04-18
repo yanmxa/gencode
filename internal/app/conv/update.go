@@ -4,9 +4,35 @@ package conv
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool"
 )
+
+// Update routes all output-path messages: agent outbox, permission bridge,
+// compaction results, and progress updates.
+func Update(rt Runtime, m *Model, msg tea.Msg) (tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case AgentOutboxMsg:
+		if msg.Closed {
+			m.Stream.Stop()
+			return rt.ProcessAgentStop(nil), true
+		}
+		return handleAgentEvent(rt, m, msg.Event), true
+	case PermBridgeMsg:
+		return rt.HandlePermBridge(msg.Request), true
+	case CompactResultMsg:
+		return rt.HandleCompactResult(msg), true
+	case kit.TokenLimitResultMsg:
+		return rt.HandleTokenLimitResult(msg), true
+	case ProgressUpdateMsg:
+		return m.HandleProgress(msg), true
+	case ProgressCheckTickMsg:
+		return m.HandleProgressTick(rt.HasRunningTasks()), true
+	default:
+		return nil, false
+	}
+}
 
 // --- Agent event dispatch ---
 
@@ -136,6 +162,3 @@ func (m *OutputModel) HandleProgressTick(hasRunningTasks bool) tea.Cmd {
 	return nil
 }
 
-func (m *OutputModel) ResizeMDRenderer(width int) {
-	m.MDRenderer = NewMDRenderer(width)
-}

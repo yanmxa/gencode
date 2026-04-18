@@ -48,7 +48,7 @@ func TestFireSessionEndClearsSessionHooks(t *testing.T) {
 		},
 	})
 
-	m := &model{runtime: appruntime.Model{HookEngine: engine}}
+	m := &model{runtime: appruntime.Env{HookEngine: engine}}
 	m.FireSessionEnd("other")
 
 	if engine.HasHooks(hook.Stop) {
@@ -68,7 +68,7 @@ func TestInitFiresSetupHook(t *testing.T) {
 
 	// Hook firing now happens during model construction (not Init()) to
 	// avoid value-receiver mutation loss. Simulate the newModel() path.
-	m := model{runtime: appruntime.Model{HookEngine: engine}}
+	m := model{runtime: appruntime.Env{HookEngine: engine}}
 	m.runtime.HookEngine.ExecuteAsync(hook.Setup, hook.HookInput{Trigger: "init"})
 
 	select {
@@ -261,7 +261,7 @@ You are a verifier.`), 0o644); err != nil {
 	m := &model{
 		cwd:       cwd,
 		userInput: input.Model{MCP: input.MCPState{}},
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			Settings:   settings,
 			HookEngine: hook.NewEngine(settings, "test-session", cwd, ""),
 		},
@@ -320,7 +320,7 @@ func TestRefreshMemoryContextFiresInstructionsLoaded(t *testing.T) {
 
 	m := &model{
 		cwd:     tmpDir,
-		runtime: appruntime.Model{HookEngine: engine},
+		runtime: appruntime.Env{HookEngine: engine},
 	}
 	m.runtime.RefreshMemoryContext(m.cwd, "session_start")
 
@@ -352,7 +352,7 @@ func TestChangeCwdFiresCwdChanged(t *testing.T) {
 
 	m := &model{
 		cwd:     oldCwd,
-		runtime: appruntime.Model{HookEngine: engine},
+		runtime: appruntime.Env{HookEngine: engine},
 	}
 	m.changeCwd(newCwd)
 
@@ -391,7 +391,7 @@ func TestApplyAgentToolSideEffectsFiresFileChanged(t *testing.T) {
 
 	m := &model{
 		cwd:     cwd,
-		runtime: appruntime.Model{HookEngine: engine},
+		runtime: appruntime.Env{HookEngine: engine},
 	}
 	m.applyToolSideEffects("Write", map[string]any{"filePath": filePath})
 
@@ -423,7 +423,7 @@ func TestApplyAgentToolSideEffectsUpdatesCwdFromBash(t *testing.T) {
 
 	m := &model{
 		cwd:     oldCwd,
-		runtime: appruntime.Model{HookEngine: engine},
+		runtime: appruntime.Env{HookEngine: engine},
 	}
 	m.applyToolSideEffects("Bash", map[string]any{"cwd": newCwd})
 
@@ -476,7 +476,7 @@ func TestChangeCwdReloadsProjectScopedSettings(t *testing.T) {
 
 	m := &model{
 		cwd: oldCwd,
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			Settings:           setting.InitForApp(oldCwd),
 			SessionPermissions: setting.NewSessionPermissions(),
 			DisabledTools:      map[string]bool{"Bash": true},
@@ -515,7 +515,7 @@ func TestInitRegistersWatchPathsFromSessionStart(t *testing.T) {
 
 	// Hook firing now happens during model construction (not Init()).
 	// Simulate the newModel() path: fire SessionStart and apply outcome.
-	m := model{runtime: appruntime.Model{HookEngine: engine}}
+	m := model{runtime: appruntime.Env{HookEngine: engine}}
 	outcome := engine.Execute(context.Background(), hook.SessionStart, hook.HookInput{
 		Source: "startup",
 	})
@@ -546,7 +546,7 @@ func TestFileWatcherFiresFileChangedForWatchedPath(t *testing.T) {
 
 	m := &model{
 		cwd:     cwd,
-		runtime: appruntime.Model{HookEngine: engine},
+		runtime: appruntime.Env{HookEngine: engine},
 	}
 	m.systemInput.FileWatcher = trigger.NewFileWatcher(engine, func(outcome hook.HookOutcome) {
 		m.applyRuntimeHookOutcome(outcome)
@@ -587,8 +587,8 @@ func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 	m := &model{
 		cwd:         t.TempDir(),
 		conv:        conv.NewModel(80),
-		systemInput: trigger.New(nil),
-		runtime: appruntime.Model{
+		systemInput: trigger.New(),
+		runtime: appruntime.Env{
 			LLMProvider: testLLMProvider{},
 		},
 	}
@@ -632,8 +632,8 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	})
 
 	m := &model{
-		systemInput: trigger.New(engine),
-		runtime:     appruntime.Model{HookEngine: engine},
+		systemInput: trigger.New(),
+		runtime:     appruntime.Env{HookEngine: engine},
 	}
 
 	done := make(chan struct{})
@@ -649,8 +649,8 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	}
 
 	_, _ = trigger.Update(m.triggerDeps(), &m.systemInput, trigger.AsyncHookTickMsg{})
-	if m.systemInput.HookStatus != "hook is running" {
-		t.Fatalf("expected hook status to refresh, got %q", m.systemInput.HookStatus)
+	if status := m.runtime.HookEngine.CurrentStatusMessage(); status != "hook is running" {
+		t.Fatalf("expected hook status to refresh, got %q", status)
 	}
 
 	close(release)
@@ -661,8 +661,8 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 	}
 
 	_, _ = trigger.Update(m.triggerDeps(), &m.systemInput, trigger.AsyncHookTickMsg{})
-	if m.systemInput.HookStatus != "" {
-		t.Fatalf("expected hook status to clear, got %q", m.systemInput.HookStatus)
+	if status := m.runtime.HookEngine.CurrentStatusMessage(); status != "" {
+		t.Fatalf("expected hook status to clear, got %q", status)
 	}
 }
 
@@ -671,7 +671,7 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 		cwd:        t.TempDir(),
 		conv:       conv.NewModel(80),
 		agentInput: notify.New(),
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			LLMProvider: testLLMProvider{},
 		},
 	}
@@ -732,7 +732,7 @@ func TestTaskNotificationTickBatchesDrainsQueue(t *testing.T) {
 		cwd:        t.TempDir(),
 		conv:       conv.NewModel(80),
 		agentInput: notify.New(),
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			LLMProvider: testLLMProvider{},
 		},
 	}

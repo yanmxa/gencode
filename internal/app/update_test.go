@@ -26,7 +26,7 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 		PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "ExitPlanMode"}},
 	}
 	m := &model{
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			OperationMode:      setting.ModePlan,
 			SessionPermissions: setting.NewSessionPermissions(),
 			PlanEnabled:        true,
@@ -64,7 +64,7 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 		PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "ExitPlanMode"}},
 	}
 	m := &model{
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			OperationMode:      setting.ModePlan,
 			SessionPermissions: setting.NewSessionPermissions(),
 			PlanEnabled:        true,
@@ -101,7 +101,7 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 		PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "ExitPlanMode"}},
 	}
 	m := &model{
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			OperationMode:      setting.ModePlan,
 			SessionPermissions: setting.NewSessionPermissions(),
 			PlanEnabled:        true,
@@ -141,7 +141,7 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 		PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "ExitPlanMode"}},
 	}
 	m := &model{
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			OperationMode:      setting.ModePlan,
 			SessionPermissions: setting.NewSessionPermissions(),
 			PlanEnabled:        true,
@@ -186,7 +186,7 @@ func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 	c.Modal.PendingQuestion = &tool.QuestionRequest{ID: "ask-1"}
 	c.Modal.PendingQuestionReply = reply
 	m := &model{
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			OperationMode:      setting.ModePlan,
 			SessionPermissions: setting.NewSessionPermissions(),
 		},
@@ -298,7 +298,7 @@ func TestOverlaySelectorsOrder(t *testing.T) {
 
 func TestStartPromptSuggestionGeneratesCommand(t *testing.T) {
 	m := &model{
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			LLMProvider: testLLMProvider{},
 		},
 		conv: conv.Model{ConversationModel: conv.ConversationModel{
@@ -317,7 +317,7 @@ func TestStartPromptSuggestionGeneratesCommand(t *testing.T) {
 
 func TestBuildPromptSuggestionRequest(t *testing.T) {
 	m := &model{
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			LLMProvider: testLLMProvider{},
 		},
 		conv: conv.Model{ConversationModel: conv.ConversationModel{
@@ -374,7 +374,7 @@ func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing
 
 func TestBuildCompactRequest(t *testing.T) {
 	m := &model{
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			SessionSummary: "existing summary",
 		},
 		conv: conv.Model{ConversationModel: conv.ConversationModel{
@@ -422,7 +422,7 @@ func TestBuildSystemPromptIncludesSkillInvocation(t *testing.T) {
 func TestBuildLoopSystemIncludesSessionSummary(t *testing.T) {
 	m := &model{
 		cwd: "/tmp/project",
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			SessionSummary:            "condensed summary",
 			CachedUserInstructions:    "user memory",
 			CachedProjectInstructions: "project memory",
@@ -489,7 +489,7 @@ func TestDetectThinkingKeywords(t *testing.T) {
 
 func TestRenderActiveModalPriority(t *testing.T) {
 	m := &model{
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			OperationMode:      setting.ModePlan,
 			SessionPermissions: setting.NewSessionPermissions(),
 		},
@@ -522,7 +522,7 @@ func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
 	m := &model{
 		width:  80,
 		height: 24,
-		runtime: appruntime.Model{
+		runtime: appruntime.Env{
 			HookEngine: engine,
 		},
 	}

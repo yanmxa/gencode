@@ -8,7 +8,6 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/app/kit"
-	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -156,7 +155,12 @@ func (m model) renderTrackerList() string {
 }
 
 func (m model) renderModeStatus() string {
-	modelName := trigger.RenderHookStatus(m.systemInput.HookStatus, m.userInput.Provider.StatusMessage)
+	modelName := m.userInput.Provider.StatusMessage
+	if m.runtime.HookEngine != nil {
+		if status := m.runtime.HookEngine.CurrentStatusMessage(); status != "" {
+			modelName = status
+		}
+	}
 	return conv.RenderModeStatus(conv.OperationModeParams{
 		Mode:          conv.OperationMode(m.runtime.OperationMode),
 		InputTokens:   m.runtime.InputTokens,
@@ -190,9 +194,25 @@ func (m model) messageRenderParams() conv.MessageRenderParams {
 		MDRenderer:              m.conv.MDRenderer,
 		SpinnerView:             m.conv.Spinner.View(),
 		TaskProgress:            m.conv.TaskProgress,
-		TaskOwnerMap:            conv.BuildTaskOwnerMap(tracker.DefaultStore.List()),
+		TaskOwnerMap:            buildTaskOwnerMap(tracker.DefaultStore.List()),
 		InteractivePromptActive: (m.conv.Modal.Question != nil && m.conv.Modal.Question.IsActive()) || (m.conv.Modal.PlanApproval != nil && m.conv.Modal.PlanApproval.IsActive()),
 	}
+}
+
+func buildTaskOwnerMap(tasks []*tracker.Task) map[string]string {
+	if len(tasks) == 0 {
+		return nil
+	}
+	ownerMap := make(map[string]string, len(tasks))
+	for _, t := range tasks {
+		if t.Owner != "" {
+			ownerMap[t.ID] = t.Owner
+		}
+	}
+	if len(ownerMap) == 0 {
+		return nil
+	}
+	return ownerMap
 }
 
 func (m model) renderPlanForScrollback(req *tool.PlanRequest) string {

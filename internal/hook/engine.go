@@ -7,8 +7,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/setting"
 )
@@ -53,7 +51,7 @@ type InitializeConfig struct {
 	SessionID      string
 	CWD            string
 	TranscriptPath string
-	Provider       llm.Provider
+	Completer      LLMCompleter
 	ModelID        string
 	EnvProvider    func() []string
 }
@@ -61,27 +59,9 @@ type InitializeConfig struct {
 // Initialize creates the singleton hook engine from the given config.
 func Initialize(cfg InitializeConfig) {
 	DefaultEngine = NewEngine(cfg.Settings, cfg.SessionID, cfg.CWD, cfg.TranscriptPath)
-	DefaultEngine.SetLLMCompleter(buildLLMCompleter(cfg.Provider), cfg.ModelID)
+	DefaultEngine.SetLLMCompleter(cfg.Completer, cfg.ModelID)
 	if cfg.EnvProvider != nil {
 		DefaultEngine.SetEnvProvider(cfg.EnvProvider)
-	}
-}
-
-// buildLLMCompleter wraps a provider into an LLMCompleter closure.
-func buildLLMCompleter(p llm.Provider) LLMCompleter {
-	if p == nil {
-		return nil
-	}
-	return func(ctx context.Context, systemPrompt, userMessage, model string) (string, error) {
-		c := llm.NewClient(p, model, 0)
-		resp, err := c.Complete(ctx, systemPrompt, []core.Message{{
-			Role:    core.RoleUser,
-			Content: userMessage,
-		}}, 4096)
-		if err != nil {
-			return "", err
-		}
-		return resp.Content, nil
 	}
 }
 
@@ -136,10 +116,6 @@ func (e *Engine) SetLLMCompleter(fn LLMCompleter, model string) {
 	e.hookModel = model
 }
 
-// SetLLMProvider configures the LLM provider and model for hook execution.
-func (e *Engine) SetLLMProvider(p llm.Provider, model string) {
-	e.SetLLMCompleter(buildLLMCompleter(p), model)
-}
 
 // SetAsyncHookCallback configures delivery of background asyncRewake hook results.
 func (e *Engine) SetAsyncHookCallback(cb AsyncHookCallback) {

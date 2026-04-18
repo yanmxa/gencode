@@ -28,20 +28,6 @@ type Runtime interface {
 	HasRunningTasks() bool
 }
 
-type PermBridgeMsg struct {
-	Request *PermBridgeRequest
-}
-
-func PollPermBridge(pb *PermissionBridge) tea.Cmd {
-	return func() tea.Msg {
-		req, ok := pb.Recv()
-		if !ok {
-			return nil
-		}
-		return PermBridgeMsg{Request: req}
-	}
-}
-
 func DrainAgentOutbox(outbox <-chan core.Event) tea.Cmd {
 	return func() tea.Msg {
 		ev, ok := <-outbox
@@ -52,27 +38,3 @@ func DrainAgentOutbox(outbox <-chan core.Event) tea.Cmd {
 	}
 }
 
-// Update routes all output-path messages: agent outbox, permission bridge,
-// compaction results, and progress updates.
-func Update(rt Runtime, m *Model, msg tea.Msg) (tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case AgentOutboxMsg:
-		if msg.Closed {
-			m.Stream.Stop()
-			return rt.ProcessAgentStop(nil), true
-		}
-		return handleAgentEvent(rt, m, msg.Event), true
-	case PermBridgeMsg:
-		return rt.HandlePermBridge(msg.Request), true
-	case CompactResultMsg:
-		return rt.HandleCompactResult(msg), true
-	case kit.TokenLimitResultMsg:
-		return rt.HandleTokenLimitResult(msg), true
-	case ProgressUpdateMsg:
-		return m.HandleProgress(msg), true
-	case ProgressCheckTickMsg:
-		return m.HandleProgressTick(rt.HasRunningTasks()), true
-	default:
-		return nil, false
-	}
-}

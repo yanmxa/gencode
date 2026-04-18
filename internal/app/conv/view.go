@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 type MessageRenderParams struct {
@@ -213,18 +212,3 @@ func renderPendingToolSpinnerFromParams(p MessageRenderParams, suppressAgentLabe
 	})
 }
 
-func BuildTaskOwnerMap(tasks []*tracker.Task) map[string]string {
-	if len(tasks) == 0 {
-		return nil
-	}
-	ownerMap := make(map[string]string, len(tasks))
-	for _, t := range tasks {
-		if t.Owner != "" {
-			ownerMap[t.ID] = t.Owner
-		}
-	}
-	if len(ownerMap) == 0 {
-		return nil
-	}
-	return ownerMap
-}

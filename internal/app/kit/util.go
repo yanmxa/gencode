@@ -81,6 +81,46 @@ func FormatAlignedRow(icon, name string, colWidth int, info string) string {
 	return fmt.Sprintf("%s  %s%s%s", icon, name, pad, info)
 }
 
+// MapString extracts a string value from a generic map.
+func MapString(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	value, ok := m[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch v := value.(type) {
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+// MapInt extracts an int value from a generic map.
+func MapInt(m map[string]any, key string) int {
+	if m == nil {
+		return 0
+	}
+	value, ok := m[key]
+	if !ok || value == nil {
+		return 0
+	}
+	switch v := value.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	default:
+		return 0
+	}
+}
+
 // RenderEnvVarStatus returns a styled "ENVVAR ✓" or "ENVVAR ✗" indicator.
 func RenderEnvVarStatus(envVar string) string {
 	if envVar == "" {

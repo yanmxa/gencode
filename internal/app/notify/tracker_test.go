@@ -65,11 +65,11 @@ func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 	if child == nil {
 		t.Fatal("expected child tracker for bg-2")
 	}
-	if MetadataString(child.Metadata, BackgroundTrackerParentID) != batch.ID {
-		t.Fatalf("child parent id = %q, want %q", MetadataString(child.Metadata, BackgroundTrackerParentID), batch.ID)
+	if metadataString(child.Metadata, BackgroundTrackerParentID) != batch.ID {
+		t.Fatalf("child parent id = %q, want %q", metadataString(child.Metadata, BackgroundTrackerParentID), batch.ID)
 	}
-	if MetadataString(child.Metadata, BackgroundTrackerAgentID) != "agent-2" {
-		t.Fatalf("child agent id = %q", MetadataString(child.Metadata, BackgroundTrackerAgentID))
+	if metadataString(child.Metadata, BackgroundTrackerAgentID) != "agent-2" {
+		t.Fatalf("child agent id = %q", metadataString(child.Metadata, BackgroundTrackerAgentID))
 	}
 
 	batchSnapshot, ok := orchestration.DefaultStore.SnapshotBatchForTask("bg-2")
@@ -121,8 +121,8 @@ func TestUpdateBackgroundWorkerTrackerReconcilesBatch(t *testing.T) {
 	if batchAfterFirst.Status != tracker.StatusInProgress {
 		t.Fatalf("batch status after first completion = %q", batchAfterFirst.Status)
 	}
-	if MetadataString(batchAfterFirst.Metadata, BackgroundTrackerCompleted) != "1" {
-		t.Fatalf("batch completed count = %q", MetadataString(batchAfterFirst.Metadata, BackgroundTrackerCompleted))
+	if metadataString(batchAfterFirst.Metadata, BackgroundTrackerCompleted) != "1" {
+		t.Fatalf("batch completed count = %q", metadataString(batchAfterFirst.Metadata, BackgroundTrackerCompleted))
 	}
 
 	UpdateBackgroundWorkerTracker(task.TaskInfo{ID: "bg-2", Type: task.TaskTypeAgent, Status: task.StatusFailed, Error: "boom"})
@@ -130,8 +130,8 @@ func TestUpdateBackgroundWorkerTrackerReconcilesBatch(t *testing.T) {
 	if batchAfterSecond.Status != tracker.StatusCompleted {
 		t.Fatalf("batch status after second completion = %q", batchAfterSecond.Status)
 	}
-	if MetadataString(batchAfterSecond.Metadata, BackgroundTrackerFailures) != "1" {
-		t.Fatalf("batch failure count = %q", MetadataString(batchAfterSecond.Metadata, BackgroundTrackerFailures))
+	if metadataString(batchAfterSecond.Metadata, BackgroundTrackerFailures) != "1" {
+		t.Fatalf("batch failure count = %q", metadataString(batchAfterSecond.Metadata, BackgroundTrackerFailures))
 	}
 
 	snapshot, ok := orchestration.DefaultStore.SnapshotBatchForTask("bg-2")

@@ -33,6 +33,10 @@ func NewModel(width int) Model {
 	}
 }
 
+func (m *OutputModel) ResizeMDRenderer(width int) {
+	m.MDRenderer = NewMDRenderer(width)
+}
+
 func newSpinner() spinner.Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Spinner{

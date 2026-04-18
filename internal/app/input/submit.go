@@ -27,7 +27,7 @@ type SubmitDeps struct {
 	Actions       SubmitRuntime
 	Input         *Model
 	Conversation  *conv.ConversationModel
-	Runtime       *appruntime.Model
+	Runtime       *appruntime.Env
 	Cwd           string
 	HandleCommand func(string) (tea.Cmd, bool)
 }

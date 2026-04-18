@@ -51,7 +51,7 @@ type PromptSuggestionRequest struct {
 type PromptSuggestionDeps struct {
 	Input        *Model
 	Conversation *conv.ConversationModel
-	Runtime      *appruntime.Model
+	Runtime      *appruntime.Env
 	BuildClient  func() *llm.Client
 }
 

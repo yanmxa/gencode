@@ -1,5 +1,5 @@
-// Package agent handles Source 2 (agent → agent) inputs:
-// background agent completion notifications, SendMessage, and self-inject.
+// Package notify handles Source 2 (background agent → main agent) inputs:
+// task completion notifications and notification queue management.
 package notify
 
 import (

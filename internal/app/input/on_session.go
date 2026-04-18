@@ -48,27 +48,16 @@ func NewSessionSelector() SessionSelector {
 	}
 }
 
-func sessionClamp(value, minVal, maxVal int) int {
-	if value < minVal {
-		return minVal
-	}
-	if value > maxVal {
-		return maxVal
-	}
-	return value
-}
-
 func calculateSessionMaxVisible(height int) int {
 	const (
 		fixedLines      = 7
 		linesPerSession = 3
 	)
-	maxVisible := (height - fixedLines) / linesPerSession
-	return sessionClamp(maxVisible, 3, 20)
+	return max(3, min((height-fixedLines)/linesPerSession, 20))
 }
 
 func calculateSessionPreviewLength(width int) int {
-	return sessionClamp(width-10, 30, 120)
+	return max(30, min(width-10, 120))
 }
 
 // EnterSelect enters session selection mode.

@@ -175,6 +175,8 @@ Each sub-model package is a self-contained MVU unit:
 
 Root implements each sub-model's Runtime via adapter methods on `*model` in `model.go`.
 
+**Env access**: shared app state (`env`) lives in `app/env.go`, not a sub-package. Sub-models never import it directly — they receive needed state through Deps structs that root assembles and passes in.
+
 ### Root Model
 
 ```go
@@ -183,8 +185,8 @@ type model struct {
     agentInput  notify.Model     // Source 2: background agent completion → notification queue
     systemInput trigger.Model    // Source 3: cron / async hook / file watcher → event queue
     conv        conv.Model       // Agent Outbox: outbox events → conversation state → chat render
-    env         appenv.Model     // Shared: provider, session, permission, plan, config, dimensions
-    agent      *agentSession    // Agent lifecycle (root-owned)
+    env         env              // Shared app state: provider, session, permission, plan, config
+    agentSess  *agentSession    // Agent lifecycle (root-owned)
 }
 ```
 
@@ -215,7 +217,7 @@ View()
   ├── m.conv.View()       → chat messages, streaming, tool results
   ├── m.conv.TrackerView()→ background task progress
   ├── m.input.View()      → textarea + image indicators
-  └── m.env.View()        → status bar: mode, model, tokens
+  └── renderModeStatus()   → status bar: mode, model, tokens
 ```
 
 ### Directory Structure
@@ -225,14 +227,16 @@ Each file is annotated with its MVU role: **[M]** model/state, **[U]** update, *
 ```
 internal/app/
 │
-│  ── Root: pure glue (6 files) ─────────────────────────────────────────────
-│  No business logic. Model + routing + view + agent lifecycle + entrypoint + init.
+│  ── Root: pure glue (7 files) ─────────────────────────────────────────────
+│  No business logic. Model + routing + view + env + agent lifecycle + entrypoint + init.
 │  Cross-cutting Cmds: sendToAgent(), drainTurnQueues(), triggerAutoCompact()
 │
-├── model.go      [M,C] Model{env, 4 sub-models, agent}, Init()
+├── model.go      [M,C] Model{env, 4 sub-models, agentSess}, Init()
 │                       conv.Runtime event handlers, session persistence, turn queue drain
 ├── agent.go        [C] Agent session lifecycle: build, start, stop
 │                       Cmd: startAgentLoop(), sendToAgent(), ContinueOutbox()
+├── env.go          [M] env: shared app state (provider, session, permission, plan, config). Not imported by sub-models —
+│                       sub-models access env state through Deps structs injected by root.
 ├── update.go       [U] Update(): msg type switch → delegate to sub-models
 │                       Cross-cutting = routing: SubmitMsg → agent, PermReq → input, ...
 ├── view.go         [V] View(): compose sub-model views into terminal layout
@@ -288,7 +292,7 @@ internal/app/
 │  Cmd chain: StartCronTicker() → TickMsg → handleCronTick() → StartCronTicker() (loop)
 │
 ├── trigger/
-│   ├── model.go            [M,V] Model{CronQueue, AsyncHookQueue}, RenderHookStatus()
+│   ├── model.go              [M] Model{CronQueue, AsyncHookQueue}
 │   ├── update.go           [U,C] Update(), handleCronTick(), StartCronTicker(), StartAsyncHookTicker()
 │   └── file_watcher.go       [C] NewFileWatcher(), SetPaths(), poll()
 │
@@ -300,8 +304,8 @@ internal/app/
 │
 ├── conv/
 │   ├── model.go              [M] Model{ConversationModel, OutputModel} composite
-│   ├── update.go           [U,C] handleAgentEvent(): PreInfer/.../OnTurn dispatch
-│   ├── runtime.go          [M,C] Runtime interface, DrainAgentOutbox(), PollPermBridge()
+│   ├── update.go           [U,C] Update() entry, handleAgentEvent(): PreInfer/.../OnTurn dispatch
+│   ├── runtime.go          [M,C] Runtime interface, AgentOutboxMsg, DrainAgentOutbox()
 │   ├── view.go               [V] RenderMessageRange(), RenderActiveContent()
 │   ├── conversation.go       [M] Append(), ConvertToProvider(), StreamState
 │   ├── compact.go           [M,C] CompactState, CompactCmd()
@@ -314,12 +318,10 @@ internal/app/
 │   ├── message.go             [V] RenderAssistantMessage(), RenderUserMessage()
 │   ├── markdown.go            [V] MDRenderer: Render()
 │   ├── progress.go          [M,C] ProgressHub: SendForAgent(), Check()
-│   └── permission_bridge.go [M,C] PermissionBridge: PermissionFunc(), Recv()
+│   ├── tracker_view.go        [V] RenderTrackerList(), task/batch/worker rendering
+│   └── permission_bridge.go [M,C] PermissionBridge, PermBridgeMsg, PollPermBridge()
 │
 │  ── Shared ────────────────────────────────────────────────────────────────
-│
-├── env/
-│   └── model.go               [M] Model{Provider, Session, Permission, Plan, Config, Dimensions}
 │
 └── kit/
     ├── suggest/             autocomplete engine
@@ -338,7 +340,7 @@ internal/app/         TUI layer (this document)
 internal/core/        Agent interface: Inbox/Outbox/Run, Event types, Message
 internal/llm/         LLM providers (Anthropic, OpenAI, Google, ...)
 internal/tool/        Tool registry and execution
-internal/hook/        Event hook system (depends on setting/ for env vars, llm/ for prompt hooks)
+internal/hook/        Event hook system (depends on setting/ for env vars; LLM completer injected by app/)
 internal/setting/     Settings and permissions
 internal/...          ...
 ```
@@ -347,8 +349,11 @@ Dependency direction: `cmd/ → app/ → {core/, llm/, tool/, hook/, setting/, .
 Domain packages never import `app/`.
 
 **Lateral dependencies** (same-layer, documented):
-- `hook/` → `setting/` (env var resolution), `llm/` (prompt/agent hook execution)
+- `hook/` → `setting/` (env var resolution)
 - `session/` → `task/tracker` (serializes tracker tasks into transcripts)
+
+**Decoupled via function injection** (no direct import):
+- `hook/` ← `app/` — `hook.LLMCompleter` injected at init via `runtime.BuildHookCompleter`
 
 **Decoupled via callback injection** (no direct import):
 - `mcp/` ↔ `plugin/` — `mcp.Initialize(cwd, pluginServersCallback)`

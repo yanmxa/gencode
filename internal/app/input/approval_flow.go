@@ -33,7 +33,7 @@ type ApprovalRuntime interface {
 type ApprovalFlowDeps struct {
 	Actions     ApprovalRuntime
 	Input       *Model
-	Runtime     *appruntime.Model
+	Runtime     *appruntime.Env
 	Tool        *conv.ToolExecState
 	Width       int
 	Height      int
@@ -113,14 +113,6 @@ func ShowApprovalModal(deps ApprovalFlowDeps, req *perm.PermissionRequest) tea.C
 		})
 	}
 	return nil
-}
-
-func HandlePermissionResponse(approved, allowAll bool, req *perm.PermissionRequest, send func(bool, bool, *perm.PermissionRequest) tea.Cmd) tea.Cmd {
-	return send(approved, allowAll, req)
-}
-
-func TogglePermissionPreview(state *Model) {
-	state.Approval.TogglePreview()
 }
 
 func isCurrentPermissionRequest(deps ApprovalFlowDeps, req *perm.PermissionRequest) bool {

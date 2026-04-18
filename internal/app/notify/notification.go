@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
 )
@@ -434,11 +435,27 @@ func describeBatch(batch *orchestration.Batch) string {
 
 type taskCompletionObserver struct {
 	notifications *NotificationQueue
+	hookEngine    *hook.Engine
 }
 
-func (o taskCompletionObserver) TaskCreated(info task.TaskInfo) {}
+func (o taskCompletionObserver) fireHook(event hook.EventType, info task.TaskInfo) {
+	if o.hookEngine == nil {
+		return
+	}
+	subject := TaskSubject(info)
+	o.hookEngine.ExecuteAsync(event, hook.HookInput{
+		TaskID:          info.ID,
+		TaskSubject:     subject,
+		TaskDescription: info.Description,
+	})
+}
+
+func (o taskCompletionObserver) TaskCreated(info task.TaskInfo) {
+	o.fireHook(hook.TaskCreated, info)
+}
 
 func (o taskCompletionObserver) TaskCompleted(info task.TaskInfo) {
+	o.fireHook(hook.TaskCompleted, info)
 	UpdateBackgroundWorkerTracker(info)
 	if o.notifications == nil {
 		return
@@ -457,7 +474,7 @@ func (o taskCompletionObserver) TaskCompleted(info task.TaskInfo) {
 func TaskSubject(info task.TaskInfo) string {
 	switch info.Type {
 	case task.TaskTypeAgent:
-		if s := JoinNameDesc(info.AgentName, info.Description); s != "" {
+		if s := joinNameDesc(info.AgentName, info.Description); s != "" {
 			return s
 		}
 	case task.TaskTypeBash:
@@ -469,7 +486,7 @@ func TaskSubject(info task.TaskInfo) string {
 }
 
 // InstallCompletionObserver registers the task completion observer that
-// handles tracker updates and notification queue pushes.
-func InstallCompletionObserver(notifications *NotificationQueue) {
-	task.SetCompletionObserver(taskCompletionObserver{notifications: notifications})
+// handles hook firing, tracker updates, and notification queue pushes.
+func InstallCompletionObserver(notifications *NotificationQueue, hookEngine *hook.Engine) {
+	task.SetCompletionObserver(taskCompletionObserver{notifications: notifications, hookEngine: hookEngine})
 }

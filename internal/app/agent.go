@@ -18,7 +18,6 @@ import (
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/subagent"
 	"github.com/yanmxa/gencode/internal/tool"
-	toolagent "github.com/yanmxa/gencode/internal/tool/agent"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 )
 
@@ -119,13 +118,13 @@ func (sess *agentSession) stop() {
 	}
 }
 
-func (m *model) ensureAgentSession() error {
+func (m *model) ensureAgentSession() (tea.Cmd, error) {
 	if m.agentSess != nil {
-		return nil
+		return nil, nil
 	}
 	sess, err := m.buildCoreAgent()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	m.agentSess = sess
 
@@ -137,8 +136,7 @@ func (m *model) ensureAgentSession() error {
 		sess.agent.SetMessages(coreMessages)
 	}
 
-	m.startAgentLoop(sess)
-	return nil
+	return m.startAgentLoop(sess), nil
 }
 
 func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {
@@ -205,19 +203,12 @@ func (m *model) ReconfigureAgentTool() {
 	}
 
 	adapter := subagent.NewExecutorAdapter(executor)
-	if t, ok := tool.Get(tool.ToolAgent); ok {
-		if agentTool, ok := t.(*toolagent.AgentTool); ok {
-			agentTool.SetExecutor(adapter)
-		}
-	}
-	if t, ok := tool.Get(tool.ToolContinueAgent); ok {
-		if continueTool, ok := t.(*toolagent.ContinueAgentTool); ok {
-			continueTool.SetExecutor(adapter)
-		}
-	}
-	if t, ok := tool.Get(tool.ToolSendMessage); ok {
-		if sendMessageTool, ok := t.(*toolagent.SendMessageTool); ok {
-			sendMessageTool.SetExecutor(adapter)
+	type executorSetter interface{ SetExecutor(tool.AgentExecutor) }
+	for _, name := range []string{tool.ToolAgent, tool.ToolContinueAgent, tool.ToolSendMessage} {
+		if t, ok := tool.Get(name); ok {
+			if setter, ok := t.(executorSetter); ok {
+				setter.SetExecutor(adapter)
+			}
 		}
 	}
 }
