@@ -1,9 +1,9 @@
 // Source 1 overlay message routing.
 //
-// Key dispatch and submit handling remain in root app/ (keypress.go, submit.go)
-// because they are cross-cutting — touching conv, mode, agent session, and runtime.
+// Key dispatch and submit handling remain in root app/ because they are
+// cross-cutting — touching conv, mode, agent session, and runtime.
 // This file routes overlay-specific messages (provider, MCP, plugin, session, etc.)
-// that only mutate user.Model state through injected Runtime callbacks.
+// through the OverlayDeps struct which provides direct access to concrete state.
 package input
 
 import (
@@ -11,23 +11,23 @@ import (
 )
 
 // Update routes Source 1 overlay messages to the appropriate handler.
-func Update(rt Runtime, state *Model, msg tea.Msg) (tea.Cmd, bool) {
-	if cmd, ok := UpdateProvider(rt, &state.Provider, msg); ok {
+func Update(deps OverlayDeps, msg tea.Msg) (tea.Cmd, bool) {
+	if cmd, ok := UpdateProvider(deps, &deps.State.Provider, msg); ok {
 		return cmd, true
 	}
-	if cmd, ok := UpdateMCP(rt, &state.MCP, msg); ok {
+	if cmd, ok := UpdateMCP(deps, &deps.State.MCP, msg); ok {
 		return cmd, true
 	}
-	if cmd, ok := UpdatePlugin(rt, &state.Plugin, msg); ok {
+	if cmd, ok := UpdatePlugin(deps, &deps.State.Plugin, msg); ok {
 		return cmd, true
 	}
-	if cmd, ok := UpdateSession(rt, &state.Session, msg); ok {
+	if cmd, ok := UpdateSession(deps, &deps.State.Session, msg); ok {
 		return cmd, true
 	}
-	if cmd, ok := UpdateMemory(rt, &state.Memory, msg); ok {
+	if cmd, ok := UpdateMemory(deps, &deps.State.Memory, msg); ok {
 		return cmd, true
 	}
-	if cmd, ok := UpdateSearch(rt, &state.Search, msg); ok {
+	if cmd, ok := UpdateSearch(deps, &deps.State.Search, msg); ok {
 		return cmd, true
 	}
 	return nil, false

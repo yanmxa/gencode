@@ -126,29 +126,19 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 	}
 
 	if m.userInput.Provider.FetchingLimits {
-		spinnerView := conv.ThinkingStyle.Render(m.agentOutput.Spinner.View() + " Fetching token limits...")
+		spinnerView := conv.ThinkingStyle.Render(m.conv.Spinner.View() + " Fetching token limits...")
 		parts = append(parts, spinnerView)
 	}
 
-	if compactView := conv.RenderCompactStatus(
-		m.width,
-		m.agentOutput.Spinner.View(),
-		m.conv.Compact.Active,
-		m.conv.Compact.Focus,
-		m.conv.Compact.Phase,
-		m.conv.Compact.LastResult,
-		m.conv.Compact.LastError,
-	); compactView != "" {
+	if compactView := conv.RenderCompactStatus(m.width, m.conv.Spinner.View(), m.conv.Compact); compactView != "" {
 		parts = append(parts, compactView)
 	}
 
 	return strings.Join(parts, "\n")
 }
 
-// renderTrackerList renders a compact task list above the input area.
-// Returns empty string when task display is toggled off via Ctrl+T.
 func (m model) renderTrackerList() string {
-	if !m.agentOutput.ShowTasks {
+	if !m.conv.ShowTasks {
 		return ""
 	}
 	tasks := tracker.DefaultStore.List()
@@ -157,7 +147,7 @@ func (m model) renderTrackerList() string {
 		AllDone:      tracker.DefaultStore.AllDone(),
 		StreamActive: m.conv.Stream.Active,
 		Width:        m.width,
-		SpinnerView:  m.agentOutput.Spinner.View(),
+		SpinnerView:  m.conv.Spinner.View(),
 		Blockers:     tracker.DefaultStore.OpenBlockers,
 		WorkerSnap: func(taskID, agentID string) (*orchestration.Snapshot, bool) {
 			return orchestration.DefaultStore.Snapshot(taskID, agentID, "", 1)
@@ -197,9 +187,9 @@ func (m model) messageRenderParams() conv.MessageRenderParams {
 		StreamActive:            m.conv.Stream.Active,
 		BuildingTool:            m.conv.Stream.BuildingTool,
 		Width:                   m.width,
-		MDRenderer:              m.agentOutput.MDRenderer,
-		SpinnerView:             m.agentOutput.Spinner.View(),
-		TaskProgress:            m.agentOutput.TaskProgress,
+		MDRenderer:              m.conv.MDRenderer,
+		SpinnerView:             m.conv.Spinner.View(),
+		TaskProgress:            m.conv.TaskProgress,
 		TaskOwnerMap:            conv.BuildTaskOwnerMap(tracker.DefaultStore.List()),
 		InteractivePromptActive: (m.conv.Modal.Question != nil && m.conv.Modal.Question.IsActive()) || (m.conv.Modal.PlanApproval != nil && m.conv.Modal.PlanApproval.IsActive()),
 	}
@@ -209,7 +199,5 @@ func (m model) renderPlanForScrollback(req *tool.PlanRequest) string {
 	if req == nil {
 		return ""
 	}
-	return conv.RenderPlanForScrollback(req.Plan, m.agentOutput.MDRenderer)
+	return conv.RenderPlanForScrollback(req.Plan, m.conv.MDRenderer)
 }
-
-

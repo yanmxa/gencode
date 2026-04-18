@@ -17,7 +17,7 @@ func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 	})
 
 	batchKey := "call-1,call-2"
-	parentID := EnsureBackgroundBatchTracker(batchKey, 2)
+	parentID := ensureBackgroundBatchTracker(batchKey, 2)
 	if parentID == "" {
 		t.Fatal("expected batch tracker to be created")
 	}

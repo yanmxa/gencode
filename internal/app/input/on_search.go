@@ -210,11 +210,11 @@ func (s *SearchSelector) Render() string {
 
 // --- Search Runtime ---
 
-func UpdateSearch(rt SearchRuntime, state *SearchSelector, msg tea.Msg) (tea.Cmd, bool) {
+func UpdateSearch(deps OverlayDeps, state *SearchSelector, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case SearchSelectedMsg:
 		state.Cancel()
-		rt.SetProviderStatusMessage(fmt.Sprintf("Search engine: %s", msg.Provider))
+		deps.State.Provider.SetStatusMessage(fmt.Sprintf("Search engine: %s", msg.Provider))
 		return kit.StatusTimer(3 * time.Second), true
 	}
 	return nil, false

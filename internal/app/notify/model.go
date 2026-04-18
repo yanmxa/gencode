@@ -8,19 +8,16 @@ import (
 	"github.com/yanmxa/gencode/internal/orchestration"
 )
 
-// Model holds all agent-event input state: task notification queue and batch tracking.
 type Model struct {
 	Notifications *NotificationQueue
 }
 
-// New creates a Model with an initialized NotificationQueue.
 func New() Model {
 	return Model{
 		Notifications: NewNotificationQueue(),
 	}
 }
 
-// Notification holds data for a background task completion notification.
 type Notification struct {
 	Notice             string
 	Context            []string
@@ -38,12 +35,10 @@ type NotificationQueue struct {
 	items []Notification
 }
 
-// NewNotificationQueue creates an initialized NotificationQueue.
 func NewNotificationQueue() *NotificationQueue {
 	return &NotificationQueue{}
 }
 
-// Push enqueues a notification.
 func (q *NotificationQueue) Push(item Notification) {
 	if q == nil {
 		return
@@ -53,7 +48,6 @@ func (q *NotificationQueue) Push(item Notification) {
 	q.items = append(q.items, item)
 }
 
-// Pop dequeues the oldest notification.
 func (q *NotificationQueue) Pop() (Notification, bool) {
 	if q == nil {
 		return Notification{}, false
@@ -68,7 +62,6 @@ func (q *NotificationQueue) Pop() (Notification, bool) {
 	return item, true
 }
 
-// PopBatch dequeues up to max notifications at once.
 func (q *NotificationQueue) PopBatch(max int) []Notification {
 	if q == nil {
 		return nil
@@ -86,7 +79,6 @@ func (q *NotificationQueue) PopBatch(max int) []Notification {
 	return items
 }
 
-// Len returns the number of queued notifications.
 func (q *NotificationQueue) Len() int {
 	if q == nil {
 		return 0

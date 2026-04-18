@@ -375,21 +375,19 @@ func sessionPluralize(n int, unit string) string {
 }
 
 // UpdateSession routes session selection messages.
-func UpdateSession(rt SessionRuntime, state *SessionState, msg tea.Msg) (tea.Cmd, bool) {
+func UpdateSession(deps OverlayDeps, state *SessionState, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case SessionSelectedMsg:
-		return handleSessionSelected(rt, state, msg), true
+		return handleSessionSelected(deps, msg), true
 	}
 	return nil, false
 }
 
-func handleSessionSelected(rt SessionRuntime, _ *SessionState, msg SessionSelectedMsg) tea.Cmd {
-	sessionID := msg.SessionID
-
-	if err := rt.LoadSession(sessionID); err != nil {
-		rt.AddNotice("Failed to load session: " + err.Error())
+func handleSessionSelected(deps OverlayDeps, msg SessionSelectedMsg) tea.Cmd {
+	if err := deps.LoadSession(msg.SessionID); err != nil {
+		deps.Conv.AddNotice("Failed to load session: " + err.Error())
 	}
 
-	rt.ResetCommitIndex()
-	return tea.Batch(rt.CommitAllMessages()...)
+	deps.Conv.CommittedCount = 0
+	return tea.Batch(deps.CommitAllMessages()...)
 }

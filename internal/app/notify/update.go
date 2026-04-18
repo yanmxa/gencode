@@ -2,31 +2,30 @@ package notify
 
 import tea "github.com/charmbracelet/bubbletea"
 
-// Runtime defines the app callbacks needed to process Source 2 input.
-type Runtime interface {
-	IsInputIdle() bool
-	StreamActive() bool
-	InjectTaskNotificationContinuation(item Notification) tea.Cmd
+// Deps holds the app-level state and callbacks needed to process Source 2 input.
+type Deps struct {
+	StreamActive bool
+	Inject       func(Notification) tea.Cmd
 }
 
 // Update routes Source 2 (agent -> agent) task-notification messages.
-func Update(rt Runtime, state *Model, msg tea.Msg) (tea.Cmd, bool) {
+func Update(deps Deps, state *Model, msg tea.Msg) (tea.Cmd, bool) {
 	if _, ok := msg.(TickMsg); !ok {
 		return nil, false
 	}
-	return handleTaskNotificationTick(rt, state), true
+	return handleTick(deps, state), true
 }
 
-func handleTaskNotificationTick(rt Runtime, state *Model) tea.Cmd {
+func handleTick(deps Deps, state *Model) tea.Cmd {
 	cmds := []tea.Cmd{StartTicker()}
 
-	ResetTrackerIfIdle(rt.StreamActive())
+	ResetTrackerIfIdle(deps.StreamActive)
 
-	items := PopReadyNotifications(state.Notifications, rt.IsInputIdle())
+	items := PopReadyNotifications(state.Notifications, !deps.StreamActive)
 	if len(items) == 0 {
 		return tea.Batch(cmds...)
 	}
 
-	cmds = append(cmds, rt.InjectTaskNotificationContinuation(MergeNotifications(items)))
+	cmds = append(cmds, deps.Inject(MergeNotifications(items)))
 	return tea.Batch(cmds...)
 }

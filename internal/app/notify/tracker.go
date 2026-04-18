@@ -62,7 +62,7 @@ type BackgroundTaskLaunch struct {
 	ResumeID    string
 }
 
-func EnsureBackgroundBatchTracker(batchKey string, total int) string {
+func ensureBackgroundBatchTracker(batchKey string, total int) string {
 	if batchKey == "" || total <= 1 {
 		return ""
 	}

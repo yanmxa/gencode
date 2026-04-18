@@ -8,8 +8,6 @@ import (
 	"github.com/yanmxa/gencode/internal/hook"
 )
 
-// Model holds all system-event input state: cron prompts, async hook rewakes,
-// and the file watcher for hook-driven file monitoring.
 type Model struct {
 	CronQueue      []string
 	AsyncHookQueue *AsyncHookQueue
@@ -18,7 +16,6 @@ type Model struct {
 	FileWatcher    *FileWatcher
 }
 
-// New creates a Model with an initialized AsyncHookQueue and optional FileWatcher.
 func New(hookEngine *hook.Engine) Model {
 	return Model{
 		AsyncHookQueue: NewAsyncHookQueue(),
@@ -27,7 +24,6 @@ func New(hookEngine *hook.Engine) Model {
 	}
 }
 
-// NewAsyncHookQueue creates an initialized AsyncHookQueue.
 func NewAsyncHookQueue() *AsyncHookQueue {
 	return &AsyncHookQueue{}
 }
@@ -45,7 +41,6 @@ type AsyncHookQueue struct {
 	items []AsyncHookRewake
 }
 
-// Push enqueues an async hook rewake item.
 func (q *AsyncHookQueue) Push(item AsyncHookRewake) {
 	if q == nil {
 		return
@@ -55,7 +50,6 @@ func (q *AsyncHookQueue) Push(item AsyncHookRewake) {
 	q.items = append(q.items, item)
 }
 
-// Pop dequeues the oldest async hook rewake item.
 func (q *AsyncHookQueue) Pop() (AsyncHookRewake, bool) {
 	if q == nil {
 		return AsyncHookRewake{}, false
@@ -70,7 +64,6 @@ func (q *AsyncHookQueue) Pop() (AsyncHookRewake, bool) {
 	return item, true
 }
 
-// Len returns the number of queued items.
 func (q *AsyncHookQueue) Len() int {
 	if q == nil {
 		return 0
@@ -80,7 +73,6 @@ func (q *AsyncHookQueue) Len() int {
 	return len(q.items)
 }
 
-// RenderHookStatus returns the hook status string if set, otherwise the default model name.
 func RenderHookStatus(hookStatus, defaultModelName string) string {
 	if hookStatus != "" {
 		return hookStatus

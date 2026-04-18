@@ -7,7 +7,6 @@ import (
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
-// MessageRenderParams holds the state needed to render messages outside the model.
 type MessageRenderParams struct {
 	Messages                []core.ChatMessage
 	CommittedCount          int
@@ -48,7 +47,6 @@ func BuildSkipIndices(messages []core.ChatMessage, startIdx int) map[int]bool {
 	return skipIndices
 }
 
-// IsToolResultInlined checks if the tool result at idx was rendered inline with its tool call.
 func IsToolResultInlined(messages []core.ChatMessage, idx int) bool {
 	msg := messages[idx]
 	if msg.ToolResult == nil {
@@ -77,7 +75,6 @@ func IsToolResultInlined(messages []core.ChatMessage, idx int) bool {
 	return false
 }
 
-// RenderMessageAt renders a single message at the given index.
 func RenderMessageAt(p MessageRenderParams, idx int, isStreaming bool) string {
 	msg := p.Messages[idx]
 	var sb strings.Builder
@@ -108,7 +105,6 @@ func RenderMessageAt(p MessageRenderParams, idx int, isStreaming bool) string {
 	return sb.String()
 }
 
-// renderAssistantWithTools renders an assistant message with tool calls.
 func renderAssistantWithTools(p MessageRenderParams, msg core.ChatMessage, idx int, isLast bool) string {
 	base := RenderAssistantMessage(AssistantParams{
 		Content:       msg.Content,
@@ -165,7 +161,6 @@ func renderAssistantWithTools(p MessageRenderParams, msg core.ChatMessage, idx i
 	return sb.String()
 }
 
-// RenderMessageRange renders messages from startIdx to endIdx with skip logic and spinner.
 func RenderMessageRange(p MessageRenderParams, startIdx, endIdx int, includeSpinner bool) string {
 	skipIndices := BuildSkipIndices(p.Messages, startIdx)
 	var sb strings.Builder
@@ -188,7 +183,6 @@ func RenderMessageRange(p MessageRenderParams, startIdx, endIdx int, includeSpin
 	return sb.String()
 }
 
-// RenderSingleMessage renders one message at the given index for committing to scrollback.
 func RenderSingleMessage(p MessageRenderParams, idx int) string {
 	if idx < 0 || idx >= len(p.Messages) {
 		return ""
@@ -201,7 +195,6 @@ func RenderSingleMessage(p MessageRenderParams, idx int) string {
 	return strings.TrimRight(RenderMessageAt(p, idx, false), "\n")
 }
 
-// RenderActiveContent renders all uncommitted messages for the managed region.
 func RenderActiveContent(p MessageRenderParams) string {
 	if p.CommittedCount >= len(p.Messages) {
 		return renderPendingToolSpinnerFromParams(p, false)
@@ -209,7 +202,6 @@ func RenderActiveContent(p MessageRenderParams) string {
 	return RenderMessageRange(p, p.CommittedCount, len(p.Messages), true)
 }
 
-// renderPendingToolSpinnerFromParams renders the pending tool spinner from message params.
 func renderPendingToolSpinnerFromParams(p MessageRenderParams, suppressAgentLabel bool) string {
 	return RenderPendingToolSpinner(PendingToolSpinnerParams{
 		InteractivePromptActive: p.InteractivePromptActive,
@@ -221,7 +213,6 @@ func renderPendingToolSpinnerFromParams(p MessageRenderParams, suppressAgentLabe
 	})
 }
 
-// BuildTaskOwnerMap builds a map of task ID → owner name for TaskGet display.
 func BuildTaskOwnerMap(tasks []*tracker.Task) map[string]string {
 	if len(tasks) == 0 {
 		return nil

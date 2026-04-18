@@ -30,7 +30,6 @@ type CompactResultMsg struct {
 
 const PhaseSummarizing = "Summarizing conversation history"
 
-// CompactState holds all compact-related state for the TUI model.
 type CompactState struct {
 	Active            bool
 	Focus             string
@@ -41,7 +40,6 @@ type CompactState struct {
 	WarningSuppressed bool
 }
 
-// Reset clears all compact state.
 func (c *CompactState) Reset() {
 	c.Active = false
 	c.Focus = ""
@@ -52,13 +50,11 @@ func (c *CompactState) Reset() {
 	c.WarningSuppressed = false
 }
 
-// ClearResult dismisses the last visible compact status.
 func (c *CompactState) ClearResult() {
 	c.LastResult = ""
 	c.LastError = false
 }
 
-// Complete transitions compact state from running to a visible result state.
 func (c *CompactState) Complete(result string, isError bool) {
 	c.Active = false
 	c.Focus = ""
@@ -71,7 +67,6 @@ func (c *CompactState) Complete(result string, isError bool) {
 	}
 }
 
-// CompactConversation compacts the message history into a summary.
 func CompactConversation(ctx context.Context, c *llm.Client, msgs []core.Message, sessionMemory, focus string) (summary string, count int, err error) {
 	count = len(msgs)
 
@@ -102,33 +97,33 @@ func CompactConversation(ctx context.Context, c *llm.Client, msgs []core.Message
 	return summary, count, nil
 }
 
-func RenderCompactStatus(width int, spinnerView string, active bool, focus, phase, result string, isError bool) string {
-	if !active && result == "" {
+func RenderCompactStatus(width int, spinnerView string, state CompactState) string {
+	if !state.Active && state.LastResult == "" {
 		return ""
 	}
 
 	label := "SESSION SUMMARY"
 	title := "Conversation compacted"
 	subtitle := "Older context was folded into a shorter summary. You can continue normally."
-	detail := result
+	detail := state.LastResult
 	accent := kit.CurrentTheme.Success
 	icon := "✓"
 
-	if active {
-		if phase != "" {
-			title = spinnerView + " " + phase
+	if state.Active {
+		if state.Phase != "" {
+			title = spinnerView + " " + state.Phase
 		} else {
 			title = spinnerView + " Compacting conversation"
 		}
 		subtitle = "Summarizing recent history into a shorter reusable summary."
-		if strings.TrimSpace(focus) != "" {
-			detail = "Focus: " + focus
+		if strings.TrimSpace(state.Focus) != "" {
+			detail = "Focus: " + state.Focus
 		} else {
 			detail = "Preparing a smaller conversation state for the next turns."
 		}
 		accent = kit.CurrentTheme.Primary
 		icon = ""
-	} else if isError {
+	} else if state.LastError {
 		label = "COMPACT ERROR"
 		title = "Compact failed"
 		subtitle = "Conversation history was not replaced. You can retry once the issue is resolved."
@@ -186,7 +181,6 @@ type CompactRequest struct {
 	Trigger        string
 }
 
-// CompactCmd returns a tea.Cmd that performs conversation compaction asynchronously.
 func CompactCmd(req CompactRequest) tea.Cmd {
 	return func() tea.Msg {
 		ctx := req.Ctx

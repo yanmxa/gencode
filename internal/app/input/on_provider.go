@@ -43,14 +43,12 @@ type ProviderStatusExpiredMsg = kit.StatusExpiredMsg
 // ── Runtime ────────────────────────────────────────────────────────────────────
 
 // UpdateProvider routes provider connection and selection messages.
-func UpdateProvider(rt ProviderRuntime, state *ProviderState, msg tea.Msg) (tea.Cmd, bool) {
+func UpdateProvider(deps OverlayDeps, state *ProviderState, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case ProviderConnectResultMsg:
 		return state.Selector.HandleConnectResult(msg), true
-	case ProviderSelectedMsg:
-		return handleProviderSelected(rt, state, msg), true
 	case ProviderModelSelectedMsg:
-		return handleProviderModelSelected(rt, state, msg), true
+		return handleProviderModelSelected(deps, state, msg), true
 	case ProviderModelsLoadedMsg:
 		state.Selector.HandleModelsLoaded(msg)
 		return nil, true
@@ -61,39 +59,26 @@ func UpdateProvider(rt ProviderRuntime, state *ProviderState, msg tea.Msg) (tea.
 	return nil, false
 }
 
-func handleProviderSelected(rt ProviderRuntime, state *ProviderState, msg ProviderSelectedMsg) tea.Cmd {
-	ctx := context.Background()
-	result, err := state.Selector.ConnectProvider(ctx, msg.Provider, msg.AuthMethod)
-	if err != nil {
-		rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: "Error: " + err.Error()})
-	} else {
-		rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: result})
-		providerRefreshConnection(rt, state, ctx, msg.Provider, msg.AuthMethod)
-	}
-	return tea.Batch(rt.CommitMessages()...)
-}
-
-func handleProviderModelSelected(rt ProviderRuntime, state *ProviderState, msg ProviderModelSelectedMsg) tea.Cmd {
+func handleProviderModelSelected(deps OverlayDeps, state *ProviderState, msg ProviderModelSelectedMsg) tea.Cmd {
 	_, err := state.Selector.SetModel(msg.ModelID, msg.ProviderName, msg.AuthMethod)
 	if err != nil {
-		rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: "Error: " + err.Error()})
-		return tea.Batch(rt.CommitMessages()...)
+		deps.Conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Error: " + err.Error()})
+		return tea.Batch(deps.CommitMessages()...)
 	}
 
-	rt.SetCurrentModel(&llm.CurrentModelInfo{
+	deps.Runtime.CurrentModel = &llm.CurrentModelInfo{
 		ModelID:    msg.ModelID,
 		Provider:   llm.Name(msg.ProviderName),
 		AuthMethod: msg.AuthMethod,
-	})
+	}
 	ctx := context.Background()
-	providerRefreshConnection(rt, state, ctx, llm.Name(msg.ProviderName), msg.AuthMethod)
+	providerRefreshConnection(deps, state, ctx, llm.Name(msg.ProviderName), msg.AuthMethod)
 
-	// Show model name in status bar for 5 seconds
 	state.StatusMessage = msg.ModelID
 	return kit.StatusTimer(5 * time.Second)
 }
 
-func providerRefreshConnection(rt ProviderRuntime, state *ProviderState, ctx context.Context, providerName llm.Name, authMethod llm.AuthMethod) {
+func providerRefreshConnection(deps OverlayDeps, state *ProviderState, ctx context.Context, providerName llm.Name, authMethod llm.AuthMethod) {
 	p, err := llm.GetProvider(ctx, providerName, authMethod)
 	if err != nil {
 		log.Logger().Warn("failed to refresh provider connection",
@@ -101,7 +86,7 @@ func providerRefreshConnection(rt ProviderRuntime, state *ProviderState, ctx con
 			zap.Error(err))
 		return
 	}
-	rt.SwitchProvider(p)
+	deps.SwitchProvider(p)
 }
 
 // ── Model types ────────────────────────────────────────────────────────────────
@@ -232,12 +217,6 @@ func NewProviderSelector() ProviderSelector {
 		maxVisible:          20,
 		expandedProviderIdx: -1,
 	}
-}
-
-// ProviderSelectedMsg is sent when a provider auth method is selected (for connection).
-type ProviderSelectedMsg struct {
-	Provider   llm.Name
-	AuthMethod llm.AuthMethod
 }
 
 // ProviderModelSelectedMsg is sent when a model is selected.

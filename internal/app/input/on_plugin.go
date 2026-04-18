@@ -180,7 +180,7 @@ func (s *PluginSelector) IsActive() bool {
 // ── Runtime ──────────────────────────────────────────────────────────────────
 
 // UpdatePlugin routes plugin management messages.
-func UpdatePlugin(rt PluginRuntime, state *PluginSelector, msg tea.Msg) (tea.Cmd, bool) {
+func UpdatePlugin(deps OverlayDeps, state *PluginSelector, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case PluginEnableMsg:
 		state.HandleEnable(msg.PluginName)
@@ -195,12 +195,12 @@ func UpdatePlugin(rt PluginRuntime, state *PluginSelector, msg tea.Msg) (tea.Cmd
 		return nil, true
 
 	case PluginInstallMsg:
-		return pluginInstallCmd(state.registry, rt.GetCwd(), msg), true
+		return pluginInstallCmd(state.registry, deps.Cwd, msg), true
 
 	case PluginInstallResultMsg:
 		state.HandleInstallResult(msg)
 		if msg.Success {
-			_ = rt.ReloadPluginBackedState()
+			_ = deps.ReloadPluginState()
 		}
 		return nil, true
 

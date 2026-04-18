@@ -393,7 +393,7 @@ func TestApplyAgentToolSideEffectsFiresFileChanged(t *testing.T) {
 		cwd:     cwd,
 		runtime: appruntime.Model{HookEngine: engine},
 	}
-	m.ApplyToolSideEffects("Write", map[string]any{"filePath": filePath})
+	m.applyToolSideEffects("Write", map[string]any{"filePath": filePath})
 
 	select {
 	case input := <-triggered:
@@ -425,7 +425,7 @@ func TestApplyAgentToolSideEffectsUpdatesCwdFromBash(t *testing.T) {
 		cwd:     oldCwd,
 		runtime: appruntime.Model{HookEngine: engine},
 	}
-	m.ApplyToolSideEffects("Bash", map[string]any{"cwd": newCwd})
+	m.applyToolSideEffects("Bash", map[string]any{"cwd": newCwd})
 
 	if m.cwd != newCwd {
 		t.Fatalf("expected cwd %q, got %q", newCwd, m.cwd)
@@ -586,9 +586,8 @@ func TestApplyRuntimeHookOutcomeSetsInitialPrompt(t *testing.T) {
 func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 	m := &model{
 		cwd:         t.TempDir(),
-		conv:        conv.NewConversation(),
+		conv:        conv.NewModel(80),
 		systemInput: trigger.New(nil),
-		agentOutput: conv.New(80, conv.NewProgressHub(10)),
 		runtime: appruntime.Model{
 			LLMProvider: testLLMProvider{},
 		},
@@ -599,7 +598,7 @@ func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 		ContinuationPrompt: "Re-evaluate the plan.",
 	})
 
-	cmd, _ := trigger.Update(m, &m.systemInput, trigger.AsyncHookTickMsg{})
+	cmd, _ := trigger.Update(m.triggerDeps(), &m.systemInput, trigger.AsyncHookTickMsg{})
 	if cmd == nil {
 		t.Fatal("expected async hook tick command")
 	}
@@ -649,7 +648,7 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 		t.Fatal("timed out waiting for status hook to start")
 	}
 
-	_, _ = trigger.Update(m, &m.systemInput, trigger.AsyncHookTickMsg{})
+	_, _ = trigger.Update(m.triggerDeps(), &m.systemInput, trigger.AsyncHookTickMsg{})
 	if m.systemInput.HookStatus != "hook is running" {
 		t.Fatalf("expected hook status to refresh, got %q", m.systemInput.HookStatus)
 	}
@@ -661,7 +660,7 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 		t.Fatal("timed out waiting for hook to finish")
 	}
 
-	_, _ = trigger.Update(m, &m.systemInput, trigger.AsyncHookTickMsg{})
+	_, _ = trigger.Update(m.triggerDeps(), &m.systemInput, trigger.AsyncHookTickMsg{})
 	if m.systemInput.HookStatus != "" {
 		t.Fatalf("expected hook status to clear, got %q", m.systemInput.HookStatus)
 	}
@@ -669,10 +668,9 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 
 func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 	m := &model{
-		cwd:         t.TempDir(),
-		conv:        conv.NewConversation(),
-		agentInput:  notify.New(),
-		agentOutput: conv.New(80, conv.NewProgressHub(10)),
+		cwd:        t.TempDir(),
+		conv:       conv.NewModel(80),
+		agentInput: notify.New(),
 		runtime: appruntime.Model{
 			LLMProvider: testLLMProvider{},
 		},
@@ -697,7 +695,7 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 	}
 	m.agentInput.Notifications.Push(item)
 
-	cmd, _ := notify.Update(m, &m.agentInput, notify.TickMsg{})
+	cmd, _ := notify.Update(m.notifyDeps(), &m.agentInput, notify.TickMsg{})
 	if cmd == nil {
 		t.Fatal("expected task notification tick command")
 	}
@@ -731,10 +729,9 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 
 func TestTaskNotificationTickBatchesDrainsQueue(t *testing.T) {
 	m := &model{
-		cwd:         t.TempDir(),
-		conv:        conv.NewConversation(),
-		agentInput:  notify.New(),
-		agentOutput: conv.New(80, conv.NewProgressHub(10)),
+		cwd:        t.TempDir(),
+		conv:       conv.NewModel(80),
+		agentInput: notify.New(),
 		runtime: appruntime.Model{
 			LLMProvider: testLLMProvider{},
 		},
@@ -762,7 +759,7 @@ func TestTaskNotificationTickBatchesDrainsQueue(t *testing.T) {
 		Batch:              batch,
 	})
 
-	cmd, _ := notify.Update(m, &m.agentInput, notify.TickMsg{})
+	cmd, _ := notify.Update(m.notifyDeps(), &m.agentInput, notify.TickMsg{})
 	if cmd == nil {
 		t.Fatal("expected task notification tick command")
 	}

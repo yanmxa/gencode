@@ -27,10 +27,12 @@ The loop: `Init → Cmd → Msg → Update → Cmd → Msg → ...`, with `View(
 ```
 app/
   model.go     root Model{input, notify, trigger, conv, runtime} + Init()
+               conv.Runtime event handlers, deps builders, injection handlers
+  agent.go     Agent session lifecycle, system prompt, tool set, LLM client
   update.go    Update(): routes msgs to sub-models by type
   view.go      View(): composes sub-model views
-  bridges.go   Runtime adapters: root → sub-model interfaces
   run.go       entrypoint / lifecycle
+  init.go      Global infrastructure init, plugin/mcp adapters
   input/       keyboard → input state → textarea render
   notify/      task completion → notification queue → inject into conversation
   trigger/     cron / hook / watcher → event queue → inject into conversation
@@ -235,11 +237,11 @@ Root implements each sub-model's Runtime via adapter methods on `*model` in `mod
 
 ```go
 type model struct {
-    input    input.Model       // Source 1: user keyboard → textarea, selectors, approval
-    notify   notify.Model      // Source 2: background agent completion → notification queue
-    trigger  trigger.Model     // Source 3: cron / async hook / file watcher → event queue
-    conv     conv.Model        // Agent Outbox: outbox events → conversation state → chat render
-    runtime  runtime.Model     // Shared: provider, session, permission, plan, config
+    userInput   input.Model      // Source 1: user keyboard → textarea, selectors, approval
+    agentInput  notify.Model     // Source 2: background agent completion → notification queue
+    systemInput trigger.Model    // Source 3: cron / async hook / file watcher → event queue
+    conv        conv.Model       // Agent Outbox: outbox events → conversation state → chat render
+    runtime     runtime.Model    // Shared: provider, session, permission, plan, config
 }
 ```
 
@@ -278,11 +280,13 @@ View()
 ```
 internal/app/
 │
-│  ── Root: pure glue (5 files) ─────────────────────────────────────────────
-│  No business logic. Model + routing + view + entrypoint + init.
+│  ── Root: pure glue (6 files) ─────────────────────────────────────────────
+│  No business logic. Model + routing + view + agent lifecycle + entrypoint + init.
 │
-├── model.go          # Model{6 sub-models}, Init(), buildCoreAgent()
-│                     # Runtime adapter methods: sendToAgent(), saveSession(), ...
+├── model.go          # Model{5 sub-models}, Init(), construction
+│                     # conv.Runtime event handlers, message pipeline, session persistence
+├── agent.go          # Agent session lifecycle: build, start, stop, send, permission bridge
+│                     # Agent tool config, system prompt, tool set, LLM client
 ├── update.go         # Update(): msg type switch → delegate to sub-models
 │                     # Cross-cutting = routing: SubmitMsg → agent, PermReq → input, ...
 ├── view.go           # View(): compose sub-model views into terminal layout
@@ -299,10 +303,10 @@ internal/app/
 │   ├── model.go             # Model{Textarea, History, Images, Queue, Selectors}
 │   ├── update.go            # Update(): routes to active overlay or textarea
 │   ├── view.go              # RenderTextarea(), image indicators
-│   ├── runtime.go           # Runtime interface (6 composed sub-interfaces)
-│   ├── command_controller.go # CommandController: slash command dispatch
-│   ├── submit.go            # HandleSubmit(), prepareUserMessage()
-│   ├── approval_flow.go     # ApprovalFlowDeps, HandlePermissionRequest()
+│   ├── runtime.go           # OverlayDeps struct for overlay handler dependency injection
+│   ├── command_controller.go # CommandController: slash command dispatch (owns CommandRuntime)
+│   ├── submit.go            # HandleSubmit(), prepareUserMessage() (owns SubmitRuntime)
+│   ├── approval_flow.go     # ApprovalFlowDeps, HandlePermissionRequest() (owns ApprovalRuntime)
 │   ├── prompt_suggestion.go # PromptSuggestion state and commands
 │   ├── on_textarea.go       # HandleTextareaUpdate(), HistoryUp/Down()
 │   ├── on_queue.go          # Queue: Enqueue(), Dequeue(), selection state
@@ -346,9 +350,9 @@ internal/app/
 │         PreInfer → OnChunk → PostInfer → PreTool → PostTool → OnTurn
 │
 ├── conv/
-│   ├── model.go             # OutputModel, ConversationModel type defs
+│   ├── model.go             # Model{ConversationModel, OutputModel} composite
 │   ├── update.go            # handleAgentEvent(): PreInfer/.../OnTurn dispatch
-│   ├── runtime.go           # Runtime interface (6 composed sub-interfaces)
+│   ├── runtime.go           # Runtime interface, AgentOutboxMsg, PermBridgeMsg
 │   ├── view.go              # RenderMessageRange(), RenderActiveContent()
 │   ├── conversation.go      # Append(), ConvertToProvider(), StreamState
 │   ├── compact.go           # CompactConversation(), CompactCmd(), CompactState

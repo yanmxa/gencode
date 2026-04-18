@@ -258,59 +258,59 @@ func (m *MemorySelector) Render() string {
 // ── Runtime interface & Update ──────────────────────────────────────────
 
 // UpdateMemory routes memory selection and editor messages.
-func UpdateMemory(rt MemoryRuntime, state *MemoryState, msg tea.Msg) (tea.Cmd, bool) {
+func UpdateMemory(deps OverlayDeps, state *MemoryState, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case MemorySelectedMsg:
-		return handleMemorySelected(rt, state, msg), true
+		return handleMemorySelected(deps, state, msg), true
 	case MemoryEditorFinishedMsg:
-		return handleMemoryEditorFinished(rt, state, msg), true
+		return handleMemoryEditorFinished(deps, state, msg), true
 	}
 	return nil, false
 }
 
-func handleMemorySelected(rt MemoryRuntime, state *MemoryState, msg MemorySelectedMsg) tea.Cmd {
+func handleMemorySelected(deps OverlayDeps, state *MemoryState, msg MemorySelectedMsg) tea.Cmd {
 	filePath := msg.Path
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		if err := CreateMemoryFile(filePath, msg.Level, rt.GetCwd()); err != nil {
-			rt.AppendMessage(core.ChatMessage{
+		if err := CreateMemoryFile(filePath, msg.Level, deps.Cwd); err != nil {
+			deps.Conv.Append(core.ChatMessage{
 				Role:    core.RoleNotice,
 				Content: fmt.Sprintf("Error: %v", err),
 			})
-			return tea.Batch(rt.CommitMessages()...)
+			return tea.Batch(deps.CommitMessages()...)
 		}
 	}
 
 	state.EditingFile = filePath
 
-	displayPath := FormatMemoryDisplayPath(filePath, msg.Level, rt.GetCwd())
+	displayPath := FormatMemoryDisplayPath(filePath, msg.Level, deps.Cwd)
 
-	rt.AppendMessage(core.ChatMessage{
+	deps.Conv.Append(core.ChatMessage{
 		Role:    core.RoleNotice,
 		Content: fmt.Sprintf("Opening %s memory: %s", msg.Level, displayPath),
 	})
 
-	commitCmds := rt.CommitMessages()
+	commitCmds := deps.CommitMessages()
 	commitCmds = append(commitCmds, startExternalEditorForMemory(filePath))
 	return tea.Batch(commitCmds...)
 }
 
-func handleMemoryEditorFinished(rt MemoryRuntime, state *MemoryState, msg MemoryEditorFinishedMsg) tea.Cmd {
+func handleMemoryEditorFinished(deps OverlayDeps, state *MemoryState, msg MemoryEditorFinishedMsg) tea.Cmd {
 	filePath := state.EditingFile
 	state.EditingFile = ""
 
-	rt.ClearCachedInstructions()
+	deps.Runtime.ClearCachedInstructions()
 
 	content := fmt.Sprintf("Saved: %s", filePath)
 	if msg.Err != nil {
 		content = fmt.Sprintf("Editor error: %v", msg.Err)
 	} else {
-		rt.RefreshMemoryContext("memory_edit")
-		rt.FireFileChanged(filePath, "memory_editor")
+		deps.Runtime.RefreshMemoryContext(deps.Cwd, "memory_edit")
+		deps.FireFileChanged(filePath, "memory_editor")
 	}
 
-	rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: content})
-	return tea.Batch(rt.CommitMessages()...)
+	deps.Conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: content})
+	return tea.Batch(deps.CommitMessages()...)
 }
 
 // startExternalEditorForMemory launches the external editor for a memory file.

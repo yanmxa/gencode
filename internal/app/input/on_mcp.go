@@ -479,7 +479,7 @@ func mcpStartConnect(reg *coremcp.Registry, name string) tea.Cmd {
 // ── Runtime interface ───────────────────────────────────────────────
 
 // UpdateMCP routes MCP server management messages.
-func UpdateMCP(rt MCPRuntime, state *MCPState, msg tea.Msg) (tea.Cmd, bool) {
+func UpdateMCP(deps OverlayDeps, state *MCPState, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case MCPConnectMsg:
 		if state.Selector.registry != nil {
@@ -500,8 +500,8 @@ func UpdateMCP(rt MCPRuntime, state *MCPState, msg tea.Msg) (tea.Cmd, bool) {
 		state.Selector.HandleConnectResult(msg)
 		if !state.Selector.IsActive() && !msg.Success {
 			content := fmt.Sprintf("Failed to connect to '%s': %v", msg.ServerName, msg.Error)
-			rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: content})
-			return tea.Batch(rt.CommitMessages()...), true
+			deps.Conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: content})
+			return tea.Batch(deps.CommitMessages()...), true
 		}
 		return nil, true
 
@@ -521,14 +521,14 @@ func UpdateMCP(rt MCPRuntime, state *MCPState, msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 
 	case MCPAddServerMsg:
-		rt.SetInputText("/mcp add ")
+		deps.State.Textarea.SetValue("/mcp add ")
 		return nil, true
 
 	case MCPEditServerMsg:
 		info, err := coremcp.PrepareServerEdit(state.Selector.registry, msg.ServerName)
 		if err != nil {
-			rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Error: %v", err)})
-			return tea.Batch(rt.CommitMessages()...), true
+			deps.Conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Error: %v", err)})
+			return tea.Batch(deps.CommitMessages()...), true
 		}
 		state.EditingFile = info.TempFile
 		state.EditingServer = info.ServerName
@@ -545,17 +545,17 @@ func UpdateMCP(rt MCPRuntime, state *MCPState, msg tea.Msg) (tea.Cmd, bool) {
 
 		if msg.Err != nil {
 			os.Remove(info.TempFile)
-			rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Editor error: %v", msg.Err)})
-			return tea.Batch(rt.CommitMessages()...), true
+			deps.Conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Editor error: %v", msg.Err)})
+			return tea.Batch(deps.CommitMessages()...), true
 		}
 
 		if err := coremcp.ApplyServerEdit(state.Selector.registry, info); err != nil {
-			rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Failed to apply edit: %v", err)})
-			return tea.Batch(rt.CommitMessages()...), true
+			deps.Conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Failed to apply edit: %v", err)})
+			return tea.Batch(deps.CommitMessages()...), true
 		}
 
-		rt.AppendMessage(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Updated MCP server '%s'", info.ServerName)})
-		return tea.Batch(rt.CommitMessages()...), true
+		deps.Conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Updated MCP server '%s'", info.ServerName)})
+		return tea.Batch(deps.CommitMessages()...), true
 	}
 	return nil, false
 }

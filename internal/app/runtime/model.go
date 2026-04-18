@@ -50,7 +50,6 @@ type Model struct {
 	CachedProjectInstructions string
 }
 
-// New creates a fully initialized runtime Model with default infrastructure.
 func New(cwd string) Model {
 	return Model{
 		OperationMode:      setting.ModeNormal,
@@ -81,7 +80,6 @@ func (m *Model) EffectiveThinkingLevel() llm.ThinkingLevel {
 	return max(m.ThinkingLevel, m.ThinkingOverride)
 }
 
-// OperationModeName returns the string name for hook engine configuration.
 func (m *Model) OperationModeName() string {
 	switch m.OperationMode {
 	case setting.ModeAutoAccept:
@@ -95,14 +93,12 @@ func (m *Model) OperationModeName() string {
 	}
 }
 
-// CycleOperationMode advances the operation mode to the next value.
 func (m *Model) CycleOperationMode() {
 	allowBypass := m.Settings != nil && m.Settings.AllowBypass != nil && *m.Settings.AllowBypass
 	m.OperationMode = m.OperationMode.NextWithBypass(allowBypass)
 	m.PlanEnabled = m.OperationMode == setting.ModePlan
 }
 
-// ResetSessionPermissions resets all session permissions to defaults.
 func (m *Model) ResetSessionPermissions() {
 	m.SessionPermissions.AllowAllEdits = false
 	m.SessionPermissions.AllowAllWrites = false
@@ -111,7 +107,6 @@ func (m *Model) ResetSessionPermissions() {
 	m.SessionPermissions.Mode = setting.ModeNormal
 }
 
-// ApplyAutoAcceptPermissions enables auto-accept permissions for the given cwd.
 func (m *Model) ApplyAutoAcceptPermissions(cwd string) {
 	m.SessionPermissions.AllowAllEdits = true
 	m.SessionPermissions.AllowAllWrites = true
@@ -121,19 +116,16 @@ func (m *Model) ApplyAutoAcceptPermissions(cwd string) {
 	}
 }
 
-// ApplyBypassPermissions enables bypass mode.
 func (m *Model) ApplyBypassPermissions() {
 	m.SessionPermissions.Mode = setting.ModeBypassPermissions
 }
 
-// EnableAutoAcceptMode fully enables auto-accept mode with permissions.
 func (m *Model) EnableAutoAcceptMode(cwd string) {
 	m.ApplyAutoAcceptPermissions(cwd)
 	m.OperationMode = setting.ModeAutoAccept
 	m.PlanEnabled = false
 }
 
-// DetectThinkingKeywords sets per-turn thinking override based on user input keywords.
 func (m *Model) DetectThinkingKeywords(input string) {
 	lower := strings.ToLower(input)
 
@@ -154,7 +146,6 @@ func (m *Model) DetectThinkingKeywords(input string) {
 	}
 }
 
-// ApplyModePermissions resets session permissions and applies mode-specific rules.
 func (m *Model) ApplyModePermissions(cwd string) {
 	m.ResetSessionPermissions()
 
@@ -167,7 +158,6 @@ func (m *Model) ApplyModePermissions(cwd string) {
 	}
 }
 
-// EnsurePlanStore lazily initializes the plan store.
 func (m *Model) EnsurePlanStore() {
 	if m.PlanStore != nil {
 		return
@@ -179,14 +169,11 @@ func (m *Model) EnsurePlanStore() {
 	m.PlanStore = store
 }
 
-// ClearCachedInstructions resets cached memory instructions.
 func (m *Model) ClearCachedInstructions() {
 	m.CachedUserInstructions = ""
 	m.CachedProjectInstructions = ""
 }
 
-// RefreshMemoryContext loads GEN.md/CLAUDE.md files, fires InstructionsLoaded
-// hooks, and updates cached instructions.
 func (m *Model) RefreshMemoryContext(cwd, loadReason string) {
 	files := system.LoadMemoryFiles(cwd)
 	var userParts, projectParts []string
@@ -209,7 +196,6 @@ func (m *Model) RefreshMemoryContext(cwd, loadReason string) {
 	m.CachedProjectInstructions = joinSections(projectParts)
 }
 
-// ApplySettings updates runtime settings, disabled tools, and hook engine config.
 func (m *Model) ApplySettings(s *setting.Settings) {
 	m.Settings = s
 	if m.DisabledTools == nil {
@@ -227,7 +213,6 @@ func (m *Model) ApplySettings(s *setting.Settings) {
 	}
 }
 
-// CheckPromptHook runs UserPromptSubmit hook and returns (blocked, reason).
 func (m *Model) CheckPromptHook(ctx context.Context, prompt string) (bool, string) {
 	if m.HookEngine == nil {
 		return false, ""
@@ -236,7 +221,6 @@ func (m *Model) CheckPromptHook(ctx context.Context, prompt string) (bool, strin
 	return outcome.ShouldBlock, outcome.BlockReason
 }
 
-// SwitchProvider updates the LLM provider and notifies the hook engine.
 func (m *Model) SwitchProvider(p llm.Provider) {
 	m.LLMProvider = p
 	if m.HookEngine != nil {
@@ -244,7 +228,6 @@ func (m *Model) SwitchProvider(p llm.Provider) {
 	}
 }
 
-// SessionMode returns the current session mode string for session metadata.
 func (m *Model) SessionMode() string {
 	if m.PlanEnabled {
 		return "plan"
@@ -257,18 +240,15 @@ func (m *Model) SessionMode() string {
 	}
 }
 
-// ClearThinkingOverride resets the per-turn thinking override.
 func (m *Model) ClearThinkingOverride() {
 	m.ThinkingOverride = llm.ThinkingOff
 }
 
-// ResetTokens clears input/output token counts.
 func (m *Model) ResetTokens() {
 	m.InputTokens = 0
 	m.OutputTokens = 0
 }
 
-// EnsureSessionStore lazily initializes the session store.
 func (m *Model) EnsureSessionStore(cwd string) error {
 	if m.SessionStore == nil {
 		store, err := session.NewStore(cwd)
@@ -280,7 +260,6 @@ func (m *Model) EnsureSessionStore(cwd string) error {
 	return nil
 }
 
-// FirePostToolHook fires PostToolUse or PostToolUseFailure hook asynchronously.
 func (m *Model) FirePostToolHook(tr core.ToolResult, sideEffect any) {
 	if m.HookEngine == nil {
 		return
@@ -304,7 +283,6 @@ func (m *Model) FirePostToolHook(tr core.ToolResult, sideEffect any) {
 	m.HookEngine.ExecuteAsync(eventType, input)
 }
 
-// FireStopFailureHook fires the StopFailure hook asynchronously.
 func (m *Model) FireStopFailureHook(lastAssistantContent string, err error) {
 	if m.HookEngine == nil {
 		return
@@ -316,7 +294,6 @@ func (m *Model) FireStopFailureHook(lastAssistantContent string, err error) {
 	})
 }
 
-// FireSessionEnd fires the SessionEnd hook synchronously.
 func (m *Model) FireSessionEnd(ctx context.Context, reason string) {
 	if m.HookEngine == nil {
 		return
@@ -327,7 +304,6 @@ func (m *Model) FireSessionEnd(ctx context.Context, reason string) {
 	m.HookEngine.ClearSessionHooks()
 }
 
-// ExecuteStartupHooks fires Setup and SessionStart hooks, returning the outcome.
 func (m *Model) ExecuteStartupHooks(ctx context.Context) hook.HookOutcome {
 	if m.HookEngine == nil {
 		return hook.HookOutcome{}

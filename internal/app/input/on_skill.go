@@ -32,10 +32,6 @@ type SkillCycleMsg struct {
 	NewState  coreskill.SkillState
 }
 
-type SkillInvokeMsg struct {
-	SkillName string
-}
-
 type SkillSelector struct {
 	registry       *coreskill.Registry
 	active         bool

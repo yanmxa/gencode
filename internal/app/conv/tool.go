@@ -16,7 +16,6 @@ import (
 
 // --- Tool state ---
 
-// ToolExecState holds tool execution state for the TUI model.
 type ToolExecState struct {
 	PendingCalls []core.ToolCall
 	CurrentIdx   int
@@ -24,7 +23,6 @@ type ToolExecState struct {
 	Cancel       context.CancelFunc
 }
 
-// Begin initializes a fresh execution context for a tool run and returns it.
 func (t *ToolExecState) Begin() context.Context {
 	if t.Cancel != nil {
 		t.Cancel()
@@ -33,7 +31,6 @@ func (t *ToolExecState) Begin() context.Context {
 	return t.Ctx
 }
 
-// Context returns the active execution context, or Background when idle.
 func (t *ToolExecState) Context() context.Context {
 	if t.Ctx != nil {
 		return t.Ctx
@@ -41,7 +38,6 @@ func (t *ToolExecState) Context() context.Context {
 	return context.Background()
 }
 
-// Reset clears all tool execution state.
 func (t *ToolExecState) Reset() {
 	if t.Cancel != nil {
 		t.Cancel()

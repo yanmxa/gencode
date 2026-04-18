@@ -8,48 +8,48 @@ import (
 	"github.com/yanmxa/gencode/internal/cron"
 )
 
-// Runtime defines the app callbacks needed to process system-originated input.
-type Runtime interface {
-	IsInputIdle() bool
-	InjectCronPrompt(prompt string) tea.Cmd
-	InjectAsyncHookContinuation(item AsyncHookRewake) tea.Cmd
-	AppendNotice(text string)
+// Deps holds the app-level state and callbacks needed to process Source 3 input.
+type Deps struct {
+	StreamActive bool
+	InjectCron   func(string) tea.Cmd
+	InjectHook   func(AsyncHookRewake) tea.Cmd
+	AppendNotice func(string)
 }
 
 // Update routes Source 3 (system -> agent) messages.
-func Update(rt Runtime, state *Model, msg tea.Msg) (tea.Cmd, bool) {
+func Update(deps Deps, state *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg.(type) {
 	case CronTickMsg:
-		return handleCronTick(rt, state), true
+		return handleCronTick(deps, state), true
 	case AsyncHookTickMsg:
-		return handleAsyncHookTick(rt, state), true
+		return handleAsyncHookTick(deps, state), true
 	default:
 		return nil, false
 	}
 }
 
-func handleCronTick(rt Runtime, state *Model) tea.Cmd {
-	result := state.HandleCronTick(rt.IsInputIdle())
+func handleCronTick(deps Deps, state *Model) tea.Cmd {
+	result := state.HandleCronTick(!deps.StreamActive)
 
 	cmds := []tea.Cmd{StartCronTicker()}
 	if result.InjectPrompt != "" {
-		cmds = append(cmds, rt.InjectCronPrompt(result.InjectPrompt))
+		cmds = append(cmds, deps.InjectCron(result.InjectPrompt))
 	}
 	for _, notice := range result.Notices {
-		rt.AppendNotice(notice)
+		deps.AppendNotice(notice)
 	}
 	return tea.Batch(cmds...)
 }
 
-func handleAsyncHookTick(rt Runtime, state *Model) tea.Cmd {
+func handleAsyncHookTick(deps Deps, state *Model) tea.Cmd {
 	cmds := []tea.Cmd{StartAsyncHookTicker()}
 
-	item := state.HandleAsyncHookTick(rt.IsInputIdle())
+	item := state.HandleAsyncHookTick(!deps.StreamActive)
 	if item == nil {
 		return tea.Batch(cmds...)
 	}
 
-	cmds = append(cmds, rt.InjectAsyncHookContinuation(*item))
+	cmds = append(cmds, deps.InjectHook(*item))
 	return tea.Batch(cmds...)
 }
 
@@ -57,41 +57,31 @@ const cronTickInterval = 30 * time.Second
 const asyncHookTickInterval = 500 * time.Millisecond
 const maxCronQueueSize = 100
 
-// CronTickMsg is sent periodically to check for due cron jobs.
 type CronTickMsg struct{}
 
-// AsyncHookTickMsg is sent periodically to check for async hook rewakes.
 type AsyncHookTickMsg struct{}
 
-// TriggerCronTickNow returns a command that immediately checks cron jobs once.
 func TriggerCronTickNow() tea.Cmd {
 	return func() tea.Msg { return CronTickMsg{} }
 }
 
-// StartCronTicker returns a command that sends periodic CronTickMsg.
 func StartCronTicker() tea.Cmd {
 	return tea.Tick(cronTickInterval, func(time.Time) tea.Msg {
 		return CronTickMsg{}
 	})
 }
 
-// StartAsyncHookTicker returns a command that sends periodic AsyncHookTickMsg.
 func StartAsyncHookTicker() tea.Cmd {
 	return tea.Tick(asyncHookTickInterval, func(time.Time) tea.Msg {
 		return AsyncHookTickMsg{}
 	})
 }
 
-// CronResult holds the result of processing a cron tick.
 type CronResult struct {
-	// InjectPrompt is a cron prompt to inject as a user message (empty if none).
 	InjectPrompt string
-	// Notices are informational messages (e.g., "cron fired but no provider").
-	Notices []string
+	Notices      []string
 }
 
-// HandleCronTick checks for due cron jobs and returns what action to take.
-// isIdle indicates whether the REPL is idle (no active stream or tool execution).
 func (s *Model) HandleCronTick(isIdle bool) CronResult {
 	var result CronResult
 
@@ -124,7 +114,6 @@ func (s *Model) HandleCronTick(isIdle bool) CronResult {
 	return result
 }
 
-// HandleAsyncHookTick checks for pending async hook rewakes and returns what action to take.
 func (s *Model) HandleAsyncHookTick(isIdle bool) *AsyncHookRewake {
 	if s.HookEngine != nil {
 		s.HookStatus = s.HookEngine.CurrentStatusMessage()

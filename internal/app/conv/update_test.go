@@ -5,7 +5,7 @@ import (
 )
 
 func TestHandleProgressWithoutHubDoesNotPanic(t *testing.T) {
-	m := New(80, nil)
+	m := OutputModel{Spinner: newSpinner(), MDRenderer: NewMDRenderer(80)}
 
 	cmd := m.HandleProgress(ProgressUpdateMsg{
 		Index:   1,
@@ -20,7 +20,7 @@ func TestHandleProgressWithoutHubDoesNotPanic(t *testing.T) {
 }
 
 func Test_drainProgressWithoutHubIsNoop(t *testing.T) {
-	m := New(80, nil)
+	m := OutputModel{Spinner: newSpinner(), MDRenderer: NewMDRenderer(80)}
 	m.TaskProgress = map[int][]string{2: {"existing"}}
 
 	m.drainProgress()

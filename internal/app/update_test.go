@@ -32,7 +32,7 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 			PlanEnabled:        true,
 			PlanTask:           "test task",
 		},
-		conv: c,
+		conv: conv.Model{ConversationModel: c},
 	}
 
 	msg := conv.PlanResponseMsg{
@@ -70,7 +70,7 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 			PlanEnabled:        true,
 			PlanTask:           "test task",
 		},
-		conv: c,
+		conv: conv.Model{ConversationModel: c},
 	}
 
 	msg := conv.PlanResponseMsg{
@@ -107,7 +107,7 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 			PlanEnabled:        true,
 			PlanTask:           "test task",
 		},
-		conv: c,
+		conv: conv.Model{ConversationModel: c},
 	}
 
 	msg := conv.PlanResponseMsg{
@@ -147,7 +147,7 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 			PlanEnabled:        true,
 			PlanTask:           "test task",
 		},
-		conv: c,
+		conv: conv.Model{ConversationModel: c},
 	}
 
 	msg := conv.PlanResponseMsg{
@@ -190,7 +190,7 @@ func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 			OperationMode:      setting.ModePlan,
 			SessionPermissions: setting.NewSessionPermissions(),
 		},
-		conv: c,
+		conv: conv.Model{ConversationModel: c},
 	}
 
 	resp := &tool.QuestionResponse{
@@ -301,15 +301,15 @@ func TestStartPromptSuggestionGeneratesCommand(t *testing.T) {
 		runtime: appruntime.Model{
 			LLMProvider: testLLMProvider{},
 		},
-		conv: conv.ConversationModel{
+		conv: conv.Model{ConversationModel: conv.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleAssistant, Content: "first"},
 				{Role: core.RoleAssistant, Content: "second"},
 			},
-		},
+		}},
 	}
 
-	cmd := m.StartPromptSuggestion()
+	cmd := input.StartPromptSuggestion(m.promptSuggestionDeps())
 	if cmd == nil {
 		t.Fatal("expected prompt suggestion command")
 	}
@@ -320,16 +320,16 @@ func TestBuildPromptSuggestionRequest(t *testing.T) {
 		runtime: appruntime.Model{
 			LLMProvider: testLLMProvider{},
 		},
-		conv: conv.ConversationModel{
+		conv: conv.Model{ConversationModel: conv.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleUser, Content: "u1"},
 				{Role: core.RoleAssistant, Content: "a1"},
 				{Role: core.RoleAssistant, Content: "a2"},
 			},
-		},
+		}},
 	}
 
-	req, ok := m.buildPromptSuggestionRequest()
+	req, ok := input.BuildPromptSuggestionRequest(m.promptSuggestionDeps())
 	if !ok {
 		t.Fatal("expected suggestion request")
 	}
@@ -349,11 +349,9 @@ func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing
 	appCwd = t.TempDir()
 	base := newBaseModel()
 	m := &base
-	m.agentOutput = conv.New(80, conv.NewProgressHub(16))
-	m.conv = conv.ConversationModel{
-		Messages: []core.ChatMessage{
-			{Role: core.RoleUser, Content: "previous request"},
-		},
+	m.conv = conv.NewModel(80)
+	m.conv.Messages = []core.ChatMessage{
+		{Role: core.RoleUser, Content: "previous request"},
 	}
 	m.runtime.LLMProvider = testLLMProvider{}
 
@@ -379,11 +377,11 @@ func TestBuildCompactRequest(t *testing.T) {
 		runtime: appruntime.Model{
 			SessionSummary: "existing summary",
 		},
-		conv: conv.ConversationModel{
+		conv: conv.Model{ConversationModel: conv.ConversationModel{
 			Messages: []core.ChatMessage{
 				{Role: core.RoleUser, Content: "hello"},
 			},
-		},
+		}},
 	}
 
 	req := m.BuildCompactRequest("focus text", "manual")
@@ -495,7 +493,7 @@ func TestRenderActiveModalPriority(t *testing.T) {
 			OperationMode:      setting.ModePlan,
 			SessionPermissions: setting.NewSessionPermissions(),
 		},
-		conv: conv.NewConversation(),
+		conv: conv.Model{ConversationModel: conv.NewConversation()},
 	}
 	m.userInput.Approval = input.NewApproval()
 
@@ -530,7 +528,7 @@ func TestPermissionHookShowsPendingApprovalModal(t *testing.T) {
 	}
 	m.userInput.Approval = input.NewApproval()
 
-	cmd := m.handlePermissionRequest(input.ApprovalRequestMsg{
+	cmd := input.HandlePermissionRequest(m.approvalDeps(), input.ApprovalRequestMsg{
 		Request: &perm.PermissionRequest{ToolName: "Edit", FilePath: "/tmp/test.txt"},
 	})
 
@@ -560,7 +558,7 @@ func TestLatePermissionHookResultIsIgnoredAfterApprovalModalCloses(t *testing.T)
 	m.userInput.Approval.Show(req, 80, 24)
 	m.userInput.Approval.Hide()
 
-	cmd := m.handleHookPermissionResult(input.HookPermissionResultMsg{
+	cmd := input.HandleHookPermissionResult(m.approvalDeps(), input.HookPermissionResultMsg{
 		Request: req,
 		Allowed: true,
 	})

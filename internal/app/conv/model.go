@@ -7,8 +7,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// OutputModel holds all output-related state: spinner, markdown renderer, task progress,
-// and display toggles.
 type OutputModel struct {
 	Spinner      spinner.Model
 	MDRenderer   *MDRenderer
@@ -17,14 +15,21 @@ type OutputModel struct {
 	ShowTasks    bool
 }
 
-// New creates a fully initialized output OutputModel.
-// hub may be nil to disable progress transport for tests or non-interactive use.
-func New(width int, hub *ProgressHub) OutputModel {
-	return OutputModel{
-		Spinner:     newSpinner(),
-		MDRenderer:  NewMDRenderer(width),
-		ProgressHub: hub,
-		ShowTasks:   true,
+type Model struct {
+	ConversationModel
+	OutputModel
+}
+
+func NewModel(width int) Model {
+	hub := NewProgressHub(100)
+	return Model{
+		ConversationModel: NewConversation(),
+		OutputModel: OutputModel{
+			Spinner:     newSpinner(),
+			MDRenderer:  NewMDRenderer(width),
+			ProgressHub: hub,
+			ShowTasks:   true,
+		},
 	}
 }
 
