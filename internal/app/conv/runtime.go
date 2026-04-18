@@ -13,95 +13,72 @@ type AgentOutboxMsg struct {
 	Closed bool
 }
 
-// ConversationMutator handles message append, commit, and notice operations.
-type ConversationMutator interface {
-	CommitMessages() []tea.Cmd
-	AppendMessage(msg core.ChatMessage)
-	AppendToLast(text, thinking string)
-	SetLastToolCalls(calls []core.ToolCall)
-	SetLastThinkingSignature(sig string)
-	AddNotice(text string)
+// Runtime defines callbacks that the conv event handlers need from the root
+// model. State mutations on ConversationModel are done directly (passed as a
+// separate parameter to Update/handlers); this interface covers only operations
+// that require resources outside the conv package.
+//
+// Composed from six sub-interfaces, each grouping a logical concern:
+//   - MessageRuntime:     message commit and agent outbox
+//   - TokenRuntime:       token counts and thinking state
+//   - ToolEffectRuntime:  tool side effects (cwd, file cache, hooks)
+//   - TurnRuntime:        turn lifecycle, session, auto-compact, queue drain
+//   - PermissionRuntime:  permission bridge requests
+//   - ProgressRuntime:    background task progress
+type Runtime interface {
+	MessageRuntime
+	TokenRuntime
+	ToolEffectRuntime
+	TurnRuntime
+	PermissionRuntime
+	ProgressRuntime
 }
 
-// StreamController manages LLM streaming lifecycle and outbox continuation.
-type StreamController interface {
-	ActivateStream()
-	SetBuildingTool(name string)
-	StopStream()
+// MessageRuntime handles message commit and agent outbox continuation.
+type MessageRuntime interface {
+	CommitMessages() []tea.Cmd
 	ContinueOutbox() tea.Cmd
 }
 
-// ToolSideEffects handles post-tool-execution side effects and hooks.
-type ToolSideEffects interface {
+// TokenRuntime handles token counts and thinking state reset.
+type TokenRuntime interface {
+	SetTokenCounts(in, out int)
+	ClearThinkingOverride()
+}
+
+// ToolEffectRuntime handles tool execution side effects: cwd changes,
+// file cache updates, post-tool hooks, and overflow persistence.
+type ToolEffectRuntime interface {
 	PopToolSideEffect(toolCallID string) any
 	ApplyToolSideEffects(toolName string, sideEffect any)
 	FirePostToolHook(tr core.ToolResult, sideEffect any)
 	PersistOverflow(result *core.ToolResult)
 }
 
-// TurnMetrics tracks token counts and transient per-turn state.
-type TurnMetrics interface {
-	SetTokenCounts(in, out int)
-	ClearWarningSuppressed()
-	ClearThinkingOverride()
-}
-
-// TurnHooks fires lifecycle hooks at turn boundaries.
-type TurnHooks interface {
+// TurnRuntime handles turn lifecycle: idle hooks, session persistence,
+// auto-compact, agent session stop, and turn queue drain.
+type TurnRuntime interface {
 	FireIdleHooks() bool
 	FireStopFailureHook(err error)
-}
-
-// SessionPersistence handles session saving, compaction, and agent lifecycle.
-type SessionPersistence interface {
 	SaveSession()
 	ShouldAutoCompact() bool
-	SetAutoCompactContinue()
 	TriggerAutoCompact() tea.Cmd
 	StopAgentSession()
-}
-
-// TurnQueueCoordinator coordinates prompt suggestion and Source 1/2/3 queue
-// draining after a turn finishes.
-type TurnQueueCoordinator interface {
 	StartPromptSuggestion() tea.Cmd
 	DrainTurnQueues() tea.Cmd
-}
-
-// ProgressRuntime coordinates task-progress polling behavior.
-type ProgressRuntime interface {
-	HasRunningTasks() bool
-}
-
-// TurnManager is the composition of all turn-boundary interfaces.
-type TurnManager interface {
-	TurnMetrics
-	TurnHooks
-	SessionPersistence
-	TurnQueueCoordinator
-}
-
-// CompactHandler handles compaction and token limit result processing.
-type CompactHandler interface {
 	HandleCompactResult(msg CompactResultMsg) tea.Cmd
 	HandleTokenLimitResult(msg kit.TokenLimitResultMsg) tea.Cmd
 }
 
-// PermBridgeHandler handles permission bridge events from the agent.
-type PermBridgeHandler interface {
+// PermissionRuntime handles permission bridge request forwarding.
+type PermissionRuntime interface {
 	StorePendingPermRequest(req *PermBridgeRequest)
 	ShowPermissionPrompt(req *PermBridgeRequest) tea.Cmd
 }
 
-// Runtime is the union of all interfaces needed by the output event handlers.
-type Runtime interface {
-	ConversationMutator
-	StreamController
-	ToolSideEffects
-	TurnManager
-	CompactHandler
-	PermBridgeHandler
-	ProgressRuntime
+// ProgressRuntime reports background task status.
+type ProgressRuntime interface {
+	HasRunningTasks() bool
 }
 
 // PermBridgeMsg carries a permission bridge request from the agent to the TUI.
@@ -132,14 +109,15 @@ func DrainAgentOutbox(outbox <-chan core.Event) tea.Cmd {
 }
 
 // Update routes all output-path messages: agent outbox, permission bridge,
-// compaction results, and progress updates.
-func Update(rt Runtime, m *OutputModel, msg tea.Msg) (tea.Cmd, bool) {
+// compaction results, and progress updates. The ConversationModel is passed
+// directly so handlers can mutate conversation state without forwarding methods.
+func Update(rt Runtime, m *OutputModel, cm *ConversationModel, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case AgentOutboxMsg:
 		if msg.Closed {
-			return handleAgentStopped(rt, m, nil), true
+			return handleAgentStopped(rt, m, cm, nil), true
 		}
-		return handleAgentEvent(rt, m, msg.Event), true
+		return handleAgentEvent(rt, m, cm, msg.Event), true
 	case PermBridgeMsg:
 		rt.StorePendingPermRequest(msg.Request)
 		return rt.ShowPermissionPrompt(msg.Request), true

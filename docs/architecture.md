@@ -278,15 +278,16 @@ View()
 ```
 internal/app/
 │
-│  ── Root: pure glue (4 files) ─────────────────────────────────────────────
-│  No business logic. Model + routing + view + entrypoint.
+│  ── Root: pure glue (5 files) ─────────────────────────────────────────────
+│  No business logic. Model + routing + view + entrypoint + init.
 │
-├── model.go          # Model{5 sub-models}, Init(), buildCoreAgent()
+├── model.go          # Model{6 sub-models}, Init(), buildCoreAgent()
 │                     # Runtime adapter methods: sendToAgent(), saveSession(), ...
 ├── update.go         # Update(): msg type switch → delegate to sub-models
 │                     # Cross-cutting = routing: SubmitMsg → agent, PermReq → input, ...
 ├── view.go           # View(): compose sub-model views into terminal layout
 ├── run.go            # Run(): tea.Program setup, entrypoint
+├── init.go           # Global infrastructure init, plugin/mcp adapters
 │
 │  ── input/ ── Source 1: User Input ────────────────────────────────────────
 │  Event: tea.KeyMsg
@@ -298,23 +299,27 @@ internal/app/
 │   ├── model.go             # Model{Textarea, History, Images, Queue, Selectors}
 │   ├── update.go            # Update(): routes to active overlay or textarea
 │   ├── view.go              # RenderTextarea(), image indicators
-│   ├── runtime.go           # Runtime interface
-│   ├── command.go           # slash command dispatch table
-│   ├── submit.go            # prepareUserMessage(), validate, emit SubmitMsg
+│   ├── runtime.go           # Runtime interface (6 composed sub-interfaces)
+│   ├── command_controller.go # CommandController: slash command dispatch
+│   ├── submit.go            # HandleSubmit(), prepareUserMessage()
+│   ├── approval_flow.go     # ApprovalFlowDeps, HandlePermissionRequest()
+│   ├── prompt_suggestion.go # PromptSuggestion state and commands
 │   ├── on_textarea.go       # HandleTextareaUpdate(), HistoryUp/Down()
-│   ├── on_queue.go          # Enqueue(), Dequeue() — mid-stream input buffer
+│   ├── on_queue.go          # Queue: Enqueue(), Dequeue(), selection state
 │   ├── on_image.go          # HandleImageSelectKey()
-│   ├── on_approval.go       # ApprovalModel: Show() → HandleKeypress() → ResponseMsg
+│   ├── on_approval.go       # ApprovalModel: Show() → HandleKeypress()
 │   ├── on_approval_bash.go  # bash command preview
 │   ├── on_approval_diff.go  # file diff preview
 │   ├── on_agent.go          # AgentSelector
-│   ├── on_provider.go       # ProviderSelector + rendering
-│   ├── on_plugin.go         # PluginSelector + /plugin commands + rendering
+│   ├── on_provider.go       # ProviderSelector + on_provider_view.go
+│   ├── on_plugin.go         # PluginSelector + on_plugin_command.go, on_plugin_view.go
 │   ├── on_mcp.go            # MCPSelector + /mcp commands
 │   ├── on_session.go        # SessionSelector
 │   ├── on_memory.go         # MemorySelector + /init, /memory commands
 │   ├── on_skill.go          # SkillSelector
-│   └── on_search.go         # SearchSelector
+│   ├── on_search.go         # SearchSelector
+│   ├── on_tool_selector.go  # ToolSelector
+│   └── on_token_limits.go   # Token limit fetching
 │
 │  ── notify/ ── Source 2: Background Agent Completion ──────────────────────
 │  Event: task.TaskCompleted observer → NotificationQueue.Push()
@@ -331,9 +336,8 @@ internal/app/
 │  Flow:  event → queue → tick → sendToAgent()
 │
 ├── trigger/
-│   ├── model.go             # Model{CronQueue, AsyncHookQueue}
+│   ├── model.go             # Model{CronQueue, AsyncHookQueue}, RenderHookStatus()
 │   ├── update.go            # Update(), handleCronTick(), handleAsyncHookTick()
-│   ├── view.go              # RenderHookStatus()
 │   └── file_watcher.go      # NewFileWatcher(), SetPaths(), poll()
 │
 │  ── conv/ ── Agent Outbox → Conversation ──────────────────────────────────
@@ -342,15 +346,14 @@ internal/app/
 │         PreInfer → OnChunk → PostInfer → PreTool → PostTool → OnTurn
 │
 ├── conv/
-│   ├── model.go             # Model{Conversation, Stream, Compact, Modal, Tool, Progress}
+│   ├── model.go             # OutputModel, ConversationModel type defs
 │   ├── update.go            # handleAgentEvent(): PreInfer/.../OnTurn dispatch
-│   ├── runtime.go           # Runtime interface: only truly cross-cutting operations
+│   ├── runtime.go           # Runtime interface (6 composed sub-interfaces)
 │   ├── view.go              # RenderMessageRange(), RenderActiveContent()
-│   ├── conversation.go      # Append(), AppendToLast(), ConvertToProvider()
-│   ├── compact.go           # ShouldAutoCompact(), CompactConversation()
-│   ├── stream.go            # Activate(), Stop(), BuildingTool
+│   ├── conversation.go      # Append(), ConvertToProvider(), StreamState
+│   ├── compact.go           # CompactConversation(), CompactCmd(), CompactState
 │   ├── tool.go              # ToolExecState + executeApproved()
-│   ├── tool_selector.go     # ToolSelector: EnterSelect(), Toggle(), Render()
+│   ├── tool_render.go       # Tool result rendering
 │   ├── modal.go             # ModalState type definitions
 │   ├── plan.go              # PlanPrompt: Show() → PlanResponseMsg
 │   ├── question.go          # QuestionPrompt: Show() → QuestionResponseMsg

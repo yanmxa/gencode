@@ -93,6 +93,17 @@ func printExitMessage(m *model) {
 	}
 }
 
+func formatAsyncHookContinuationContext(result hook.AsyncHookResult, reason string) string {
+	return fmt.Sprintf(
+		"<background-hook-result>\nstatus: blocked\nevent: %s\nhook_type: %s\nhook_source: %s\nhook_name: %s\nreason: %s\ninstruction: Re-evaluate the plan before any further model or tool action.\n</background-hook-result>",
+		result.Event,
+		result.HookType,
+		result.HookSource,
+		result.HookName,
+		reason,
+	)
+}
+
 func runPrint(userMessage string) error {
 	ctx := context.Background()
 

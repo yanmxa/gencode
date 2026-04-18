@@ -79,3 +79,11 @@ func (q *AsyncHookQueue) Len() int {
 	defer q.mu.Unlock()
 	return len(q.items)
 }
+
+// RenderHookStatus returns the hook status string if set, otherwise the default model name.
+func RenderHookStatus(hookStatus, defaultModelName string) string {
+	if hookStatus != "" {
+		return hookStatus
+	}
+	return defaultModelName
+}

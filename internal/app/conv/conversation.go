@@ -4,6 +4,20 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 )
 
+// --- Stream state ---
+
+// StreamState holds streaming-related display state for the TUI.
+type StreamState struct {
+	Active       bool
+	BuildingTool string
+}
+
+// Stop clears streaming state.
+func (s *StreamState) Stop() {
+	s.Active = false
+	s.BuildingTool = ""
+}
+
 // --- Conversation model ---
 
 // ConversationModel holds the conversation message history, commit tracking,

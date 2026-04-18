@@ -29,27 +29,33 @@ import (
 
 type commandHandler func(*CommandController, context.Context, string) (string, tea.Cmd, error)
 
+// CommandRuntime provides app-level operations that command handlers need
+// but cannot access directly (agent session, system triggers, persistence).
+type CommandRuntime interface {
+	CommitMessages() []tea.Cmd
+	StartProviderTurn(content string) tea.Cmd
+	HandleSkillInvocation() tea.Cmd
+	StartExternalEditor(path string) tea.Cmd
+	ReloadPluginBackedState() error
+	PersistSession() error
+	InitTaskStorage()
+	ReconfigureAgentTool()
+	StopAgentSession()
+	FireSessionEnd(reason string)
+	BuildCompactRequest(focus, trigger string) conv.CompactRequest
+	SpinnerTickCmd() tea.Cmd
+	ResetCronQueue()
+}
+
 type CommandDeps struct {
-	Input                   *Model
-	Conversation            *conv.ConversationModel
-	Runtime                 *appruntime.Model
-	Tool                    *conv.ToolExecState
-	Width                   int
-	Height                  int
-	Cwd                     string
-	CommitMessages          func() []tea.Cmd
-	StartProviderTurn       func(string) tea.Cmd
-	HandleSkillInvocation   func() tea.Cmd
-	StartExternalEditor     func(string) tea.Cmd
-	ReloadPluginBackedState func() error
-	SaveSession             func() error
-	InitTaskStorage         func()
-	ReconfigureAgentTool    func()
-	StopAgentSession        func()
-	FireSessionEnd          func(string)
-	BuildCompactRequest     func(string, string) conv.CompactRequest
-	SpinnerTick             tea.Cmd
-	ResetCronQueue          func()
+	Actions      CommandRuntime
+	Input        *Model
+	Conversation *conv.ConversationModel
+	Runtime      *appruntime.Model
+	Tool         *conv.ToolExecState
+	Width        int
+	Height       int
+	Cwd          string
 }
 
 type CommandController struct {
@@ -100,11 +106,11 @@ func (c CommandController) Execute(ctx context.Context, inputText string) (strin
 	}
 
 	if sk, ok := LookupSkillCommand(cmdName); ok {
-		return c.executeSkillSlashCommand(sk, args), c.deps.HandleSkillInvocation(), true
+		return c.executeSkillSlashCommand(sk, args), c.deps.Actions.HandleSkillInvocation(), true
 	}
 
 	if pc, ok := command.IsCustomCommand(cmdName); ok {
-		return c.executeCustomCommand(pc, args), c.deps.HandleSkillInvocation(), true
+		return c.executeCustomCommand(pc, args), c.deps.Actions.HandleSkillInvocation(), true
 	}
 
 	return unknownCommandResult(cmdName), nil, true
@@ -136,7 +142,7 @@ func (c CommandController) HandleSubmit(inputText string) (tea.Cmd, bool) {
 		c.deps.Conversation.AddNotice(result)
 	}
 
-	cmds := c.deps.CommitMessages()
+	cmds := c.deps.Actions.CommitMessages()
 	if cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -159,9 +165,9 @@ func (c CommandController) executeExitCommand(cmdName string) (string, tea.Cmd, 
 	if cmdName != "exit" {
 		return "", nil, false
 	}
-	c.deps.StopAgentSession()
+	c.deps.Actions.StopAgentSession()
 	c.deps.Conversation.Stream.Stop()
-	c.deps.FireSessionEnd("prompt_input_exit")
+	c.deps.Actions.FireSessionEnd("prompt_input_exit")
 	return "", tea.Quit, true
 }
 
@@ -245,7 +251,7 @@ func (c *CommandController) handleHelpCommand(_ context.Context, _ string) (stri
 }
 
 func (c *CommandController) handleClearCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
-	c.deps.StopAgentSession()
+	c.deps.Actions.StopAgentSession()
 	c.deps.Conversation.Stream.Stop()
 	if c.deps.Tool.Cancel != nil {
 		c.deps.Tool.Cancel()
@@ -256,9 +262,7 @@ func (c *CommandController) handleClearCommand(_ context.Context, _ string) (str
 	c.deps.Runtime.OutputTokens = 0
 	tracker.DefaultStore.Reset()
 	tool.ResetFetched()
-	if c.deps.ResetCronQueue != nil {
-		c.deps.ResetCronQueue()
-	}
+	c.deps.Actions.ResetCronQueue()
 	cmds := []tea.Cmd{tea.ClearScreen}
 	if os.Getenv("TMUX") != "" {
 		cmds = append(cmds, func() tea.Msg {
@@ -277,7 +281,7 @@ func (c *CommandController) handleForkCommand(_ context.Context, _ string) (stri
 	if len(c.deps.Conversation.Messages) == 0 {
 		return "Nothing to fork — no messages in current session.", nil, nil
 	}
-	if err := c.deps.SaveSession(); err != nil {
+	if err := c.deps.Actions.PersistSession(); err != nil {
 		return "", nil, fmt.Errorf("failed to save session before fork: %w", err)
 	}
 	if c.deps.Runtime.SessionID == "" {
@@ -290,8 +294,8 @@ func (c *CommandController) handleForkCommand(_ context.Context, _ string) (stri
 	c.deps.Runtime.SessionID = forked.Metadata.ID
 	c.deps.Runtime.SessionSummary = ""
 	tracker.DefaultStore.SetStorageDir("")
-	c.deps.InitTaskStorage()
-	c.deps.ReconfigureAgentTool()
+	c.deps.Actions.InitTaskStorage()
+	c.deps.Actions.ReconfigureAgentTool()
 	originalID := forked.Metadata.ParentSessionID
 	return fmt.Sprintf("Forked conversation. You are now in the fork.\nTo resume the original: gen -r %s", originalID), nil, nil
 }
@@ -333,7 +337,7 @@ func (c *CommandController) handleMemoryCommand(_ context.Context, args string) 
 	}
 	if editPath != "" {
 		c.deps.Input.Memory.EditingFile = editPath
-		return result, c.deps.StartExternalEditor(editPath), nil
+		return result, c.deps.Actions.StartExternalEditor(editPath), nil
 	}
 	return result, nil, nil
 }
@@ -368,7 +372,7 @@ func (c *CommandController) handleReloadPluginsCommand(ctx context.Context, args
 		return "", nil, fmt.Errorf("failed to reload plugin registry: %w", err)
 	}
 	_ = plugin.DefaultRegistry.LoadClaudePlugins(ctx)
-	if err := c.deps.ReloadPluginBackedState(); err != nil {
+	if err := c.deps.Actions.ReloadPluginBackedState(); err != nil {
 		return "", nil, err
 	}
 	return "Reloaded plugins and refreshed plugin-backed skills, agents, MCP servers, and hooks.", nil, nil
@@ -488,7 +492,7 @@ func (c *CommandController) handleLoopCommand(_ context.Context, args string) (s
 	}
 	c.deps.Conversation.AddNotice(fmt.Sprintf("Scheduled recurring task %s (%s, cron `%s`).%s Auto-expires after 7 days. Executing now.", job.ID, parsed.Human, parsed.Cron, parsed.Note))
 	c.deps.Conversation.Append(core.ChatMessage{Role: core.RoleUser, Content: parsed.Prompt})
-	return "", c.deps.StartProviderTurn(parsed.Prompt), nil
+	return "", c.deps.Actions.StartProviderTurn(parsed.Prompt), nil
 }
 
 func handleLoopAdminCommand(args string) (string, bool, error) {
@@ -559,7 +563,7 @@ func (c *CommandController) handleTokenLimitCommand(_ context.Context, args stri
 		Store:        c.deps.Runtime.ProviderStore,
 		InputTokens:  c.deps.Runtime.InputTokens,
 		Cwd:          c.deps.Cwd,
-		SpinnerTick:  c.deps.SpinnerTick,
+		SpinnerTick:  c.deps.Actions.SpinnerTickCmd(),
 	}, args)
 	if cmd != nil {
 		c.deps.Input.Provider.FetchingLimits = true
@@ -583,7 +587,7 @@ func (c *CommandController) handleCompactCommand(_ context.Context, args string)
 	c.deps.Conversation.Compact.Active = true
 	c.deps.Conversation.Compact.Focus = strings.TrimSpace(args)
 	c.deps.Conversation.Compact.Phase = conv.PhaseSummarizing
-	return "", tea.Batch(c.deps.SpinnerTick, conv.CompactCmd(c.deps.BuildCompactRequest(c.deps.Conversation.Compact.Focus, "manual"))), nil
+	return "", tea.Batch(c.deps.Actions.SpinnerTickCmd(), conv.CompactCmd(c.deps.Actions.BuildCompactRequest(c.deps.Conversation.Compact.Focus, "manual"))), nil
 }
 
 func LookupSkillCommand(cmd string) (*skill.Skill, bool) {

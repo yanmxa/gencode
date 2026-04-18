@@ -240,31 +240,31 @@ func indexRunes(haystack []rune, needle string, start int) int {
 
 // HistoryUp navigates to the previous history entry.
 func (m *Model) HistoryUp() {
-	if len(m.History) == 0 {
+	if len(m.History.Items) == 0 {
 		return
 	}
-	if m.HistoryIdx == -1 {
-		m.TempInput = m.Textarea.Value()
-		m.HistoryIdx = len(m.History) - 1
-	} else if m.HistoryIdx > 0 {
-		m.HistoryIdx--
+	if m.History.Index == -1 {
+		m.History.Stashed = m.Textarea.Value()
+		m.History.Index = len(m.History.Items) - 1
+	} else if m.History.Index > 0 {
+		m.History.Index--
 	}
-	m.Textarea.SetValue(m.History[m.HistoryIdx])
+	m.Textarea.SetValue(m.History.Items[m.History.Index])
 	m.Textarea.CursorEnd()
 	m.UpdateHeight()
 }
 
 // HistoryDown navigates to the next history entry.
 func (m *Model) HistoryDown() {
-	if m.HistoryIdx == -1 {
+	if m.History.Index == -1 {
 		return
 	}
-	if m.HistoryIdx < len(m.History)-1 {
-		m.HistoryIdx++
-		m.Textarea.SetValue(m.History[m.HistoryIdx])
+	if m.History.Index < len(m.History.Items)-1 {
+		m.History.Index++
+		m.Textarea.SetValue(m.History.Items[m.History.Index])
 	} else {
-		m.HistoryIdx = -1
-		m.Textarea.SetValue(m.TempInput)
+		m.History.Index = -1
+		m.Textarea.SetValue(m.History.Stashed)
 	}
 	m.Textarea.CursorEnd()
 	m.UpdateHeight()
@@ -342,18 +342,18 @@ func (m *Model) Reset() {
 	m.Textarea.SetHeight(minTextareaHeight)
 	m.ClearPaste()
 	m.ClearImages()
-	m.QueueSelectIdx = -1
-	m.QueueTempInput = ""
+	m.Queue.SelectIdx = -1
+	m.Queue.Stashed = ""
 }
 
 func (m *Model) RecordSubmission(cwd, input string) {
 	if input == "" {
 		return
 	}
-	m.History = append(m.History, input)
-	m.HistoryIdx = -1
-	m.TempInput = ""
-	history.Save(cwd, m.History)
+	m.History.Items = append(m.History.Items, input)
+	m.History.Index = -1
+	m.History.Stashed = ""
+	history.Save(cwd, m.History.Items)
 }
 
 func (m *Model) RestoreImages(images []core.Image) {

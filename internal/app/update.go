@@ -1,4 +1,5 @@
-// Bubble Tea Update: top-level message dispatch, key routing, and resize handling.
+// Bubble Tea Update: top-level message dispatch, key routing, input side effects,
+// submit flow, approval flow, permission bridge, and mode handling.
 package app
 
 import (
@@ -13,21 +14,22 @@ import (
 	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	"github.com/yanmxa/gencode/internal/app/notify"
 	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/plan"
+	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/tool"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 )
 
-// --- Routing types & helpers ---
+// --- Routing types ---
 
-type messageUpdater func(*model, tea.Msg) (tea.Cmd, bool)
-
-// overlaySelector is implemented by full-screen selector components that can
-// render themselves and receive keyboard input when active.
 type overlaySelector interface {
 	IsActive() bool
 	HandleKeypress(tea.KeyMsg) tea.Cmd
@@ -48,11 +50,11 @@ func (m *model) overlaySelectors() []overlaySelector {
 	}
 }
 
-// initialPromptMsg is sent from Init() to inject an initial CLI prompt.
 type initialPromptMsg string
 
+// --- Main Update dispatch ---
+
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// ── Input & UI chrome ────────────────────────────────────
 	switch msg := msg.(type) {
 	case initialPromptMsg:
 		m.userInput.Textarea.SetValue(string(msg))
@@ -69,8 +71,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case input.SkillInvokeMsg:
 		if sk, ok := skill.DefaultRegistry.Get(msg.SkillName); ok {
-			executeSkillCommand(m, sk, "")
-			return m, m.handleSkillInvocation()
+			input.ApplySkillInvocation(&m.userInput, sk, "")
+			return m, m.HandleSkillInvocation()
 		}
 		return m, nil
 	case ctrlOSingleTickMsg:
@@ -82,125 +84,36 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// ── Feature routing ──────────────────────────────────────
 	if cmd, handled := m.routeFeatureUpdate(msg); handled {
 		return m, cmd
 	}
-	// ── Fallthrough: forward to textarea & spinner ────────────
 	return m, m.updateTextarea(msg)
 }
 
 // --- Feature routing ---
 
 func (m *model) routeFeatureUpdate(msg tea.Msg) (tea.Cmd, bool) {
-	for _, updater := range [...]messageUpdater{
-		(*model).updateOutput, // agent outbox, perm bridge, compact results
-		(*model).updateAgentInput,
-		(*model).updateApproval,
-		(*model).updateMode,
-		(*model).updateUserOverlays, // provider, MCP, plugin, session, memory, search
-		(*model).updateSystemInput,
-	} {
-		if cmd, handled := updater(m, msg); handled {
-			return cmd, true
-		}
+	if cmd, ok := conv.Update(m, &m.agentOutput, &m.conv, msg); ok {
+		return cmd, true
+	}
+	if cmd, ok := notify.Update(m, &m.agentInput, msg); ok {
+		return cmd, true
+	}
+	if cmd, ok := input.UpdateApproval(m.approvalDeps(), msg); ok {
+		return cmd, true
+	}
+	if cmd, ok := m.updateMode(msg); ok {
+		return cmd, true
+	}
+	if cmd, ok := input.Update(m, &m.userInput, msg); ok {
+		return cmd, true
+	}
+	if cmd, ok := trigger.Update(m, &m.systemInput, msg); ok {
+		return cmd, true
 	}
 	return nil, false
 }
 
-func (m *model) updateOutput(msg tea.Msg) (tea.Cmd, bool) {
-	return conv.Update(m, &m.agentOutput, msg)
-}
-
-func (m *model) updateAgentInput(msg tea.Msg) (tea.Cmd, bool) {
-	return notify.Update(m, &m.agentInput, msg)
-}
-
-func (m *model) updateApproval(msg tea.Msg) (tea.Cmd, bool) {
-	return input.UpdateApproval(m.approvalDeps(), msg)
-}
-
-func (m *model) updateUserOverlays(msg tea.Msg) (tea.Cmd, bool) {
-	return input.Update(m, &m.userInput, msg)
-}
-
-func (m *model) updateSystemInput(msg tea.Msg) (tea.Cmd, bool) {
-	return trigger.Update(m, &m.systemInput, msg)
-}
-
-func (m *model) IsInputIdle() bool {
-	return !m.conv.Stream.Active && !m.isToolPhaseActive()
-}
-
-func (m *model) StreamActive() bool {
-	return m.conv.Stream.Active
-}
-
-func (m *model) AppendNotice(text string) {
-	if text == "" {
-		return
-	}
-	m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: text})
-}
-
-func (m *model) handleTaskNotificationTick() tea.Cmd {
-	cmd, _ := notify.Update(m, &m.agentInput, notify.TickMsg{})
-	return cmd
-}
-
-func (m *model) InjectTaskNotificationContinuation(item notify.Notification) tea.Cmd {
-	if item.Notice != "" {
-		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: item.Notice})
-	}
-	if m.runtime.LLMProvider == nil {
-		if item.Notice == "" {
-			m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "A background task completed, but no provider is connected."})
-		}
-		return tea.Batch(m.commitMessages()...)
-	}
-	if item.ContinuationPrompt == "" {
-		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "A background task completed, but no task notification payload was available."})
-		return tea.Batch(m.commitMessages()...)
-	}
-	for _, ctx := range notify.ContinuationContext(item) {
-		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: ctx})
-	}
-	return m.sendToAgent(notify.BuildContinuationPrompt(item), nil)
-}
-
-func (m *model) handleAsyncHookTick() tea.Cmd {
-	cmd, _ := trigger.Update(m, &m.systemInput, trigger.AsyncHookTickMsg{})
-	return cmd
-}
-
-func (m *model) InjectAsyncHookContinuation(item trigger.AsyncHookRewake) tea.Cmd {
-	if item.Notice != "" {
-		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: item.Notice})
-	}
-	if len(item.Context) == 0 {
-		return tea.Batch(m.commitMessages()...)
-	}
-	if m.runtime.LLMProvider == nil {
-		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Async hook requested a follow-up, but no provider is connected."})
-		return tea.Batch(m.commitMessages()...)
-	}
-	for _, ctx := range item.Context {
-		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: ctx})
-	}
-	return m.sendToAgent(item.ContinuationPrompt, nil)
-}
-
-func (m *model) InjectCronPrompt(prompt string) tea.Cmd {
-	if m.runtime.LLMProvider == nil {
-		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Cron fired but no provider connected: %s", prompt)})
-		return tea.Batch(m.commitMessages()...)
-	}
-	m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Scheduled task fired"})
-	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: prompt})
-	return m.sendToAgent(prompt, nil)
-}
-
-// updateTextarea forwards unhandled messages to the textarea and spinner.
 func (m *model) updateTextarea(msg tea.Msg) tea.Cmd {
 	cmd, changed := m.userInput.HandleTextareaUpdate(msg)
 	cmds := []tea.Cmd{cmd}
@@ -210,8 +123,7 @@ func (m *model) updateTextarea(msg tea.Msg) tea.Cmd {
 
 	if m.conv.Stream.Active || m.userInput.Provider.FetchingLimits || m.conv.Compact.Active {
 		var spinnerCmd tea.Cmd
-		m.agentOutput.Spinner, cmd = m.agentOutput.Spinner.Update(msg)
-		spinnerCmd = cmd
+		m.agentOutput.Spinner, spinnerCmd = m.agentOutput.Spinner.Update(msg)
 		cmds = append(cmds, spinnerCmd)
 	}
 
@@ -238,7 +150,6 @@ func (m *model) handleKeypress(msg tea.KeyMsg) (tea.Cmd, bool) {
 	return m.handleInputKey(msg)
 }
 
-// handleInputKey handles general input keys (shortcuts, navigation, submit).
 func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	switch msg.Type {
 	case tea.KeyTab, tea.KeyRight:
@@ -269,16 +180,16 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return m.expandCollapseAll(), true
 
 	case tea.KeyCtrlX:
-		return nil, false // let textarea handle it
+		return nil, false
 
 	case tea.KeyCtrlU:
 		if m.userInput.Queue.Len() > 0 {
 			m.userInput.Queue.Clear()
-			m.userInput.QueueSelectIdx = -1
-			m.userInput.QueueTempInput = ""
+			m.userInput.Queue.SelectIdx = -1
+			m.userInput.Queue.Stashed = ""
 			return nil, true
 		}
-		return nil, false // let textarea handle (clear to start of line)
+		return nil, false
 
 	case tea.KeyCtrlV, tea.KeyCtrlY:
 		return m.pasteImageFromClipboard()
@@ -286,19 +197,19 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	case tea.KeyCtrlC:
 		if m.userInput.Textarea.Value() != "" {
 			m.userInput.Reset()
-			m.userInput.HistoryIdx = -1
+			m.userInput.History.Index = -1
 			return nil, true
 		}
-		return m.quitWithCancel()
+		return m.QuitWithCancel()
 
 	case tea.KeyCtrlD:
 		if m.userInput.Textarea.Value() != "" {
-			return nil, false // let textarea handle deletion
+			return nil, false
 		}
-		return m.quitWithCancel()
+		return m.QuitWithCancel()
 
 	case tea.KeyCtrlL:
-		_, cmd, _ := handleClearCommand(context.Background(), m, "")
+		_, cmd, _ := m.executeCommand(context.Background(), "/clear")
 		return cmd, true
 
 	case tea.KeyEsc:
@@ -339,13 +250,11 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		return m.handleSubmit(), true
-
 	}
 
 	return nil, false
 }
 
-// delegateToActiveModal routes keypresses to active modal components.
 func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 	if m.conv.Modal.PlanApproval != nil && m.conv.Modal.PlanApproval.IsActive() {
 		cmd, resp := m.conv.Modal.PlanApproval.HandleKeypress(msg)
@@ -393,7 +302,7 @@ type ctrlOSingleTickMsg struct{}
 
 func (m *model) handleCtrlO() tea.Cmd {
 	if m.userInput.Approval.IsActive() {
-		m.togglePermissionPreview()
+		input.TogglePermissionPreview(&m.userInput)
 		return nil
 	}
 
@@ -411,7 +320,7 @@ func (m *model) handleCtrlO() tea.Cmd {
 
 func (m *model) handleCtrlOSingleTick() tea.Cmd {
 	if m.userInput.LastCtrlO.IsZero() {
-		return nil // already consumed by double-tap
+		return nil
 	}
 	m.userInput.LastCtrlO = time.Time{}
 	m.conv.ToggleMostRecentExpandable()
@@ -444,7 +353,7 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 		if len(m.conv.Messages) > 0 {
 			cmds = append(cmds, m.commitAllMessages()...)
 		} else {
-			cmds = append(cmds, tea.Println(m.renderWelcome()))
+			cmds = append(cmds, tea.Println(conv.RenderWelcome()))
 		}
 
 		if m.userInput.Session.PendingSelector {
@@ -478,7 +387,7 @@ func (m *model) reflowScrollback() tea.Cmd {
 	cmds = append(cmds, tea.ClearScreen)
 
 	for i := 0; i < committed; i++ {
-		if rendered := m.renderSingleMessage(i); rendered != "" {
+		if rendered := conv.RenderSingleMessage(m.messageRenderParams(), i); rendered != "" {
 			cmds = append(cmds, tea.Println(rendered))
 		}
 		m.conv.CommittedCount = i + 1
@@ -487,7 +396,123 @@ func (m *model) reflowScrollback() tea.Cmd {
 	return tea.Sequence(cmds...)
 }
 
-// --- Mode routing (operation mode cycle, plan/question/enter-plan) ---
+// --- Submit flow ---
+
+func (m *model) handleSubmit() tea.Cmd {
+	return input.HandleSubmit(m.submitDeps())
+}
+
+func (m *model) drainInputQueue() tea.Cmd {
+	return input.DrainInputQueue(m.submitDeps())
+}
+
+func (m *model) submitDeps() input.SubmitDeps {
+	return input.SubmitDeps{
+		Actions:      m,
+		Input:        &m.userInput,
+		Conversation: &m.conv,
+		Runtime:      &m.runtime,
+		Cwd:          m.cwd,
+		HandleCommand: func(text string) (tea.Cmd, bool) {
+			ctrl := input.NewCommandController(m.commandDeps())
+			return ctrl.HandleSubmit(text)
+		},
+	}
+}
+
+func (m *model) StartProviderTurn(content string) tea.Cmd {
+	if m.runtime.LLMProvider == nil {
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleNotice,
+			Content: "No provider connected. Use /provider to connect.",
+		})
+		return tea.Batch(m.commitMessages()...)
+	}
+
+	if err := m.ensureAgentSession(); err != nil {
+		m.conv.Append(core.ChatMessage{
+			Role:    core.RoleNotice,
+			Content: "Failed to start agent: " + err.Error(),
+		})
+		return tea.Batch(m.commitMessages()...)
+	}
+
+	m.runtime.DetectThinkingKeywords(content)
+
+	var images []core.Image
+	if len(m.conv.Messages) > 0 {
+		lastMsg := m.conv.Messages[len(m.conv.Messages)-1]
+		images = lastMsg.Images
+	}
+
+	return m.sendToAgent(content, images)
+}
+
+// --- Command execution ---
+
+func (m *model) commandDeps() input.CommandDeps {
+	return input.CommandDeps{
+		Actions:      m,
+		Input:        &m.userInput,
+		Conversation: &m.conv,
+		Runtime:      &m.runtime,
+		Tool:         &m.conv.Tool,
+		Width:        m.width,
+		Height:       m.height,
+		Cwd:          m.cwd,
+	}
+}
+
+func (m *model) executeCommand(ctx context.Context, inputText string) (string, tea.Cmd, bool) {
+	return input.NewCommandController(m.commandDeps()).Execute(ctx, inputText)
+}
+
+// --- Approval flow ---
+
+func (m *model) approvalDeps() input.ApprovalFlowDeps {
+	return input.ApprovalFlowDeps{
+		Actions:     m,
+		Input:       &m.userInput,
+		Runtime:     &m.runtime,
+		Tool:        &m.conv.Tool,
+		Width:       m.width,
+		Height:      m.height,
+		Cwd:         m.cwd,
+		ProgressHub: m.agentOutput.ProgressHub,
+	}
+}
+
+func (m *model) handlePermissionRequest(msg input.ApprovalRequestMsg) tea.Cmd {
+	return input.HandlePermissionRequest(m.approvalDeps(), msg)
+}
+
+func (m *model) handleHookPermissionResult(msg input.HookPermissionResultMsg) tea.Cmd {
+	return input.HandleHookPermissionResult(m.approvalDeps(), msg)
+}
+
+func (m *model) handlePermissionResponse(msg input.ApprovalResponseMsg) tea.Cmd {
+	return m.handlePermBridgeDecision(permissionDecision{Approved: msg.Approved, AllowAll: msg.AllowAll, Request: msg.Request})
+}
+
+func (m *model) AbortToolWithError(errorMsg string, retry bool) tea.Cmd {
+	if m.conv.Tool.PendingCalls == nil || m.conv.Tool.CurrentIdx >= len(m.conv.Tool.PendingCalls) {
+		m.conv.Tool.Reset()
+		m.conv.Stream.Stop()
+		return tea.Batch(m.commitMessages()...)
+	}
+	tc := m.conv.Tool.PendingCalls[m.conv.Tool.CurrentIdx]
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, ToolName: tc.Name, ToolResult: &core.ToolResult{ToolCallID: tc.ID, Content: errorMsg, IsError: true}})
+	m.cancelRemainingToolCalls(m.conv.Tool.CurrentIdx + 1)
+	m.conv.Tool.Reset()
+	m.conv.Stream.Stop()
+	commitCmds := m.commitMessages()
+	if retry {
+		commitCmds = append(commitCmds, m.ContinueOutbox())
+	}
+	return tea.Batch(commitCmds...)
+}
+
+// --- Mode handling (operation mode, plan, question, enter-plan) ---
 
 func (m *model) cycleOperationMode() {
 	m.runtime.CycleOperationMode()
@@ -505,20 +530,16 @@ func (m *model) cycleOperationMode() {
 func (m *model) updateMode(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case conv.ProgressQuestionMsg:
-		c := m.handleQuestionRequest(conv.QuestionRequestMsg{
+		return m.handleQuestionRequest(conv.QuestionRequestMsg{
 			Request: msg.Request,
 			Reply:   msg.Reply,
-		})
-		return c, true
+		}), true
 	case conv.QuestionRequestMsg:
-		c := m.handleQuestionRequest(msg)
-		return c, true
+		return m.handleQuestionRequest(msg), true
 	case conv.PlanRequestMsg:
-		c := m.handlePlanRequest(msg)
-		return c, true
+		return m.handlePlanRequest(msg), true
 	case conv.EnterPlanRequestMsg:
-		c := m.handleEnterPlanRequest(msg)
-		return c, true
+		return m.handleEnterPlanRequest(msg), true
 	}
 	return nil, false
 }
@@ -569,7 +590,7 @@ func (m *model) handlePlanResponse(msg conv.PlanResponseMsg) tea.Cmd {
 	if !msg.Approved {
 		m.runtime.PlanEnabled = false
 		m.runtime.OperationMode = setting.ModeNormal
-		return m.abortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.", false)
+		return m.AbortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.", false)
 	}
 
 	planContent := msg.ModifiedPlan
@@ -637,4 +658,205 @@ func (m *model) handleEnterPlanResponse(msg conv.EnterPlanResponseMsg) tea.Cmd {
 	}
 
 	return tea.Batch(m.commitMessages()...)
+}
+
+// --- Input side effects ---
+
+func (m *model) handleStreamCancel() tea.Cmd {
+	if m.agentSess != nil {
+		m.agentSess.stop()
+		m.agentSess = nil
+	}
+	m.conv.Stream.Stop()
+	m.runtime.ClearThinkingOverride()
+	m.cancelPendingToolCalls()
+	m.conv.MarkLastInterrupted()
+
+	cmds := m.commitMessages()
+	if cmd := m.drainInputQueue(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m *model) cancelPendingToolCalls() {
+	toolCalls := m.conv.Tool.DrainPendingCalls()
+	if toolCalls == nil && len(m.conv.Messages) > 0 {
+		lastMsg := m.conv.Messages[len(m.conv.Messages)-1]
+		if lastMsg.Role == core.RoleAssistant {
+			toolCalls = lastMsg.ToolCalls
+		}
+	}
+	m.conv.AppendCancelledToolResults(toolCalls, func(tc core.ToolCall) string {
+		if tc.Name == "TaskOutput" {
+			return "Stopped waiting for background task output because the user sent a new message. The background task may still be running."
+		}
+		return "Tool execution interrupted because the user sent a new message."
+	})
+}
+
+func (m *model) cancelRemainingToolCalls(startIdx int) {
+	m.conv.AppendCancelledToolResults(m.conv.Tool.RemainingCalls(startIdx), func(core.ToolCall) string {
+		return "Tool execution skipped."
+	})
+}
+
+func (m *model) HandleSkillInvocation() tea.Cmd {
+	if m.runtime.LLMProvider == nil {
+		m.conv.AddNotice("No provider connected. Use /provider to connect.")
+		m.userInput.Skill.ClearPending()
+		return tea.Batch(m.commitMessages()...)
+	}
+	userMsg := m.userInput.Skill.ConsumeInvocation()
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: userMsg})
+	return m.sendToAgent(userMsg, nil)
+}
+
+func (m *model) pasteImageFromClipboard() (tea.Cmd, bool) {
+	imgData, err := image.ReadImageToProviderData()
+	if err != nil {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Image paste error: " + err.Error()})
+		return tea.Batch(m.commitMessages()...), true
+	}
+	if imgData == nil {
+		return nil, false
+	}
+	label := m.userInput.AddPendingImage(*imgData)
+	m.userInput.Images.Selection = input.ImageSelection{}
+	m.userInput.Textarea.InsertString(label)
+	m.userInput.UpdateHeight()
+	return nil, true
+}
+
+func (m *model) QuitWithCancel() (tea.Cmd, bool) {
+	if m.agentSess != nil {
+		m.agentSess.stop()
+		m.agentSess = nil
+	}
+	m.conv.Stream.Stop()
+	if m.conv.Tool.Cancel != nil {
+		m.conv.Tool.Cancel()
+	}
+	m.FireSessionEnd("prompt_input_exit")
+	return tea.Quit, true
+}
+
+// --- CWD, file, and project context changes ---
+
+func (m *model) changeCwd(newCwd string) {
+	if newCwd == "" || newCwd == m.cwd {
+		return
+	}
+	oldCwd := m.cwd
+	m.cwd = newCwd
+	m.isGit = setting.IsGitRepo(newCwd)
+	m.userInput.Suggestions.SetCwd(newCwd)
+	if m.userInput.Suggestions.GetSuggestionType() == suggest.TypeFile {
+		m.userInput.Suggestions.Hide()
+	}
+	m.runtime.ClearCachedInstructions()
+	m.runtime.RefreshMemoryContext(newCwd, "cwd_changed")
+	m.ReloadProjectContext(newCwd)
+	m.ReconfigureAgentTool()
+	if m.runtime.HookEngine != nil {
+		m.runtime.HookEngine.SetCwd(newCwd)
+		outcome := m.runtime.HookEngine.Execute(context.Background(), hook.CwdChanged, hook.HookInput{OldCwd: oldCwd, NewCwd: newCwd})
+		m.applyRuntimeHookOutcome(outcome)
+	}
+}
+
+func (m *model) fireFileChanged(filePath, source string) {
+	if m.runtime.HookEngine == nil || filePath == "" {
+		return
+	}
+	outcome := m.runtime.HookEngine.Execute(context.Background(), hook.FileChanged, hook.HookInput{FilePath: filePath, Source: source, Event: "change"})
+	m.applyRuntimeHookOutcome(outcome)
+}
+
+func (m *model) ReloadProjectContext(cwd string) {
+	initExtensions(cwd)
+	setting.Initialize(cwd)
+	if m.runtime.HookEngine != nil {
+		plugin.MergePluginHooksIntoSettings(setting.DefaultSetup)
+	}
+	m.runtime.ApplySettings(setting.DefaultSetup)
+}
+
+func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
+	if outcome.InitialUserMessage != "" && m.initialPrompt == "" && len(m.conv.Messages) == 0 {
+		m.initialPrompt = outcome.InitialUserMessage
+	}
+	if len(outcome.WatchPaths) == 0 {
+		return
+	}
+	if m.systemInput.FileWatcher == nil {
+		queue := m.systemInput.AsyncHookQueue
+		m.systemInput.FileWatcher = trigger.NewFileWatcher(m.runtime.HookEngine, func(outcome hook.HookOutcome) {
+			if queue != nil && outcome.InitialUserMessage != "" {
+				queue.Push(trigger.AsyncHookRewake{Notice: "File watcher hook triggered", Context: []string{outcome.InitialUserMessage}})
+			}
+		})
+	}
+	m.systemInput.FileWatcher.SetPaths(outcome.WatchPaths)
+}
+
+// --- conv.Runtime: token limit result ---
+
+func (m *model) HandleTokenLimitResult(msg kit.TokenLimitResultMsg) tea.Cmd {
+	m.userInput.Provider.FetchingLimits = false
+	var content string
+	if msg.Error != nil {
+		content = "Error: " + msg.Error.Error()
+	} else {
+		content = msg.Result
+	}
+	m.conv.AddNotice(content)
+	return tea.Batch(m.commitMessages()...)
+}
+
+// --- conv.Runtime: permission bridge ---
+
+type permissionDecision struct {
+	Approved bool
+	AllowAll bool
+	Request  *perm.PermissionRequest
+}
+
+func (m *model) StorePendingPermRequest(req *conv.PermBridgeRequest) {
+	if m.agentSess != nil {
+		m.agentSess.pendingPermRequest = req
+	}
+}
+
+func (m *model) ShowPermissionPrompt(req *conv.PermBridgeRequest) tea.Cmd {
+	if req == nil {
+		return nil
+	}
+	m.userInput.Approval.Show(&perm.PermissionRequest{ToolName: req.ToolName, Description: req.Description}, m.width, m.height)
+	return nil
+}
+
+func (m *model) handlePermBridgeDecision(decision permissionDecision) tea.Cmd {
+	if m.agentSess == nil {
+		return nil
+	}
+	req := m.agentSess.pendingPermRequest
+	m.agentSess.pendingPermRequest = nil
+	if req == nil {
+		return nil
+	}
+	resp := conv.PermBridgeResponse{Allow: decision.Approved, Reason: "user decision"}
+	if decision.Approved {
+		if decision.AllowAll && m.runtime.SessionPermissions != nil && decision.Request != nil {
+			m.runtime.SessionPermissions.AllowTool(decision.Request.ToolName)
+		}
+		resp.Reason = "user approved"
+	} else {
+		resp.Reason = "user denied"
+	}
+	select {
+	case req.Response <- resp:
+	default:
+	}
+	return conv.PollPermBridge(m.agentSess.permBridge)
 }

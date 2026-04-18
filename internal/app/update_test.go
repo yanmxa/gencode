@@ -309,7 +309,7 @@ func TestStartPromptSuggestionGeneratesCommand(t *testing.T) {
 		},
 	}
 
-	cmd := m.startPromptSuggestion()
+	cmd := m.StartPromptSuggestion()
 	if cmd == nil {
 		t.Fatal("expected prompt suggestion command")
 	}
@@ -386,7 +386,7 @@ func TestBuildCompactRequest(t *testing.T) {
 		},
 	}
 
-	req := m.buildCompactRequest("focus text", "manual")
+	req := m.BuildCompactRequest("focus text", "manual")
 	if req.Focus != "focus text" {
 		t.Fatalf("unexpected focus: %q", req.Focus)
 	}
@@ -401,24 +401,23 @@ func TestBuildCompactRequest(t *testing.T) {
 	}
 }
 
-func TestBuildLoopExtraIncludesSkillInvocation(t *testing.T) {
+func TestBuildSystemPromptIncludesSkillInvocation(t *testing.T) {
 	m := &model{}
 	m.userInput.Skill = input.SkillState{
 		ActiveInvocation: "<skill>Use the active skill</skill>",
 	}
 
-	extra := m.buildLoopExtra([]string{"base"})
-	if len(extra) != 3 {
-		t.Fatalf("expected 3 extra entries, got %d: %#v", len(extra), extra)
+	sys := m.buildSystemPrompt([]string{"base"}, nil)
+	prompt := sys.Prompt()
+
+	if !strings.Contains(prompt, "base") {
+		t.Fatalf("expected 'base' extra in prompt")
 	}
-	if extra[0] != "base" {
-		t.Fatalf("unexpected first extra entry: %#v", extra)
+	if !strings.Contains(prompt, "<coordinator-guidance>") {
+		t.Fatalf("expected coordinator guidance in prompt")
 	}
-	if !strings.Contains(extra[1], "<coordinator-guidance>") {
-		t.Fatalf("expected coordinator guidance entry, got %#v", extra[1])
-	}
-	if extra[2] != "<skill>Use the active skill</skill>" {
-		t.Fatalf("unexpected extra ordering: %#v", extra)
+	if !strings.Contains(prompt, "<skill>Use the active skill</skill>") {
+		t.Fatalf("expected skill invocation in prompt")
 	}
 }
 
@@ -432,7 +431,7 @@ func TestBuildLoopSystemIncludesSessionSummary(t *testing.T) {
 		},
 	}
 
-	sys := m.buildLoopSystem([]string{"extra"}, nil)
+	sys := m.buildSystemPrompt([]string{"extra"}, nil)
 	prompt := sys.Prompt()
 
 	// Verify environment layer includes cwd

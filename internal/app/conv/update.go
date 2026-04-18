@@ -14,32 +14,32 @@ import (
 // --- Agent event dispatch ---
 
 // handleAgentEvent processes a single event from the core.Agent outbox.
-func handleAgentEvent(rt Runtime, m *OutputModel, ev core.Event) tea.Cmd {
+func handleAgentEvent(rt Runtime, m *OutputModel, cm *ConversationModel, ev core.Event) tea.Cmd {
 	switch ev.Type {
 	case core.OnStart, core.OnMessage:
 		return rt.ContinueOutbox()
 
 	case core.PreInfer:
-		return handlePreInfer(rt, m)
+		return handlePreInfer(rt, m, cm)
 
 	case core.OnChunk:
-		return handleChunk(rt, ev)
+		return handleChunk(rt, cm, ev)
 
 	case core.PostInfer:
-		return handlePostInfer(rt, ev)
+		return handlePostInfer(rt, cm, ev)
 
 	case core.PreTool:
-		return handlePreTool(rt, ev)
+		return handlePreTool(rt, cm, ev)
 
 	case core.PostTool:
-		return handlePostTool(rt, m, ev)
+		return handlePostTool(rt, m, cm, ev)
 
 	case core.OnTurn:
-		return handleTurn(rt, m, ev)
+		return handleTurn(rt, m, cm, ev)
 
 	case core.OnStop:
 		err, _ := ev.Error()
-		return handleAgentStopped(rt, m, err)
+		return handleAgentStopped(rt, m, cm, err)
 
 	default:
 		return rt.ContinueOutbox()
@@ -51,15 +51,12 @@ func handleAgentEvent(rt Runtime, m *OutputModel, ev core.Event) tea.Cmd {
 // handlePreInfer fires when the agent is about to call the LLM.
 // Marks the stream as active and appends an empty assistant message
 // for incremental text accumulation.
-func handlePreInfer(rt Runtime, m *OutputModel) tea.Cmd {
-	rt.ActivateStream()
+func handlePreInfer(rt Runtime, m *OutputModel, cm *ConversationModel) tea.Cmd {
+	cm.Stream.Active = true
+	cm.Stream.BuildingTool = ""
 
-	// Commit pending messages (e.g. user input, tool results) to scrollback
-	// before the new assistant message starts.
 	commitCmds := rt.CommitMessages()
-
-	// Append an empty assistant message that will accumulate streamed text.
-	rt.AppendMessage(core.ChatMessage{Role: core.RoleAssistant, Content: ""})
+	cm.Append(core.ChatMessage{Role: core.RoleAssistant, Content: ""})
 
 	cmds := append(commitCmds, m.Spinner.Tick)
 	cmds = append(cmds, rt.ContinueOutbox())
@@ -67,44 +64,44 @@ func handlePreInfer(rt Runtime, m *OutputModel) tea.Cmd {
 }
 
 // handleChunk processes a streaming text/thinking chunk from the LLM.
-func handleChunk(rt Runtime, ev core.Event) tea.Cmd {
+func handleChunk(rt Runtime, cm *ConversationModel, ev core.Event) tea.Cmd {
 	chunk, ok := ev.Chunk()
 	if !ok {
 		return rt.ContinueOutbox()
 	}
 	if chunk.Text != "" || chunk.Thinking != "" {
-		rt.AppendToLast(chunk.Text, chunk.Thinking)
+		cm.AppendToLast(chunk.Text, chunk.Thinking)
 	}
 	return rt.ContinueOutbox()
 }
 
 // handlePostInfer fires after the LLM response is fully received.
 // Updates token counts, thinking signature, and tool call display state.
-func handlePostInfer(rt Runtime, ev core.Event) tea.Cmd {
+func handlePostInfer(rt Runtime, cm *ConversationModel, ev core.Event) tea.Cmd {
 	resp, ok := ev.Response()
 	if !ok {
 		return rt.ContinueOutbox()
 	}
 
 	rt.SetTokenCounts(resp.TokensIn, resp.TokensOut)
-	rt.ClearWarningSuppressed()
+	cm.Compact.WarningSuppressed = false
 
 	if resp.ThinkingSignature != "" {
-		rt.SetLastThinkingSignature(resp.ThinkingSignature)
+		cm.SetLastThinkingSignature(resp.ThinkingSignature)
 	}
 	if len(resp.ToolCalls) > 0 {
-		rt.SetLastToolCalls(resp.ToolCalls)
+		cm.SetLastToolCalls(resp.ToolCalls)
 	}
 
-	rt.SetBuildingTool("")
+	cm.Stream.BuildingTool = ""
 	return rt.ContinueOutbox()
 }
 
 // handlePreTool fires before a tool is executed. Updates the building
 // tool indicator for the spinner display.
-func handlePreTool(rt Runtime, ev core.Event) tea.Cmd {
+func handlePreTool(rt Runtime, cm *ConversationModel, ev core.Event) tea.Cmd {
 	if tc, ok := ev.ToolCall(); ok {
-		rt.SetBuildingTool(tc.Name)
+		cm.Stream.BuildingTool = tc.Name
 	}
 	return rt.ContinueOutbox()
 }
@@ -112,29 +109,25 @@ func handlePreTool(rt Runtime, ev core.Event) tea.Cmd {
 // handlePostTool fires after a tool execution completes. Applies side effects
 // (cwd changes, file cache, background task tracking) and appends the tool
 // result to the conversation display.
-func handlePostTool(rt Runtime, m *OutputModel, ev core.Event) tea.Cmd {
+func handlePostTool(rt Runtime, m *OutputModel, cm *ConversationModel, ev core.Event) tea.Cmd {
 	tr, ok := ev.ToolResult()
 	if !ok {
 		return rt.ContinueOutbox()
 	}
 
-	rt.SetBuildingTool("")
+	cm.Stream.BuildingTool = ""
 
-	// Retrieve side effects stored by the tool adapter
 	sideEffect := rt.PopToolSideEffect(tr.ToolCallID)
 	if sideEffect != nil {
 		rt.ApplyToolSideEffects(tr.ToolName, sideEffect)
 	}
 
-	// Clean up agent progress display
 	if tool.IsAgentToolName(tr.ToolName) {
 		m.TaskProgress = nil
 	}
 
-	// Fire PostToolUse hook asynchronously
 	rt.FirePostToolHook(tr, sideEffect)
 
-	// Persist overflow and append to conversation display
 	result := &core.ToolResult{
 		ToolCallID: tr.ToolCallID,
 		ToolName:   tr.ToolName,
@@ -142,7 +135,7 @@ func handlePostTool(rt Runtime, m *OutputModel, ev core.Event) tea.Cmd {
 		IsError:    tr.IsError,
 	}
 	rt.PersistOverflow(result)
-	rt.AppendMessage(core.ChatMessage{
+	cm.Append(core.ChatMessage{
 		Role:     core.RoleUser,
 		ToolName: tr.ToolName,
 		ToolResult: &core.ToolResult{
@@ -159,60 +152,53 @@ func handlePostTool(rt Runtime, m *OutputModel, ev core.Event) tea.Cmd {
 // handleTurn fires when the agent completes a think+act cycle (end_turn).
 // This is the idle point — save session, fire hooks, check compaction,
 // drain queued inputs.
-func handleTurn(rt Runtime, m *OutputModel, ev core.Event) tea.Cmd {
+func handleTurn(rt Runtime, m *OutputModel, cm *ConversationModel, ev core.Event) tea.Cmd {
 	result, _ := ev.Result()
 
-	rt.StopStream()
+	cm.Stream.Stop()
 	rt.ClearThinkingOverride()
 
 	commitCmds := rt.CommitMessages()
 
-	// Fire idle hooks (Stop + Notification)
 	if rt.FireIdleHooks() {
-		// Stop hook blocked — send continuation to agent
 		cmds := append(commitCmds, rt.ContinueOutbox())
 		return tea.Batch(cmds...)
 	}
 
 	rt.SaveSession()
 
-	// Check auto-compact
 	if rt.ShouldAutoCompact() {
-		rt.SetAutoCompactContinue()
+		cm.Compact.AutoContinue = true
 		cmds := append(commitCmds, rt.TriggerAutoCompact())
 		return tea.Batch(cmds...)
 	}
 
-	// Try prompt suggestion if idle
 	if cmd := rt.StartPromptSuggestion(); cmd != nil {
 		commitCmds = append(commitCmds, cmd)
 	}
 
-	// Drain queued Source 1/2/3 items through the runtime coordinator.
 	if cmd := rt.DrainTurnQueues(); cmd != nil {
 		commitCmds = append(commitCmds, cmd)
 		return tea.Batch(commitCmds...)
 	}
 
-	// Check for stop reason details (max_turns etc.)
 	if result.StopReason != "" && result.StopReason != core.StopEndTurn {
-		rt.AddNotice(fmt.Sprintf("Agent stopped: %s", result.StopReason))
+		cm.AddNotice(fmt.Sprintf("Agent stopped: %s", result.StopReason))
 		if result.StopDetail != "" {
-			rt.AddNotice(result.StopDetail)
+			cm.AddNotice(result.StopDetail)
 		}
 	}
 
-	// Continue draining outbox (agent goes back to waitForInput)
 	cmds := append(commitCmds, rt.ContinueOutbox())
 	return tea.Batch(cmds...)
 }
 
 // handleAgentStopped processes agent shutdown.
-func handleAgentStopped(rt Runtime, m *OutputModel, err error) tea.Cmd {
-	rt.StopStream()
+func handleAgentStopped(rt Runtime, m *OutputModel, cm *ConversationModel, err error) tea.Cmd {
+	cm.Stream.Stop()
 
 	if err != nil {
-		rt.AddNotice(fmt.Sprintf("Agent error: %v", err))
+		cm.AddNotice(fmt.Sprintf("Agent error: %v", err))
 		rt.FireStopFailureHook(err)
 	}
 
@@ -220,9 +206,6 @@ func handleAgentStopped(rt Runtime, m *OutputModel, err error) tea.Cmd {
 	rt.StopAgentSession()
 	return tea.Batch(commitCmds...)
 }
-
-// --- Utilities ---
-
 
 // --- Progress handling (operates on output Model directly) ---
 

@@ -16,15 +16,20 @@ type SubmitRequest struct {
 	Input string
 }
 
+// SubmitRuntime provides app-level operations that the submit flow needs.
+type SubmitRuntime interface {
+	CommitMessages() []tea.Cmd
+	QuitWithCancel() (tea.Cmd, bool)
+	StartProviderTurn(content string) tea.Cmd
+}
+
 type SubmitDeps struct {
-	Input             *Model
-	Conversation      *conv.ConversationModel
-	Runtime           *appruntime.Model
-	Cwd               string
-	CommitMessages    func() []tea.Cmd
-	HandleCommand     func(string) (tea.Cmd, bool)
-	QuitWithCancel    func() (tea.Cmd, bool)
-	StartProviderTurn func(string) tea.Cmd
+	Actions       SubmitRuntime
+	Input         *Model
+	Conversation  *conv.ConversationModel
+	Runtime       *appruntime.Model
+	Cwd           string
+	HandleCommand func(string) (tea.Cmd, bool)
 }
 
 func HandleSubmit(deps SubmitDeps) tea.Cmd {
@@ -65,7 +70,7 @@ func DrainInputQueue(deps SubmitDeps) tea.Cmd {
 
 func ExecuteSubmitRequest(deps SubmitDeps, req SubmitRequest) tea.Cmd {
 	if isExitRequest(req.Input) {
-		cmd, _ := deps.QuitWithCancel()
+		cmd, _ := deps.Actions.QuitWithCancel()
 		return cmd
 	}
 
@@ -88,20 +93,20 @@ func ExecuteSubmitRequest(deps SubmitDeps, req SubmitRequest) tea.Cmd {
 	}
 	deps.Conversation.Append(userMsg)
 	deps.Input.Reset()
-	return deps.StartProviderTurn(userMsg.Content)
+	return deps.Actions.StartProviderTurn(userMsg.Content)
 }
 
 func BlockPromptSubmission(deps SubmitDeps, reason string) tea.Cmd {
 	deps.Conversation.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Prompt blocked: " + reason})
 	deps.Input.Reset()
-	return tea.Batch(deps.CommitMessages()...)
+	return tea.Batch(deps.Actions.CommitMessages()...)
 }
 
 func PrepareSubmittedUserMessage(deps SubmitDeps, rawInput string) (core.ChatMessage, tea.Cmd, bool) {
 	content, fileImages, err := ProcessImageRefs(deps.Cwd, rawInput)
 	if err != nil {
 		deps.Conversation.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Image error: " + err.Error()})
-		return core.ChatMessage{}, tea.Batch(deps.CommitMessages()...), true
+		return core.ChatMessage{}, tea.Batch(deps.Actions.CommitMessages()...), true
 	}
 
 	displayContent := content

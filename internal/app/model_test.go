@@ -49,7 +49,7 @@ func TestFireSessionEndClearsSessionHooks(t *testing.T) {
 	})
 
 	m := &model{runtime: appruntime.Model{HookEngine: engine}}
-	m.fireSessionEnd("other")
+	m.FireSessionEnd("other")
 
 	if engine.HasHooks(hook.Stop) {
 		t.Fatal("expected session-scoped hooks to be cleared after SessionEnd")
@@ -159,7 +159,7 @@ func TestFreshSessionInitializesTaskStorageAndOutputDir(t *testing.T) {
 		t.Fatalf("expected initial session id to propagate, got %q", m.runtime.SessionID)
 	}
 
-	m.initTaskStorage()
+	m.InitTaskStorage()
 
 	wantDir := filepath.Join(tmpHome, ".gen", "tasks", "session-fresh-123")
 	if got := tracker.DefaultStore.GetStorageDir(); got != wantDir {
@@ -393,7 +393,7 @@ func TestApplyAgentToolSideEffectsFiresFileChanged(t *testing.T) {
 		cwd:     cwd,
 		runtime: appruntime.Model{HookEngine: engine},
 	}
-	m.applyAgentToolSideEffects("Write", map[string]any{"filePath": filePath})
+	m.ApplyToolSideEffects("Write", map[string]any{"filePath": filePath})
 
 	select {
 	case input := <-triggered:
@@ -425,7 +425,7 @@ func TestApplyAgentToolSideEffectsUpdatesCwdFromBash(t *testing.T) {
 		cwd:     oldCwd,
 		runtime: appruntime.Model{HookEngine: engine},
 	}
-	m.applyAgentToolSideEffects("Bash", map[string]any{"cwd": newCwd})
+	m.ApplyToolSideEffects("Bash", map[string]any{"cwd": newCwd})
 
 	if m.cwd != newCwd {
 		t.Fatalf("expected cwd %q, got %q", newCwd, m.cwd)
@@ -599,7 +599,7 @@ func TestAsyncHookTickInjectsNoticeAndContext(t *testing.T) {
 		ContinuationPrompt: "Re-evaluate the plan.",
 	})
 
-	cmd := m.handleAsyncHookTick()
+	cmd, _ := trigger.Update(m, &m.systemInput, trigger.AsyncHookTickMsg{})
 	if cmd == nil {
 		t.Fatal("expected async hook tick command")
 	}
@@ -649,7 +649,7 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 		t.Fatal("timed out waiting for status hook to start")
 	}
 
-	_ = m.handleAsyncHookTick()
+	_, _ = trigger.Update(m, &m.systemInput, trigger.AsyncHookTickMsg{})
 	if m.systemInput.HookStatus != "hook is running" {
 		t.Fatalf("expected hook status to refresh, got %q", m.systemInput.HookStatus)
 	}
@@ -661,7 +661,7 @@ func TestAsyncHookTickRefreshesHookStatus(t *testing.T) {
 		t.Fatal("timed out waiting for hook to finish")
 	}
 
-	_ = m.handleAsyncHookTick()
+	_, _ = trigger.Update(m, &m.systemInput, trigger.AsyncHookTickMsg{})
 	if m.systemInput.HookStatus != "" {
 		t.Fatalf("expected hook status to clear, got %q", m.systemInput.HookStatus)
 	}
@@ -697,7 +697,7 @@ func TestTaskNotificationTickInjectsNotice(t *testing.T) {
 	}
 	m.agentInput.Notifications.Push(item)
 
-	cmd := m.handleTaskNotificationTick()
+	cmd, _ := notify.Update(m, &m.agentInput, notify.TickMsg{})
 	if cmd == nil {
 		t.Fatal("expected task notification tick command")
 	}
@@ -762,7 +762,7 @@ func TestTaskNotificationTickBatchesDrainsQueue(t *testing.T) {
 		Batch:              batch,
 	})
 
-	cmd := m.handleTaskNotificationTick()
+	cmd, _ := notify.Update(m, &m.agentInput, notify.TickMsg{})
 	if cmd == nil {
 		t.Fatal("expected task notification tick command")
 	}

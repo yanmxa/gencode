@@ -21,20 +21,23 @@ type PastedChunk struct {
 	LineCount int    // total line count
 }
 
+// HistoryNav tracks command history navigation state.
+type HistoryNav struct {
+	Items   []string
+	Index   int    // -1 = not navigating
+	Stashed string // stashed textarea input while navigating
+}
+
 // Model holds all input-related state: textarea, history, suggestions, images, and selectors.
 type Model struct {
 	Textarea         textarea.Model
-	History          []string
-	HistoryIdx       int
-	TempInput        string
+	History          HistoryNav
 	PromptSuggestion PromptSuggestionState
 	Suggestions      suggest.State
 	LastCtrlO        time.Time
 	Images           ImageState
 	TerminalHeight   int
 	PastedChunks     []PastedChunk
-	QueueSelectIdx   int    // -1 = no selection, 0+ = selected queue item index
-	QueueTempInput   string // stashed input when navigating into queue
 	Queue            Queue
 
 	// Selectors / overlays
@@ -105,11 +108,10 @@ func New(cwd string, width int, matchFunc suggest.Matcher, deps SelectorDeps) Mo
 	suggestions := suggest.NewState(matchFunc)
 	suggestions.SetCwd(cwd)
 	return Model{
-		Textarea:       newTextarea(width),
-		History:        history.Load(cwd),
-		HistoryIdx:     -1,
-		Suggestions:    suggestions,
-		QueueSelectIdx: -1,
+		Textarea:    newTextarea(width),
+		History:     HistoryNav{Items: history.Load(cwd), Index: -1},
+		Suggestions: suggestions,
+		Queue:       NewQueue(),
 
 		Approval: NewApproval(),
 		Agent:    NewAgentSelector(deps.AgentRegistry),

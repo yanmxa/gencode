@@ -24,17 +24,21 @@ type HookPermissionResultMsg struct {
 	Outcome hook.HookOutcome
 }
 
+// ApprovalRuntime provides app-level operations that the approval flow needs.
+type ApprovalRuntime interface {
+	AbortToolWithError(msg string, retry bool) tea.Cmd
+	ReloadProjectContext(cwd string)
+}
+
 type ApprovalFlowDeps struct {
-	Input                *Model
-	Runtime              *appruntime.Model
-	Tool                 *conv.ToolExecState
-	Width                int
-	Height               int
-	Cwd                  string
-	ProgressHub          *conv.ProgressHub
-	ContinueOutbox       func() tea.Cmd
-	AbortToolWithError   func(string, bool) tea.Cmd
-	ReloadProjectContext func(string)
+	Actions     ApprovalRuntime
+	Input       *Model
+	Runtime     *appruntime.Model
+	Tool        *conv.ToolExecState
+	Width       int
+	Height      int
+	Cwd         string
+	ProgressHub *conv.ProgressHub
 }
 
 func UpdateApproval(deps ApprovalFlowDeps, msg tea.Msg) (tea.Cmd, bool) {
@@ -81,7 +85,7 @@ func HandleHookPermissionResult(deps ApprovalFlowDeps, msg HookPermissionResultM
 	}
 	if msg.Blocked {
 		deps.Input.Approval.Hide()
-		return deps.AbortToolWithError("Blocked by hook: "+msg.Reason, false)
+		return deps.Actions.AbortToolWithError("Blocked by hook: "+msg.Reason, false)
 	}
 	if msg.Allowed {
 		applyPermissionUpdates(deps, msg.Outcome.UpdatedPermissions)
@@ -227,8 +231,8 @@ func applyPermissionUpdates(deps ApprovalFlowDeps, updates []hook.PermissionUpda
 			}
 		}
 	}
-	if needReload && deps.ReloadProjectContext != nil {
-		deps.ReloadProjectContext(deps.Cwd)
+	if needReload {
+		deps.Actions.ReloadProjectContext(deps.Cwd)
 	}
 }
 

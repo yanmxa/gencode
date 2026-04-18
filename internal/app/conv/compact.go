@@ -1,5 +1,5 @@
-// Compact state, message types, and helper functions for conversation compaction
-// and token-limit management.
+// Compact state, message types, commands, and helper functions for conversation
+// compaction and token-limit management.
 package conv
 
 import (
@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/system"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
 )
 
@@ -169,4 +171,40 @@ func RenderCompactStatus(width int, spinnerView string, active bool, focus, phas
 	}
 
 	return boxStyle.Render(strings.Join(lines, "\n"))
+}
+
+// --- Compact command ---
+
+// CompactRequest holds all parameters needed to perform a conversation compaction.
+type CompactRequest struct {
+	Ctx            context.Context
+	Client         *llm.Client
+	Messages       []core.Message
+	SessionSummary string
+	Focus          string
+	HookEngine     *hook.Engine
+	Trigger        string
+}
+
+// CompactCmd returns a tea.Cmd that performs conversation compaction asynchronously.
+func CompactCmd(req CompactRequest) tea.Cmd {
+	return func() tea.Msg {
+		ctx := req.Ctx
+		focus := req.Focus
+		if req.HookEngine != nil {
+			outcome := req.HookEngine.Execute(ctx, hook.PreCompact, hook.HookInput{
+				Trigger:            req.Trigger,
+				CustomInstructions: req.Focus,
+			})
+			if outcome.AdditionalContext != "" {
+				if focus != "" {
+					focus += "\n" + outcome.AdditionalContext
+				} else {
+					focus = outcome.AdditionalContext
+				}
+			}
+		}
+		summary, count, err := CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
+		return CompactResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
+	}
 }

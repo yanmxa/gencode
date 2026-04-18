@@ -1,5 +1,4 @@
 // Shared runtime state: provider, session, permissions, plan, and config.
-// This is the 5th sub-Model in the root MVU, alongside user, agent, system, and output.
 package runtime
 
 import (
@@ -49,6 +48,26 @@ type Model struct {
 	// ── Instructions (cached) ───────────────────────────────────
 	CachedUserInstructions    string
 	CachedProjectInstructions string
+}
+
+// New creates a fully initialized runtime Model with default infrastructure.
+func New(cwd string) Model {
+	return Model{
+		OperationMode:      setting.ModeNormal,
+		SessionPermissions: setting.NewSessionPermissions(),
+		DisabledTools:      setting.GetDisabledTools(),
+
+		LLMProvider:   llm.DefaultSetup.Provider,
+		ProviderStore: llm.DefaultSetup.Store,
+		CurrentModel:  llm.DefaultSetup.CurrentModel,
+
+		SessionStore: session.DefaultSetup.Store,
+		SessionID:    session.DefaultSetup.SessionID,
+
+		Settings:   setting.DefaultSetup,
+		HookEngine: hook.DefaultEngine,
+		FileCache:  filecache.New(),
+	}
 }
 
 func (m *Model) GetModelID() string {

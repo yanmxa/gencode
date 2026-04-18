@@ -37,12 +37,12 @@ func (m *model) View() string {
 		return modalView
 	}
 
-	activeContent := m.renderActiveContent()
+	activeContent := conv.RenderActiveContent(m.messageRenderParams())
 	inputView := m.renderInputView()
 	chatSection := m.renderChatSection(activeContent, trackerView)
 	statusLine := m.renderModeStatus()
 	suggestions := m.userInput.Suggestions.Render(m.width)
-	tokenWarning := conv.RenderTokenWarning(m.runtime.InputTokens, m.getEffectiveInputLimit(), m.conv.Compact.WarningSuppressed)
+	tokenWarning := conv.RenderTokenWarning(m.runtime.InputTokens, kit.GetEffectiveInputLimit(m.runtime.ProviderStore, m.runtime.CurrentModel), m.conv.Compact.WarningSuppressed)
 	queuePreview := m.renderQueuePreview()
 
 	var view strings.Builder
@@ -165,19 +165,15 @@ func (m model) renderTrackerList() string {
 	})
 }
 
-func (m model) renderWelcome() string {
-	return conv.RenderWelcome()
-}
-
 func (m model) renderModeStatus() string {
 	modelName := trigger.RenderHookStatus(m.systemInput.HookStatus, m.userInput.Provider.StatusMessage)
 	return conv.RenderModeStatus(conv.OperationModeParams{
 		Mode:          conv.OperationMode(m.runtime.OperationMode),
 		InputTokens:   m.runtime.InputTokens,
-		InputLimit:    m.getEffectiveInputLimit(),
+		InputLimit:    kit.GetEffectiveInputLimit(m.runtime.ProviderStore, m.runtime.CurrentModel),
 		ModelName:     modelName,
 		Width:         m.width,
-		ThinkingLevel: m.effectiveThinkingLevel(),
+		ThinkingLevel: m.runtime.EffectiveThinkingLevel(),
 		QueueCount:    m.userInput.Queue.Len(),
 	})
 }
@@ -191,10 +187,8 @@ func (m model) renderQueuePreview() string {
 	for i, item := range items {
 		previews[i] = conv.QueuePreviewItem{Content: item.Content, HasImages: len(item.Images) > 0}
 	}
-	return strings.TrimSuffix(conv.RenderQueuePreview(previews, m.userInput.QueueSelectIdx, m.width), "\n")
+	return strings.TrimSuffix(conv.RenderQueuePreview(previews, m.userInput.Queue.SelectIdx, m.width), "\n")
 }
-
-// --- Message rendering (thin delegation to output package) ---
 
 func (m model) messageRenderParams() conv.MessageRenderParams {
 	return conv.MessageRenderParams{
@@ -218,14 +212,4 @@ func (m model) renderPlanForScrollback(req *tool.PlanRequest) string {
 	return conv.RenderPlanForScrollback(req.Plan, m.agentOutput.MDRenderer)
 }
 
-func (m model) renderSingleMessage(idx int) string {
-	return conv.RenderSingleMessage(m.messageRenderParams(), idx)
-}
 
-func (m model) renderActiveContent() string {
-	return conv.RenderActiveContent(m.messageRenderParams())
-}
-
-func (m model) isToolPhaseActive() bool {
-	return false
-}
