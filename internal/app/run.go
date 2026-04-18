@@ -12,6 +12,7 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -55,11 +56,11 @@ func initModel(opts setting.RunOptions) (*model, error) {
 }
 
 func (m *model) configureAsyncHookCallback() {
-	if m.env.HookEngine == nil || m.systemInput.AsyncHookQueue == nil {
+	if hook.DefaultEngine == nil || m.systemInput.AsyncHookQueue == nil {
 		return
 	}
 	queue := m.systemInput.AsyncHookQueue
-	m.env.HookEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
+	hook.DefaultEngine.SetAsyncHookCallback(func(result hook.AsyncHookResult) {
 		reason := result.BlockReason
 		if reason == "" {
 			reason = "asynchronous hook requested a rewake"
@@ -84,11 +85,11 @@ func (m *model) fireStartupHooks() {
 }
 
 func printExitMessage(m *model) {
-	if m.env.SessionID != "" {
+	if session.DefaultSetup.SessionID != "" {
 		dim := kit.DimStyle()
 		fmt.Println()
 		fmt.Println(dim.Render("Resume this session with:"))
-		fmt.Println(dim.Render("gen -r " + m.env.SessionID))
+		fmt.Println(dim.Render("gen -r " + session.DefaultSetup.SessionID))
 		fmt.Println()
 	}
 }

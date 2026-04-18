@@ -13,6 +13,7 @@ var DefaultSetup = &Setup{}
 type Setup struct {
 	Store     *Store
 	SessionID string
+	Summary   string
 }
 
 // Init creates a session store and generates a fresh session ID.
@@ -24,6 +25,19 @@ func Initialize(cwd string) {
 		log.Logger().Warn("session store initialization failed, sessions will not be persisted", zap.Error(err))
 	}
 	DefaultSetup.Store = store
+}
+
+// EnsureStore lazily initializes the session store for the given cwd.
+func EnsureStore(cwd string) error {
+	if DefaultSetup.Store != nil {
+		return nil
+	}
+	store, err := NewStore(cwd)
+	if err != nil {
+		return err
+	}
+	DefaultSetup.Store = store
+	return nil
 }
 
 // TranscriptPath returns the transcript file path for the current session,

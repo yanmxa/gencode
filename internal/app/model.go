@@ -5,6 +5,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -30,6 +32,7 @@ import (
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/subagent"
+	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -90,7 +93,7 @@ func (m *model) Init() tea.Cmd {
 func newModel(opts setting.RunOptions) (*model, error) {
 	base := newBaseModel()
 	m := &base
-	notify.InstallCompletionObserver(m.agentInput.Notifications, m.env.HookEngine)
+	notify.InstallCompletionObserver(m.agentInput.Notifications, hook.DefaultEngine)
 	m.configureAsyncHookCallback()
 	m.ensureMemoryContextLoaded()
 	m.ReconfigureAgentTool()
@@ -114,7 +117,7 @@ func newBaseModel() model {
 		conv:        conv.NewModel(defaultWidth),
 		agentInput:  notify.New(),
 		systemInput: trigger.New(),
-		env: newEnv(appCwd),
+		env: newEnv(),
 
 		cwd:   appCwd,
 		isGit: setting.IsGitRepo(appCwd),
@@ -165,11 +168,10 @@ func (m *model) ReloadPluginBackedState() error {
 	mcp.Initialize(m.cwd, pluginMCPServers)
 
 	setting.Initialize(m.cwd)
-	m.env.Settings = setting.DefaultSetup
-	if m.env.HookEngine != nil {
+	if hook.DefaultEngine != nil {
 		plugin.MergePluginHooksIntoSettings(setting.DefaultSetup)
-		m.env.HookEngine.SetSettings(setting.DefaultSetup)
 	}
+	syncSettingsToHookEngine()
 	m.ReconfigureAgentTool()
 
 	return nil
@@ -193,7 +195,7 @@ func (m *model) applyContinueOption() error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
-	m.env.SessionStore = sessionStore
+	session.DefaultSetup.Store = sessionStore
 
 	sess, err := sessionStore.GetLatest()
 	if err != nil {
@@ -209,7 +211,7 @@ func (m *model) applyResumeOption(resumeID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
-	m.env.SessionStore = sessionStore
+	session.DefaultSetup.Store = sessionStore
 
 	if resumeID != "" {
 		sess, err := sessionStore.Load(resumeID)
@@ -229,9 +231,9 @@ func (m *model) BuildCompactRequest(focus, trigger string) conv.CompactRequest {
 		Ctx:            context.Background(),
 		Client:         m.buildLLMClient(),
 		Messages:       m.conv.ConvertToProvider(),
-		SessionSummary: m.env.SessionSummary,
+		SessionSummary: session.DefaultSetup.Summary,
 		Focus:          focus,
-		HookEngine:     m.env.HookEngine,
+		HookEngine:     hook.DefaultEngine,
 		Trigger:        trigger,
 	}
 }
@@ -288,33 +290,127 @@ func (m *model) renderAndCommit(checkReady bool) []tea.Cmd {
 // Session persistence
 // ============================================================
 
+func (m *model) InitTaskStorage() {
+	initTaskStorage(session.DefaultSetup.SessionID)
+}
+
 func (m *model) PersistSession() error {
-	return saveSession(sessionSaveDeps{
-		env:             &m.env,
-		cwd:             m.cwd,
-		messages:        m.conv.Messages,
-		reconfigureTool: m.ReconfigureAgentTool,
-	})
+	if err := session.EnsureStore(m.cwd); err != nil {
+		return err
+	}
+	if len(m.conv.Messages) == 0 {
+		return nil
+	}
+
+	entries := session.ConvertToEntries(m.conv.Messages)
+
+	var providerName, modelID string
+	if m.env.CurrentModel != nil {
+		providerName = string(m.env.CurrentModel.Provider)
+		modelID = m.env.CurrentModel.ModelID
+	}
+
+	sess := &session.Snapshot{
+		Metadata: session.SessionMetadata{
+			ID:         session.DefaultSetup.SessionID,
+			Provider:   providerName,
+			Model:      modelID,
+			Cwd:        m.cwd,
+			LastPrompt: session.ExtractLastUserText(entries),
+			Summary:    session.DefaultSetup.Summary,
+			Mode:       m.env.SessionMode(),
+		},
+		Entries: entries,
+		Tasks:   tracker.DefaultStore.Export(),
+	}
+
+	if sess.Metadata.Title == "" || sess.Metadata.ID == "" {
+		sess.Metadata.Title = session.GenerateTitle(sess.Entries)
+	}
+
+	if err := session.DefaultSetup.Store.Save(sess); err != nil {
+		return err
+	}
+
+	session.DefaultSetup.SessionID = sess.Metadata.ID
+	initTaskStorage(session.DefaultSetup.SessionID)
+
+	if hook.DefaultEngine != nil {
+		hook.DefaultEngine.SetTranscriptPath(session.DefaultSetup.Store.SessionPath(sess.Metadata.ID))
+	}
+	m.ReconfigureAgentTool()
+
+	return nil
 }
 
 func (m *model) loadSessionByID(id string) error {
-	return loadSession(sessionLoadDeps{
-		env: &m.env,
-		cwd: m.cwd,
-		restoreMessages: func(msgs []core.ChatMessage) {
-			m.conv.Messages = msgs
-		},
-	}, id)
-}
+	if err := session.EnsureStore(m.cwd); err != nil {
+		return err
+	}
 
-func (m *model) InitTaskStorage() {
-	initTaskStorage(m.env.SessionID)
+	sess, err := session.DefaultSetup.Store.Load(id)
+	if err != nil {
+		return err
+	}
+
+	tracker.DefaultStore.SetStorageDir("")
+	m.restoreSessionData(sess)
+
+	if len(sess.Tasks) == 0 {
+		tracker.DefaultStore.Reset()
+	}
+	tool.ResetFetched()
+
+	m.env.InputTokens = 0
+	m.env.OutputTokens = 0
+
+	return nil
 }
 
 func (m *model) restoreSessionData(sess *session.Snapshot) {
-	restoreSessionData(&m.env, sess, func(msgs []core.ChatMessage) {
-		m.conv.Messages = msgs
-	})
+	m.conv.Messages = session.ConvertFromEntries(sess.Entries)
+	session.DefaultSetup.SessionID = sess.Metadata.ID
+
+	if sess.Metadata.Summary != "" {
+		session.DefaultSetup.Summary = sess.Metadata.Summary
+	} else if session.DefaultSetup.Store != nil {
+		if mem, err := session.DefaultSetup.Store.LoadSessionMemory(sess.Metadata.ID); err == nil && mem != "" {
+			session.DefaultSetup.Summary = mem
+		}
+	}
+
+	initTaskStorage(session.DefaultSetup.SessionID)
+
+	if len(sess.Tasks) > 0 {
+		tracker.DefaultStore.Import(sess.Tasks)
+	}
+}
+
+func initTaskStorage(sessionID string) {
+	if tracker.DefaultStore.GetStorageDir() != "" {
+		return
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Logger().Warn("failed to get home directory for task storage", zap.Error(err))
+		return
+	}
+
+	taskListID := os.Getenv("GEN_TASK_LIST_ID")
+	if taskListID != "" {
+		dir := filepath.Join(homeDir, ".gen", "tasks", taskListID)
+		tracker.DefaultStore.SetStorageDir(dir)
+		_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
+		return
+	}
+
+	if sessionID == "" {
+		return
+	}
+	dir := filepath.Join(homeDir, ".gen", "tasks", sessionID)
+	tracker.DefaultStore.SetStorageDir(dir)
+	_ = task.SetOutputDir(filepath.Join(dir, "outputs"))
 }
 
 // ============================================================
@@ -361,7 +457,7 @@ func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 		log.Logger().Warn("failed to save session", zap.Error(err))
 	}
 
-	if kit.ShouldAutoCompact(m.env.LLMProvider, len(m.conv.Messages), m.env.InputTokens, m.env.ProviderStore, m.env.CurrentModel) {
+	if kit.ShouldAutoCompact(m.env.LLMProvider, len(m.conv.Messages), m.env.InputTokens, llm.DefaultSetup.Store, m.env.CurrentModel) {
 		m.conv.Compact.AutoContinue = true
 		return tea.Batch(append(commitCmds, m.triggerAutoCompact())...)
 	}
@@ -419,12 +515,12 @@ func (m *model) HandleCompactResult(msg conv.CompactResultMsg) tea.Cmd {
 			restoredContext = filecache.FormatRestoredFiles(restoredFiles)
 		}
 	}
-	if m.env.SessionStore != nil && m.env.SessionID != "" {
-		_ = m.env.SessionStore.SaveSessionMemory(m.env.SessionID, msg.Summary)
+	if session.DefaultSetup.Store != nil && session.DefaultSetup.SessionID != "" {
+		_ = session.DefaultSetup.Store.SaveSessionMemory(session.DefaultSetup.SessionID, msg.Summary)
 	}
-	m.env.SessionSummary = msg.Summary
-	if m.env.HookEngine != nil {
-		m.env.HookEngine.ExecuteAsync(hook.PostCompact, hook.HookInput{Trigger: msg.Trigger})
+	session.DefaultSetup.Summary = msg.Summary
+	if hook.DefaultEngine != nil {
+		hook.DefaultEngine.ExecuteAsync(hook.PostCompact, hook.HookInput{Trigger: msg.Trigger})
 	}
 	scrollPart := tea.Sequence(append(scrollbackCmds, tea.Println(boundary), tea.ClearScreen)...)
 	cmds := []tea.Cmd{scrollPart}
@@ -534,13 +630,13 @@ func (m *model) persistOverflow(result *core.ToolResult) {
 	}
 	preview := result.Content[:cutoff]
 	persisted := false
-	if err := m.env.EnsureSessionStore(m.cwd); err == nil && m.env.SessionID != "" {
-		if err := m.env.SessionStore.PersistToolResult(m.env.SessionID, result.ToolCallID, result.Content); err == nil {
+	if err := session.EnsureStore(m.cwd); err == nil && session.DefaultSetup.SessionID != "" {
+		if err := session.DefaultSetup.Store.PersistToolResult(session.DefaultSetup.SessionID, result.ToolCallID, result.Content); err == nil {
 			persisted = true
 		}
 	}
 	if persisted {
-		result.Content = fmt.Sprintf("%s\n\n[Full output persisted to blobs/tool-result/%s/%s]", preview, m.env.SessionID, result.ToolCallID)
+		result.Content = fmt.Sprintf("%s\n\n[Full output persisted to blobs/tool-result/%s/%s]", preview, session.DefaultSetup.SessionID, result.ToolCallID)
 	} else {
 		result.Content = fmt.Sprintf("%s\n\n[Output truncated from %d bytes — full content not persisted]", preview, len(result.Content))
 	}
@@ -558,28 +654,28 @@ func (m *model) changeCwd(newCwd string) {
 	m.env.RefreshMemoryContext(newCwd, "cwd_changed")
 	m.ReloadProjectContext(newCwd)
 	m.ReconfigureAgentTool()
-	if m.env.HookEngine != nil {
-		m.env.HookEngine.SetCwd(newCwd)
-		outcome := m.env.HookEngine.Execute(context.Background(), hook.CwdChanged, hook.HookInput{OldCwd: oldCwd, NewCwd: newCwd})
+	if hook.DefaultEngine != nil {
+		hook.DefaultEngine.SetCwd(newCwd)
+		outcome := hook.DefaultEngine.Execute(context.Background(), hook.CwdChanged, hook.HookInput{OldCwd: oldCwd, NewCwd: newCwd})
 		m.applyRuntimeHookOutcome(outcome)
 	}
 }
 
 func (m *model) fireFileChanged(filePath, source string) {
-	if m.env.HookEngine == nil || filePath == "" {
+	if hook.DefaultEngine == nil || filePath == "" {
 		return
 	}
-	outcome := m.env.HookEngine.Execute(context.Background(), hook.FileChanged, hook.HookInput{FilePath: filePath, Source: source, Event: "change"})
+	outcome := hook.DefaultEngine.Execute(context.Background(), hook.FileChanged, hook.HookInput{FilePath: filePath, Source: source, Event: "change"})
 	m.applyRuntimeHookOutcome(outcome)
 }
 
 func (m *model) ReloadProjectContext(cwd string) {
 	initExtensions(cwd)
 	setting.Initialize(cwd)
-	if m.env.HookEngine != nil {
+	if hook.DefaultEngine != nil {
 		plugin.MergePluginHooksIntoSettings(setting.DefaultSetup)
 	}
-	m.env.ApplySettings(setting.DefaultSetup)
+	syncSettingsToHookEngine()
 }
 
 func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
@@ -590,7 +686,7 @@ func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
 		return
 	}
 	if m.systemInput.FileWatcher == nil {
-		m.systemInput.FileWatcher = trigger.NewFileWatcher(m.env.HookEngine, func(outcome hook.HookOutcome) {
+		m.systemInput.FileWatcher = trigger.NewFileWatcher(hook.DefaultEngine, func(outcome hook.HookOutcome) {
 			if m.systemInput.AsyncHookQueue != nil && outcome.InitialUserMessage != "" {
 				m.systemInput.AsyncHookQueue.Push(trigger.AsyncHookRewake{Notice: "File watcher hook triggered", Context: []string{outcome.InitialUserMessage}})
 			}
@@ -618,7 +714,7 @@ func (m *model) triggerAutoCompact() tea.Cmd {
 	m.conv.Compact.Active = true
 	m.conv.Compact.Focus = ""
 	m.conv.Compact.Phase = conv.PhaseSummarizing
-	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", kit.GetContextUsagePercent(m.env.InputTokens, m.env.ProviderStore, m.env.CurrentModel)))
+	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", kit.GetContextUsagePercent(m.env.InputTokens, llm.DefaultSetup.Store, m.env.CurrentModel)))
 	commitCmds := m.CommitMessages()
 	commitCmds = append(commitCmds, m.conv.Spinner.Tick, conv.CompactCmd(m.BuildCompactRequest("", "auto")))
 	return tea.Batch(commitCmds...)
@@ -779,16 +875,16 @@ func (m *model) enterPlanModeForCommand(task string) error {
 }
 
 func (m *model) forkSession() (string, error) {
-	if m.env.SessionID == "" {
+	if session.DefaultSetup.SessionID == "" {
 		return "", fmt.Errorf("no active session to fork")
 	}
-	forked, err := m.env.SessionStore.Fork(m.env.SessionID)
+	forked, err := session.DefaultSetup.Store.Fork(session.DefaultSetup.SessionID)
 	if err != nil {
 		return "", err
 	}
 	originalID := forked.Metadata.ParentSessionID
-	m.env.SessionID = forked.Metadata.ID
-	m.env.SessionSummary = ""
+	session.DefaultSetup.SessionID = forked.Metadata.ID
+	session.DefaultSetup.Summary = ""
 	tracker.DefaultStore.SetStorageDir("")
 	return originalID, nil
 }

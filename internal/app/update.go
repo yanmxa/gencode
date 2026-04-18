@@ -17,6 +17,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/notify"
 	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/plan"
@@ -350,8 +351,8 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 
 		if m.userInput.Session.PendingSelector {
 			m.userInput.Session.PendingSelector = false
-			if m.env.SessionStore != nil {
-				_ = m.userInput.Session.Selector.EnterSelect(m.width, m.height, m.env.SessionStore, m.cwd)
+			if session.DefaultSetup.Store != nil {
+				_ = m.userInput.Session.Selector.EnterSelect(m.width, m.height, session.DefaultSetup.Store, m.cwd)
 			}
 		}
 
@@ -452,20 +453,20 @@ func (m *model) commandDeps() input.CommandDeps {
 		Height:       m.height,
 		Cwd:          m.cwd,
 
-		DisabledTools: m.env.DisabledTools,
-		ProviderStore: m.env.ProviderStore,
+		DisabledTools: setting.DefaultSetup.DisabledTools,
+		ProviderStore: llm.DefaultSetup.Store,
 		LLMProvider:   m.env.LLMProvider,
 		InputTokens:   m.env.InputTokens,
 		CurrentModel:  m.env.CurrentModel,
 
-		GetSessionID:     func() string { return m.env.SessionID },
-		GetSessionStore:  func() *session.Store { return m.env.SessionStore },
+		GetSessionID:     func() string { return session.DefaultSetup.SessionID },
+		GetSessionStore:  func() *session.Store { return session.DefaultSetup.Store },
 		GetThinkingLevel: func() llm.ThinkingLevel { return m.env.ThinkingLevel },
 
 		ResetTokens:        m.env.ResetTokens,
 		SetThinkingLevel:   func(level llm.ThinkingLevel) { m.env.ThinkingLevel = level },
 		EnterPlanMode:      m.enterPlanModeForCommand,
-		EnsureSessionStore: m.env.EnsureSessionStore,
+		EnsureSessionStore: func(cwd string) error { return session.EnsureStore(cwd) },
 		ForkSession:        m.forkSession,
 
 		CommitMessages:          m.CommitMessages,
@@ -496,8 +497,8 @@ func (m *model) approvalDeps() input.ApprovalFlowDeps {
 	return input.ApprovalFlowDeps{
 		Actions:            m,
 		Input:              &m.userInput,
-		HookEngine:         m.env.HookEngine,
-		Settings:           m.env.Settings,
+		HookEngine:         hook.DefaultEngine,
+		Settings:           setting.DefaultSetup,
 		SessionPermissions: m.env.SessionPermissions,
 		SetOperationMode:   func(mode setting.OperationMode) { m.env.OperationMode = mode },
 		Tool:               &m.conv.Tool,
@@ -538,8 +539,8 @@ func (m *model) cycleOperationMode() {
 		m.env.EnsurePlanStore()
 	}
 
-	if m.env.HookEngine != nil {
-		m.env.HookEngine.SetPermissionMode(m.env.OperationModeName())
+	if hook.DefaultEngine != nil {
+		hook.DefaultEngine.SetPermissionMode(m.env.OperationModeName())
 	}
 }
 

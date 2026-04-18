@@ -1,4 +1,7 @@
-// Shared app state: provider, session, permissions, plan, and config.
+// Shared mutable app state: provider, session, permissions, plan, and cache.
+//
+// Singletons (hook.DefaultEngine, setting.DefaultSetup, llm.DefaultSetup.Store)
+// are accessed directly — not copied here.
 package app
 
 import (
@@ -16,56 +19,38 @@ import (
 )
 
 type Env struct {
-	// ── Provider ────────────────────────────────────────────────
+	// ── Provider (mutable — changes via SwitchProvider) ─────────
 	LLMProvider      llm.Provider
-	ProviderStore    *llm.Store
 	CurrentModel     *llm.CurrentModelInfo
 	InputTokens      int
 	OutputTokens     int
 	ThinkingLevel    llm.ThinkingLevel
 	ThinkingOverride llm.ThinkingLevel
 
-	// ── Session ─────────────────────────────────────────────────
-	SessionStore   *session.Store
-	SessionID      string
-	SessionSummary string
-
-	// ── Permission ──────────────────────────────────────────────
+	// ── Permission (mutable — changes per mode cycle) ───────────
 	OperationMode      setting.OperationMode
 	SessionPermissions *setting.SessionPermissions
-	DisabledTools      map[string]bool
 
-	// ── Plan ────────────────────────────────────────────────────
+	// ── Plan (mutable — changes per plan mode) ──────────────────
 	PlanEnabled bool
 	PlanTask    string
 	PlanStore   *plan.Store
 
-	// ── Config ──────────────────────────────────────────────────
-	Settings   *setting.Settings
-	HookEngine *hook.Engine
-	FileCache  *filecache.Cache
-
-	// ── Instructions (cached) ───────────────────────────────────
+	// ── Cache (session-scoped) ──────────────────────────────────
+	FileCache                 *filecache.Cache
 	CachedUserInstructions    string
 	CachedProjectInstructions string
 }
 
-func newEnv(cwd string) Env {
+func newEnv() Env {
 	return Env{
 		OperationMode:      setting.ModeNormal,
 		SessionPermissions: setting.NewSessionPermissions(),
-		DisabledTools:      setting.GetDisabledTools(),
 
-		LLMProvider:   llm.DefaultSetup.Provider,
-		ProviderStore: llm.DefaultSetup.Store,
-		CurrentModel:  llm.DefaultSetup.CurrentModel,
+		LLMProvider:  llm.DefaultSetup.Provider,
+		CurrentModel: llm.DefaultSetup.CurrentModel,
 
-		SessionStore: session.DefaultSetup.Store,
-		SessionID:    session.DefaultSetup.SessionID,
-
-		Settings:   setting.DefaultSetup,
-		HookEngine: hook.DefaultEngine,
-		FileCache:  filecache.New(),
+		FileCache: filecache.New(),
 	}
 }
 
@@ -94,7 +79,8 @@ func (m *Env) OperationModeName() string {
 }
 
 func (m *Env) CycleOperationMode() {
-	allowBypass := m.Settings != nil && m.Settings.AllowBypass != nil && *m.Settings.AllowBypass
+	s := setting.DefaultSetup
+	allowBypass := s != nil && s.AllowBypass != nil && *s.AllowBypass
 	m.OperationMode = m.OperationMode.NextWithBypass(allowBypass)
 	m.PlanEnabled = m.OperationMode == setting.ModePlan
 }
@@ -184,8 +170,8 @@ func (m *Env) RefreshMemoryContext(cwd, loadReason string) {
 		case "project", "local":
 			projectParts = append(projectParts, f.Content)
 		}
-		if m.HookEngine != nil {
-			m.HookEngine.ExecuteAsync(hook.InstructionsLoaded, hook.HookInput{
+		if hook.DefaultEngine != nil {
+			hook.DefaultEngine.ExecuteAsync(hook.InstructionsLoaded, hook.HookInput{
 				FilePath:   f.Path,
 				MemoryType: memoryTypeForLevel(f.Level),
 				LoadReason: loadReason,
@@ -196,35 +182,24 @@ func (m *Env) RefreshMemoryContext(cwd, loadReason string) {
 	m.CachedProjectInstructions = joinSections(projectParts)
 }
 
-func (m *Env) ApplySettings(s *setting.Settings) {
-	m.Settings = s
-	if m.DisabledTools == nil {
-		m.DisabledTools = make(map[string]bool)
-	} else {
-		for k := range m.DisabledTools {
-			delete(m.DisabledTools, k)
-		}
-	}
-	for k, v := range s.DisabledTools {
-		m.DisabledTools[k] = v
-	}
-	if m.HookEngine != nil {
-		m.HookEngine.SetSettings(s)
+func syncSettingsToHookEngine() {
+	if hook.DefaultEngine != nil && setting.DefaultSetup != nil {
+		hook.DefaultEngine.SetSettings(setting.DefaultSetup)
 	}
 }
 
 func (m *Env) CheckPromptHook(ctx context.Context, prompt string) (bool, string) {
-	if m.HookEngine == nil {
+	if hook.DefaultEngine == nil {
 		return false, ""
 	}
-	outcome := m.HookEngine.Execute(ctx, hook.UserPromptSubmit, hook.HookInput{Prompt: prompt})
+	outcome := hook.DefaultEngine.Execute(ctx, hook.UserPromptSubmit, hook.HookInput{Prompt: prompt})
 	return outcome.ShouldBlock, outcome.BlockReason
 }
 
 func (m *Env) SwitchProvider(p llm.Provider) {
 	m.LLMProvider = p
-	if m.HookEngine != nil {
-		m.HookEngine.SetLLMCompleter(buildHookCompleter(p), m.GetModelID())
+	if hook.DefaultEngine != nil {
+		hook.DefaultEngine.SetLLMCompleter(buildHookCompleter(p), m.GetModelID())
 	}
 }
 
@@ -266,19 +241,9 @@ func (m *Env) ResetTokens() {
 	m.OutputTokens = 0
 }
 
-func (m *Env) EnsureSessionStore(cwd string) error {
-	if m.SessionStore == nil {
-		store, err := session.NewStore(cwd)
-		if err != nil {
-			return err
-		}
-		m.SessionStore = store
-	}
-	return nil
-}
 
 func (m *Env) FirePostToolHook(tr core.ToolResult, sideEffect any) {
-	if m.HookEngine == nil {
+	if hook.DefaultEngine == nil {
 		return
 	}
 	eventType := hook.PostToolUse
@@ -297,62 +262,62 @@ func (m *Env) FirePostToolHook(tr core.ToolResult, sideEffect any) {
 	if tr.IsError {
 		input.Error = tr.Content
 	}
-	m.HookEngine.ExecuteAsync(eventType, input)
+	hook.DefaultEngine.ExecuteAsync(eventType, input)
 }
 
 func (m *Env) FireStopFailureHook(lastAssistantContent string, err error) {
-	if m.HookEngine == nil {
+	if hook.DefaultEngine == nil {
 		return
 	}
-	m.HookEngine.ExecuteAsync(hook.StopFailure, hook.HookInput{
+	hook.DefaultEngine.ExecuteAsync(hook.StopFailure, hook.HookInput{
 		LastAssistantMessage: lastAssistantContent,
 		Error:                err.Error(),
-		StopHookActive:       m.HookEngine.StopHookActive(),
+		StopHookActive:       hook.DefaultEngine.StopHookActive(),
 	})
 }
 
 func (m *Env) FireSessionEnd(ctx context.Context, reason string) {
-	if m.HookEngine == nil {
+	if hook.DefaultEngine == nil {
 		return
 	}
-	m.HookEngine.Execute(ctx, hook.SessionEnd, hook.HookInput{
+	hook.DefaultEngine.Execute(ctx, hook.SessionEnd, hook.HookInput{
 		Reason: reason,
 	})
-	m.HookEngine.ClearSessionHooks()
+	hook.DefaultEngine.ClearSessionHooks()
 }
 
 func (m *Env) ExecuteStartupHooks(ctx context.Context) hook.HookOutcome {
-	if m.HookEngine == nil {
+	if hook.DefaultEngine == nil {
 		return hook.HookOutcome{}
 	}
-	m.HookEngine.ExecuteAsync(hook.Setup, hook.HookInput{
+	hook.DefaultEngine.ExecuteAsync(hook.Setup, hook.HookInput{
 		Trigger: "init",
 	})
 	source := "startup"
-	if m.SessionID != "" {
+	if session.DefaultSetup.SessionID != "" {
 		source = "resume"
 	}
-	return m.HookEngine.Execute(ctx, hook.SessionStart, hook.HookInput{
+	return hook.DefaultEngine.Execute(ctx, hook.SessionStart, hook.HookInput{
 		Source: source,
 		Model:  m.GetModelID(),
 	})
 }
 
 func (m *Env) ExecuteIdleHooks(ctx context.Context, lastAssistantContent string) (blocked bool, reason string) {
-	if m.HookEngine == nil {
+	if hook.DefaultEngine == nil {
 		return false, ""
 	}
-	if m.HookEngine.HasHooks(hook.Stop) {
-		outcome := m.HookEngine.Execute(ctx, hook.Stop, hook.HookInput{
+	if hook.DefaultEngine.HasHooks(hook.Stop) {
+		outcome := hook.DefaultEngine.Execute(ctx, hook.Stop, hook.HookInput{
 			LastAssistantMessage: lastAssistantContent,
-			StopHookActive:       m.HookEngine.StopHookActive(),
+			StopHookActive:       hook.DefaultEngine.StopHookActive(),
 		})
 		if outcome.ShouldBlock {
 			blocked = true
 			reason = outcome.BlockReason
 		}
 	}
-	m.HookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
+	hook.DefaultEngine.ExecuteAsync(hook.Notification, hook.HookInput{
 		Message:          "Claude is waiting for your input",
 		NotificationType: "idle_prompt",
 	})
