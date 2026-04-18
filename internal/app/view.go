@@ -88,14 +88,14 @@ func (m *model) renderOverlaySelector() string {
 
 func (m *model) renderActiveModal(separator, trackerPrefix string) string {
 	switch {
-	case m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive():
-		return separatorWrapped(trackerPrefix, separator, m.mode.PlanApproval.RenderMenu())
+	case m.conv.Modal.PlanApproval != nil && m.conv.Modal.PlanApproval.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.conv.Modal.PlanApproval.RenderMenu())
 	case m.userInput.Approval.IsActive():
 		return separatorWrapped(trackerPrefix, separator, m.userInput.Approval.Render())
-	case m.mode.Question.IsActive():
-		return separatorWrapped(trackerPrefix, separator, m.mode.Question.Render())
-	case m.mode.PlanEntry.IsActive():
-		return separatorWrapped(trackerPrefix, separator, m.mode.PlanEntry.Render())
+	case m.conv.Modal.Question.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.conv.Modal.Question.Render())
+	case m.conv.Modal.PlanEntry.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.conv.Modal.PlanEntry.Render())
 	default:
 		return ""
 	}
@@ -148,7 +148,7 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 // renderTrackerList renders a compact task list above the input area.
 // Returns empty string when task display is toggled off via Ctrl+T.
 func (m model) renderTrackerList() string {
-	if !m.showTasks {
+	if !m.agentOutput.ShowTasks {
 		return ""
 	}
 	tasks := tracker.DefaultStore.List()
@@ -207,7 +207,7 @@ func (m model) messageRenderParams() conv.MessageRenderParams {
 		SpinnerView:             m.agentOutput.Spinner.View(),
 		TaskProgress:            m.agentOutput.TaskProgress,
 		TaskOwnerMap:            conv.BuildTaskOwnerMap(tracker.DefaultStore.List()),
-		InteractivePromptActive: (m.mode.Question != nil && m.mode.Question.IsActive()) || (m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive()),
+		InteractivePromptActive: (m.conv.Modal.Question != nil && m.conv.Modal.Question.IsActive()) || (m.conv.Modal.PlanApproval != nil && m.conv.Modal.PlanApproval.IsActive()),
 	}
 }
 

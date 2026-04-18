@@ -21,6 +21,10 @@ import (
 // TestPlanResponse_ModifyStaysInPlanMode verifies that when user gives feedback
 // via option 4 (modify), the model stays in plan mode for plan revision.
 func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
+	c := conv.NewConversation()
+	c.Tool = conv.ToolExecState{
+		PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "ExitPlanMode"}},
+	}
 	m := &model{
 		runtime: appruntime.Model{
 			OperationMode:      setting.ModePlan,
@@ -28,17 +32,7 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 			PlanEnabled:        true,
 			PlanTask:           "test task",
 		},
-		mode: conv.ModalState{
-			PlanApproval: conv.NewPlanPrompt(),
-			Question:     conv.NewQuestionPrompt(),
-		},
-		tool: conv.ToolExecState{
-			PendingCalls: []core.ToolCall{
-				{ID: "tc-1", Name: "ExitPlanMode"},
-			},
-			CurrentIdx: 0,
-		},
-		conv: conv.NewConversation(),
+		conv: c,
 	}
 
 	msg := conv.PlanResponseMsg{
@@ -56,7 +50,6 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 
 	m.handlePlanResponse(msg)
 
-	// After modify: should still be in plan mode
 	if !m.runtime.PlanEnabled {
 		t.Error("plan.enabled should remain true after modify feedback")
 	}
@@ -65,8 +58,11 @@ func TestPlanResponse_ModifyStaysInPlanMode(t *testing.T) {
 	}
 }
 
-// TestPlanResponse_ManualExitsPlanMode verifies that manual approval exits plan mode.
 func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
+	c := conv.NewConversation()
+	c.Tool = conv.ToolExecState{
+		PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "ExitPlanMode"}},
+	}
 	m := &model{
 		runtime: appruntime.Model{
 			OperationMode:      setting.ModePlan,
@@ -74,17 +70,7 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 			PlanEnabled:        true,
 			PlanTask:           "test task",
 		},
-		mode: conv.ModalState{
-			PlanApproval: conv.NewPlanPrompt(),
-			Question:     conv.NewQuestionPrompt(),
-		},
-		tool: conv.ToolExecState{
-			PendingCalls: []core.ToolCall{
-				{ID: "tc-1", Name: "ExitPlanMode"},
-			},
-			CurrentIdx: 0,
-		},
-		conv: conv.NewConversation(),
+		conv: c,
 	}
 
 	msg := conv.PlanResponseMsg{
@@ -110,6 +96,10 @@ func TestPlanResponse_ManualExitsPlanMode(t *testing.T) {
 
 // TestPlanResponse_AutoExitsPlanMode verifies that auto approval exits plan mode.
 func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
+	c := conv.NewConversation()
+	c.Tool = conv.ToolExecState{
+		PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "ExitPlanMode"}},
+	}
 	m := &model{
 		runtime: appruntime.Model{
 			OperationMode:      setting.ModePlan,
@@ -117,17 +107,7 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 			PlanEnabled:        true,
 			PlanTask:           "test task",
 		},
-		mode: conv.ModalState{
-			PlanApproval: conv.NewPlanPrompt(),
-			Question:     conv.NewQuestionPrompt(),
-		},
-		tool: conv.ToolExecState{
-			PendingCalls: []core.ToolCall{
-				{ID: "tc-1", Name: "ExitPlanMode"},
-			},
-			CurrentIdx: 0,
-		},
-		conv: conv.NewConversation(),
+		conv: c,
 	}
 
 	msg := conv.PlanResponseMsg{
@@ -156,6 +136,10 @@ func TestPlanResponse_AutoExitsPlanMode(t *testing.T) {
 
 // TestPlanResponse_RejectedExitsPlanMode verifies that rejection exits plan mode.
 func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
+	c := conv.NewConversation()
+	c.Tool = conv.ToolExecState{
+		PendingCalls: []core.ToolCall{{ID: "tc-1", Name: "ExitPlanMode"}},
+	}
 	m := &model{
 		runtime: appruntime.Model{
 			OperationMode:      setting.ModePlan,
@@ -163,17 +147,7 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 			PlanEnabled:        true,
 			PlanTask:           "test task",
 		},
-		mode: conv.ModalState{
-			PlanApproval: conv.NewPlanPrompt(),
-			Question:     conv.NewQuestionPrompt(),
-		},
-		tool: conv.ToolExecState{
-			PendingCalls: []core.ToolCall{
-				{ID: "tc-1", Name: "ExitPlanMode"},
-			},
-			CurrentIdx: 0,
-		},
-		conv: conv.NewConversation(),
+		conv: c,
 	}
 
 	msg := conv.PlanResponseMsg{
@@ -208,16 +182,15 @@ func TestPlanResponse_RejectedExitsPlanMode(t *testing.T) {
 
 func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 	reply := make(chan *tool.QuestionResponse, 1)
+	c := conv.NewConversation()
+	c.Modal.PendingQuestion = &tool.QuestionRequest{ID: "ask-1"}
+	c.Modal.PendingQuestionReply = reply
 	m := &model{
 		runtime: appruntime.Model{
 			OperationMode:      setting.ModePlan,
 			SessionPermissions: setting.NewSessionPermissions(),
 		},
-		pendingQuestion:      &tool.QuestionRequest{ID: "ask-1"},
-		pendingQuestionReply: reply,
-		mode: conv.ModalState{
-			Question: conv.NewQuestionPrompt(),
-		},
+		conv: c,
 	}
 
 	resp := &tool.QuestionResponse{
@@ -234,10 +207,10 @@ func TestHandleQuestionResponse_ForAgentReplyChannel(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("expected no follow-up command for agent question response")
 	}
-	if m.pendingQuestion != nil {
+	if m.conv.Modal.PendingQuestion != nil {
 		t.Fatal("expected pending question to be cleared")
 	}
-	if m.pendingQuestionReply != nil {
+	if m.conv.Modal.PendingQuestionReply != nil {
 		t.Fatal("expected pending question reply channel to be cleared")
 	}
 
@@ -363,11 +336,11 @@ func TestBuildPromptSuggestionRequest(t *testing.T) {
 	if req.Client == nil {
 		t.Fatal("expected client in request")
 	}
-	if req.SystemPrompt != suggestionSystemPrompt {
+	if req.SystemPrompt != input.SuggestionSystemPrompt {
 		t.Fatalf("unexpected system prompt: %q", req.SystemPrompt)
 	}
 	last := req.Messages[len(req.Messages)-1]
-	if last.Role != core.RoleUser || last.Content != suggestionUserPrompt {
+	if last.Role != core.RoleUser || last.Content != input.SuggestionUserPrompt {
 		t.Fatalf("unexpected tail message: %#v", last)
 	}
 }
@@ -384,7 +357,7 @@ func TestExecuteSubmitRequest_AppendsUserMessageAndStartsProviderTurn(t *testing
 	}
 	m.runtime.LLMProvider = testLLMProvider{}
 
-	cmd := m.executeSubmitRequest(input.SubmitRequest{Input: "请修复这个 bug"})
+	cmd := input.ExecuteSubmitRequest(m.submitDeps(), input.SubmitRequest{Input: "请修复这个 bug"})
 	if cmd == nil {
 		t.Fatal("expected submit command")
 	}
@@ -484,7 +457,7 @@ func TestBuildLoopSystemIncludesSessionSummary(t *testing.T) {
 }
 
 func TestBuildCoordinatorGuidanceEncouragesParallelAuditFanout(t *testing.T) {
-	guidance := buildCoordinatorGuidance()
+	guidance := system.CoordinatorGuidance()
 	for _, want := range []string{
 		"<coordinator-guidance>",
 		"broad audit, review, architecture analysis, refactor plan",
@@ -523,18 +496,14 @@ func TestRenderActiveModalPriority(t *testing.T) {
 			OperationMode:      setting.ModePlan,
 			SessionPermissions: setting.NewSessionPermissions(),
 		},
-		mode: conv.ModalState{
-			PlanApproval: conv.NewPlanPrompt(),
-			Question:     conv.NewQuestionPrompt(),
-			PlanEntry:    conv.NewEnterPlanPrompt(),
-		},
+		conv: conv.NewConversation(),
 	}
 	m.userInput.Approval = input.NewApproval()
 
-	m.mode.PlanApproval.Show(&tool.PlanRequest{Plan: "plan"}, "", 80, 24)
+	m.conv.Modal.PlanApproval.Show(&tool.PlanRequest{Plan: "plan"}, "", 80, 24)
 	m.userInput.Approval.Show(&perm.PermissionRequest{ToolName: "Bash", Description: "run"}, 80, 24)
-	m.mode.Question.Show(&tool.QuestionRequest{}, 80)
-	m.mode.PlanEntry.Show(&tool.EnterPlanRequest{}, 80)
+	m.conv.Modal.Question.Show(&tool.QuestionRequest{}, 80)
+	m.conv.Modal.PlanEntry.Show(&tool.EnterPlanRequest{}, 80)
 
 	view := m.renderActiveModal("---", "")
 	if !strings.Contains(view, "Would you like to proceed?") {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/system"
+	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/plan"
@@ -43,6 +44,7 @@ type Model struct {
 	// ── Config ──────────────────────────────────────────────────
 	Settings   *setting.Settings
 	HookEngine *hook.Engine
+	FileCache  *filecache.Cache
 
 	// ── Instructions (cached) ───────────────────────────────────
 	CachedUserInstructions    string

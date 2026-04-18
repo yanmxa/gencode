@@ -1,5 +1,5 @@
 // Handler logic for core.Agent outbox events. Each handler function takes
-// a Runtime (mutation primitives from parent) and a *Model (output-local state).
+// a Runtime (mutation primitives from parent) and a *OutputModel (output-local state).
 package conv
 
 import (
@@ -14,7 +14,7 @@ import (
 // --- Agent event dispatch ---
 
 // handleAgentEvent processes a single event from the core.Agent outbox.
-func handleAgentEvent(rt Runtime, m *Model, ev core.Event) tea.Cmd {
+func handleAgentEvent(rt Runtime, m *OutputModel, ev core.Event) tea.Cmd {
 	switch ev.Type {
 	case core.OnStart, core.OnMessage:
 		return rt.ContinueOutbox()
@@ -51,7 +51,7 @@ func handleAgentEvent(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 // handlePreInfer fires when the agent is about to call the LLM.
 // Marks the stream as active and appends an empty assistant message
 // for incremental text accumulation.
-func handlePreInfer(rt Runtime, m *Model) tea.Cmd {
+func handlePreInfer(rt Runtime, m *OutputModel) tea.Cmd {
 	rt.ActivateStream()
 
 	// Commit pending messages (e.g. user input, tool results) to scrollback
@@ -112,7 +112,7 @@ func handlePreTool(rt Runtime, ev core.Event) tea.Cmd {
 // handlePostTool fires after a tool execution completes. Applies side effects
 // (cwd changes, file cache, background task tracking) and appends the tool
 // result to the conversation display.
-func handlePostTool(rt Runtime, m *Model, ev core.Event) tea.Cmd {
+func handlePostTool(rt Runtime, m *OutputModel, ev core.Event) tea.Cmd {
 	tr, ok := ev.ToolResult()
 	if !ok {
 		return rt.ContinueOutbox()
@@ -159,7 +159,7 @@ func handlePostTool(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 // handleTurn fires when the agent completes a think+act cycle (end_turn).
 // This is the idle point — save session, fire hooks, check compaction,
 // drain queued inputs.
-func handleTurn(rt Runtime, m *Model, ev core.Event) tea.Cmd {
+func handleTurn(rt Runtime, m *OutputModel, ev core.Event) tea.Cmd {
 	result, _ := ev.Result()
 
 	rt.StopStream()
@@ -208,7 +208,7 @@ func handleTurn(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 }
 
 // handleAgentStopped processes agent shutdown.
-func handleAgentStopped(rt Runtime, m *Model, err error) tea.Cmd {
+func handleAgentStopped(rt Runtime, m *OutputModel, err error) tea.Cmd {
 	rt.StopStream()
 
 	if err != nil {
@@ -227,7 +227,7 @@ func handleAgentStopped(rt Runtime, m *Model, err error) tea.Cmd {
 // --- Progress handling (operates on output Model directly) ---
 
 // drainProgress drains all pending task progress messages from the channel.
-func (m *Model) drainProgress() {
+func (m *OutputModel) drainProgress() {
 	if m.ProgressHub == nil {
 		return
 	}
@@ -235,7 +235,7 @@ func (m *Model) drainProgress() {
 }
 
 // HandleProgress processes a task progress message.
-func (m *Model) HandleProgress(msg ProgressUpdateMsg) tea.Cmd {
+func (m *OutputModel) HandleProgress(msg ProgressUpdateMsg) tea.Cmd {
 	if m.TaskProgress == nil {
 		m.TaskProgress = make(map[int][]string)
 	}
@@ -252,7 +252,7 @@ func (m *Model) HandleProgress(msg ProgressUpdateMsg) tea.Cmd {
 }
 
 // HandleProgressTick processes a progress tick when tasks may be running.
-func (m *Model) HandleProgressTick(hasRunningTasks bool) tea.Cmd {
+func (m *OutputModel) HandleProgressTick(hasRunningTasks bool) tea.Cmd {
 	if hasRunningTasks {
 		if m.ProgressHub == nil {
 			return m.Spinner.Tick
@@ -263,7 +263,7 @@ func (m *Model) HandleProgressTick(hasRunningTasks bool) tea.Cmd {
 }
 
 // HandleTick handles spinner tick messages with context-aware updates.
-func (m *Model) HandleTick(msg tea.Msg, active, fetching, compacting, interactiveActive, hasRunningTasks bool) tea.Cmd {
+func (m *OutputModel) HandleTick(msg tea.Msg, active, fetching, compacting, interactiveActive, hasRunningTasks bool) tea.Cmd {
 	// Handle token limit fetching spinner
 	if fetching {
 		var cmd tea.Cmd
@@ -291,6 +291,6 @@ func (m *Model) HandleTick(msg tea.Msg, active, fetching, compacting, interactiv
 }
 
 // ResizeMDRenderer recreates the markdown renderer for the given width.
-func (m *Model) ResizeMDRenderer(width int) {
+func (m *OutputModel) ResizeMDRenderer(width int) {
 	m.MDRenderer = NewMDRenderer(width)
 }

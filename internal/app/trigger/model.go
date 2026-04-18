@@ -8,19 +8,22 @@ import (
 	"github.com/yanmxa/gencode/internal/hook"
 )
 
-// Model holds all system-event input state: cron prompts and async hook rewakes.
+// Model holds all system-event input state: cron prompts, async hook rewakes,
+// and the file watcher for hook-driven file monitoring.
 type Model struct {
 	CronQueue      []string
 	AsyncHookQueue *AsyncHookQueue
 	HookStatus     string // temporary active hook status shown in status bar
 	HookEngine     *hook.Engine
+	FileWatcher    *FileWatcher
 }
 
-// New creates a Model with an initialized AsyncHookQueue.
+// New creates a Model with an initialized AsyncHookQueue and optional FileWatcher.
 func New(hookEngine *hook.Engine) Model {
 	return Model{
 		AsyncHookQueue: NewAsyncHookQueue(),
 		HookEngine:     hookEngine,
+		FileWatcher:    NewFileWatcher(hookEngine, nil),
 	}
 }
 

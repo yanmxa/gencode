@@ -521,11 +521,11 @@ func TestInitRegistersWatchPathsFromSessionStart(t *testing.T) {
 	})
 	m.applyRuntimeHookOutcome(outcome)
 
-	paths := m.fileWatcher.CurrentPaths()
+	paths := m.systemInput.FileWatcher.CurrentPaths()
 	if len(paths) != 1 || paths[0] != watchPath {
 		t.Fatalf("expected watch path %q, got %#v", watchPath, paths)
 	}
-	m.fileWatcher.Stop()
+	m.systemInput.FileWatcher.Stop()
 }
 
 func TestFileWatcherFiresFileChangedForWatchedPath(t *testing.T) {
@@ -548,7 +548,7 @@ func TestFileWatcherFiresFileChangedForWatchedPath(t *testing.T) {
 		cwd:     cwd,
 		runtime: appruntime.Model{HookEngine: engine},
 	}
-	m.fileWatcher = trigger.NewFileWatcher(engine, func(outcome hook.HookOutcome) {
+	m.systemInput.FileWatcher = trigger.NewFileWatcher(engine, func(outcome hook.HookOutcome) {
 		m.applyRuntimeHookOutcome(outcome)
 	})
 	m.applyRuntimeHookOutcome(hook.HookOutcome{WatchPaths: []string{filePath}})
@@ -570,7 +570,7 @@ func TestFileWatcherFiresFileChangedForWatchedPath(t *testing.T) {
 		t.Fatal("timed out waiting for watched file change hook")
 	}
 
-	m.fileWatcher.Stop()
+	m.systemInput.FileWatcher.Stop()
 }
 
 func TestApplyRuntimeHookOutcomeSetsInitialPrompt(t *testing.T) {

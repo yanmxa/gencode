@@ -10,6 +10,9 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit/history"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	"github.com/yanmxa/gencode/internal/core"
+	coremcp "github.com/yanmxa/gencode/internal/mcp"
+	coreplugin "github.com/yanmxa/gencode/internal/plugin"
+	coreskill "github.com/yanmxa/gencode/internal/skill"
 )
 
 // PastedChunk holds a collapsed multi-line paste block.
@@ -86,8 +89,19 @@ func (img *ImageState) RemoveAt(idx int) {
 	}
 }
 
-// New creates a fully initialized input Model.
-func New(cwd string, width int, matchFunc suggest.Matcher) Model {
+// SelectorDeps holds the external dependencies needed to build all input selectors.
+// Passing this to New() lets the root model avoid manually wiring each selector.
+type SelectorDeps struct {
+	AgentRegistry  AgentRegistry
+	SkillRegistry  *coreskill.Registry
+	MCPRegistry    *coremcp.Registry
+	PluginRegistry *coreplugin.Registry
+	LoadDisabled   func(userLevel bool) map[string]bool
+	UpdateDisabled func(disabled map[string]bool, userLevel bool) error
+}
+
+// New creates a fully initialized input Model with all selectors wired up.
+func New(cwd string, width int, matchFunc suggest.Matcher, deps SelectorDeps) Model {
 	suggestions := suggest.NewState(matchFunc)
 	suggestions.SetCwd(cwd)
 	return Model{
@@ -96,6 +110,17 @@ func New(cwd string, width int, matchFunc suggest.Matcher) Model {
 		HistoryIdx:     -1,
 		Suggestions:    suggestions,
 		QueueSelectIdx: -1,
+
+		Approval: NewApproval(),
+		Agent:    NewAgentSelector(deps.AgentRegistry),
+		Search:   NewSearchSelector(),
+		Skill:    SkillState{Selector: NewSkillSelector(deps.SkillRegistry)},
+		Session:  SessionState{Selector: NewSessionSelector()},
+		Memory:   MemoryState{Selector: NewMemorySelector()},
+		MCP:      MCPState{Selector: NewMCPSelector(deps.MCPRegistry)},
+		Plugin:   NewPluginSelector(deps.PluginRegistry),
+		Provider: ProviderState{Selector: NewProviderSelector()},
+		Tool:     NewToolSelector(deps.LoadDisabled, deps.UpdateDisabled),
 	}
 }
 

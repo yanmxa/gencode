@@ -133,7 +133,7 @@ func DrainAgentOutbox(outbox <-chan core.Event) tea.Cmd {
 
 // Update routes all output-path messages: agent outbox, permission bridge,
 // compaction results, and progress updates.
-func Update(rt Runtime, m *Model, msg tea.Msg) (tea.Cmd, bool) {
+func Update(rt Runtime, m *OutputModel, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case AgentOutboxMsg:
 		if msg.Closed {

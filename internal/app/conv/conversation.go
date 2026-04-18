@@ -7,17 +7,22 @@ import (
 // --- Conversation model ---
 
 // ConversationModel holds the conversation message history, commit tracking,
-// stream and compact state.
+// stream/compact state, modal prompts, and tool execution state.
 type ConversationModel struct {
 	Messages       []core.ChatMessage
 	CommittedCount int
 	Stream         StreamState
 	Compact        CompactState
+	Modal          ModalState
+	Tool           ToolExecState
 }
 
-// NewConversation returns an empty conversation model.
+// NewConversation returns a fully initialized conversation model.
 func NewConversation() ConversationModel {
-	return ConversationModel{Messages: []core.ChatMessage{}}
+	return ConversationModel{
+		Messages: []core.ChatMessage{},
+		Modal:    NewModalState(),
+	}
 }
 
 // --- Conversation methods ---

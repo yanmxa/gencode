@@ -60,7 +60,7 @@ func Test_imageRefPattern(t *testing.T) {
 }
 
 func TestPendingImageMatchesAndExtractInlineImages(t *testing.T) {
-	m := New("", 80, nil)
+	m := New("", 80, nil, SelectorDeps{})
 	first := m.AddPendingImage(core.Image{FileName: "a.png"})
 	second := m.AddPendingImage(core.Image{FileName: "b.png"})
 
@@ -87,7 +87,7 @@ func TestPendingImageMatchesAndExtractInlineImages(t *testing.T) {
 }
 
 func TestExtractInlineImagesUsesSubmittedBufferOffsets(t *testing.T) {
-	m := New("", 80, nil)
+	m := New("", 80, nil, SelectorDeps{})
 	label := m.AddPendingImage(core.Image{FileName: "a.png"})
 
 	raw := "  " + label + " hi"
@@ -103,7 +103,7 @@ func TestExtractInlineImagesUsesSubmittedBufferOffsets(t *testing.T) {
 }
 
 func TestRemoveImageToken(t *testing.T) {
-	m := New("", 80, nil)
+	m := New("", 80, nil, SelectorDeps{})
 	label := m.AddPendingImage(core.Image{FileName: "clip.png"})
 	m.Textarea.SetValue("hello " + label + " world")
 

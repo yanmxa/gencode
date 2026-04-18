@@ -251,15 +251,15 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 
 	case tea.KeyShiftTab:
 		if !m.conv.Stream.Active && !m.userInput.Approval.IsActive() &&
-			!m.mode.Question.IsActive() &&
-			(m.mode.PlanApproval == nil || !m.mode.PlanApproval.IsActive()) &&
+			!m.conv.Modal.Question.IsActive() &&
+			(m.conv.Modal.PlanApproval == nil || !m.conv.Modal.PlanApproval.IsActive()) &&
 			!m.userInput.Provider.Selector.IsActive() && !m.userInput.Suggestions.IsVisible() {
 			m.cycleOperationMode()
 			return nil, true
 		}
 
 	case tea.KeyCtrlT:
-		m.showTasks = !m.showTasks
+		m.agentOutput.ShowTasks = !m.agentOutput.ShowTasks
 		return nil, true
 
 	case tea.KeyCtrlO:
@@ -347,15 +347,15 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 
 // delegateToActiveModal routes keypresses to active modal components.
 func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
-	if m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive() {
-		cmd, resp := m.mode.PlanApproval.HandleKeypress(msg)
+	if m.conv.Modal.PlanApproval != nil && m.conv.Modal.PlanApproval.IsActive() {
+		cmd, resp := m.conv.Modal.PlanApproval.HandleKeypress(msg)
 		if resp != nil {
 			return true, tea.Batch(cmd, m.handlePlanResponse(*resp))
 		}
 		return true, cmd
 	}
-	if m.mode.Question.IsActive() {
-		cmd, resp := m.mode.Question.HandleKeypress(msg)
+	if m.conv.Modal.Question.IsActive() {
+		cmd, resp := m.conv.Modal.Question.HandleKeypress(msg)
 		if resp != nil {
 			return true, tea.Batch(cmd, m.handleQuestionResponse(*resp))
 		}
@@ -368,8 +368,8 @@ func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 		}
 		return true, cmd
 	}
-	if m.mode.PlanEntry.IsActive() {
-		cmd, resp := m.mode.PlanEntry.HandleKeypress(msg)
+	if m.conv.Modal.PlanEntry.IsActive() {
+		cmd, resp := m.conv.Modal.PlanEntry.HandleKeypress(msg)
 		if resp != nil {
 			return true, tea.Batch(cmd, m.handleEnterPlanResponse(*resp))
 		}
@@ -433,8 +433,8 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 
 	m.agentOutput.ResizeMDRenderer(msg.Width)
 
-	if m.mode.PlanApproval != nil {
-		m.mode.PlanApproval.SetSize(msg.Width, msg.Height)
+	if m.conv.Modal.PlanApproval != nil {
+		m.conv.Modal.PlanApproval.SetSize(msg.Width, msg.Height)
 	}
 
 	if !m.ready {
@@ -524,16 +524,16 @@ func (m *model) updateMode(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (m *model) handleQuestionRequest(msg conv.QuestionRequestMsg) tea.Cmd {
-	m.pendingQuestion = msg.Request
-	m.pendingQuestionReply = msg.Reply
-	m.mode.Question.Show(msg.Request, m.width)
+	m.conv.Modal.PendingQuestion = msg.Request
+	m.conv.Modal.PendingQuestionReply = msg.Reply
+	m.conv.Modal.Question.Show(msg.Request, m.width)
 	return tea.Batch(m.commitMessages()...)
 }
 
 func (m *model) handleQuestionResponse(msg conv.QuestionResponseMsg) tea.Cmd {
-	reply := m.pendingQuestionReply
-	m.pendingQuestionReply = nil
-	defer func() { m.pendingQuestion = nil }()
+	reply := m.conv.Modal.PendingQuestionReply
+	m.conv.Modal.PendingQuestionReply = nil
+	defer func() { m.conv.Modal.PendingQuestion = nil }()
 
 	if reply == nil {
 		return nil
@@ -561,7 +561,7 @@ func (m *model) handlePlanRequest(msg conv.PlanRequestMsg) tea.Cmd {
 	planScrollback := m.renderPlanForScrollback(msg.Request)
 	cmds = append(cmds, tea.Println(planScrollback))
 
-	m.mode.PlanApproval.Show(msg.Request, planPath, m.width, m.height)
+	m.conv.Modal.PlanApproval.Show(msg.Request, planPath, m.width, m.height)
 	return tea.Batch(cmds...)
 }
 
@@ -613,7 +613,7 @@ func (m *model) handlePlanResponse(msg conv.PlanResponseMsg) tea.Cmd {
 func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
 	m.conv.Clear()
 	m.runtime.EnableAutoAcceptMode(m.cwd)
-	m.tool.Reset()
+	m.conv.Tool.Reset()
 
 	userMsg := fmt.Sprintf("Implement the following approved plan step by step. Start coding immediately — do NOT explore or investigate further.\n\n%s", planContent)
 	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: userMsg})
@@ -622,7 +622,7 @@ func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
 }
 
 func (m *model) handleEnterPlanRequest(msg conv.EnterPlanRequestMsg) tea.Cmd {
-	m.mode.PlanEntry.Show(msg.Request, m.width)
+	m.conv.Modal.PlanEntry.Show(msg.Request, m.width)
 	return tea.Batch(m.commitMessages()...)
 }
 

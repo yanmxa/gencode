@@ -4,11 +4,22 @@ import (
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
-// ModalState holds plan mode modal prompt UI components.
+// ModalState holds plan mode modal prompt UI components and pending question state.
 type ModalState struct {
-	PlanApproval *PlanPrompt
-	PlanEntry    *EnterPlanPrompt
-	Question     *QuestionPrompt
+	PlanApproval         *PlanPrompt
+	PlanEntry            *EnterPlanPrompt
+	Question             *QuestionPrompt
+	PendingQuestion      *tool.QuestionRequest
+	PendingQuestionReply chan *tool.QuestionResponse
+}
+
+// NewModalState returns a fully initialized ModalState.
+func NewModalState() ModalState {
+	return ModalState{
+		PlanApproval: NewPlanPrompt(),
+		PlanEntry:    NewEnterPlanPrompt(),
+		Question:     NewQuestionPrompt(),
+	}
 }
 
 // PlanRequestMsg is sent when ExitPlanMode tool is called

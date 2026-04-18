@@ -1,13 +1,20 @@
 package app
 
 import (
+	"context"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/app/kit/suggest"
+	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/plugin"
+	"github.com/yanmxa/gencode/internal/setting"
 )
 
 func (m *model) GetCwd() string                 { return m.cwd }
@@ -52,7 +59,7 @@ func (m *model) handleStreamCancel() tea.Cmd {
 }
 
 func (m *model) cancelPendingToolCalls() {
-	toolCalls := m.tool.DrainPendingCalls()
+	toolCalls := m.conv.Tool.DrainPendingCalls()
 	if toolCalls == nil && len(m.conv.Messages) > 0 {
 		lastMsg := m.conv.Messages[len(m.conv.Messages)-1]
 		if lastMsg.Role == core.RoleAssistant {
@@ -63,7 +70,7 @@ func (m *model) cancelPendingToolCalls() {
 }
 
 func (m *model) cancelRemainingToolCalls(startIdx int) {
-	m.conv.AppendCancelledToolResults(m.tool.RemainingCalls(startIdx), func(core.ToolCall) string {
+	m.conv.AppendCancelledToolResults(m.conv.Tool.RemainingCalls(startIdx), func(core.ToolCall) string {
 		return "Tool execution skipped."
 	})
 }
@@ -110,9 +117,66 @@ func (m *model) quitWithCancel() (tea.Cmd, bool) {
 		m.agentSess = nil
 	}
 	m.conv.Stream.Stop()
-	if m.tool.Cancel != nil {
-		m.tool.Cancel()
+	if m.conv.Tool.Cancel != nil {
+		m.conv.Tool.Cancel()
 	}
 	m.fireSessionEnd("prompt_input_exit")
 	return tea.Quit, true
+}
+
+func (m *model) fireFileChanged(filePath, source string) {
+	if m.runtime.HookEngine == nil || filePath == "" {
+		return
+	}
+	outcome := m.runtime.HookEngine.Execute(context.Background(), hook.FileChanged, hook.HookInput{FilePath: filePath, Source: source, Event: "change"})
+	m.applyRuntimeHookOutcome(outcome)
+}
+
+func (m *model) changeCwd(newCwd string) {
+	if newCwd == "" || newCwd == m.cwd {
+		return
+	}
+	oldCwd := m.cwd
+	m.cwd = newCwd
+	m.isGit = setting.IsGitRepo(newCwd)
+	m.userInput.Suggestions.SetCwd(newCwd)
+	if m.userInput.Suggestions.GetSuggestionType() == suggest.TypeFile {
+		m.userInput.Suggestions.Hide()
+	}
+	m.runtime.ClearCachedInstructions()
+	m.runtime.RefreshMemoryContext(newCwd, "cwd_changed")
+	m.reloadProjectContext(newCwd)
+	m.reconfigureAgentTool()
+	if m.runtime.HookEngine != nil {
+		m.runtime.HookEngine.SetCwd(newCwd)
+		outcome := m.runtime.HookEngine.Execute(context.Background(), hook.CwdChanged, hook.HookInput{OldCwd: oldCwd, NewCwd: newCwd})
+		m.applyRuntimeHookOutcome(outcome)
+	}
+}
+
+func (m *model) reloadProjectContext(cwd string) {
+	initExtensions(cwd)
+	setting.Initialize(cwd)
+	if m.runtime.HookEngine != nil {
+		plugin.MergePluginHooksIntoSettings(setting.DefaultSetup)
+	}
+	m.runtime.ApplySettings(setting.DefaultSetup)
+}
+
+func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
+	if outcome.InitialUserMessage != "" && m.initialPrompt == "" && len(m.conv.Messages) == 0 {
+		m.initialPrompt = outcome.InitialUserMessage
+	}
+	if len(outcome.WatchPaths) == 0 {
+		return
+	}
+	if m.systemInput.FileWatcher == nil {
+		queue := m.systemInput.AsyncHookQueue
+		m.systemInput.FileWatcher = trigger.NewFileWatcher(m.runtime.HookEngine, func(outcome hook.HookOutcome) {
+			if queue != nil && outcome.InitialUserMessage != "" {
+				queue.Push(trigger.AsyncHookRewake{Notice: "File watcher hook triggered", Context: []string{outcome.InitialUserMessage}})
+			}
+		})
+	}
+	m.systemInput.FileWatcher.SetPaths(outcome.WatchPaths)
 }
