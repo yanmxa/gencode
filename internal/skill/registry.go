@@ -483,6 +483,13 @@ func (r *Registry) PromptSection() string {
 	return r.GetSkillsSection()
 }
 
+// Registry returns the concrete *Registry receiver.
+// This satisfies the Service interface, allowing callers to access
+// Registry-specific methods that are not part of the Service contract.
+func (r *Registry) Registry() *Registry {
+	return r
+}
+
 // NewRegistryForTest creates a Registry with pre-populated skills and stores.
 // Intended for testing only.
 func NewRegistryForTest(skills map[string]*Skill, userStore, projectStore *Store) *Registry {

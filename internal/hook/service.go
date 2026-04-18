@@ -37,7 +37,15 @@ type Service interface {
 
 	// lifecycle
 	Wait()
+
+	// Engine returns the underlying *Engine.
+	// This is needed by callers that require the concrete type
+	// (e.g. notify.InstallCompletionObserver, subagent.NewExecutor, trigger.NewFileWatcher).
+	Engine() *Engine
 }
+
+// Engine returns the receiver itself, satisfying the Service interface.
+func (e *Engine) Engine() *Engine { return e }
 
 // Compile-time check: *Engine implements Service.
 var _ Service = (*Engine)(nil)

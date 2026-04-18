@@ -1,20 +1,13 @@
-// Shared mutable app state: provider, session, permissions, plan, and cache.
-//
-// Singletons are accessed via Default() service accessors (e.g. hook.Default(),
-// setting.Default(), llm.Default()) — not copied here.
+// Shared mutable app state: provider, permissions, plan, and cache.
+// Pure state holder — no singleton service dependencies.
 package app
 
 import (
-	"context"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/core/system"
 	"github.com/yanmxa/gencode/internal/filecache"
-	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/plan"
-	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/setting"
 )
 
@@ -76,12 +69,6 @@ func (m *Env) OperationModeName() string {
 	default:
 		return "default"
 	}
-}
-
-func (m *Env) CycleOperationMode() {
-	allowBypass := setting.DefaultIfInit() != nil && setting.Default().AllowBypass()
-	m.OperationMode = m.OperationMode.NextWithBypass(allowBypass)
-	m.PlanEnabled = m.OperationMode == setting.ModePlan
 }
 
 func (m *Env) ResetSessionPermissions() {
@@ -159,66 +146,6 @@ func (m *Env) ClearCachedInstructions() {
 	m.CachedProjectInstructions = ""
 }
 
-func (m *Env) RefreshMemoryContext(cwd, loadReason string) {
-	files := system.LoadMemoryFiles(cwd)
-	var userParts, projectParts []string
-	for _, f := range files {
-		switch f.Level {
-		case "global":
-			userParts = append(userParts, f.Content)
-		case "project", "local":
-			projectParts = append(projectParts, f.Content)
-		}
-		if svc := hook.DefaultIfInit(); svc != nil {
-			svc.ExecuteAsync(hook.InstructionsLoaded, hook.HookInput{
-				FilePath:   f.Path,
-				MemoryType: memoryTypeForLevel(f.Level),
-				LoadReason: loadReason,
-			})
-		}
-	}
-	m.CachedUserInstructions = joinSections(userParts)
-	m.CachedProjectInstructions = joinSections(projectParts)
-}
-
-func syncSettingsToHookEngine() {
-	if svc := hook.DefaultIfInit(); svc != nil && setting.DefaultIfInit() != nil {
-		svc.SetSettings(setting.Default().Snapshot())
-	}
-}
-
-func (m *Env) CheckPromptHook(ctx context.Context, prompt string) (bool, string) {
-	if svc := hook.DefaultIfInit(); svc != nil {
-		outcome := svc.Execute(ctx, hook.UserPromptSubmit, hook.HookInput{Prompt: prompt})
-		return outcome.ShouldBlock, outcome.BlockReason
-	}
-	return false, ""
-}
-
-func (m *Env) SwitchProvider(p llm.Provider) {
-	m.LLMProvider = p
-	if svc := hook.DefaultIfInit(); svc != nil {
-		svc.SetLLMCompleter(buildHookCompleter(p), m.GetModelID())
-	}
-}
-
-func buildHookCompleter(p llm.Provider) hook.LLMCompleter {
-	if p == nil {
-		return nil
-	}
-	return func(ctx context.Context, systemPrompt, userMessage, model string) (string, error) {
-		c := llm.NewClient(p, model, 0)
-		resp, err := c.Complete(ctx, systemPrompt, []core.Message{{
-			Role:    core.RoleUser,
-			Content: userMessage,
-		}}, 4096)
-		if err != nil {
-			return "", err
-		}
-		return resp.Content, nil
-	}
-}
-
 func (m *Env) SessionMode() string {
 	if m.PlanEnabled {
 		return "plan"
@@ -241,92 +168,6 @@ func (m *Env) ResetTokens() {
 }
 
 
-func (m *Env) FirePostToolHook(tr core.ToolResult, sideEffect any) {
-	svc := hook.DefaultIfInit()
-	if svc == nil {
-		return
-	}
-	eventType := hook.PostToolUse
-	if tr.IsError {
-		eventType = hook.PostToolUseFailure
-	}
-	toolResponse := any(tr.Content)
-	if sideEffect != nil {
-		toolResponse = sideEffect
-	}
-	input := hook.HookInput{
-		ToolName:     tr.ToolName,
-		ToolUseID:    tr.ToolCallID,
-		ToolResponse: toolResponse,
-	}
-	if tr.IsError {
-		input.Error = tr.Content
-	}
-	svc.ExecuteAsync(eventType, input)
-}
-
-func (m *Env) FireStopFailureHook(lastAssistantContent string, err error) {
-	svc := hook.DefaultIfInit()
-	if svc == nil {
-		return
-	}
-	svc.ExecuteAsync(hook.StopFailure, hook.HookInput{
-		LastAssistantMessage: lastAssistantContent,
-		Error:                err.Error(),
-		StopHookActive:       svc.StopHookActive(),
-	})
-}
-
-func (m *Env) FireSessionEnd(ctx context.Context, reason string) {
-	svc := hook.DefaultIfInit()
-	if svc == nil {
-		return
-	}
-	svc.Execute(ctx, hook.SessionEnd, hook.HookInput{
-		Reason: reason,
-	})
-	svc.ClearSessionHooks()
-}
-
-func (m *Env) ExecuteStartupHooks(ctx context.Context) hook.HookOutcome {
-	svc := hook.DefaultIfInit()
-	if svc == nil {
-		return hook.HookOutcome{}
-	}
-	svc.ExecuteAsync(hook.Setup, hook.HookInput{
-		Trigger: "init",
-	})
-	source := "startup"
-	if session.Default().ID() != "" {
-		source = "resume"
-	}
-	return svc.Execute(ctx, hook.SessionStart, hook.HookInput{
-		Source: source,
-		Model:  m.GetModelID(),
-	})
-}
-
-func (m *Env) ExecuteIdleHooks(ctx context.Context, lastAssistantContent string) (blocked bool, reason string) {
-	svc := hook.DefaultIfInit()
-	if svc == nil {
-		return false, ""
-	}
-	if svc.HasHooks(hook.Stop) {
-		outcome := svc.Execute(ctx, hook.Stop, hook.HookInput{
-			LastAssistantMessage: lastAssistantContent,
-			StopHookActive:       svc.StopHookActive(),
-		})
-		if outcome.ShouldBlock {
-			blocked = true
-			reason = outcome.BlockReason
-		}
-	}
-	svc.ExecuteAsync(hook.Notification, hook.HookInput{
-		Message:          "Claude is waiting for your input",
-		NotificationType: "idle_prompt",
-	})
-	return blocked, reason
-}
 
 func memoryTypeForLevel(level string) string {
 	switch level {

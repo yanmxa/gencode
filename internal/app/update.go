@@ -17,7 +17,6 @@ import (
 	"github.com/yanmxa/gencode/internal/app/notify"
 	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/plan"
@@ -351,8 +350,8 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 
 		if m.userInput.Session.PendingSelector {
 			m.userInput.Session.PendingSelector = false
-			if session.Default().GetStore() != nil {
-				_ = m.userInput.Session.Selector.EnterSelect(m.width, m.height, session.Default().GetStore(), m.cwd)
+			if m.services.Session.GetStore() != nil {
+				_ = m.userInput.Session.Selector.EnterSelect(m.width, m.height, m.services.Session.GetStore(), m.cwd)
 			}
 		}
 
@@ -402,7 +401,7 @@ func (m *model) submitDeps() input.SubmitDeps {
 		Actions:         m,
 		Input:           &m.userInput,
 		Conversation:    &m.conv.ConversationModel,
-		CheckPromptHook: m.env.CheckPromptHook,
+		CheckPromptHook: m.checkPromptHook,
 		Cwd:             m.cwd,
 		HandleCommand: func(text string) (tea.Cmd, bool) {
 			ctrl := input.NewCommandController(m.commandDeps())
@@ -453,14 +452,14 @@ func (m *model) commandDeps() input.CommandDeps {
 		Height:       m.height,
 		Cwd:          m.cwd,
 
-		DisabledTools: setting.Default().DisabledTools(),
-		ProviderStore: llm.Default().Store(),
+		DisabledTools: m.services.Setting.DisabledTools(),
+		ProviderStore: m.services.LLM.Store(),
 		LLMProvider:   m.env.LLMProvider,
 		InputTokens:   m.env.InputTokens,
 		CurrentModel:  m.env.CurrentModel,
 
-		GetSessionID:     func() string { return session.Default().ID() },
-		GetSessionStore:  func() *session.Store { return session.Default().GetStore() },
+		GetSessionID:     func() string { return m.services.Session.ID() },
+		GetSessionStore:  func() *session.Store { return m.services.Session.GetStore() },
 		GetThinkingLevel: func() llm.ThinkingLevel { return m.env.ThinkingLevel },
 
 		ResetTokens:        m.env.ResetTokens,
@@ -497,8 +496,8 @@ func (m *model) approvalDeps() input.ApprovalFlowDeps {
 	return input.ApprovalFlowDeps{
 		Actions:            m,
 		Input:              &m.userInput,
-		HookEngine:         hook.DefaultEngine,
-		Settings:           setting.Default().Snapshot(),
+		HookEngine:         m.services.Hook.Engine(),
+		Settings:           m.services.Setting.Snapshot(),
 		SessionPermissions: m.env.SessionPermissions,
 		SetOperationMode:   func(mode setting.OperationMode) { m.env.OperationMode = mode },
 		Tool:               &m.conv.Tool,
@@ -532,15 +531,17 @@ func (m *model) AbortToolWithError(errorMsg string, retry bool) tea.Cmd {
 // ============================================================
 
 func (m *model) cycleOperationMode() {
-	m.env.CycleOperationMode()
+	allowBypass := m.services.Setting != nil && m.services.Setting.AllowBypass()
+	m.env.OperationMode = m.env.OperationMode.NextWithBypass(allowBypass)
+	m.env.PlanEnabled = m.env.OperationMode == setting.ModePlan
 	m.env.ApplyModePermissions(m.cwd)
 
 	if m.env.PlanEnabled {
 		m.env.EnsurePlanStore()
 	}
 
-	if svc := hook.DefaultIfInit(); svc != nil {
-		svc.SetPermissionMode(m.env.OperationModeName())
+	if m.services.Hook != nil {
+		m.services.Hook.SetPermissionMode(m.env.OperationModeName())
 	}
 }
 

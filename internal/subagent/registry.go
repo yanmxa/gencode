@@ -273,3 +273,10 @@ func (r *Registry) PromptSection() string {
 func (r *Registry) NewExecutor(provider llm.Provider, cwd string, parentModelID string, hookEngine *hook.Engine) *Executor {
 	return NewExecutor(provider, cwd, parentModelID, hookEngine)
 }
+
+// Registry returns the receiver itself.
+// Implements Service.Registry, giving callers access to the concrete type
+// needed for adapter construction.
+func (r *Registry) Registry() *Registry {
+	return r
+}

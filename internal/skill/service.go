@@ -27,6 +27,9 @@ type Service interface {
 		Namespace string
 		IsProject bool
 	})
+
+	// concrete access
+	Registry() *Registry
 }
 
 // Compile-time check: *Registry implements Service.

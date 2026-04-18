@@ -56,8 +56,8 @@ func initInfrastructure() error {
 func initTools(cwd string) error {
 	orchestration.Default().Reset()
 	cron.Default().Reset()
-	cron.DefaultStore.SetStoragePath(filepath.Join(cwd, ".gen", "scheduled_tasks.json"))
-	if err := cron.DefaultStore.LoadDurable(); err != nil {
+	cron.Default().SetStoragePath(filepath.Join(cwd, ".gen", "scheduled_tasks.json"))
+	if err := cron.Default().LoadDurable(); err != nil {
 		return fmt.Errorf("failed to load scheduled tasks: %w", err)
 	}
 	fs.SetEnvProvider(plugin.PluginEnv)

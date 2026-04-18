@@ -28,6 +28,9 @@ type Service interface {
 	// installer
 	NewInstaller(cwd string) *Installer  // create plugin installer
 
+	// access
+	Registry() *Registry                 // return the underlying *Registry
+
 	// cross-domain (consumed by other services at init)
 	AgentPaths() []PluginPath            // agent file paths from enabled plugins
 	SkillPaths() []PluginPath            // skill directory paths from enabled plugins
@@ -100,3 +103,4 @@ func (s *service) CommandPaths() []PluginPath { return GetPluginCommandPaths() }
 func (s *service) MCPServers() []PluginMCPServer { return GetPluginMCPServers() }
 func (s *service) PluginHooks() map[string][]setting.Hook { return GetPluginHooks() }
 func (s *service) PluginEnv() []string { return PluginEnv() }
+func (s *service) Registry() *Registry { return s.registry }

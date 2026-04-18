@@ -24,6 +24,9 @@ type Service interface {
 
 	// system prompt
 	PromptSection() string // rendered section for system prompt
+
+	// concrete access
+	Registry() *Registry // returns the underlying Registry for adapter construction
 }
 
 // Compile-time check: *Registry implements Service.

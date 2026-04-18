@@ -19,6 +19,8 @@ type Service interface {
 
 	// lifecycle
 	Reset()
+	SetStoragePath(path string)
+	LoadDurable() error
 }
 
 // ── singleton ──────────────────────────────────────────────

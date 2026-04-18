@@ -375,10 +375,10 @@ func (c *CommandController) handleReloadPluginsCommand(ctx context.Context, args
 	if strings.TrimSpace(args) != "" {
 		return "Usage: /reload-plugins", nil, nil
 	}
-	if err := plugin.DefaultRegistry.Load(ctx, c.deps.Cwd); err != nil {
+	if err := plugin.Default().Load(ctx, c.deps.Cwd); err != nil {
 		return "", nil, fmt.Errorf("failed to reload plugin registry: %w", err)
 	}
-	_ = plugin.DefaultRegistry.LoadClaudePlugins(ctx)
+	_ = plugin.Default().LoadClaudePlugins(ctx)
 	if err := c.deps.ReloadPluginBackedState(); err != nil {
 		return "", nil, err
 	}
@@ -467,7 +467,7 @@ func (c *CommandController) handleLoopCommand(_ context.Context, args string) (s
 		if err != nil {
 			return loopUsage(), nil, nil
 		}
-		job, err := cron.DefaultStore.Create(parsed.Cron, parsed.Prompt, false, false)
+		job, err := cron.Default().Create(parsed.Cron, parsed.Prompt, false, false)
 		if err != nil {
 			return "", nil, err
 		}
@@ -481,7 +481,7 @@ func (c *CommandController) handleLoopCommand(_ context.Context, args string) (s
 	if err != nil {
 		return loopUsage(), nil, nil
 	}
-	job, err := cron.DefaultStore.Create(parsed.Cron, parsed.Prompt, true, false)
+	job, err := cron.Default().Create(parsed.Cron, parsed.Prompt, true, false)
 	if err != nil {
 		return "", nil, err
 	}
@@ -508,7 +508,7 @@ func handleLoopAdminCommand(args string) (string, bool, error) {
 		if strings.EqualFold(fields[1], "all") {
 			jobs := cron.Default().List()
 			for _, job := range jobs {
-				if err := cron.DefaultStore.Delete(job.ID); err != nil {
+				if err := cron.Default().Delete(job.ID); err != nil {
 					return "", true, err
 				}
 			}
@@ -518,7 +518,7 @@ func handleLoopAdminCommand(args string) (string, bool, error) {
 		if id == "" {
 			return "Usage: /loop delete <job-id>", true, nil
 		}
-		if err := cron.DefaultStore.Delete(id); err != nil {
+		if err := cron.Default().Delete(id); err != nil {
 			return "", true, err
 		}
 		return fmt.Sprintf("Cancelled scheduled task %s.", id), true, nil
