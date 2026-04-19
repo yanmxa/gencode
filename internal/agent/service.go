@@ -37,6 +37,8 @@ type Service interface {
 // Options holds dependencies for initialization.
 type Options struct{}
 
+var _ Service = (*service)(nil)
+
 // ── singleton ──────────────────────────────────────────────
 
 var (

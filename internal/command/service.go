@@ -20,11 +20,21 @@ type Service interface {
 	GetCustomCommands() []Info
 }
 
+// PluginCommandPath describes a custom command file provided by a plugin.
+type PluginCommandPath struct {
+	Path      string
+	Namespace string
+	IsProject bool // true for project-scope, false for user-scope
+}
+
 // Options holds all dependencies for initialization.
 type Options struct {
-	CWD              string
-	DynamicProviders []func() []Info
+	CWD                  string
+	DynamicProviders     []func() []Info
+	PluginCommandPaths   func() []PluginCommandPath // injected plugin callback
 }
+
+var _ Service = (*service)(nil)
 
 // ── singleton ──────────────────────────────────────────────
 

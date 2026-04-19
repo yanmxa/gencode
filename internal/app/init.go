@@ -34,14 +34,31 @@ var appCwd string
 func initInfrastructure() error {
 	appCwd, _ = os.Getwd()
 
-	llm.Initialize(llm.Options{})
-	initExtensions(appCwd)
+	// Phase 1: foundation — no cross-service deps
 	setting.Initialize(setting.Options{CWD: appCwd})
-	if err := initTools(appCwd); err != nil {
-		return err
+	llm.Initialize(llm.Options{})
+
+	// Phase 2: extensions — plugin first, then dependents
+	initExtensions(appCwd)
+
+	// Phase 3: tool infrastructure
+	tool.Initialize(tool.Options{})
+	agent.Initialize(agent.Options{})
+	task.Initialize(task.Options{})
+	tracker.Initialize(tracker.Options{})
+	orchestration.Initialize(orchestration.Options{})
+	cron.Initialize(cron.Options{
+		StoragePath: filepath.Join(appCwd, ".gen", "scheduled_tasks.json"),
+	})
+	if err := cron.Default().LoadDurable(); err != nil {
+		return fmt.Errorf("failed to load scheduled tasks: %w", err)
 	}
+	fs.SetEnvProvider(plugin.PluginEnv)
+
+	// Phase 4: session
 	session.Initialize(session.Options{CWD: appCwd})
 
+	// Phase 5: hooks — depends on setting, session, llm, plugin
 	hookSettings := setting.Default().Snapshot()
 	plugin.MergePluginHooksIntoSettings(hookSettings)
 	hook.Initialize(hook.Options{
@@ -54,22 +71,6 @@ func initInfrastructure() error {
 		EnvProvider:    plugin.PluginEnv,
 	})
 
-	return nil
-}
-
-func initTools(cwd string) error {
-	agent.Initialize(agent.Options{})
-	tool.Initialize(tool.Options{})
-	task.Initialize(task.Options{})
-	tracker.Initialize(tracker.Options{})
-	orchestration.Initialize(orchestration.Options{})
-	cron.Initialize(cron.Options{
-		StoragePath: filepath.Join(cwd, ".gen", "scheduled_tasks.json"),
-	})
-	if err := cron.Default().LoadDurable(); err != nil {
-		return fmt.Errorf("failed to load scheduled tasks: %w", err)
-	}
-	fs.SetEnvProvider(plugin.PluginEnv)
 	return nil
 }
 

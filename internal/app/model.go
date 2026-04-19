@@ -630,10 +630,7 @@ func (m *model) persistOverflow(result *core.ToolResult) {
 	if len(result.Content) <= overflowThreshold {
 		return
 	}
-	cutoff := previewSize
-	if cutoff > len(result.Content) {
-		cutoff = len(result.Content)
-	}
+	cutoff := min(previewSize, len(result.Content))
 	for cutoff > 0 && !utf8.RuneStart(result.Content[cutoff]) {
 		cutoff--
 	}

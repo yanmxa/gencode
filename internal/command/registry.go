@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/yanmxa/gencode/internal/markdown"
-	"github.com/yanmxa/gencode/internal/plugin"
 
 	"gopkg.in/yaml.v3"
 )
@@ -67,41 +66,6 @@ func ParseCommand(input string) (cmd string, args string, isCmd bool) {
 	return cmd, args, true
 }
 
-// ── backward-compat package-level functions ───────────────
-
-// BuiltinNames returns the set of built-in command names for registry lookup.
-// Delegates to Default().
-func BuiltinNames() map[string]Info {
-	return Default().BuiltinNames()
-}
-
-// GetMatchingCommands returns all commands (builtin + skills + plugin commands)
-// whose names fuzzy-match the given query. Results are sorted alphabetically.
-// Delegates to Default().
-func GetMatchingCommands(query string) []Info {
-	return Default().GetMatching(query)
-}
-
-// GetCustomCommands returns Info entries for all custom commands
-// (user, plugin, and project level).
-// Delegates to Default().
-func GetCustomCommands() []Info {
-	return Default().GetCustomCommands()
-}
-
-// IsCustomCommand checks whether the given command name matches a custom command.
-// Delegates to Default().
-func IsCustomCommand(cmd string) (*CustomCommand, bool) {
-	return Default().IsCustomCommand(cmd)
-}
-
-// SetDynamicInfoProviders configures additional command metadata sources that
-// are composed above this package, such as skill-backed slash commands.
-// Delegates to Default().
-func SetDynamicInfoProviders(providers ...func() []Info) {
-	Default().(*service).setDynamicInfoProviders(providers...)
-}
-
 // Initialize sets the working directory for resolving project-level commands,
 // creates the service, and sets the singleton.
 // Sources: ~/.gen/commands/, .gen/commands/, and plugin command paths.
@@ -109,6 +73,7 @@ func Initialize(opts Options) error {
 	s := &service{
 		cwd:                  opts.CWD,
 		dynamicInfoProviders: opts.DynamicProviders,
+		pluginCommandPaths:   opts.PluginCommandPaths,
 	}
 	mu.Lock()
 	instance = s
@@ -164,6 +129,7 @@ type service struct {
 	cwd                  string
 	cachedCustomCommands []CustomCommand
 	dynamicInfoProviders []func() []Info
+	pluginCommandPaths   func() []PluginCommandPath
 }
 
 func (s *service) BuiltinNames() map[string]Info {
@@ -343,12 +309,15 @@ func (s *service) loadCustomCommandsFromDisk() []CustomCommand {
 		}
 	}
 
-	if plugin.DefaultRegistry != nil {
-		paths := plugin.GetPluginCommandPaths()
-		for _, pp := range paths {
+	if s.pluginCommandPaths != nil {
+		for _, pp := range s.pluginCommandPaths() {
 			pc := loadCustomCommandFile(pp.Path, pp.Namespace)
 			if pc != nil {
-				pc.Scope = pluginScopeTocommandScope(pp.Scope)
+				if pp.IsProject {
+					pc.Scope = scopeProjectPlugin
+				} else {
+					pc.Scope = scopeUserPlugin
+				}
 				cmdMap[pc.FullName()] = *pc
 			}
 		}
@@ -369,16 +338,6 @@ func (s *service) loadCustomCommandsFromDisk() []CustomCommand {
 		return cmds[i].FullName() < cmds[j].FullName()
 	})
 	return cmds
-}
-
-// pluginScopeTocommandScope maps plugin.Scope to commandScope.
-func pluginScopeTocommandScope(s plugin.Scope) commandScope {
-	switch s {
-	case plugin.ScopeProject, plugin.ScopeLocal:
-		return scopeProjectPlugin
-	default:
-		return scopeUserPlugin
-	}
 }
 
 // loadCommandsFromDir scans a directory for markdown command files.

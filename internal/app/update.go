@@ -379,7 +379,7 @@ func (m *model) reflowScrollback() tea.Cmd {
 	var cmds []tea.Cmd
 	cmds = append(cmds, tea.ClearScreen)
 
-	for i := 0; i < committed; i++ {
+	for i := range committed {
 		if rendered := conv.RenderSingleMessage(m.messageRenderParams(), i); rendered != "" {
 			cmds = append(cmds, tea.Println(rendered))
 		}
