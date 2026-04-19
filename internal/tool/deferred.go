@@ -10,18 +10,18 @@ import (
 )
 
 // deferredToolNames lists tools whose schemas are NOT sent to the LLM initially.
-// They appear as names in <available-deferred-tools> in the system prompt.
+// They appear with descriptions in <available-deferred-tools> in the system prompt.
 // The LLM calls ToolSearch to fetch their full schemas on demand.
 //
 // Only defer tools that are genuinely rare. Do NOT defer tools that are:
 // - Needed reactively (TaskStop — triggered by background completions)
 // - Commonly used (EnterPlanMode — triggered by task complexity)
-var deferredToolNames = map[string]bool{
-	ToolCronCreate:    true,
-	ToolCronDelete:    true,
-	ToolCronList:      true,
-	ToolEnterWorktree: true,
-	ToolExitWorktree:  true,
+var deferredToolNames = map[string]string{
+	ToolCronCreate:    "Schedule a prompt to run on a cron schedule",
+	ToolCronDelete:    "Delete a scheduled cron prompt",
+	ToolCronList:      "List all scheduled cron prompts",
+	ToolEnterWorktree: "Create an isolated git worktree for agent work",
+	ToolExitWorktree:  "Leave and clean up a git worktree",
 }
 
 // fetchedDeferred tracks which deferred tools have been activated via ToolSearch.
@@ -48,7 +48,8 @@ func ResetFetched() {
 
 // IsDeferred returns true if the tool name is in the deferred set.
 func IsDeferred(name string) bool {
-	return deferredToolNames[name]
+	_, ok := deferredToolNames[name]
+	return ok
 }
 
 // deferredToolList returns sorted deferred tool names for the system prompt.
@@ -70,7 +71,10 @@ func FormatDeferredToolsPrompt() string {
 	var sb strings.Builder
 	sb.WriteString("<available-deferred-tools>\n")
 	for _, name := range names {
+		sb.WriteString("- ")
 		sb.WriteString(name)
+		sb.WriteString(": ")
+		sb.WriteString(deferredToolNames[name])
 		sb.WriteString("\n")
 	}
 	sb.WriteString("</available-deferred-tools>")
@@ -174,12 +178,12 @@ func allDeferredSchemas() []core.ToolSchema {
 	// Collect from known schema slices that contain deferred tools
 	var all []core.ToolSchema
 	for _, s := range cronToolSchemas {
-		if deferredToolNames[s.Name] {
+		if _, ok := deferredToolNames[s.Name]; ok {
 			all = append(all, s)
 		}
 	}
 	for _, s := range worktreeToolSchemas {
-		if deferredToolNames[s.Name] {
+		if _, ok := deferredToolNames[s.Name]; ok {
 			all = append(all, s)
 		}
 	}

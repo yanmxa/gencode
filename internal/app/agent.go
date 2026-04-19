@@ -31,12 +31,12 @@ func (m *model) buildAgentParams() agent.BuildParams {
 		sessionSummary = fmt.Sprintf("<session-summary>\n%s\n</session-summary>", summary)
 	}
 
-	var extra []string
+	var extra []system.ExtraLayer
 	if coordinator := system.CoordinatorGuidance(); coordinator != "" {
-		extra = append(extra, coordinator)
+		extra = append(extra, system.ExtraLayer{Name: "coordinator", Content: coordinator})
 	}
 	if m.userInput.Skill.ActiveInvocation != "" {
-		extra = append(extra, m.userInput.Skill.ActiveInvocation)
+		extra = append(extra, system.ExtraLayer{Name: "skill-invocation", Content: m.userInput.Skill.ActiveInvocation})
 	}
 
 	var mcpTools []core.Tool
@@ -172,6 +172,7 @@ func (m *model) ReconfigureAgentTool() {
 		executor.SetSessionStore(m.services.Session.GetStore(), m.services.Session.ID())
 	}
 	executor.SetContext(m.env.CachedUserInstructions, m.env.CachedProjectInstructions, m.env.IsGit)
+	executor.SetCapabilities(m.services.Skill.PromptSection(), m.services.Subagent.PromptSection())
 	if m.services.MCP.Registry() != nil {
 		executor.SetMCP(m.services.MCP.Registry().GetToolSchemas, m.services.MCP.Registry())
 	}

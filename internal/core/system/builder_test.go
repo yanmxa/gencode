@@ -88,7 +88,7 @@ func TestBuildPromptDirectFields(t *testing.T) {
 func TestBuildPromptExtra(t *testing.T) {
 	sys := Build(Config{
 		Cwd:   "/tmp/test",
-		Extra: []string{"agent identity content here"},
+		Extra: []ExtraLayer{{Name: "test-extra", Content: "agent identity content here"}},
 	})
 
 	prompt := sys.Prompt()
@@ -106,7 +106,7 @@ func TestBuildPromptNarrativeOrder(t *testing.T) {
 		SessionSummary:      "<session-summary>\nSESSION_SUMMARY_MARKER\n</session-summary>",
 		Skills:              "<available-skills>\nSKILLS_MARKER\n</available-skills>",
 		Agents:              "<available-agents>\nAGENTS_MARKER\n</available-agents>",
-		Extra:               []string{"EXTRA_MARKER"},
+		Extra:               []ExtraLayer{{Name: "test", Content: "EXTRA_MARKER"}},
 	})
 
 	prompt := sys.Prompt()
@@ -193,8 +193,8 @@ func TestPromptInitCachedFiles(t *testing.T) {
 	if cachedBase == "" {
 		t.Error("cachedBase should be non-empty after init()")
 	}
-	if cachedTools == "" {
-		t.Error("cachedTools should be non-empty after init()")
+	if cachedToolsCore == "" {
+		t.Error("cachedToolsCore should be non-empty after init()")
 	}
 	if cachedPlanMode == "" {
 		t.Error("cachedPlanMode should be non-empty after init()")
@@ -206,7 +206,7 @@ func TestPromptInitCachedFiles(t *testing.T) {
 	if !strings.Contains(prompt, cachedBase[:50]) {
 		t.Error("prompt should contain base.txt content")
 	}
-	if !strings.Contains(prompt, cachedTools[:50]) {
+	if !strings.Contains(prompt, cachedToolsCore[:50]) {
 		t.Error("prompt should contain tools content")
 	}
 }

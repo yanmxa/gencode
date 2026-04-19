@@ -16,21 +16,28 @@ import (
 //go:embed prompts/*.txt
 var promptFS embed.FS
 
+// ExtraLayer is a named piece of extra system prompt content (priority 700+).
+type ExtraLayer struct {
+	Name    string
+	Content string
+}
+
 var (
-	cachedBase        string
-	cachedTools       string
-	cachedPlanMode    string
-	cachedCoordinator string
+	cachedBase           string
+	cachedToolsCore      string
+	cachedToolsGit       string
+	cachedToolsQuestions string
+	cachedToolsTasks     string
+	cachedPlanMode       string
+	cachedCoordinator    string
 )
 
 func init() {
 	cachedBase = load("base.txt")
-	cachedTools = join([]string{
-		load("tools-core.txt"),
-		load("tools-git.txt"),
-		load("tools-questions.txt"),
-		load("tools-tasks.txt"),
-	})
+	cachedToolsCore = load("tools-core.txt")
+	cachedToolsGit = load("tools-git.txt")
+	cachedToolsQuestions = load("tools-questions.txt")
+	cachedToolsTasks = load("tools-tasks.txt")
 	cachedPlanMode = load("planmode.txt")
 	cachedCoordinator = load("coordinator.txt")
 }
@@ -53,7 +60,7 @@ type Config struct {
 	Skills              string
 	Agents              string
 	DeferredTools       string
-	Extra               []string
+	Extra               []ExtraLayer
 }
 
 // Build creates a core.System with properly separated layers.
@@ -119,9 +126,14 @@ func Build(cfg Config) core.System {
 		})
 	}
 
+	guidelines := []string{cachedToolsCore}
+	if cfg.IsGit {
+		guidelines = append(guidelines, cachedToolsGit)
+	}
+	guidelines = append(guidelines, cachedToolsQuestions, cachedToolsTasks)
 	sys.Set(core.Layer{
 		Name: "guidelines", Priority: 500,
-		Content: cachedTools, Source: core.Predefined,
+		Content: join(guidelines), Source: core.Predefined,
 	})
 
 	if cfg.PlanMode {
@@ -132,11 +144,15 @@ func Build(cfg Config) core.System {
 	}
 
 	for i, extra := range cfg.Extra {
-		if strings.TrimSpace(extra) != "" {
+		if strings.TrimSpace(extra.Content) != "" {
+			name := extra.Name
+			if name == "" {
+				name = fmt.Sprintf("extra-%d", i)
+			}
 			sys.Set(core.Layer{
-				Name:     fmt.Sprintf("extra-%d", i),
+				Name:     name,
 				Priority: 700 + i,
-				Content:  extra, Source: core.Injected,
+				Content:  extra.Content, Source: core.Injected,
 			})
 		}
 	}
@@ -150,8 +166,8 @@ func formatEnvStatic(cwd string, isGit bool, model string) string {
 		gitStatus = "Yes"
 	}
 	today := time.Now().Format("2006-01-02")
-	return fmt.Sprintf("# currentDate\nToday's date is %s.\n\n<env>\nSession working directory: %s\nIs git repo: %s\nPlatform: %s\nModel: %s\n</env>",
-		today, cwd, gitStatus, runtime.GOOS, model)
+	return fmt.Sprintf("# currentDate\nToday's date is %s.\n\n<env>\nSession working directory: %s\nIs git repo: %s\nPlatform: %s/%s\nModel: %s\n</env>",
+		today, cwd, gitStatus, runtime.GOOS, runtime.GOARCH, model)
 }
 
 func load(name string) string {

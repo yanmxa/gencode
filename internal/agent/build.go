@@ -28,7 +28,7 @@ type BuildParams struct {
 	SkillsPrompt        string
 	AgentsPrompt        string
 	DeferredToolsPrompt string
-	Extra               []string
+	Extra               []system.ExtraLayer
 
 	DisabledTools map[string]bool
 	MCPTools      []core.Tool

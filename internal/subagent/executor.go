@@ -31,6 +31,8 @@ type Executor struct {
 	userInstructions    string                      // ~/.gen/GEN.md + rules
 	projectInstructions string                      // .gen/GEN.md + rules + local
 	isGit               bool                        // whether cwd is a git repository
+	skillsPrompt        string                      // available skills section for capable subagents
+	agentsPrompt        string                      // available agents section for capable subagents
 	mcpGetter           func() []core.ToolSchema // MCP tool schemas from parent
 	mcpRegistry         *mcp.Registry               // MCP registry for tool execution
 }
@@ -67,6 +69,13 @@ func (e *Executor) SetContext(userInstructions, projectInstructions string, isGi
 	e.userInstructions = userInstructions
 	e.projectInstructions = projectInstructions
 	e.isGit = isGit
+}
+
+// SetCapabilities provides skills and agents prompt sections so subagents
+// that have Agent/Skill tools can see available capabilities.
+func (e *Executor) SetCapabilities(skillsPrompt, agentsPrompt string) {
+	e.skillsPrompt = skillsPrompt
+	e.agentsPrompt = agentsPrompt
 }
 
 // SetMCP provides the parent's MCP tool getter and registry so subagents
@@ -255,6 +264,15 @@ func (e *Executor) buildAgent(ctx context.Context, rc *runConfig, agentCwd strin
 		}
 	}
 
+	// Capabilities — only inject for subagents with corresponding tools
+	var skillsPrompt, agentsPrompt string
+	if hasToolAccess(rc.config.Tools, "Skill") {
+		skillsPrompt = e.skillsPrompt
+	}
+	if hasToolAccess(rc.config.Tools, "Agent") {
+		agentsPrompt = e.agentsPrompt
+	}
+
 	// System prompt
 	sys := system.Build(system.Config{
 		ProviderName:        e.provider.Name(),
@@ -264,7 +282,9 @@ func (e *Executor) buildAgent(ctx context.Context, rc *runConfig, agentCwd strin
 		PlanMode:            rc.permMode == PermissionPlan,
 		UserInstructions:    e.userInstructions,
 		ProjectInstructions: e.projectInstructions,
-		Extra:               []string{rc.agentPrompt},
+		Skills:              skillsPrompt,
+		Agents:              agentsPrompt,
+		Extra:               []system.ExtraLayer{{Name: "agent-identity", Content: rc.agentPrompt}},
 	})
 
 	// Tools — adapt legacy tool registry + MCP tools
@@ -381,6 +401,20 @@ func agentPermission(mode PermissionMode) perm.Checker {
 	default:
 		return perm.PermitAll()
 	}
+}
+
+// hasToolAccess returns true if the tool list includes the given tool.
+// A nil list means all tools are accessible.
+func hasToolAccess(tools ToolList, name string) bool {
+	if tools == nil {
+		return true
+	}
+	for _, t := range tools {
+		if t == name {
+			return true
+		}
+	}
+	return false
 }
 
 // newAgentToolSet creates a tool.Set for subagents with the disallow set eagerly initialized.

@@ -1,6 +1,7 @@
 package subagent
 
 import (
+	"sort"
 	"strings"
 	"sync"
 
@@ -225,13 +226,17 @@ func (r *Registry) isDisabledInternal(name string) bool {
 
 // GetAgentsSection returns a formatted string describing available agents.
 // This is used to inform the LLM about what agents are available.
-// Only includes enabled agents.
+// Only includes enabled agents. Output is sorted for deterministic prompts.
 // Returns content wrapped in <available-agents> XML tags for consistency.
 func (r *Registry) GetAgentsSection() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var lines []string
+	type entry struct {
+		name, desc, whenToUse, tools string
+	}
+
+	var entries []entry
 	for name, config := range r.agents {
 		if r.isDisabledInternal(name) {
 			continue
@@ -240,23 +245,31 @@ func (r *Registry) GetAgentsSection() string {
 		if config.Tools != nil {
 			toolsDesc = strings.Join([]string(config.Tools), ", ")
 		}
-		desc := config.Description
-		if config.WhenToUse != "" {
-			desc += " " + config.WhenToUse
-		}
-		lines = append(lines, "- "+config.Name+": "+desc+" (Tools: "+toolsDesc+")")
+		entries = append(entries, entry{
+			name:      config.Name,
+			desc:      config.Description,
+			whenToUse: config.WhenToUse,
+			tools:     toolsDesc,
+		})
 	}
 
-	if len(lines) == 0 {
+	if len(entries) == 0 {
 		return ""
 	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].name < entries[j].name
+	})
 
 	var sb strings.Builder
 	sb.WriteString("<available-agents>\n")
 	sb.WriteString("Available agent types for the Agent tool:\n\n")
-	for _, line := range lines {
-		sb.WriteString(line)
-		sb.WriteString("\n")
+	for _, e := range entries {
+		sb.WriteString("- " + e.name + ": " + e.desc)
+		if e.whenToUse != "" {
+			sb.WriteString("\n  Use when: " + e.whenToUse)
+		}
+		sb.WriteString("\n  Tools: " + e.tools + "\n")
 	}
 	sb.WriteString("</available-agents>")
 
