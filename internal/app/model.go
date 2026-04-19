@@ -60,7 +60,6 @@ var (
 func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		textarea.Blink,
-		m.conv.Spinner.Tick,
 		m.userInput.MCP.Selector.AutoConnect(),
 		trigger.TriggerCronTickNow(),
 		trigger.StartCronTicker(),
@@ -226,13 +225,12 @@ func (m *model) BuildCompactRequest(focus, trigger string) conv.CompactRequest {
 		hookEngine = m.services.Hook.Engine()
 	}
 	return conv.CompactRequest{
-		Ctx:            context.Background(),
-		Client:         m.buildLLMClient(),
-		Messages:       m.conv.ConvertToProvider(),
-		SessionSummary: m.services.Session.GetSummary(),
-		Focus:          focus,
-		HookEngine:     hookEngine,
-		Trigger:        trigger,
+		Ctx:        context.Background(),
+		Client:     m.buildLLMClient(),
+		Messages:   m.conv.ConvertToProvider(),
+		Focus:      focus,
+		HookEngine: hookEngine,
+		Trigger:    trigger,
 	}
 }
 
@@ -504,6 +502,10 @@ func (m *model) HandleCompactResult(msg conv.CompactResultMsg) tea.Cmd {
 
 	m.conv.Clear()
 	m.env.ResetTokens()
+
+	// Inject compaction summary as a user message (not system prompt)
+	summaryMsg := fmt.Sprintf("<session-summary>\n%s\n</session-summary>", msg.Summary)
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: summaryMsg})
 
 	var restoredFiles []filecache.RestoredFile
 	var restoredContext string

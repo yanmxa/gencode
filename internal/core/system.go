@@ -18,7 +18,6 @@ const (
 //	100:   provider      — provider-specific overrides (optional)
 //	110:   environment   — cwd, git, platform, model
 //	200:   instructions  — user + project instructions
-//	300:   session-summary — conversation compaction
 //	400:   capabilities  — skills, agents, deferred tools
 //	500:   guidelines    — tool usage, git safety
 //	600:   mode          — plan mode

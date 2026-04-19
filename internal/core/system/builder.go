@@ -57,7 +57,6 @@ type Config struct {
 	PlanMode            bool
 	UserInstructions    string
 	ProjectInstructions string
-	SessionSummary      string
 	Skills              string
 	Agents              string
 	DeferredTools       string
@@ -66,13 +65,12 @@ type Config struct {
 
 // Build creates a core.System with properly separated layers.
 //
-// Layer structure (8 layers max):
+// Layer structure (7 layers max):
 //
 //	identity        (0)   — base.txt (who you are, how you behave)
 //	provider        (100) — provider-specific overrides (optional, only if file exists)
 //	environment     (110) — cwd, git, platform, model
 //	instructions    (200) — user + project instructions
-//	session-summary (300) — conversation compaction
 //	capabilities    (400) — skills, agents, deferred tools
 //	guidelines      (500) — tool usage, git safety
 //	mode            (600) — plan mode
@@ -105,14 +103,6 @@ func Build(cfg Config) core.System {
 		sys.Set(core.Layer{
 			Name: "instructions", Priority: 200,
 			Content: instr, Source: core.FromFile,
-		})
-	}
-
-	// Session summary from compaction
-	if cfg.SessionSummary != "" {
-		sys.Set(core.Layer{
-			Name: "session-summary", Priority: 300,
-			Content: cfg.SessionSummary, Source: core.Dynamic,
 		})
 	}
 

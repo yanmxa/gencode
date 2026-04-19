@@ -3,8 +3,6 @@
 package app
 
 import (
-	"fmt"
-
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/agent"
@@ -26,11 +24,6 @@ import (
 // ============================================================
 
 func (m *model) buildAgentParams() agent.BuildParams {
-	var sessionSummary string
-	if summary := m.services.Session.GetSummary(); summary != "" {
-		sessionSummary = fmt.Sprintf("<session-summary>\n%s\n</session-summary>", summary)
-	}
-
 	var extra []system.ExtraLayer
 	if coordinator := system.CoordinatorGuidance(); coordinator != "" {
 		extra = append(extra, system.ExtraLayer{Name: "coordinator", Content: coordinator})
@@ -59,7 +52,6 @@ func (m *model) buildAgentParams() agent.BuildParams {
 		PlanEnabled:         m.env.PlanEnabled,
 		UserInstructions:    m.env.CachedUserInstructions,
 		ProjectInstructions: m.env.CachedProjectInstructions,
-		SessionSummary:      sessionSummary,
 		SkillsPrompt:        m.services.Skill.PromptSection(),
 		AgentsPrompt:        m.services.Subagent.PromptSection(),
 		DeferredToolsPrompt: m.services.Tool.FormatDeferredToolsPrompt(),

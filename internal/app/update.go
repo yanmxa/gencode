@@ -65,9 +65,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		return m, m.handleWindowResize(msg)
 	case spinner.TickMsg:
-		var cmd tea.Cmd
-		m.conv.Spinner, cmd = m.conv.Spinner.Update(msg)
-		return m, cmd
+		if m.needsSpinner() {
+			var cmd tea.Cmd
+			m.conv.Spinner, cmd = m.conv.Spinner.Update(msg)
+			return m, cmd
+		}
+		return m, nil
 	case ctrlOSingleTickMsg:
 		return m, m.handleCtrlOSingleTick()
 	case input.PromptSuggestionMsg:
@@ -105,20 +108,19 @@ func (m *model) routeFeatureUpdate(msg tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
+func (m *model) needsSpinner() bool {
+	return m.conv.Stream.Active ||
+		m.conv.Compact.Active ||
+		m.userInput.Provider.FetchingLimits ||
+		m.services.Tracker.HasInProgress()
+}
+
 func (m *model) updateTextarea(msg tea.Msg) tea.Cmd {
 	cmd, changed := m.userInput.HandleTextareaUpdate(msg)
-	cmds := []tea.Cmd{cmd}
 	if changed {
 		m.userInput.PromptSuggestion.Clear()
 	}
-
-	if m.conv.Stream.Active || m.userInput.Provider.FetchingLimits || m.conv.Compact.Active {
-		var spinnerCmd tea.Cmd
-		m.conv.Spinner, spinnerCmd = m.conv.Spinner.Update(msg)
-		cmds = append(cmds, spinnerCmd)
-	}
-
-	return tea.Batch(cmds...)
+	return cmd
 }
 
 // ============================================================

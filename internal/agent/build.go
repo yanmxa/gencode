@@ -24,7 +24,6 @@ type BuildParams struct {
 	PlanEnabled         bool
 	UserInstructions    string
 	ProjectInstructions string
-	SessionSummary      string
 	SkillsPrompt        string
 	AgentsPrompt        string
 	DeferredToolsPrompt string
@@ -52,7 +51,6 @@ func buildAgent(p BuildParams) (core.Agent, *PermissionBridge, error) {
 		PlanMode:            p.PlanEnabled,
 		UserInstructions:    p.UserInstructions,
 		ProjectInstructions: p.ProjectInstructions,
-		SessionSummary:      p.SessionSummary,
 		Skills:              p.SkillsPrompt,
 		Agents:              p.AgentsPrompt,
 		DeferredTools:       p.DeferredToolsPrompt,

@@ -67,14 +67,10 @@ func (c *CompactState) Complete(result string, isError bool) {
 	}
 }
 
-func CompactConversation(ctx context.Context, c *llm.Client, msgs []core.Message, sessionMemory, focus string) (summary string, count int, err error) {
+func CompactConversation(ctx context.Context, c *llm.Client, msgs []core.Message, focus string) (summary string, count int, err error) {
 	count = len(msgs)
 
 	conversationText := core.BuildConversationText(msgs)
-
-	if sessionMemory != "" {
-		conversationText = fmt.Sprintf("Previous session context:\n\n%s\n\n---\n\nRecent conversation:\n\n%s", sessionMemory, conversationText)
-	}
 
 	if focus != "" {
 		conversationText += fmt.Sprintf("\n\n**Important**: Focus the summary on: %s", focus)
@@ -172,11 +168,10 @@ func RenderCompactStatus(width int, spinnerView string, state CompactState) stri
 
 // CompactRequest holds all parameters needed to perform a conversation compaction.
 type CompactRequest struct {
-	Ctx            context.Context
-	Client         *llm.Client
-	Messages       []core.Message
-	SessionSummary string
-	Focus          string
+	Ctx      context.Context
+	Client   *llm.Client
+	Messages []core.Message
+	Focus    string
 	HookEngine     *hook.Engine
 	Trigger        string
 }
@@ -198,7 +193,7 @@ func CompactCmd(req CompactRequest) tea.Cmd {
 				}
 			}
 		}
-		summary, count, err := CompactConversation(ctx, req.Client, req.Messages, req.SessionSummary, focus)
+		summary, count, err := CompactConversation(ctx, req.Client, req.Messages, focus)
 		return CompactResultMsg{Summary: summary, OriginalCount: count, Trigger: req.Trigger, Error: err}
 	}
 }
