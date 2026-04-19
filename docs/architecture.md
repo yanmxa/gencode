@@ -232,7 +232,7 @@ internal/app/
 │
 │  ── Root: pure glue (8 files) ─────────────────────────────────────────────
 │  No business logic. Model + services + routing + view + env + agent lifecycle + entrypoint + init.
-│  Cross-cutting Cmds: sendToAgent(), drainTurnQueues(), triggerAutoCompact()
+│  Cross-cutting Cmds: sendToAgent(), drainTurnQueues()
 │
 ├── model.go      [M,C] Model{env, services, 4 sub-models}, Init()
 │                       conv.Runtime event handlers, session persistence, turn queue drain, deps builders

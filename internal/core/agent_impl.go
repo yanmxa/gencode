@@ -70,6 +70,7 @@ func (a *agent) Run(ctx context.Context) error {
 	}()
 
 	for {
+		debugLog("agent.Run: waitForInput blocking...")
 		if err := a.waitForInput(ctx); err != nil {
 			if err == errStopped {
 				return nil
@@ -77,13 +78,17 @@ func (a *agent) Run(ctx context.Context) error {
 			runErr = err
 			return err
 		}
+		debugLog("agent.Run: waitForInput received message")
 
 		for {
+			debugLog("agent.Run: starting ThinkAct")
 			result, err := a.ThinkAct(ctx)
 			if result != nil {
+				debugLog("agent.Run: ThinkAct done, emitting TurnEvent")
 				a.emit(ctx, TurnEvent(a.id, *result))
 			}
 			if err != nil {
+				debugLog("agent.Run: ThinkAct error: %v", err)
 				if err == errStopped {
 					return nil
 				}
@@ -91,8 +96,6 @@ func (a *agent) Run(ctx context.Context) error {
 				return err
 			}
 
-			// Pick up messages that arrived during ThinkAct (e.g. queued user input
-			// sent directly to the inbox). Avoids a full TUI event loop round-trip.
 			n, drainErr := a.drainInbox(ctx)
 			if drainErr != nil {
 				if drainErr == errStopped {
@@ -101,6 +104,7 @@ func (a *agent) Run(ctx context.Context) error {
 				runErr = drainErr
 				return drainErr
 			}
+			debugLog("agent.Run: post-ThinkAct drain n=%d", n)
 			if n == 0 {
 				break
 			}
@@ -446,21 +450,20 @@ func (a *agent) emitFinal(event Event) {
 	}
 }
 
-// drainInbox non-blocking reads all pending inbox messages.
-// Returns the number of messages drained and errStopped if SigStop is received.
+// drainInbox non-blocking reads ONE pending inbox message.
+// Returns 1 if a message was consumed, 0 if none available.
+// Each message gets its own ThinkAct cycle so the TUI can pair
+// each user message with its response.
 func (a *agent) drainInbox(ctx context.Context) (int, error) {
-	var n int
-	for {
-		select {
-		case msg, ok := <-a.inbox:
-			if !ok || msg.Signal == SigStop {
-				return n, errStopped
-			}
-			a.ingest(ctx, msg)
-			n++
-		default:
-			return n, nil
+	select {
+	case msg, ok := <-a.inbox:
+		if !ok || msg.Signal == SigStop {
+			return 0, errStopped
 		}
+		a.ingest(ctx, msg)
+		return 1, nil
+	default:
+		return 0, nil
 	}
 }
 

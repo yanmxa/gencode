@@ -12,6 +12,7 @@ import (
 	"github.com/yanmxa/gencode/internal/core/system"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/subagent"
@@ -118,8 +119,17 @@ func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {
 	}
 }
 
+// SendToActiveAgent sends a message to the agent inbox synchronously during
+// Update so it's available immediately for the agent's post-ThinkAct drain.
+// The inbox channel is buffered (16), so this won't block.
 func (m *model) SendToActiveAgent(content string, images []core.Image) tea.Cmd {
-	return m.sendToAgent(content, images)
+	if m.services.Agent.Active() {
+		log.QueueLog("SendToActiveAgent: sending to inbox %q", truncate(content, 60))
+		m.services.Agent.Send(content, images)
+	} else {
+		log.QueueLog("SendToActiveAgent: agent NOT active, message lost %q", truncate(content, 60))
+	}
+	return nil
 }
 
 func (m *model) StopAgentSession() {

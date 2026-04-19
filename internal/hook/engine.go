@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -151,7 +152,14 @@ func (e *Engine) Execute(ctx context.Context, event EventType, input HookInput) 
 			continue
 		}
 
+		hookStart := time.Now()
 		result := e.executeMatchedHook(ctx, hook, input)
+		log.Logger().Debug("hook executed",
+			zap.String("event", string(event)),
+			zap.String("source", matchedHookIdentity(hook)),
+			zap.Duration("duration", time.Since(hookStart)),
+			zap.Bool("error", result.Error != nil),
+		)
 		if result.Error != nil {
 			log.Logger().Warn("hook execution failed",
 				zap.String("event", string(event)),

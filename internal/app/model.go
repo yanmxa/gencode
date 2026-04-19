@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -430,18 +431,16 @@ func (m *model) ProcessToolResult(tr core.ToolResult) *core.ToolResult {
 
 func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 	m.env.ClearThinkingOverride()
+	start := time.Now()
+	queueLen := m.userInput.Queue.Len()
+	log.QueueLog("ProcessTurnEnd: starting queueLen=%d", queueLen)
 	commitCmds := m.CommitMessages()
+	log.QueueLog("ProcessTurnEnd: CommitMessages done elapsed=%v", time.Since(start))
 
-	if blocked, sendCmd := m.fireIdleHooks(); blocked {
-		cmds := append(commitCmds, m.ContinueOutbox())
-		if sendCmd != nil {
-			cmds = append(cmds, sendCmd)
-		}
-		return tea.Batch(cmds...)
-	}
-
-	// Drain queued messages before session persistence — avoids delay for queued input.
+	// Drain queued messages FIRST — skip idle hooks when we have pending work,
+	// since we're not truly idle and hooks like Stop/Notification would add latency.
 	if cmd, found := m.drainTurnQueues(); found {
+		log.QueueLog("ProcessTurnEnd: drained queued messages elapsed=%v", time.Since(start))
 		if cmd != nil {
 			commitCmds = append(commitCmds, cmd)
 		}
@@ -449,9 +448,20 @@ func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 		return tea.Batch(commitCmds...)
 	}
 
+	if blocked, sendCmd := m.fireIdleHooks(); blocked {
+		log.QueueLog("ProcessTurnEnd: idle hooks BLOCKED elapsed=%v", time.Since(start))
+		cmds := append(commitCmds, m.ContinueOutbox())
+		if sendCmd != nil {
+			cmds = append(cmds, sendCmd)
+		}
+		return tea.Batch(cmds...)
+	}
+	log.QueueLog("ProcessTurnEnd: idle hooks done elapsed=%v", time.Since(start))
+
 	if err := m.PersistSession(); err != nil {
 		log.Logger().Warn("failed to save session", zap.Error(err))
 	}
+	log.QueueLog("ProcessTurnEnd: persist done elapsed=%v", time.Since(start))
 
 	if cmd := input.StartPromptSuggestion(m.promptSuggestionDeps()); cmd != nil {
 		commitCmds = append(commitCmds, cmd)
@@ -464,6 +474,7 @@ func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 		}
 	}
 
+	log.QueueLog("ProcessTurnEnd: returning elapsed=%v cmds=%d", time.Since(start), len(commitCmds)+1)
 	return tea.Batch(append(commitCmds, m.ContinueOutbox())...)
 }
 
@@ -700,12 +711,18 @@ func (m *model) fireIdleHooks() (bool, tea.Cmd) {
 
 
 func (m *model) drainTurnQueues() (tea.Cmd, bool) {
+	// Drain ONE user message per call so each gets its own agent response.
+	// The agent's inner loop also drains one inbox message at a time,
+	// producing one TurnEvent per queued message.
 	if item, ok := m.userInput.Queue.Dequeue(); ok {
+		remaining := m.userInput.Queue.Len()
+		log.QueueLog("drainTurnQueues: dequeued %q sentToInbox=%v remaining=%d", truncate(item.Content, 60), item.SentToInbox, remaining)
 		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: item.Content, Images: item.Images})
-		if item.SentToInbox {
-			return nil, true
+		if !item.SentToInbox {
+			log.QueueLog("drainTurnQueues: sending to inbox (was not sent)")
+			m.services.Agent.Send(item.Content, item.Images)
 		}
-		return m.sendToAgent(item.Content, item.Images), true
+		return nil, true
 	}
 
 	if len(m.systemInput.CronQueue) > 0 {
@@ -881,4 +898,11 @@ func (m *model) FireSessionEnd(reason string) {
 	if m.systemInput.FileWatcher != nil {
 		m.systemInput.FileWatcher.Stop()
 	}
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -37,6 +38,7 @@ func Update(rt Runtime, m *Model, msg tea.Msg) (tea.Cmd, bool) {
 // --- Agent event dispatch ---
 
 func handleAgentEvent(rt Runtime, m *Model, ev core.Event) tea.Cmd {
+	log.QueueLog("handleAgentEvent: %s", ev.Type)
 	switch ev.Type {
 	case core.OnStart, core.OnMessage:
 		return rt.ContinueOutbox()

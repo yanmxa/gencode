@@ -215,45 +215,33 @@ app layer in response to these outbox events — not by core.Agent itself.
 
 ## Auto Compaction
 
-Compaction is an **app-level** concern, not a core.Agent responsibility.
-The TUI triggers it when context usage exceeds 95%.
+Compaction is a **core.Agent** responsibility. The agent checks context usage
+before each inference (pre-infer check in ThinkAct loop). When context exceeds
+95% of the input limit, the agent calls its `CompactFunc` to summarize the
+conversation and replaces its internal messages with the summary.
 
 ```
-  TUI: ProcessTurnEnd()
+  core.Agent ThinkAct() loop:
     │
-    ├─ check: InputTokens >= 95% of context limit?
+    ├─ pre-infer: tokensIn >= 95% of InputLimit?
     │   │
-    │   yes ──► triggerAutoCompact()
-    │   no  ──► continue
+    │   yes ──► agent.compact()
+    │   │       ├─ CompactFunc(ctx, msgs) → summary
+    │   │       ├─ SetMessages([FormatCompactSummary(summary)])
+    │   │       └─ emit OnCompact event
+    │   no  ──► continue to inference
     │
     ▼
 
-  COMPACT (app/conv/compact.go):
+  TUI: HandleAgentCompact(info):
   ┌────────────────────────────────────────────────────┐
-  │                                                    │
-  │  CompactConversation(ctx, llmClient, msgs, focus)  │
-  │       │                                            │
-  │       ▼                                            │
-  │  LLM summarizes conversation → summary string     │
-  │                                                    │
-  └────────────────────────────────────────────────────┘
-    │
-    ▼
-
-  HandleCompactResult():
-  ┌────────────────────────────────────────────────────┐
-  │                                                    │
-  │  1. conv.Clear() — wipe all messages               │
-  │  2. Inject summary as user message:                │
-  │     "Previous context:\n...\nContinue with task."  │
-  │  3. Restore recently accessed files (filecache)    │
-  │  4. If auto-continue: sendToAgent(resumePrompt)    │
-  │                                                    │
-  │  Summary lives in messages, not system prompt.     │
-  │  Next turn's TokensIn reflects the smaller context.│
-  │                                                    │
+  │  1. conv.Clear() — wipe TUI display messages       │
+  │  2. Inject summary as user message                 │
+  │  3. Fire PostCompact hook                          │
+  │  4. Agent continues with compacted context         │
   └────────────────────────────────────────────────────┘
 
-  Cumulative: each compaction sees the previous summary
-  as a user message in the conversation being compacted.
+  Manual /compact: uses CompactCmd → HandleCompactResult.
+  Stops the agent; next user message restarts with
+  compacted messages from m.conv.
 ```

@@ -8,6 +8,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/log"
 )
 
 type SubmitRequest struct {
@@ -41,9 +42,11 @@ func HandleSubmit(deps SubmitDeps) tea.Cmd {
 	}
 
 	if deps.Conversation.Stream.Active {
+		log.QueueLog("HandleSubmit: stream active, enqueue+send %q", input)
 		return enqueueAndSend(deps, input)
 	}
 
+	log.QueueLog("HandleSubmit: stream idle, normal submit %q", input)
 	deps.Conversation.Compact.ClearResult()
 	return ExecuteSubmitRequest(deps, SubmitRequest{Input: input})
 }
@@ -59,6 +62,7 @@ func enqueueAndSend(deps SubmitDeps, input string) tea.Cmd {
 	}
 	deps.Input.Queue.MarkSentToInbox(deps.Input.Queue.Len() - 1)
 	deps.Input.Reset()
+	log.QueueLog("enqueueAndSend: queued+inbox %q queueLen=%d", input, deps.Input.Queue.Len())
 	return deps.Actions.SendToActiveAgent(input, images)
 }
 

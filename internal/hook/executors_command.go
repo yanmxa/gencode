@@ -123,12 +123,22 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd settin
 		return outcome
 	}
 
+	// Auto-close stdin if the hook doesn't produce output quickly.
+	// Hooks using `cat` (reads until EOF) will deadlock without this.
+	// Interactive hooks (prompt-response) produce output before needing
+	// more stdin, so the timer is cancelled in time.
+	stdinTimer := time.AfterFunc(500*time.Millisecond, func() {
+		stdinPipe.Close()
+	})
+	defer stdinTimer.Stop()
+
 	scanner := bufio.NewScanner(stdoutPipe)
 	var finalOutput string
 	firstLine := true
 	promptCallback := e.getPromptCallback()
 
 	for scanner.Scan() {
+		stdinTimer.Stop()
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
@@ -137,7 +147,6 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd settin
 			firstLine = false
 			var async asyncFirstLine
 			if json.Unmarshal([]byte(line), &async) == nil && async.Async {
-				_ = stdinPipe.Close()
 				detached = true
 				go func() {
 					defer cancel()
@@ -163,14 +172,12 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd settin
 				continue
 			}
 			if _, err := io.WriteString(stdinPipe, string(respJSON)+"\n"); err != nil {
-				continue
+				break
 			}
 			continue
 		}
 		finalOutput = line
 	}
-
-	_ = stdinPipe.Close()
 	exitCode := getExitCode(cmd.Wait())
 	if exitCode == 2 {
 		return handleBlockingExit(&stderr)

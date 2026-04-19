@@ -20,6 +20,7 @@ import (
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/setting"
@@ -415,6 +416,7 @@ func (m *model) submitDeps() input.SubmitDeps {
 }
 
 func (m *model) StartProviderTurn(content string) tea.Cmd {
+	log.QueueLog("StartProviderTurn: %q", truncate(content, 60))
 	if m.env.LLMProvider == nil {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleNotice,
