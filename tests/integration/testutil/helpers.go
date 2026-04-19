@@ -70,7 +70,10 @@ func EndTurnResponseWithUsage(content string, input, output int) llm.CompletionR
 func RegisterFakeTool(t *testing.T, name, result string) {
 	t.Helper()
 	tool.Register(&fakeTool{name: name, result: result})
-	t.Cleanup(func() { tool.SetDefault(tool.NewRegistry()) })
+	t.Cleanup(func() {
+		tool.Unregister(name)
+		tool.ResetService()
+	})
 }
 
 type fakeTool struct {

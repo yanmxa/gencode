@@ -40,6 +40,18 @@ func (r *Registry) RegisterAlias(alias string, tool Tool) {
 	r.tools[strings.ToLower(alias)] = tool
 }
 
+// Unregister removes a tool by name. Returns true if the tool existed.
+func (r *Registry) Unregister(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := strings.ToLower(name)
+	_, ok := r.tools[key]
+	if ok {
+		delete(r.tools, key)
+	}
+	return ok
+}
+
 // Get retrieves a tool by name
 func (r *Registry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
@@ -84,6 +96,11 @@ var defaultRegistry = NewRegistry()
 // Called by tool subpackages during init().
 func Register(tool Tool) {
 	defaultRegistry.Register(tool)
+}
+
+// Unregister removes a tool from the default registry. Intended for test cleanup.
+func Unregister(name string) {
+	defaultRegistry.Unregister(name)
 }
 
 // Get retrieves a tool from the default registry.
