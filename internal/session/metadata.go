@@ -47,7 +47,6 @@ func TranscriptFromSnapshot(sess *Snapshot, nodes []transcript.Node, tasks []tra
 			LastPrompt: sess.Metadata.LastPrompt,
 			Tag:        sess.Metadata.Tag,
 			Mode:       sess.Metadata.Mode,
-			Summary:    sess.Metadata.Summary,
 			Tasks:      transcript.TrackerTaskViewsFromTasks(tasks),
 		},
 	}

@@ -22,7 +22,6 @@ type MemoryFile struct {
 	Size    int64
 	Content string
 	Level   string // "global", "project", or "local"
-	Source  string // "rules" for rules directory files, empty otherwise
 }
 
 // LoadInstructions loads user-level and project-level instructions separately.
@@ -64,7 +63,7 @@ func LoadMemoryFiles(cwd string) []MemoryFile {
 		filepath.Join(homeDir, ".gen", "GEN.md"),
 		filepath.Join(homeDir, ".claude", "CLAUDE.md"),
 	}
-	if f := loadMemoryFile(userSources, "global", "", seen); f != nil {
+	if f := loadMemoryFile(userSources, "global", seen); f != nil {
 		files = append(files, *f)
 	}
 
@@ -77,7 +76,7 @@ func LoadMemoryFiles(cwd string) []MemoryFile {
 		filepath.Join(cwd, ".claude", "CLAUDE.md"),
 		filepath.Join(cwd, "CLAUDE.md"),
 	}
-	if f := loadMemoryFile(projectSources, "project", "", seen); f != nil {
+	if f := loadMemoryFile(projectSources, "project", seen); f != nil {
 		files = append(files, *f)
 	}
 
@@ -87,14 +86,14 @@ func LoadMemoryFiles(cwd string) []MemoryFile {
 	localSources := []string{
 		filepath.Join(cwd, ".gen", "GEN.local.md"),
 	}
-	if f := loadMemoryFile(localSources, "local", "", seen); f != nil {
+	if f := loadMemoryFile(localSources, "local", seen); f != nil {
 		files = append(files, *f)
 	}
 
 	return files
 }
 
-func loadMemoryFile(sources []string, level, source string, seen map[string]bool) *MemoryFile {
+func loadMemoryFile(sources []string, level string, seen map[string]bool) *MemoryFile {
 	for _, src := range sources {
 		info, err := os.Stat(src)
 		if err != nil {
@@ -124,7 +123,6 @@ func loadMemoryFile(sources []string, level, source string, seen map[string]bool
 			Size:    info.Size(),
 			Content: fmt.Sprintf("<!-- Source: %s -->\n%s", src, content),
 			Level:   level,
-			Source:  source,
 		}
 	}
 	return nil
@@ -148,7 +146,7 @@ func loadRulesDirectory(dir string, level string, seen map[string]bool) []Memory
 	}
 	sort.Strings(mdFiles)
 	for _, path := range mdFiles {
-		if f := loadMemoryFile([]string{path}, level, "rules", seen); f != nil {
+		if f := loadMemoryFile([]string{path}, level, seen); f != nil {
 			files = append(files, *f)
 		}
 	}

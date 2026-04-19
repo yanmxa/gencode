@@ -74,7 +74,6 @@ func TestMetadataAndTaskViewHelpers(t *testing.T) {
 		State: State{
 			Title:      "Title",
 			LastPrompt: "continue",
-			Summary:    "summary",
 			Tag:        "tag",
 			Mode:       "plan",
 		},

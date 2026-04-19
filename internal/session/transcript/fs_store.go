@@ -36,16 +36,12 @@ type fileIndexEntry struct {
 	LastPrompt   string    `json:"lastPrompt,omitempty"`
 	MessageCount int       `json:"messageCount"`
 	GitBranch    string    `json:"gitBranch,omitempty"`
-	HasSummary   bool      `json:"hasSummary,omitempty"`
 	IsSidechain  bool      `json:"isSidechain,omitempty"`
 }
 
 func NewFileStore(baseDir, projectID string) (*FileStore, error) {
 	if err := os.MkdirAll(filepath.Join(baseDir, "transcripts"), 0o755); err != nil {
 		return nil, fmt.Errorf("create transcripts dir: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Join(baseDir, "blobs", "summary"), 0o755); err != nil {
-		return nil, fmt.Errorf("create summary blobs dir: %w", err)
 	}
 	return &FileStore{baseDir: baseDir, projectID: projectID}, nil
 }
@@ -155,27 +151,12 @@ func (s *FileStore) Compact(ctx context.Context, cmd CompactCommand) error {
 		return err
 	}
 
-	system := &SystemRecord{BoundaryID: cmd.BoundaryID}
-	if cmd.Summary != "" {
-		blobID := fmt.Sprintf("%s-%d", cmd.TranscriptID, cmd.Time.UnixNano())
-		blobPath := s.summaryBlobPath(blobID)
-		tmp := blobPath + ".tmp"
-		if err := os.WriteFile(tmp, []byte(cmd.Summary), 0o644); err != nil {
-			return fmt.Errorf("write summary blob: %w", err)
-		}
-		if err := os.Rename(tmp, blobPath); err != nil {
-			os.Remove(tmp)
-			return fmt.Errorf("finalize summary blob: %w", err)
-		}
-		system.SummaryBlobID = blobID
-	}
-
 	rec := Record{
 		ID:           fmt.Sprintf("%s:compact:%d", cmd.TranscriptID, cmd.Time.UnixNano()),
 		TranscriptID: cmd.TranscriptID,
 		Time:         cmd.Time,
 		Type:         RecordCompacted,
-		System:       system,
+		System:       &SystemRecord{BoundaryID: cmd.BoundaryID},
 	}
 	if err := s.appendRecord(s.transcriptPath(cmd.TranscriptID), rec); err != nil {
 		return err
@@ -301,7 +282,7 @@ func (s *FileStore) Load(ctx context.Context, transcriptID string) (*Transcript,
 	if err != nil {
 		return nil, err
 	}
-	return Project(records, fileBlobReader{s: s})
+	return Project(records)
 }
 
 func (s *FileStore) List(ctx context.Context, projectID string, opts ListOptions) ([]ListItem, error) {
@@ -332,7 +313,6 @@ func (s *FileStore) List(ctx context.Context, projectID string, opts ListOptions
 			LastPrompt:   entry.LastPrompt,
 			MessageCount: entry.MessageCount,
 			GitBranch:    entry.GitBranch,
-			HasSummary:   entry.HasSummary,
 			IsSidechain:  entry.IsSidechain,
 		})
 	}
@@ -402,29 +382,12 @@ func (s *FileStore) Delete(ctx context.Context, transcriptID string) error {
 	return nil
 }
 
-type fileBlobReader struct {
-	s *FileStore
-}
-
-func (r fileBlobReader) Get(kind, id string) ([]byte, error) {
-	switch kind {
-	case "summary":
-		return os.ReadFile(r.s.summaryBlobPath(id))
-	default:
-		return nil, fmt.Errorf("unsupported blob kind: %s", kind)
-	}
-}
-
 func (s *FileStore) transcriptPath(transcriptID string) string {
 	return filepath.Join(s.baseDir, "transcripts", transcriptID+".jsonl")
 }
 
 func (s *FileStore) TranscriptPath(transcriptID string) string {
 	return s.transcriptPath(transcriptID)
-}
-
-func (s *FileStore) summaryBlobPath(blobID string) string {
-	return filepath.Join(s.baseDir, "blobs", "summary", blobID+".md")
 }
 
 func (s *FileStore) indexPath() string {
@@ -511,7 +474,6 @@ func recordsForTranscript(tx Transcript) ([]Record, error) {
 		PatchLastPrompt(tx.State.LastPrompt),
 		patchTag(tx.State.Tag),
 		patchMode(tx.State.Mode),
-		PatchSummary(tx.State.Summary),
 	}
 	if len(tx.State.Tasks) > 0 {
 		ops = append(ops, PatchTasks(TrackerTasksFromView(tx.State.Tasks)))
@@ -646,7 +608,6 @@ func (s *FileStore) rebuildIndexLocked() error {
 			LastPrompt:   item.LastPrompt,
 			MessageCount: item.MessageCount,
 			GitBranch:    item.GitBranch,
-			HasSummary:   item.HasSummary,
 			IsSidechain:  item.IsSidechain,
 		})
 	}
@@ -676,7 +637,6 @@ func (s *FileStore) refreshIndexLocked(transcriptID string) error {
 		LastPrompt:   item.LastPrompt,
 		MessageCount: item.MessageCount,
 		GitBranch:    item.GitBranch,
-		HasSummary:   item.HasSummary,
 		IsSidechain:  item.IsSidechain,
 	}
 
@@ -695,7 +655,7 @@ func (s *FileStore) buildListItemLocked(transcriptID string) (ListItem, error) {
 	if err != nil {
 		return ListItem{}, err
 	}
-	transcript, err := Project(records, fileBlobReader{s: s})
+	transcript, err := Project(records)
 	if err != nil {
 		return ListItem{}, err
 	}
@@ -714,7 +674,6 @@ func (s *FileStore) buildListItemLocked(transcriptID string) (ListItem, error) {
 		LastPrompt:   coalesce(transcript.State.LastPrompt, lastUserText(transcript.Messages)),
 		MessageCount: len(transcript.Messages),
 		GitBranch:    lastGitBranch(transcript.Messages),
-		HasSummary:   transcript.State.Summary != "",
 		IsSidechain:  anySidechain(transcript.Messages),
 	}, nil
 }

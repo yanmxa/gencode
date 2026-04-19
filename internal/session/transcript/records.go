@@ -18,7 +18,6 @@ const (
 	PatchPathLastPrompt = "lastPrompt"
 	PatchPathTag        = "tag"
 	PatchPathMode       = "mode"
-	PatchPathSummary    = "summary"
 	PatchPathTasks      = "tasks"
 	PatchPathWorktree   = "worktree"
 )
@@ -60,8 +59,7 @@ type SystemRecord struct {
 	Provider      string `json:"provider,omitempty"`
 	Model         string `json:"model,omitempty"`
 	ParentID      string `json:"parentId,omitempty"`
-	SummaryBlobID string `json:"summaryBlobId,omitempty"`
-	BoundaryID    string `json:"boundaryId,omitempty"`
+	BoundaryID string `json:"boundaryId,omitempty"`
 }
 
 type ContentBlock struct {

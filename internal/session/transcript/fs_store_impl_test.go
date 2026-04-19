@@ -103,11 +103,20 @@ func TestFileStoreCompactAndFork(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AppendMessage(): %v", err)
 	}
+	if err := store.AppendMessage(context.Background(), AppendMessageCommand{
+		TranscriptID: "tx-1",
+		MessageID:    "m2",
+		ParentID:     "m1",
+		Time:         now.Add(2 * time.Second),
+		Role:         "assistant",
+		Content:      []ContentBlock{{Type: "text", Text: "world"}},
+	}); err != nil {
+		t.Fatalf("AppendMessage(m2): %v", err)
+	}
 	if err := store.Compact(context.Background(), CompactCommand{
 		TranscriptID: "tx-1",
-		Time:         now.Add(2 * time.Second),
+		Time:         now.Add(3 * time.Second),
 		BoundaryID:   "m1",
-		Summary:      "summary text",
 	}); err != nil {
 		t.Fatalf("Compact(): %v", err)
 	}
@@ -116,14 +125,14 @@ func TestFileStoreCompactAndFork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(): %v", err)
 	}
-	if transcript.State.Summary != "summary text" {
-		t.Fatalf("Summary = %q, want %q", transcript.State.Summary, "summary text")
+	if len(transcript.Messages) != 2 {
+		t.Fatalf("expected 2 messages after compact (boundary=m1), got %d", len(transcript.Messages))
 	}
 
 	if err := store.Fork(context.Background(), ForkCommand{
 		SourceTranscriptID: "tx-1",
 		NewTranscriptID:    "tx-2",
-		Time:               now.Add(3 * time.Second),
+		Time:               now.Add(4 * time.Second),
 	}); err != nil {
 		t.Fatalf("Fork(): %v", err)
 	}
@@ -133,9 +142,6 @@ func TestFileStoreCompactAndFork(t *testing.T) {
 	}
 	if forked.ParentID != "tx-1" {
 		t.Fatalf("fork ParentID = %q, want %q", forked.ParentID, "tx-1")
-	}
-	if forked.State.Summary != "summary text" {
-		t.Fatalf("fork summary = %q, want %q", forked.State.Summary, "summary text")
 	}
 }
 
@@ -162,7 +168,6 @@ func TestFileStoreReplace(t *testing.T) {
 			State: State{
 				Title:      "Saved via replace",
 				LastPrompt: "hello",
-				Summary:    "compact",
 			},
 		},
 	})
@@ -176,9 +181,6 @@ func TestFileStoreReplace(t *testing.T) {
 	}
 	if transcript.State.Title != "Saved via replace" {
 		t.Fatalf("Title = %q", transcript.State.Title)
-	}
-	if transcript.State.Summary != "compact" {
-		t.Fatalf("Summary = %q", transcript.State.Summary)
 	}
 	if len(transcript.Messages) != 2 {
 		t.Fatalf("len(Messages) = %d, want 2", len(transcript.Messages))

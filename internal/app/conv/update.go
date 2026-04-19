@@ -84,6 +84,8 @@ func handleChunk(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	}
 	if chunk.Done && chunk.Response != nil && len(chunk.Response.ToolCalls) == 0 {
 		m.Stream.Active = false
+		commitCmds := rt.CommitMessages()
+		return tea.Batch(append(commitCmds, rt.ContinueOutbox())...)
 	}
 	return rt.ContinueOutbox()
 }

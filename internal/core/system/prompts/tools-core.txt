@@ -1,25 +1,15 @@
 # Tool usage
 
-Prefer specialized tools over Bash for file operations:
-- Read instead of cat/head/tail
-- Edit instead of sed/awk
-- Write instead of echo/cat with redirection
-- Glob instead of find/ls
-- Grep instead of grep/rg
+Prefer specialized tools over Bash: Read (not cat), Edit (not sed), Write (not echo), Glob (not find), Grep (not grep/rg).
 
-## Tool selection strategy
-
-Before spawning an Agent, estimate the effort. Use the lightest option that works:
+Before spawning an Agent, estimate the effort. Use the lightest option:
 1. Single Bash/Glob/Grep/Read call can answer it → use that tool directly
 2. Needs 3+ searches with decisions between them → Explore agent
 3. Needs code changes, complex reasoning, or multi-file edits → general-purpose agent
 
-## Key rules
-
-1. **Read before Edit/Write**: Always read a file before modifying it.
-2. **Parallel execution**: Run independent tool calls in parallel.
-3. **Search extensively**: Use multiple Glob/Grep calls in parallel to find all relevant files.
-4. **Edit for updates, Write for new files only**.
-5. **Working directory discipline**: Bash runs in the session working directory — never prepend `cd <cwd> &&`.
-6. **Path hygiene**: Use relative paths inside the session directory. Absolute paths only for targets outside it.
-7. **No unnecessary files**: Never create docs/README unless asked.
+Key rules:
+- Run independent tool calls in parallel.
+- Edit for updates, Write for new files only.
+- Bash runs in the session working directory — never prepend `cd <cwd> &&`.
+- Use relative paths inside the session directory. Absolute paths only for targets outside it.
+- Never create docs/README unless asked.

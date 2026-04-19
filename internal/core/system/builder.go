@@ -30,6 +30,7 @@ var (
 	cachedToolsTasks     string
 	cachedPlanMode       string
 	cachedCoordinator    string
+	cachedCompact        string
 )
 
 func init() {
@@ -40,6 +41,7 @@ func init() {
 	cachedToolsTasks = load("tools-tasks.txt")
 	cachedPlanMode = load("planmode.txt")
 	cachedCoordinator = load("coordinator.txt")
+	cachedCompact = load("compact.txt")
 }
 
 // CoordinatorGuidance returns the coordinator prompt for the main session.
@@ -210,5 +212,5 @@ func join(parts []string) string {
 
 // CompactPrompt returns the prompt for conversation compaction.
 func CompactPrompt() string {
-	return load("compact.txt")
+	return cachedCompact
 }

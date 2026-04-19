@@ -28,7 +28,7 @@ func TestCompact_SummarizesConversation(t *testing.T) {
 		core.AssistantMessage("you're welcome", "", nil),
 	}
 
-	summary, count, err := conv.CompactConversation(context.Background(), c, msgs, "", "")
+	summary, count, err := conv.CompactConversation(context.Background(), c, msgs, "")
 	if err != nil {
 		t.Fatalf("CompactConversation() error: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestCompact_WithFocus(t *testing.T) {
 		core.AssistantMessage("ok", "", nil),
 	}
 
-	_, _, err := conv.CompactConversation(context.Background(), c, msgs, "", "testing")
+	_, _, err := conv.CompactConversation(context.Background(), c, msgs, "testing")
 	if err != nil {
 		t.Fatalf("CompactConversation() error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestCompact_EmptyConversation(t *testing.T) {
 		llm.CompletionResponse{Content: "Empty summary", StopReason: "end_turn"},
 	)
 
-	summary, count, err := conv.CompactConversation(context.Background(), c, nil, "", "")
+	summary, count, err := conv.CompactConversation(context.Background(), c, nil, "")
 	if err != nil {
 		t.Fatalf("CompactConversation() error: %v", err)
 	}
@@ -77,37 +77,6 @@ func TestCompact_EmptyConversation(t *testing.T) {
 	}
 	if summary == "" {
 		t.Error("expected non-empty summary even for empty conversation")
-	}
-}
-
-func TestCompact_WithSessionMemory(t *testing.T) {
-	c, fake := newFakeClient(
-		llm.CompletionResponse{Content: "Combined summary", StopReason: "end_turn"},
-	)
-
-	msgs := []core.Message{
-		core.UserMessage("add tests", nil),
-		core.AssistantMessage("done", "", nil),
-	}
-
-	sessionMemory := "Previous context: refactored session store."
-	_, _, err := conv.CompactConversation(context.Background(), c, msgs, sessionMemory, "")
-	if err != nil {
-		t.Fatalf("CompactConversation() error: %v", err)
-	}
-
-	if len(fake.Calls) != 1 {
-		t.Fatalf("expected 1 call, got %d", len(fake.Calls))
-	}
-	sent := fake.Calls[0].Messages[0].Content
-	if !strings.Contains(sent, "Previous session context:") {
-		t.Error("expected 'Previous session context:' header in sent text")
-	}
-	if !strings.Contains(sent, sessionMemory) {
-		t.Error("expected session memory content in sent text")
-	}
-	if !strings.Contains(sent, "Recent conversation:") {
-		t.Error("expected 'Recent conversation:' header in sent text")
 	}
 }
 
@@ -121,7 +90,7 @@ func TestCompact_WithoutOptionalSections_LeavesPromptPlain(t *testing.T) {
 		core.AssistantMessage("checking now", "", nil),
 	}
 
-	_, _, err := conv.CompactConversation(context.Background(), c, msgs, "", "")
+	_, _, err := conv.CompactConversation(context.Background(), c, msgs, "")
 	if err != nil {
 		t.Fatalf("CompactConversation() error: %v", err)
 	}
@@ -131,12 +100,6 @@ func TestCompact_WithoutOptionalSections_LeavesPromptPlain(t *testing.T) {
 	}
 
 	sent := fake.Calls[0].Messages[0].Content
-	if strings.Contains(sent, "Previous session context:") {
-		t.Fatal("did not expect session memory header without prior summary")
-	}
-	if strings.Contains(sent, "Recent conversation:") {
-		t.Fatal("did not expect recent conversation header without prior summary")
-	}
 	if strings.Contains(sent, "**Important**: Focus the summary on:") {
 		t.Fatal("did not expect focus directive without focus override")
 	}

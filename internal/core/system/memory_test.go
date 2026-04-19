@@ -436,8 +436,8 @@ func TestLoadMemoryFiles_PrefersGenPathsAndPreservesSectionOrder(t *testing.T) {
 	if strings.Contains(files[0].Content, "user claude fallback") {
 		t.Fatal("expected user .gen/GEN.md to take precedence over ~/.claude/CLAUDE.md")
 	}
-	if files[1].Level != "global" || files[1].Source != "rules" {
-		t.Fatalf("expected global rules second, got level=%q source=%q", files[1].Level, files[1].Source)
+	if files[1].Level != "global" {
+		t.Fatalf("expected global rules second, got level=%q", files[1].Level)
 	}
 	if files[2].Level != "project" || !strings.Contains(files[2].Path, filepath.Join(".gen", "GEN.md")) {
 		t.Fatalf("expected project GEN.md third, got level=%q path=%q", files[2].Level, files[2].Path)
@@ -445,8 +445,8 @@ func TestLoadMemoryFiles_PrefersGenPathsAndPreservesSectionOrder(t *testing.T) {
 	if strings.Contains(files[2].Content, "project claude fallback") {
 		t.Fatal("expected project .gen/GEN.md to take precedence over project CLAUDE.md")
 	}
-	if files[3].Level != "project" || files[3].Source != "rules" {
-		t.Fatalf("expected project rules fourth, got level=%q source=%q", files[3].Level, files[3].Source)
+	if files[3].Level != "project" {
+		t.Fatalf("expected project rules fourth, got level=%q", files[3].Level)
 	}
 	if files[4].Level != "local" || !strings.Contains(files[4].Path, "GEN.local.md") {
 		t.Fatalf("expected local GEN.local.md last, got level=%q path=%q", files[4].Level, files[4].Path)

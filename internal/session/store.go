@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -236,31 +235,6 @@ func (s *Store) LoadSubagentMessages(agentID string) ([]core.Message, error) {
 		return nil, fmt.Errorf("no messages found in session %s", agentID)
 	}
 	return msgs, nil
-}
-
-func (s *Store) SaveSessionMemory(sessionID, summary string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	return s.transcriptStore.PatchState(context.Background(), transcript.PatchStateCommand{
-		TranscriptID: sessionID,
-		Time:         time.Now(),
-		Ops:          []transcript.PatchOp{transcript.PatchSummary(summary)},
-	})
-}
-
-func (s *Store) LoadSessionMemory(sessionID string) (string, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	transcript, err := s.transcriptStore.Load(context.Background(), sessionID)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
-		}
-		return "", err
-	}
-	return transcript.State.Summary, nil
 }
 
 func (s *Store) toolResultsDir(sessionID string) string {

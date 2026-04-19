@@ -7,11 +7,7 @@ import (
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
-type BlobReader interface {
-	Get(kind, id string) ([]byte, error)
-}
-
-func Project(records []Record, blobs BlobReader) (*Transcript, error) {
+func Project(records []Record) (*Transcript, error) {
 	t := &Transcript{}
 	messageMap := make(map[string]Node, len(records))
 	order := make([]string, 0, len(records))
@@ -55,12 +51,6 @@ func Project(records []Record, blobs BlobReader) (*Transcript, error) {
 		case RecordCompacted:
 			if r.System != nil {
 				compactBoundary = r.System.BoundaryID
-				if r.System.SummaryBlobID != "" && blobs != nil {
-					data, err := blobs.Get("summary", r.System.SummaryBlobID)
-					if err == nil {
-						t.State.Summary = string(data)
-					}
-				}
 			}
 			if t.ID == "" {
 				t.ID = r.TranscriptID
@@ -154,12 +144,6 @@ func applyStatePatch(state *State, patch *StateRecord) error {
 				return fmt.Errorf("patch %s: %w", op.Path, err)
 			}
 			state.Mode = v
-		case PatchPathSummary:
-			var v string
-			if err := json.Unmarshal(op.Value, &v); err != nil {
-				return fmt.Errorf("patch %s: %w", op.Path, err)
-			}
-			state.Summary = v
 		case PatchPathTasks:
 			var tasks []tracker.Task
 			if err := json.Unmarshal(op.Value, &tasks); err != nil {

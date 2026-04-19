@@ -66,17 +66,13 @@ func TestBuildPromptContainsInstructions(t *testing.T) {
 
 func TestBuildPromptDirectFields(t *testing.T) {
 	sys := Build(Config{
-		Cwd:            "/tmp/test",
-		SessionSummary: "<session-summary>\nRefactored core.\n</session-summary>",
-		Skills:         "<available-skills>\n- commit\n</available-skills>",
-		Agents:         "<available-agents>\n- Explore\n</available-agents>",
+		Cwd:    "/tmp/test",
+		Skills: "<available-skills>\n- commit\n</available-skills>",
+		Agents: "<available-agents>\n- Explore\n</available-agents>",
 	})
 
 	prompt := sys.Prompt()
 
-	if !strings.Contains(prompt, "<session-summary>") {
-		t.Error("prompt should contain session-summary")
-	}
 	if !strings.Contains(prompt, "<available-skills>") {
 		t.Error("prompt should contain skills")
 	}
@@ -103,7 +99,6 @@ func TestBuildPromptNarrativeOrder(t *testing.T) {
 		Cwd:                 "/tmp/test",
 		UserInstructions:    "USER_INSTRUCTIONS_MARKER",
 		ProjectInstructions: "PROJECT_INSTRUCTIONS_MARKER",
-		SessionSummary:      "<session-summary>\nSESSION_SUMMARY_MARKER\n</session-summary>",
 		Skills:              "<available-skills>\nSKILLS_MARKER\n</available-skills>",
 		Agents:              "<available-agents>\nAGENTS_MARKER\n</available-agents>",
 		Extra:               []ExtraLayer{{Name: "test", Content: "EXTRA_MARKER"}},
@@ -114,12 +109,11 @@ func TestBuildPromptNarrativeOrder(t *testing.T) {
 	envIdx := strings.Index(prompt, "<env>")
 	userIdx := strings.Index(prompt, "USER_INSTRUCTIONS_MARKER")
 	projectIdx := strings.Index(prompt, "PROJECT_INSTRUCTIONS_MARKER")
-	summaryIdx := strings.Index(prompt, "SESSION_SUMMARY_MARKER")
 	skillsIdx := strings.Index(prompt, "SKILLS_MARKER")
 	agentsIdx := strings.Index(prompt, "AGENTS_MARKER")
 	extraIdx := strings.Index(prompt, "EXTRA_MARKER")
 
-	if envIdx < 0 || userIdx < 0 || projectIdx < 0 || summaryIdx < 0 ||
+	if envIdx < 0 || userIdx < 0 || projectIdx < 0 ||
 		skillsIdx < 0 || agentsIdx < 0 || extraIdx < 0 {
 		t.Fatal("prompt is missing one or more expected sections")
 	}
@@ -130,11 +124,8 @@ func TestBuildPromptNarrativeOrder(t *testing.T) {
 	if userIdx >= projectIdx {
 		t.Error("user instructions should appear before project instructions")
 	}
-	if projectIdx >= summaryIdx {
-		t.Error("project instructions should appear before session summary")
-	}
-	if summaryIdx >= skillsIdx {
-		t.Error("session summary should appear before skills")
+	if projectIdx >= skillsIdx {
+		t.Error("project instructions should appear before skills")
 	}
 	if skillsIdx >= agentsIdx {
 		t.Error("skills should appear before agents")
@@ -177,9 +168,6 @@ func TestBuildPromptEmptyFieldsExcluded(t *testing.T) {
 	}
 	if strings.Contains(prompt, "<project-instructions>") {
 		t.Error("empty ProjectInstructions should not produce <project-instructions> tag")
-	}
-	if strings.Contains(prompt, "<session-summary>") {
-		t.Error("empty SessionSummary should not produce <session-summary> tag")
 	}
 	if strings.Contains(prompt, "<available-skills>") {
 		t.Error("empty Skills should not produce <available-skills> tag")

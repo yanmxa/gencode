@@ -15,10 +15,6 @@ type Service interface {
 	SetID(id string)
 	TranscriptPath() string
 
-	// summary
-	GetSummary() string
-	SetSummary(summary string)
-
 	// store access
 	GetStore() *Store
 	SetStore(s *Store)
@@ -30,8 +26,6 @@ type Service interface {
 	LoadLatest() (*Snapshot, error)
 	List() ([]*SessionMetadata, error)
 	Fork(id string) (*Snapshot, error)
-	SaveMemory(id, memory string) error
-	LoadMemory(id string) (string, error)
 }
 
 // Compile-time check: *Setup implements Service.

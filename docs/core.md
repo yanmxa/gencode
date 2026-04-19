@@ -152,7 +152,6 @@ Priority    Band             Source
   0-99      Identity         base template
 100-199     Environment      provider, cwd, git, model
 200-299     Instructions     user GEN.md, project GEN.md
-300-399     Memory           session summary
 400-499     Capabilities     skills, agents, deferred tools
 500-599     Guidelines       tool usage, git workflow
 600-699     Mode             plan mode
@@ -216,43 +215,45 @@ app layer in response to these outbox events — not by core.Agent itself.
 
 ## Auto Compaction
 
+Compaction is an **app-level** concern, not a core.Agent responsibility.
+The TUI triggers it when context usage exceeds 95%.
+
 ```
-  ThinkAct(ctx)
-    for each turn:
-      │
-      ├─ check: TokensIn >= 95% of LLM.InputLimit()?
-      │   │
-      │   yes ──► COMPACT
-      │   │
-      │   no
-      │   ▼
-      │  PreInfer → streamInfer()
-      │                │
-      │           prompt_too_long error?
-      │                │
-      │               yes ──► COMPACT → retry streamInfer
-      │               no (other error) → return error
-      │
-      └─ continue turn loop
+  TUI: ProcessTurnEnd()
+    │
+    ├─ check: InputTokens >= 95% of context limit?
+    │   │
+    │   yes ──► triggerAutoCompact()
+    │   no  ──► continue
+    │
+    ▼
 
-
-  COMPACT:
+  COMPACT (app/conv/compact.go):
   ┌────────────────────────────────────────────────────┐
   │                                                    │
-  │  CompactFunc(ctx, messages) → summary              │
+  │  CompactConversation(ctx, llmClient, msgs, focus)  │
   │       │                                            │
   │       ▼                                            │
-  │  SetMessages([UserMessage("Previous context:\n"    │
-  │               + summary)])                         │
+  │  LLM summarizes conversation → summary string     │
+  │                                                    │
+  └────────────────────────────────────────────────────┘
+    │
+    ▼
+
+  HandleCompactResult():
+  ┌────────────────────────────────────────────────────┐
+  │                                                    │
+  │  1. conv.Clear() — wipe all messages               │
+  │  2. Inject summary as user message:                │
+  │     <session-summary>...</session-summary>         │
+  │  3. Restore recently accessed files (filecache)    │
+  │  4. If auto-continue: sendToAgent(resumePrompt)    │
   │                                                    │
   │  Summary lives in messages, not system prompt.     │
   │  Next turn's TokensIn reflects the smaller context.│
   │                                                    │
   └────────────────────────────────────────────────────┘
 
-  Cumulative:
-    Compaction₁: summary₁ = f(conversation₁)
-    Compaction₂: summary₂ = f(summary₁ + conversation₂)
-    Compaction₃: summary₃ = f(summary₂ + conversation₃)
-                             └── managed by CompactFunc closure
+  Cumulative: each compaction sees the previous summary
+  as a user message in the conversation being compacted.
 ```

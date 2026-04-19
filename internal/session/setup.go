@@ -9,15 +9,11 @@ import (
 var defaultSetup = &Setup{}
 
 // Setup holds the initialized session infrastructure needed by the app layer.
-// The exported fields (Store, SessionID, Summary) are kept for backward
-// compatibility. New code should use the Service interface methods instead.
 type Setup struct {
 	mu sync.RWMutex
 
-	// Exported fields — backward compatible, accessed directly by callers.
 	Store     *Store
 	SessionID string
-	Summary   string
 }
 
 // EnsureStore lazily initializes the session store for the given cwd.
@@ -67,21 +63,6 @@ func (s *Setup) TranscriptPath() string {
 		return s.Store.SessionPath(s.SessionID)
 	}
 	return ""
-}
-
-// GetSummary returns the compaction summary.
-// Named GetSummary to avoid conflict with the exported Summary field.
-func (s *Setup) GetSummary() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.Summary
-}
-
-// SetSummary updates the compaction summary.
-func (s *Setup) SetSummary(summary string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Summary = summary
 }
 
 // GetStore returns the underlying session store (may be nil).
@@ -154,24 +135,3 @@ func (s *Setup) Fork(id string) (*Snapshot, error) {
 	return st.Fork(id)
 }
 
-// SaveMemory persists session memory via the store.
-func (s *Setup) SaveMemory(id, memory string) error {
-	s.mu.RLock()
-	st := s.Store
-	s.mu.RUnlock()
-	if st == nil {
-		return fmt.Errorf("session store not initialized")
-	}
-	return st.SaveSessionMemory(id, memory)
-}
-
-// LoadMemory loads session memory via the store.
-func (s *Setup) LoadMemory(id string) (string, error) {
-	s.mu.RLock()
-	st := s.Store
-	s.mu.RUnlock()
-	if st == nil {
-		return "", fmt.Errorf("session store not initialized")
-	}
-	return st.LoadSessionMemory(id)
-}

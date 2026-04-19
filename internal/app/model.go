@@ -313,7 +313,6 @@ func (m *model) PersistSession() error {
 			Model:      modelID,
 			Cwd:        m.env.CWD,
 			LastPrompt: session.ExtractLastUserText(entries),
-			Summary:    m.services.Session.GetSummary(),
 			Mode:       m.env.SessionMode(),
 		},
 		Entries: entries,
@@ -366,14 +365,6 @@ func (m *model) loadSessionByID(id string) error {
 func (m *model) restoreSessionData(sess *session.Snapshot) {
 	m.conv.Messages = session.ConvertFromEntries(sess.Entries)
 	m.services.Session.SetID(sess.Metadata.ID)
-
-	if sess.Metadata.Summary != "" {
-		m.services.Session.SetSummary(sess.Metadata.Summary)
-	} else if m.services.Session.GetStore() != nil {
-		if mem, err := m.services.Session.LoadMemory(sess.Metadata.ID); err == nil && mem != "" {
-			m.services.Session.SetSummary(mem)
-		}
-	}
 
 	m.initTaskStorage(m.services.Session.ID())
 
@@ -449,6 +440,12 @@ func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 		return tea.Batch(cmds...)
 	}
 
+	// Drain queued messages before session persistence — avoids delay for queued input.
+	if cmd := m.drainTurnQueues(); cmd != nil {
+		commitCmds = append(commitCmds, cmd, m.ContinueOutbox())
+		return tea.Batch(commitCmds...)
+	}
+
 	if err := m.PersistSession(); err != nil {
 		log.Logger().Warn("failed to save session", zap.Error(err))
 	}
@@ -460,11 +457,6 @@ func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 
 	if cmd := input.StartPromptSuggestion(m.promptSuggestionDeps()); cmd != nil {
 		commitCmds = append(commitCmds, cmd)
-	}
-
-	if cmd := m.drainTurnQueues(); cmd != nil {
-		commitCmds = append(commitCmds, cmd)
-		return tea.Batch(commitCmds...)
 	}
 
 	if result.StopReason != "" && result.StopReason != core.StopEndTurn {
@@ -515,10 +507,6 @@ func (m *model) HandleCompactResult(msg conv.CompactResultMsg) tea.Cmd {
 			restoredContext = filecache.FormatRestoredFiles(restoredFiles)
 		}
 	}
-	if m.services.Session.GetStore() != nil && m.services.Session.ID() != "" {
-		_ = m.services.Session.SaveMemory(m.services.Session.ID(), msg.Summary)
-	}
-	m.services.Session.SetSummary(msg.Summary)
 	if m.services.Hook != nil {
 		m.services.Hook.ExecuteAsync(hook.PostCompact, hook.HookInput{Trigger: msg.Trigger})
 	}
@@ -883,7 +871,6 @@ func (m *model) forkSession() (string, error) {
 	}
 	originalID := forked.Metadata.ParentSessionID
 	m.services.Session.SetID(forked.Metadata.ID)
-	m.services.Session.SetSummary("")
 	m.services.Tracker.SetStorageDir("")
 	return originalID, nil
 }

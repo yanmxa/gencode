@@ -33,7 +33,6 @@ type State struct {
 	LastPrompt string
 	Tag        string
 	Mode       string
-	Summary    string
 
 	Tasks    []TrackerTaskView
 	Worktree *WorktreeState
@@ -64,6 +63,5 @@ type ListItem struct {
 	MessageCount int
 	GitBranch    string
 
-	HasSummary  bool
 	IsSidechain bool
 }

@@ -43,7 +43,6 @@ type CompactCommand struct {
 	TranscriptID string
 	Time         time.Time
 	BoundaryID   string
-	Summary      string
 }
 
 type ForkCommand struct {
@@ -75,10 +74,6 @@ func patchTag(tag string) PatchOp {
 
 func patchMode(mode string) PatchOp {
 	return mustPatch(PatchPathMode, mode)
-}
-
-func PatchSummary(summary string) PatchOp {
-	return mustPatch(PatchPathSummary, summary)
 }
 
 func PatchTasks(tasks []tracker.Task) PatchOp {

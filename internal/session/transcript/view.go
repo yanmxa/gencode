@@ -10,7 +10,6 @@ type MetadataView struct {
 	ID              string
 	Title           string
 	LastPrompt      string
-	Summary         string
 	Tag             string
 	Mode            string
 	CreatedAt       time.Time
@@ -30,7 +29,6 @@ func MetadataFromTranscript(t *Transcript) MetadataView {
 		ID:              t.ID,
 		Title:           t.State.Title,
 		LastPrompt:      t.State.LastPrompt,
-		Summary:         t.State.Summary,
 		Tag:             t.State.Tag,
 		Mode:            t.State.Mode,
 		CreatedAt:       t.CreatedAt,

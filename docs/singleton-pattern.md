@@ -360,26 +360,21 @@ type Service interface {
 ```go
 type Service interface {
     // identity
-    ID() string                          // current session ID
-    TranscriptPath() string              // path to transcript file
-    Summary() string                     // compaction summary
+    ID() string
+    SetID(id string)
+    TranscriptPath() string
 
-    // persistence
-    Save(snap *Snapshot) error           // persist session
-    Load(id string) (*Snapshot, error)   // load by ID
-    LoadLatest() (*Snapshot, error)      // load most recent
-    List() ([]SessionMetadata, error)    // list all sessions
+    // store access
+    GetStore() *Store
+    SetStore(s *Store)
+    EnsureStore(cwd string) error
 
-    // lifecycle
-    New() string                         // create new session, return ID
-    Fork(id string) (*Snapshot, error)   // fork existing session
-    Clear()                              // reset current session
-
-    // state mutation
-    SetID(id string)                     // update current session ID
-    SetSummary(summary string)           // update compaction summary
-    SaveMemory(id, memory string) error  // persist session memory
-    LoadMemory(id string) (string, error)
+    // persistence (delegates to store)
+    Save(snap *Snapshot) error
+    Load(id string) (*Snapshot, error)
+    LoadLatest() (*Snapshot, error)
+    List() ([]*SessionMetadata, error)
+    Fork(id string) (*Snapshot, error)
 }
 ```
 

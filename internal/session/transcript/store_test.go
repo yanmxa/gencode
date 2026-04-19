@@ -28,7 +28,6 @@ func TestPatchHelpersEncodeExpectedPayloads(t *testing.T) {
 		{name: "lastPrompt", got: PatchLastPrompt("continue"), want: `"continue"`},
 		{name: "mode", got: patchMode("plan"), want: `"plan"`},
 		{name: "tag", got: patchTag("urgent"), want: `"urgent"`},
-		{name: "summary", got: PatchSummary("compact summary"), want: `"compact summary"`},
 	}
 
 	for _, tc := range cases {
