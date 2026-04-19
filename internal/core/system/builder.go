@@ -53,6 +53,7 @@ type Config struct {
 	ModelID             string
 	Cwd                 string
 	IsGit               bool
+	IsSubagent          bool
 	PlanMode            bool
 	UserInstructions    string
 	ProjectInstructions string
@@ -130,7 +131,12 @@ func Build(cfg Config) core.System {
 	if cfg.IsGit {
 		guidelines = append(guidelines, cachedToolsGit)
 	}
-	guidelines = append(guidelines, cachedToolsQuestions, cachedToolsTasks)
+	if !cfg.IsSubagent {
+		guidelines = append(guidelines, cachedToolsQuestions)
+	}
+	if !cfg.IsSubagent && !cfg.PlanMode {
+		guidelines = append(guidelines, cachedToolsTasks)
+	}
 	sys.Set(core.Layer{
 		Name: "guidelines", Priority: 500,
 		Content: join(guidelines), Source: core.Predefined,

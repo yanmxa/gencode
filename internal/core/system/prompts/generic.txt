@@ -4,5 +4,3 @@
 2. **Keep it simple**: Only make requested changes. No extra features, refactors, or "improvements".
 3. **Verify**: Run tests or linters if available.
 4. **Clean up**: Delete unused code completely, don't comment it out.
-
-NEVER commit unless explicitly asked.

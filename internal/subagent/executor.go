@@ -279,6 +279,7 @@ func (e *Executor) buildAgent(ctx context.Context, rc *runConfig, agentCwd strin
 		ModelID:             rc.modelID,
 		Cwd:                 agentCwd,
 		IsGit:               e.isGit,
+		IsSubagent:          true,
 		PlanMode:            rc.permMode == PermissionPlan,
 		UserInstructions:    e.userInstructions,
 		ProjectInstructions: e.projectInstructions,
