@@ -188,13 +188,8 @@ type model struct {
     agentInput  notify.Model     // Source 2: background agent completion → notification queue
     systemInput trigger.Model    // Source 3: cron / async hook / file watcher → event queue
     conv        conv.Model       // Agent Outbox: outbox events → conversation state → chat render
-    env         env              // App-local TUI state: provider, permissions, plan, cache
+    env         env              // App-local TUI state: provider, permissions, plan, cache, cwd
     services    services         // Domain service singletons, injected at construction
-
-    // Infrastructure
-    bgTracker     *notify.BackgroundTracker
-    cwd           string
-    isGit         bool
 }
 ```
 
@@ -239,7 +234,7 @@ internal/app/
 │  No business logic. Model + services + routing + view + env + agent lifecycle + entrypoint + init.
 │  Cross-cutting Cmds: sendToAgent(), drainTurnQueues(), triggerAutoCompact()
 │
-├── model.go      [M,C] Model{env, services, 4 sub-models, bgTracker}, Init()
+├── model.go      [M,C] Model{env, services, 4 sub-models}, Init()
 │                       conv.Runtime event handlers, session persistence, turn queue drain, deps builders
 ├── agent.go        [C] Agent session lifecycle: delegates to services.Agent.
 │                       buildAgentParams(), ensureAgentSession(), sendToAgent(), ContinueOutbox()
