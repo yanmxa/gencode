@@ -29,12 +29,10 @@ type CompactResultMsg struct {
 // --- Compact state ---
 
 const PhaseSummarizing = "Summarizing conversation history"
-const compactMaxTokens = 4096
 
 type CompactState struct {
 	Active            bool
 	Focus             string
-	AutoContinue      bool
 	LastResult        string
 	LastError         bool
 	Phase             string
@@ -44,7 +42,6 @@ type CompactState struct {
 func (c *CompactState) Reset() {
 	c.Active = false
 	c.Focus = ""
-	c.AutoContinue = false
 	c.LastResult = ""
 	c.LastError = false
 	c.Phase = ""
@@ -59,7 +56,6 @@ func (c *CompactState) ClearResult() {
 func (c *CompactState) Complete(result string, isError bool) {
 	c.Active = false
 	c.Focus = ""
-	c.AutoContinue = false
 	c.LastResult = result
 	c.LastError = isError
 	c.Phase = ""
@@ -80,7 +76,7 @@ func CompactConversation(ctx context.Context, c *llm.Client, msgs []core.Message
 	response, err := c.Complete(ctx,
 		system.CompactPrompt(),
 		[]core.Message{core.UserMessage(conversationText, nil)},
-		compactMaxTokens,
+		core.CompactMaxTokens,
 	)
 	if err != nil {
 		return "", count, fmt.Errorf("failed to generate summary: %w", err)

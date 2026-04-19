@@ -19,6 +19,7 @@ type SubmitRuntime interface {
 	CommitMessages() []tea.Cmd
 	QuitWithCancel() (tea.Cmd, bool)
 	StartProviderTurn(content string) tea.Cmd
+	SendToActiveAgent(content string, images []core.Image) tea.Cmd
 }
 
 type SubmitDeps struct {
@@ -40,20 +41,25 @@ func HandleSubmit(deps SubmitDeps) tea.Cmd {
 	}
 
 	if deps.Conversation.Stream.Active {
-		return enqueueCurrentInput(deps, input)
+		return enqueueAndSend(deps, input)
 	}
 
 	deps.Conversation.Compact.ClearResult()
 	return ExecuteSubmitRequest(deps, SubmitRequest{Input: input})
 }
 
-func enqueueCurrentInput(deps SubmitDeps, input string) tea.Cmd {
-	if deps.Input.Queue.Enqueue(input, deps.Input.PendingImages()) < 0 {
+// enqueueAndSend puts the message in the TUI queue for display ordering and
+// also sends it directly to the agent inbox so it can be picked up immediately
+// after the current turn without waiting for the TUI event loop round-trip.
+func enqueueAndSend(deps SubmitDeps, input string) tea.Cmd {
+	images := deps.Input.PendingImages()
+	if deps.Input.Queue.Enqueue(input, images) < 0 {
 		deps.Conversation.AddNotice("Input queue is full. Please wait for the current turn to complete.")
 		return nil
 	}
+	deps.Input.Queue.MarkSentToInbox(deps.Input.Queue.Len() - 1)
 	deps.Input.Reset()
-	return nil
+	return deps.Actions.SendToActiveAgent(input, images)
 }
 
 func DrainInputQueue(deps SubmitDeps) tea.Cmd {

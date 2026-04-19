@@ -50,6 +50,9 @@ func handleAgentEvent(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 		return handlePreTool(rt, m, ev)
 	case core.PostTool:
 		return handlePostTool(rt, m, ev)
+	case core.OnCompact:
+		info, _ := ev.CompactInfo()
+		return rt.HandleAgentCompact(info)
 	case core.OnTurn:
 		result, _ := ev.Result()
 		m.Stream.Stop()

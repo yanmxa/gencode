@@ -441,18 +441,16 @@ func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 	}
 
 	// Drain queued messages before session persistence — avoids delay for queued input.
-	if cmd := m.drainTurnQueues(); cmd != nil {
-		commitCmds = append(commitCmds, cmd, m.ContinueOutbox())
+	if cmd, found := m.drainTurnQueues(); found {
+		if cmd != nil {
+			commitCmds = append(commitCmds, cmd)
+		}
+		commitCmds = append(commitCmds, m.ContinueOutbox())
 		return tea.Batch(commitCmds...)
 	}
 
 	if err := m.PersistSession(); err != nil {
 		log.Logger().Warn("failed to save session", zap.Error(err))
-	}
-
-	if kit.ShouldAutoCompact(m.env.LLMProvider, len(m.conv.Messages), m.env.InputTokens, m.services.LLM.Store(), m.env.CurrentModel) {
-		m.conv.Compact.AutoContinue = true
-		return tea.Batch(append(commitCmds, m.triggerAutoCompact())...)
 	}
 
 	if cmd := input.StartPromptSuggestion(m.promptSuggestionDeps()); cmd != nil {
@@ -479,10 +477,26 @@ func (m *model) ProcessAgentStop(err error) tea.Cmd {
 	return tea.Batch(commitCmds...)
 }
 
-const autoCompactResumePrompt = "Continue with the task. The conversation was auto-compacted to free up context."
+func (m *model) HandleAgentCompact(info core.CompactInfo) tea.Cmd {
+	scrollbackCmds := m.commitAllMessages()
+	boundaryStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
+	boundary := boundaryStyle.Render(fmt.Sprintf("✻ Conversation compacted — %d messages summarized (scroll up for history)", info.OriginalCount))
 
+	m.conv.Clear()
+	m.env.ResetTokens()
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: core.FormatCompactSummary(info.Summary)})
+
+	if m.services.Hook != nil {
+		m.services.Hook.ExecuteAsync(hook.PostCompact, hook.HookInput{Trigger: "auto"})
+	}
+
+	scrollPart := tea.Sequence(append(scrollbackCmds, tea.Println(boundary), tea.ClearScreen)...)
+	return tea.Batch(scrollPart, m.ContinueOutbox())
+}
+
+// HandleCompactResult handles manual /compact results.
+// Stops the agent so the next user message restarts it with compacted messages.
 func (m *model) HandleCompactResult(msg conv.CompactResultMsg) tea.Cmd {
-	shouldContinue := m.conv.Compact.AutoContinue
 	if msg.Error != nil {
 		m.conv.Compact.Complete(fmt.Sprintf("Compaction could not be completed: %v", msg.Error), true)
 		return tea.Batch(m.CommitMessages()...)
@@ -494,37 +508,25 @@ func (m *model) HandleCompactResult(msg conv.CompactResultMsg) tea.Cmd {
 
 	m.conv.Clear()
 	m.env.ResetTokens()
+	m.StopAgentSession()
 
-	// Inject compaction summary as a user message (not system prompt)
-	summaryMsg := fmt.Sprintf("<session-summary>\n%s\n</session-summary>", msg.Summary)
-	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: summaryMsg})
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: core.FormatCompactSummary(msg.Summary)})
 
 	var restoredFiles []filecache.RestoredFile
-	var restoredContext string
 	if m.env.FileCache != nil {
 		restoredFiles, _ = m.env.FileCache.RestoreRecent()
 		if len(restoredFiles) > 0 {
-			restoredContext = filecache.FormatRestoredFiles(restoredFiles)
+			restoredContext := filecache.FormatRestoredFiles(restoredFiles)
+			m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: restoredContext})
+			m.conv.AddNotice(fmt.Sprintf("Restored %d recently accessed file(s) for context.", len(restoredFiles)))
 		}
 	}
 	if m.services.Hook != nil {
 		m.services.Hook.ExecuteAsync(hook.PostCompact, hook.HookInput{Trigger: msg.Trigger})
 	}
+
 	scrollPart := tea.Sequence(append(scrollbackCmds, tea.Println(boundary), tea.ClearScreen)...)
-	cmds := []tea.Cmd{scrollPart}
-	if shouldContinue {
-		m.conv.Compact.ClearResult()
-		if restoredContext != "" {
-			m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: restoredContext})
-		}
-		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: autoCompactResumePrompt})
-		cmds = append(cmds, m.sendToAgent(autoCompactResumePrompt, nil))
-	} else if restoredContext != "" {
-		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: restoredContext})
-		m.conv.AddNotice(fmt.Sprintf("Restored %d recently accessed file(s) for context.", len(restoredFiles)))
-		cmds = append(cmds, m.CommitMessages()...)
-	}
-	return tea.Batch(cmds...)
+	return tea.Batch(scrollPart, tea.Batch(m.CommitMessages()...))
 }
 
 func (m *model) HandleTokenLimitResult(msg kit.TokenLimitResultMsg) tea.Cmd {
@@ -696,41 +698,35 @@ func (m *model) fireIdleHooks() (bool, tea.Cmd) {
 	return false, nil
 }
 
-func (m *model) triggerAutoCompact() tea.Cmd {
-	m.conv.Compact.Active = true
-	m.conv.Compact.Focus = ""
-	m.conv.Compact.Phase = conv.PhaseSummarizing
-	m.conv.AddNotice(fmt.Sprintf("\u26a1 Auto-compacting conversation (%.0f%% context used)...", kit.GetContextUsagePercent(m.env.InputTokens, m.services.LLM.Store(), m.env.CurrentModel)))
-	commitCmds := m.CommitMessages()
-	commitCmds = append(commitCmds, m.conv.Spinner.Tick, conv.CompactCmd(m.BuildCompactRequest("", "auto")))
-	return tea.Batch(commitCmds...)
-}
 
-func (m *model) drainTurnQueues() tea.Cmd {
+func (m *model) drainTurnQueues() (tea.Cmd, bool) {
 	if item, ok := m.userInput.Queue.Dequeue(); ok {
 		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: item.Content, Images: item.Images})
-		return m.sendToAgent(item.Content, item.Images)
+		if item.SentToInbox {
+			return nil, true
+		}
+		return m.sendToAgent(item.Content, item.Images), true
 	}
 
 	if len(m.systemInput.CronQueue) > 0 {
 		prompt := m.systemInput.CronQueue[0]
 		m.systemInput.CronQueue = m.systemInput.CronQueue[1:]
-		return m.injectCronPrompt(prompt)
+		return m.injectCronPrompt(prompt), true
 	}
 
 	if m.systemInput.AsyncHookQueue != nil {
 		if item, ok := m.systemInput.AsyncHookQueue.Pop(); ok {
-			return m.injectAsyncHookContinuation(item)
+			return m.injectAsyncHookContinuation(item), true
 		}
 	}
 
 	if m.agentInput.Notifications != nil {
 		if items := notify.PopReadyNotifications(m.agentInput.Notifications, true); len(items) > 0 {
-			return m.injectTaskNotification(notify.MergeNotifications(items))
+			return m.injectTaskNotification(notify.MergeNotifications(items)), true
 		}
 	}
 
-	return nil
+	return nil, false
 }
 
 func (m *model) injectTaskNotification(item notify.Notification) tea.Cmd {

@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"context"
 	"fmt"
+	"strings"
 
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/system"
@@ -74,12 +76,27 @@ func buildAgent(p BuildParams) (core.Agent, *PermissionBridge, error) {
 
 	pb := NewPermissionBridge(p.PermissionDecider)
 
+	compactClient := client
+	compactFunc := func(ctx context.Context, msgs []core.Message) (string, error) {
+		text := core.BuildConversationText(msgs)
+		resp, err := compactClient.Complete(ctx, system.CompactPrompt(), []core.Message{core.UserMessage(text, nil)}, core.CompactMaxTokens)
+		if err != nil {
+			return "", err
+		}
+		summary := strings.TrimSpace(resp.Content)
+		if summary == "" {
+			return "", fmt.Errorf("compaction produced empty summary")
+		}
+		return summary, nil
+	}
+
 	ag := core.NewAgent(core.Config{
-		ID:    "main",
-		LLM:   client,
-		System: sys,
-		Tools:  tool.WithPermission(tools, pb.PermissionFunc()),
-		CWD:   p.CWD,
+		ID:          "main",
+		LLM:         client,
+		System:      sys,
+		Tools:       tool.WithPermission(tools, pb.PermissionFunc()),
+		CompactFunc: compactFunc,
+		CWD:         p.CWD,
 	})
 
 	return ag, pb, nil

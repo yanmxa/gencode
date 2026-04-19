@@ -23,6 +23,7 @@ type Runtime interface {
 	ProcessTurnEnd(result core.Result) tea.Cmd
 	ProcessAgentStop(err error) tea.Cmd
 	HandlePermBridge(req *PermBridgeRequest) tea.Cmd
+	HandleAgentCompact(info core.CompactInfo) tea.Cmd
 	HandleCompactResult(msg CompactResultMsg) tea.Cmd
 	HandleTokenLimitResult(msg kit.TokenLimitResultMsg) tea.Cmd
 	HasRunningTasks() bool

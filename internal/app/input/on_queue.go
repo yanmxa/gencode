@@ -11,9 +11,10 @@ import (
 const maxQueueSize = 50
 
 type QueueItem struct {
-	ID      int
-	Content string
-	Images  []core.Image
+	ID          int
+	Content     string
+	Images      []core.Image
+	SentToInbox bool
 }
 
 type Queue struct {
@@ -72,6 +73,12 @@ func (q *Queue) UpdateAt(idx int, content string, images []core.Image) bool {
 	q.items[idx].Content = content
 	q.items[idx].Images = images
 	return true
+}
+
+func (q *Queue) MarkSentToInbox(idx int) {
+	if idx >= 0 && idx < len(q.items) {
+		q.items[idx].SentToInbox = true
+	}
 }
 
 func (q *Queue) Clear() { q.items = nil }

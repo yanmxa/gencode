@@ -245,7 +245,7 @@ The TUI triggers it when context usage exceeds 95%.
   │                                                    │
   │  1. conv.Clear() — wipe all messages               │
   │  2. Inject summary as user message:                │
-  │     <session-summary>...</session-summary>         │
+  │     "Previous context:\n...\nContinue with task."  │
   │  3. Restore recently accessed files (filecache)    │
   │  4. If auto-continue: sendToAgent(resumePrompt)    │
   │                                                    │

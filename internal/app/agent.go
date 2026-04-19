@@ -118,6 +118,10 @@ func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {
 	}
 }
 
+func (m *model) SendToActiveAgent(content string, images []core.Image) tea.Cmd {
+	return m.sendToAgent(content, images)
+}
+
 func (m *model) StopAgentSession() {
 	m.services.Agent.Stop()
 }

@@ -175,6 +175,7 @@ const (
 	PostTool  EventType = "PostTool"   // after tool execution (ToolResult in Data)
 	OnMessage EventType = "Message"    // message received on inbox (Message in Data)
 	OnTurn    EventType = "Turn"       // think+act cycle completed (Result in Data)
+	OnCompact EventType = "Compact"   // conversation compacted (CompactInfo in Data)
 )
 
 // Event carries context for an agent lifecycle point.
@@ -187,13 +188,20 @@ type Event struct {
 
 // Event.Data type helpers — reduce boilerplate in handlers.
 
-func (e Event) ToolCall() (ToolCall, bool)       { tc, ok := e.Data.(ToolCall); return tc, ok }
-func (e Event) ToolResult() (ToolResult, bool)   { tr, ok := e.Data.(ToolResult); return tr, ok }
-func (e Event) Message() (Message, bool)         { m, ok := e.Data.(Message); return m, ok }
-func (e Event) Result() (Result, bool)           { r, ok := e.Data.(Result); return r, ok }
-func (e Event) Response() (*InferResponse, bool) { r, ok := e.Data.(*InferResponse); return r, ok }
-func (e Event) Chunk() (Chunk, bool)             { c, ok := e.Data.(Chunk); return c, ok }
-func (e Event) Error() (error, bool)             { err, ok := e.Data.(error); return err, ok }
+func (e Event) ToolCall() (ToolCall, bool)         { tc, ok := e.Data.(ToolCall); return tc, ok }
+func (e Event) ToolResult() (ToolResult, bool)     { tr, ok := e.Data.(ToolResult); return tr, ok }
+func (e Event) Message() (Message, bool)           { m, ok := e.Data.(Message); return m, ok }
+func (e Event) Result() (Result, bool)             { r, ok := e.Data.(Result); return r, ok }
+func (e Event) Response() (*InferResponse, bool)   { r, ok := e.Data.(*InferResponse); return r, ok }
+func (e Event) Chunk() (Chunk, bool)               { c, ok := e.Data.(Chunk); return c, ok }
+func (e Event) Error() (error, bool)               { err, ok := e.Data.(error); return err, ok }
+func (e Event) CompactInfo() (CompactInfo, bool)   { ci, ok := e.Data.(CompactInfo); return ci, ok }
+
+// CompactInfo carries compaction details for the OnCompact event.
+type CompactInfo struct {
+	Summary       string
+	OriginalCount int
+}
 
 // Typed event constructors — enforce correct Data types at construction.
 
@@ -210,3 +218,6 @@ func PostInferEvent(agentID string, r *InferResponse) Event {
 }
 func PreToolEvent(tc ToolCall) Event    { return Event{Type: PreTool, Source: tc.Name, Data: tc} }
 func PostToolEvent(tr ToolResult) Event { return Event{Type: PostTool, Source: tr.ToolName, Data: tr} }
+func CompactEvent(agentID string, info CompactInfo) Event {
+	return Event{Type: OnCompact, Source: agentID, Data: info}
+}

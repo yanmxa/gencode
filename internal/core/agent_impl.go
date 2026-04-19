@@ -325,6 +325,14 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 	return toolUses
 }
 
+// CompactMaxTokens is the max output tokens for compaction LLM calls.
+const CompactMaxTokens = 4096
+
+// FormatCompactSummary formats a compaction summary for injection as a user message.
+func FormatCompactSummary(summary string) string {
+	return "Previous context:\n" + summary
+}
+
 // compact calls CompactFunc and replaces messages with the summary.
 // Returns true if compaction succeeded.
 func (a *agent) compact(ctx context.Context) bool {
@@ -336,7 +344,9 @@ func (a *agent) compact(ctx context.Context) bool {
 	if err != nil || summary == "" {
 		return false
 	}
-	a.SetMessages([]Message{UserMessage("Previous context:\n"+summary+"\n\nContinue with the task.", nil)})
+	originalCount := len(msgs)
+	a.SetMessages([]Message{UserMessage(FormatCompactSummary(summary), nil)})
+	a.emit(ctx, CompactEvent(a.id, CompactInfo{Summary: summary, OriginalCount: originalCount}))
 	return true
 }
 
