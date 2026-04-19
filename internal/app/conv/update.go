@@ -82,6 +82,9 @@ func handleChunk(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	if chunk.Text != "" || chunk.Thinking != "" {
 		m.AppendToLast(chunk.Text, chunk.Thinking)
 	}
+	if chunk.Done && chunk.Response != nil && len(chunk.Response.ToolCalls) == 0 {
+		m.Stream.Active = false
+	}
 	return rt.ContinueOutbox()
 }
 

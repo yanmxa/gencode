@@ -379,7 +379,7 @@ func (a *agent) streamInfer(ctx context.Context) (*InferResponse, error) {
 			if chunk.Err != nil {
 				return nil, fmt.Errorf("infer: %w", chunk.Err)
 			}
-			if chunk.Text != "" || chunk.Thinking != "" {
+			if chunk.Text != "" || chunk.Thinking != "" || chunk.Done {
 				a.emit(ctx, ChunkEvent(a.id, chunk))
 			}
 			if chunk.Done {

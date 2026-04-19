@@ -440,7 +440,7 @@ func (m *model) StartProviderTurn(content string) tea.Cmd {
 
 	sendCmd := m.sendToAgent(content, images)
 	if startCmd != nil {
-		return tea.Sequence(startCmd, sendCmd)
+		return tea.Batch(startCmd, sendCmd)
 	}
 	return sendCmd
 }
