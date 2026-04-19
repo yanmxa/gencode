@@ -139,27 +139,22 @@ func (c CommandController) Execute(ctx context.Context, inputText string) (strin
 }
 
 func (c CommandController) HandleSubmit(inputText string) (tea.Cmd, bool) {
-	preserve := shouldPreserveCommandInConversation(c.deps.Command, inputText)
-	preAppended := false
-	if preserve && ShouldPreserveBeforeCommandExecution(inputText) {
+	preserve := shouldPreserveCommandInConversation(inputText)
+	if preserve {
 		c.deps.Conversation.Append(core.ChatMessage{Role: core.RoleUser, Content: inputText})
-		preAppended = true
 	}
 
-	insertAt := len(c.deps.Conversation.Messages)
 	result, cmd, isCmd := c.Execute(context.Background(), inputText)
 	if !isCmd {
-		if preAppended && len(c.deps.Conversation.Messages) > 0 {
-			c.deps.Conversation.Messages = c.deps.Conversation.Messages[:len(c.deps.Conversation.Messages)-1]
+		if preserve {
+			msgs := c.deps.Conversation.Messages
+			c.deps.Conversation.Messages = msgs[:len(msgs)-1]
 		}
 		return nil, false
 	}
 
 	c.deps.Input.Reset()
 
-	if preserve && !preAppended {
-		c.insertConversationMessage(insertAt, core.ChatMessage{Role: core.RoleUser, Content: inputText})
-	}
 	if result != "" {
 		c.deps.Conversation.AddNotice(result)
 	}
@@ -238,18 +233,6 @@ func (c CommandController) executeCustomCommand(pc *command.CustomCommand, args 
 	return ""
 }
 
-func (c CommandController) insertConversationMessage(idx int, msg core.ChatMessage) {
-	if idx < 0 || idx >= len(c.deps.Conversation.Messages) {
-		c.deps.Conversation.Append(msg)
-		return
-	}
-	c.deps.Conversation.Messages = append(c.deps.Conversation.Messages, core.ChatMessage{})
-	copy(c.deps.Conversation.Messages[idx+1:], c.deps.Conversation.Messages[idx:])
-	c.deps.Conversation.Messages[idx] = msg
-	if idx < c.deps.Conversation.CommittedCount {
-		c.deps.Conversation.CommittedCount++
-	}
-}
 
 func (c *CommandController) handleHelpCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	var sb strings.Builder
@@ -643,28 +626,15 @@ func SkillCommandInfos() []command.Info {
 	return infos
 }
 
-func shouldPreserveCommandInConversation(cmdSvc command.Service, inputText string) bool {
+func shouldPreserveCommandInConversation(inputText string) bool {
 	name, _, isCmd := command.ParseCommand(inputText)
 	if !isCmd {
 		return false
 	}
 	switch name {
-	case "clear", "exit":
-		return false
+	case "compact", "fork", "resume", "plan", "loop", "init", "tokenlimit":
+		return true
 	}
-	if _, ok := LookupSkillCommand(name); ok {
-		return false
-	}
-	if _, ok := cmdSvc.IsCustomCommand(name); ok {
-		return false
-	}
-	return true
+	return false
 }
 
-func ShouldPreserveBeforeCommandExecution(inputText string) bool {
-	name, _, isCmd := command.ParseCommand(inputText)
-	if !isCmd {
-		return false
-	}
-	return name == "loop"
-}
