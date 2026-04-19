@@ -160,7 +160,7 @@ func TestScenarioMinimal_NoGitGuidelines(t *testing.T) {
 	sys := Build(Config{Cwd: "/tmp/project", IsGit: false})
 	prompt := sys.Prompt()
 
-	if strings.Contains(prompt, "Git Safety Protocol") {
+	if strings.Contains(prompt, "Git safety (Bash)") {
 		t.Error("non-git scenario should NOT contain git safety guidelines")
 	}
 	if !strings.Contains(prompt, "# Tool usage") {
@@ -213,7 +213,7 @@ func TestScenarioMainSession_HasAllSections(t *testing.T) {
 		{"agents", "<available-agents>"},
 		{"deferred tools", "<available-deferred-tools>"},
 		{"core tool guidelines", "# Tool usage"},
-		{"git guidelines", "Git Safety Protocol"},
+		{"git guidelines", "Git safety (Bash)"},
 		{"question guidelines", "AskUserQuestion"},
 		{"task guidelines", "TaskCreate"},
 		{"coordinator", "<coordinator-guidance>"},
@@ -239,7 +239,7 @@ func TestScenarioNoGit_ExcludesGitGuidelines(t *testing.T) {
 	sys := Build(cfg)
 	prompt := sys.Prompt()
 
-	if strings.Contains(prompt, "Git Safety Protocol") {
+	if strings.Contains(prompt, "Git safety (Bash)") {
 		t.Error("no-git scenario should NOT contain git safety guidelines")
 	}
 	if !strings.Contains(prompt, "Is git repo: No") {
@@ -407,10 +407,10 @@ func TestConditionalGitGuidelines(t *testing.T) {
 	promptWithGit := withGit.Prompt()
 	promptWithoutGit := withoutGit.Prompt()
 
-	if !strings.Contains(promptWithGit, "Git Safety Protocol") {
+	if !strings.Contains(promptWithGit, "Git safety (Bash)") {
 		t.Error("IsGit=true should include git safety guidelines")
 	}
-	if strings.Contains(promptWithoutGit, "Git Safety Protocol") {
+	if strings.Contains(promptWithoutGit, "Git safety (Bash)") {
 		t.Error("IsGit=false should NOT include git safety guidelines")
 	}
 

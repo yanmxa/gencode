@@ -39,19 +39,6 @@ func LoadInstructions(cwd string) (user, project string) {
 	return strings.Join(userParts, "\n\n"), strings.Join(projectParts, "\n\n")
 }
 
-// LoadMemory loads memory content from standard locations.
-func LoadMemory(cwd string) string {
-	files := LoadMemoryFiles(cwd)
-	if len(files) == 0 {
-		return ""
-	}
-	var parts []string
-	for _, f := range files {
-		parts = append(parts, f.Content)
-	}
-	return strings.Join(parts, "\n\n")
-}
-
 // LoadMemoryFiles loads all memory files with metadata.
 // Returns files in order: global, global rules, project, project rules, local.
 func LoadMemoryFiles(cwd string) []MemoryFile {

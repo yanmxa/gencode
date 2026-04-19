@@ -78,16 +78,32 @@ func (a *agent) Run(ctx context.Context) error {
 			return err
 		}
 
-		result, err := a.ThinkAct(ctx)
-		if result != nil {
-			a.emit(ctx, TurnEvent(a.id, *result))
-		}
-		if err != nil {
-			if err == errStopped {
-				return nil
+		for {
+			result, err := a.ThinkAct(ctx)
+			if result != nil {
+				a.emit(ctx, TurnEvent(a.id, *result))
 			}
-			runErr = err
-			return err
+			if err != nil {
+				if err == errStopped {
+					return nil
+				}
+				runErr = err
+				return err
+			}
+
+			// Pick up messages that arrived during ThinkAct (e.g. queued user input
+			// sent directly to the inbox). Avoids a full TUI event loop round-trip.
+			n, drainErr := a.drainInbox(ctx)
+			if drainErr != nil {
+				if drainErr == errStopped {
+					return nil
+				}
+				runErr = drainErr
+				return drainErr
+			}
+			if n == 0 {
+				break
+			}
 		}
 	}
 }
@@ -159,7 +175,7 @@ func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 
 		// Between turns: drain any new inbox messages (non-blocking)
 		if turns > 0 {
-			if err := a.drainInbox(ctx); err != nil {
+			if _, err := a.drainInbox(ctx); err != nil {
 				return nil, err
 			}
 		}
@@ -421,17 +437,19 @@ func (a *agent) emitFinal(event Event) {
 }
 
 // drainInbox non-blocking reads all pending inbox messages.
-// Returns errStopped if SigStop is received.
-func (a *agent) drainInbox(ctx context.Context) error {
+// Returns the number of messages drained and errStopped if SigStop is received.
+func (a *agent) drainInbox(ctx context.Context) (int, error) {
+	var n int
 	for {
 		select {
 		case msg, ok := <-a.inbox:
 			if !ok || msg.Signal == SigStop {
-				return errStopped
+				return n, errStopped
 			}
 			a.ingest(ctx, msg)
+			n++
 		default:
-			return nil
+			return n, nil
 		}
 	}
 }

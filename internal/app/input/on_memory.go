@@ -604,10 +604,15 @@ func memoryPadRight(s string, length int) string {
 
 // handleMemoryShow shows the current loaded memory content.
 func handleMemoryShow(cwd string) (string, error) {
-	content := system.LoadMemory(cwd)
-	if content == "" {
+	files := system.LoadMemoryFiles(cwd)
+	if len(files) == 0 {
 		return "No memory files loaded.\n\nCreate project memory with: /init", nil
 	}
+	var parts []string
+	for _, f := range files {
+		parts = append(parts, f.Content)
+	}
+	content := strings.Join(parts, "\n\n")
 
 	const maxShow = 2000
 	if len(content) > maxShow {

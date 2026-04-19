@@ -32,13 +32,6 @@ When making changes, mimic existing code style, use existing libraries and patte
 
 When referencing code, use `file_path:line_number` pattern.
 
-# Task execution
-
-1. **Read before modify**: Never change code you haven't read.
-2. **Keep it simple**: Only make requested changes. No extra features, refactors, or "improvements".
-3. **Verify**: Run tests or linters if available.
-4. **Clean up**: Delete unused code completely, don't comment it out.
-
 
 # currentDate
 Today's date is YYYY-MM-DD.
@@ -60,11 +53,15 @@ Before spawning an Agent, estimate the effort. Use the lightest option:
 3. Needs code changes, complex reasoning, or multi-file edits → general-purpose agent
 
 Key rules:
+- Read before modifying — never change code you haven't read.
 - Run independent tool calls in parallel.
 - Edit for updates, Write for new files only.
 - Bash runs in the session working directory — never prepend `cd <cwd> &&`.
 - Use relative paths inside the session directory. Absolute paths only for targets outside it.
 - Never create docs/README unless asked.
+- Keep it simple: only make requested changes. No extra features, refactors, or "improvements".
+- Run tests or linters if available after changes.
+- Delete unused code completely, don't comment it out.
 
 
 # Asking questions

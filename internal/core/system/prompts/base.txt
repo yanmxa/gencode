@@ -31,10 +31,3 @@ When making changes, mimic existing code style, use existing libraries and patte
 - Default to writing no comments. Only add one when the WHY is non-obvious.
 
 When referencing code, use `file_path:line_number` pattern.
-
-# Task execution
-
-1. **Read before modify**: Never change code you haven't read.
-2. **Keep it simple**: Only make requested changes. No extra features, refactors, or "improvements".
-3. **Verify**: Run tests or linters if available.
-4. **Clean up**: Delete unused code completely, don't comment it out.

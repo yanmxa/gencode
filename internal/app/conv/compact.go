@@ -29,6 +29,7 @@ type CompactResultMsg struct {
 // --- Compact state ---
 
 const PhaseSummarizing = "Summarizing conversation history"
+const compactMaxTokens = 4096
 
 type CompactState struct {
 	Active            bool
@@ -79,7 +80,7 @@ func CompactConversation(ctx context.Context, c *llm.Client, msgs []core.Message
 	response, err := c.Complete(ctx,
 		system.CompactPrompt(),
 		[]core.Message{core.UserMessage(conversationText, nil)},
-		2048,
+		compactMaxTokens,
 	)
 	if err != nil {
 		return "", count, fmt.Errorf("failed to generate summary: %w", err)
