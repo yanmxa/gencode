@@ -38,23 +38,23 @@ type Options struct{}
 // ── singleton ──────────────────────────────────────────────
 
 var (
-	svcMu    sync.RWMutex
+	mu    sync.RWMutex
 	instance Service
 )
 
 // Initialize creates a new Store and sets it as the singleton.
 func Initialize(opts Options) {
-	svcMu.Lock()
+	mu.Lock()
 	instance = NewStore()
-	svcMu.Unlock()
+	mu.Unlock()
 }
 
 // Default returns the singleton Service instance.
 // Panics if not initialized.
 func Default() Service {
-	svcMu.RLock()
+	mu.RLock()
 	s := instance
-	svcMu.RUnlock()
+	mu.RUnlock()
 	if s == nil {
 		panic("tracker: not initialized")
 	}
@@ -63,15 +63,15 @@ func Default() Service {
 
 // SetDefault replaces the singleton instance. Intended for tests.
 func SetDefault(s Service) {
-	svcMu.Lock()
+	mu.Lock()
 	instance = s
-	svcMu.Unlock()
+	mu.Unlock()
 }
 
 // ResetService clears the singleton instance. Intended for tests.
 func ResetService() {
-	svcMu.Lock()
+	mu.Lock()
 	instance = nil
-	svcMu.Unlock()
+	mu.Unlock()
 }
 

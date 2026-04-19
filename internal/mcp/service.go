@@ -47,7 +47,6 @@ func Initialize(opts Options) error {
 		reg.PluginServers = opts.PluginServers
 		reg.configs = reg.mergePluginMCPConfigs(reg.configs)
 	}
-	defaultRegistry = reg
 	SetDefault(&service{reg: reg})
 	return nil
 }
@@ -55,16 +54,16 @@ func Initialize(opts Options) error {
 // ── singleton ──────────────────────────────────────────────
 
 var (
-	svcMu      sync.RWMutex
-	svcInstance Service
+	mu      sync.RWMutex
+	instance Service
 )
 
 // Default returns the singleton Service instance.
 // Panics if Initialize has not been called.
 func Default() Service {
-	svcMu.RLock()
-	s := svcInstance
-	svcMu.RUnlock()
+	mu.RLock()
+	s := instance
+	mu.RUnlock()
 	if s == nil {
 		panic("mcp: not initialized")
 	}
@@ -74,24 +73,24 @@ func Default() Service {
 // DefaultIfInit returns the singleton Service instance, or nil if not yet
 // initialized. Useful for nil-guards that used to check DefaultRegistry == nil.
 func DefaultIfInit() Service {
-	svcMu.RLock()
-	s := svcInstance
-	svcMu.RUnlock()
+	mu.RLock()
+	s := instance
+	mu.RUnlock()
 	return s
 }
 
 // SetDefault replaces the singleton instance. Intended for tests.
 func SetDefault(s Service) {
-	svcMu.Lock()
-	svcInstance = s
-	svcMu.Unlock()
+	mu.Lock()
+	instance = s
+	mu.Unlock()
 }
 
 // ResetService clears the singleton instance. Intended for tests.
 func ResetService() {
-	svcMu.Lock()
-	svcInstance = nil
-	svcMu.Unlock()
+	mu.Lock()
+	instance = nil
+	mu.Unlock()
 }
 
 // WrapRegistry creates a Service from a *Registry. Used by tests.

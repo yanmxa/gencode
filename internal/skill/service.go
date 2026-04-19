@@ -40,6 +40,38 @@ type Options struct {
 	CWD string
 }
 
+// Initialize loads skills from all sources, applies persisted states,
+// and sets the singleton.
+func Initialize(opts Options) {
+	cwd := opts.CWD
+	loader := newLoader(cwd)
+
+	skills, _ := loader.loadAll()
+	userStore, _ := NewUserStore()
+	projectStore, _ := NewProjectStore(cwd)
+
+	registry := &Registry{
+		skills:       skills,
+		userStore:    userStore,
+		projectStore: projectStore,
+		cwd:          cwd,
+	}
+
+	for _, skill := range skills {
+		fullName := skill.FullName()
+		if state, ok := userStore.GetState(fullName); ok {
+			skill.State = state
+		}
+		if state, ok := projectStore.GetState(fullName); ok {
+			skill.State = state
+		}
+	}
+
+	mu.Lock()
+	instance = registry
+	mu.Unlock()
+}
+
 // ── singleton ──────────────────────────────────────────────
 
 var (

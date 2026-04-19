@@ -66,21 +66,6 @@ func ParseCommand(input string) (cmd string, args string, isCmd bool) {
 	return cmd, args, true
 }
 
-// Initialize sets the working directory for resolving project-level commands,
-// creates the service, and sets the singleton.
-// Sources: ~/.gen/commands/, .gen/commands/, and plugin command paths.
-func Initialize(opts Options) error {
-	s := &service{
-		cwd:                  opts.CWD,
-		dynamicInfoProviders: opts.DynamicProviders,
-		pluginCommandPaths:   opts.PluginCommandPaths,
-	}
-	mu.Lock()
-	instance = s
-	mu.Unlock()
-	return nil
-}
-
 // ── implementation ─────────────────────────────────────────
 
 // commandScope represents where a custom command was loaded from.

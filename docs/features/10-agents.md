@@ -56,6 +56,7 @@ gen agent run --type AgentName --prompt "task"
 
 ```bash
 go test ./internal/agent/... -v
+go test ./internal/subagent/... -v
 go test ./tests/integration/agent/... -v
 ```
 

@@ -76,16 +76,16 @@ func Initialize(opts Options) {
 // -- singleton ----------------------------------------------------------
 
 var (
-	svcMu    sync.RWMutex
+	mu    sync.RWMutex
 	instance Service
 )
 
 // Default returns the singleton Service instance.
 // Panics if Initialize has not been called.
 func Default() Service {
-	svcMu.RLock()
+	mu.RLock()
 	s := instance
-	svcMu.RUnlock()
+	mu.RUnlock()
 	if s == nil {
 		panic("hook: not initialized")
 	}
@@ -96,22 +96,22 @@ func Default() Service {
 // initialized. Used during early initialization when the hook service may
 // not be ready.
 func DefaultIfInit() Service {
-	svcMu.RLock()
+	mu.RLock()
 	s := instance
-	svcMu.RUnlock()
+	mu.RUnlock()
 	return s
 }
 
 // SetDefault replaces the singleton instance. Intended for tests.
 func SetDefault(s Service) {
-	svcMu.Lock()
+	mu.Lock()
 	instance = s
-	svcMu.Unlock()
+	mu.Unlock()
 }
 
 // ResetService clears the singleton instance. Intended for tests.
 func ResetService() {
-	svcMu.Lock()
+	mu.Lock()
 	instance = nil
-	svcMu.Unlock()
+	mu.Unlock()
 }

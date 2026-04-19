@@ -35,7 +35,7 @@ type Options struct {
 // ── singleton ──────────────────────────────────────────────
 
 var (
-	svcMu    sync.RWMutex
+	mu    sync.RWMutex
 	instance Service
 )
 
@@ -45,17 +45,17 @@ func Initialize(opts Options) {
 	if opts.OutputDir != "" {
 		m.SetOutputDir(opts.OutputDir)
 	}
-	svcMu.Lock()
+	mu.Lock()
 	instance = m
-	svcMu.Unlock()
+	mu.Unlock()
 }
 
 // Default returns the singleton Service instance.
 // Panics if not initialized.
 func Default() Service {
-	svcMu.RLock()
+	mu.RLock()
 	s := instance
-	svcMu.RUnlock()
+	mu.RUnlock()
 	if s == nil {
 		panic("task: not initialized")
 	}
@@ -64,16 +64,16 @@ func Default() Service {
 
 // SetDefault replaces the singleton instance. Intended for tests.
 func SetDefault(s Service) {
-	svcMu.Lock()
+	mu.Lock()
 	instance = s
-	svcMu.Unlock()
+	mu.Unlock()
 }
 
 // ResetService clears the singleton instance. Intended for tests.
 func ResetService() {
-	svcMu.Lock()
+	mu.Lock()
 	instance = nil
-	svcMu.Unlock()
+	mu.Unlock()
 }
 
 // ── Service methods on Manager ─────────────────────────────

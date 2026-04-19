@@ -36,6 +36,18 @@ type Options struct {
 
 var _ Service = (*service)(nil)
 
+// Initialize creates the command service and sets the singleton.
+func Initialize(opts Options) {
+	s := &service{
+		cwd:                  opts.CWD,
+		dynamicInfoProviders: opts.DynamicProviders,
+		pluginCommandPaths:   opts.PluginCommandPaths,
+	}
+	mu.Lock()
+	instance = s
+	mu.Unlock()
+}
+
 // ── singleton ──────────────────────────────────────────────
 
 var (

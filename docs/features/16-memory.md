@@ -27,8 +27,7 @@ gencode injects project and user instructions from Markdown files into the LLM's
 ## Automated Tests
 
 ```bash
-go test ./internal/app/memory/... -v
-go test ./internal/system/... -v
+go test ./internal/core/system/... -v
 ```
 
 Covered:

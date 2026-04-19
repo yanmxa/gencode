@@ -23,6 +23,9 @@ type Service interface {
 	LoadDurable() error
 }
 
+// Compile-time check: *Store implements Service.
+var _ Service = (*Store)(nil)
+
 // ── singleton ──────────────────────────────────────────────
 
 var (

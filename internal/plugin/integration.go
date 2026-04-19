@@ -3,35 +3,11 @@
 package plugin
 
 import (
-	"context"
-	"os"
 	"strings"
 	"sync"
 
 	"github.com/yanmxa/gencode/internal/setting"
 )
-
-// InitPlugins initializes the plugin system and loads all enabled plugins.
-// This should be called early in the application startup, before loading
-// skills, agents, hooks, and MCP servers.
-func InitPlugins(ctx context.Context, cwd string) error {
-	// Load plugins from standard directories
-	if err := defaultRegistry.Load(ctx, cwd); err != nil {
-		return err
-	}
-
-	// Load Claude Code plugins if enabled (non-fatal: missing plugins are skipped)
-	_ = defaultRegistry.LoadClaudePlugins(ctx)
-
-	// Load plugins from --plugin-dir if specified
-	if pluginDir := os.Getenv("GEN_PLUGIN_DIR"); pluginDir != "" {
-		if err := defaultRegistry.LoadFromPath(ctx, pluginDir); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
 
 // GetPluginSkillPaths returns all skill directory paths from enabled plugins.
 func GetPluginSkillPaths() []PluginPath {

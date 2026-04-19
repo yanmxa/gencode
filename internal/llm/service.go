@@ -38,13 +38,22 @@ func Initialize(opts Options) {
 		return
 	}
 
+	defaultSetup.mu.Lock()
 	defaultSetup.Store = store
 	defaultSetup.CurrentModel = store.GetCurrentModel()
+	defaultSetup.mu.Unlock()
+
 	ctx := context.Background()
 
-	if defaultSetup.CurrentModel != nil {
-		if p, err := GetProvider(ctx, defaultSetup.CurrentModel.Provider, defaultSetup.CurrentModel.AuthMethod); err == nil {
+	defaultSetup.mu.RLock()
+	cm := defaultSetup.CurrentModel
+	defaultSetup.mu.RUnlock()
+
+	if cm != nil {
+		if p, err := GetProvider(ctx, cm.Provider, cm.AuthMethod); err == nil {
+			defaultSetup.mu.Lock()
 			defaultSetup.Provider = p
+			defaultSetup.mu.Unlock()
 			setSingleton()
 			return
 		}
@@ -52,7 +61,9 @@ func Initialize(opts Options) {
 
 	for providerName, conn := range store.GetConnections() {
 		if p, err := GetProvider(ctx, Name(providerName), conn.AuthMethod); err == nil {
+			defaultSetup.mu.Lock()
 			defaultSetup.Provider = p
+			defaultSetup.mu.Unlock()
 			setSingleton()
 			return
 		}
@@ -64,16 +75,16 @@ func Initialize(opts Options) {
 // -- singleton ---------------------------------------------------------------
 
 var (
-	svcMu      sync.RWMutex
-	svcInstance Service
+	mu      sync.RWMutex
+	instance Service
 )
 
 // Default returns the singleton Service instance.
 // Panics if Initialize has not been called.
 func Default() Service {
-	svcMu.RLock()
-	s := svcInstance
-	svcMu.RUnlock()
+	mu.RLock()
+	s := instance
+	mu.RUnlock()
 	if s == nil {
 		panic("llm: not initialized")
 	}
@@ -82,16 +93,16 @@ func Default() Service {
 
 // SetDefault replaces the singleton instance. Intended for tests.
 func SetDefault(s Service) {
-	svcMu.Lock()
-	svcInstance = s
-	svcMu.Unlock()
+	mu.Lock()
+	instance = s
+	mu.Unlock()
 }
 
 // ResetService clears the singleton instance. Intended for tests.
 func ResetService() {
-	svcMu.Lock()
-	svcInstance = nil
-	svcMu.Unlock()
+	mu.Lock()
+	instance = nil
+	mu.Unlock()
 }
 
 // -- implementation ----------------------------------------------------------
@@ -101,17 +112,44 @@ type service struct {
 	setup *Setup
 }
 
-func (s *service) Provider() Provider              { return s.setup.Provider }
-func (s *service) SetProvider(p Provider)           { s.setup.Provider = p }
-func (s *service) ModelID() string                  { return s.setup.ModelID() }
-func (s *service) CurrentModel() *CurrentModelInfo  { return s.setup.CurrentModel }
-func (s *service) SetCurrentModel(info *CurrentModelInfo) { s.setup.CurrentModel = info }
-func (s *service) Store() *Store                    { return s.setup.Store }
+func (s *service) Provider() Provider {
+	s.setup.mu.RLock()
+	defer s.setup.mu.RUnlock()
+	return s.setup.Provider
+}
+
+func (s *service) SetProvider(p Provider) {
+	s.setup.mu.Lock()
+	defer s.setup.mu.Unlock()
+	s.setup.Provider = p
+}
+
+func (s *service) ModelID() string { return s.setup.ModelID() }
+
+func (s *service) CurrentModel() *CurrentModelInfo {
+	s.setup.mu.RLock()
+	defer s.setup.mu.RUnlock()
+	return s.setup.CurrentModel
+}
+
+func (s *service) SetCurrentModel(info *CurrentModelInfo) {
+	s.setup.mu.Lock()
+	defer s.setup.mu.Unlock()
+	s.setup.CurrentModel = info
+}
+
+func (s *service) Store() *Store {
+	s.setup.mu.RLock()
+	defer s.setup.mu.RUnlock()
+	return s.setup.Store
+}
 
 func (s *service) NewClient(model string, maxTokens int) *Client {
-	return NewClient(s.setup.Provider, model, maxTokens)
+	p := s.Provider()
+	return NewClient(p, model, maxTokens)
 }
 
 func (s *service) ListProviders() map[Name][]Info {
-	return GetProvidersWithStatus(s.setup.Store)
+	st := s.Store()
+	return GetProvidersWithStatus(st)
 }

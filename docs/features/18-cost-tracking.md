@@ -19,8 +19,8 @@ Token usage is tracked per turn and accumulated across the session. Cost is calc
 ## Automated Tests
 
 ```bash
-go test ./internal/provider/... -v -run TestTokenUsage
-go test ./internal/client/... -v -run TestCostTracking
+go test ./internal/llm/... -v -run TestTokenUsage
+go test ./internal/llm/... -v -run TestCostTracking
 go test ./tests/integration/... -v -run TestLoop_TokenAccumulation
 ```
 

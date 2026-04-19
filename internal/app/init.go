@@ -78,16 +78,12 @@ func initExtensions(cwd string) {
 	if err := plugin.Initialize(context.Background(), plugin.Options{CWD: cwd}); err != nil {
 		log.Logger().Warn("Failed to initialize plugin", zap.Error(err))
 	}
-	if err := skill.Initialize(skill.Options{CWD: cwd}); err != nil {
-		log.Logger().Warn("Failed to initialize skill", zap.Error(err))
-	}
-	if err := command.Initialize(command.Options{
+	skill.Initialize(skill.Options{CWD: cwd})
+	command.Initialize(command.Options{
 		CWD:                cwd,
 		DynamicProviders:   []func() []command.Info{skillCommandInfos},
 		PluginCommandPaths: pluginCommandPaths,
-	}); err != nil {
-		log.Logger().Warn("Failed to initialize command", zap.Error(err))
-	}
+	})
 	if err := subagent.Initialize(subagent.Options{CWD: cwd, PluginAgentPaths: pluginAgentPaths}); err != nil {
 		log.Logger().Warn("Failed to initialize subagent", zap.Error(err))
 	}

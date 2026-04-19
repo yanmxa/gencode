@@ -30,6 +30,9 @@ type Service interface {
 // Options holds all dependencies for initialization.
 type Options struct{}
 
+// Compile-time check: *Store implements Service.
+var _ Service = (*Store)(nil)
+
 // ── singleton ──────────────────────────────────────────────
 
 var (

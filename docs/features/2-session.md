@@ -25,7 +25,7 @@ Detailed persistence, recovery, and transcript-specific test coverage now live i
 ## Automated Tests
 
 ```bash
-GOCACHE=/tmp/gocache go test ./internal/transcriptstore ./internal/app/session ./tests/integration/session/... ./tests/integration/cli/...
+GOCACHE=/tmp/gocache go test ./internal/session/... ./tests/integration/session/... ./tests/integration/cli/...
 ```
 
 Covered:

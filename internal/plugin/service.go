@@ -65,17 +65,16 @@ func Initialize(ctx context.Context, opts Options) error {
 // ── singleton ──────────────────────────────────────────────
 
 var (
-	svcMu      sync.RWMutex
-	svcInstance Service
+	mu      sync.RWMutex
+	instance Service
 )
 
 // Default returns the singleton Service instance.
-// Default returns the singleton Service instance.
 // Falls back to wrapping defaultRegistry if Initialize has not been called.
 func Default() Service {
-	svcMu.RLock()
-	s := svcInstance
-	svcMu.RUnlock()
+	mu.RLock()
+	s := instance
+	mu.RUnlock()
 	if s != nil {
 		return s
 	}
@@ -84,16 +83,16 @@ func Default() Service {
 
 // SetDefault replaces the singleton instance. Intended for tests.
 func SetDefault(s Service) {
-	svcMu.Lock()
-	svcInstance = s
-	svcMu.Unlock()
+	mu.Lock()
+	instance = s
+	mu.Unlock()
 }
 
 // ResetService clears the singleton instance. Intended for tests.
 func ResetService() {
-	svcMu.Lock()
-	svcInstance = nil
-	svcMu.Unlock()
+	mu.Lock()
+	instance = nil
+	mu.Unlock()
 }
 
 // WrapRegistry creates a Service from a *Registry. Used by tests.

@@ -123,52 +123,6 @@ func (s *Store) SetState(name string, state SkillState) error {
 
 // Initialize loads all skills and applies persisted states.
 // This should be called at application startup.
-func Initialize(opts Options) error {
-	cwd := opts.CWD
-	loader := newLoader(cwd)
-
-	skills, err := loader.loadAll()
-	if err != nil {
-		return err
-	}
-
-	userStore, err := NewUserStore()
-	if err != nil {
-		return err
-	}
-
-	projectStore, err := NewProjectStore(cwd)
-	if err != nil {
-		return err
-	}
-
-	registry := &Registry{
-		skills:       skills,
-		userStore:    userStore,
-		projectStore: projectStore,
-		cwd:          cwd,
-	}
-
-	// Apply persisted states (project overrides user)
-	for _, skill := range skills {
-		fullName := skill.FullName()
-		// First apply user-level state
-		if state, ok := userStore.GetState(fullName); ok {
-			skill.State = state
-		}
-		// Then apply project-level state (higher priority)
-		if state, ok := projectStore.GetState(fullName); ok {
-			skill.State = state
-		}
-	}
-
-	mu.Lock()
-	instance = registry
-	mu.Unlock()
-
-	return nil
-}
-
 // Get returns a skill by name.
 func (r *Registry) Get(name string) (*Skill, bool) {
 	r.mu.RLock()
