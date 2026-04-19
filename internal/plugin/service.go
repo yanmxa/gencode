@@ -53,6 +53,15 @@ type Options struct {
 	CWD string
 }
 
+// Initialize loads plugins into the default registry and sets the singleton Service.
+func Initialize(ctx context.Context, opts Options) error {
+	if err := defaultRegistry.Load(ctx, opts.CWD); err != nil {
+		return err
+	}
+	SetDefault(&service{registry: defaultRegistry})
+	return nil
+}
+
 // ── singleton ──────────────────────────────────────────────
 
 var (
@@ -61,8 +70,8 @@ var (
 )
 
 // Default returns the singleton Service instance.
-// Falls back to wrapping DefaultRegistry if no explicit instance has been set,
-// ensuring backward compatibility with CLI commands that use DefaultRegistry directly.
+// Default returns the singleton Service instance.
+// Falls back to wrapping defaultRegistry if Initialize has not been called.
 func Default() Service {
 	svcMu.RLock()
 	s := svcInstance
@@ -70,7 +79,7 @@ func Default() Service {
 	if s != nil {
 		return s
 	}
-	return &service{registry: DefaultRegistry}
+	return &service{registry: defaultRegistry}
 }
 
 // SetDefault replaces the singleton instance. Intended for tests.
@@ -87,9 +96,14 @@ func ResetService() {
 	svcMu.Unlock()
 }
 
+// WrapRegistry creates a Service from a *Registry. Used by tests.
+func WrapRegistry(reg *Registry) Service {
+	return &service{registry: reg}
+}
+
 // ── implementation ─────────────────────────────────────────
 
-// service wraps the legacy Registry to satisfy the Service interface.
+// service wraps the Registry to satisfy the Service interface.
 type service struct {
 	registry *Registry
 }

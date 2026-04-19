@@ -1,6 +1,12 @@
 package session
 
-import "sync"
+import (
+	"sync"
+
+	"go.uber.org/zap"
+
+	"github.com/yanmxa/gencode/internal/log"
+)
 
 // Service is the public contract for the session module.
 type Service interface {
@@ -34,6 +40,21 @@ var _ Service = (*Setup)(nil)
 // Options holds configuration for Initialize.
 type Options struct {
 	CWD string
+}
+
+// Initialize creates a session store and generates a fresh session ID.
+func Initialize(opts Options) {
+	store, err := NewStore(opts.CWD)
+	if err != nil {
+		log.Logger().Warn("session store initialization failed, sessions will not be persisted", zap.Error(err))
+	}
+
+	defaultSetup.mu.Lock()
+	defaultSetup.SessionID = NewSessionID()
+	defaultSetup.Store = store
+	defaultSetup.mu.Unlock()
+
+	SetDefault(defaultSetup)
 }
 
 // ── singleton ──────────────────────────────────────────────

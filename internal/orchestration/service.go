@@ -37,14 +37,6 @@ var (
 	instance Service
 )
 
-func init() {
-	mu.Lock()
-	if instance == nil {
-		instance = newStore()
-	}
-	mu.Unlock()
-}
-
 // Initialize sets up the orchestration singleton. Call once at startup.
 func Initialize(opts Options) {
 	s := newStore()

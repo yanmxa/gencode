@@ -10,7 +10,9 @@ import (
 )
 
 func TestSendMessageTool_ResumesCompletedTask(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -44,7 +46,9 @@ func TestSendMessageTool_ResumesCompletedTask(t *testing.T) {
 }
 
 func TestSendMessageTool_RejectsRunningTask(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -138,7 +142,9 @@ func TestSendMessageTool_RequiresAgentTypeForDirectAgentID(t *testing.T) {
 }
 
 func TestSendMessageTool_DrainsQueuedMessagesOnResume(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -184,7 +190,9 @@ func TestSendMessageTool_DrainsQueuedMessagesOnResume(t *testing.T) {
 }
 
 func TestSendMessageTool_QueuesRunningTaskByAgentID(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())

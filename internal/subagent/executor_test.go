@@ -209,7 +209,7 @@ func TestPlanAgentsExposeOnlyReadOnlyTools(t *testing.T) {
 
 	for _, agentName := range tests {
 		t.Run(agentName, func(t *testing.T) {
-			cfg, ok := DefaultRegistry.Get(agentName)
+			cfg, ok := defaultRegistry.Get(agentName)
 			if !ok {
 				t.Fatalf("agent %q not found", agentName)
 			}

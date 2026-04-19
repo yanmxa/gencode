@@ -52,9 +52,9 @@ func (m *model) buildAgentParams() agent.BuildParams {
 		MaxTokens:     kit.GetMaxTokens(m.services.LLM.Store(), m.env.CurrentModel, setting.DefaultMaxTokens),
 		ThinkingLevel: m.env.EffectiveThinkingLevel(),
 
-		CWD:     m.cwd,
-		CWDFunc: func() string { return m.cwd },
-		IsGit:   m.isGit,
+		CWD:     m.env.CWD,
+		CWDFunc: func() string { return m.env.CWD },
+		IsGit:   m.env.IsGit,
 
 		PlanEnabled:         m.env.PlanEnabled,
 		UserInstructions:    m.env.CachedUserInstructions,
@@ -149,7 +149,7 @@ func (m *model) HandlePermBridge(req *conv.PermBridgeRequest) tea.Cmd {
 	m.userInput.Approval.Show(&perm.PermissionRequest{
 		ToolName:    req.ToolName,
 		Description: req.Description,
-	}, m.width, m.height)
+	}, m.env.Width, m.env.Height)
 	return nil
 }
 
@@ -167,11 +167,11 @@ func (m *model) ReconfigureAgentTool() {
 	if m.services.Hook != nil {
 		hookEngine = m.services.Hook.Engine()
 	}
-	executor := subagent.NewExecutor(m.env.LLMProvider, m.cwd, m.env.GetModelID(), hookEngine)
+	executor := subagent.NewExecutor(m.env.LLMProvider, m.env.CWD, m.env.GetModelID(), hookEngine)
 	if m.services.Session.GetStore() != nil && m.services.Session.ID() != "" {
 		executor.SetSessionStore(m.services.Session.GetStore(), m.services.Session.ID())
 	}
-	executor.SetContext(m.env.CachedUserInstructions, m.env.CachedProjectInstructions, m.isGit)
+	executor.SetContext(m.env.CachedUserInstructions, m.env.CachedProjectInstructions, m.env.IsGit)
 	if m.services.MCP.Registry() != nil {
 		executor.SetMCP(m.services.MCP.Registry().GetToolSchemas, m.services.MCP.Registry())
 	}

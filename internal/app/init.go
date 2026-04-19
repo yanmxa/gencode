@@ -82,8 +82,9 @@ func initExtensions(cwd string) {
 		log.Logger().Warn("Failed to initialize skill", zap.Error(err))
 	}
 	if err := command.Initialize(command.Options{
-		CWD:              cwd,
-		DynamicProviders: []func() []command.Info{skillCommandInfos},
+		CWD:                cwd,
+		DynamicProviders:   []func() []command.Info{skillCommandInfos},
+		PluginCommandPaths: pluginCommandPaths,
 	}); err != nil {
 		log.Logger().Warn("Failed to initialize command", zap.Error(err))
 	}
@@ -93,6 +94,19 @@ func initExtensions(cwd string) {
 	if err := mcp.Initialize(mcp.Options{CWD: cwd, PluginServers: pluginMCPServers}); err != nil {
 		log.Logger().Warn("Failed to initialize mcp", zap.Error(err))
 	}
+}
+
+func pluginCommandPaths() []command.PluginCommandPath {
+	pPaths := plugin.GetPluginCommandPaths()
+	paths := make([]command.PluginCommandPath, len(pPaths))
+	for i, p := range pPaths {
+		paths[i] = command.PluginCommandPath{
+			Path:      p.Path,
+			Namespace: p.Namespace,
+			IsProject: p.Scope == plugin.ScopeProject || p.Scope == plugin.ScopeLocal,
+		}
+	}
+	return paths
 }
 
 func pluginAgentPaths() []subagent.PluginAgentPath {

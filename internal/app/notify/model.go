@@ -10,6 +10,7 @@ import (
 
 type Model struct {
 	Notifications *NotificationQueue
+	BGTracker     *BackgroundTracker
 }
 
 func New() Model {

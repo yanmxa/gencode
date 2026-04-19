@@ -12,6 +12,14 @@ import (
 )
 
 type env struct {
+	// ── App-level state ─────────────────────────────────────────
+	CWD           string
+	IsGit         bool
+	Width         int
+	Height        int
+	Ready         bool
+	InitialPrompt string
+
 	// ── Provider (mutable — changes via SwitchProvider) ─────────
 	LLMProvider      llm.Provider
 	CurrentModel     *llm.CurrentModelInfo
@@ -35,8 +43,11 @@ type env struct {
 	CachedProjectInstructions string
 }
 
-func newEnv(llmSvc llm.Service) env {
+func newEnv(llmSvc llm.Service, cwd string, isGit bool) env {
 	return env{
+		CWD:   cwd,
+		IsGit: isGit,
+
 		OperationMode:      setting.ModeNormal,
 		SessionPermissions: setting.NewSessionPermissions(),
 

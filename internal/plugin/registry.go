@@ -393,19 +393,6 @@ func (r *Registry) GetAllHooks() map[string][]HookMatcher {
 	return result
 }
 
-// DefaultRegistry is the global plugin registry.
-var DefaultRegistry = NewRegistry()
+// defaultRegistry is the package-level plugin registry.
+var defaultRegistry = NewRegistry()
 
-// Initialize loads plugins into the default registry and sets the singleton Service.
-func Initialize(ctx context.Context, opts Options) error {
-	if err := DefaultRegistry.Load(ctx, opts.CWD); err != nil {
-		return err
-	}
-	SetDefault(&service{registry: DefaultRegistry})
-	return nil
-}
-
-// LoadFromDir loads a single plugin from path into the default registry.
-func LoadFromDir(ctx context.Context, path string) error {
-	return DefaultRegistry.LoadFromPath(ctx, path)
-}

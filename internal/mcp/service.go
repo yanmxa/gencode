@@ -37,6 +37,21 @@ type Options struct {
 	PluginServers func() []PluginServer
 }
 
+// Initialize creates and configures the MCP registry singleton.
+func Initialize(opts Options) error {
+	reg, err := NewRegistry(opts.CWD)
+	if err != nil {
+		return err
+	}
+	if opts.PluginServers != nil {
+		reg.PluginServers = opts.PluginServers
+		reg.configs = reg.mergePluginMCPConfigs(reg.configs)
+	}
+	defaultRegistry = reg
+	SetDefault(&service{reg: reg})
+	return nil
+}
+
 // ── singleton ──────────────────────────────────────────────
 
 var (
@@ -77,6 +92,11 @@ func ResetService() {
 	svcMu.Lock()
 	svcInstance = nil
 	svcMu.Unlock()
+}
+
+// WrapRegistry creates a Service from a *Registry. Used by tests.
+func WrapRegistry(reg *Registry) Service {
+	return &service{reg: reg}
 }
 
 // ── implementation ─────────────────────────────────────────

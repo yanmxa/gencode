@@ -39,16 +39,16 @@ var (
 	svcInstance Service
 )
 
-// Initialize sets the singleton to the DefaultRegistry.
+// Initialize sets the singleton to the default registry.
 func Initialize(opts Options) {
 	svcMu.Lock()
-	svcInstance = DefaultRegistry
+	svcInstance = defaultRegistry
 	svcMu.Unlock()
 }
 
 // Default returns the singleton Service instance.
-// Falls back to DefaultRegistry if no explicit instance has been set,
-// ensuring backward compatibility with existing init()-time registrations.
+// Falls back to defaultRegistry if Initialize has not been called,
+// since tools register at init time before Initialize runs.
 func Default() Service {
 	svcMu.RLock()
 	s := svcInstance
@@ -56,7 +56,7 @@ func Default() Service {
 	if s != nil {
 		return s
 	}
-	return DefaultRegistry
+	return defaultRegistry
 }
 
 // SetDefault replaces the singleton instance. Intended for tests.

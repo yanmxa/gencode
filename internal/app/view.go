@@ -16,7 +16,7 @@ import (
 var ghostTextStyle = lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 
 func (m *model) View() string {
-	if !m.ready {
+	if !m.env.Ready {
 		return "\n  Loading..."
 	}
 
@@ -25,7 +25,7 @@ func (m *model) View() string {
 		return selectorView
 	}
 
-	separator := conv.SeparatorStyle.Render(strings.Repeat("─", m.width))
+	separator := conv.SeparatorStyle.Render(strings.Repeat("─", m.env.Width))
 	trackerView := m.renderTrackerList()
 	trackerPrefix := ""
 	if trackerView != "" {
@@ -40,7 +40,7 @@ func (m *model) View() string {
 	inputView := m.renderInputView()
 	chatSection := m.renderChatSection(activeContent, trackerView)
 	statusLine := m.renderModeStatus()
-	suggestions := m.userInput.Suggestions.Render(m.width)
+	suggestions := m.userInput.Suggestions.Render(m.env.Width)
 	tokenWarning := conv.RenderTokenWarning(m.env.InputTokens, kit.GetEffectiveInputLimit(m.services.LLM.Store(), m.env.CurrentModel), m.conv.Compact.WarningSuppressed)
 	queuePreview := m.renderQueuePreview()
 
@@ -129,7 +129,7 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 		parts = append(parts, spinnerView)
 	}
 
-	if compactView := conv.RenderCompactStatus(m.width, m.conv.Spinner.View(), m.conv.Compact); compactView != "" {
+	if compactView := conv.RenderCompactStatus(m.env.Width, m.conv.Spinner.View(), m.conv.Compact); compactView != "" {
 		parts = append(parts, compactView)
 	}
 
@@ -145,7 +145,7 @@ func (m model) renderTrackerList() string {
 		Tasks:        tasks,
 		AllDone:      m.services.Tracker.AllDone(),
 		StreamActive: m.conv.Stream.Active,
-		Width:        m.width,
+		Width:        m.env.Width,
 		SpinnerView:  m.conv.Spinner.View(),
 		Blockers:     m.services.Tracker.OpenBlockers,
 		WorkerSnap: func(taskID, agentID string) (*orchestration.Snapshot, bool) {
@@ -166,7 +166,7 @@ func (m model) renderModeStatus() string {
 		InputTokens:   m.env.InputTokens,
 		InputLimit:    kit.GetEffectiveInputLimit(m.services.LLM.Store(), m.env.CurrentModel),
 		ModelName:     modelName,
-		Width:         m.width,
+		Width:         m.env.Width,
 		ThinkingLevel: m.env.EffectiveThinkingLevel(),
 		QueueCount:    m.userInput.Queue.Len(),
 	})
@@ -181,7 +181,7 @@ func (m model) renderQueuePreview() string {
 	for i, item := range items {
 		previews[i] = conv.QueuePreviewItem{Content: item.Content, HasImages: len(item.Images) > 0}
 	}
-	return strings.TrimSuffix(conv.RenderQueuePreview(previews, m.userInput.Queue.SelectIdx, m.width), "\n")
+	return strings.TrimSuffix(conv.RenderQueuePreview(previews, m.userInput.Queue.SelectIdx, m.env.Width), "\n")
 }
 
 func (m model) messageRenderParams() conv.MessageRenderParams {
@@ -190,7 +190,7 @@ func (m model) messageRenderParams() conv.MessageRenderParams {
 		CommittedCount:          m.conv.CommittedCount,
 		StreamActive:            m.conv.Stream.Active,
 		BuildingTool:            m.conv.Stream.BuildingTool,
-		Width:                   m.width,
+		Width:                   m.env.Width,
 		MDRenderer:              m.conv.MDRenderer,
 		SpinnerView:             m.conv.Spinner.View(),
 		TaskProgress:            m.conv.TaskProgress,

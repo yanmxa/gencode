@@ -77,20 +77,21 @@ func (r *Registry) FormatDeferredToolsPrompt() string { return FormatDeferredToo
 // PopSideEffect retrieves and removes the side effect for a tool call.
 func (r *Registry) PopSideEffect(toolCallID string) any { return PopSideEffect(toolCallID) }
 
-// DefaultRegistry is the global default tool registry
-var DefaultRegistry = NewRegistry()
+// defaultRegistry is the package-level tool registry, populated at init time.
+var defaultRegistry = NewRegistry()
 
-// Register adds a tool to the default registry
+// Register adds a tool to the default registry.
+// Called by tool subpackages during init().
 func Register(tool Tool) {
-	DefaultRegistry.Register(tool)
+	defaultRegistry.Register(tool)
 }
 
-// Get retrieves a tool from the default registry
+// Get retrieves a tool from the default registry.
 func Get(name string) (Tool, bool) {
-	return DefaultRegistry.Get(name)
+	return defaultRegistry.Get(name)
 }
 
-// Execute runs a tool from the default registry
+// Execute runs a tool from the default registry.
 func Execute(ctx context.Context, name string, params map[string]any, cwd string) toolresult.ToolResult {
-	return DefaultRegistry.Execute(ctx, name, params, cwd)
+	return defaultRegistry.Execute(ctx, name, params, cwd)
 }

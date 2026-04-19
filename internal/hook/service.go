@@ -50,6 +50,29 @@ func (e *Engine) Engine() *Engine { return e }
 // Compile-time check: *Engine implements Service.
 var _ Service = (*Engine)(nil)
 
+// Options holds the dependencies needed to create the default hook engine.
+// All fields must be supplied by the caller — the hook package does not reach into
+// global singletons.
+type Options struct {
+	Settings       *setting.Settings
+	SessionID      string
+	CWD            string
+	TranscriptPath string
+	Completer      LLMCompleter
+	ModelID        string
+	EnvProvider    func() []string
+}
+
+// Initialize creates the singleton hook engine from the given options.
+func Initialize(opts Options) {
+	e := NewEngine(opts.Settings, opts.SessionID, opts.CWD, opts.TranscriptPath)
+	e.SetLLMCompleter(opts.Completer, opts.ModelID)
+	if opts.EnvProvider != nil {
+		e.SetEnvProvider(opts.EnvProvider)
+	}
+	SetDefault(e)
+}
+
 // -- singleton ----------------------------------------------------------
 
 var (
@@ -70,8 +93,8 @@ func Default() Service {
 }
 
 // DefaultIfInit returns the singleton Service instance, or nil if not yet
-// initialized. This supports callers that check `if hook.DefaultEngine != nil`
-// before calling methods.
+// initialized. Used during early initialization when the hook service may
+// not be ready.
 func DefaultIfInit() Service {
 	svcMu.RLock()
 	s := instance

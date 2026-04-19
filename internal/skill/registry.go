@@ -10,9 +10,6 @@ import (
 	"sync"
 )
 
-// DefaultRegistry is the global skill registry instance.
-var DefaultRegistry = NewRegistry()
-
 // NewRegistry creates an empty skill registry.
 func NewRegistry() *Registry {
 	return &Registry{
@@ -164,8 +161,6 @@ func Initialize(opts Options) error {
 			skill.State = state
 		}
 	}
-
-	DefaultRegistry = registry
 
 	mu.Lock()
 	instance = registry

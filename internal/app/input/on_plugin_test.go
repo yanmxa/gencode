@@ -206,10 +206,9 @@ func TestRenderInstalledDetailShowsStructuredSections(t *testing.T) {
 }
 
 func TestHandlePluginCommandMarketplaceAddListRemove(t *testing.T) {
-	prev := coreplugin.DefaultRegistry
 	reg := coreplugin.NewRegistry()
-	coreplugin.DefaultRegistry = reg
-	t.Cleanup(func() { coreplugin.DefaultRegistry = prev })
+	coreplugin.SetDefault(coreplugin.WrapRegistry(reg))
+	t.Cleanup(coreplugin.ResetService)
 
 	tmpHome := t.TempDir()
 	tmpDir := t.TempDir()
@@ -247,10 +246,9 @@ func TestHandlePluginCommandMarketplaceAddListRemove(t *testing.T) {
 }
 
 func TestHandlePluginCommandInstallFromMarketplace(t *testing.T) {
-	prev := coreplugin.DefaultRegistry
 	reg := coreplugin.NewRegistry()
-	coreplugin.DefaultRegistry = reg
-	t.Cleanup(func() { coreplugin.DefaultRegistry = prev })
+	coreplugin.SetDefault(coreplugin.WrapRegistry(reg))
+	t.Cleanup(coreplugin.ResetService)
 
 	tmpHome := t.TempDir()
 	tmpDir := t.TempDir()
@@ -274,7 +272,7 @@ func TestHandlePluginCommandInstallFromMarketplace(t *testing.T) {
 		t.Fatalf("install result should mention reload command: %q", result)
 	}
 
-	if _, ok := coreplugin.DefaultRegistry.Get("codex@openai-codex"); !ok {
+	if _, ok := reg.Get("codex@openai-codex"); !ok {
 		t.Fatal("expected installed plugin to be registered")
 	}
 }

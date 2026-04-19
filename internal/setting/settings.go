@@ -204,16 +204,6 @@ func NewSettings() *Settings {
 	}
 }
 
-// DefaultSetup is the singleton app settings, initialized by Initialize().
-var DefaultSetup *Settings
-
-// Initialize loads settings for cwd and sets both DefaultSetup and the Service singleton.
-func Initialize(opts Options) {
-	s := InitForApp(opts.CWD)
-	DefaultSetup = s
-	SetDefault(&settingsService{settings: s})
-}
-
 // InitForApp loads settings for cwd, deep-clones them, and returns
 // an isolated copy safe for mutation by the app layer.
 // It also merges external provider preferences (e.g., search provider

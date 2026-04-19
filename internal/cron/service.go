@@ -35,14 +35,6 @@ type Options struct {
 	StoragePath string // file path for durable job persistence
 }
 
-func init() {
-	mu.Lock()
-	if instance == nil {
-		instance = NewStore()
-	}
-	mu.Unlock()
-}
-
 // Initialize creates and configures the cron service singleton.
 func Initialize(opts Options) {
 	s := NewStore()

@@ -27,8 +27,9 @@ func NewRegistry() *Registry {
 	return r
 }
 
-// DefaultRegistry is the global agent registry
-var DefaultRegistry = NewRegistry()
+// defaultRegistry is the package-level agent registry.
+// External callers should use Default() to get the Service singleton.
+var defaultRegistry = NewRegistry()
 
 // Register adds an agent configuration to the registry
 func (r *Registry) Register(config *AgentConfig) {

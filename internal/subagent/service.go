@@ -1,6 +1,7 @@
 package subagent
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/yanmxa/gencode/internal/hook"
@@ -36,6 +37,26 @@ var _ Service = (*Registry)(nil)
 type Options struct {
 	CWD              string
 	PluginAgentPaths func() []PluginAgentPath
+}
+
+// Initialize loads custom agents from all sources and initializes state stores.
+func Initialize(opts Options) error {
+	ClearPluginAgentPaths()
+
+	if opts.PluginAgentPaths != nil {
+		for _, pp := range opts.PluginAgentPaths() {
+			AddPluginAgentPath(pp.Path, pp.Namespace)
+		}
+	}
+
+	LoadCustomAgents(opts.CWD)
+
+	if err := defaultRegistry.InitStores(opts.CWD); err != nil {
+		return fmt.Errorf("failed to initialize agent stores: %w", err)
+	}
+
+	SetDefault(defaultRegistry)
+	return nil
 }
 
 // ── singleton ──────────────────────────────────────────────

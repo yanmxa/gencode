@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/yanmxa/gencode/internal/plugin"
 )
 
 // saveAndRestore saves current singleton state and restores it on cleanup.
@@ -22,11 +20,11 @@ func saveAndRestore(t *testing.T) {
 }
 
 // initTestService creates a fresh service and sets it as the singleton.
-func initTestService(t *testing.T, cwd string, providers ...func() []Info) *service {
+func initTestService(t *testing.T, cwd string, opts ...func(*service)) *service {
 	t.Helper()
 	s := &service{cwd: cwd}
-	if len(providers) > 0 {
-		s.dynamicInfoProviders = append([]func() []Info(nil), providers...)
+	for _, opt := range opts {
+		opt(s)
 	}
 	mu.Lock()
 	instance = s
@@ -34,17 +32,29 @@ func initTestService(t *testing.T, cwd string, providers ...func() []Info) *serv
 	return s
 }
 
+func withDynamicProviders(providers ...func() []Info) func(*service) {
+	return func(s *service) {
+		s.dynamicInfoProviders = append([]func() []Info(nil), providers...)
+	}
+}
+
+func withPluginCommandPaths(fn func() []PluginCommandPath) func(*service) {
+	return func(s *service) {
+		s.pluginCommandPaths = fn
+	}
+}
+
 func TestGetMatchingCommands_IncludesDynamicProviders(t *testing.T) {
 	saveAndRestore(t)
 
-	initTestService(t, "", func() []Info {
+	initTestService(t, "", withDynamicProviders(func() []Info {
 		return []Info{
 			{Name: "search", Description: "Search files <pattern>"},
 			{Name: "review", Description: "Review code"},
 		}
-	})
+	}))
 
-	matches := GetMatchingCommands("sea")
+	matches := Default().GetMatching("sea")
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 matching dynamic command, got %d", len(matches))
 	}
@@ -119,22 +129,12 @@ func TestLoadCustomCommandFile_NamespaceInFrontmatter(t *testing.T) {
 	}
 }
 
-func setupPluginRegistryWithCommands(t *testing.T) string {
+func setupPluginCommandPaths(t *testing.T) (string, func() []PluginCommandPath) {
 	t.Helper()
 	tmpDir := t.TempDir()
 
-	pluginDir := filepath.Join(tmpDir, "myplugin")
-	metaDir := filepath.Join(pluginDir, ".gen-plugin")
-	cmdsDir := filepath.Join(pluginDir, "commands")
-	if err := os.MkdirAll(metaDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	cmdsDir := filepath.Join(tmpDir, "myplugin", "commands")
 	if err := os.MkdirAll(cmdsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	manifest := `{"name": "myplugin", "version": "1.0.0"}`
-	if err := os.WriteFile(filepath.Join(metaDir, "plugin.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -148,28 +148,26 @@ func setupPluginRegistryWithCommands(t *testing.T) string {
 		t.Fatal(err)
 	}
 
-	return tmpDir
+	provider := func() []PluginCommandPath {
+		return []PluginCommandPath{
+			{Path: filepath.Join(cmdsDir, "greet.md"), Namespace: "myplugin", IsProject: true},
+			{Path: filepath.Join(cmdsDir, "build.md"), Namespace: "myplugin", IsProject: true},
+		}
+	}
+	return tmpDir, provider
 }
 
 func TestIsCustomCommand_MatchesCustomCommands(t *testing.T) {
 	saveAndRestore(t)
-	prevReg := plugin.DefaultRegistry
-	t.Cleanup(func() {
-		plugin.DefaultRegistry = prevReg
-	})
 
-	tmpDir := setupPluginRegistryWithCommands(t)
+	_, provider := setupPluginCommandPaths(t)
+	initTestService(t, "", withPluginCommandPaths(provider))
 
-	plugin.DefaultRegistry = plugin.NewRegistry()
-	if err := plugin.DefaultRegistry.LoadFromPath(nil, filepath.Join(tmpDir, "myplugin")); err != nil {
-		t.Fatal(err)
-	}
+	svc := Default()
 
-	initTestService(t, "")
-
-	pc, ok := IsCustomCommand("myplugin:greet")
+	pc, ok := svc.IsCustomCommand("myplugin:greet")
 	if !ok {
-		cmds := GetCustomCommands()
+		cmds := svc.GetCustomCommands()
 		t.Logf("available plugin commands: %+v", cmds)
 		t.Fatal("expected myplugin:greet to be found as plugin command")
 	}
@@ -177,12 +175,12 @@ func TestIsCustomCommand_MatchesCustomCommands(t *testing.T) {
 		t.Errorf("description = %q, want %q", pc.Description, "Say hello")
 	}
 
-	_, ok = IsCustomCommand("greet")
+	_, ok = svc.IsCustomCommand("greet")
 	if !ok {
 		t.Fatal("expected short name 'greet' to match plugin command")
 	}
 
-	_, ok = IsCustomCommand("nonexistent")
+	_, ok = svc.IsCustomCommand("nonexistent")
 	if ok {
 		t.Fatal("nonexistent command should not match")
 	}
@@ -190,21 +188,11 @@ func TestIsCustomCommand_MatchesCustomCommands(t *testing.T) {
 
 func TestGetMatchingCommands_IncludesCustomCommands(t *testing.T) {
 	saveAndRestore(t)
-	prevReg := plugin.DefaultRegistry
-	t.Cleanup(func() {
-		plugin.DefaultRegistry = prevReg
-	})
 
-	tmpDir := setupPluginRegistryWithCommands(t)
+	_, provider := setupPluginCommandPaths(t)
+	initTestService(t, "", withPluginCommandPaths(provider))
 
-	plugin.DefaultRegistry = plugin.NewRegistry()
-	if err := plugin.DefaultRegistry.LoadFromPath(nil, filepath.Join(tmpDir, "myplugin")); err != nil {
-		t.Fatal(err)
-	}
-
-	initTestService(t, "")
-
-	matches := GetMatchingCommands("gre")
+	matches := Default().GetMatching("gre")
 	found := false
 	for _, m := range matches {
 		if m.Name == "myplugin:greet" {
@@ -256,11 +244,6 @@ func TestLoadCommandsFromDir_NonexistentDir(t *testing.T) {
 
 func TestProjectCommandOverridesUser(t *testing.T) {
 	saveAndRestore(t)
-	prevReg := plugin.DefaultRegistry
-	t.Cleanup(func() {
-		plugin.DefaultRegistry = prevReg
-	})
-	plugin.DefaultRegistry = nil
 
 	root := t.TempDir()
 
@@ -324,11 +307,6 @@ func TestUserCommandWithoutNamespace(t *testing.T) {
 
 func TestIsCustomCommand_MatchesUserAndProjectCommands(t *testing.T) {
 	saveAndRestore(t)
-	prevReg := plugin.DefaultRegistry
-	t.Cleanup(func() {
-		plugin.DefaultRegistry = prevReg
-	})
-	plugin.DefaultRegistry = nil
 
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "project")
@@ -347,7 +325,8 @@ func TestIsCustomCommand_MatchesUserAndProjectCommands(t *testing.T) {
 	t.Setenv("HOME", filepath.Join(root, "empty-home"))
 	t.Cleanup(func() { os.Setenv("HOME", origHome) })
 
-	pc, ok := IsCustomCommand("format")
+	svc := Default()
+	pc, ok := svc.IsCustomCommand("format")
 	if !ok {
 		t.Fatal("expected project-level 'format' command to be found")
 	}
@@ -359,50 +338,22 @@ func TestIsCustomCommand_MatchesUserAndProjectCommands(t *testing.T) {
 	}
 }
 
-func TestPluginScopeMapping(t *testing.T) {
-	tests := []struct {
-		pluginScope plugin.Scope
-		want        commandScope
-	}{
-		{plugin.ScopeUser, scopeUserPlugin},
-		{plugin.ScopeManaged, scopeUserPlugin},
-		{plugin.ScopeProject, scopeProjectPlugin},
-		{plugin.ScopeLocal, scopeProjectPlugin},
-	}
-	for _, tt := range tests {
-		got := pluginScopeTocommandScope(tt.pluginScope)
-		if got != tt.want {
-			t.Errorf("pluginScopeTocommandScope(%q) = %d, want %d", tt.pluginScope, got, tt.want)
-		}
-	}
-}
-
-func TestCustomcommandScopeFromRegistry(t *testing.T) {
+func TestPluginCommandScope(t *testing.T) {
 	saveAndRestore(t)
-	prevReg := plugin.DefaultRegistry
-	t.Cleanup(func() {
-		plugin.DefaultRegistry = prevReg
-	})
 
-	tmpDir := setupPluginRegistryWithCommands(t)
-
-	plugin.DefaultRegistry = plugin.NewRegistry()
-	// LoadFromPath uses ScopeLocal -> should map to scopeProjectPlugin
-	if err := plugin.DefaultRegistry.LoadFromPath(nil, filepath.Join(tmpDir, "myplugin")); err != nil {
-		t.Fatal(err)
-	}
-
-	initTestService(t, "")
+	_, provider := setupPluginCommandPaths(t)
+	initTestService(t, "", withPluginCommandPaths(provider))
 
 	origHome := os.Getenv("HOME")
-	t.Setenv("HOME", filepath.Join(tmpDir, "empty-home"))
+	t.Setenv("HOME", filepath.Join(t.TempDir(), "empty-home"))
 	t.Cleanup(func() { os.Setenv("HOME", origHome) })
 
-	pc, ok := IsCustomCommand("myplugin:greet")
+	svc := Default()
+	pc, ok := svc.IsCustomCommand("myplugin:greet")
 	if !ok {
 		t.Fatal("expected plugin command to be found")
 	}
 	if pc.Scope != scopeProjectPlugin {
-		t.Errorf("scope = %d, want %d (scopeProjectPlugin for ScopeLocal plugin)", pc.Scope, scopeProjectPlugin)
+		t.Errorf("scope = %d, want %d (scopeProjectPlugin for IsProject=true)", pc.Scope, scopeProjectPlugin)
 	}
 }

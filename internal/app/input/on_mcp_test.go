@@ -12,14 +12,17 @@ import (
 
 func withTestRegistry(t *testing.T, reg *coremcp.Registry) {
 	t.Helper()
-	prev := coremcp.DefaultRegistry
-	coremcp.DefaultRegistry = reg
-	t.Cleanup(func() { coremcp.DefaultRegistry = prev })
+	if reg != nil {
+		coremcp.SetDefault(coremcp.WrapRegistry(reg))
+	} else {
+		coremcp.ResetService()
+	}
+	t.Cleanup(coremcp.ResetService)
 }
 
 func TestHandleCommand_UninitializedRegistryMessage(t *testing.T) {
 	withTestRegistry(t, nil)
-	selector := NewMCPSelector(coremcp.DefaultRegistry)
+	selector := NewMCPSelector(nil)
 
 	result, editInfo, err := HandleMCPCommand(context.Background(), &selector, 80, 24, "")
 	if err != nil {
@@ -34,10 +37,11 @@ func TestHandleCommand_UninitializedRegistryMessage(t *testing.T) {
 }
 
 func TestHandleCommand_EmptyArgsOpensSelector(t *testing.T) {
-	withTestRegistry(t, coremcp.NewRegistryForTest(map[string]coremcp.ServerConfig{
+	reg := coremcp.NewRegistryForTest(map[string]coremcp.ServerConfig{
 		"demo": {Name: "demo", Command: "echo", Scope: coremcp.ScopeLocal},
-	}))
-	selector := NewMCPSelector(coremcp.DefaultRegistry)
+	})
+	withTestRegistry(t, reg)
+	selector := NewMCPSelector(reg)
 
 	result, editInfo, err := HandleMCPCommand(context.Background(), &selector, 80, 24, "")
 	if err != nil {
@@ -62,7 +66,7 @@ func TestPrepareServerEditAndApplyServerEdit_RoundTrip(t *testing.T) {
 	}
 	withTestRegistry(t, reg)
 
-	err = coremcp.DefaultRegistry.AddServer("demo", coremcp.ServerConfig{
+	err = reg.AddServer("demo", coremcp.ServerConfig{
 		Type:    coremcp.TransportHTTP,
 		URL:     "https://example.com/mcp",
 		Headers: map[string]string{"Authorization": "Bearer secret-token"},
@@ -71,7 +75,7 @@ func TestPrepareServerEditAndApplyServerEdit_RoundTrip(t *testing.T) {
 		t.Fatalf("AddServer() error = %v", err)
 	}
 
-	info, err := coremcp.PrepareServerEdit(coremcp.DefaultRegistry, "demo")
+	info, err := coremcp.PrepareServerEdit(reg, "demo")
 	if err != nil {
 		t.Fatalf("PrepareServerEdit() error = %v", err)
 	}
@@ -92,11 +96,11 @@ func TestPrepareServerEditAndApplyServerEdit_RoundTrip(t *testing.T) {
 		t.Fatalf("WriteFile(temp) error = %v", err)
 	}
 
-	if err := coremcp.ApplyServerEdit(coremcp.DefaultRegistry, info); err != nil {
+	if err := coremcp.ApplyServerEdit(reg, info); err != nil {
 		t.Fatalf("ApplyServerEdit() error = %v", err)
 	}
 
-	cfg, ok := coremcp.DefaultRegistry.GetConfig("demo")
+	cfg, ok := reg.GetConfig("demo")
 	if !ok {
 		t.Fatal("expected edited server config to exist")
 	}
@@ -112,7 +116,7 @@ func TestPrepareServerEditAndApplyServerEdit_RoundTrip(t *testing.T) {
 }
 
 func TestHandleGet_MasksSecretsAndShowsDefaults(t *testing.T) {
-	withTestRegistry(t, coremcp.NewRegistryForTest(map[string]coremcp.ServerConfig{
+	reg := coremcp.NewRegistryForTest(map[string]coremcp.ServerConfig{
 		"api": {
 			Name:    "api",
 			Type:    coremcp.TransportHTTP,
@@ -120,9 +124,10 @@ func TestHandleGet_MasksSecretsAndShowsDefaults(t *testing.T) {
 			Env:     map[string]string{"API_KEY": "super-secret"},
 			Headers: map[string]string{"Authorization": "Bearer secret-token"},
 		},
-	}))
+	})
+	withTestRegistry(t, reg)
 
-	result, err := handleMCPGet(coremcp.DefaultRegistry, "api")
+	result, err := handleMCPGet(reg, "api")
 	if err != nil {
 		t.Fatalf("handleMCPGet() error = %v", err)
 	}

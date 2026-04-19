@@ -9,7 +9,7 @@ import (
 )
 
 func TestRenderTrackerListGroupsBackgroundBatchChildren(t *testing.T) {
-	tracker.Default().Reset()
+	tracker.Initialize(tracker.Options{})
 	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(func() {
 		tracker.Default().Reset()
@@ -73,7 +73,7 @@ func TestRenderTrackerListGroupsBackgroundBatchChildren(t *testing.T) {
 }
 
 func TestRenderTrackerListPrefersOrchestrationSnapshotForBatchAndQueueState(t *testing.T) {
-	tracker.Default().Reset()
+	tracker.Initialize(tracker.Options{})
 	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(func() {
 		tracker.Default().Reset()

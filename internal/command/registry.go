@@ -260,13 +260,6 @@ func (s *service) GetCustomCommands() []Info {
 	return infos
 }
 
-// setDynamicInfoProviders replaces the dynamic info providers.
-func (s *service) setDynamicInfoProviders(providers ...func() []Info) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.dynamicInfoProviders = append([]func() []Info(nil), providers...)
-}
-
 func (s *service) getDynamicInfoProviders() []func() []Info {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

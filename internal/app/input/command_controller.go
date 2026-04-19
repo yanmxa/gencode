@@ -49,6 +49,7 @@ type CommandDeps struct {
 	Tracker tracker.Service
 	Cron    cron.Service
 	ToolSvc tool.Service
+	Command command.Service
 
 	// State getters (values that may change during command execution)
 	GetSessionID     func() string
@@ -130,7 +131,7 @@ func (c CommandController) Execute(ctx context.Context, inputText string) (strin
 		return c.executeSkillSlashCommand(sk, args), c.deps.HandleSkillInvocation(), true
 	}
 
-	if pc, ok := command.IsCustomCommand(cmdName); ok {
+	if pc, ok := c.deps.Command.IsCustomCommand(cmdName); ok {
 		return c.executeCustomCommand(pc, args), c.deps.HandleSkillInvocation(), true
 	}
 
@@ -138,7 +139,7 @@ func (c CommandController) Execute(ctx context.Context, inputText string) (strin
 }
 
 func (c CommandController) HandleSubmit(inputText string) (tea.Cmd, bool) {
-	preserve := ShouldPreserveCommandInConversation(inputText)
+	preserve := shouldPreserveCommandInConversation(c.deps.Command, inputText)
 	preAppended := false
 	if preserve && ShouldPreserveBeforeCommandExecution(inputText) {
 		c.deps.Conversation.Append(core.ChatMessage{Role: core.RoleUser, Content: inputText})
@@ -253,7 +254,7 @@ func (c CommandController) insertConversationMessage(idx int, msg core.ChatMessa
 func (c *CommandController) handleHelpCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	var sb strings.Builder
 	sb.WriteString("Available Commands:\n\n")
-	builtins := command.BuiltinNames()
+	builtins := c.deps.Command.BuiltinNames()
 	names := make([]string, 0, len(builtins))
 	for name := range builtins {
 		names = append(names, name)
@@ -263,7 +264,7 @@ func (c *CommandController) handleHelpCommand(_ context.Context, _ string) (stri
 		info := builtins[name]
 		fmt.Fprintf(&sb, "  /%s - %s\n", info.Name, info.Description)
 	}
-	pluginCmds := command.GetCustomCommands()
+	pluginCmds := c.deps.Command.GetCustomCommands()
 	if len(pluginCmds) > 0 {
 		sb.WriteString("\nCustom Commands:\n\n")
 		for _, cmd := range pluginCmds {
@@ -642,7 +643,7 @@ func SkillCommandInfos() []command.Info {
 	return infos
 }
 
-func ShouldPreserveCommandInConversation(inputText string) bool {
+func shouldPreserveCommandInConversation(cmdSvc command.Service, inputText string) bool {
 	name, _, isCmd := command.ParseCommand(inputText)
 	if !isCmd {
 		return false
@@ -654,7 +655,7 @@ func ShouldPreserveCommandInConversation(inputText string) bool {
 	if _, ok := LookupSkillCommand(name); ok {
 		return false
 	}
-	if _, ok := command.IsCustomCommand(name); ok {
+	if _, ok := cmdSvc.IsCustomCommand(name); ok {
 		return false
 	}
 	return true

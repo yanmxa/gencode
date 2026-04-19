@@ -50,9 +50,8 @@ type mcpState struct {
 	Disabled []string `json:"disabled,omitempty"`
 }
 
-// DefaultRegistry is the global MCP registry. Initialized eagerly to avoid
-// nil checks at every call site; replaced by Initialize() during app startup.
-var DefaultRegistry = newEmptyRegistry()
+// defaultRegistry is the package-level MCP registry.
+var defaultRegistry = newEmptyRegistry()
 
 func newEmptyRegistry() *Registry {
 	return &Registry{
@@ -62,23 +61,6 @@ func newEmptyRegistry() *Registry {
 		connecting: make(map[string]bool),
 		connectErr: make(map[string]string),
 	}
-}
-
-// Initialize initializes the global MCP registry with the given working directory.
-func Initialize(opts Options) error {
-	reg, err := NewRegistry(opts.CWD)
-	if err != nil {
-		return err
-	}
-	if opts.PluginServers != nil {
-		reg.PluginServers = opts.PluginServers
-		reg.configs = reg.mergePluginMCPConfigs(reg.configs)
-	}
-	DefaultRegistry = reg
-
-	// Set the Service singleton wrapping this registry.
-	SetDefault(&service{reg: reg})
-	return nil
 }
 
 // NewRegistryForTest creates a registry with pre-loaded configs for testing.

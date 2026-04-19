@@ -16,9 +16,6 @@ type Manager struct {
 	tasks map[string]BackgroundTask
 }
 
-// DefaultManager is the global default task manager
-var DefaultManager = NewManager()
-
 // NewManager creates a new task manager
 func NewManager() *Manager {
 	return &Manager{

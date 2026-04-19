@@ -56,7 +56,9 @@ func (s *stubContinueAgentExecutor) GetParentModelID() string {
 }
 
 func TestContinueAgentTool_ResolvesTaskIDToResumeID(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -143,7 +145,9 @@ func TestContinueAgentTool_RequiresAgentTypeForDirectAgentID(t *testing.T) {
 }
 
 func TestContinueAgentTool_DrainsQueuedMessages(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -46,14 +46,6 @@ var (
 	instance Service
 )
 
-func init() {
-	mu.Lock()
-	if instance == nil {
-		instance = &service{}
-	}
-	mu.Unlock()
-}
-
 func Initialize(opts Options) {
 	mu.Lock()
 	instance = &service{}

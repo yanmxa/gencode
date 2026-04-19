@@ -12,7 +12,9 @@ import (
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/setting"
+	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/subagent"
+	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 	_ "github.com/yanmxa/gencode/internal/tool/registry"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
@@ -266,6 +268,11 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 }
 
 func TestAgent_BackgroundExecution(t *testing.T) {
+	task.Initialize(task.Options{})
+	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
+	t.Cleanup(orchestration.ResetService)
+
 	mp := &testutil.MockProvider{
 		Responses: []llm.CompletionResponse{
 			{

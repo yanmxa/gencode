@@ -49,15 +49,6 @@ type model struct {
 	conv        conv.Model    // Agent Outbox: conversation + output rendering
 	env         env           // Shared app state: provider, session, permission, plan, config
 	services    services      // Domain service singletons, injected at construction
-
-	// ── Infrastructure ──────────────────────────────────────────
-	bgTracker     *notify.BackgroundTracker
-	cwd           string
-	isGit         bool
-	width         int
-	height        int
-	ready         bool
-	initialPrompt string
 }
 
 var (
@@ -76,8 +67,8 @@ func (m *model) Init() tea.Cmd {
 		trigger.StartAsyncHookTicker(),
 		notify.StartTicker(),
 	}
-	if m.initialPrompt != "" {
-		prompt := m.initialPrompt
+	if m.env.InitialPrompt != "" {
+		prompt := m.env.InitialPrompt
 		cmds = append(cmds, func() tea.Msg { return initialPromptMsg(prompt) })
 	}
 	return tea.Batch(cmds...)
@@ -90,12 +81,12 @@ func (m *model) Init() tea.Cmd {
 func newModel(opts setting.RunOptions) (*model, error) {
 	base := newBaseModel()
 	m := &base
-	m.bgTracker = notify.NewBackgroundTracker(m.services.Tracker, m.services.Orchestration)
+	m.agentInput.BGTracker = notify.NewBackgroundTracker(m.services.Tracker, m.services.Orchestration)
 	var hookEngine *hook.Engine
 	if m.services.Hook != nil {
 		hookEngine = m.services.Hook.Engine()
 	}
-	notify.InstallCompletionObserver(m.agentInput.Notifications, hookEngine, m.bgTracker)
+	notify.InstallCompletionObserver(m.agentInput.Notifications, hookEngine, m.agentInput.BGTracker)
 	m.configureAsyncHookCallback()
 	m.ensureMemoryContextLoaded()
 	m.ReconfigureAgentTool()
@@ -121,11 +112,8 @@ func newBaseModel() model {
 		conv:        conv.NewModel(defaultWidth),
 		agentInput:  notify.New(),
 		systemInput: trigger.New(),
-		env:         newEnv(svc.LLM),
-
+		env:      newEnv(svc.LLM, appCwd, svc.Setting.IsGitRepo(appCwd)),
 		services: svc,
-		cwd:      appCwd,
-		isGit:    svc.Setting.IsGitRepo(appCwd),
 	}
 }
 
@@ -141,7 +129,7 @@ func (m *model) applyRunOptions(opts setting.RunOptions) error {
 	}
 
 	if opts.Prompt != "" && !opts.PlanMode {
-		m.initialPrompt = opts.Prompt
+		m.env.InitialPrompt = opts.Prompt
 	}
 
 	if opts.PlanMode {
@@ -166,14 +154,15 @@ func (m *model) applyRunOptions(opts setting.RunOptions) error {
 }
 
 func (m *model) ReloadPluginBackedState() error {
-	skill.Initialize(skill.Options{CWD: m.cwd})
+	skill.Initialize(skill.Options{CWD: m.env.CWD})
 	command.Initialize(command.Options{
-		CWD:              m.cwd,
+		CWD:              m.env.CWD,
 		DynamicProviders: []func() []command.Info{skillCommandInfos},
+		PluginCommandPaths: pluginCommandPaths,
 	})
-	subagent.Initialize(subagent.Options{CWD: m.cwd, PluginAgentPaths: pluginAgentPaths})
-	mcp.Initialize(mcp.Options{CWD: m.cwd, PluginServers: pluginMCPServers})
-	setting.Initialize(setting.Options{CWD: m.cwd})
+	subagent.Initialize(subagent.Options{CWD: m.env.CWD, PluginAgentPaths: pluginAgentPaths})
+	mcp.Initialize(mcp.Options{CWD: m.env.CWD, PluginServers: pluginMCPServers})
+	setting.Initialize(setting.Options{CWD: m.env.CWD})
 
 	m.services.refreshAfterReload()
 
@@ -200,7 +189,7 @@ func (m *model) enablePlanMode(prompt string) error {
 }
 
 func (m *model) applyContinueOption() error {
-	if err := m.services.Session.EnsureStore(m.cwd); err != nil {
+	if err := m.services.Session.EnsureStore(m.env.CWD); err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
 
@@ -214,7 +203,7 @@ func (m *model) applyContinueOption() error {
 }
 
 func (m *model) applyResumeOption(resumeID string) error {
-	if err := m.services.Session.EnsureStore(m.cwd); err != nil {
+	if err := m.services.Session.EnsureStore(m.env.CWD); err != nil {
 		return fmt.Errorf("failed to initialize session store: %w", err)
 	}
 
@@ -251,7 +240,7 @@ func (m *model) ensureMemoryContextLoaded() {
 	if m.env.CachedUserInstructions != "" || m.env.CachedProjectInstructions != "" {
 		return
 	}
-	m.refreshMemoryContext(m.cwd, "session_start")
+	m.refreshMemoryContext(m.env.CWD, "session_start")
 }
 
 // ============================================================
@@ -304,7 +293,7 @@ func (m *model) InitTaskStorage() {
 }
 
 func (m *model) PersistSession() error {
-	if err := m.services.Session.EnsureStore(m.cwd); err != nil {
+	if err := m.services.Session.EnsureStore(m.env.CWD); err != nil {
 		return err
 	}
 	if len(m.conv.Messages) == 0 {
@@ -324,7 +313,7 @@ func (m *model) PersistSession() error {
 			ID:         m.services.Session.ID(),
 			Provider:   providerName,
 			Model:      modelID,
-			Cwd:        m.cwd,
+			Cwd:        m.env.CWD,
 			LastPrompt: session.ExtractLastUserText(entries),
 			Summary:    m.services.Session.GetSummary(),
 			Mode:       m.env.SessionMode(),
@@ -353,7 +342,7 @@ func (m *model) PersistSession() error {
 }
 
 func (m *model) loadSessionByID(id string) error {
-	if err := m.services.Session.EnsureStore(m.cwd); err != nil {
+	if err := m.services.Session.EnsureStore(m.env.CWD); err != nil {
 		return err
 	}
 
@@ -617,9 +606,9 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 	if launch.TaskID == "" {
 		return
 	}
-	childID := m.bgTracker.EnsureWorkerTracker(launch, "", "")
+	childID := m.agentInput.BGTracker.EnsureWorkerTracker(launch, "", "")
 	if childID != "" {
-		m.bgTracker.RecordLaunch(launch, "", "", 0)
+		m.agentInput.BGTracker.RecordLaunch(launch, "", "", 0)
 	}
 }
 
@@ -636,7 +625,7 @@ func (m *model) persistOverflow(result *core.ToolResult) {
 	}
 	preview := result.Content[:cutoff]
 	persisted := false
-	if err := m.services.Session.EnsureStore(m.cwd); err == nil && m.services.Session.ID() != "" {
+	if err := m.services.Session.EnsureStore(m.env.CWD); err == nil && m.services.Session.ID() != "" {
 		if err := m.services.Session.GetStore().PersistToolResult(m.services.Session.ID(), result.ToolCallID, result.Content); err == nil {
 			persisted = true
 		}
@@ -649,12 +638,12 @@ func (m *model) persistOverflow(result *core.ToolResult) {
 }
 
 func (m *model) changeCwd(newCwd string) {
-	if newCwd == "" || newCwd == m.cwd {
+	if newCwd == "" || newCwd == m.env.CWD {
 		return
 	}
-	oldCwd := m.cwd
-	m.cwd = newCwd
-	m.isGit = m.services.Setting.IsGitRepo(newCwd)
+	oldCwd := m.env.CWD
+	m.env.CWD = newCwd
+	m.env.IsGit = m.services.Setting.IsGitRepo(newCwd)
 	m.userInput.HandleCwdChange(newCwd)
 	m.env.ClearCachedInstructions()
 	m.refreshMemoryContext(newCwd, "cwd_changed")
@@ -686,8 +675,8 @@ func (m *model) ReloadProjectContext(cwd string) {
 }
 
 func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
-	if outcome.InitialUserMessage != "" && m.initialPrompt == "" && len(m.conv.Messages) == 0 {
-		m.initialPrompt = outcome.InitialUserMessage
+	if outcome.InitialUserMessage != "" && m.env.InitialPrompt == "" && len(m.conv.Messages) == 0 {
+		m.env.InitialPrompt = outcome.InitialUserMessage
 	}
 	if len(outcome.WatchPaths) == 0 {
 		return
@@ -818,7 +807,7 @@ func (m *model) overlayDeps() input.OverlayDeps {
 	return input.OverlayDeps{
 		State:             &m.userInput,
 		Conv:              &m.conv.ConversationModel,
-		Cwd:               m.cwd,
+		Cwd:               m.env.CWD,
 		CommitMessages:    m.CommitMessages,
 		CommitAllMessages: m.commitAllMessages,
 		SwitchProvider: func(p llm.Provider) {
@@ -840,7 +829,6 @@ func (m *model) notifyDeps() notify.Deps {
 	return notify.Deps{
 		StreamActive: m.conv.Stream.Active,
 		Inject:       m.injectTaskNotification,
-		BGTracker:    m.bgTracker,
 	}
 }
 

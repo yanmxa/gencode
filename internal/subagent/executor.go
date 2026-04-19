@@ -116,7 +116,7 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 // RunBackground executes an agent in the background and returns the task
 func (e *Executor) RunBackground(req AgentRequest) (*task.AgentTask, error) {
 	// Get agent configuration for validation
-	config, ok := DefaultRegistry.Get(req.Agent)
+	config, ok := defaultRegistry.Get(req.Agent)
 	if !ok {
 		return nil, fmt.Errorf("unknown agent type: %s", req.Agent)
 	}
@@ -201,7 +201,7 @@ func (e *Executor) prepareWorkspace(req AgentRequest) (string, func(), error) {
 }
 
 func (e *Executor) prepareRunConfig(req AgentRequest) (*runConfig, error) {
-	config, ok := DefaultRegistry.Get(req.Agent)
+	config, ok := defaultRegistry.Get(req.Agent)
 	if !ok {
 		return nil, fmt.Errorf("unknown agent type: %s", req.Agent)
 	}

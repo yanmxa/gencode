@@ -76,20 +76,6 @@ func ResetService() {
 	svcMu.Unlock()
 }
 
-// initDefault sets the singleton to the DefaultManager if not already set.
-// Called from package init to ensure backward compatibility.
-func initDefault() {
-	svcMu.Lock()
-	defer svcMu.Unlock()
-	if instance == nil {
-		instance = DefaultManager
-	}
-}
-
-func init() {
-	initDefault()
-}
-
 // ── Service methods on Manager ─────────────────────────────
 
 // SetObserver implements Service by delegating to the package-level

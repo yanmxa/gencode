@@ -53,6 +53,12 @@ type Options struct {
 	CWD string
 }
 
+// Initialize loads settings for cwd and sets the Service singleton.
+func Initialize(opts Options) {
+	s := InitForApp(opts.CWD)
+	SetDefault(&settingsService{settings: s})
+}
+
 // ── singleton ──────────────────────────────────────────────
 
 var (
@@ -141,8 +147,6 @@ func (s *settingsService) Reload(cwd string) error {
 	s.settings = cloned
 	s.mu.Unlock()
 
-	// Keep DefaultSetup in sync for backward compatibility.
-	DefaultSetup = cloned
 	return nil
 }
 

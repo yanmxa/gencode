@@ -328,9 +328,9 @@ func (m *model) expandCollapseAll() tea.Cmd {
 }
 
 func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
-	oldWidth := m.width
-	m.width = msg.Width
-	m.height = msg.Height
+	oldWidth := m.env.Width
+	m.env.Width = msg.Width
+	m.env.Height = msg.Height
 	m.userInput.TerminalHeight = msg.Height
 
 	m.conv.ResizeMDRenderer(msg.Width)
@@ -339,8 +339,8 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 		m.conv.Modal.PlanApproval.SetSize(msg.Width, msg.Height)
 	}
 
-	if !m.ready {
-		m.ready = true
+	if !m.env.Ready {
+		m.env.Ready = true
 
 		var cmds []tea.Cmd
 		if len(m.conv.Messages) > 0 {
@@ -352,7 +352,7 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 		if m.userInput.Session.PendingSelector {
 			m.userInput.Session.PendingSelector = false
 			if m.services.Session.GetStore() != nil {
-				_ = m.userInput.Session.Selector.EnterSelect(m.width, m.height, m.services.Session.GetStore(), m.cwd)
+				_ = m.userInput.Session.Selector.EnterSelect(m.env.Width, m.env.Height, m.services.Session.GetStore(), m.env.CWD)
 			}
 		}
 
@@ -403,7 +403,7 @@ func (m *model) submitDeps() input.SubmitDeps {
 		Input:           &m.userInput,
 		Conversation:    &m.conv.ConversationModel,
 		CheckPromptHook: m.checkPromptHook,
-		Cwd:             m.cwd,
+		Cwd:             m.env.CWD,
 		HandleCommand: func(text string) (tea.Cmd, bool) {
 			ctrl := input.NewCommandController(m.commandDeps())
 			return ctrl.HandleSubmit(text)
@@ -450,9 +450,9 @@ func (m *model) commandDeps() input.CommandDeps {
 		Input:        &m.userInput,
 		Conversation: &m.conv.ConversationModel,
 		Tool:         &m.conv.Tool,
-		Width:        m.width,
-		Height:       m.height,
-		Cwd:          m.cwd,
+		Width:        m.env.Width,
+		Height:       m.env.Height,
+		Cwd:          m.env.CWD,
 
 		DisabledTools: m.services.Setting.DisabledTools(),
 		ProviderStore: m.services.LLM.Store(),
@@ -460,6 +460,7 @@ func (m *model) commandDeps() input.CommandDeps {
 		InputTokens:   m.env.InputTokens,
 		CurrentModel:  m.env.CurrentModel,
 
+		Command: m.services.Command,
 		Skill:   m.services.Skill,
 		Plugin:  m.services.Plugin,
 		MCP:     m.services.MCP,
@@ -515,9 +516,9 @@ func (m *model) approvalDeps() input.ApprovalFlowDeps {
 		SessionPermissions: m.env.SessionPermissions,
 		SetOperationMode:   func(mode setting.OperationMode) { m.env.OperationMode = mode },
 		Tool:               &m.conv.Tool,
-		Width:              m.width,
-		Height:             m.height,
-		Cwd:                m.cwd,
+		Width:              m.env.Width,
+		Height:             m.env.Height,
+		Cwd:                m.env.CWD,
 		ProgressHub:        m.conv.ProgressHub,
 		MCPExecutor:        conv.NewMCPExecutor(m.services.MCP),
 	}
@@ -549,7 +550,7 @@ func (m *model) cycleOperationMode() {
 	allowBypass := m.services.Setting != nil && m.services.Setting.AllowBypass()
 	m.env.OperationMode = m.env.OperationMode.NextWithBypass(allowBypass)
 	m.env.PlanEnabled = m.env.OperationMode == setting.ModePlan
-	m.env.ApplyModePermissions(m.cwd)
+	m.env.ApplyModePermissions(m.env.CWD)
 
 	if m.env.PlanEnabled {
 		m.env.EnsurePlanStore()
@@ -580,7 +581,7 @@ func (m *model) updateMode(msg tea.Msg) (tea.Cmd, bool) {
 func (m *model) handleQuestionRequest(msg conv.QuestionRequestMsg) tea.Cmd {
 	m.conv.Modal.PendingQuestion = msg.Request
 	m.conv.Modal.PendingQuestionReply = msg.Reply
-	m.conv.Modal.Question.Show(msg.Request, m.width)
+	m.conv.Modal.Question.Show(msg.Request, m.env.Width)
 	return tea.Batch(m.CommitMessages()...)
 }
 
@@ -615,7 +616,7 @@ func (m *model) handlePlanRequest(msg conv.PlanRequestMsg) tea.Cmd {
 	planScrollback := m.renderPlanForScrollback(msg.Request)
 	cmds = append(cmds, tea.Println(planScrollback))
 
-	m.conv.Modal.PlanApproval.Show(msg.Request, planPath, m.width, m.height)
+	m.conv.Modal.PlanApproval.Show(msg.Request, planPath, m.env.Width, m.env.Height)
 	return tea.Batch(cmds...)
 }
 
@@ -652,7 +653,7 @@ func (m *model) handlePlanResponse(msg conv.PlanResponseMsg) tea.Cmd {
 	case "clear-auto":
 		return m.handlePlanClearAutoMode(planContent)
 	case "auto":
-		m.env.EnableAutoAcceptMode(m.cwd)
+		m.env.EnableAutoAcceptMode(m.env.CWD)
 	case "manual":
 		m.env.OperationMode = setting.ModeNormal
 		m.env.PlanEnabled = false
@@ -666,7 +667,7 @@ func (m *model) handlePlanResponse(msg conv.PlanResponseMsg) tea.Cmd {
 
 func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
 	m.conv.Clear()
-	m.env.EnableAutoAcceptMode(m.cwd)
+	m.env.EnableAutoAcceptMode(m.env.CWD)
 	m.conv.Tool.Reset()
 
 	userMsg := fmt.Sprintf("Implement the following approved plan step by step. Start coding immediately — do NOT explore or investigate further.\n\n%s", planContent)
@@ -676,7 +677,7 @@ func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
 }
 
 func (m *model) handleEnterPlanRequest(msg conv.EnterPlanRequestMsg) tea.Cmd {
-	m.conv.Modal.PlanEntry.Show(msg.Request, m.width)
+	m.conv.Modal.PlanEntry.Show(msg.Request, m.env.Width)
 	return tea.Batch(m.CommitMessages()...)
 }
 

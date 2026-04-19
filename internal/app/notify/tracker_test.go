@@ -9,7 +9,7 @@ import (
 )
 
 func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
-	tracker.Default().Reset()
+	tracker.Initialize(tracker.Options{})
 	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(func() {
 		tracker.Default().Reset()
@@ -87,7 +87,7 @@ func TestBackgroundTaskTrackerCreatesBatchAndChildren(t *testing.T) {
 }
 
 func TestUpdateBackgroundWorkerTrackerReconcilesBatch(t *testing.T) {
-	tracker.Default().Reset()
+	tracker.Initialize(tracker.Options{})
 	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(func() {
 		tracker.Default().Reset()

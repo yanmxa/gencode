@@ -1,6 +1,9 @@
 package llm
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 // Service is the public contract for the llm module.
 type Service interface {
@@ -26,6 +29,37 @@ var _ Service = (*service)(nil)
 
 // Options holds configuration for Initialize.
 type Options struct{}
+
+// Initialize discovers and connects to the best available LLM provider,
+// then publishes the result as the singleton Service.
+func Initialize(opts Options) {
+	store, _ := NewStore()
+	if store == nil {
+		return
+	}
+
+	defaultSetup.Store = store
+	defaultSetup.CurrentModel = store.GetCurrentModel()
+	ctx := context.Background()
+
+	if defaultSetup.CurrentModel != nil {
+		if p, err := GetProvider(ctx, defaultSetup.CurrentModel.Provider, defaultSetup.CurrentModel.AuthMethod); err == nil {
+			defaultSetup.Provider = p
+			setSingleton()
+			return
+		}
+	}
+
+	for providerName, conn := range store.GetConnections() {
+		if p, err := GetProvider(ctx, Name(providerName), conn.AuthMethod); err == nil {
+			defaultSetup.Provider = p
+			setSingleton()
+			return
+		}
+	}
+
+	setSingleton()
+}
 
 // -- singleton ---------------------------------------------------------------
 
@@ -62,9 +96,7 @@ func ResetService() {
 
 // -- implementation ----------------------------------------------------------
 
-// service wraps the legacy Setup struct to satisfy the Service interface.
-// It delegates to DefaultSetup's exported fields, preserving backward
-// compatibility with existing callers that access DefaultSetup directly.
+// service wraps the Setup struct to satisfy the Service interface.
 type service struct {
 	setup *Setup
 }

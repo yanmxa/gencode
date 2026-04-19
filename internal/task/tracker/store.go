@@ -53,9 +53,6 @@ func NewStore() *Store {
 	}
 }
 
-// DefaultStore is the global task store singleton
-var DefaultStore = NewStore()
-
 // SetStorageDir sets the directory for disk persistence and loads existing tasks.
 // If dir is empty, the store operates in memory-only mode.
 func (s *Store) SetStorageDir(dir string) error {

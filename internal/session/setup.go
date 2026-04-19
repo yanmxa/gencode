@@ -3,15 +3,10 @@ package session
 import (
 	"fmt"
 	"sync"
-
-	"go.uber.org/zap"
-
-	"github.com/yanmxa/gencode/internal/log"
 )
 
-// DefaultSetup is the singleton session setup, initialized by Initialize().
-// Deprecated: prefer session.Default() which returns the Service interface.
-var DefaultSetup = &Setup{}
+// defaultSetup is the package-level session setup, initialized by Initialize().
+var defaultSetup = &Setup{}
 
 // Setup holds the initialized session infrastructure needed by the app layer.
 // The exported fields (Store, SessionID, Summary) are kept for backward
@@ -23,28 +18,6 @@ type Setup struct {
 	Store     *Store
 	SessionID string
 	Summary   string
-}
-
-// Initialize creates a session store and generates a fresh session ID.
-// Sets DefaultSetup and the singleton as a side effect.
-func Initialize(opts Options) {
-	store, err := NewStore(opts.CWD)
-	if err != nil {
-		log.Logger().Warn("session store initialization failed, sessions will not be persisted", zap.Error(err))
-	}
-
-	DefaultSetup.mu.Lock()
-	DefaultSetup.SessionID = NewSessionID()
-	DefaultSetup.Store = store
-	DefaultSetup.mu.Unlock()
-
-	SetDefault(DefaultSetup)
-}
-
-// EnsureStore lazily initializes the session store for the given cwd.
-// Deprecated: use Service.EnsureStore instead.
-func EnsureStore(cwd string) error {
-	return DefaultSetup.EnsureStore(cwd)
 }
 
 // EnsureStore lazily initializes the session store for the given cwd.

@@ -42,10 +42,10 @@ var (
 	instance Service
 )
 
-// Initialize sets the singleton to the DefaultStore.
+// Initialize creates a new Store and sets it as the singleton.
 func Initialize(opts Options) {
 	svcMu.Lock()
-	instance = DefaultStore
+	instance = NewStore()
 	svcMu.Unlock()
 }
 
@@ -75,11 +75,3 @@ func ResetService() {
 	svcMu.Unlock()
 }
 
-// initDefault sets the singleton to DefaultStore if not already set.
-func init() {
-	svcMu.Lock()
-	defer svcMu.Unlock()
-	if instance == nil {
-		instance = DefaultStore
-	}
-}

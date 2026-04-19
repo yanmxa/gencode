@@ -40,32 +40,6 @@ type Engine struct {
 	detachedWg sync.WaitGroup // tracks fire-and-forget goroutines
 }
 
-// DefaultEngine is the singleton hook engine, initialized by Init().
-var DefaultEngine *Engine
-
-// Options holds the dependencies needed to create the default hook engine.
-// All fields must be supplied by the caller — the hook package does not reach into
-// global singletons.
-type Options struct {
-	Settings       *setting.Settings
-	SessionID      string
-	CWD            string
-	TranscriptPath string
-	Completer      LLMCompleter
-	ModelID        string
-	EnvProvider    func() []string
-}
-
-// Initialize creates the singleton hook engine from the given options.
-func Initialize(opts Options) {
-	DefaultEngine = NewEngine(opts.Settings, opts.SessionID, opts.CWD, opts.TranscriptPath)
-	DefaultEngine.SetLLMCompleter(opts.Completer, opts.ModelID)
-	if opts.EnvProvider != nil {
-		DefaultEngine.SetEnvProvider(opts.EnvProvider)
-	}
-	SetDefault(DefaultEngine)
-}
-
 // NewEngine creates a new hook execution engine.
 func NewEngine(settings *setting.Settings, sessionID, cwd, transcriptPath string) *Engine {
 	return &Engine{

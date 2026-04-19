@@ -1,7 +1,6 @@
 package subagent
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -130,7 +129,7 @@ func loadAgentFromFileWithNamespace(filePath string, namespace string) {
 			config.Source = "plugin"
 		}
 
-		DefaultRegistry.Register(config)
+		defaultRegistry.Register(config)
 		log.Logger().Info("Loaded custom agent",
 			zap.String("name", config.Name),
 			zap.String("source", filePath))
@@ -194,24 +193,3 @@ func LoadAgentSystemPrompt(filePath string) string {
 	return body
 }
 
-// Initialize loads custom agents from all sources and initializes state stores.
-func Initialize(opts Options) error {
-	ClearPluginAgentPaths()
-
-	if opts.PluginAgentPaths != nil {
-		for _, pp := range opts.PluginAgentPaths() {
-			AddPluginAgentPath(pp.Path, pp.Namespace)
-		}
-	}
-
-	LoadCustomAgents(opts.CWD)
-
-	if err := DefaultRegistry.InitStores(opts.CWD); err != nil {
-		return fmt.Errorf("failed to initialize agent stores: %w", err)
-	}
-
-	// Set the singleton service to the global registry.
-	SetDefault(DefaultRegistry)
-
-	return nil
-}

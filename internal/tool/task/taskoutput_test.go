@@ -11,7 +11,9 @@ import (
 )
 
 func TestTaskOutputTool_StillRunning(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	// Create a test agent task that stays running
@@ -62,7 +64,9 @@ func TestTaskOutputTool_StillRunning(t *testing.T) {
 }
 
 func TestTaskOutputTool_Completed(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	// Create a test agent task and complete it
@@ -115,7 +119,9 @@ func TestTaskOutputTool_Completed(t *testing.T) {
 }
 
 func TestTaskOutputTool_NotFound(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	tool := &TaskOutputTool{}
@@ -134,7 +140,9 @@ func TestTaskOutputTool_NotFound(t *testing.T) {
 }
 
 func TestTaskOutputTool_NonBlocking(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	// Create a running task
@@ -175,7 +183,9 @@ func TestTaskOutputTool_NonBlocking(t *testing.T) {
 }
 
 func TestTaskOutputTool_DefaultsToNonBlocking(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -208,7 +218,9 @@ func TestTaskOutputTool_DefaultsToNonBlocking(t *testing.T) {
 }
 
 func TestTaskOutputTool_AllowsOlderRunningTaskInspection(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -235,7 +247,9 @@ func TestTaskOutputTool_AllowsOlderRunningTaskInspection(t *testing.T) {
 }
 
 func TestTaskOutputTool_RendersOrchestrationSnapshot(t *testing.T) {
+	task.Initialize(task.Options{})
 	orchestration.Initialize(orchestration.Options{})
+	t.Cleanup(task.ResetService)
 	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())

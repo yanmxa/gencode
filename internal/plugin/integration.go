@@ -16,16 +16,16 @@ import (
 // skills, agents, hooks, and MCP servers.
 func InitPlugins(ctx context.Context, cwd string) error {
 	// Load plugins from standard directories
-	if err := DefaultRegistry.Load(ctx, cwd); err != nil {
+	if err := defaultRegistry.Load(ctx, cwd); err != nil {
 		return err
 	}
 
 	// Load Claude Code plugins if enabled (non-fatal: missing plugins are skipped)
-	_ = DefaultRegistry.LoadClaudePlugins(ctx)
+	_ = defaultRegistry.LoadClaudePlugins(ctx)
 
 	// Load plugins from --plugin-dir if specified
 	if pluginDir := os.Getenv("GEN_PLUGIN_DIR"); pluginDir != "" {
-		if err := DefaultRegistry.LoadFromPath(ctx, pluginDir); err != nil {
+		if err := defaultRegistry.LoadFromPath(ctx, pluginDir); err != nil {
 			return err
 		}
 	}
@@ -51,7 +51,7 @@ func GetPluginCommandPaths() []PluginPath {
 // collectPluginPaths collects paths from enabled plugins using a getter function.
 func collectPluginPaths(getPaths func(*Plugin) []string) []PluginPath {
 	var paths []PluginPath
-	for _, p := range DefaultRegistry.GetEnabled() {
+	for _, p := range defaultRegistry.GetEnabled() {
 		for _, path := range getPaths(p) {
 			paths = append(paths, PluginPath{
 				Path:      path,
@@ -75,7 +75,7 @@ type PluginPath struct {
 func GetPluginHooks() map[string][]setting.Hook {
 	result := make(map[string][]setting.Hook)
 
-	for _, p := range DefaultRegistry.GetEnabled() {
+	for _, p := range defaultRegistry.GetEnabled() {
 		if p.Components.Hooks == nil {
 			continue
 		}
@@ -116,7 +116,7 @@ type PluginMCPServer struct {
 // GetPluginMCPServers returns all MCP servers from enabled plugins.
 func GetPluginMCPServers() []PluginMCPServer {
 	var servers []PluginMCPServer
-	for _, p := range DefaultRegistry.GetEnabled() {
+	for _, p := range defaultRegistry.GetEnabled() {
 		for name, cfg := range p.Components.MCP {
 			servers = append(servers, PluginMCPServer{
 				Name:   p.Name() + ":" + name,
@@ -167,10 +167,10 @@ func getActivePluginRoot() string {
 // FindPluginRootForPath returns the plugin root that contains the given path,
 // or "" if no enabled plugin matches.
 func FindPluginRootForPath(path string) string {
-	if DefaultRegistry == nil || path == "" {
+	if path == "" {
 		return ""
 	}
-	for _, p := range DefaultRegistry.GetEnabled() {
+	for _, p := range defaultRegistry.GetEnabled() {
 		if strings.HasPrefix(path, p.Path+"/") || path == p.Path {
 			return p.Path
 		}
@@ -192,10 +192,7 @@ func FindPluginRootForPath(path string) string {
 //
 //	GEN_PLUGIN_ROOT=<path>   CLAUDE_PLUGIN_ROOT=<path>
 func PluginEnv() []string {
-	if DefaultRegistry == nil {
-		return nil
-	}
-	enabled := DefaultRegistry.GetEnabled()
+	enabled := defaultRegistry.GetEnabled()
 	if len(enabled) == 0 {
 		return nil
 	}
