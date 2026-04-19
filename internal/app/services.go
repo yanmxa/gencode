@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/yanmxa/gencode/internal/agent"
 	"github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/cron"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -35,6 +36,7 @@ type services struct {
 	Orchestration orchestration.Service
 	MCP           mcp.Service
 	Plugin        plugin.Service
+	Agent         agent.Service
 }
 
 func newServices() services {
@@ -53,6 +55,7 @@ func newServices() services {
 		Orchestration: orchestration.Default(),
 		MCP:           mcp.Default(),
 		Plugin:        plugin.Default(),
+		Agent:         agent.Default(),
 	}
 }
 

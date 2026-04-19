@@ -6,12 +6,12 @@
 ┌─────────────────────────────────────────────────────────────┐
 │  core.NewAgent(Config)                                      │
 │                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
-│  │   LLM    │  │  System   │  │  Tools   │  │   Hooks    │  │
-│  │ (stream) │  │ (layers)  │  │(registry)│  │ (handlers) │  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └─────┬──────┘  │
-│       │              │             │              │         │
-│       └──────────────┴─────────────┴──────────────┘         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                  │
+│  │   LLM    │  │  System   │  │  Tools   │                  │
+│  │ (stream) │  │ (layers)  │  │(registry)│                  │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘                  │
+│       │              │             │                        │
+│       └──────────────┴─────────────┘                        │
 │                          │                                  │
 │                     ┌────┴────┐                              │
 │                     │  Agent  │                              │
@@ -21,6 +21,9 @@
 │                     └─────────┘                              │
 │                                                             │
 │  Optional: CWD, MaxTurns, CompactFunc                       │
+│                                                             │
+│  core.Agent has NO dependency on hooks.                     │
+│  Hooks are an app-layer concern — see hook.md.              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -57,7 +60,7 @@
      │  until Stop │   │                            │  ...                │
      └─────────────┘   │                            └─────────────────────┘
                        │
-                       └──► both call: OnMessage hook + append to history
+                       └──► both paths: append to conversation history
 ```
 
 ## Run Loop (TUI path)
@@ -110,32 +113,34 @@
 
 ## Tool Execution
 
+core.Agent knows nothing about hooks — it only sees `core.Tools` (which
+may be wrapped with a permission decorator). For hook integration around
+tool execution, see [permission.md](permission.md#hook-integration).
+
 ```
   tool calls from LLM
         │
         ▼
-  ┌─── GATE (sequential) ───────────────────────┐
+  ┌─── EMIT + RESOLVE (sequential) ─────────────┐
   │  for each call:                              │
-  │    Permission ──deny──► error result, skip   │
-  │        │                                     │
-  │      allow                                   │
-  │        │                                     │
-  │    PreTool hook                               │
-  │        ├─ block ──► error result, skip       │
-  │        ├─ modify ──► update input            │
-  │        └─ pass ──► add to execution queue    │
+  │    emit PreTool event (outbox)               │
+  │    tools.Get(name) → tool (or nil → error)   │
   └──────────────────────────────────────────────┘
         │
         ▼
   ┌─── EXECUTE (parallel) ──────────────────────┐
   │  tool.Execute(ctx, params)                   │
+  │    └─ if wrapped by WithPermission:          │
+  │       IsSafeTool? → skip check               │
+  │       PermissionFunc → Permit/Reject/Prompt  │
+  │       Prompt → blocks on PermissionBridge    │
   │  panic recovery per goroutine                │
   └──────────────────────────────────────────────┘
         │
         ▼
   ┌─── RECORD (sequential) ─────────────────────┐
   │  append ToolResult to conversation           │
-  │  emit PostTool event                         │
+  │  emit PostTool event (outbox)                │
   └──────────────────────────────────────────────┘
 ```
 
@@ -159,51 +164,55 @@ Priority    Band             Source
          (cached, rebuild on change)
 ```
 
-## Hooks Lifecycle
+## Outbox Events
+
+core.Agent emits events to its Outbox channel at each lifecycle point.
+The TUI observes these for rendering. **These are NOT hook events** —
+hooks are an app-layer concern (see [hook.md](hook.md)).
 
 ```
-  Agent Lifecycle                  Hook Events             Action Capabilities
+  Agent Lifecycle                  Outbox Event            TUI Action
   ──────────────────────────────────────────────────────────────────────────
 
   Run() starts
     │
-    ├─► OnStart ·················· observe only
-    │
     ▼
   waitForInput()
     │ message arrives
-    ├─► OnMessage ················ observe only
     │
     ▼
   ThinkAct() loop
     │
-    ├─► PreInfer ················· Block | Inject
+    ├─► PreInfer ················· start stream spinner
     │
     ▼
   streamInfer()
     │
-    ├─► OnChunk (per token) ······ observe only
+    ├─► OnChunk (per token) ······ append to streaming view
     │
-    ├─► PostInfer ················ observe only
+    ├─► PostInfer ················ update token counts, set tool calls
     │
     ▼
   execTools()
     │
     │  for each tool call:
-    │    ├─► PreTool ············· Block | Modify
+    │    ├─► PreTool ············· show "building tool" status
     │    │  tool.Execute()
-    │    └─► PostTool ············ observe only
+    │    └─► PostTool ············ append tool result, apply side effects
     │
     ▼
   end of turn?
     ├─ tool calls → loop back to PreInfer
     └─ no calls
-         ├─► OnTurn ·············· observe only
+         ├─► OnTurn ·············· commit messages, save session, drain queues
          └─► back to waitForInput()
 
   Run() returns
-    └─► OnStop ··················· observe only (guaranteed delivery)
+    └─► OnStop ··················· cleanup agent session
 ```
+
+Hook events (PreToolUse, PostToolUse, Stop, etc.) are fired by the
+app layer in response to these outbox events — not by core.Agent itself.
 
 ## Auto Compaction
 

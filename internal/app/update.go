@@ -698,10 +698,7 @@ func (m *model) handleEnterPlanResponse(msg conv.EnterPlanResponseMsg) tea.Cmd {
 // ============================================================
 
 func (m *model) handleStreamCancel() tea.Cmd {
-	if m.agentSess != nil {
-		m.agentSess.stop()
-		m.agentSess = nil
-	}
+	m.services.Agent.Stop()
 	m.conv.Stream.Stop()
 	m.env.ClearThinkingOverride()
 	m.cancelPendingToolCalls()
@@ -764,10 +761,7 @@ func (m *model) pasteImageFromClipboard() (tea.Cmd, bool) {
 }
 
 func (m *model) QuitWithCancel() (tea.Cmd, bool) {
-	if m.agentSess != nil {
-		m.agentSess.stop()
-		m.agentSess = nil
-	}
+	m.services.Agent.Stop()
 	m.conv.Stream.Stop()
 	if m.conv.Tool.Cancel != nil {
 		m.conv.Tool.Cancel()
@@ -787,11 +781,11 @@ type permissionDecision struct {
 }
 
 func (m *model) handlePermBridgeDecision(decision permissionDecision) tea.Cmd {
-	if m.agentSess == nil {
+	if !m.services.Agent.Active() {
 		return nil
 	}
-	req := m.agentSess.pendingPermRequest
-	m.agentSess.pendingPermRequest = nil
+	req := m.services.Agent.PendingPermission()
+	m.services.Agent.SetPendingPermission(nil)
 	if req == nil {
 		return nil
 	}
@@ -808,5 +802,5 @@ func (m *model) handlePermBridgeDecision(decision permissionDecision) tea.Cmd {
 	case req.Response <- resp:
 	default:
 	}
-	return conv.PollPermBridge(m.agentSess.permBridge)
+	return conv.PollPermBridge(m.services.Agent.PermissionBridge())
 }

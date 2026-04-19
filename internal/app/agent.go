@@ -1,13 +1,13 @@
-// Agent session lifecycle: constructing, configuring, starting, stopping,
-// and communicating with the core.Agent goroutine.
+// Agent session lifecycle: building params, delegating to agent.Service,
+// and wrapping channels in tea.Cmds for the TUI.
 package app
 
 import (
-	"context"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/yanmxa/gencode/internal/agent"
 	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
@@ -22,139 +22,112 @@ import (
 )
 
 // ============================================================
-// Agent session type
+// Build params from model state
 // ============================================================
 
-type agentSession struct {
-	agent              core.Agent
-	permBridge         *conv.PermissionBridge
-	cancel             context.CancelFunc
-	pendingPermRequest *conv.PermBridgeRequest
-}
-
-var errNoProvider = providerRequiredError("no LLM provider configured")
-
-type providerRequiredError string
-
-func (e providerRequiredError) Error() string { return string(e) }
-
-// ============================================================
-// Agent construction and lifecycle
-// ============================================================
-
-func (m *model) buildCoreAgent() (*agentSession, error) {
-	if m.env.LLMProvider == nil {
-		return nil, errNoProvider
+func (m *model) buildAgentParams() agent.BuildParams {
+	var sessionSummary string
+	if summary := m.services.Session.GetSummary(); summary != "" {
+		sessionSummary = fmt.Sprintf("<session-summary>\n%s\n</session-summary>", summary)
 	}
 
-	client := llm.NewClient(m.env.LLMProvider, m.env.GetModelID(), kit.GetMaxTokens(m.services.LLM.Store(), m.env.CurrentModel, setting.DefaultMaxTokens))
-	client.SetThinking(m.env.EffectiveThinkingLevel())
+	var extra []string
+	if coordinator := system.CoordinatorGuidance(); coordinator != "" {
+		extra = append(extra, coordinator)
+	}
+	if m.userInput.Skill.ActiveInvocation != "" {
+		extra = append(extra, m.userInput.Skill.ActiveInvocation)
+	}
 
-	sys := m.buildSystemPrompt(nil, client)
-	tools := m.buildAgentTools()
+	var mcpTools []core.Tool
+	if m.services.MCP.Registry() != nil {
+		schemas := m.services.MCP.Registry().GetToolSchemas()
+		mcpCaller := mcp.NewCaller(m.services.MCP.Registry())
+		mcpTools = mcp.AsCoreTools(schemas, mcpCaller)
+	}
 
-	permBridge := conv.NewPermissionBridge(func(name string, args map[string]any) conv.PermDecisionResult {
-		if m.services.Setting == nil {
-			return conv.PermDecisionResult{Decision: perm.Permit}
-		}
-		decision := m.services.Setting.HasPermissionToUseTool(name, args, m.env.SessionPermissions)
-		switch decision.Behavior {
-		case setting.Allow:
-			return conv.PermDecisionResult{Decision: perm.Permit, Reason: decision.Reason}
-		case setting.Deny:
-			return conv.PermDecisionResult{Decision: perm.Reject, Reason: decision.Reason}
-		default:
-			return conv.PermDecisionResult{
-				Decision:    perm.Prompt,
-				Reason:      decision.Reason,
-				ToolName:    name,
-				Description: decision.Reason,
+	return agent.BuildParams{
+		Provider:      m.env.LLMProvider,
+		ModelID:       m.env.GetModelID(),
+		MaxTokens:     kit.GetMaxTokens(m.services.LLM.Store(), m.env.CurrentModel, setting.DefaultMaxTokens),
+		ThinkingLevel: m.env.EffectiveThinkingLevel(),
+
+		CWD:     m.cwd,
+		CWDFunc: func() string { return m.cwd },
+		IsGit:   m.isGit,
+
+		PlanEnabled:         m.env.PlanEnabled,
+		UserInstructions:    m.env.CachedUserInstructions,
+		ProjectInstructions: m.env.CachedProjectInstructions,
+		SessionSummary:      sessionSummary,
+		SkillsPrompt:        m.services.Skill.PromptSection(),
+		AgentsPrompt:        m.services.Subagent.PromptSection(),
+		DeferredToolsPrompt: m.services.Tool.FormatDeferredToolsPrompt(),
+		Extra:               extra,
+
+		DisabledTools: m.services.Setting.DisabledTools(),
+		MCPTools:      mcpTools,
+
+		PermissionDecider: func(name string, args map[string]any) agent.PermDecisionResult {
+			decision := m.services.Setting.HasPermissionToUseTool(name, args, m.env.SessionPermissions)
+			switch decision.Behavior {
+			case setting.Allow:
+				return agent.PermDecisionResult{Decision: perm.Permit, Reason: decision.Reason}
+			case setting.Deny:
+				return agent.PermDecisionResult{Decision: perm.Reject, Reason: decision.Reason}
+			default:
+				return agent.PermDecisionResult{
+					Decision:    perm.Prompt,
+					Reason:      decision.Reason,
+					ToolName:    name,
+					Description: decision.Reason,
+				}
 			}
-		}
-	})
-
-	ag := core.NewAgent(core.Config{
-		ID:     "main",
-		LLM:    client,
-		System: sys,
-		Tools:  tool.WithPermission(tools, permBridge.PermissionFunc()),
-		CWD:    m.cwd,
-	})
-
-	return &agentSession{agent: ag, permBridge: permBridge}, nil
-}
-
-func (m *model) startAgentLoop(sess *agentSession) tea.Cmd {
-	ctx, cancel := context.WithCancel(context.Background())
-	sess.cancel = cancel
-
-	go func() {
-		_ = sess.agent.Run(ctx)
-	}()
-
-	return tea.Batch(
-		conv.DrainAgentOutbox(sess.agent.Outbox()),
-		conv.PollPermBridge(sess.permBridge),
-	)
-}
-
-func (sess *agentSession) stop() {
-	if sess == nil {
-		return
-	}
-	if sess.cancel != nil {
-		sess.cancel()
-		sess.cancel = nil
-	}
-	if sess.permBridge != nil {
-		sess.permBridge.Close()
-	}
-	if sess.agent != nil {
-		select {
-		case sess.agent.Inbox() <- core.Message{Signal: core.SigStop}:
-		default:
-		}
+		},
 	}
 }
+
+// ============================================================
+// Agent lifecycle (delegates to services.Agent)
+// ============================================================
 
 func (m *model) ensureAgentSession() (tea.Cmd, error) {
-	if m.agentSess != nil {
+	if m.services.Agent.Active() {
 		return nil, nil
 	}
-	sess, err := m.buildCoreAgent()
-	if err != nil {
-		return nil, err
-	}
-	m.agentSess = sess
 
+	params := m.buildAgentParams()
+
+	var coreMessages []core.Message
 	if len(m.conv.Messages) > 0 {
-		var coreMessages []core.Message
 		for _, msg := range m.conv.ConvertToProvider() {
 			coreMessages = append(coreMessages, msg)
 		}
-		sess.agent.SetMessages(coreMessages)
 	}
 
-	return m.startAgentLoop(sess), nil
+	if err := m.services.Agent.Start(params, coreMessages); err != nil {
+		return nil, err
+	}
+
+	return tea.Batch(
+		conv.DrainAgentOutbox(m.services.Agent.Outbox()),
+		conv.PollPermBridge(m.services.Agent.PermissionBridge()),
+	), nil
 }
 
 func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {
-	if m.agentSess == nil || m.agentSess.agent == nil {
+	if !m.services.Agent.Active() {
 		return nil
 	}
-	inbox := m.agentSess.agent.Inbox()
-	msg := core.Message{Role: core.RoleUser, Content: content, Images: images}
+	svc := m.services.Agent
 	return func() tea.Msg {
-		inbox <- msg
+		svc.Send(content, images)
 		return nil
 	}
 }
 
 func (m *model) StopAgentSession() {
-	if m.agentSess != nil {
-		m.agentSess.stop()
-		m.agentSess = nil
-	}
+	m.services.Agent.Stop()
 }
 
 // ============================================================
@@ -162,16 +135,14 @@ func (m *model) StopAgentSession() {
 // ============================================================
 
 func (m *model) ContinueOutbox() tea.Cmd {
-	if m.agentSess == nil || m.agentSess.agent == nil {
+	if !m.services.Agent.Active() {
 		return nil
 	}
-	return conv.DrainAgentOutbox(m.agentSess.agent.Outbox())
+	return conv.DrainAgentOutbox(m.services.Agent.Outbox())
 }
 
 func (m *model) HandlePermBridge(req *conv.PermBridgeRequest) tea.Cmd {
-	if m.agentSess != nil {
-		m.agentSess.pendingPermRequest = req
-	}
+	m.services.Agent.SetPendingPermission(req)
 	if req == nil {
 		return nil
 	}
@@ -214,70 +185,6 @@ func (m *model) ReconfigureAgentTool() {
 			}
 		}
 	}
-}
-
-// ============================================================
-// System prompt and tool set
-// ============================================================
-
-func (m *model) buildSystemPrompt(extra []string, loopClient *llm.Client) core.System {
-	var providerName, modelID string
-	if loopClient != nil {
-		modelID = loopClient.ModelID()
-		providerName = loopClient.Name()
-	}
-
-	allExtra := append([]string{}, extra...)
-	if coordinator := system.CoordinatorGuidance(); coordinator != "" {
-		allExtra = append(allExtra, coordinator)
-	}
-	if m.userInput.Skill.ActiveInvocation != "" {
-		allExtra = append(allExtra, m.userInput.Skill.ActiveInvocation)
-	}
-
-	var sessionSummary string
-	if summary := m.services.Session.GetSummary(); summary != "" {
-		sessionSummary = fmt.Sprintf("<session-summary>\n%s\n</session-summary>", summary)
-	}
-
-	skills := m.services.Skill.PromptSection()
-	agents := m.services.Subagent.PromptSection()
-
-	return system.Build(system.Config{
-		ProviderName:        providerName,
-		ModelID:             modelID,
-		Cwd:                 m.cwd,
-		IsGit:               m.isGit,
-		PlanMode:            m.env.PlanEnabled,
-		UserInstructions:    m.env.CachedUserInstructions,
-		ProjectInstructions: m.env.CachedProjectInstructions,
-		SessionSummary:      sessionSummary,
-		Skills:              skills,
-		Agents:              agents,
-		DeferredTools:       m.services.Tool.FormatDeferredToolsPrompt(),
-		Extra:               allExtra,
-	})
-}
-
-func (m *model) buildAgentTools() core.Tools {
-	var mcpGetter func() []core.ToolSchema
-	if m.services.MCP.Registry() != nil {
-		mcpGetter = m.services.MCP.Registry().GetToolSchemas
-	}
-	schemas := (&tool.Set{
-		Disabled: m.services.Setting.DisabledTools(),
-		PlanMode: m.env.PlanEnabled,
-		MCP:      mcpGetter,
-	}).Tools()
-
-	tools := tool.AdaptToolRegistry(schemas, func() string { return m.cwd })
-	if m.services.MCP.Registry() != nil {
-		mcpCaller := mcp.NewCaller(m.services.MCP.Registry())
-		for _, t := range mcp.AsCoreTools(schemas, mcpCaller) {
-			tools.Add(t)
-		}
-	}
-	return tools
 }
 
 // ============================================================

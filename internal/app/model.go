@@ -43,15 +43,12 @@ const defaultWidth = 80
 
 type model struct {
 	// ── Sub-models (one per event source / concern) ─────────────
-	userInput   input.Model    // Source 1: user keyboard input
-	agentInput  notify.Model   // Source 2: background agent completion
-	systemInput trigger.Model  // Source 3: system events (cron/hooks/watcher)
-	conv        conv.Model     // Agent Outbox: conversation + output rendering
-	env      env      // Shared app state: provider, session, permission, plan, config
-	services services // Domain service singletons, injected at construction
-
-	// ── Agent session ───────────────────────────────────────────
-	agentSess *agentSession
+	userInput   input.Model   // Source 1: user keyboard input
+	agentInput  notify.Model  // Source 2: background agent completion
+	systemInput trigger.Model // Source 3: system events (cron/hooks/watcher)
+	conv        conv.Model    // Agent Outbox: conversation + output rendering
+	env         env           // Shared app state: provider, session, permission, plan, config
+	services    services      // Domain service singletons, injected at construction
 
 	// ── Infrastructure ──────────────────────────────────────────
 	bgTracker     *notify.BackgroundTracker

@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/yanmxa/gencode/internal/agent"
 	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/app/kit/suggest"
 	"github.com/yanmxa/gencode/internal/command"
@@ -57,6 +58,7 @@ func initInfrastructure() error {
 }
 
 func initTools(cwd string) error {
+	agent.Initialize(agent.Options{})
 	tool.Initialize(tool.Options{})
 	task.Initialize(task.Options{})
 	tracker.Initialize(tracker.Options{})

@@ -175,18 +175,26 @@ Each sub-model package is a self-contained MVU unit:
 
 Root implements each sub-model's Runtime via adapter methods on `*model` in `model.go`.
 
-**Env access**: shared app state (`env`) lives in `app/env.go`, not a sub-package. Sub-models never import it directly — they receive needed state through Deps structs that root assembles and passes in.
+**Env**: app-local TUI state (`env`) lives in `app/env.go` — provider snapshot, permissions, plan, cache. Pure state holder with no singleton dependencies.
+
+**Services**: domain service singletons (`services`) live in `app/services.go` — 14 interface-typed fields injected at model construction via `newServices()`. Model methods access services through `m.services.*`, never through package-level `Default()` calls at runtime. Sub-models never import services directly — they receive needed references through Deps structs that root assembles and passes in.
 
 ### Root Model
 
 ```go
 type model struct {
+    // Sub-models (one per event source / concern)
     userInput   input.Model      // Source 1: user keyboard → textarea, selectors, approval
     agentInput  notify.Model     // Source 2: background agent completion → notification queue
     systemInput trigger.Model    // Source 3: cron / async hook / file watcher → event queue
     conv        conv.Model       // Agent Outbox: outbox events → conversation state → chat render
-    env         env              // Shared app state: provider, session, permission, plan, config
-    agentSess  *agentSession    // Agent lifecycle (root-owned)
+    env         env              // App-local TUI state: provider, permissions, plan, cache
+    services    services         // Domain service singletons, injected at construction
+
+    // Infrastructure
+    bgTracker     *notify.BackgroundTracker
+    cwd           string
+    isGit         bool
 }
 ```
 
@@ -227,16 +235,21 @@ Each file is annotated with its MVU role: **[M]** model/state, **[U]** update, *
 ```
 internal/app/
 │
-│  ── Root: pure glue (7 files) ─────────────────────────────────────────────
-│  No business logic. Model + routing + view + env + agent lifecycle + entrypoint + init.
+│  ── Root: pure glue (8 files) ─────────────────────────────────────────────
+│  No business logic. Model + services + routing + view + env + agent lifecycle + entrypoint + init.
 │  Cross-cutting Cmds: sendToAgent(), drainTurnQueues(), triggerAutoCompact()
 │
-├── model.go      [M,C] Model{env, 4 sub-models, agentSess}, Init()
-│                       conv.Runtime event handlers, session persistence, turn queue drain
-├── agent.go        [C] Agent session lifecycle: build, start, stop
-│                       Cmd: startAgentLoop(), sendToAgent(), ContinueOutbox()
-├── env.go          [M] env: shared app state (provider, session, permission, plan, config). Not imported by sub-models —
-│                       sub-models access env state through Deps structs injected by root.
+├── model.go      [M,C] Model{env, services, 4 sub-models, bgTracker}, Init()
+│                       conv.Runtime event handlers, session persistence, turn queue drain, deps builders
+├── agent.go        [C] Agent session lifecycle: delegates to services.Agent.
+│                       buildAgentParams(), ensureAgentSession(), sendToAgent(), ContinueOutbox()
+│                       ReconfigureAgentTool() wires subagent executor into tool registry.
+├── services.go     [M] services: domain service singletons (14 fields), injected at model construction.
+│                       newServices() snapshots all Default() calls. refreshAfterReload() re-snapshots
+│                       the 5 services replaced by Initialize() during plugin reload.
+├── env.go          [M] env: app-local TUI state only (provider, permissions, plan, cache).
+│                       Pure state holder — no singleton service dependencies.
+│                       Sub-models never import it — they receive needed state through Deps structs.
 ├── update.go       [U] Update(): msg type switch → delegate to sub-models
 │                       Cross-cutting = routing: SubmitMsg → agent, PermReq → input, ...
 ├── view.go         [V] View(): compose sub-model views into terminal layout
@@ -353,7 +366,7 @@ Domain packages never import `app/`.
 - `session/` → `task/tracker` (serializes tracker tasks into transcripts)
 
 **Decoupled via function injection** (no direct import):
-- `hook/` ← `app/` — `hook.LLMCompleter` injected at init via `buildHookCompleter`
+- `hook/` ← `app/` — `hook.LLMCompleter` injected at init via `runtime.BuildHookCompleter`
 
 **Decoupled via callback injection** (no direct import):
 - `mcp/` ↔ `plugin/` — `mcp.Initialize(cwd, pluginServersCallback)`
