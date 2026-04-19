@@ -62,16 +62,16 @@ func Initialize(opts Options) {
 // ── singleton ──────────────────────────────────────────────
 
 var (
-	svcMu    sync.RWMutex
-	svcInst  Service
+	mu    sync.RWMutex
+	instance  Service
 )
 
 // Default returns the singleton Service instance.
 // Panics if Initialize has not been called.
 func Default() Service {
-	svcMu.RLock()
-	s := svcInst
-	svcMu.RUnlock()
+	mu.RLock()
+	s := instance
+	mu.RUnlock()
 	if s == nil {
 		panic("setting: not initialized")
 	}
@@ -80,24 +80,24 @@ func Default() Service {
 
 // DefaultIfInit returns the singleton Service instance, or nil if not initialized.
 func DefaultIfInit() Service {
-	svcMu.RLock()
-	s := svcInst
-	svcMu.RUnlock()
+	mu.RLock()
+	s := instance
+	mu.RUnlock()
 	return s
 }
 
 // SetDefault replaces the singleton instance. Intended for tests.
 func SetDefault(s Service) {
-	svcMu.Lock()
-	svcInst = s
-	svcMu.Unlock()
+	mu.Lock()
+	instance = s
+	mu.Unlock()
 }
 
 // ResetService clears the singleton instance. Intended for tests.
 func ResetService() {
-	svcMu.Lock()
-	svcInst = nil
-	svcMu.Unlock()
+	mu.Lock()
+	instance = nil
+	mu.Unlock()
 }
 
 // ── implementation ─────────────────────────────────────────

@@ -35,24 +35,24 @@ type Options struct{}
 // ── singleton ──────────────────────────────────────────────
 
 var (
-	svcMu      sync.RWMutex
-	svcInstance Service
+	mu      sync.RWMutex
+	instance Service
 )
 
 // Initialize sets the singleton to the default registry.
 func Initialize(opts Options) {
-	svcMu.Lock()
-	svcInstance = defaultRegistry
-	svcMu.Unlock()
+	mu.Lock()
+	instance = defaultRegistry
+	mu.Unlock()
 }
 
 // Default returns the singleton Service instance.
 // Falls back to defaultRegistry if Initialize has not been called,
 // since tools register at init time before Initialize runs.
 func Default() Service {
-	svcMu.RLock()
-	s := svcInstance
-	svcMu.RUnlock()
+	mu.RLock()
+	s := instance
+	mu.RUnlock()
 	if s != nil {
 		return s
 	}
@@ -61,14 +61,14 @@ func Default() Service {
 
 // SetDefault replaces the singleton instance. Intended for tests.
 func SetDefault(s Service) {
-	svcMu.Lock()
-	svcInstance = s
-	svcMu.Unlock()
+	mu.Lock()
+	instance = s
+	mu.Unlock()
 }
 
 // ResetService clears the singleton instance. Intended for tests.
 func ResetService() {
-	svcMu.Lock()
-	svcInstance = nil
-	svcMu.Unlock()
+	mu.Lock()
+	instance = nil
+	mu.Unlock()
 }
