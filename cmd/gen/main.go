@@ -49,7 +49,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&cliOpts.plan, "plan", false, "Enter plan mode")
 	rootCmd.Flags().BoolVarP(&cliOpts.cont, "continue", "c", false, "Resume the most recent session")
 	rootCmd.Flags().BoolVarP(&cliOpts.resume, "resume", "r", false, "Select and resume a previous session")
-	rootCmd.Flags().StringVar(&cliOpts.pluginDir, "plugin-dir", "", "Load plugins from a specific directory")
+	rootCmd.PersistentFlags().StringVar(&cliOpts.pluginDir, "plugin-dir", "", "Load plugins from a specific directory")
 
 	// Register subcommands
 	rootCmd.AddCommand(versionCmd)

@@ -172,6 +172,12 @@ func (s *SearchSelector) Render() string {
 	var sb strings.Builder
 
 	dimStyle := kit.DimStyle()
+	sepStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
+	cw := s.contentWidth()
+	sepWidth := cw - 8
+
+	sb.WriteString(sepStyle.Render(strings.Repeat("─", sepWidth)))
+	sb.WriteString("\n")
 
 	sb.WriteString(kit.SelectorTitleStyle().Render("Search Engine"))
 	sb.WriteString("\n\n")
@@ -200,13 +206,21 @@ func (s *SearchSelector) Render() string {
 	}
 
 	sb.WriteString("\n")
+	sb.WriteString(sepStyle.Render(strings.Repeat("─", sepWidth)))
+	sb.WriteString("\n")
 	sb.WriteString(dimStyle.Render("↑/↓ navigate · Enter select · Esc cancel"))
 
 	content := sb.String()
-	boxWidth := kit.CalculateToolBoxWidth(s.width)
-	box := kit.SelectorBorderStyle().Width(boxWidth).Render(content)
+	box := lipgloss.NewStyle().
+		Width(cw).
+		Padding(1, 2).
+		Render(content)
 
-	return lipgloss.Place(s.width, s.height-4, lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(s.width, s.height-2, lipgloss.Center, lipgloss.Top, box)
+}
+
+func (s *SearchSelector) contentWidth() int {
+	return max(60, s.width-6)
 }
 
 // --- Search Runtime ---
