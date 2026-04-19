@@ -14,14 +14,15 @@ const (
 //
 // Priority determines render order (lower = first):
 //
-//	0-99:   Identity        (base template, provider-specific)
-//	100-199: Environment    (cwd, git, platform, model)
-//	200-299: Instructions   (user-level, project-level)
-//	300-399: Memory         (session summary, compaction)
-//	400-499: Capabilities   (skills, agents, deferred tools)
-//	500-599: Guidelines     (tool usage, git workflow)
-//	600-699: Mode           (plan mode, worktree mode)
-//	700+:    Extra          (agent identity, skill invocation)
+//	0:     identity      — base template (who you are, how you behave)
+//	100:   provider      — provider-specific overrides (optional)
+//	110:   environment   — cwd, git, platform, model
+//	200:   instructions  — user + project instructions
+//	300:   session-summary — conversation compaction
+//	400:   capabilities  — skills, agents, deferred tools
+//	500:   guidelines    — tool usage, git safety
+//	600:   mode          — plan mode
+//	700+:  extra         — coordinator, skill invocation, agent identity
 type Layer struct {
 	Name     string // unique key (e.g. "identity", "user-instructions")
 	Priority int    // render order

@@ -65,40 +65,50 @@ type Config struct {
 }
 
 // Build creates a core.System with properly separated layers.
+//
+// Layer structure (8 layers max):
+//
+//	identity        (0)   — base.txt (who you are, how you behave)
+//	provider        (100) — provider-specific overrides (optional, only if file exists)
+//	environment     (110) — cwd, git, platform, model
+//	instructions    (200) — user + project instructions
+//	session-summary (300) — conversation compaction
+//	capabilities    (400) — skills, agents, deferred tools
+//	guidelines      (500) — tool usage, git safety
+//	mode            (600) — plan mode
+//	extra-*         (700) — coordinator, skill invocation, agent identity
 func Build(cfg Config) core.System {
 	sys := core.NewSystem()
 
+	// Identity — base behavior and conventions
 	sys.Set(core.Layer{
 		Name: "identity", Priority: 0,
 		Content: cachedBase, Source: core.Predefined,
 	})
 
-	sys.Set(core.Layer{
-		Name: "environment-provider", Priority: 100,
-		Content: providerOrGeneric(cfg.ProviderName), Source: core.Predefined,
-	})
+	// Provider-specific overrides (only if a file like prompts/anthropic.txt exists)
+	if p := loadProvider(cfg.ProviderName); p != "" {
+		sys.Set(core.Layer{
+			Name: "provider", Priority: 100,
+			Content: p, Source: core.Predefined,
+		})
+	}
 
+	// Runtime environment
 	sys.Set(core.Layer{
-		Name: "environment-runtime", Priority: 110,
+		Name: "environment", Priority: 110,
 		Content: formatEnvStatic(cfg.Cwd, cfg.IsGit, cfg.ModelID), Source: core.Dynamic,
 	})
 
-	if cfg.UserInstructions != "" {
+	// Instructions — user-level + project-level merged into one layer
+	if instr := formatInstructions(cfg.UserInstructions, cfg.ProjectInstructions); instr != "" {
 		sys.Set(core.Layer{
-			Name: "user-instructions", Priority: 200,
-			Content: "<user-instructions>\n" + cfg.UserInstructions + "\n</user-instructions>",
-			Source:  core.FromFile,
+			Name: "instructions", Priority: 200,
+			Content: instr, Source: core.FromFile,
 		})
 	}
 
-	if cfg.ProjectInstructions != "" {
-		sys.Set(core.Layer{
-			Name: "project-instructions", Priority: 210,
-			Content: "<project-instructions>\n" + cfg.ProjectInstructions + "\n</project-instructions>",
-			Source:  core.FromFile,
-		})
-	}
-
+	// Session summary from compaction
 	if cfg.SessionSummary != "" {
 		sys.Set(core.Layer{
 			Name: "session-summary", Priority: 300,
@@ -106,27 +116,15 @@ func Build(cfg Config) core.System {
 		})
 	}
 
-	if cfg.Skills != "" {
+	// Capabilities — skills, agents, deferred tools merged into one layer
+	if caps := join([]string{cfg.Skills, cfg.Agents, cfg.DeferredTools}); caps != "" {
 		sys.Set(core.Layer{
-			Name: "capabilities-skills", Priority: 400,
-			Content: cfg.Skills, Source: core.FromFile,
+			Name: "capabilities", Priority: 400,
+			Content: caps, Source: core.FromFile,
 		})
 	}
 
-	if cfg.Agents != "" {
-		sys.Set(core.Layer{
-			Name: "capabilities-agents", Priority: 410,
-			Content: cfg.Agents, Source: core.FromFile,
-		})
-	}
-
-	if cfg.DeferredTools != "" {
-		sys.Set(core.Layer{
-			Name: "capabilities-deferred-tools", Priority: 420,
-			Content: cfg.DeferredTools, Source: core.FromFile,
-		})
-	}
-
+	// Tool guidelines — conditional on context
 	guidelines := []string{cachedToolsCore}
 	if cfg.IsGit {
 		guidelines = append(guidelines, cachedToolsGit)
@@ -142,13 +140,15 @@ func Build(cfg Config) core.System {
 		Content: join(guidelines), Source: core.Predefined,
 	})
 
+	// Plan mode
 	if cfg.PlanMode {
 		sys.Set(core.Layer{
-			Name: "mode-plan", Priority: 600,
+			Name: "mode", Priority: 600,
 			Content: cachedPlanMode, Source: core.Predefined,
 		})
 	}
 
+	// Extra layers — coordinator guidance, skill invocation, agent identity
 	for i, extra := range cfg.Extra {
 		if strings.TrimSpace(extra.Content) != "" {
 			name := extra.Name
@@ -184,15 +184,28 @@ func load(name string) string {
 	return string(data)
 }
 
-func providerOrGeneric(provider string) string {
+// loadProvider returns provider-specific prompt content, or "" if none exists.
+func loadProvider(provider string) string {
 	if provider == "" {
-		return load("generic.txt")
+		return ""
 	}
 	data, err := promptFS.ReadFile("prompts/" + provider + ".txt")
 	if err != nil {
-		return load("generic.txt")
+		return ""
 	}
 	return string(data)
+}
+
+// formatInstructions merges user and project instructions into one block.
+func formatInstructions(user, project string) string {
+	var parts []string
+	if user != "" {
+		parts = append(parts, "<user-instructions>\n"+user+"\n</user-instructions>")
+	}
+	if project != "" {
+		parts = append(parts, "<project-instructions>\n"+project+"\n</project-instructions>")
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func join(parts []string) string {
