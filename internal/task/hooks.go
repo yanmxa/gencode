@@ -4,21 +4,21 @@ import (
 	"sync"
 )
 
-// CompletionObserver receives task lifecycle notifications. The app layer
+// LifecycleHandler receives task lifecycle notifications. The app layer
 // installs an observer that handles tracker updates, notification queue
 // pushes, and hook firing.
-type CompletionObserver interface {
+type LifecycleHandler interface {
 	TaskCreated(info TaskInfo)
 	TaskCompleted(info TaskInfo)
 }
 
 var taskObserver struct {
 	mu       sync.RWMutex
-	observer CompletionObserver
+	observer LifecycleHandler
 }
 
-// SetCompletionObserver installs or clears the task completion observer.
-func SetCompletionObserver(observer CompletionObserver) {
+// SetLifecycleHandler installs or clears the task completion observer.
+func SetLifecycleHandler(observer LifecycleHandler) {
 	taskObserver.mu.Lock()
 	defer taskObserver.mu.Unlock()
 	taskObserver.observer = observer

@@ -6,15 +6,15 @@ import (
 )
 
 func TestFormatEnvIncludesSessionWorkingDirectoryFacts(t *testing.T) {
-	env := formatEnvStatic("/tmp/project", true, "test-model")
+	env := formatEnv("/tmp/project", true, "test-model")
 	if !strings.Contains(env, "Session working directory: /tmp/project") {
-		t.Fatalf("formatEnvStatic() = %q, want session working directory", env)
+		t.Fatalf("formatEnv() = %q, want session working directory", env)
 	}
 	if !strings.Contains(env, "Is git repo: Yes") {
-		t.Fatalf("formatEnvStatic() = %q, want git status", env)
+		t.Fatalf("formatEnv() = %q, want git status", env)
 	}
 	if strings.Contains(env, "Bash commands start in the session working directory.") {
-		t.Fatalf("formatEnvStatic() = %q, should keep tool guidance out of env", env)
+		t.Fatalf("formatEnv() = %q, should keep tool guidance out of env", env)
 	}
 }
 

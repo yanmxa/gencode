@@ -1,6 +1,3 @@
-// Package system builds system prompts for GenCode agents.
-// It assembles prompts from embedded templates, runtime environment,
-// user/project instructions, and dynamic capabilities.
 package system
 
 import (
@@ -16,38 +13,38 @@ import (
 //go:embed prompts/*.txt
 var promptFS embed.FS
 
-// ExtraLayer is a named piece of extra system prompt content (priority 700+).
+// ExtraLayer is a named piece of content appended after standard layers.
 type ExtraLayer struct {
 	Name    string
 	Content string
 }
 
 var (
-	cachedBase           string
-	cachedToolsCore      string
-	cachedToolsGit       string
-	cachedToolsQuestions string
-	cachedToolsTasks     string
-	cachedCompact string
+	cachedBase      string
+	cachedToolsCore string
+	cachedToolsGit  string
+	cachedToolsQA   string
+	cachedToolsTask string
+	cachedCompact   string
 )
 
 func init() {
 	cachedBase = load("base.txt")
 	cachedToolsCore = load("tools-core.txt")
 	cachedToolsGit = load("tools-git.txt")
-	cachedToolsQuestions = load("tools-questions.txt")
-	cachedToolsTasks = load("tools-tasks.txt")
+	cachedToolsQA = load("tools-questions.txt")
+	cachedToolsTask = load("tools-tasks.txt")
 	cachedCompact = load("compact.txt")
 }
 
-// Config holds all inputs needed to build a layered core.System.
+// Config holds inputs for building a system prompt.
 type Config struct {
 	ProviderName        string
 	ModelID             string
 	Cwd                 string
 	IsGit               bool
 	IsSubagent          bool
-	UserInstructions string
+	UserInstructions    string
 	ProjectInstructions string
 	Skills              string
 	Agents              string
@@ -55,27 +52,16 @@ type Config struct {
 	Extra               []ExtraLayer
 }
 
-// Build creates a core.System with properly separated layers.
-//
-// Layer structure (6 layers max):
-//
-//	identity        (0)   — base.txt (who you are, how you behave)
-//	provider        (100) — provider-specific overrides (optional, only if file exists)
-//	environment     (110) — cwd, git, platform, model
-//	instructions    (200) — user + project instructions
-//	capabilities    (400) — skills, agents, deferred tools
-//	guidelines      (500) — tool usage, git safety
-//	extra-*         (700) — coordinator, skill invocation, agent identity
+// Build assembles a layered system prompt.
+// Layer priorities determine render order — see core.Layer for the scheme.
 func Build(cfg Config) core.System {
 	sys := core.NewSystem()
 
-	// Identity — base behavior and conventions
 	sys.Set(core.Layer{
 		Name: "identity", Priority: 0,
 		Content: cachedBase, Source: core.Predefined,
 	})
 
-	// Provider-specific overrides (only if a file like prompts/anthropic.txt exists)
 	if p := loadProvider(cfg.ProviderName); p != "" {
 		sys.Set(core.Layer{
 			Name: "provider", Priority: 100,
@@ -83,70 +69,67 @@ func Build(cfg Config) core.System {
 		})
 	}
 
-	// Runtime environment
 	sys.Set(core.Layer{
 		Name: "environment", Priority: 110,
-		Content: formatEnvStatic(cfg.Cwd, cfg.IsGit, cfg.ModelID), Source: core.Dynamic,
+		Content: formatEnv(cfg.Cwd, cfg.IsGit, cfg.ModelID), Source: core.Dynamic,
 	})
 
-	// Instructions — user-level + project-level merged into one layer
-	if instr := formatInstructions(cfg.UserInstructions, cfg.ProjectInstructions); instr != "" {
+	if instr := mergeInstructions(cfg.UserInstructions, cfg.ProjectInstructions); instr != "" {
 		sys.Set(core.Layer{
 			Name: "instructions", Priority: 200,
 			Content: instr, Source: core.FromFile,
 		})
 	}
 
-	// Capabilities — skills, agents, deferred tools merged into one layer
-	if caps := join([]string{cfg.Skills, cfg.Agents, cfg.DeferredTools}); caps != "" {
+	if caps := joinNonEmpty(cfg.Skills, cfg.Agents, cfg.DeferredTools); caps != "" {
 		sys.Set(core.Layer{
 			Name: "capabilities", Priority: 400,
 			Content: caps, Source: core.FromFile,
 		})
 	}
 
-	// Tool guidelines — conditional on context
-	guidelines := []string{cachedToolsCore}
-	if cfg.IsGit {
-		guidelines = append(guidelines, cachedToolsGit)
-	}
-	if !cfg.IsSubagent {
-		guidelines = append(guidelines, cachedToolsQuestions)
-	}
-	if !cfg.IsSubagent {
-		guidelines = append(guidelines, cachedToolsTasks)
-	}
 	sys.Set(core.Layer{
 		Name: "guidelines", Priority: 500,
-		Content: join(guidelines), Source: core.Predefined,
+		Content: guidelines(cfg.IsGit, cfg.IsSubagent), Source: core.Predefined,
 	})
 
-	// Extra layers — coordinator guidance, skill invocation, agent identity
 	for i, extra := range cfg.Extra {
-		if strings.TrimSpace(extra.Content) != "" {
-			name := extra.Name
-			if name == "" {
-				name = fmt.Sprintf("extra-%d", i)
-			}
-			sys.Set(core.Layer{
-				Name:     name,
-				Priority: 700 + i,
-				Content:  extra.Content, Source: core.Injected,
-			})
+		if strings.TrimSpace(extra.Content) == "" {
+			continue
 		}
+		name := extra.Name
+		if name == "" {
+			name = fmt.Sprintf("extra-%d", i)
+		}
+		sys.Set(core.Layer{
+			Name: name, Priority: 700 + i,
+			Content: extra.Content, Source: core.Injected,
+		})
 	}
 
 	return sys
 }
 
-func formatEnvStatic(cwd string, isGit bool, model string) string {
-	gitStatus := "No"
+func guidelines(isGit, isSubagent bool) string {
+	parts := []string{cachedToolsCore}
 	if isGit {
-		gitStatus = "Yes"
+		parts = append(parts, cachedToolsGit)
 	}
-	today := time.Now().Format("2006-01-02")
-	return fmt.Sprintf("# currentDate\nToday's date is %s.\n\n<env>\nSession working directory: %s\nIs git repo: %s\nPlatform: %s/%s\nModel: %s\n</env>",
-		today, cwd, gitStatus, runtime.GOOS, runtime.GOARCH, model)
+	if !isSubagent {
+		parts = append(parts, cachedToolsQA, cachedToolsTask)
+	}
+	return joinNonEmpty(parts...)
+}
+
+func formatEnv(cwd string, isGit bool, model string) string {
+	git := "No"
+	if isGit {
+		git = "Yes"
+	}
+	return fmt.Sprintf(
+		"# currentDate\nToday's date is %s.\n\n<env>\nSession working directory: %s\nIs git repo: %s\nPlatform: %s/%s\nModel: %s\n</env>",
+		time.Now().Format("2006-01-02"), cwd, git, runtime.GOOS, runtime.GOARCH, model,
+	)
 }
 
 func load(name string) string {
@@ -157,20 +140,18 @@ func load(name string) string {
 	return string(data)
 }
 
-// loadProvider returns provider-specific prompt content, or "" if none exists.
-func loadProvider(provider string) string {
-	if provider == "" {
+func loadProvider(name string) string {
+	if name == "" {
 		return ""
 	}
-	data, err := promptFS.ReadFile("prompts/" + provider + ".txt")
+	data, err := promptFS.ReadFile("prompts/" + name + ".txt")
 	if err != nil {
 		return ""
 	}
 	return string(data)
 }
 
-// formatInstructions merges user and project instructions into one block.
-func formatInstructions(user, project string) string {
+func mergeInstructions(user, project string) string {
 	var parts []string
 	if user != "" {
 		parts = append(parts, "<user-instructions>\n"+user+"\n</user-instructions>")
@@ -181,7 +162,7 @@ func formatInstructions(user, project string) string {
 	return strings.Join(parts, "\n\n")
 }
 
-func join(parts []string) string {
+func joinNonEmpty(parts ...string) string {
 	filtered := make([]string, 0, len(parts))
 	for _, p := range parts {
 		if strings.TrimSpace(p) != "" {

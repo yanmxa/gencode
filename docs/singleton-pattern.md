@@ -107,7 +107,7 @@ type service struct {
 │  type model struct {                                             │
 │      // sub-models                                               │
 │      userInput   input.Model                                     │
-│      agentInput  notify.Model                                    │
+│      agentInput  hub.Model                                       │
 │      systemInput trigger.Model                                   │
 │      conv        conv.Model                                      │
 │                                                                  │
@@ -462,7 +462,7 @@ type Service interface {
     Kill(id string) error                // force kill
 
     // observer
-    SetObserver(obs CompletionObserver)  // lifecycle notification callback
+    SetLifecycleHandler(obs LifecycleHandler)
 }
 ```
 

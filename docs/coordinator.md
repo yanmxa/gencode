@@ -255,7 +255,7 @@ change, and why — don't say "try again."
 ```
 Worker completes
     │
-    ├── CompletionObserver
+    ├── LifecycleHandler
     │     ├─ fire TaskCompleted hook (async)
     │     ├─ update tracker (worker + batch)
     │     └─ push notification to queue

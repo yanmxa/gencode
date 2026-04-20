@@ -1,4 +1,4 @@
-package notify
+package hub
 
 import (
 	"testing"
@@ -7,12 +7,20 @@ import (
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
+func metadataStr(metadata map[string]any, key string) string {
+	if v, ok := metadata[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 func TestTrackWorkerCreatesEntry(t *testing.T) {
 	tracker.Initialize(tracker.Options{})
 	t.Cleanup(func() { tracker.Default().Reset() })
 
-	bt := NewBackgroundTracker(tracker.Default())
-	bt.TrackWorker(BackgroundTaskLaunch{
+	TrackWorker(tracker.Default(), BackgroundTaskLaunch{
 		TaskID:      "bg-1",
 		AgentName:   "dir-audit",
 		AgentType:   "Explore",
@@ -26,8 +34,8 @@ func TestTrackWorkerCreatesEntry(t *testing.T) {
 	if tasks[0].Status != tracker.StatusInProgress {
 		t.Fatalf("status = %q, want %q", tasks[0].Status, tracker.StatusInProgress)
 	}
-	if metadataString(tasks[0].Metadata, metaTaskID) != "bg-1" {
-		t.Fatalf("task ID metadata = %q", metadataString(tasks[0].Metadata, metaTaskID))
+	if metadataStr(tasks[0].Metadata, metaTaskID) != "bg-1" {
+		t.Fatalf("task ID metadata = %q", metadataStr(tasks[0].Metadata, metaTaskID))
 	}
 }
 
@@ -35,15 +43,14 @@ func TestCompleteWorkerUpdatesStatus(t *testing.T) {
 	tracker.Initialize(tracker.Options{})
 	t.Cleanup(func() { tracker.Default().Reset() })
 
-	bt := NewBackgroundTracker(tracker.Default())
-	bt.TrackWorker(BackgroundTaskLaunch{
+	TrackWorker(tracker.Default(), BackgroundTaskLaunch{
 		TaskID:      "bg-1",
 		AgentName:   "dir-audit",
 		AgentType:   "Explore",
 		Description: "Directory audit",
 	})
 
-	bt.CompleteWorker(task.TaskInfo{
+	CompleteWorker(tracker.Default(), task.TaskInfo{
 		ID:     "bg-1",
 		Type:   task.TaskTypeAgent,
 		Status: task.StatusCompleted,
@@ -56,8 +63,8 @@ func TestCompleteWorkerUpdatesStatus(t *testing.T) {
 	if tasks[0].Status != tracker.StatusCompleted {
 		t.Fatalf("status = %q, want %q", tasks[0].Status, tracker.StatusCompleted)
 	}
-	if metadataString(tasks[0].Metadata, metaStatusDetail) != string(task.StatusCompleted) {
-		t.Fatalf("status detail = %q", metadataString(tasks[0].Metadata, metaStatusDetail))
+	if metadataStr(tasks[0].Metadata, metaStatusDetail) != string(task.StatusCompleted) {
+		t.Fatalf("status detail = %q", metadataStr(tasks[0].Metadata, metaStatusDetail))
 	}
 }
 
@@ -65,15 +72,14 @@ func TestCompleteWorkerTracksFailure(t *testing.T) {
 	tracker.Initialize(tracker.Options{})
 	t.Cleanup(func() { tracker.Default().Reset() })
 
-	bt := NewBackgroundTracker(tracker.Default())
-	bt.TrackWorker(BackgroundTaskLaunch{
+	TrackWorker(tracker.Default(), BackgroundTaskLaunch{
 		TaskID:      "bg-1",
 		AgentName:   "fix-auth",
 		AgentType:   "general-purpose",
 		Description: "Fix auth module",
 	})
 
-	bt.CompleteWorker(task.TaskInfo{
+	CompleteWorker(tracker.Default(), task.TaskInfo{
 		ID:     "bg-1",
 		Type:   task.TaskTypeAgent,
 		Status: task.StatusFailed,
@@ -81,7 +87,7 @@ func TestCompleteWorkerTracksFailure(t *testing.T) {
 	})
 
 	tasks := tracker.Default().List()
-	if metadataString(tasks[0].Metadata, metaStatusDetail) != string(task.StatusFailed) {
-		t.Fatalf("status detail = %q, want %q", metadataString(tasks[0].Metadata, metaStatusDetail), task.StatusFailed)
+	if metadataStr(tasks[0].Metadata, metaStatusDetail) != string(task.StatusFailed) {
+		t.Fatalf("status detail = %q, want %q", metadataStr(tasks[0].Metadata, metaStatusDetail), task.StatusFailed)
 	}
 }

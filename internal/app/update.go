@@ -13,7 +13,6 @@ import (
 	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/app/kit"
-	"github.com/yanmxa/gencode/internal/app/notify"
 	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -96,9 +95,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) routeFeatureUpdate(msg tea.Msg) (tea.Cmd, bool) {
 	if cmd, ok := conv.Update(m, &m.conv, msg); ok {
-		return cmd, true
-	}
-	if cmd, ok := notify.Update(m.notifyDeps(), &m.agentInput, msg); ok {
 		return cmd, true
 	}
 	if cmd, ok := input.UpdateApproval(m.approvalDeps(), msg); ok {

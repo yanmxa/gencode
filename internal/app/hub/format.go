@@ -1,13 +1,19 @@
-package notify
+package hub
 
 import (
 	"encoding/xml"
 	"fmt"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/task"
 )
+
+// Message is a notification delivered to an agent.
+// Notice is displayed in the TUI; Content is sent to the LLM.
+type Message struct {
+	Notice  string
+	Content string
+}
 
 // TaskMessage builds a Message from a completed task.
 // Returns (Message{}, false) if the task status is not terminal.
@@ -95,6 +101,21 @@ func Merge(items []Message) Message {
 	}
 }
 
+// TaskSubject generates a human-readable subject line from task info.
+func TaskSubject(info task.TaskInfo) string {
+	switch info.Type {
+	case task.TaskTypeAgent:
+		if s := joinNameDesc(info.AgentName, info.Description); s != "" {
+			return s
+		}
+	case task.TaskTypeBash:
+		if info.Command != "" {
+			return info.Command
+		}
+	}
+	return info.Description
+}
+
 func formatStatus(status task.TaskStatus) string {
 	switch status {
 	case task.StatusCompleted:
@@ -116,60 +137,17 @@ func escapeXMLText(s string) string {
 	return b.String()
 }
 
-// --- Task completion observer ---
-
-type taskCompletionObserver struct {
-	queue      *Queue
-	hookEngine *hook.Engine
-	bgTracker  *BackgroundTracker
-}
-
-func (o taskCompletionObserver) fireHook(event hook.EventType, info task.TaskInfo) {
-	if o.hookEngine == nil {
-		return
+func joinNameDesc(name, desc string) string {
+	name = strings.TrimSpace(name)
+	desc = strings.TrimSpace(desc)
+	switch {
+	case name != "" && desc != "" && !strings.EqualFold(name, desc):
+		return name + ": " + desc
+	case desc != "":
+		return desc
+	case name != "":
+		return name
+	default:
+		return ""
 	}
-	subject := TaskSubject(info)
-	o.hookEngine.ExecuteAsync(event, hook.HookInput{
-		TaskID:          info.ID,
-		TaskSubject:     subject,
-		TaskDescription: info.Description,
-	})
-}
-
-func (o taskCompletionObserver) TaskCreated(info task.TaskInfo) {
-	o.fireHook(hook.TaskCreated, info)
-}
-
-func (o taskCompletionObserver) TaskCompleted(info task.TaskInfo) {
-	o.fireHook(hook.TaskCompleted, info)
-	if o.bgTracker != nil {
-		o.bgTracker.CompleteWorker(info)
-	}
-	if o.queue == nil {
-		return
-	}
-	subject := TaskSubject(info)
-	if msg, ok := TaskMessage(info, subject); ok {
-		o.queue.Push(msg)
-	}
-}
-
-func TaskSubject(info task.TaskInfo) string {
-	switch info.Type {
-	case task.TaskTypeAgent:
-		if s := joinNameDesc(info.AgentName, info.Description); s != "" {
-			return s
-		}
-	case task.TaskTypeBash:
-		if info.Command != "" {
-			return info.Command
-		}
-	}
-	return info.Description
-}
-
-// InstallCompletionObserver registers the task completion observer that
-// handles hook firing, tracker updates, and queue pushes.
-func InstallCompletionObserver(queue *Queue, hookEngine *hook.Engine, bgTracker *BackgroundTracker) {
-	task.SetCompletionObserver(taskCompletionObserver{queue: queue, hookEngine: hookEngine, bgTracker: bgTracker})
 }

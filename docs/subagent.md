@@ -24,12 +24,12 @@ There are exactly two interaction patterns:
                         └──┬──────┬───┘
                            │      │
               foreground   │      │  background
-              (synchronous)│      │  (async notify)
+              (synchronous)│      │  (async)
               ▼                      ▼
      ┌────────────────┐    ┌────────────────┐
      │  Subagent A    │    │  Subagent B    │ goroutine
      │  Blocks parent │    │  Runs alone    │
-     │  Result = tool │    │  Done → notify │
+     │  Result = tool │    │  Done → EventHub│
      └────────────────┘    └────────────────┘
 ```
 
@@ -45,9 +45,9 @@ Main Agent LLM loop
 ├─ Tool call: Agent(prompt: "find all API endpoints")
 │     │
 │     ▼
-│   Executor.Run()                       ← subagent/executor.go:102
+│   Executor.Run()
 │     ├─ Build core.Agent (system prompt + tool set)
-│     ├─ agent.ThinkAct(ctx)             ← core/agent_impl.go:158
+│     ├─ agent.ThinkAct(ctx)
 │     │     ├─ LLM → Grep → LLM → Read → LLM → end_turn
 │     │     └─ Returns Result{Content: "Found 12 endpoints..."}
 │     └─ Return Content as tool result
@@ -56,199 +56,280 @@ Main Agent LLM loop
 ├─ LLM continues next reasoning step
 ```
 
-## Pattern 2: Background — Async Message
+## Pattern 2: Background — EventHub
 
-The Subagent runs in a separate goroutine. The Main Agent immediately receives a task ID and continues working. When the Subagent completes, it **pushes a Message** that becomes a message in the Main Agent's conversation.
+All inter-agent communication flows through a central **EventHub**. Producers call `hub.Publish(event)`. The EventHub calls the subscriber's delivery function. That's it.
 
-### Phase 1: Launch
+Task completion is just one event type. SendMessage, cron, hooks — all the same `Publish()` call.
 
-The Main Agent's LLM calls `Agent` with `run_in_background: true`:
+### Event
 
-```
-Main Agent LLM loop
-│
-├─ LLM inference → "These three tasks can run in parallel"
-│
-├─ Parallel tool calls:
-│   Agent(prompt: "fix auth module",    run_in_background: true)
-│   Agent(prompt: "fix payment module", run_in_background: true)
-│   Agent(prompt: "fix logging module", run_in_background: true)
-│
-│   Each call internally:                ← tool/agent/agent.go:114
-│     Executor.RunBackground()           ← subagent/executor.go:126
-│       ├─ Build core.Agent
-│       ├─ Register AgentTask → get taskID
-│       ├─ Spawn goroutine → Subagent runs independently
-│       └─ Return tool result immediately (don't wait for completion)
-```
+Inspired by [CloudEvents](https://github.com/cloudevents/spec):
 
-The Main Agent receives one tool result per `Agent` call:
-
-```
-Agent started in background.
-Task ID: task-abc123
-Agent: Explore
-Description: fix auth module
-```
-
-After receiving all three tool results, the LLM replies: "I launched 3 agents..." then `end_turn`, entering idle state.
-
-### Phase 2: Subagent Execution
-
-The Subagent runs its own LLM loop inside the goroutine, fully independent from the Main Agent:
-
-```
-goroutine:
-  Subagent.ThinkAct(ctx)                 ← core/agent_impl.go:158
-    ├─ LLM inference → Read(src/auth/validate.go)
-    ├─ Execute Read
-    ├─ LLM inference → Edit(src/auth/validate.go, ...)
-    ├─ Execute Edit
-    ├─ LLM inference → end_turn
-    └─ Returns Result{Content: "Fixed null pointer in validate.go:42"}
-```
-
-### Phase 3: Completion → Push Message
-
-When the Subagent finishes, it **pushes a Message to the Queue** — the Main Agent does not poll for results:
-
-```
-Subagent goroutine ends
-     │
-     ▼
-AgentTask.Complete(result)
-     │
-     │  taskCompletionObserver            ← notify/notification.go:139
-     ▼
-TaskMessage(info, subject) → Message {   ← notify/notification.go:14
-    Notice:  "fix auth module completed"  ← For TUI display
-    Content: "<task-notification>...</>"   ← For LLM reasoning
+```go
+type Event struct {
+    Type    string    // "task.completed", "agent.message", "cron.fired"
+    Source  string    // producer: "agent:<id>", "system:cron"
+    Target  string    // consumer: "agent:<id>", "main"
+    Subject string    // human-readable: "fix auth module completed"
+    Data    string    // payload: XML content, message text, etc.
+    Time    time.Time
 }
-     │
-     ▼
-Queue.Push(msg)                           ← notify/model.go (thread-safe)
 ```
 
-The Message has only two fields: `Notice` for the user, `Content` for the LLM. `Content` is minimal XML carrying just enough for the LLM to decide next steps:
+### EventHub
 
-```xml
-<task-notification task-id="task-abc123" status="completed" agent-id="session-789" description="fix auth module">
-Fixed null pointer in validate.go:42. Added nil check before user.ID access.
-</task-notification>
+The EventHub is `map[string]func(Event)` — subscribers register a delivery function, not a channel. Each consumer decides HOW to receive.
+
+```go
+package hub
+
+type EventHub struct {
+    mu   sync.RWMutex
+    subs map[string]func(Event)
+}
+
+func New() *EventHub
+func (h *EventHub) Register(id string, deliver func(Event))
+func (h *EventHub) Unregister(id string)
+func (h *EventHub) Publish(e Event)    // calls subs[e.Target](e)
 ```
 
-All metadata as attributes (task-id, status, agent-id, description), result content as body text. Compact and complete.
+Implementation:
 
-On failure:
-
-```xml
-<task-notification task-id="task-ghi789" status="failed" description="fix logging module">
-Could not find logging config at expected path /etc/app/logging.yaml
-</task-notification>
+```go
+func (h *EventHub) Publish(e Event) {
+    if e.Time.IsZero() {
+        e.Time = time.Now()
+    }
+    h.mu.RLock()
+    deliver, ok := h.subs[e.Target]
+    h.mu.RUnlock()
+    if ok {
+        deliver(e)
+    }
+}
 ```
 
-### Phase 4: Injection into Main Agent's Conversation
+~20 lines total. Point-to-point routing. No channels, no goroutines inside the EventHub.
 
-The TUI checks the Queue every 500ms via a tick. At each turn boundary (`ProcessTurnEnd`), it drains notifications and converts them into **two messages** — one for the user, one for the LLM:
+### Register
 
-```
-Queue                                    ← notify/model.go
-     │
-     │  Turn boundary (ProcessTurnEnd)   ← app/model.go:458
-     │  drainTurnQueues()                ← app/model.go:722
-     │  PopReady(queue, idle)            ← notify/tracker.go:25
-     ▼
-┌────────────────────────────────────────────────┐
-│                                                │
-│  Message 1: RoleNotice                         │
-│  "fix auth module completed"                   │
-│  → Rendered in TUI for the user                │
-│  → Not sent to LLM conversation               │
-│                                                │
-│  Message 2: RoleUser                           │
-│  <task-notification task-id="task-abc123"      │
-│    status="completed" agent-id="session-789"   │
-│    description="fix auth module">              │
-│  Fixed null pointer in validate.go:42...       │
-│  </task-notification>                          │
-│  → injectNotification()               ← app/model.go:758
-│  → sendToAgent() → Agent Inbox                 │
-│  → Triggers new LLM reasoning cycle            │
-│                                                │
-└────────────────────────────────────────────────┘
+Each consumer registers a delivery function. The function captures whatever the consumer needs — inbox, program, hooks — via closure. No intermediate types.
+
+**Main agent — deliver via `program.Send()`:**
+
+```go
+hub.Register("main", func(e Event) {
+    program.Send(e)    // Bubble Tea's native mechanism → arrives in Update loop
+})
 ```
 
-The Main Agent's LLM sees this user message like any regular input — it synthesizes results and decides next steps on its own.
+`program.Send()` is goroutine-safe and non-blocking. The event arrives as a `tea.Msg` in the Update loop:
 
-### Multiple Messages Arriving Together
-
-If multiple Subagents complete while the Main Agent is busy, Messages queue up. When the Main Agent reaches a turn boundary, it pops up to 8 Messages at once and merges them into a single Message via `Merge()` (`notify/notification.go:56`):
-
-```xml
-<task-notifications count="3">
-<task-notification task-id="task-abc123" status="completed" agent-id="session-1" description="fix auth module">
-Fixed auth module...
-</task-notification>
-<task-notification task-id="task-def456" status="completed" agent-id="session-2" description="fix payment module">
-Fixed payment module...
-</task-notification>
-<task-notification task-id="task-ghi789" status="failed" description="fix logging module">
-Could not find logging config...
-</task-notification>
-</task-notifications>
+```go
+// In TUI Update:
+case hub.Event:
+    tracker.Done(e.Source)
+    injectNotification(e)
 ```
 
-## Full Sequence
+No intermediary channel. No `tea.Cmd` blocking pattern. Bubble Tea already solves this.
+
+**Background agent — deliver directly to existing inbox:**
+
+```go
+hub.Register("agent:"+taskID, func(e Event) {
+    agent.Inbox() <- core.Message{Role: core.RoleUser, Content: e.Data}
+})
+```
+
+No bridge goroutine. No second channel. The agent already has a buffered inbox (16) — just write to it. The agent reads at the next turn boundary via `drainInbox()`.
+
+**Unregister — on completion or kill:**
+
+```go
+hub.Unregister("agent:" + taskID)    // just delete(map, id)
+```
+
+No channel to close, no goroutine to stop. Just remove the function from the map.
+
+### Publish
+
+Any code that calls `hub.Publish()` is a producer. No observer structs — just closures:
+
+```go
+// ── At app startup ──
+
+task.OnCompleted(func(info task.TaskInfo) {
+    hooks.ExecuteAsync(hook.TaskCompleted, hookInput(info))
+    hub.Publish(Event{
+        Type:    "task.completed",
+        Source:  "agent:" + info.ID,
+        Target:  "main",
+        Subject: formatSubject(info),
+        Data:    formatXML(info),
+    })
+})
+
+// ── SendMessage tool ──
+
+hub.Publish(Event{
+    Type:   "agent.message",
+    Source: "agent:" + senderID,
+    Target: "agent:" + recipientID,
+    Data:   content,
+})
+
+// ── Cron scheduler ──
+
+hub.Publish(Event{
+    Type:   "cron.fired",
+    Source: "system:cron",
+    Target: "main",
+    Data:   prompt,
+})
+```
+
+### Architecture
 
 ```
-User: "Fix bugs in auth, payment, and logging modules"
-  │
-  ▼
-Main Agent LLM inference
-  │
-  ├─ Agent(prompt:"fix auth",    bg:true) → "Task ID: task-abc123"
-  ├─ Agent(prompt:"fix payment", bg:true) → "Task ID: task-def456"
-  ├─ Agent(prompt:"fix logging", bg:true) → "Task ID: task-ghi789"
-  │
-  ├─ LLM: "I launched 3 background agents..."
-  ├─ end_turn → idle
-  │
-  │              task-abc123        task-def456        task-ghi789
-  │              goroutine          goroutine          goroutine
-  │                 │                  │                  │
-  │                 ▼                  │                  │
-  │            Done → Push msg         │                  │
-  │                                    ▼                  │
-  │                               Done → Push msg         │
-  │                                                       ▼
-  │                                                  Failed → Push msg
-  │
-  │  Queue: [msg-1, msg-2, msg-3]
-  │
-  │  Turn boundary → PopReady → Merge → injectNotification:
-  │
-  │    RoleNotice: "3 background tasks completed: ..."     → User sees
-  │    RoleUser:   <task-notifications count="3">...</>    → LLM sees
-  │
-  ▼
-Main Agent LLM inference:
-  "task-abc123 and task-def456 succeeded, task-ghi789 failed. Let me check..."
-  → May spawn new agent to retry
-  → May reply directly to user
-  → Entirely up to the LLM
+ Producers                          Hub                         Consumers
+ ─────────                     ──────────────                   ─────────
+
+ task.OnCompleted(func{        ┌────────────┐
+   hub.Publish(Event{          │            │    Register("main", func(e) {
+     Target: "main"        ───►│            ├──►   program.Send(e)    ← TUI Update loop
+   })                          │            │    })
+ })                            │            │      ├─ Tracker.Done(e.Source)
+                                │    Hub     │      ├─ Show e.Subject
+ SendMessage tool:              │            │      └─ Inbox ← e.Data
+   hub.Publish(Event{          │ map[string] │
+     Target: "agent:B"    ───►│  func(Event)│    Register("agent:B", func(e) {
+   })                          │            ├──►   agent.Inbox() <- msg  ← direct write
+                                │            │    })
+ Cron scheduler:                │            │
+   hub.Publish(Event{          │            │
+     Target: "main"        ───►│            │
+   })                          └────────────┘
+```
+
+No channels inside the EventHub. No bridge goroutines. Each delivery function writes to whatever the consumer already has.
+
+### Background Agent Flow
+
+```
+ Agent Tool                 Background Goroutine                TUI Update Loop
+ ──────────                 ────────────────────                ───────────────
+
+ Agent(bg:true)
+ ├─ Build subagent
+ ├─ hub.Register("agent:A",
+ │    func(e) { agent.Inbox() <- ... })
+ ├─ Spawn goroutine ──────► ThinkAct()
+ ├─ Return taskID             ├─ LLM → tools → ...
+ │                            └─ end_turn
+ │  TUI Update:                     │
+ │  Tracker.Add(id, ◷)            │
+ │                                  ├─ hub.Publish(Event{
+ │  Main Agent                      │     Type:   task.completed
+ │  continues working               │     Source: agent:A
+ │                                  │     Target: main
+ │                                  │     ...
+ │                                  │   })
+ │                                  └─ hub.Unregister("agent:A")
+ │
+ │                                  EventHub calls subs["main"](e)
+ │                                    = program.Send(e)
+ │
+ │                                                          Update loop receives:
+ │                                                          ├─ Tracker.Done("agent:A")
+ │                                                          ├─ Notice: e.Subject
+ │                                                          └─ Inbox ← e.Data
+ │
+ │  Main Agent next turn:
+ │  drainInbox → sees <task-notification> → LLM reasons about result
+```
+
+### Agent-to-Agent Communication
+
+Same `Publish()` call, different target:
+
+```
+ Agent A                              Hub                        Agent B
+ ───────                         ──────────                      ───────
+
+ SendMessage(to: "agent:B",
+   content: "check tests")
+   │
+   └─ hub.Publish(Event{
+        Type:   agent.message
+        Source: agent:A               EventHub calls subs["agent:B"](e)
+        Target: agent:B          ───►   = agent.Inbox() <- msg   ← direct write
+        Data:   "check tests"
+      })                                                          drainInbox:
+                                                                  sees "check tests"
+                                                                  LLM reasons about it
+```
+
+### Tracker
+
+Pure TUI display state. Only mutated in the Update loop:
+
+```
+On launch:      Tracker.Add(id, subject, owner)     → show ◷ spinner
+On hub event:   Tracker.Done(e.Source, status)       → show ✓ or ✗
+```
+
+No goroutine touches the Tracker. No races.
+
+### Batching
+
+When the TUI receives multiple events in rapid succession (e.g., concurrent agent completions), the Update loop batches them naturally:
+
+```go
+// In TUI Update:
+case hub.Event:
+    events := []hub.Event{e}
+    // Check if more events are queued (Bubble Tea processes all pending msgs)
+    return m, tea.Batch(
+        m.injectNotification(mergeEvents(events)),
+    )
+```
+
+Or the delivery function can buffer before calling `program.Send()`:
+
+```go
+hub.Register("main", func(e Event) {
+    batcher.Add(e)               // accumulate
+    batcher.FlushAfter(10*ms, func(batch []Event) {
+        program.Send(EventBatch(batch))
+    })
+})
+```
+
+Concurrent completions naturally merge. No tick, no polling.
+
+### Two-Message Injection
+
+Each event delivery becomes two messages in the TUI conversation:
+
+```
+RoleNotice:  e.Subject → user sees ("fix auth completed")
+RoleUser:    e.Data    → LLM sees (<task-notification ...>)
 ```
 
 ## Lifecycle
 
 ```
-CONSTRUCT → EXECUTE → RETURN → (NOTIFY) → CLEANUP
+CONSTRUCT → EXECUTE → RETURN → (HUB) → CLEANUP
 ```
 
 - **CONSTRUCT**: Resolve agent type → Build system prompt + tool set → Create core.Agent → Optional git worktree isolation
 - **EXECUTE**: Inject prompt → ThinkAct loop (LLM inference → tool execution → repeat until end_turn)
 - **RETURN**: Foreground → return tool result directly; Background → store in AgentTask
-- **NOTIFY** (background only): Complete → `TaskMessage()` → `Queue.Push()` → `injectNotification()` at turn boundary
-- **CLEANUP**: Save session transcript → Close MCP connections → Delete worktree if no changes
+- **HUB** (background only): Complete → `hub.Publish()` → delivery function → target agent
+- **CLEANUP**: `hub.Unregister()` → Save session → Close MCP → Delete worktree if no changes
 
 ## What Subagents Inherit
 
@@ -288,35 +369,13 @@ You are a Go code reviewer. Focus on correctness bugs...
 
 Source priority: Built-in → Project `.gen/agents/*.md` → User `~/.gen/agents/*.md` → Plugin agents
 
-## Key Source Locations
-
-| File | Line | What |
-|------|------|------|
-| `tool/agent/agent.go` | 114 | `execute()` — Agent tool entry point |
-| `subagent/executor.go` | 102 | `Run()` — foreground subagent execution |
-| `subagent/executor.go` | 126 | `RunBackground()` — background subagent launch |
-| `core/agent_impl.go` | 158 | `ThinkAct()` — the LLM inference-action loop |
-| `notify/model.go` | — | `Message`, `Queue` — generic message types |
-| `notify/notification.go` | 14 | `TaskMessage()` — builds Message from task completion |
-| `notify/notification.go` | 56 | `Merge()` — combines multiple Messages into one |
-| `notify/notification.go` | 139 | `taskCompletionObserver` — bridges task → Queue |
-| `notify/notification.go` | 173 | `InstallCompletionObserver()` — wires up the observer |
-| `notify/tracker.go` | 60 | `TrackWorker()` — registers background task in TUI tracker |
-| `notify/tracker.go` | 90 | `CompleteWorker()` — marks task complete in TUI tracker |
-| `notify/tracker.go` | 25 | `PopReady()` — pops queued Messages when idle |
-| `notify/update.go` | 19 | `handleTick()` — 500ms tick handler for queue drain |
-| `app/model.go` | 458 | `ProcessTurnEnd()` — turn boundary, triggers queue drain |
-| `app/model.go` | 722 | `drainTurnQueues()` — pops notifications from Queue |
-| `app/model.go` | 758 | `injectNotification()` — converts Message to conversation messages |
-| `app/model.go` | 590 | `syncBackgroundTaskTrackerFromAgent()` — tracks agent launches |
-
 ## Related Tools
 
 | Tool | Purpose |
 |------|---------|
 | `Agent` | Spawn a subagent (foreground or background) |
 | `ContinueAgent` | Resume a completed agent from its saved session |
-| `SendMessage` | Send a message to a completed agent (resumes execution) |
+| `SendMessage` | Send a message to a running/completed agent |
 | `TaskOutput` | Read output from a background task |
 | `TaskStop` | Stop a running background task |
 
@@ -324,8 +383,9 @@ Source priority: Built-in → Project `.gen/agents/*.md` → User `~/.gen/agents
 
 1. **Prompt is the interface.** Subagents cannot see the parent's conversation — the prompt must be self-contained.
 2. **Completed work becomes a message.** Background results are injected as a user message — no special protocol, no shared state, just a message in the conversation.
-3. **Push, not pull.** Subagents push to the Queue on completion; the Main Agent receives at turn boundaries. No polling.
-4. **Generic messaging.** `Message{Notice, Content}` is not task-specific — any agent can push to any Queue. Task completion is just one producer (`TaskMessage`).
-5. **Isolated by default.** Independent context, file cache, and task state. Only share what's necessary (provider, instructions, hooks).
-6. **Fail independently.** A Subagent failure produces an error result — it doesn't crash the parent. The parent decides how to handle it.
-7. **Agent types are data, not code.** Markdown + frontmatter definitions — extensible without recompilation.
+3. **EventHub = `map[string]func(Event)`.** ~20 lines. No channels, no goroutines inside. Each consumer registers a delivery function — `program.Send()` for the TUI, `agent.Inbox()` for background agents.
+4. **No intermediate types.** No observer structs, no bridge goroutines, no intermediary channels. Closures capture what they need. Producers call `hub.Publish()` directly.
+5. **All TUI mutations in Update.** `program.Send()` delivers events to the Update loop natively. Tracker updates, notices, inbox sends — all happen there.
+6. **Isolated by default.** Independent context, file cache, and task state. Only share what's necessary (provider, instructions, hooks).
+7. **Fail independently.** A Subagent failure produces an error result — it doesn't crash the parent. The parent decides how to handle it.
+8. **Agent types are data, not code.** Markdown + frontmatter definitions — extensible without recompilation.

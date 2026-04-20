@@ -34,7 +34,7 @@ Three input sources feed the Agent Inbox. The Outbox outputs events that mutate 
    command ──┤           sendMsg ────┤            asyncHook ─────┤
    modalResp ┤           selfInject ─┤            fileChange ────┤
              ▼                       ▼                           ▼
-          input/                  notify/                   trigger/
+          input/                   hub/                     trigger/
              │                       │                           │
              └───────────────┬───────┴───────────────────────────┘
                              │ sendToAgent()
@@ -92,7 +92,7 @@ Three input sources feed the Agent Inbox. The Outbox outputs events that mutate 
 
 **Three input paths** — all converge at the Inbox via `sendToAgent()`:
 - **Source 1 (User)**: submit / command / modal response → if agent busy, queued until OnTurn drains
-- **Source 2 (Agents)**: background agent completion / SendMessage / self-inject (hook blocked)
+- **Source 2 (Agents)**: background agent completion via EventHub → `program.Send()` / SendMessage / self-inject (hook blocked)
 - **Source 3 (System)**: cron tick / async hook callback / file watcher
 
 **Output path**: Outbox → TUI observes events for rendering. PermReq bridges back to Source 1 (approval → user decision → unblock agent).
@@ -145,7 +145,7 @@ AgentOutboxMsg
 |-------|----------------------|----------|
 | Outbox poll | `DrainAgentOutbox()` → `AgentOutboxMsg` → `DrainAgentOutbox()` | conv/runtime.go |
 | Perm bridge | `PollPermBridge()` → `PermBridgeMsg` → `PollPermBridge()` | conv/runtime.go |
-| Tick timers | `StartTicker()` → `TickMsg` → `StartTicker()` | notify/, trigger/ |
+| Tick timers | `StartTicker()` → `TickMsg` → `StartTicker()` | trigger/ |
 
 **Key one-shot chains**:
 - **Submit**: `HandleSubmit()` → `sendToAgent()` → starts outbox + perm loops if first message
@@ -185,7 +185,7 @@ Root implements each sub-model's Runtime via adapter methods on `*model` in `mod
 type model struct {
     // Sub-models (one per event source / concern)
     userInput   input.Model      // Source 1: user keyboard → textarea, selectors, approval
-    agentInput  notify.Model     // Source 2: background agent completion → notification queue
+    agentInput  hub.Model        // Source 2: background agent events via EventHub delivery
     systemInput trigger.Model    // Source 3: cron / async hook / file watcher → event queue
     conv        conv.Model       // Agent Outbox: outbox events → conversation state → chat render
     env         env              // App-local TUI state: provider, permissions, plan, cache, cwd
@@ -204,7 +204,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     case conv.PermissionRequestMsg:  return m, m.input.ShowApproval(msg.Req)
     case input.ApprovalResponseMsg:  return m, m.conv.ResolvePermission(msg)
     case conv.OutboxMsg:             return m, m.conv.HandleOutbox(msg)
-    case notify.TickMsg:             return m, m.notify.HandleTick(msg)
+    case hub.EventMsg:               return m, m.handleHubEvent(msg)
     case trigger.TickMsg:            return m, m.trigger.HandleTick(msg)
     // ...
     }
@@ -283,16 +283,15 @@ internal/app/
 │   ├── on_tool_selector.go  [M,U,V] ToolSelector
 │   └── on_token_limits.go       [C] Token limit fetch Cmd
 │
-│  ── notify/ ── Source 2: Background Agent Completion ──────────────────────
-│  Event: task.TaskCompleted observer → NotificationQueue.Push()
-│  Flow:  tick → PopReady() → Merge() → sendToAgent(Content)
-│  Cmd chain: StartTicker() → TickMsg → handleTick() → StartTicker() (loop)
+│  ── hub/ ── Source 2: Inter-Agent Events (EventHub) ───────────────────────
+│  EventHub: map[string]func(Event) — delivery function pattern, ~20 lines.
+│  Producers call hub.Publish(Event{Target: id}). Hub routes to subscriber's
+│  delivery function. Main agent: program.Send(e). Background agents: agent.Inbox().
+│  No channels, no bridge goroutines inside the hub.
 │
-├── notify/
-│   ├── model.go              [M] Model{NotificationQueue}, Push(), Pop()
-│   ├── update.go           [U,C] Update(), handleTick() → inject notification Cmd
-│   ├── notification.go       [M] BuildTaskNotification(), MergeNotifications()
-│   └── tracker.go          [M,C] Background batch/worker tracker, StartTicker()
+├── hub/
+│   ├── hub.go                [M] EventHub{subs}, Register(), Unregister(), Publish()
+│   └── format.go             [M] FormatNotification(), MergeEvents()
 │
 │  ── trigger/ ── Source 3: System Events ───────────────────────────────────
 │  Event: cron tick | async hook callback | file watcher

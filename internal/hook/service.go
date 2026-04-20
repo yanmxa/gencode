@@ -40,7 +40,7 @@ type Service interface {
 
 	// Engine returns the underlying *Engine.
 	// This is needed by callers that require the concrete type
-	// (e.g. notify.InstallCompletionObserver, subagent.NewExecutor, trigger.NewFileWatcher).
+	// (e.g. hub.InstallTaskObserver, subagent.NewExecutor, trigger.NewFileWatcher).
 	Engine() *Engine
 }
 

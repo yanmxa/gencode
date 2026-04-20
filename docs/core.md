@@ -155,7 +155,7 @@ Priority    Band             Source
 400-499     Capabilities     skills, agents, deferred tools
 500-599     Guidelines       tool usage, git workflow
 600-699     Mode             plan mode
-700+        Extra            skill invocation, coordinator
+700+        Extra            skill invocation, agent identity
 ─────────────────────────────────────────────────
                     │
                     ▼

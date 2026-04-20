@@ -1,41 +1,16 @@
-package notify
+package hub
 
 import (
-	"strings"
-	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
-
-	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
-
-const tickInterval = 500 * time.Millisecond
-const maxPerContinuation = 8
-
-type TickMsg struct{}
-
-func StartTicker() tea.Cmd {
-	return tea.Tick(tickInterval, func(time.Time) tea.Msg {
-		return TickMsg{}
-	})
-}
-
-func PopReady(queue *Queue, idle bool) []Message {
-	if queue == nil || !idle {
-		return nil
-	}
-	return queue.PopBatch(maxPerContinuation)
-}
-
-// --- Background task tracker (TUI display) ---
 
 const (
 	metaTaskID       = "background_task_id"
 	metaStatusDetail = "background_status_detail"
 )
 
+// BackgroundTaskLaunch holds metadata for a newly spawned background task.
 type BackgroundTaskLaunch struct {
 	TaskID      string
 	AgentName   string
@@ -43,23 +18,10 @@ type BackgroundTaskLaunch struct {
 	Description string
 }
 
-type BackgroundTracker struct {
-	tracker tracker.Service
-}
-
-func NewBackgroundTracker(t tracker.Service) *BackgroundTracker {
-	return &BackgroundTracker{tracker: t}
-}
-
-func (bt *BackgroundTracker) ResetIfIdle(streamActive bool) {
-	if !streamActive && bt.tracker.AllDone() {
-		bt.tracker.Reset()
-	}
-}
-
-func (bt *BackgroundTracker) TrackWorker(launch BackgroundTaskLaunch) {
-	if existing := bt.tracker.FindByMetadata(metaTaskID, launch.TaskID); existing != nil {
-		_ = bt.tracker.Update(existing.ID,
+// TrackWorker creates or updates a tracker entry for a running background task.
+func TrackWorker(svc tracker.Service, launch BackgroundTaskLaunch) {
+	if existing := svc.FindByMetadata(metaTaskID, launch.TaskID); existing != nil {
+		_ = svc.Update(existing.ID,
 			tracker.WithSubject(workerSubject(launch)),
 			tracker.WithDescription(launch.Description),
 			tracker.WithStatus(tracker.StatusInProgress),
@@ -71,7 +33,7 @@ func (bt *BackgroundTracker) TrackWorker(launch BackgroundTaskLaunch) {
 		return
 	}
 
-	entry := bt.tracker.Create(
+	entry := svc.Create(
 		workerSubject(launch),
 		launch.Description,
 		"",
@@ -84,11 +46,12 @@ func (bt *BackgroundTracker) TrackWorker(launch BackgroundTaskLaunch) {
 	if launch.AgentType != "" {
 		opts = append(opts, tracker.WithOwner(launch.AgentType))
 	}
-	_ = bt.tracker.Update(entry.ID, opts...)
+	_ = svc.Update(entry.ID, opts...)
 }
 
-func (bt *BackgroundTracker) CompleteWorker(info task.TaskInfo) {
-	entry := bt.tracker.FindByMetadata(metaTaskID, info.ID)
+// CompleteWorker marks a tracker entry as completed.
+func CompleteWorker(svc tracker.Service, info task.TaskInfo) {
+	entry := svc.FindByMetadata(metaTaskID, info.ID)
 	if entry == nil {
 		return
 	}
@@ -108,7 +71,7 @@ func (bt *BackgroundTracker) CompleteWorker(info task.TaskInfo) {
 		statusDetail = string(task.StatusCompleted)
 	}
 
-	_ = bt.tracker.Update(entry.ID,
+	_ = svc.Update(entry.ID,
 		tracker.WithSubject(subject),
 		tracker.WithDescription(info.Description),
 		tracker.WithStatus(tracker.StatusCompleted),
@@ -119,8 +82,6 @@ func (bt *BackgroundTracker) CompleteWorker(info task.TaskInfo) {
 	)
 }
 
-// --- Helpers ---
-
 func workerSubject(launch BackgroundTaskLaunch) string {
 	if s := joinNameDesc(launch.AgentName, launch.Description); s != "" {
 		return s
@@ -129,23 +90,4 @@ func workerSubject(launch BackgroundTaskLaunch) string {
 		return launch.AgentType
 	}
 	return launch.TaskID
-}
-
-func metadataString(metadata map[string]any, key string) string {
-	return kit.MapString(metadata, key)
-}
-
-func joinNameDesc(name, desc string) string {
-	name = strings.TrimSpace(name)
-	desc = strings.TrimSpace(desc)
-	switch {
-	case name != "" && desc != "" && !strings.EqualFold(name, desc):
-		return name + ": " + desc
-	case desc != "":
-		return desc
-	case name != "":
-		return name
-	default:
-		return ""
-	}
 }

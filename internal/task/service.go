@@ -18,7 +18,7 @@ type Service interface {
 	Remove(id string)
 
 	// observer
-	SetObserver(obs CompletionObserver)
+	SetLifecycleHandler(obs LifecycleHandler)
 
 	// output
 	SetOutputDir(dir string) error
@@ -78,10 +78,8 @@ func ResetService() {
 
 // ── Service methods on Manager ─────────────────────────────
 
-// SetObserver implements Service by delegating to the package-level
-// SetCompletionObserver function.
-func (m *Manager) SetObserver(obs CompletionObserver) {
-	SetCompletionObserver(obs)
+func (m *Manager) SetLifecycleHandler(obs LifecycleHandler) {
+	SetLifecycleHandler(obs)
 }
 
 // SetOutputDir implements Service by delegating to the package-level

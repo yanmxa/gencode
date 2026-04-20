@@ -16,9 +16,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/app/conv"
+	"github.com/yanmxa/gencode/internal/app/hub"
 	"github.com/yanmxa/gencode/internal/app/input"
 	"github.com/yanmxa/gencode/internal/app/kit"
-	"github.com/yanmxa/gencode/internal/app/notify"
 	"github.com/yanmxa/gencode/internal/app/trigger"
 	"github.com/yanmxa/gencode/internal/command"
 	"github.com/yanmxa/gencode/internal/core"
@@ -32,6 +32,7 @@ import (
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/subagent"
+	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -44,7 +45,8 @@ const defaultWidth = 80
 type model struct {
 	// ── Sub-models (one per event source / concern) ─────────────
 	userInput   input.Model   // Source 1: user keyboard input
-	agentInput  notify.Model  // Source 2: background agent completion
+	eventHub    *hub.EventHub // Source 2: inter-agent events via delivery functions
+	eventInbox  *hub.Inbox    // Buffered events from background producers
 	systemInput trigger.Model // Source 3: system events (cron/hooks/watcher)
 	conv        conv.Model    // Agent Outbox: conversation + output rendering
 	env         env           // Shared app state: provider, session, permission, plan, config
@@ -64,7 +66,6 @@ func (m *model) Init() tea.Cmd {
 		trigger.TriggerCronTickNow(),
 		trigger.StartCronTicker(),
 		trigger.StartAsyncHookTicker(),
-		notify.StartTicker(),
 	}
 	if m.env.InitialPrompt != "" {
 		prompt := m.env.InitialPrompt
@@ -80,12 +81,19 @@ func (m *model) Init() tea.Cmd {
 func newModel(opts setting.RunOptions) (*model, error) {
 	base := newBaseModel()
 	m := &base
-	m.agentInput.BGTracker = notify.NewBackgroundTracker(m.services.Tracker)
+
+	// Wire EventHub: "main" subscriber buffers events for turn-boundary drain.
+	m.eventHub.Register("main", func(e hub.Event) {
+		m.eventInbox.Push(e)
+	})
+
+	// Wire task completion: closure captures hub + hooks + tracker directly.
 	var hookEngine *hook.Engine
 	if m.services.Hook != nil {
 		hookEngine = m.services.Hook.Engine()
 	}
-	notify.InstallCompletionObserver(m.agentInput.Queue, hookEngine, m.agentInput.BGTracker)
+	m.registerAgentTaskToEventHub(hookEngine)
+
 	m.configureAsyncHookCallback()
 	m.ensureMemoryContextLoaded()
 	m.ReconfigureAgentTool()
@@ -109,7 +117,8 @@ func newBaseModel() model {
 			UpdateDisabled: svc.Setting.UpdateDisabledToolsAt,
 		}),
 		conv:        conv.NewModel(defaultWidth),
-		agentInput:  notify.New(),
+		eventHub:    hub.New(),
+		eventInbox:  &hub.Inbox{},
 		systemInput: trigger.New(),
 		env:      newEnv(svc.LLM, appCwd, svc.Setting.IsGitRepo(appCwd)),
 		services: svc,
@@ -457,6 +466,9 @@ func (m *model) ProcessToolResult(tr core.ToolResult) *core.ToolResult {
 
 func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 	m.env.ClearThinkingOverride()
+	if m.services.Tracker.AllDone() {
+		m.services.Tracker.Reset()
+	}
 	log.QueueLog("ProcessTurnEnd: starting queueLen=%d", m.userInput.Queue.Len())
 	commitCmds := m.CommitMessages()
 
@@ -595,7 +607,7 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 	if !ok {
 		return
 	}
-	launch := notify.BackgroundTaskLaunch{
+	launch := hub.BackgroundTaskLaunch{
 		TaskID:      kit.MapString(bg, "taskId"),
 		AgentName:   kit.MapString(bg, "agentName"),
 		AgentType:   kit.MapString(bg, "agentType"),
@@ -604,7 +616,7 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 	if launch.TaskID == "" {
 		return
 	}
-	m.agentInput.BGTracker.TrackWorker(launch)
+	hub.TrackWorker(m.services.Tracker, launch)
 }
 
 func (m *model) persistOverflow(result *core.ToolResult) {
@@ -746,16 +758,15 @@ func (m *model) drainTurnQueues() (tea.Cmd, bool) {
 		}
 	}
 
-	if m.agentInput.Queue != nil {
-		if items := notify.PopReady(m.agentInput.Queue, true); len(items) > 0 {
-			return m.injectNotification(notify.Merge(items)), true
-		}
+	if events := m.eventInbox.Drain(maxEventsPerDrain); len(events) > 0 {
+		msgs := eventsToMessages(events)
+		return m.injectNotification(hub.Merge(msgs)), true
 	}
 
 	return nil, false
 }
 
-func (m *model) injectNotification(msg notify.Message) tea.Cmd {
+func (m *model) injectNotification(msg hub.Message) tea.Cmd {
 	if msg.Notice != "" {
 		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: msg.Notice})
 	}
@@ -769,6 +780,64 @@ func (m *model) injectNotification(msg notify.Message) tea.Cmd {
 		return tea.Batch(m.CommitMessages()...)
 	}
 	return m.sendToAgent(msg.Content, nil)
+}
+
+func (m *model) registerAgentTaskToEventHub(hookEngine *hook.Engine) {
+	trackerSvc := m.services.Tracker
+	eventHub := m.eventHub
+
+	fireHook := func(event hook.EventType, info task.TaskInfo) {
+		if hookEngine == nil {
+			return
+		}
+		subject := hub.TaskSubject(info)
+		hookEngine.ExecuteAsync(event, hook.HookInput{
+			TaskID:          info.ID,
+			TaskSubject:     subject,
+			TaskDescription: info.Description,
+		})
+	}
+
+	task.SetLifecycleHandler(taskObserverFunc{
+		onCreated: func(info task.TaskInfo) {
+			fireHook(hook.TaskCreated, info)
+		},
+		onCompleted: func(info task.TaskInfo) {
+			fireHook(hook.TaskCompleted, info)
+			hub.CompleteWorker(trackerSvc, info)
+
+			subject := hub.TaskSubject(info)
+			msg, ok := hub.TaskMessage(info, subject)
+			if !ok {
+				return
+			}
+			eventHub.Publish(hub.Event{
+				Type:    "task.completed",
+				Source:  fmt.Sprintf("agent:%s", info.ID),
+				Target:  "main",
+				Subject: msg.Notice,
+				Data:    msg.Content,
+			})
+		},
+	})
+}
+
+type taskObserverFunc struct {
+	onCreated   func(task.TaskInfo)
+	onCompleted func(task.TaskInfo)
+}
+
+func (f taskObserverFunc) TaskCreated(info task.TaskInfo)   { f.onCreated(info) }
+func (f taskObserverFunc) TaskCompleted(info task.TaskInfo) { f.onCompleted(info) }
+
+const maxEventsPerDrain = 8
+
+func eventsToMessages(events []hub.Event) []hub.Message {
+	msgs := make([]hub.Message, len(events))
+	for i, e := range events {
+		msgs[i] = hub.Message{Notice: e.Subject, Content: e.Data}
+	}
+	return msgs
 }
 
 func (m *model) injectCronPrompt(prompt string) tea.Cmd {
@@ -830,13 +899,6 @@ func (m *model) overlayDeps() input.OverlayDeps {
 		FireFileChanged:         m.fireFileChanged,
 		ReloadPluginState:       m.ReloadPluginBackedState,
 		LoadSession:             m.loadSessionByID,
-	}
-}
-
-func (m *model) notifyDeps() notify.Deps {
-	return notify.Deps{
-		StreamActive: m.conv.Stream.Active,
-		Inject:       m.injectNotification,
 	}
 }
 
