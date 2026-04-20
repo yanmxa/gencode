@@ -92,8 +92,8 @@ func (s *toolSet) Schemas() []ToolSchema {
 // TODO: Deferred tools — lazy-load rarely used tools (cron, worktree)
 //   via ToolSearch; track fetched state, only include in Schemas() when activated.
 
-// TODO: Filtering — support plan mode (read-only subset), agent allow/disallow lists,
-//   disabled tools. Could be a Subset(filter FilterFunc) Tools method or a wrapper.
+// TODO: Filtering — support agent allow/disallow lists, disabled tools.
+//   Could be a Subset(filter FilterFunc) Tools method or a wrapper.
 
 // TODO: MCP tools — integrate external MCP server tools into the same Tools interface.
 //   MCP tools implement Tool with Execute routing to MCP transport.

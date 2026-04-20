@@ -28,9 +28,7 @@ var (
 	cachedToolsGit       string
 	cachedToolsQuestions string
 	cachedToolsTasks     string
-	cachedPlanMode       string
-	cachedCoordinator    string
-	cachedCompact        string
+	cachedCompact string
 )
 
 func init() {
@@ -39,14 +37,7 @@ func init() {
 	cachedToolsGit = load("tools-git.txt")
 	cachedToolsQuestions = load("tools-questions.txt")
 	cachedToolsTasks = load("tools-tasks.txt")
-	cachedPlanMode = load("planmode.txt")
-	cachedCoordinator = load("coordinator.txt")
 	cachedCompact = load("compact.txt")
-}
-
-// CoordinatorGuidance returns the coordinator prompt for the main session.
-func CoordinatorGuidance() string {
-	return cachedCoordinator
 }
 
 // Config holds all inputs needed to build a layered core.System.
@@ -56,8 +47,7 @@ type Config struct {
 	Cwd                 string
 	IsGit               bool
 	IsSubagent          bool
-	PlanMode            bool
-	UserInstructions    string
+	UserInstructions string
 	ProjectInstructions string
 	Skills              string
 	Agents              string
@@ -67,7 +57,7 @@ type Config struct {
 
 // Build creates a core.System with properly separated layers.
 //
-// Layer structure (7 layers max):
+// Layer structure (6 layers max):
 //
 //	identity        (0)   — base.txt (who you are, how you behave)
 //	provider        (100) — provider-specific overrides (optional, only if file exists)
@@ -75,7 +65,6 @@ type Config struct {
 //	instructions    (200) — user + project instructions
 //	capabilities    (400) — skills, agents, deferred tools
 //	guidelines      (500) — tool usage, git safety
-//	mode            (600) — plan mode
 //	extra-*         (700) — coordinator, skill invocation, agent identity
 func Build(cfg Config) core.System {
 	sys := core.NewSystem()
@@ -124,21 +113,13 @@ func Build(cfg Config) core.System {
 	if !cfg.IsSubagent {
 		guidelines = append(guidelines, cachedToolsQuestions)
 	}
-	if !cfg.IsSubagent && !cfg.PlanMode {
+	if !cfg.IsSubagent {
 		guidelines = append(guidelines, cachedToolsTasks)
 	}
 	sys.Set(core.Layer{
 		Name: "guidelines", Priority: 500,
 		Content: join(guidelines), Source: core.Predefined,
 	})
-
-	// Plan mode
-	if cfg.PlanMode {
-		sys.Set(core.Layer{
-			Name: "mode", Priority: 600,
-			Content: cachedPlanMode, Source: core.Predefined,
-		})
-	}
 
 	// Extra layers — coordinator guidance, skill invocation, agent identity
 	for i, extra := range cfg.Extra {

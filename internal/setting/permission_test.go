@@ -833,7 +833,7 @@ func TestSafeToolAllowlist(t *testing.T) {
 	allSafeTools := []string{
 		"Read", "Glob", "Grep", "WebFetch", "WebSearch", "LSP",
 		"TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
-		"AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
+		"AskUserQuestion",
 		"CronList", "ToolSearch",
 	}
 
@@ -955,15 +955,12 @@ func TestResolveHookAllow(t *testing.T) {
 }
 
 func TestOperationModeNext(t *testing.T) {
-	// Normal → AutoAccept → Plan → Normal
+	// Normal → AutoAccept → Normal
 	if ModeNormal.Next() != ModeAutoAccept {
 		t.Errorf("Normal.Next() = %v, want AutoAccept", ModeNormal.Next())
 	}
-	if ModeAutoAccept.Next() != ModePlan {
-		t.Errorf("AutoAccept.Next() = %v, want Plan", ModeAutoAccept.Next())
-	}
-	if ModePlan.Next() != ModeNormal {
-		t.Errorf("Plan.Next() = %v, want Normal", ModePlan.Next())
+	if ModeAutoAccept.Next() != ModeNormal {
+		t.Errorf("AutoAccept.Next() = %v, want Normal", ModeAutoAccept.Next())
 	}
 	// BypassPermissions is not in cycle — goes back to Normal
 	if ModeBypassPermissions.Next() != ModeNormal {

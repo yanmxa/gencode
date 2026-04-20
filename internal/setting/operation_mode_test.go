@@ -5,7 +5,7 @@ import (
 )
 
 func TestNextWithBypass_Disabled(t *testing.T) {
-	cycle := []OperationMode{ModeNormal, ModeAutoAccept, ModePlan, ModeNormal}
+	cycle := []OperationMode{ModeNormal, ModeAutoAccept, ModeNormal}
 	for i := 0; i < len(cycle)-1; i++ {
 		got := cycle[i].NextWithBypass(false)
 		if got != cycle[i+1] {
@@ -15,7 +15,7 @@ func TestNextWithBypass_Disabled(t *testing.T) {
 }
 
 func TestNextWithBypass_Enabled(t *testing.T) {
-	cycle := []OperationMode{ModeNormal, ModeAutoAccept, ModePlan, ModeBypassPermissions, ModeNormal}
+	cycle := []OperationMode{ModeNormal, ModeAutoAccept, ModeBypassPermissions, ModeNormal}
 	for i := 0; i < len(cycle)-1; i++ {
 		got := cycle[i].NextWithBypass(true)
 		if got != cycle[i+1] {
@@ -35,7 +35,7 @@ func TestNextWithBypass_UnknownMode(t *testing.T) {
 }
 
 func TestNext_StillWorks(t *testing.T) {
-	cycle := []OperationMode{ModeNormal, ModeAutoAccept, ModePlan, ModeNormal}
+	cycle := []OperationMode{ModeNormal, ModeAutoAccept, ModeNormal}
 	for i := 0; i < len(cycle)-1; i++ {
 		got := cycle[i].Next()
 		if got != cycle[i+1] {

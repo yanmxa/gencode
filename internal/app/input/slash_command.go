@@ -59,7 +59,6 @@ type CommandDeps struct {
 	// Mutation callbacks
 	ResetTokens        func()
 	SetThinkingLevel   func(llm.ThinkingLevel)
-	EnterPlanMode      func(task string) error
 	EnsureSessionStore func(cwd string) error
 	ForkSession        func() (originalSessionID string, err error)
 	ResetFetched       func()
@@ -95,10 +94,9 @@ func builtinCommandHandlers() map[string]commandHandler {
 		"fork":           (*CommandController).handleForkCommand,
 		"resume":         (*CommandController).handleResumeCommand,
 		"help":           (*CommandController).handleHelpCommand,
-		"glob":           (*CommandController).handleGlobCommand,
-		"tools":          (*CommandController).handleToolCommand,
-		"plan":           (*CommandController).handlePlanCommand,
-		"skills":         (*CommandController).handleSkillCommand,
+		"glob":   (*CommandController).handleGlobCommand,
+		"tools":  (*CommandController).handleToolCommand,
+		"skills": (*CommandController).handleSkillCommand,
 		"agents":         (*CommandController).handleAgentCommand,
 		"tokenlimit":     (*CommandController).handleTokenLimitCommand,
 		"compact":        (*CommandController).handleCompactCommand,
@@ -425,16 +423,6 @@ func (c *CommandController) handleAgentCommand(_ context.Context, _ string) (str
 	return "", nil, nil
 }
 
-func (c *CommandController) handlePlanCommand(_ context.Context, args string) (string, tea.Cmd, error) {
-	if args == "" {
-		return "Usage: /plan <task description>\n\nEnter plan mode to explore the codebase and create an implementation plan before making changes.", nil, nil
-	}
-	if err := c.deps.EnterPlanMode(args); err != nil {
-		return "", nil, err
-	}
-	return fmt.Sprintf("Entering plan mode for: %s\n\nI will explore the codebase and create an implementation plan. Only read-only tools are available until the plan is approved.", args), nil, nil
-}
-
 func (c *CommandController) handleThinkCommand(_ context.Context, args string) (string, tea.Cmd, error) {
 	args = strings.TrimSpace(strings.ToLower(args))
 	switch args {
@@ -632,7 +620,7 @@ func shouldPreserveCommandInConversation(inputText string) bool {
 		return false
 	}
 	switch name {
-	case "compact", "fork", "resume", "plan", "loop", "init", "tokenlimit":
+	case "compact", "fork", "resume", "loop", "init", "tokenlimit":
 		return true
 	}
 	return false

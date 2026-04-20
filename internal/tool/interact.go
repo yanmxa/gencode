@@ -34,36 +34,6 @@ type QuestionResponse struct {
 // AskQuestionFunc requests a question response from an interactive caller.
 type AskQuestionFunc func(ctx context.Context, req *QuestionRequest) (*QuestionResponse, error)
 
-// --- EnterPlanMode types ---
-
-// EnterPlanRequest is sent to the TUI to ask user consent to enter plan mode.
-type EnterPlanRequest struct {
-	ID      string
-	Message string
-}
-
-// EnterPlanResponse contains the user's decision.
-type EnterPlanResponse struct {
-	RequestID string
-	Approved  bool
-}
-
-// --- ExitPlanMode types ---
-
-// PlanRequest is sent to the TUI to display plan for approval.
-type PlanRequest struct {
-	ID   string
-	Plan string
-}
-
-// PlanResponse contains the user's decision.
-type PlanResponse struct {
-	RequestID    string
-	Approved     bool
-	ApproveMode  string
-	ModifiedPlan string
-}
-
 // --- Worktree types ---
 
 // EnterWorktreeRequest is sent to the TUI for user confirmation.

@@ -340,9 +340,7 @@ var taskStopToolSchema = core.ToolSchema{
 
 var askUserQuestionToolSchema = core.ToolSchema{
 	Name: "AskUserQuestion",
-	Description: `Ask the user questions to gather preferences, clarify requirements, or get decisions on implementation choices. Use when you need user input to proceed.
-
-Plan mode note: In plan mode, use this tool to clarify requirements or choose between approaches BEFORE finalizing your plan. Do NOT use this tool to ask "Is my plan ready?" or "Should I proceed?" — use ExitPlanMode for plan approval. Do not reference "the plan" in your questions because the user cannot see the plan until you call ExitPlanMode.`,
+	Description: `Ask the user questions to gather preferences, clarify requirements, or get decisions on implementation choices. Use when you need user input to proceed.`,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{

@@ -6,17 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
 )
 
 func TestTaskOutputTool_StillRunning(t *testing.T) {
 	task.Initialize(task.Options{})
-	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(task.ResetService)
-	t.Cleanup(orchestration.ResetService)
 
-	// Create a test agent task that stays running
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -24,24 +20,20 @@ func TestTaskOutputTool_StillRunning(t *testing.T) {
 	agentTask.UpdateProgress(5, 1000)
 	agentTask.AppendOutput([]byte("Some partial output\n"))
 
-	// Register the task
 	task.Default().RegisterTask(agentTask)
 	defer task.Default().Remove("test-agent-123")
 
-	// Execute TaskOutput with short timeout
 	tool := &TaskOutputTool{}
 	result := tool.Execute(context.Background(), map[string]any{
 		"task_id": "test-agent-123",
 		"block":   true,
-		"timeout": float64(100), // 100ms timeout
+		"timeout": float64(100),
 	}, ".")
 
-	// Verify it returns success (not error) for still-running task
 	if !result.Success {
 		t.Errorf("Expected Success=true for still-running task, got false. Error: %s", result.Error)
 	}
 
-	// Verify the output contains helpful information
 	if !strings.Contains(result.Output, "still running") {
 		t.Errorf("Expected 'still running' in output, got: %s", result.Output)
 	}
@@ -65,11 +57,8 @@ func TestTaskOutputTool_StillRunning(t *testing.T) {
 
 func TestTaskOutputTool_Completed(t *testing.T) {
 	task.Initialize(task.Options{})
-	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(task.ResetService)
-	t.Cleanup(orchestration.ResetService)
 
-	// Create a test agent task and complete it
 	ctx, cancel := context.WithCancel(context.Background())
 
 	agentTask := task.NewAgentTask("test-agent-456", "Explore", "Test task", ctx, cancel)
@@ -80,11 +69,9 @@ func TestTaskOutputTool_Completed(t *testing.T) {
 	agentTask.Complete(nil)
 	cancel()
 
-	// Register the task
 	task.Default().RegisterTask(agentTask)
 	defer task.Default().Remove("test-agent-456")
 
-	// Execute TaskOutput
 	tool := &TaskOutputTool{}
 	result := tool.Execute(context.Background(), map[string]any{
 		"task_id": "test-agent-456",
@@ -92,12 +79,10 @@ func TestTaskOutputTool_Completed(t *testing.T) {
 		"timeout": float64(1000),
 	}, ".")
 
-	// Verify success
 	if !result.Success {
 		t.Errorf("Expected Success=true for completed task, got false. Error: %s", result.Error)
 	}
 
-	// Verify the output contains completion info
 	if !strings.Contains(result.Output, "completed") {
 		t.Errorf("Expected 'completed' in output, got: %s", result.Output)
 	}
@@ -120,9 +105,7 @@ func TestTaskOutputTool_Completed(t *testing.T) {
 
 func TestTaskOutputTool_NotFound(t *testing.T) {
 	task.Initialize(task.Options{})
-	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(task.ResetService)
-	t.Cleanup(orchestration.ResetService)
 
 	tool := &TaskOutputTool{}
 	result := tool.Execute(context.Background(), map[string]any{
@@ -141,11 +124,8 @@ func TestTaskOutputTool_NotFound(t *testing.T) {
 
 func TestTaskOutputTool_NonBlocking(t *testing.T) {
 	task.Initialize(task.Options{})
-	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(task.ResetService)
-	t.Cleanup(orchestration.ResetService)
 
-	// Create a running task
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -155,7 +135,6 @@ func TestTaskOutputTool_NonBlocking(t *testing.T) {
 	task.Default().RegisterTask(agentTask)
 	defer task.Default().Remove("test-agent-789")
 
-	// Execute with block=false
 	tool := &TaskOutputTool{}
 	start := time.Now()
 	result := tool.Execute(context.Background(), map[string]any{
@@ -164,7 +143,6 @@ func TestTaskOutputTool_NonBlocking(t *testing.T) {
 	}, ".")
 	elapsed := time.Since(start)
 
-	// Should return immediately (not wait)
 	if elapsed > 500*time.Millisecond {
 		t.Errorf("Non-blocking call took too long: %v", elapsed)
 	}
@@ -184,9 +162,7 @@ func TestTaskOutputTool_NonBlocking(t *testing.T) {
 
 func TestTaskOutputTool_DefaultsToNonBlocking(t *testing.T) {
 	task.Initialize(task.Options{})
-	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(task.ResetService)
-	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -219,9 +195,7 @@ func TestTaskOutputTool_DefaultsToNonBlocking(t *testing.T) {
 
 func TestTaskOutputTool_AllowsOlderRunningTaskInspection(t *testing.T) {
 	task.Initialize(task.Options{})
-	orchestration.Initialize(orchestration.Options{})
 	t.Cleanup(task.ResetService)
-	t.Cleanup(orchestration.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -243,66 +217,5 @@ func TestTaskOutputTool_AllowsOlderRunningTaskInspection(t *testing.T) {
 	}
 	if !strings.Contains(result.Output, "Background task is still running.") {
 		t.Fatalf("expected normal running output for older task, got: %s", result.Output)
-	}
-}
-
-func TestTaskOutputTool_RendersOrchestrationSnapshot(t *testing.T) {
-	task.Initialize(task.Options{})
-	orchestration.Initialize(orchestration.Options{})
-	t.Cleanup(task.ResetService)
-	t.Cleanup(orchestration.ResetService)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	agentTask := task.NewAgentTask("test-agent-orch", "Explore", "Test task", ctx, cancel)
-	agentTask.SetIdentity("Explore", "agent-session-orch")
-	agentTask.Complete(nil)
-	task.Default().RegisterTask(agentTask)
-	defer task.Default().Remove("test-agent-orch")
-
-	orchestration.Default().RecordLaunch(orchestration.Launch{
-		TaskID:       "test-agent-orch",
-		AgentID:      "agent-session-orch",
-		AgentType:    "Explore",
-		AgentName:    "Explore",
-		Description:  "Test task",
-		Status:       string(task.StatusCompleted),
-		Running:      false,
-		BatchID:      "batch-orch",
-		BatchKey:     "batch-orch",
-		BatchSubject: "2 background agents launched",
-		BatchTotal:   2,
-	})
-	orchestration.Default().UpdateBatch(orchestration.Batch{
-		ID:        "batch-orch",
-		Key:       "batch-orch",
-		Subject:   "2 background agents launched",
-		Status:    "completed",
-		Completed: 2,
-		Total:     2,
-		Failures:  1,
-	})
-	orchestration.Default().QueuePendingMessage("test-agent-orch", "follow up later")
-
-	tool := &TaskOutputTool{}
-	result := tool.Execute(context.Background(), map[string]any{
-		"task_id": "test-agent-orch",
-	}, ".")
-
-	if !result.Success {
-		t.Fatalf("expected success, got error: %s", result.Error)
-	}
-	if !strings.Contains(result.Output, "Orchestration:") {
-		t.Fatalf("expected orchestration section, got: %s", result.Output)
-	}
-	if !strings.Contains(result.Output, "PendingMessages: 1") {
-		t.Fatalf("expected pending message count, got: %s", result.Output)
-	}
-	if !strings.Contains(result.Output, "CoordinatorPhase: completed_batch_with_failures") {
-		t.Fatalf("expected coordinator phase, got: %s", result.Output)
-	}
-	if !strings.Contains(result.Output, "SuggestedNextActions: continue_failed_worker, spawn_verifier, finalize_summary") {
-		t.Fatalf("expected suggested actions, got: %s", result.Output)
 	}
 }

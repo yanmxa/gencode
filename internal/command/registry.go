@@ -32,7 +32,6 @@ func builtinCommands() []Info {
 		{Name: "help", Description: "Show available commands"},
 		{Name: "glob", Description: "Find files matching a pattern"},
 		{Name: "tools", Description: "Manage available tools (enable/disable)"},
-		{Name: "plan", Description: "Enter plan mode to explore and plan before execution"},
 		{Name: "skills", Description: "Manage skills (enable/disable/activate)"},
 		{Name: "agents", Description: "Manage available agents (enable/disable)"},
 		{Name: "tokenlimit", Description: "View or set token limits for current model"},

@@ -28,9 +28,8 @@ var version = "1.13.2"
 // cliOpts holds all CLI flag values in one place.
 var cliOpts struct {
 	print  string // -p/--print: non-interactive print mode
-	plan   bool
-	cont   bool // --continue
-	resume bool // --resume
+	cont   bool   // --continue
+	resume bool   // --resume
 
 	pluginDir string
 }
@@ -46,7 +45,6 @@ func init() {
 
 	// Register flags
 	rootCmd.Flags().StringVarP(&cliOpts.print, "print", "p", "", "Non-interactive print mode with prompt")
-	rootCmd.Flags().BoolVar(&cliOpts.plan, "plan", false, "Enter plan mode")
 	rootCmd.Flags().BoolVarP(&cliOpts.cont, "continue", "c", false, "Resume the most recent session")
 	rootCmd.Flags().BoolVarP(&cliOpts.resume, "resume", "r", false, "Select and resume a previous session")
 	rootCmd.PersistentFlags().StringVar(&cliOpts.pluginDir, "plugin-dir", "", "Load plugins from a specific directory")
@@ -96,7 +94,6 @@ Non-interactive mode:
 			Print:     printPrompt,
 			Prompt:    prompt,
 			PluginDir: cliOpts.pluginDir,
-			PlanMode:  cliOpts.plan,
 			Continue:  cliOpts.cont,
 			Resume:    cliOpts.resume,
 			ResumeID:  resumeID,
@@ -155,7 +152,6 @@ Print Mode (non-interactive):
 Interactive Mode:
   gen                        Start chat
   gen "Explain this code"    Start chat with initial prompt
-  gen --plan "design login"  Start in plan mode
 
 Session:
   gen -c, --continue         Resume the most recent session
@@ -186,7 +182,6 @@ Examples:
   gen                        Start interactive chat
   gen "Explain this code"    Interactive with initial prompt
   gen -p "Explain this code" Print response and exit
-  gen --plan "design login"  Plan mode
   gen -c                     Resume previous session
   gen version                Show version
 

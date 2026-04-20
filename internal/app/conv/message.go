@@ -21,7 +21,6 @@ type OperationMode int
 const (
 	ModeNormal OperationMode = iota
 	ModeAutoAccept
-	ModePlan
 	ModeBypassPermissions
 )
 
@@ -95,7 +94,7 @@ func RenderModeStatus(params OperationModeParams) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// RenderOperationModeIndicator returns the mode status indicator for auto-accept or plan mode.
+// RenderOperationModeIndicator returns the mode status indicator for auto-accept or bypass mode.
 func RenderOperationModeIndicator(mode OperationMode) string {
 	var icon, label string
 	var color lipgloss.TerminalColor
@@ -105,10 +104,6 @@ func RenderOperationModeIndicator(mode OperationMode) string {
 		icon = "⏵⏵"
 		label = " accept edits on"
 		color = kit.CurrentTheme.Success
-	case ModePlan:
-		icon = "⏸"
-		label = " plan mode on"
-		color = kit.CurrentTheme.Warning
 	case ModeBypassPermissions:
 		icon = "⏩"
 		label = " bypass permissions on"
@@ -217,21 +212,6 @@ func RenderTokenWarning(inputTokens, inputLimit int, compactSuppressed bool) str
 	}
 	style := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 	return "  " + style.Render(fmt.Sprintf("⚡ %d%% until auto-compact", untilCompact))
-}
-
-// RenderPlanForScrollback renders the plan markdown content for scrollback.
-func RenderPlanForScrollback(plan string, mdRenderer *MDRenderer) string {
-	if plan == "" {
-		return ""
-	}
-
-	content := plan
-	if mdRenderer != nil {
-		if rendered, err := mdRenderer.Render(content); err == nil {
-			content = strings.TrimSpace(rendered)
-		}
-	}
-	return content
 }
 
 var (
@@ -412,8 +392,6 @@ func renderMarkdownContent(mdRenderer *MDRenderer, content string) string {
 // getToolExecutionDesc returns a human-readable description for a tool being executed.
 func getToolExecutionDesc(toolName string) string {
 	switch toolName {
-	case tool.ToolExitPlanMode:
-		return "Preparing implementation plan..."
 	case "Read":
 		return "Reading file..."
 	case "Write":

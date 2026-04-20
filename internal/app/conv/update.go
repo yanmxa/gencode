@@ -15,9 +15,12 @@ import (
 func Update(rt Runtime, m *Model, msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case AgentOutboxMsg:
-		if msg.Closed {
+		if msg.Closed && len(msg.Batch) == 0 {
 			m.Stream.Stop()
 			return rt.ProcessAgentStop(nil), true
+		}
+		if len(msg.Batch) > 0 {
+			return handleAgentEventBatch(rt, m, msg.Batch, msg.Closed), true
 		}
 		return handleAgentEvent(rt, m, msg.Event), true
 	case PermBridgeMsg:
@@ -40,21 +43,6 @@ func Update(rt Runtime, m *Model, msg tea.Msg) (tea.Cmd, bool) {
 func handleAgentEvent(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	log.QueueLog("handleAgentEvent: %s", ev.Type)
 	switch ev.Type {
-	case core.OnStart, core.OnMessage:
-		return rt.ContinueOutbox()
-	case core.PreInfer:
-		return handlePreInfer(rt, m)
-	case core.OnChunk:
-		return handleChunk(rt, m, ev)
-	case core.PostInfer:
-		return handlePostInfer(rt, m, ev)
-	case core.PreTool:
-		return handlePreTool(rt, m, ev)
-	case core.PostTool:
-		return handlePostTool(rt, m, ev)
-	case core.OnCompact:
-		info, _ := ev.CompactInfo()
-		return rt.HandleAgentCompact(info)
 	case core.OnTurn:
 		result, _ := ev.Result()
 		m.Stream.Stop()
@@ -63,26 +51,101 @@ func handleAgentEvent(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 		err, _ := ev.Error()
 		m.Stream.Stop()
 		return rt.ProcessAgentStop(err)
+	case core.OnCompact:
+		info, _ := ev.CompactInfo()
+		return rt.HandleAgentCompact(info)
 	default:
+		if extra := applyAgentEvent(rt, m, ev); extra != nil {
+			return tea.Batch(extra, rt.ContinueOutbox())
+		}
 		return rt.ContinueOutbox()
 	}
 }
 
-// --- Event handlers ---
+func handleAgentEventBatch(rt Runtime, m *Model, events []core.Event, closed bool) tea.Cmd {
+	var cmds []tea.Cmd
+	needsContinue := true
 
-func handlePreInfer(rt Runtime, m *Model) tea.Cmd {
+	for _, ev := range events {
+		log.QueueLog("handleAgentEventBatch: %s", ev.Type)
+		switch ev.Type {
+		case core.OnTurn:
+			result, _ := ev.Result()
+			m.Stream.Stop()
+			cmds = append(cmds, rt.ProcessTurnEnd(result))
+			needsContinue = false
+		case core.OnStop:
+			err, _ := ev.Error()
+			m.Stream.Stop()
+			cmds = append(cmds, rt.ProcessAgentStop(err))
+			needsContinue = false
+		case core.OnCompact:
+			info, _ := ev.CompactInfo()
+			cmds = append(cmds, rt.HandleAgentCompact(info))
+			needsContinue = false
+		default:
+			if extra := applyAgentEvent(rt, m, ev); extra != nil {
+				cmds = append(cmds, extra)
+			}
+			continue
+		}
+		break // terminal event — don't process further events in this batch
+	}
+
+	if closed {
+		m.Stream.Stop()
+		cmds = append(cmds, rt.ProcessAgentStop(nil))
+		needsContinue = false
+	}
+
+	if needsContinue {
+		cmds = append(cmds, rt.ContinueOutbox())
+	}
+
+	if len(cmds) == 1 {
+		return cmds[0]
+	}
+	return tea.Batch(cmds...)
+}
+
+// --- Event side-effect handlers (no ContinueOutbox) ---
+
+func applyAgentEvent(rt Runtime, m *Model, ev core.Event) tea.Cmd {
+	switch ev.Type {
+	case core.OnStart, core.OnMessage:
+		return nil
+	case core.PreInfer:
+		return applyPreInfer(rt, m)
+	case core.OnChunk:
+		return applyChunk(rt, m, ev)
+	case core.PostInfer:
+		return applyPostInfer(rt, m, ev)
+	case core.PreTool:
+		applyPreTool(m, ev)
+		return nil
+	case core.PostTool:
+		return applyPostTool(rt, m, ev)
+	default:
+		return nil
+	}
+}
+
+func applyPreInfer(rt Runtime, m *Model) tea.Cmd {
 	m.Stream.Active = true
 	m.Stream.BuildingTool = ""
 	commitCmds := rt.CommitMessages()
 	m.Append(core.ChatMessage{Role: core.RoleAssistant, Content: ""})
-	cmds := append(commitCmds, m.Spinner.Tick, rt.ContinueOutbox())
+	cmds := append(commitCmds, m.Spinner.Tick)
+	if len(cmds) == 1 {
+		return cmds[0]
+	}
 	return tea.Batch(cmds...)
 }
 
-func handleChunk(rt Runtime, m *Model, ev core.Event) tea.Cmd {
+func applyChunk(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	chunk, ok := ev.Chunk()
 	if !ok {
-		return rt.ContinueOutbox()
+		return nil
 	}
 	if chunk.Text != "" || chunk.Thinking != "" {
 		m.AppendToLast(chunk.Text, chunk.Thinking)
@@ -90,15 +153,17 @@ func handleChunk(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	if chunk.Done && chunk.Response != nil && len(chunk.Response.ToolCalls) == 0 {
 		m.Stream.Active = false
 		commitCmds := rt.CommitMessages()
-		return tea.Batch(append(commitCmds, rt.ContinueOutbox())...)
+		if len(commitCmds) > 0 {
+			return tea.Batch(commitCmds...)
+		}
 	}
-	return rt.ContinueOutbox()
+	return nil
 }
 
-func handlePostInfer(rt Runtime, m *Model, ev core.Event) tea.Cmd {
+func applyPostInfer(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	resp, ok := ev.Response()
 	if !ok {
-		return rt.ContinueOutbox()
+		return nil
 	}
 	rt.SetTokenCounts(resp.TokensIn, resp.TokensOut)
 	m.Compact.WarningSuppressed = false
@@ -109,20 +174,19 @@ func handlePostInfer(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 		m.SetLastToolCalls(resp.ToolCalls)
 	}
 	m.Stream.BuildingTool = ""
-	return rt.ContinueOutbox()
+	return nil
 }
 
-func handlePreTool(rt Runtime, m *Model, ev core.Event) tea.Cmd {
+func applyPreTool(m *Model, ev core.Event) {
 	if tc, ok := ev.ToolCall(); ok {
 		m.Stream.BuildingTool = tc.Name
 	}
-	return rt.ContinueOutbox()
 }
 
-func handlePostTool(rt Runtime, m *Model, ev core.Event) tea.Cmd {
+func applyPostTool(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	tr, ok := ev.ToolResult()
 	if !ok {
-		return rt.ContinueOutbox()
+		return nil
 	}
 	m.Stream.BuildingTool = ""
 	if tool.IsAgentToolName(tr.ToolName) {
@@ -134,7 +198,7 @@ func handlePostTool(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 		ToolName:   tr.ToolName,
 		ToolResult: result,
 	})
-	return rt.ContinueOutbox()
+	return nil
 }
 
 // --- Progress handling (operates on output Model directly) ---

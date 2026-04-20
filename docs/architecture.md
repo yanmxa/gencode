@@ -285,7 +285,7 @@ internal/app/
 │
 │  ── notify/ ── Source 2: Background Agent Completion ──────────────────────
 │  Event: task.TaskCompleted observer → NotificationQueue.Push()
-│  Flow:  tick → PopReady() → BuildContinuationPrompt() → sendToAgent()
+│  Flow:  tick → PopReady() → Merge() → sendToAgent(Content)
 │  Cmd chain: StartTicker() → TickMsg → handleTick() → StartTicker() (loop)
 │
 ├── notify/

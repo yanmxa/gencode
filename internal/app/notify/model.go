@@ -1,46 +1,38 @@
-// Package notify handles Source 2 (background agent → main agent) inputs:
-// task completion notifications and notification queue management.
+// Package notify provides a generic message delivery mechanism between agents.
+// Any agent can push a Message to a Queue; the receiver drains it when ready.
 package notify
 
-import (
-	"sync"
-
-	"github.com/yanmxa/gencode/internal/orchestration"
-)
+import "sync"
 
 type Model struct {
-	Notifications *NotificationQueue
-	BGTracker     *BackgroundTracker
+	Queue     *Queue
+	BGTracker *BackgroundTracker
 }
 
 func New() Model {
 	return Model{
-		Notifications: NewNotificationQueue(),
+		Queue: NewQueue(),
 	}
 }
 
-type Notification struct {
-	Notice             string
-	Context            []string
-	ContinuationPrompt string
-	Count              int
-	TaskID             string
-	Subject            string
-	Status             string
-	Batch              *orchestration.Batch
+// Message is a notification delivered to an agent.
+// Notice is displayed in the TUI; Content is sent to the LLM.
+type Message struct {
+	Notice  string
+	Content string
 }
 
-// NotificationQueue is a thread-safe queue for task completion notifications.
-type NotificationQueue struct {
+// Queue is a thread-safe FIFO for delivering messages between agents.
+type Queue struct {
 	mu    sync.Mutex
-	items []Notification
+	items []Message
 }
 
-func NewNotificationQueue() *NotificationQueue {
-	return &NotificationQueue{}
+func NewQueue() *Queue {
+	return &Queue{}
 }
 
-func (q *NotificationQueue) Push(item Notification) {
+func (q *Queue) Push(item Message) {
 	if q == nil {
 		return
 	}
@@ -49,21 +41,7 @@ func (q *NotificationQueue) Push(item Notification) {
 	q.items = append(q.items, item)
 }
 
-func (q *NotificationQueue) Pop() (Notification, bool) {
-	if q == nil {
-		return Notification{}, false
-	}
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	if len(q.items) == 0 {
-		return Notification{}, false
-	}
-	item := q.items[0]
-	q.items = q.items[1:]
-	return item, true
-}
-
-func (q *NotificationQueue) PopBatch(max int) []Notification {
+func (q *Queue) PopBatch(max int) []Message {
 	if q == nil {
 		return nil
 	}
@@ -75,12 +53,12 @@ func (q *NotificationQueue) PopBatch(max int) []Notification {
 	if len(q.items) < max {
 		max = len(q.items)
 	}
-	items := append([]Notification(nil), q.items[:max]...)
+	items := append([]Message(nil), q.items[:max]...)
 	q.items = q.items[max:]
 	return items
 }
 
-func (q *NotificationQueue) Len() int {
+func (q *Queue) Len() int {
 	if q == nil {
 		return 0
 	}

@@ -3,10 +3,8 @@ package task
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
@@ -128,10 +126,6 @@ func (t *TaskOutputTool) Execute(ctx context.Context, params map[string]any, cwd
 	if info.Error != "" {
 		output += fmt.Sprintf("\nError: %s", info.Error)
 	}
-	if snapshot, ok := orchestration.Default().Snapshot(info.ID, info.AgentSessionID, string(info.Status), 1); ok {
-		output += formatOrchestrationSnapshot(snapshot)
-	}
-
 	return toolresult.ToolResult{
 		Success: info.Status != task.StatusFailed,
 		Output:  output,
@@ -205,62 +199,6 @@ func shouldDeferImmediatePolling(info task.TaskInfo, block bool) bool {
 		return false
 	}
 	return time.Since(info.StartTime) < recentLaunchPollingCooldown
-}
-
-func formatOrchestrationSnapshot(snapshot *orchestration.Snapshot) string {
-	if snapshot == nil {
-		return ""
-	}
-
-	var sb strings.Builder
-	sb.WriteString("\nOrchestration:\n")
-	if snapshot.Worker.PendingMessageCount > 0 {
-		fmt.Fprintf(&sb, "PendingMessages: %d\n", snapshot.Worker.PendingMessageCount)
-	}
-	if snapshot.Batch != nil && snapshot.Batch.Total > 0 {
-		fmt.Fprintf(&sb, "Batch: %s (%d/%d complete", batchLabel(snapshot.Batch), snapshot.Batch.Completed, snapshot.Batch.Total)
-		if snapshot.Batch.Failures > 0 {
-			fmt.Fprintf(&sb, ", %d failed", snapshot.Batch.Failures)
-		}
-		sb.WriteString(")\n")
-	}
-	if snapshot.Decision.Phase != "" {
-		fmt.Fprintf(&sb, "CoordinatorPhase: %s\n", snapshot.Decision.Phase)
-	}
-	if snapshot.Decision.RecommendedAction != "" {
-		fmt.Fprintf(&sb, "RecommendedAction: %s\n", snapshot.Decision.RecommendedAction)
-	}
-
-	actions := make([]string, 0, 4)
-	if snapshot.Decision.WaitForRemainingWorkers {
-		actions = append(actions, "wait_for_remaining_workers")
-	}
-	if snapshot.Decision.ShouldContinueFailedWorker {
-		actions = append(actions, "continue_failed_worker")
-	}
-	if snapshot.Decision.ShouldSpawnVerifier {
-		actions = append(actions, "spawn_verifier")
-	}
-	if snapshot.Decision.ShouldFinalizeSummary {
-		actions = append(actions, "finalize_summary")
-	}
-	if len(actions) > 0 {
-		fmt.Fprintf(&sb, "SuggestedNextActions: %s\n", strings.Join(actions, ", "))
-	}
-	return sb.String()
-}
-
-func batchLabel(batch *orchestration.BatchSnapshot) string {
-	if batch == nil {
-		return ""
-	}
-	if batch.Subject != "" {
-		return batch.Subject
-	}
-	if batch.ID != "" {
-		return batch.ID
-	}
-	return "background batch"
 }
 
 func init() {

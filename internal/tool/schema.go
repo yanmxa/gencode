@@ -13,10 +13,8 @@ const (
 	// Deprecated aliases — kept for backward compatibility with cached model contexts.
 	ToolAgentOutput   = ToolTaskOutput
 	ToolAgentStop     = ToolTaskStop
-	ToolSkill         = "Skill"
-	ToolEnterPlanMode = "EnterPlanMode"
-	ToolExitPlanMode  = "ExitPlanMode"
-	ToolTaskCreate    = "TaskCreate"
+	ToolSkill      = "Skill"
+	ToolTaskCreate = "TaskCreate"
 	ToolTaskGet       = "TaskGet"
 	ToolTaskUpdate    = "TaskUpdate"
 	ToolTaskList      = "TaskList"
@@ -45,9 +43,6 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []core.ToolSchema) []core.ToolS
 	tools := make([]core.ToolSchema, 0, 20)
 	tools = append(tools, baseToolSchemas()...)
 
-	// Add EnterPlanMode to normal mode tools
-	tools = append(tools, enterPlanModeSchema)
-
 	// Add Skill tool
 	tools = append(tools, skillToolSchema)
 
@@ -74,43 +69,6 @@ func GetToolSchemasWithMCP(mcpToolsGetter func() []core.ToolSchema) []core.ToolS
 	}
 
 	return tools
-}
-
-// getPlanModeToolSchemas returns only the tools available in plan mode.
-// Plan mode restricts to read-only tools, the plan-mode Agent tool, plus ExitPlanMode.
-func getPlanModeToolSchemas() []core.ToolSchema {
-	// Read-only tools allowed in plan mode
-	allowedTools := map[string]bool{
-		"Read":            true,
-		"Glob":            true,
-		"Grep":            true,
-		"WebFetch":        true,
-		"WebSearch":       true,
-		"AskUserQuestion": true, // allow LLM to ask clarifying questions in plan mode
-	}
-
-	// Filter to allowed read-only tools
-	allTools := GetToolSchemas()
-	tools := make([]core.ToolSchema, 0, len(allowedTools)+2)
-
-	for _, t := range allTools {
-		if allowedTools[t.Name] {
-			tools = append(tools, t)
-		}
-	}
-
-	// Add plan-mode Agent schema (no run_in_background, restricted agent types)
-	tools = append(tools, planModeAgentSchema)
-
-	// Add ExitPlanMode
-	tools = append(tools, exitPlanModeSchema)
-
-	return tools
-}
-
-// getPlanModeToolSchemasFiltered returns plan mode tools excluding disabled tools
-func getPlanModeToolSchemasFiltered(disabled map[string]bool) []core.ToolSchema {
-	return filterSchemas(getPlanModeToolSchemas(), disabled)
 }
 
 func filterSchemas(all []core.ToolSchema, disabled map[string]bool) []core.ToolSchema {

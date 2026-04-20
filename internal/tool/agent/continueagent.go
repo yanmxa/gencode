@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
@@ -168,7 +167,7 @@ func (t *ContinueAgentTool) execute(ctx context.Context, params map[string]any, 
 	req := tool.AgentExecRequest{
 		Agent:       target.agentType,
 		Name:        agentName,
-		Prompt:      composeContinuationPrompt(prompt, orchestration.Default().DrainPendingMessages(resolvedTaskID, target.agentID)),
+		Prompt:      prompt,
 		Description: description,
 		Background:  tool.GetBool(params, "run_in_background"),
 		Model:       tool.GetString(params, "model"),
@@ -294,31 +293,9 @@ func ensureContinuationTaskStopped(taskID, toolName string) error {
 		return fmt.Errorf("task not found: %s", taskID)
 	}
 	if bgTask.IsRunning() {
-		return fmt.Errorf("task %s is still running; %s requires a stopped worker. Use SendMessage(task_id=%q, message=...) to queue a follow-up or wait for completion", taskID, toolName, taskID)
+		return fmt.Errorf("task %s is still running; %s requires a stopped worker — wait for completion first", taskID, toolName)
 	}
 	return nil
-}
-
-func composeContinuationPrompt(prompt string, pendingMessages []string) string {
-	prompt = strings.TrimSpace(prompt)
-	if len(pendingMessages) == 0 {
-		return prompt
-	}
-
-	var b strings.Builder
-	b.WriteString("Queued follow-up messages captured while this worker was still running:\n")
-	for i, message := range pendingMessages {
-		message = strings.TrimSpace(message)
-		if message == "" {
-			continue
-		}
-		fmt.Fprintf(&b, "%d. %s\n", i+1, message)
-	}
-	if prompt != "" {
-		b.WriteString("\nLatest instruction:\n")
-		b.WriteString(prompt)
-	}
-	return strings.TrimSpace(b.String())
 }
 
 func formatForegroundAgentResult(agentType string, result *tool.AgentExecResult, duration time.Duration) string {

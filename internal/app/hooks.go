@@ -7,6 +7,8 @@ import (
 	"context"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/core/system"
 	"github.com/yanmxa/gencode/internal/hook"
@@ -64,25 +66,43 @@ func (m *model) executeStartupHooks(ctx context.Context) hook.HookOutcome {
 	})
 }
 
-func (m *model) executeIdleHooks(ctx context.Context, lastAssistantContent string) (blocked bool, reason string) {
-	if m.services.Hook == nil {
-		return false, ""
-	}
-	if m.services.Hook.HasHooks(hook.Stop) {
-		outcome := m.services.Hook.Execute(ctx, hook.Stop, hook.HookInput{
-			LastAssistantMessage: lastAssistantContent,
-			StopHookActive:       m.services.Hook.StopHookActive(),
-		})
-		if outcome.ShouldBlock {
-			blocked = true
-			reason = outcome.BlockReason
+type stopHookResultMsg struct {
+	Blocked bool
+	Reason  string
+	Result  core.Result
+}
+
+func (m *model) fireIdleHooksCmd(result core.Result) tea.Cmd {
+	hookEngine := m.services.Hook
+	if hookEngine == nil {
+		return func() tea.Msg {
+			return stopHookResultMsg{Result: result}
 		}
 	}
-	m.services.Hook.ExecuteAsync(hook.Notification, hook.HookInput{
-		Message:          "Claude is waiting for your input",
-		NotificationType: "idle_prompt",
-	})
-	return blocked, reason
+
+	lastContent := core.LastAssistantChatContent(m.conv.Messages)
+	hasStopHooks := hookEngine.HasHooks(hook.Stop)
+	stopHookActive := hookEngine.StopHookActive()
+
+	return func() tea.Msg {
+		var blocked bool
+		var reason string
+		if hasStopHooks {
+			outcome := hookEngine.Execute(context.Background(), hook.Stop, hook.HookInput{
+				LastAssistantMessage: lastContent,
+				StopHookActive:      stopHookActive,
+			})
+			if outcome.ShouldBlock {
+				blocked = true
+				reason = outcome.BlockReason
+			}
+		}
+		hookEngine.ExecuteAsync(hook.Notification, hook.HookInput{
+			Message:          "Claude is waiting for your input",
+			NotificationType: "idle_prompt",
+		})
+		return stopHookResultMsg{Blocked: blocked, Reason: reason, Result: result}
+	}
 }
 
 func (m *model) checkPromptHook(ctx context.Context, prompt string) (bool, string) {

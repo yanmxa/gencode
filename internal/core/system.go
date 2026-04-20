@@ -20,8 +20,7 @@ const (
 //	200:   instructions  — user + project instructions
 //	400:   capabilities  — skills, agents, deferred tools
 //	500:   guidelines    — tool usage, git safety
-//	600:   mode          — plan mode
-//	700+:  extra         — coordinator, skill invocation, agent identity
+//	700+:  extra         — skill invocation, agent identity
 type Layer struct {
 	Name     string // unique key (e.g. "identity", "user-instructions")
 	Priority int    // render order

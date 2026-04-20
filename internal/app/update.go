@@ -4,7 +4,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -20,8 +19,9 @@ import (
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/image"
 	"github.com/yanmxa/gencode/internal/llm"
+	"go.uber.org/zap"
+
 	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/tool"
@@ -79,6 +79,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case kit.DismissedMsg, input.ToolToggleMsg, input.SkillCycleMsg, input.AgentToggleMsg:
 		return m, nil
+	case persistSessionDoneMsg:
+		if msg.err != nil {
+			log.Logger().Warn("async session persist failed", zap.Error(msg.err))
+		}
+		return m, nil
+	case stopHookResultMsg:
+		return m, m.handleStopHookResult(msg)
 	}
 
 	if cmd, handled := m.routeFeatureUpdate(msg); handled {
@@ -159,7 +166,6 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	case tea.KeyShiftTab:
 		if !m.conv.Stream.Active && !m.userInput.Approval.IsActive() &&
 			!m.conv.Modal.Question.IsActive() &&
-			(m.conv.Modal.PlanApproval == nil || !m.conv.Modal.PlanApproval.IsActive()) &&
 			!m.userInput.Provider.Selector.IsActive() && !m.userInput.Suggestions.IsVisible() {
 			m.cycleOperationMode()
 			return nil, true
@@ -252,13 +258,6 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 }
 
 func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
-	if m.conv.Modal.PlanApproval != nil && m.conv.Modal.PlanApproval.IsActive() {
-		cmd, resp := m.conv.Modal.PlanApproval.HandleKeypress(msg)
-		if resp != nil {
-			return true, tea.Batch(cmd, m.handlePlanResponse(*resp))
-		}
-		return true, cmd
-	}
 	if m.conv.Modal.Question.IsActive() {
 		cmd, resp := m.conv.Modal.Question.HandleKeypress(msg)
 		if resp != nil {
@@ -273,14 +272,6 @@ func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 		}
 		return true, cmd
 	}
-	if m.conv.Modal.PlanEntry.IsActive() {
-		cmd, resp := m.conv.Modal.PlanEntry.HandleKeypress(msg)
-		if resp != nil {
-			return true, tea.Batch(cmd, m.handleEnterPlanResponse(*resp))
-		}
-		return true, cmd
-	}
-
 	for _, s := range m.overlaySelectors() {
 		if s.IsActive() {
 			return true, s.HandleKeypress(msg)
@@ -338,10 +329,6 @@ func (m *model) handleWindowResize(msg tea.WindowSizeMsg) tea.Cmd {
 
 	m.conv.ResizeMDRenderer(msg.Width)
 
-	if m.conv.Modal.PlanApproval != nil {
-		m.conv.Modal.PlanApproval.SetSize(msg.Width, msg.Height)
-	}
-
 	if !m.env.Ready {
 		m.env.Ready = true
 
@@ -379,17 +366,20 @@ func (m *model) reflowScrollback() tea.Cmd {
 	committed := m.conv.CommittedCount
 	m.conv.CommittedCount = 0
 
-	var cmds []tea.Cmd
-	cmds = append(cmds, tea.ClearScreen)
+	var parts []string
+	params := m.messageRenderParams()
 
 	for i := range committed {
-		if rendered := conv.RenderSingleMessage(m.messageRenderParams(), i); rendered != "" {
-			cmds = append(cmds, tea.Println(rendered))
+		if rendered := conv.RenderSingleMessage(params, i); rendered != "" {
+			parts = append(parts, rendered)
 		}
 		m.conv.CommittedCount = i + 1
 	}
 
-	return tea.Sequence(cmds...)
+	if len(parts) == 0 {
+		return tea.ClearScreen
+	}
+	return tea.Sequence(tea.ClearScreen, tea.Println(strings.Join(parts, "\n")))
 }
 
 // ============================================================
@@ -478,7 +468,6 @@ func (m *model) commandDeps() input.CommandDeps {
 
 		ResetTokens:        m.env.ResetTokens,
 		SetThinkingLevel:   func(level llm.ThinkingLevel) { m.env.ThinkingLevel = level },
-		EnterPlanMode:      m.enterPlanModeForCommand,
 		EnsureSessionStore: func(cwd string) error { return m.services.Session.EnsureStore(cwd) },
 		ForkSession:        m.forkSession,
 		ResetFetched:       m.services.Tool.ResetFetched,
@@ -553,12 +542,7 @@ func (m *model) AbortToolWithError(errorMsg string, retry bool) tea.Cmd {
 func (m *model) cycleOperationMode() {
 	allowBypass := m.services.Setting != nil && m.services.Setting.AllowBypass()
 	m.env.OperationMode = m.env.OperationMode.NextWithBypass(allowBypass)
-	m.env.PlanEnabled = m.env.OperationMode == setting.ModePlan
 	m.env.ApplyModePermissions(m.env.CWD)
-
-	if m.env.PlanEnabled {
-		m.env.EnsurePlanStore()
-	}
 
 	if m.services.Hook != nil {
 		m.services.Hook.SetPermissionMode(m.env.OperationModeName())
@@ -574,10 +558,6 @@ func (m *model) updateMode(msg tea.Msg) (tea.Cmd, bool) {
 		}), true
 	case conv.QuestionRequestMsg:
 		return m.handleQuestionRequest(msg), true
-	case conv.PlanRequestMsg:
-		return m.handlePlanRequest(msg), true
-	case conv.EnterPlanRequestMsg:
-		return m.handleEnterPlanRequest(msg), true
 	}
 	return nil, false
 }
@@ -607,95 +587,6 @@ func (m *model) handleQuestionResponse(msg conv.QuestionResponseMsg) tea.Cmd {
 	}
 	reply <- msg.Response
 	return nil
-}
-
-func (m *model) handlePlanRequest(msg conv.PlanRequestMsg) tea.Cmd {
-	var planPath string
-	if m.env.PlanStore != nil {
-		planPath = m.env.PlanStore.GetPath(plan.GeneratePlanName(m.env.PlanTask))
-	}
-
-	cmds := m.CommitMessages()
-
-	planScrollback := m.renderPlanForScrollback(msg.Request)
-	cmds = append(cmds, tea.Println(planScrollback))
-
-	m.conv.Modal.PlanApproval.Show(msg.Request, planPath, m.env.Width, m.env.Height)
-	return tea.Batch(cmds...)
-}
-
-func (m *model) handlePlanResponse(msg conv.PlanResponseMsg) tea.Cmd {
-	if !msg.Approved {
-		m.env.PlanEnabled = false
-		m.env.OperationMode = setting.ModeNormal
-		return m.AbortToolWithError("Plan was rejected by the user. Please ask for clarification or modify your approach.", false)
-	}
-
-	planContent := msg.ModifiedPlan
-	if planContent == "" && msg.Request != nil {
-		planContent = msg.Request.Plan
-	}
-
-	if msg.ApproveMode != "modify" {
-		m.env.EnsurePlanStore()
-		if m.env.PlanStore != nil {
-			savedPlan := &plan.Plan{
-				Task:    m.env.PlanTask,
-				Status:  plan.StatusApproved,
-				Content: planContent,
-			}
-			if _, err := m.env.PlanStore.Save(savedPlan); err != nil {
-				m.conv.Append(core.ChatMessage{
-					Role:    core.RoleNotice,
-					Content: fmt.Sprintf("Warning: failed to save plan: %v", err),
-				})
-			}
-		}
-	}
-
-	switch msg.ApproveMode {
-	case "clear-auto":
-		return m.handlePlanClearAutoMode(planContent)
-	case "auto":
-		m.env.EnableAutoAcceptMode(m.env.CWD)
-	case "manual":
-		m.env.OperationMode = setting.ModeNormal
-		m.env.PlanEnabled = false
-	case "modify":
-		m.env.OperationMode = setting.ModePlan
-		m.env.PlanEnabled = true
-	}
-
-	return tea.Batch(m.CommitMessages()...)
-}
-
-func (m *model) handlePlanClearAutoMode(planContent string) tea.Cmd {
-	m.conv.Clear()
-	m.env.EnableAutoAcceptMode(m.env.CWD)
-	m.conv.Tool.Reset()
-
-	userMsg := fmt.Sprintf("Implement the following approved plan step by step. Start coding immediately — do NOT explore or investigate further.\n\n%s", planContent)
-	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: userMsg})
-
-	return m.sendToAgent(userMsg, nil)
-}
-
-func (m *model) handleEnterPlanRequest(msg conv.EnterPlanRequestMsg) tea.Cmd {
-	m.conv.Modal.PlanEntry.Show(msg.Request, m.env.Width)
-	return tea.Batch(m.CommitMessages()...)
-}
-
-func (m *model) handleEnterPlanResponse(msg conv.EnterPlanResponseMsg) tea.Cmd {
-	if msg.Approved {
-		m.env.PlanEnabled = true
-		m.env.OperationMode = setting.ModePlan
-		if msg.Request != nil && msg.Request.Message != "" {
-			m.env.PlanTask = msg.Request.Message
-		}
-		m.env.EnsurePlanStore()
-	}
-
-	return tea.Batch(m.CommitMessages()...)
 }
 
 // ============================================================

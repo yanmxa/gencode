@@ -5,8 +5,6 @@ import (
 )
 
 type ModalState struct {
-	PlanApproval         *PlanPrompt
-	PlanEntry            *EnterPlanPrompt
 	Question             *QuestionPrompt
 	PendingQuestion      *tool.QuestionRequest
 	PendingQuestionReply chan *tool.QuestionResponse
@@ -14,36 +12,8 @@ type ModalState struct {
 
 func NewModalState() ModalState {
 	return ModalState{
-		PlanApproval: NewPlanPrompt(),
-		PlanEntry:    NewEnterPlanPrompt(),
-		Question:     NewQuestionPrompt(),
+		Question: NewQuestionPrompt(),
 	}
-}
-
-// PlanRequestMsg is sent when ExitPlanMode tool is called
-type PlanRequestMsg struct {
-	Request *tool.PlanRequest
-}
-
-// PlanResponseMsg is sent when user responds to plan approval
-type PlanResponseMsg struct {
-	Request      *tool.PlanRequest
-	Response     *tool.PlanResponse
-	Approved     bool
-	ApproveMode  string // "clear-auto" | "auto" | "manual" | "modify"
-	ModifiedPlan string
-}
-
-// EnterPlanRequestMsg is sent when EnterPlanMode tool is called
-type EnterPlanRequestMsg struct {
-	Request *tool.EnterPlanRequest
-}
-
-// EnterPlanResponseMsg is sent when user responds
-type EnterPlanResponseMsg struct {
-	Request  *tool.EnterPlanRequest
-	Response *tool.EnterPlanResponse
-	Approved bool
 }
 
 // QuestionRequestMsg is sent when AskUserQuestion tool is called

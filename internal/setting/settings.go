@@ -79,7 +79,6 @@ type SessionPermissions struct {
 	WorkingDirectories []string
 
 	// IsBypassAvailable controls whether BypassPermissions mode can be entered.
-	// In plan mode, this remembers if bypass was available before entering plan.
 	IsBypassAvailable bool
 
 	// ShouldAvoidPrompts is set for headless/async subagents that cannot
@@ -144,22 +143,19 @@ type OperationMode int
 const (
 	ModeNormal            OperationMode = iota
 	ModeAutoAccept                      // auto-approve edits/writes
-	ModePlan                            // read-only tools only
 	ModeBypassPermissions               // allow all (bypass-immune checks still apply)
 	ModeDontAsk                         // convert ask → deny (never prompt)
 )
 
 // allModes lists the modes that the user can cycle through with the mode toggle.
 // BypassPermissions and DontAsk are entered explicitly, not via cycling.
-var cycleModes = []OperationMode{ModeNormal, ModeAutoAccept, ModePlan}
-var cycleModesWithBypass = []OperationMode{ModeNormal, ModeAutoAccept, ModePlan, ModeBypassPermissions}
+var cycleModes = []OperationMode{ModeNormal, ModeAutoAccept}
+var cycleModesWithBypass = []OperationMode{ModeNormal, ModeAutoAccept, ModeBypassPermissions}
 
 func (m OperationMode) String() string {
 	switch m {
 	case ModeAutoAccept:
 		return "accept edits"
-	case ModePlan:
-		return "plan mode"
 	case ModeBypassPermissions:
 		return "bypass permissions"
 	case ModeDontAsk:

@@ -23,8 +23,7 @@ type BuildParams struct {
 	CWDFunc func() string // dynamic CWD for tool execution; falls back to CWD if nil
 	IsGit   bool
 
-	PlanEnabled         bool
-	UserInstructions    string
+	UserInstructions string
 	ProjectInstructions string
 	SkillsPrompt        string
 	AgentsPrompt        string
@@ -50,8 +49,7 @@ func buildAgent(p BuildParams) (core.Agent, *PermissionBridge, error) {
 		ModelID:             client.ModelID(),
 		Cwd:                 p.CWD,
 		IsGit:               p.IsGit,
-		PlanMode:            p.PlanEnabled,
-		UserInstructions:    p.UserInstructions,
+		UserInstructions: p.UserInstructions,
 		ProjectInstructions: p.ProjectInstructions,
 		Skills:              p.SkillsPrompt,
 		Agents:              p.AgentsPrompt,
@@ -67,7 +65,6 @@ func buildAgent(p BuildParams) (core.Agent, *PermissionBridge, error) {
 
 	schemas := (&tool.Set{
 		Disabled: p.DisabledTools,
-		PlanMode: p.PlanEnabled,
 	}).Tools()
 	tools := tool.AdaptToolRegistry(schemas, cwdFunc)
 	for _, t := range p.MCPTools {

@@ -188,9 +188,6 @@ func applyPermissionUpdates(deps ApprovalFlowDeps, updates []hook.PermissionUpda
 					deps.SetOperationMode(setting.ModeAutoAccept)
 				case "dontAsk":
 					deps.SessionPermissions.Mode = setting.ModeDontAsk
-				case "plan":
-					deps.SessionPermissions.Mode = setting.ModePlan
-					deps.SetOperationMode(setting.ModePlan)
 				case "normal":
 					deps.SessionPermissions.Mode = setting.ModeNormal
 					deps.SetOperationMode(setting.ModeNormal)

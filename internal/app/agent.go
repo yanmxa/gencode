@@ -26,9 +26,6 @@ import (
 
 func (m *model) buildAgentParams() agent.BuildParams {
 	var extra []system.ExtraLayer
-	if coordinator := system.CoordinatorGuidance(); coordinator != "" {
-		extra = append(extra, system.ExtraLayer{Name: "coordinator", Content: coordinator})
-	}
 	if m.userInput.Skill.ActiveInvocation != "" {
 		extra = append(extra, system.ExtraLayer{Name: "skill-invocation", Content: m.userInput.Skill.ActiveInvocation})
 	}
@@ -50,7 +47,6 @@ func (m *model) buildAgentParams() agent.BuildParams {
 		CWDFunc: func() string { return m.env.CWD },
 		IsGit:   m.env.IsGit,
 
-		PlanEnabled:         m.env.PlanEnabled,
 		UserInstructions:    m.env.CachedUserInstructions,
 		ProjectInstructions: m.env.CachedProjectInstructions,
 		SkillsPrompt:        m.services.Skill.PromptSection(),

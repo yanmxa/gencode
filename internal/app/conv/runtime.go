@@ -9,6 +9,7 @@ import (
 
 type AgentOutboxMsg struct {
 	Event  core.Event
+	Batch  []core.Event // set when multiple events were drained at once
 	Closed bool
 }
 
@@ -29,13 +30,40 @@ type Runtime interface {
 	HasRunningTasks() bool
 }
 
+// DrainAgentOutbox blocks until at least one event is available, then greedily
+// drains additional ready events to reduce Update+View cycles. Stops at
+// terminal events (OnTurn/OnStop/OnCompact) so turn boundaries aren't crossed.
 func DrainAgentOutbox(outbox <-chan core.Event) tea.Cmd {
 	return func() tea.Msg {
 		ev, ok := <-outbox
 		if !ok {
 			return AgentOutboxMsg{Closed: true}
 		}
-		return AgentOutboxMsg{Event: ev}
+		if isTerminalEvent(ev) {
+			return AgentOutboxMsg{Event: ev}
+		}
+		batch := []core.Event{ev}
+		for {
+			select {
+			case next, ok := <-outbox:
+				if !ok {
+					return AgentOutboxMsg{Batch: batch, Closed: true}
+				}
+				batch = append(batch, next)
+				if isTerminalEvent(next) {
+					return AgentOutboxMsg{Batch: batch}
+				}
+			default:
+				if len(batch) == 1 {
+					return AgentOutboxMsg{Event: batch[0]}
+				}
+				return AgentOutboxMsg{Batch: batch}
+			}
+		}
 	}
+}
+
+func isTerminalEvent(ev core.Event) bool {
+	return ev.Type == core.OnTurn || ev.Type == core.OnStop || ev.Type == core.OnCompact
 }
 

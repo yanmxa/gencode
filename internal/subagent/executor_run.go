@@ -7,7 +7,6 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/orchestration"
 	"go.uber.org/zap"
 )
 
@@ -86,16 +85,6 @@ func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*c
 		return nil, err
 	}
 
-	// Inject pending messages from orchestration (for background agents)
-	drainFn := e.buildDrainInjectedInputs(run.req)
-	if drainFn != nil {
-		for _, injected := range drainFn() {
-			if injected != "" {
-				ag.Append(ctx, core.UserMessage(injected, nil))
-			}
-		}
-	}
-
 	result, err := ag.ThinkAct(ctx)
 	if err != nil {
 		if result != nil {
@@ -105,15 +94,6 @@ func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*c
 	}
 
 	return result, nil
-}
-
-func (e *Executor) buildDrainInjectedInputs(req AgentRequest) func() []string {
-	if req.LiveTaskID == "" && req.ResumeID == "" {
-		return nil
-	}
-	return func() []string {
-		return orchestration.Default().DrainPendingMessages(req.LiveTaskID, req.ResumeID)
-	}
 }
 
 func (e *Executor) logRunCompletion(run *preparedRun, result *core.Result, success bool) {

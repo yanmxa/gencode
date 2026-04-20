@@ -17,7 +17,6 @@ import (
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/mcp"
-	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/setting"
@@ -46,7 +45,6 @@ func initInfrastructure() error {
 	agent.Initialize(agent.Options{})
 	task.Initialize(task.Options{})
 	tracker.Initialize(tracker.Options{})
-	orchestration.Initialize(orchestration.Options{})
 	cron.Initialize(cron.Options{
 		StoragePath: filepath.Join(appCwd, ".gen", "scheduled_tasks.json"),
 	})

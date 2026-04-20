@@ -7,7 +7,6 @@ import (
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/mcp"
-	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/setting"
@@ -33,8 +32,7 @@ type services struct {
 	Task          task.Service
 	Tracker       tracker.Service
 	Cron          cron.Service
-	Orchestration orchestration.Service
-	MCP           mcp.Service
+	MCP mcp.Service
 	Plugin        plugin.Service
 	Agent         agent.Service
 }
@@ -52,16 +50,15 @@ func newServices() services {
 		Task:          task.Default(),
 		Tracker:       tracker.Default(),
 		Cron:          cron.Default(),
-		Orchestration: orchestration.Default(),
-		MCP:           mcp.Default(),
+		MCP: mcp.Default(),
 		Plugin:        plugin.Default(),
 		Agent:         agent.Default(),
 	}
 }
 
 // refreshAfterReload re-snapshots the 5 services whose singletons are replaced
-// by Initialize() calls in ReloadPluginBackedState. The remaining 9 services
-// (LLM, Hook, Session, Tool, Task, Tracker, Cron, Orchestration, Plugin)
+// by Initialize() calls in ReloadPluginBackedState. The remaining services
+// (LLM, Hook, Session, Tool, Task, Tracker, Cron, Plugin)
 // are stable — their singletons are created once at startup and never replaced.
 func (s *services) refreshAfterReload() {
 	s.Setting = setting.Default()

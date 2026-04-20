@@ -9,8 +9,6 @@ import (
 // parentOnlyTools are tools that only the parent conversation can use.
 // Subagents never get these regardless of their allow list.
 var parentOnlyTools = map[string]bool{
-	ToolEnterPlanMode: true,
-	ToolExitPlanMode:  true,
 	ToolEnterWorktree: true,
 	ToolExitWorktree:  true,
 }
@@ -19,10 +17,9 @@ var parentOnlyTools = map[string]bool{
 // If Static is non-nil, it is returned directly (for custom agents).
 // Otherwise, tools are resolved dynamically using the config fields.
 type Set struct {
-	Static    []core.ToolSchema        // fixed tool list (overrides dynamic)
-	Disabled  map[string]bool              // excluded tools
-	PlanMode  bool                         // plan mode filter
-	MCP       func() []core.ToolSchema // MCP tools getter
+	Static   []core.ToolSchema           // fixed tool list (overrides dynamic)
+	Disabled map[string]bool              // excluded tools
+	MCP      func() []core.ToolSchema // MCP tools getter
 	Allow     []string                     // agent allow list (nil = all tools, non-nil = only these)
 	Disallow     []string                  // agent deny list (excluded after allow filtering)
 	IsAgent      bool                      // true for subagent tool sets (excludes parent-only tools)
@@ -50,12 +47,8 @@ func (s *Set) Tools() []core.ToolSchema {
 	return s.defaultTools()
 }
 
-// defaultTools returns the full tool set filtered by disabled/plan/deferred mode.
+// defaultTools returns the full tool set filtered by disabled/deferred mode.
 func (s *Set) defaultTools() []core.ToolSchema {
-	if s.PlanMode {
-		return getPlanModeToolSchemasFiltered(s.Disabled)
-	}
-
 	tools := GetToolSchemasWithMCP(s.MCP)
 
 	filtered := make([]core.ToolSchema, 0, len(tools))

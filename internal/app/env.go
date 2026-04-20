@@ -1,4 +1,4 @@
-// Shared mutable app state: provider, permissions, plan, and cache.
+// Shared mutable app state: provider, permissions, and cache.
 // Pure state holder — no singleton service dependencies.
 package app
 
@@ -7,7 +7,6 @@ import (
 
 	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/setting"
 )
 
@@ -31,11 +30,6 @@ type env struct {
 	// ── Permission (mutable — changes per mode cycle) ───────────
 	OperationMode      setting.OperationMode
 	SessionPermissions *setting.SessionPermissions
-
-	// ── Plan (mutable — changes per plan mode) ──────────────────
-	PlanEnabled bool
-	PlanTask    string
-	PlanStore   *plan.Store
 
 	// ── Cache (session-scoped) ──────────────────────────────────
 	FileCache                 *filecache.Cache
@@ -73,8 +67,6 @@ func (m *env) OperationModeName() string {
 	switch m.OperationMode {
 	case setting.ModeAutoAccept:
 		return "auto"
-	case setting.ModePlan:
-		return "plan"
 	case setting.ModeBypassPermissions:
 		return "bypassPermissions"
 	default:
@@ -106,7 +98,6 @@ func (m *env) ApplyBypassPermissions() {
 func (m *env) EnableAutoAcceptMode(cwd string) {
 	m.ApplyAutoAcceptPermissions(cwd)
 	m.OperationMode = setting.ModeAutoAccept
-	m.PlanEnabled = false
 }
 
 func (m *env) DetectThinkingKeywords(input string) {
@@ -141,26 +132,12 @@ func (m *env) ApplyModePermissions(cwd string) {
 	}
 }
 
-func (m *env) EnsurePlanStore() {
-	if m.PlanStore != nil {
-		return
-	}
-	store, err := plan.NewStore()
-	if err != nil {
-		return
-	}
-	m.PlanStore = store
-}
-
 func (m *env) ClearCachedInstructions() {
 	m.CachedUserInstructions = ""
 	m.CachedProjectInstructions = ""
 }
 
 func (m *env) SessionMode() string {
-	if m.PlanEnabled {
-		return "plan"
-	}
 	switch m.OperationMode {
 	case setting.ModeAutoAccept:
 		return "auto-accept"

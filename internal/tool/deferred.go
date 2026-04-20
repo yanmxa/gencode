@@ -15,7 +15,6 @@ import (
 //
 // Only defer tools that are genuinely rare. Do NOT defer tools that are:
 // - Needed reactively (TaskStop — triggered by background completions)
-// - Commonly used (EnterPlanMode — triggered by task complexity)
 var deferredToolNames = map[string]string{
 	ToolCronCreate:    "Schedule a prompt to run on a cron schedule",
 	ToolCronDelete:    "Delete a scheduled cron prompt",

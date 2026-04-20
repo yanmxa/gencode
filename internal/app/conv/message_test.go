@@ -165,17 +165,6 @@ func Test_formatToolResultSizeUsesNoOutputForEmptyContent(t *testing.T) {
 	}
 }
 
-func TestRenderPlanForScrollbackDoesNotInjectTitle(t *testing.T) {
-	plan := "# Context\nBody"
-	rendered := RenderPlanForScrollback(plan, nil)
-	if rendered != plan {
-		t.Fatalf("RenderPlanForScrollback() = %q, want raw plan content", rendered)
-	}
-	if strings.Contains(rendered, "Implementation Plan") {
-		t.Fatalf("RenderPlanForScrollback() = %q, should not inject a title", rendered)
-	}
-}
-
 func Test_renderTaskOutputResultInlineShowsErrorText(t *testing.T) {
 	rendered := renderTaskOutputResultInline(ToolResultData{
 		ToolName: "TaskOutput",

@@ -99,14 +99,42 @@ Events for observation use async execution (fire-and-forget).
 | `PreToolUse` | `PostToolUse` |
 | `PermissionRequest` | `PostToolUseFailure` |
 | `UserPromptSubmit` | `StopFailure` |
-| `Stop` | `SubagentStart` / `SubagentStop` |
-| `PreCompact` | `PostCompact` |
-| `SessionStart` | `SessionEnd` |
-| `FileChanged` | `InstructionsLoaded` |
-| `CwdChanged` | `TaskCreated` / `TaskCompleted` |
+| `PreCompact` | `Stop` (via `tea.Cmd`) |
+| `SessionStart` | `SubagentStart` / `SubagentStop` |
+| | `PostCompact` |
+| | `SessionEnd` |
+| | `FileChanged` |
+| | `CwdChanged` |
+| | `InstructionsLoaded` |
+| | `TaskCreated` / `TaskCompleted` |
 | | `WorktreeCreate` / `WorktreeRemove` |
 | | `Notification` |
 | | `ConfigChange` |
+
+### TUI Thread Safety
+
+Bubble Tea uses a single-threaded MVU loop: `Update` → `View` → render.
+If `Update` blocks, the entire UI freezes — no rendering, no keyboard
+input, nothing.
+
+**Rule: Never call `Engine.Execute()` synchronously inside `Update` or
+any method reachable from it, unless the hook is guaranteed to be fast.**
+
+Slow hooks (external processes, network calls, LLM completions) will
+freeze the UI for their entire duration. This caused a 9-12 second
+freeze when `Stop` hooks ran synchronously in `ProcessTurnEnd`.
+
+Choose the right pattern based on what the caller needs:
+
+| Need outcome? | Pattern | Example |
+|---|---|---|
+| No | `ExecuteAsync` | `FileChanged`, `CwdChanged`, `PostToolUse` |
+| Yes | Wrap in `tea.Cmd`, deliver result via custom `tea.Msg` | `Stop` (via `fireIdleHooksCmd` → `stopHookResultMsg`) |
+| Yes + must block caller | `Execute` inside `tea.Cmd` (NOT inside `Update`) | `PreCompact` (inside `CompactCmd`), `PermissionRequest` (inside `DispatchPermissionHookAsync`) |
+
+Events currently using `Execute` in the Update thread:
+- `UserPromptSubmit` — intentional; must block to reject invalid input; typically fast
+- `SessionStart` — runs at startup before TUI is interactive; acceptable
 
 ## Execution Pipeline
 

@@ -8,9 +8,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/app/kit"
-	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task/tracker"
-	"github.com/yanmxa/gencode/internal/tool"
 )
 
 var ghostTextStyle = lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
@@ -87,14 +85,10 @@ func (m *model) renderOverlaySelector() string {
 
 func (m *model) renderActiveModal(separator, trackerPrefix string) string {
 	switch {
-	case m.conv.Modal.PlanApproval != nil && m.conv.Modal.PlanApproval.IsActive():
-		return separatorWrapped(trackerPrefix, separator, m.conv.Modal.PlanApproval.RenderMenu())
 	case m.userInput.Approval.IsActive():
 		return separatorWrapped(trackerPrefix, separator, m.userInput.Approval.Render())
 	case m.conv.Modal.Question.IsActive():
 		return separatorWrapped(trackerPrefix, separator, m.conv.Modal.Question.Render())
-	case m.conv.Modal.PlanEntry.IsActive():
-		return separatorWrapped(trackerPrefix, separator, m.conv.Modal.PlanEntry.Render())
 	default:
 		return ""
 	}
@@ -147,10 +141,7 @@ func (m model) renderTrackerList() string {
 		StreamActive: m.conv.Stream.Active,
 		Width:        m.env.Width,
 		SpinnerView:  m.conv.Spinner.View(),
-		Blockers:     m.services.Tracker.OpenBlockers,
-		WorkerSnap: func(taskID, agentID string) (*orchestration.Snapshot, bool) {
-			return m.services.Orchestration.Snapshot(taskID, agentID, "", 1)
-		},
+		Blockers: m.services.Tracker.OpenBlockers,
 	})
 }
 
@@ -195,7 +186,7 @@ func (m model) messageRenderParams() conv.MessageRenderParams {
 		SpinnerView:             m.conv.Spinner.View(),
 		TaskProgress:            m.conv.TaskProgress,
 		TaskOwnerMap:            buildTaskOwnerMap(m.services.Tracker.List()),
-		InteractivePromptActive: (m.conv.Modal.Question != nil && m.conv.Modal.Question.IsActive()) || (m.conv.Modal.PlanApproval != nil && m.conv.Modal.PlanApproval.IsActive()),
+		InteractivePromptActive: m.conv.Modal.Question != nil && m.conv.Modal.Question.IsActive(),
 	}
 }
 
@@ -215,9 +206,3 @@ func buildTaskOwnerMap(tasks []*tracker.Task) map[string]string {
 	return ownerMap
 }
 
-func (m model) renderPlanForScrollback(req *tool.PlanRequest) string {
-	if req == nil {
-		return ""
-	}
-	return conv.RenderPlanForScrollback(req.Plan, m.conv.MDRenderer)
-}

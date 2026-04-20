@@ -94,8 +94,6 @@ var safeTools = func() map[string]bool {
 		"TaskList":        true,
 		"TaskUpdate":      true,
 		"AskUserQuestion": true,
-		"EnterPlanMode":   true,
-		"ExitPlanMode":    true,
 		"CronList":        true,
 		"ToolSearch":      true,
 	}

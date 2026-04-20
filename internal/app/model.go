@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -27,7 +27,6 @@ import (
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/mcp"
-	"github.com/yanmxa/gencode/internal/plan"
 	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/session"
 	"github.com/yanmxa/gencode/internal/setting"
@@ -81,12 +80,12 @@ func (m *model) Init() tea.Cmd {
 func newModel(opts setting.RunOptions) (*model, error) {
 	base := newBaseModel()
 	m := &base
-	m.agentInput.BGTracker = notify.NewBackgroundTracker(m.services.Tracker, m.services.Orchestration)
+	m.agentInput.BGTracker = notify.NewBackgroundTracker(m.services.Tracker)
 	var hookEngine *hook.Engine
 	if m.services.Hook != nil {
 		hookEngine = m.services.Hook.Engine()
 	}
-	notify.InstallCompletionObserver(m.agentInput.Notifications, hookEngine, m.agentInput.BGTracker)
+	notify.InstallCompletionObserver(m.agentInput.Queue, hookEngine, m.agentInput.BGTracker)
 	m.configureAsyncHookCallback()
 	m.ensureMemoryContextLoaded()
 	m.ReconfigureAgentTool()
@@ -128,14 +127,8 @@ func (m *model) applyRunOptions(opts setting.RunOptions) error {
 		}
 	}
 
-	if opts.Prompt != "" && !opts.PlanMode {
+	if opts.Prompt != "" {
 		m.env.InitialPrompt = opts.Prompt
-	}
-
-	if opts.PlanMode {
-		if err := m.enablePlanMode(opts.Prompt); err != nil {
-			return err
-		}
 	}
 
 	if opts.Continue {
@@ -172,19 +165,6 @@ func (m *model) ReloadPluginBackedState() error {
 	m.syncSettingsToHookEngine()
 	m.ReconfigureAgentTool()
 
-	return nil
-}
-
-func (m *model) enablePlanMode(prompt string) error {
-	m.env.PlanEnabled = true
-	m.env.PlanTask = prompt
-	m.env.OperationMode = setting.ModePlan
-
-	planStore, err := plan.NewStore()
-	if err != nil {
-		return fmt.Errorf("failed to initialize plan store: %w", err)
-	}
-	m.env.PlanStore = planStore
 	return nil
 }
 
@@ -255,8 +235,9 @@ func (m *model) commitAllMessages() []tea.Cmd {
 }
 
 func (m *model) renderAndCommit(checkReady bool) []tea.Cmd {
-	var printCmds []tea.Cmd
+	var parts []string
 	lastIdx := len(m.conv.Messages) - 1
+	params := m.messageRenderParams()
 
 	for i := m.conv.CommittedCount; i < len(m.conv.Messages); i++ {
 		msg := m.conv.Messages[i]
@@ -270,17 +251,16 @@ func (m *model) renderAndCommit(checkReady bool) []tea.Cmd {
 			}
 		}
 
-		if rendered := conv.RenderSingleMessage(m.messageRenderParams(), i); rendered != "" {
-			printCmds = append(printCmds, tea.Println(rendered))
+		if rendered := conv.RenderSingleMessage(params, i); rendered != "" {
+			parts = append(parts, rendered)
 		}
 		m.conv.CommittedCount = i + 1
 	}
 
-	// Wrap in tea.Sequence to preserve message ordering.
-	if len(printCmds) > 1 {
-		return []tea.Cmd{tea.Sequence(printCmds...)}
+	if len(parts) == 0 {
+		return nil
 	}
-	return printCmds
+	return []tea.Cmd{tea.Println(strings.Join(parts, "\n"))}
 }
 
 // ============================================================
@@ -337,6 +317,52 @@ func (m *model) PersistSession() error {
 	m.ReconfigureAgentTool()
 
 	return nil
+}
+
+type persistSessionDoneMsg struct{ err error }
+
+// Only safe when the session ID is already established (i.e. not the first save).
+func (m *model) persistSessionCmd() tea.Cmd {
+	if err := m.services.Session.EnsureStore(m.env.CWD); err != nil {
+		log.Logger().Warn("failed to ensure session store for async persist", zap.Error(err))
+		return nil
+	}
+	if len(m.conv.Messages) == 0 {
+		return nil
+	}
+
+	entries := session.ConvertToEntries(m.conv.Messages)
+
+	var providerName, modelID string
+	if m.env.CurrentModel != nil {
+		providerName = string(m.env.CurrentModel.Provider)
+		modelID = m.env.CurrentModel.ModelID
+	}
+
+	sess := &session.Snapshot{
+		Metadata: session.SessionMetadata{
+			ID:         m.services.Session.ID(),
+			Provider:   providerName,
+			Model:      modelID,
+			Cwd:        m.env.CWD,
+			LastPrompt: session.ExtractLastUserText(entries),
+			Mode:       m.env.SessionMode(),
+		},
+		Entries: entries,
+		Tasks:   m.services.Tracker.Export(),
+	}
+
+	if sess.Metadata.Title == "" {
+		sess.Metadata.Title = session.GenerateTitle(sess.Entries)
+	}
+
+	store := m.services.Session.GetStore()
+	return func() tea.Msg {
+		if store == nil {
+			return persistSessionDoneMsg{err: fmt.Errorf("no session store")}
+		}
+		return persistSessionDoneMsg{err: store.Save(sess)}
+	}
 }
 
 func (m *model) loadSessionByID(id string) error {
@@ -431,16 +457,11 @@ func (m *model) ProcessToolResult(tr core.ToolResult) *core.ToolResult {
 
 func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 	m.env.ClearThinkingOverride()
-	start := time.Now()
-	queueLen := m.userInput.Queue.Len()
-	log.QueueLog("ProcessTurnEnd: starting queueLen=%d", queueLen)
+	log.QueueLog("ProcessTurnEnd: starting queueLen=%d", m.userInput.Queue.Len())
 	commitCmds := m.CommitMessages()
-	log.QueueLog("ProcessTurnEnd: CommitMessages done elapsed=%v", time.Since(start))
 
-	// Drain queued messages FIRST — skip idle hooks when we have pending work,
-	// since we're not truly idle and hooks like Stop/Notification would add latency.
 	if cmd, found := m.drainTurnQueues(); found {
-		log.QueueLog("ProcessTurnEnd: drained queued messages elapsed=%v", time.Since(start))
+		log.QueueLog("ProcessTurnEnd: drained queued message, skipping hooks")
 		if cmd != nil {
 			commitCmds = append(commitCmds, cmd)
 		}
@@ -448,34 +469,9 @@ func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 		return tea.Batch(commitCmds...)
 	}
 
-	if blocked, sendCmd := m.fireIdleHooks(); blocked {
-		log.QueueLog("ProcessTurnEnd: idle hooks BLOCKED elapsed=%v", time.Since(start))
-		cmds := append(commitCmds, m.ContinueOutbox())
-		if sendCmd != nil {
-			cmds = append(cmds, sendCmd)
-		}
-		return tea.Batch(cmds...)
-	}
-	log.QueueLog("ProcessTurnEnd: idle hooks done elapsed=%v", time.Since(start))
-
-	if err := m.PersistSession(); err != nil {
-		log.Logger().Warn("failed to save session", zap.Error(err))
-	}
-	log.QueueLog("ProcessTurnEnd: persist done elapsed=%v", time.Since(start))
-
-	if cmd := input.StartPromptSuggestion(m.promptSuggestionDeps()); cmd != nil {
-		commitCmds = append(commitCmds, cmd)
-	}
-
-	if result.StopReason != "" && result.StopReason != core.StopEndTurn {
-		m.conv.AddNotice(fmt.Sprintf("Agent stopped: %s", result.StopReason))
-		if result.StopDetail != "" {
-			m.conv.AddNotice(result.StopDetail)
-		}
-	}
-
-	log.QueueLog("ProcessTurnEnd: returning elapsed=%v cmds=%d", time.Since(start), len(commitCmds)+1)
-	return tea.Batch(append(commitCmds, m.ContinueOutbox())...)
+	log.QueueLog("ProcessTurnEnd: firing idle hooks async")
+	commitCmds = append(commitCmds, m.fireIdleHooksCmd(result), m.ContinueOutbox())
+	return tea.Batch(commitCmds...)
 }
 
 func (m *model) ProcessAgentStop(err error) tea.Cmd {
@@ -604,15 +600,11 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 		AgentName:   kit.MapString(bg, "agentName"),
 		AgentType:   kit.MapString(bg, "agentType"),
 		Description: kit.MapString(bg, "description"),
-		ResumeID:    kit.MapString(bg, "resumeId"),
 	}
 	if launch.TaskID == "" {
 		return
 	}
-	childID := m.agentInput.BGTracker.EnsureWorkerTracker(launch, "", "")
-	if childID != "" {
-		m.agentInput.BGTracker.RecordLaunch(launch, "", "", 0)
-	}
+	m.agentInput.BGTracker.TrackWorker(launch)
 }
 
 func (m *model) persistOverflow(result *core.ToolResult) {
@@ -654,8 +646,7 @@ func (m *model) changeCwd(newCwd string) {
 	m.ReconfigureAgentTool()
 	if m.services.Hook != nil {
 		m.services.Hook.SetCwd(newCwd)
-		outcome := m.services.Hook.Execute(context.Background(), hook.CwdChanged, hook.HookInput{OldCwd: oldCwd, NewCwd: newCwd})
-		m.applyRuntimeHookOutcome(outcome)
+		m.services.Hook.ExecuteAsync(hook.CwdChanged, hook.HookInput{OldCwd: oldCwd, NewCwd: newCwd})
 	}
 }
 
@@ -663,8 +654,7 @@ func (m *model) fireFileChanged(filePath, source string) {
 	if m.services.Hook == nil || filePath == "" {
 		return
 	}
-	outcome := m.services.Hook.Execute(context.Background(), hook.FileChanged, hook.HookInput{FilePath: filePath, Source: source, Event: "change"})
-	m.applyRuntimeHookOutcome(outcome)
+	m.services.Hook.ExecuteAsync(hook.FileChanged, hook.HookInput{FilePath: filePath, Source: source, Event: "change"})
 }
 
 func (m *model) ReloadProjectContext(cwd string) {
@@ -698,17 +688,36 @@ func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
 // Internal: turn lifecycle and queue drain
 // ============================================================
 
-func (m *model) fireIdleHooks() (bool, tea.Cmd) {
-	lastContent := core.LastAssistantChatContent(m.conv.Messages)
-	blocked, reason := m.executeIdleHooks(context.Background(), lastContent)
-	if blocked {
-		msg := "Stop hook blocked: " + reason
-		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: msg})
-		return true, m.sendToAgent(msg, nil)
+func (m *model) handleStopHookResult(msg stopHookResultMsg) tea.Cmd {
+	if msg.Blocked {
+		log.QueueLog("handleStopHookResult: hooks BLOCKED reason=%q", msg.Reason)
+		blockMsg := "Stop hook blocked: " + msg.Reason
+		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: blockMsg})
+		return m.sendToAgent(blockMsg, nil)
 	}
-	return false, nil
+	log.QueueLog("handleStopHookResult: hooks done, persisting")
+	var cmds []tea.Cmd
+	if m.services.Session.ID() != "" {
+		cmds = append(cmds, m.persistSessionCmd())
+	} else {
+		if err := m.PersistSession(); err != nil {
+			log.Logger().Warn("failed to save session", zap.Error(err))
+		}
+	}
+	if cmd := input.StartPromptSuggestion(m.promptSuggestionDeps()); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	if msg.Result.StopReason != "" && msg.Result.StopReason != core.StopEndTurn {
+		m.conv.AddNotice(fmt.Sprintf("Agent stopped: %s", msg.Result.StopReason))
+		if msg.Result.StopDetail != "" {
+			m.conv.AddNotice(msg.Result.StopDetail)
+		}
+	}
+	if len(cmds) > 0 {
+		return tea.Batch(cmds...)
+	}
+	return nil
 }
-
 
 func (m *model) drainTurnQueues() (tea.Cmd, bool) {
 	// Drain ONE user message per call so each gets its own agent response.
@@ -737,33 +746,29 @@ func (m *model) drainTurnQueues() (tea.Cmd, bool) {
 		}
 	}
 
-	if m.agentInput.Notifications != nil {
-		if items := notify.PopReadyNotifications(m.agentInput.Notifications, true); len(items) > 0 {
-			return m.injectTaskNotification(notify.MergeNotifications(items)), true
+	if m.agentInput.Queue != nil {
+		if items := notify.PopReady(m.agentInput.Queue, true); len(items) > 0 {
+			return m.injectNotification(notify.Merge(items)), true
 		}
 	}
 
 	return nil, false
 }
 
-func (m *model) injectTaskNotification(item notify.Notification) tea.Cmd {
-	if item.Notice != "" {
-		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: item.Notice})
+func (m *model) injectNotification(msg notify.Message) tea.Cmd {
+	if msg.Notice != "" {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: msg.Notice})
 	}
 	if m.env.LLMProvider == nil {
-		if item.Notice == "" {
+		if msg.Notice == "" {
 			m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "A background task completed, but no provider is connected."})
 		}
 		return tea.Batch(m.CommitMessages()...)
 	}
-	if item.ContinuationPrompt == "" {
-		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "A background task completed, but no task notification payload was available."})
+	if msg.Content == "" {
 		return tea.Batch(m.CommitMessages()...)
 	}
-	for _, ctx := range notify.ContinuationContext(item) {
-		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: ctx})
-	}
-	return m.sendToAgent(notify.BuildContinuationPrompt(item), nil)
+	return m.sendToAgent(msg.Content, nil)
 }
 
 func (m *model) injectCronPrompt(prompt string) tea.Cmd {
@@ -831,7 +836,7 @@ func (m *model) overlayDeps() input.OverlayDeps {
 func (m *model) notifyDeps() notify.Deps {
 	return notify.Deps{
 		StreamActive: m.conv.Stream.Active,
-		Inject:       m.injectTaskNotification,
+		Inject:       m.injectNotification,
 	}
 }
 
@@ -857,22 +862,6 @@ func (m *model) StartExternalEditor(path string) tea.Cmd {
 
 func (m *model) SpinnerTickCmd() tea.Cmd { return m.conv.Spinner.Tick }
 func (m *model) ResetCronQueue()         { m.systemInput.CronQueue = nil }
-
-func (m *model) enterPlanModeForCommand(task string) error {
-	m.env.OperationMode = setting.ModePlan
-	m.env.PlanEnabled = true
-	m.env.PlanTask = task
-	m.env.SessionPermissions.AllowAllEdits = false
-	m.env.SessionPermissions.AllowAllWrites = false
-	m.env.SessionPermissions.AllowAllBash = false
-	m.env.SessionPermissions.AllowAllSkills = false
-	store, err := plan.NewStore()
-	if err != nil {
-		return fmt.Errorf("failed to initialize plan store: %w", err)
-	}
-	m.env.PlanStore = store
-	return nil
-}
 
 func (m *model) forkSession() (string, error) {
 	if m.services.Session.ID() == "" {

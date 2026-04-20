@@ -13,7 +13,7 @@ var safeTools = map[string]bool{
 	"Read": true, "Glob": true, "Grep": true,
 	"WebFetch": true, "WebSearch": true, "LSP": true,
 	"TaskCreate": true, "TaskGet": true, "TaskList": true, "TaskUpdate": true,
-	"AskUserQuestion": true, "EnterPlanMode": true, "ExitPlanMode": true,
+	"AskUserQuestion": true,
 	"CronList": true, "ToolSearch": true,
 }
 

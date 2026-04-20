@@ -39,9 +39,6 @@ func testScenarios() []scenario {
 				Skills:              "<available-skills>\nUse the Skill tool to invoke these capabilities:\n\n- git: Git workflow automation\n- review: Review a pull request\n- init: Initialize a new CLAUDE.md file\n\nInvoke with: Skill(skill=\"name\", args=\"optional args\")\n</available-skills>",
 				Agents:              "<available-agents>\nAvailable agent types for the Agent tool:\n\n- Explore: Fast codebase exploration\n  Use when: need to find files, search code, answer questions about codebase\n  Tools: Read, Glob, Grep\n- Plan: Software architect for implementation plans\n  Use when: need to plan implementation strategy\n  Tools: Read, Glob, Grep, Agent\n- general-purpose: All tools including nested Agent\n  Tools: *\n</available-agents>",
 				DeferredTools:       "<available-deferred-tools>\n- CronCreate: Schedule a prompt to run on a cron schedule\n- CronDelete: Delete a scheduled cron prompt\n- CronList: List all scheduled cron prompts\n- EnterWorktree: Create an isolated git worktree for agent work\n- ExitWorktree: Leave and clean up a git worktree\n</available-deferred-tools>",
-				Extra: []ExtraLayer{
-					{Name: "coordinator", Content: CoordinatorGuidance()},
-				},
 			},
 		},
 		{
@@ -55,18 +52,6 @@ func testScenarios() []scenario {
 				ProjectInstructions: "This is a Go project.",
 				Skills:              "<available-skills>\nUse the Skill tool to invoke these capabilities:\n\n- review: Review a pull request\n\nInvoke with: Skill(skill=\"name\", args=\"optional args\")\n</available-skills>",
 				Agents:              "<available-agents>\nAvailable agent types for the Agent tool:\n\n- Explore: Fast codebase exploration\n  Tools: Read, Glob, Grep\n</available-agents>",
-			},
-		},
-		{
-			name: "plan_mode",
-			config: Config{
-				ProviderName:        "anthropic",
-				ModelID:             "claude-sonnet-4-20250514",
-				Cwd:                 "/home/user/myproject",
-				IsGit:               true,
-				PlanMode:            true,
-				UserInstructions:    "Always use tabs.",
-				ProjectInstructions: "Go project with Bubble Tea.",
 			},
 		},
 		{
@@ -178,12 +163,6 @@ func TestScenarioMinimal_NoGitGuidelines(t *testing.T) {
 	if strings.Contains(prompt, "<available-agents>") {
 		t.Error("should NOT contain agents when empty")
 	}
-	if strings.Contains(prompt, "<coordinator-guidance>") {
-		t.Error("should NOT contain coordinator guidance when not injected")
-	}
-	if strings.Contains(prompt, "Plan Mode") {
-		t.Error("should NOT contain plan mode when disabled")
-	}
 }
 
 func TestScenarioMainSession_HasAllSections(t *testing.T) {
@@ -216,7 +195,6 @@ func TestScenarioMainSession_HasAllSections(t *testing.T) {
 		{"git guidelines", "Git safety (Bash)"},
 		{"question guidelines", "AskUserQuestion"},
 		{"task guidelines", "TaskCreate"},
-		{"coordinator", "<coordinator-guidance>"},
 	}
 
 	for _, r := range required {
@@ -250,30 +228,6 @@ func TestScenarioNoGit_ExcludesGitGuidelines(t *testing.T) {
 	}
 }
 
-func TestScenarioPlanMode_HasPlanContent(t *testing.T) {
-	scenarios := testScenarios()
-	var cfg Config
-	for _, sc := range scenarios {
-		if sc.name == "plan_mode" {
-			cfg = sc.config
-			break
-		}
-	}
-
-	sys := Build(cfg)
-	prompt := sys.Prompt()
-
-	if !strings.Contains(prompt, "PLAN MODE") {
-		t.Error("plan mode scenario should contain PLAN MODE marker")
-	}
-	if !strings.Contains(prompt, "ExitPlanMode") {
-		t.Error("plan mode scenario should reference ExitPlanMode")
-	}
-	if strings.Contains(prompt, "TaskCreate") {
-		t.Error("plan mode should NOT have task management guidelines")
-	}
-}
-
 func TestScenarioSubagentReadonly_NoCapabilities(t *testing.T) {
 	scenarios := testScenarios()
 	var cfg Config
@@ -298,9 +252,6 @@ func TestScenarioSubagentReadonly_NoCapabilities(t *testing.T) {
 	}
 	if strings.Contains(prompt, "<available-agents>") {
 		t.Error("read-only subagent should NOT have agents section")
-	}
-	if strings.Contains(prompt, "<coordinator-guidance>") {
-		t.Error("subagent should NOT have coordinator guidance")
 	}
 	if strings.Contains(prompt, "AskUserQuestion") {
 		t.Error("subagent should NOT have question guidelines")
@@ -346,21 +297,19 @@ func TestLayerOrdering(t *testing.T) {
 		Skills:              "SKILLS_MARKER",
 		Agents:              "AGENTS_MARKER",
 		DeferredTools:       "DEFERRED_MARKER",
-		Extra:               []ExtraLayer{{Name: "coord", Content: "COORDINATOR_MARKER"}},
 	})
 
 	prompt := sys.Prompt()
 
 	indices := map[string]int{
-		"identity":     strings.Index(prompt, "interactive AI assistant"),
-		"env":          strings.Index(prompt, "<env>"),
-		"user":         strings.Index(prompt, "USER_MARKER"),
-		"project":      strings.Index(prompt, "PROJECT_MARKER"),
-		"skills":       strings.Index(prompt, "SKILLS_MARKER"),
-		"agents":       strings.Index(prompt, "AGENTS_MARKER"),
-		"deferred":     strings.Index(prompt, "DEFERRED_MARKER"),
-		"guidelines":   strings.Index(prompt, "# Tool usage"),
-		"coordinator":  strings.Index(prompt, "COORDINATOR_MARKER"),
+		"identity":   strings.Index(prompt, "interactive AI assistant"),
+		"env":        strings.Index(prompt, "<env>"),
+		"user":       strings.Index(prompt, "USER_MARKER"),
+		"project":    strings.Index(prompt, "PROJECT_MARKER"),
+		"skills":     strings.Index(prompt, "SKILLS_MARKER"),
+		"agents":     strings.Index(prompt, "AGENTS_MARKER"),
+		"deferred":   strings.Index(prompt, "DEFERRED_MARKER"),
+		"guidelines": strings.Index(prompt, "# Tool usage"),
 	}
 
 	for name, idx := range indices {
@@ -369,7 +318,7 @@ func TestLayerOrdering(t *testing.T) {
 		}
 	}
 
-	order := []string{"identity", "env", "user", "project", "skills", "agents", "deferred", "guidelines", "coordinator"}
+	order := []string{"identity", "env", "user", "project", "skills", "agents", "deferred", "guidelines"}
 	for i := 1; i < len(order); i++ {
 		if indices[order[i-1]] >= indices[order[i]] {
 			t.Errorf("%s (idx=%d) should appear before %s (idx=%d)", order[i-1], indices[order[i-1]], order[i], indices[order[i]])
@@ -381,16 +330,15 @@ func TestExtraLayerSemanticNaming(t *testing.T) {
 	sys := Build(Config{
 		Cwd: "/tmp/test",
 		Extra: []ExtraLayer{
-			{Name: "coordinator", Content: "COORD_CONTENT"},
+			{Name: "agent-identity", Content: "AGENT_CONTENT"},
 			{Name: "skill-invocation", Content: "SKILL_CONTENT"},
 		},
 	})
 
-	// Verify layers can be retrieved by semantic name
-	if layer, ok := sys.Get("coordinator"); !ok {
-		t.Error("should be able to get layer by semantic name 'coordinator'")
-	} else if layer.Content != "COORD_CONTENT" {
-		t.Errorf("coordinator content = %q, want COORD_CONTENT", layer.Content)
+	if layer, ok := sys.Get("agent-identity"); !ok {
+		t.Error("should be able to get layer by semantic name 'agent-identity'")
+	} else if layer.Content != "AGENT_CONTENT" {
+		t.Errorf("agent-identity content = %q, want AGENT_CONTENT", layer.Content)
 	}
 
 	if layer, ok := sys.Get("skill-invocation"); !ok {

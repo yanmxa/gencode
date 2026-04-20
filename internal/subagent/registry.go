@@ -123,7 +123,7 @@ Good for reducing complexity, removing duplication, improving naming, and tighte
 		PermissionMode: PermissionAcceptEdits,
 		Tools:          nil, // all tools
 		DisallowedTools: ToolList{"Agent", "ContinueAgent", "SendMessage",
-			"EnterPlanMode", "ExitPlanMode", "EnterWorktree", "ExitWorktree",
+			"EnterWorktree", "ExitWorktree",
 			"CronCreate", "CronDelete", "CronList"},
 		MaxTurns: 50,
 		Source:   "built-in",

@@ -71,25 +71,6 @@ func TestPrepareRunConfigRespectsOverrides(t *testing.T) {
 	}
 }
 
-func TestPrepareRunConfigUsesResolvedPlanModePrompt(t *testing.T) {
-	executor := &Executor{}
-
-	rc, err := executor.prepareRunConfig(AgentRequest{
-		Agent: "general-purpose",
-		Mode:  string(PermissionPlan),
-	})
-	if err != nil {
-		t.Fatalf("prepareRunConfig() error: %v", err)
-	}
-
-	if rc.permMode != PermissionPlan {
-		t.Fatalf("expected plan mode, got %q", rc.permMode)
-	}
-	if !strings.Contains(rc.agentPrompt, "## Mode: Read-Only") {
-		t.Fatalf("expected read-only mode prompt, got %q", rc.agentPrompt)
-	}
-}
-
 func TestBuildCancelledAgentResultUsesPreparedRunMetadata(t *testing.T) {
 	executor := &Executor{}
 	run := &preparedRun{

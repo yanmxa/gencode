@@ -135,28 +135,6 @@ func TestBuildPromptNarrativeOrder(t *testing.T) {
 	}
 }
 
-func TestBuildPromptPlanMode(t *testing.T) {
-	sys := Build(Config{
-		Cwd:      "/tmp/test",
-		PlanMode: true,
-	})
-	prompt := sys.Prompt()
-
-	if !strings.Contains(prompt, "plan") && !strings.Contains(prompt, "Plan") {
-		t.Error("PlanMode=true should include plan mode content in prompt")
-	}
-
-	sys2 := Build(Config{
-		Cwd:      "/tmp/test",
-		PlanMode: false,
-	})
-	prompt2 := sys2.Prompt()
-
-	if len(prompt) <= len(prompt2) {
-		t.Error("PlanMode=true prompt should be longer than PlanMode=false prompt")
-	}
-}
-
 func TestBuildPromptEmptyFieldsExcluded(t *testing.T) {
 	sys := Build(Config{
 		Cwd: "/tmp/test",
@@ -184,10 +162,6 @@ func TestPromptInitCachedFiles(t *testing.T) {
 	if cachedToolsCore == "" {
 		t.Error("cachedToolsCore should be non-empty after init()")
 	}
-	if cachedPlanMode == "" {
-		t.Error("cachedPlanMode should be non-empty after init()")
-	}
-
 	sys := Build(Config{Cwd: "/tmp/test"})
 	prompt := sys.Prompt()
 
