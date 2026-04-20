@@ -45,9 +45,9 @@ Main Agent LLM loop
 ├─ Tool call: Agent(prompt: "find all API endpoints")
 │     │
 │     ▼
-│   Executor.Run()
+│   Executor.Run()                       ← subagent/executor.go:102
 │     ├─ Build core.Agent (system prompt + tool set)
-│     ├─ agent.ThinkAct(ctx)          ← Subagent's LLM loop
+│     ├─ agent.ThinkAct(ctx)             ← core/agent_impl.go:158
 │     │     ├─ LLM → Grep → LLM → Read → LLM → end_turn
 │     │     └─ Returns Result{Content: "Found 12 endpoints..."}
 │     └─ Return Content as tool result
@@ -56,9 +56,9 @@ Main Agent LLM loop
 ├─ LLM continues next reasoning step
 ```
 
-## Pattern 2: Background — Async Notification
+## Pattern 2: Background — Async Message
 
-The Subagent runs in a separate goroutine. The Main Agent immediately receives a task ID and continues working. When the Subagent completes, it **pushes a notification** that becomes a message in the Main Agent's conversation.
+The Subagent runs in a separate goroutine. The Main Agent immediately receives a task ID and continues working. When the Subagent completes, it **pushes a Message** that becomes a message in the Main Agent's conversation.
 
 ### Phase 1: Launch
 
@@ -74,8 +74,8 @@ Main Agent LLM loop
 │   Agent(prompt: "fix payment module", run_in_background: true)
 │   Agent(prompt: "fix logging module", run_in_background: true)
 │
-│   Each call internally:
-│     Executor.RunBackground()
+│   Each call internally:                ← tool/agent/agent.go:114
+│     Executor.RunBackground()           ← subagent/executor.go:126
 │       ├─ Build core.Agent
 │       ├─ Register AgentTask → get taskID
 │       ├─ Spawn goroutine → Subagent runs independently
@@ -99,7 +99,7 @@ The Subagent runs its own LLM loop inside the goroutine, fully independent from 
 
 ```
 goroutine:
-  Subagent.ThinkAct(ctx)
+  Subagent.ThinkAct(ctx)                 ← core/agent_impl.go:158
     ├─ LLM inference → Read(src/auth/validate.go)
     ├─ Execute Read
     ├─ LLM inference → Edit(src/auth/validate.go, ...)
@@ -108,9 +108,9 @@ goroutine:
     └─ Returns Result{Content: "Fixed null pointer in validate.go:42"}
 ```
 
-### Phase 3: Completion → Push Notification
+### Phase 3: Completion → Push Message
 
-When the Subagent finishes, it **pushes a notification to the queue** — the Main Agent does not poll for results:
+When the Subagent finishes, it **pushes a Message to the Queue** — the Main Agent does not poll for results:
 
 ```
 Subagent goroutine ends
@@ -118,18 +118,18 @@ Subagent goroutine ends
      ▼
 AgentTask.Complete(result)
      │
-     │  Triggers completion callback registered at launch
+     │  taskCompletionObserver            ← notify/notification.go:139
      ▼
-Build Notification {
-    Notice: "fix auth module completed"      ← For TUI display
-    Prompt: "<task-notification>...</>"       ← For LLM reasoning
+TaskMessage(info, subject) → Message {   ← notify/notification.go:14
+    Notice:  "fix auth module completed"  ← For TUI display
+    Content: "<task-notification>...</>"   ← For LLM reasoning
 }
      │
      ▼
-NotificationQueue.Push(notification)         ← Thread-safe queue
+Queue.Push(msg)                           ← notify/model.go (thread-safe)
 ```
 
-The Notification has only two fields. `Prompt` is minimal XML carrying just enough for the LLM to decide next steps:
+The Message has only two fields: `Notice` for the user, `Content` for the LLM. `Content` is minimal XML carrying just enough for the LLM to decide next steps:
 
 ```xml
 <task-notification task-id="task-abc123" status="completed" agent-id="session-789" description="fix auth module">
@@ -149,12 +149,14 @@ Could not find logging config at expected path /etc/app/logging.yaml
 
 ### Phase 4: Injection into Main Agent's Conversation
 
-The TUI checks the queue every 500ms. When the Main Agent is idle (not inferring, not executing tools), it pops notifications and converts them into **two messages** — one for the user, one for the LLM:
+The TUI checks the Queue every 500ms via a tick. At each turn boundary (`ProcessTurnEnd`), it drains notifications and converts them into **two messages** — one for the user, one for the LLM:
 
 ```
-NotificationQueue
+Queue                                    ← notify/model.go
      │
-     │  Main Agent idle
+     │  Turn boundary (ProcessTurnEnd)   ← app/model.go:458
+     │  drainTurnQueues()                ← app/model.go:722
+     │  PopReady(queue, idle)            ← notify/tracker.go:25
      ▼
 ┌────────────────────────────────────────────────┐
 │                                                │
@@ -169,6 +171,7 @@ NotificationQueue
 │    description="fix auth module">              │
 │  Fixed null pointer in validate.go:42...       │
 │  </task-notification>                          │
+│  → injectNotification()               ← app/model.go:758
 │  → sendToAgent() → Agent Inbox                 │
 │  → Triggers new LLM reasoning cycle            │
 │                                                │
@@ -177,9 +180,9 @@ NotificationQueue
 
 The Main Agent's LLM sees this user message like any regular input — it synthesizes results and decides next steps on its own.
 
-### Multiple Notifications Arriving Together
+### Multiple Messages Arriving Together
 
-If multiple Subagents complete while the Main Agent is busy, notifications queue up. When the Main Agent goes idle, it pops up to 8 notifications at once and merges them into a single message:
+If multiple Subagents complete while the Main Agent is busy, Messages queue up. When the Main Agent reaches a turn boundary, it pops up to 8 Messages at once and merges them into a single Message via `Merge()` (`notify/notification.go:56`):
 
 ```xml
 <task-notifications count="3">
@@ -214,15 +217,15 @@ Main Agent LLM inference
   │              goroutine          goroutine          goroutine
   │                 │                  │                  │
   │                 ▼                  │                  │
-  │            Done → Push notify      │                  │
+  │            Done → Push msg         │                  │
   │                                    ▼                  │
-  │                               Done → Push notify      │
+  │                               Done → Push msg         │
   │                                                       ▼
-  │                                                  Failed → Push notify
+  │                                                  Failed → Push msg
   │
-  │  Queue: [notif-1, notif-2, notif-3]
+  │  Queue: [msg-1, msg-2, msg-3]
   │
-  │  Main Agent idle → Pop all → Convert to two messages:
+  │  Turn boundary → PopReady → Merge → injectNotification:
   │
   │    RoleNotice: "3 background tasks completed: ..."     → User sees
   │    RoleUser:   <task-notifications count="3">...</>    → LLM sees
@@ -244,7 +247,7 @@ CONSTRUCT → EXECUTE → RETURN → (NOTIFY) → CLEANUP
 - **CONSTRUCT**: Resolve agent type → Build system prompt + tool set → Create core.Agent → Optional git worktree isolation
 - **EXECUTE**: Inject prompt → ThinkAct loop (LLM inference → tool execution → repeat until end_turn)
 - **RETURN**: Foreground → return tool result directly; Background → store in AgentTask
-- **NOTIFY** (background only): Complete → Build Notification → Push queue → Inject as message when idle
+- **NOTIFY** (background only): Complete → `TaskMessage()` → `Queue.Push()` → `injectNotification()` at turn boundary
 - **CLEANUP**: Save session transcript → Close MCP connections → Delete worktree if no changes
 
 ## What Subagents Inherit
@@ -285,6 +288,28 @@ You are a Go code reviewer. Focus on correctness bugs...
 
 Source priority: Built-in → Project `.gen/agents/*.md` → User `~/.gen/agents/*.md` → Plugin agents
 
+## Key Source Locations
+
+| File | Line | What |
+|------|------|------|
+| `tool/agent/agent.go` | 114 | `execute()` — Agent tool entry point |
+| `subagent/executor.go` | 102 | `Run()` — foreground subagent execution |
+| `subagent/executor.go` | 126 | `RunBackground()` — background subagent launch |
+| `core/agent_impl.go` | 158 | `ThinkAct()` — the LLM inference-action loop |
+| `notify/model.go` | — | `Message`, `Queue` — generic message types |
+| `notify/notification.go` | 14 | `TaskMessage()` — builds Message from task completion |
+| `notify/notification.go` | 56 | `Merge()` — combines multiple Messages into one |
+| `notify/notification.go` | 139 | `taskCompletionObserver` — bridges task → Queue |
+| `notify/notification.go` | 173 | `InstallCompletionObserver()` — wires up the observer |
+| `notify/tracker.go` | 60 | `TrackWorker()` — registers background task in TUI tracker |
+| `notify/tracker.go` | 90 | `CompleteWorker()` — marks task complete in TUI tracker |
+| `notify/tracker.go` | 25 | `PopReady()` — pops queued Messages when idle |
+| `notify/update.go` | 19 | `handleTick()` — 500ms tick handler for queue drain |
+| `app/model.go` | 458 | `ProcessTurnEnd()` — turn boundary, triggers queue drain |
+| `app/model.go` | 722 | `drainTurnQueues()` — pops notifications from Queue |
+| `app/model.go` | 758 | `injectNotification()` — converts Message to conversation messages |
+| `app/model.go` | 590 | `syncBackgroundTaskTrackerFromAgent()` — tracks agent launches |
+
 ## Related Tools
 
 | Tool | Purpose |
@@ -299,7 +324,8 @@ Source priority: Built-in → Project `.gen/agents/*.md` → User `~/.gen/agents
 
 1. **Prompt is the interface.** Subagents cannot see the parent's conversation — the prompt must be self-contained.
 2. **Completed work becomes a message.** Background results are injected as a user message — no special protocol, no shared state, just a message in the conversation.
-3. **Subagents push, Main Agent doesn't poll.** Subagents push to the queue on completion; the Main Agent receives when idle. Push, not pull.
-4. **Isolated by default.** Independent context, file cache, and task state. Only share what's necessary (provider, instructions, hooks).
-5. **Fail independently.** A Subagent failure produces an error result — it doesn't crash the parent. The parent decides how to handle it.
-6. **Agent types are data, not code.** Markdown + frontmatter definitions — extensible without recompilation.
+3. **Push, not pull.** Subagents push to the Queue on completion; the Main Agent receives at turn boundaries. No polling.
+4. **Generic messaging.** `Message{Notice, Content}` is not task-specific — any agent can push to any Queue. Task completion is just one producer (`TaskMessage`).
+5. **Isolated by default.** Independent context, file cache, and task state. Only share what's necessary (provider, instructions, hooks).
+6. **Fail independently.** A Subagent failure produces an error result — it doesn't crash the parent. The parent decides how to handle it.
+7. **Agent types are data, not code.** Markdown + frontmatter definitions — extensible without recompilation.
