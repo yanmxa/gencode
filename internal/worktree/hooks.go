@@ -1,40 +1,20 @@
 package worktree
 
-import "sync"
+import "github.com/yanmxa/gencode/internal/hook"
 
-// HookObserver receives worktree lifecycle notifications without coupling the
-// worktree package to the hooks runtime.
-type HookObserver interface {
-	WorktreeCreated(name, path string)
-	WorktreeRemoved(path string)
-}
-
-var worktreeHookObserver struct {
-	mu       sync.RWMutex
-	observer HookObserver
-}
-
-// SetHookObserver installs or clears the current worktree hook observer.
-func SetHookObserver(observer HookObserver) {
-	worktreeHookObserver.mu.Lock()
-	defer worktreeHookObserver.mu.Unlock()
-	worktreeHookObserver.observer = observer
-}
-
-func notifyWorktreeCreated(name, path string) {
-	worktreeHookObserver.mu.RLock()
-	observer := worktreeHookObserver.observer
-	worktreeHookObserver.mu.RUnlock()
-	if observer != nil {
-		observer.WorktreeCreated(name, path)
+func fireWorktreeCreated(name, path string) {
+	if h := hook.DefaultIfInit(); h != nil {
+		h.ExecuteAsync(hook.WorktreeCreate, hook.HookInput{
+			Name:         name,
+			WorktreePath: path,
+		})
 	}
 }
 
-func notifyWorktreeRemoved(path string) {
-	worktreeHookObserver.mu.RLock()
-	observer := worktreeHookObserver.observer
-	worktreeHookObserver.mu.RUnlock()
-	if observer != nil {
-		observer.WorktreeRemoved(path)
+func fireWorktreeRemoved(path string) {
+	if h := hook.DefaultIfInit(); h != nil {
+		h.ExecuteAsync(hook.WorktreeRemove, hook.HookInput{
+			WorktreePath: path,
+		})
 	}
 }

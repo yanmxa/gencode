@@ -1,12 +1,24 @@
 package session
 
 import (
+	"sync"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/transcript"
+	"github.com/yanmxa/gencode/internal/session/transcript"
 )
 
-var AppVersion string
+var appVersion string
+var appVersionOnce sync.Once
+
+// SetAppVersion sets the application version. Only the first call takes effect.
+func SetAppVersion(v string) {
+	appVersionOnce.Do(func() { appVersion = v })
+}
+
+// GetAppVersion returns the application version set by SetAppVersion.
+func GetAppVersion() string {
+	return appVersion
+}
 
 const (
 	EntryUser      = "user"

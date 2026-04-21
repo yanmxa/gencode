@@ -5,33 +5,32 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/app/conv"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
 
-// newFakeClient creates a *client.Client backed by the given responses.
-func newFakeClient(responses ...message.CompletionResponse) (*client.Client, *client.FakeClient) {
-	fake := &client.FakeClient{Responses: responses}
+func newFakeClient(responses ...llm.CompletionResponse) (*llm.Client, *llm.FakeLLM) {
+	fake := &llm.FakeLLM{Responses: responses}
 	return testutil.NewTestClient(fake), fake
 }
 
 func TestCompact_SummarizesConversation(t *testing.T) {
 	c, _ := newFakeClient(
-		message.CompletionResponse{Content: "Summary: discussed file reading", StopReason: "end_turn"},
+		llm.CompletionResponse{Content: "Summary: discussed file reading", StopReason: "end_turn"},
 	)
 
-	msgs := []message.Message{
-		message.UserMessage("read the file", nil),
-		message.AssistantMessage("I'll read the file for you", "", nil),
-		message.UserMessage("thanks", nil),
-		message.AssistantMessage("you're welcome", "", nil),
+	msgs := []core.Message{
+		core.UserMessage("read the file", nil),
+		core.AssistantMessage("I'll read the file for you", "", nil),
+		core.UserMessage("thanks", nil),
+		core.AssistantMessage("you're welcome", "", nil),
 	}
 
-	summary, count, err := runtime.Compact(context.Background(), c, msgs, "", "")
+	summary, count, err := conv.CompactConversation(context.Background(), c, msgs, "")
 	if err != nil {
-		t.Fatalf("Compact() error: %v", err)
+		t.Fatalf("CompactConversation() error: %v", err)
 	}
 	if count != 4 {
 		t.Errorf("expected count 4, got %d", count)
@@ -43,20 +42,19 @@ func TestCompact_SummarizesConversation(t *testing.T) {
 
 func TestCompact_WithFocus(t *testing.T) {
 	c, fake := newFakeClient(
-		message.CompletionResponse{Content: "Focused summary on testing", StopReason: "end_turn"},
+		llm.CompletionResponse{Content: "Focused summary on testing", StopReason: "end_turn"},
 	)
 
-	msgs := []message.Message{
-		message.UserMessage("write tests", nil),
-		message.AssistantMessage("ok", "", nil),
+	msgs := []core.Message{
+		core.UserMessage("write tests", nil),
+		core.AssistantMessage("ok", "", nil),
 	}
 
-	_, _, err := runtime.Compact(context.Background(), c, msgs, "", "testing")
+	_, _, err := conv.CompactConversation(context.Background(), c, msgs, "testing")
 	if err != nil {
-		t.Fatalf("Compact() error: %v", err)
+		t.Fatalf("CompactConversation() error: %v", err)
 	}
 
-	// Verify focus string appears in the messages sent to Complete
 	if len(fake.Calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(fake.Calls))
 	}
@@ -67,12 +65,12 @@ func TestCompact_WithFocus(t *testing.T) {
 
 func TestCompact_EmptyConversation(t *testing.T) {
 	c, _ := newFakeClient(
-		message.CompletionResponse{Content: "Empty summary", StopReason: "end_turn"},
+		llm.CompletionResponse{Content: "Empty summary", StopReason: "end_turn"},
 	)
 
-	summary, count, err := runtime.Compact(context.Background(), c, nil, "", "")
+	summary, count, err := conv.CompactConversation(context.Background(), c, nil, "")
 	if err != nil {
-		t.Fatalf("Compact() error: %v", err)
+		t.Fatalf("CompactConversation() error: %v", err)
 	}
 	if count != 0 {
 		t.Errorf("expected count 0, got %d", count)
@@ -82,51 +80,19 @@ func TestCompact_EmptyConversation(t *testing.T) {
 	}
 }
 
-func TestCompact_WithSessionMemory(t *testing.T) {
-	c, fake := newFakeClient(
-		message.CompletionResponse{Content: "Combined summary", StopReason: "end_turn"},
-	)
-
-	msgs := []message.Message{
-		message.UserMessage("add tests", nil),
-		message.AssistantMessage("done", "", nil),
-	}
-
-	sessionMemory := "Previous context: refactored session store."
-	_, _, err := runtime.Compact(context.Background(), c, msgs, sessionMemory, "")
-	if err != nil {
-		t.Fatalf("Compact() error: %v", err)
-	}
-
-	// Verify session memory was prepended to the conversation text
-	if len(fake.Calls) != 1 {
-		t.Fatalf("expected 1 call, got %d", len(fake.Calls))
-	}
-	sent := fake.Calls[0].Messages[0].Content
-	if !strings.Contains(sent, "Previous session context:") {
-		t.Error("expected 'Previous session context:' header in sent text")
-	}
-	if !strings.Contains(sent, sessionMemory) {
-		t.Error("expected session memory content in sent text")
-	}
-	if !strings.Contains(sent, "Recent conversation:") {
-		t.Error("expected 'Recent conversation:' header in sent text")
-	}
-}
-
 func TestCompact_WithoutOptionalSections_LeavesPromptPlain(t *testing.T) {
 	c, fake := newFakeClient(
-		message.CompletionResponse{Content: "Plain summary", StopReason: "end_turn"},
+		llm.CompletionResponse{Content: "Plain summary", StopReason: "end_turn"},
 	)
 
-	msgs := []message.Message{
-		message.UserMessage("inspect session state", nil),
-		message.AssistantMessage("checking now", "", nil),
+	msgs := []core.Message{
+		core.UserMessage("inspect session state", nil),
+		core.AssistantMessage("checking now", "", nil),
 	}
 
-	_, _, err := runtime.Compact(context.Background(), c, msgs, "", "")
+	_, _, err := conv.CompactConversation(context.Background(), c, msgs, "")
 	if err != nil {
-		t.Fatalf("Compact() error: %v", err)
+		t.Fatalf("CompactConversation() error: %v", err)
 	}
 
 	if len(fake.Calls) != 1 {
@@ -134,12 +100,6 @@ func TestCompact_WithoutOptionalSections_LeavesPromptPlain(t *testing.T) {
 	}
 
 	sent := fake.Calls[0].Messages[0].Content
-	if strings.Contains(sent, "Previous session context:") {
-		t.Fatal("did not expect session memory header without prior summary")
-	}
-	if strings.Contains(sent, "Recent conversation:") {
-		t.Fatal("did not expect recent conversation header without prior summary")
-	}
 	if strings.Contains(sent, "**Important**: Focus the summary on:") {
 		t.Fatal("did not expect focus directive without focus override")
 	}
@@ -169,7 +129,7 @@ func TestNeedsCompaction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := message.NeedsCompaction(tt.input, tt.limit)
+			got := core.NeedsCompaction(tt.input, tt.limit)
 			if got != tt.expect {
 				t.Errorf("NeedsCompaction(%d, %d) = %v, want %v",
 					tt.input, tt.limit, got, tt.expect)

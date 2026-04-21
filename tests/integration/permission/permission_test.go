@@ -4,33 +4,30 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/permission"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
 
 func TestPermission_PermitAll_AllowsWrite(t *testing.T) {
 	testutil.RegisterFakeTool(t, "Write", "written successfully")
 
-	loop, _ := testutil.NewTestLoopWithPermission(t, permission.PermitAll(),
+	ag, _ := testutil.NewTestAgentWithPermission(t, perm.AsPermissionFunc(perm.PermitAll()),
 		testutil.ToolCallResponse("Write", "tc1", `{"file_path": "/tmp/test"}`),
 		testutil.EndTurnResponse("done"),
 	)
-	loop.AddUser("write a file", nil)
 
-	result, err := loop.Run(context.Background(), runtime.RunOptions{})
+	result, err := testutil.RunAgent(context.Background(), ag, "write a file")
 	if err != nil {
-		t.Fatalf("Run() error: %v", err)
+		t.Fatalf("RunAgent() error: %v", err)
 	}
 
-	// Verify tool executed successfully (no error results)
 	for _, m := range result.Messages {
 		if m.ToolResult != nil && m.ToolResult.IsError {
 			t.Errorf("unexpected error result: %s", m.ToolResult.Content)
 		}
 	}
-	if result.StopReason != "end_turn" {
+	if result.StopReason != core.StopEndTurn {
 		t.Errorf("expected 'end_turn', got %q", result.StopReason)
 	}
 }
@@ -38,18 +35,16 @@ func TestPermission_PermitAll_AllowsWrite(t *testing.T) {
 func TestPermission_ReadOnly_BlocksWrite(t *testing.T) {
 	testutil.RegisterFakeTool(t, "Write", "should not execute")
 
-	loop, _ := testutil.NewTestLoopWithPermission(t, permission.ReadOnly(),
+	ag, _ := testutil.NewTestAgentWithPermission(t, perm.AsPermissionFunc(perm.ReadOnly()),
 		testutil.ToolCallResponse("Write", "tc1", `{"file_path": "/tmp/test"}`),
 		testutil.EndTurnResponse("ok"),
 	)
-	loop.AddUser("write", nil)
 
-	result, err := loop.Run(context.Background(), runtime.RunOptions{})
+	result, err := testutil.RunAgent(context.Background(), ag, "write")
 	if err != nil {
-		t.Fatalf("Run() error: %v", err)
+		t.Fatalf("RunAgent() error: %v", err)
 	}
 
-	// Verify tool was rejected
 	hasError := false
 	for _, m := range result.Messages {
 		if m.ToolResult != nil && m.ToolResult.IsError {
@@ -65,18 +60,16 @@ func TestPermission_ReadOnly_BlocksWrite(t *testing.T) {
 func TestPermission_ReadOnly_AllowsRead(t *testing.T) {
 	testutil.RegisterFakeTool(t, "Read", "file contents")
 
-	loop, _ := testutil.NewTestLoopWithPermission(t, permission.ReadOnly(),
+	ag, _ := testutil.NewTestAgentWithPermission(t, perm.AsPermissionFunc(perm.ReadOnly()),
 		testutil.ToolCallResponse("Read", "tc1", `{"file_path": "/tmp/test"}`),
 		testutil.EndTurnResponse("done"),
 	)
-	loop.AddUser("read", nil)
 
-	result, err := loop.Run(context.Background(), runtime.RunOptions{})
+	result, err := testutil.RunAgent(context.Background(), ag, "read")
 	if err != nil {
-		t.Fatalf("Run() error: %v", err)
+		t.Fatalf("RunAgent() error: %v", err)
 	}
 
-	// Verify tool executed without error
 	for _, m := range result.Messages {
 		if m.ToolResult != nil && m.ToolResult.IsError {
 			t.Errorf("unexpected error for Read tool: %s", m.ToolResult.Content)
@@ -84,18 +77,19 @@ func TestPermission_ReadOnly_AllowsRead(t *testing.T) {
 	}
 }
 
-func TestPermission_DenyAll_BlocksEverything(t *testing.T) {
-	testutil.RegisterFakeTool(t, "Read", "should not execute")
+func TestPermission_DenyAll_BlocksNonSafeTools(t *testing.T) {
+	// DenyAll blocks non-safe tools. Safe tools (Read, Glob, etc.) bypass
+	// permission checks in the decorator — this is by design.
+	testutil.RegisterFakeTool(t, "Bash", "should not execute")
 
-	loop, _ := testutil.NewTestLoopWithPermission(t, permission.DenyAll(),
-		testutil.ToolCallResponse("Read", "tc1", `{}`),
+	ag, _ := testutil.NewTestAgentWithPermission(t, perm.AsPermissionFunc(perm.DenyAll()),
+		testutil.ToolCallResponse("Bash", "tc1", `{"command":"echo hi"}`),
 		testutil.EndTurnResponse("done"),
 	)
-	loop.AddUser("read", nil)
 
-	result, err := loop.Run(context.Background(), runtime.RunOptions{})
+	result, err := testutil.RunAgent(context.Background(), ag, "run a command")
 	if err != nil {
-		t.Fatalf("Run() error: %v", err)
+		t.Fatalf("RunAgent() error: %v", err)
 	}
 
 	hasError := false
@@ -106,30 +100,27 @@ func TestPermission_DenyAll_BlocksEverything(t *testing.T) {
 		}
 	}
 	if !hasError {
-		t.Error("expected error result for Read tool in DenyAll mode")
+		t.Error("expected error result for Bash tool in DenyAll mode")
 	}
 }
 
-func TestPermission_ExecTool_Directly(t *testing.T) {
-	testutil.RegisterFakeTool(t, "Bash", "executed")
-	tc := message.ToolCall{ID: "tc1", Name: "Bash", Input: `{"command": "echo hello"}`}
+func TestPermission_SafeToolBypassesPermission(t *testing.T) {
+	// Safe tools (Read, Glob, etc.) bypass permission checks even with DenyAll.
+	testutil.RegisterFakeTool(t, "Read", "file contents")
 
-	tests := []struct {
-		name      string
-		checker   permission.Checker
-		wantError bool
-	}{
-		{"PermitAll allows Bash", permission.PermitAll(), false},
-		{"DenyAll rejects Bash", permission.DenyAll(), true},
-		{"ReadOnly rejects Bash", permission.ReadOnly(), true},
+	ag, _ := testutil.NewTestAgentWithPermission(t, perm.AsPermissionFunc(perm.DenyAll()),
+		testutil.ToolCallResponse("Read", "tc1", `{}`),
+		testutil.EndTurnResponse("done"),
+	)
+
+	result, err := testutil.RunAgent(context.Background(), ag, "read")
+	if err != nil {
+		t.Fatalf("RunAgent() error: %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			loop, _ := testutil.NewTestLoopWithPermission(t, tt.checker)
-			result := loop.ExecTool(context.Background(), tc)
-			if result.IsError != tt.wantError {
-				t.Errorf("IsError = %v, want %v (content: %s)", result.IsError, tt.wantError, result.Content)
-			}
-		})
+
+	for _, m := range result.Messages {
+		if m.ToolResult != nil && m.ToolResult.IsError {
+			t.Errorf("safe tool Read should bypass DenyAll: %s", m.ToolResult.Content)
+		}
 	}
 }

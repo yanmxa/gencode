@@ -3,8 +3,8 @@ package session
 import (
 	"time"
 
-	"github.com/yanmxa/gencode/internal/tracker"
-	"github.com/yanmxa/gencode/internal/transcript"
+	"github.com/yanmxa/gencode/internal/task/tracker"
+	"github.com/yanmxa/gencode/internal/session/transcript"
 )
 
 func NormalizeMetadata(meta *SessionMetadata, entries []Entry, defaultCwd string, now time.Time) {
@@ -47,7 +47,6 @@ func TranscriptFromSnapshot(sess *Snapshot, nodes []transcript.Node, tasks []tra
 			LastPrompt: sess.Metadata.LastPrompt,
 			Tag:        sess.Metadata.Tag,
 			Mode:       sess.Metadata.Mode,
-			Summary:    sess.Metadata.Summary,
 			Tasks:      transcript.TrackerTaskViewsFromTasks(tasks),
 		},
 	}

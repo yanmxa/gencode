@@ -10,9 +10,21 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yanmxa/gencode/internal/plugin"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/core"
 )
+
+// PluginServer describes an MCP server contributed by a plugin.
+// Fields use primitive types so callers don't need mcp-internal types.
+type PluginServer struct {
+	Name    string
+	Type    string
+	Command string
+	Args    []string
+	Env     map[string]string
+	URL     string
+	Headers map[string]string
+	Scope   string
+}
 
 // Registry manages multiple MCP server connections
 type Registry struct {
@@ -25,6 +37,10 @@ type Registry struct {
 	loader     *ConfigLoader
 	cwd        string
 
+	// PluginServers returns MCP servers contributed by plugins. Injected by
+	// the app layer to avoid mcp importing plugin (same-layer dependency).
+	PluginServers func() []PluginServer
+
 	// Callback when tool schemas change
 	onToolsChanged func()
 }
@@ -34,17 +50,17 @@ type mcpState struct {
 	Disabled []string `json:"disabled,omitempty"`
 }
 
-// DefaultRegistry is the global MCP registry
-var DefaultRegistry *Registry
+// defaultRegistry is the package-level MCP registry.
+var defaultRegistry = newEmptyRegistry()
 
-// Initialize initializes the global MCP registry with the given working directory
-func Initialize(cwd string) error {
-	reg, err := NewRegistry(cwd)
-	if err != nil {
-		return err
+func newEmptyRegistry() *Registry {
+	return &Registry{
+		clients:    make(map[string]*Client),
+		configs:    make(map[string]ServerConfig),
+		disabled:   make(map[string]bool),
+		connecting: make(map[string]bool),
+		connectErr: make(map[string]string),
 	}
-	DefaultRegistry = reg
-	return nil
 }
 
 // NewRegistryForTest creates a registry with pre-loaded configs for testing.
@@ -66,7 +82,6 @@ func NewRegistry(cwd string) (*Registry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load MCP configs: %w", err)
 	}
-	configs = mergePluginMCPConfigs(configs)
 
 	reg := &Registry{
 		clients:    make(map[string]*Client),
@@ -77,51 +92,55 @@ func NewRegistry(cwd string) (*Registry, error) {
 		loader:     loader,
 		cwd:        cwd,
 	}
+	reg.configs = reg.mergePluginMCPConfigs(configs)
 	reg.loadState()
 	return reg, nil
 }
 
-// Reload reloads configurations from disk
+// Reload reloads configurations from disk.
+// Clients whose server config no longer exists are disconnected to avoid
+// orphaned connections.
 func (r *Registry) Reload() error {
 	configs, err := r.loader.LoadAll()
 	if err != nil {
 		return err
 	}
-	configs = mergePluginMCPConfigs(configs)
+	configs = r.mergePluginMCPConfigs(configs)
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	// Disconnect clients whose config was removed.
+	for name, client := range r.clients {
+		if _, ok := configs[name]; !ok {
+			_ = client.Disconnect()
+			delete(r.clients, name)
+			delete(r.connecting, name)
+			delete(r.connectErr, name)
+		}
+	}
 	r.configs = configs
+	r.mu.Unlock()
 	return nil
 }
 
-func mergePluginMCPConfigs(configs map[string]ServerConfig) map[string]ServerConfig {
+func (r *Registry) mergePluginMCPConfigs(configs map[string]ServerConfig) map[string]ServerConfig {
 	merged := make(map[string]ServerConfig, len(configs))
 	maps.Copy(merged, configs)
-	for _, srv := range plugin.GetPluginMCPServers() {
+	if r.PluginServers == nil {
+		return merged
+	}
+	for _, srv := range r.PluginServers() {
 		merged[srv.Name] = ServerConfig{
 			Name:    srv.Name,
-			Type:    TransportType(srv.Config.Type),
-			Command: srv.Config.Command,
-			Args:    append([]string(nil), srv.Config.Args...),
-			Env:     maps.Clone(srv.Config.Env),
-			URL:     srv.Config.URL,
-			Headers: maps.Clone(srv.Config.Headers),
-			Scope:   pluginScopeToMCPScope(srv.Scope),
+			Type:    TransportType(srv.Type),
+			Command: srv.Command,
+			Args:    append([]string(nil), srv.Args...),
+			Env:     maps.Clone(srv.Env),
+			URL:     srv.URL,
+			Headers: maps.Clone(srv.Headers),
+			Scope:   Scope(srv.Scope),
 		}
 	}
 	return merged
-}
-
-func pluginScopeToMCPScope(scope plugin.Scope) Scope {
-	switch scope {
-	case plugin.ScopeProject:
-		return ScopeProject
-	case plugin.ScopeLocal:
-		return ScopeLocal
-	default:
-		return ScopeUser
-	}
 }
 
 // AddServer adds a new server configuration
@@ -295,19 +314,19 @@ var emptySchema = map[string]any{
 	"properties": map[string]any{},
 }
 
-// GetToolSchemas returns provider.ToolSchema schemas for all connected MCP servers
-func (r *Registry) GetToolSchemas() []provider.ToolSchema {
+// GetToolSchemas returns core.ToolSchema schemas for all connected MCP servers
+func (r *Registry) GetToolSchemas() []core.ToolSchema {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var tools []provider.ToolSchema
+	var tools []core.ToolSchema
 	for serverName, client := range r.clients {
 		if !client.IsConnected() {
 			continue
 		}
 
 		for _, mcpTool := range client.GetCachedTools() {
-			tools = append(tools, provider.ToolSchema{
+			tools = append(tools, core.ToolSchema{
 				Name:        fmt.Sprintf("mcp__%s__%s", serverName, mcpTool.Name),
 				Description: mcpTool.Description,
 				Parameters:  parseInputSchema(mcpTool.InputSchema),
@@ -333,7 +352,7 @@ func parseInputSchema(raw json.RawMessage) any {
 // CallTool calls a tool on an MCP server
 // The tool name should be in the format: mcp__<server>__<tool>
 func (r *Registry) CallTool(ctx context.Context, fullName string, arguments map[string]any) (*ToolResult, error) {
-	serverName, toolName, ok := ParseMCPToolName(fullName)
+	serverName, toolName, ok := parseMCPToolName(fullName)
 	if !ok {
 		return nil, fmt.Errorf("invalid MCP tool name: %s", fullName)
 	}
@@ -363,8 +382,8 @@ func (r *Registry) notifyToolsChanged() {
 	}
 }
 
-// ParseMCPToolName parses a tool name in the format mcp__<server>__<tool>
-func ParseMCPToolName(name string) (serverName, toolName string, ok bool) {
+// parseMCPToolName parses a tool name in the format mcp__<server>__<tool>
+func parseMCPToolName(name string) (serverName, toolName string, ok bool) {
 	rest, found := strings.CutPrefix(name, "mcp__")
 	if !found {
 		return "", "", false
@@ -380,7 +399,7 @@ func ParseMCPToolName(name string) (serverName, toolName string, ok bool) {
 
 // IsMCPTool returns true if the tool name is an MCP tool
 func IsMCPTool(name string) bool {
-	_, _, ok := ParseMCPToolName(name)
+	_, _, ok := parseMCPToolName(name)
 	return ok
 }
 
@@ -476,5 +495,11 @@ func (r *Registry) saveState() {
 	if err != nil {
 		return
 	}
-	os.WriteFile(path, data, 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+	}
 }

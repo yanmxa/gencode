@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/setting"
 )
 
 const (
@@ -281,7 +281,7 @@ func parseHooksMap(m map[string]any, pluginPath string) *HooksConfig {
 					if !ok {
 						continue
 					}
-					cmd := config.HookCmd{}
+					cmd := setting.HookCmd{}
 					if t, ok := hookMap["type"].(string); ok {
 						cmd.Type = t
 					}

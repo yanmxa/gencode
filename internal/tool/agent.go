@@ -2,10 +2,9 @@ package tool
 
 import (
 	"context"
-	"fmt"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 const (
@@ -62,7 +61,7 @@ type ProgressFunc func(msg string)
 
 // MessagesGetter returns the current parent conversation messages.
 // Used by fork to inherit conversation context.
-type MessagesGetter func() []message.Message
+type MessagesGetter func() []core.Message
 
 // AgentExecRequest contains parameters for agent execution.
 type AgentExecRequest struct {
@@ -77,7 +76,7 @@ type AgentExecRequest struct {
 	ResumeID       string
 	Isolation      string
 	TeamName       string
-	ParentMessages []message.Message // conversation context for fork
+	ParentMessages []core.Message // conversation context for fork
 	OnProgress     ProgressFunc
 	OnQuestion     AskQuestionFunc
 }
@@ -111,17 +110,4 @@ type AgentConfigInfo struct {
 	Description    string
 	PermissionMode string
 	Tools          []string
-}
-
-// FormatDuration formats a duration as human-readable string.
-func FormatDuration(d time.Duration) string {
-	if d < time.Second {
-		return fmt.Sprintf("%dms", d.Milliseconds())
-	}
-	minutes := int(d.Minutes())
-	seconds := int(d.Seconds()) % 60
-	if minutes > 0 {
-		return fmt.Sprintf("%dm %ds", minutes, seconds)
-	}
-	return fmt.Sprintf("%ds", seconds)
 }

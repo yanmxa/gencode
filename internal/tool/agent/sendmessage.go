@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
@@ -16,7 +15,7 @@ import (
 // Running workers do not yet support live injection, so messages are queued
 // and delivered on the next resume.
 type SendMessageTool struct {
-	Executor tool.AgentExecutor
+	executor tool.AgentExecutor
 }
 
 func NewSendMessageTool() *SendMessageTool {
@@ -31,7 +30,7 @@ func (t *SendMessageTool) Icon() string             { return tool.IconAgent }
 func (t *SendMessageTool) RequiresPermission() bool { return true }
 
 func (t *SendMessageTool) SetExecutor(executor tool.AgentExecutor) {
-	t.Executor = executor
+	t.executor = executor
 }
 
 func (t *SendMessageTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*perm.PermissionRequest, error) {
@@ -40,11 +39,11 @@ func (t *SendMessageTool) PreparePermission(ctx context.Context, params map[stri
 	if err != nil {
 		return nil, err
 	}
-	if t.Executor == nil {
+	if t.executor == nil {
 		return nil, fmt.Errorf("agent executor not configured")
 	}
 
-	target, err := resolveContinuationTargetForMessage(normalized)
+	target, err := resolveContinuationTarget(normalized)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +53,7 @@ func (t *SendMessageTool) PreparePermission(ctx context.Context, params map[stri
 		}
 	}
 
-	config, ok := t.Executor.GetAgentConfig(target.agentType)
+	config, ok := t.executor.GetAgentConfig(target.agentType)
 	if !ok {
 		return nil, fmt.Errorf("unknown agent type: %s", target.agentType)
 	}
@@ -67,7 +66,7 @@ func (t *SendMessageTool) PreparePermission(ctx context.Context, params map[stri
 	runBackground := tool.GetBool(normalized, "run_in_background")
 	effectiveModel := tool.GetString(normalized, "model")
 	if effectiveModel == "" {
-		effectiveModel = t.Executor.GetParentModelID()
+		effectiveModel = t.executor.GetParentModelID()
 	}
 	if effectiveModel == "" {
 		effectiveModel = "claude-sonnet-4-20250514"
@@ -117,7 +116,7 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 	}
 	ctx = tool.WithAgentDepth(ctx, currentDepth+1)
 
-	if t.Executor == nil {
+	if t.executor == nil {
 		return toolresult.NewErrorResult(t.Name(), "agent executor not configured")
 	}
 
@@ -127,34 +126,19 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 		return toolresult.NewErrorResult(t.Name(), "message is required")
 	}
 
-	target, err := resolveContinuationTargetForMessage(normalized)
+	target, err := resolveContinuationTarget(normalized)
 	if err != nil {
 		return toolresult.NewErrorResult(t.Name(), err.Error())
 	}
-	resolvedTaskID := resolveLiveTaskID(target)
-	if resolvedTaskID != "" {
-		running, err := isContinuationTaskRunning(resolvedTaskID)
+	if target.taskID != "" {
+		running, err := isContinuationTaskRunning(target.taskID)
 		if err != nil {
 			return toolresult.NewErrorResult(t.Name(), err.Error())
 		}
 		if running {
-			if !orchestration.DefaultStore.QueuePendingMessage(resolvedTaskID, messageText) {
-				return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("failed to queue message for running task %s", resolvedTaskID))
-			}
-			queuedCount := orchestration.DefaultStore.PendingMessageCount(resolvedTaskID, "")
-			return toolresult.ToolResult{
-				Success: true,
-				Output: fmt.Sprintf("Worker is still running. The message was queued for delivery at the worker's next safe turn boundary.\nTask ID: %s\nQueued messages: %d\n\nYou will be automatically notified when the worker completes. Continue with other work or respond to the user instead.",
-					resolvedTaskID, queuedCount),
-				Metadata: toolresult.ResultMetadata{
-					Title:    t.Name(),
-					Icon:     t.Icon(),
-					Subtitle: fmt.Sprintf("%s: queued for %s", target.agentType, resolvedTaskID),
-					Duration: time.Since(start),
-				},
-			}
+			return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("task %s is still running; wait for completion before sending a message", target.taskID))
 		}
-		if err := ensureContinuationTaskReady(resolvedTaskID); err != nil {
+		if err := ensureContinuationTaskReady(target.taskID); err != nil {
 			return toolresult.NewErrorResult(t.Name(), err.Error())
 		}
 	}
@@ -181,7 +165,7 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 	req := tool.AgentExecRequest{
 		Agent:       target.agentType,
 		Name:        agentName,
-		Prompt:      composeContinuationPrompt(messageText, orchestration.DefaultStore.DrainPendingMessages(resolvedTaskID, target.agentID)),
+		Prompt:      messageText,
 		Description: description,
 		Background:  tool.GetBool(normalized, "run_in_background"),
 		Model:       tool.GetString(normalized, "model"),
@@ -194,7 +178,7 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 	}
 
 	if req.Background {
-		taskInfo, err := t.Executor.RunBackground(req)
+		taskInfo, err := t.executor.RunBackground(req)
 		if err != nil {
 			return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("failed to send background message to agent: %v", err))
 		}
@@ -223,7 +207,7 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 		}
 	}
 
-	result, err := t.Executor.Run(ctx, req)
+	result, err := t.executor.Run(ctx, req)
 	if err != nil {
 		return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("agent message failed: %v", err))
 	}
@@ -266,16 +250,10 @@ func normalizeSendMessageParams(params map[string]any) map[string]any {
 	return normalized
 }
 
-func resolveContinuationTargetForMessage(params map[string]any) (continuedAgentTarget, error) {
-	target, err := resolveContinuationTarget(params)
-	if err != nil {
-		return continuedAgentTarget{}, err
-	}
-	return target, nil
-}
+
 
 func ensureContinuationTaskExists(taskID string) error {
-	bgTask, found := task.DefaultManager.Get(taskID)
+	bgTask, found := task.Default().Get(taskID)
 	if !found {
 		return fmt.Errorf("task not found: %s", taskID)
 	}
@@ -287,12 +265,12 @@ func ensureContinuationTaskExists(taskID string) error {
 }
 
 func ensureContinuationTaskReady(taskID string) error {
-	bgTask, found := task.DefaultManager.Get(taskID)
+	bgTask, found := task.Default().Get(taskID)
 	if !found {
 		return fmt.Errorf("task not found: %s", taskID)
 	}
 	if bgTask.IsRunning() {
-		return fmt.Errorf("task %s is still running; use SendMessage(task_id=%q, message=...) to queue a follow-up or wait for completion", taskID, taskID)
+		return fmt.Errorf("task %s is still running; wait for completion before sending a message", taskID)
 	}
 	info := bgTask.GetStatus()
 	if info.Type != task.TaskTypeAgent {
@@ -305,19 +283,11 @@ func ensureContinuationTaskReady(taskID string) error {
 }
 
 func isContinuationTaskRunning(taskID string) (bool, error) {
-	bgTask, found := task.DefaultManager.Get(taskID)
+	bgTask, found := task.Default().Get(taskID)
 	if !found {
 		return false, fmt.Errorf("task not found: %s", taskID)
 	}
 	return bgTask.IsRunning(), nil
-}
-
-func resolveLiveTaskID(target continuedAgentTarget) string {
-	if target.taskID != "" {
-		return target.taskID
-	}
-	taskID, _ := orchestration.DefaultStore.ResolveTaskID(target.agentID)
-	return taskID
 }
 
 func init() {

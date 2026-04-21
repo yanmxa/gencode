@@ -16,9 +16,6 @@ type Manager struct {
 	tasks map[string]BackgroundTask
 }
 
-// DefaultManager is the global default task manager
-var DefaultManager = NewManager()
-
 // NewManager creates a new task manager
 func NewManager() *Manager {
 	return &Manager{
@@ -40,12 +37,6 @@ func (m *Manager) CreateBashTask(cmd *exec.Cmd, command, description string, ctx
 	return task
 }
 
-// Create is an alias for CreateBashTask for backward compatibility
-// Deprecated: Use CreateBashTask instead
-func (m *Manager) Create(cmd *exec.Cmd, command, description string, ctx context.Context, cancel context.CancelFunc) *BashTask {
-	return m.CreateBashTask(cmd, command, description, ctx, cancel)
-}
-
 // RegisterTask registers an existing task (used for agent tasks)
 func (m *Manager) RegisterTask(task BackgroundTask) {
 	m.mu.Lock()
@@ -57,13 +48,10 @@ func (m *Manager) RegisterTask(task BackgroundTask) {
 // generateID creates a short random ID
 func generateID() string {
 	b := make([]byte, 4)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
 	return hex.EncodeToString(b)
-}
-
-// GenerateID creates a short random ID (exported for agent tasks)
-func GenerateID() string {
-	return generateID()
 }
 
 // Get retrieves a task by ID
@@ -74,8 +62,8 @@ func (m *Manager) Get(id string) (BackgroundTask, bool) {
 	return task, ok
 }
 
-// GetBashTask retrieves a bash task by ID (for backward compatibility)
-func (m *Manager) GetBashTask(id string) (*BashTask, bool) {
+// getBashTask retrieves a bash task by ID (for backward compatibility)
+func (m *Manager) getBashTask(id string) (*BashTask, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	task, ok := m.tasks[id]
@@ -132,28 +120,24 @@ func (m *Manager) Kill(id string) error {
 		return task.Kill()
 	}
 
-	// Wait for graceful exit
-	done := make(chan struct{})
-	go func() {
-		for task.IsRunning() {
-			time.Sleep(100 * time.Millisecond)
-		}
-		close(done)
-	}()
+	// Wait for graceful exit with timeout
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
 
-	select {
-	case <-done:
-		// Already terminated
-	case <-time.After(2 * time.Second):
-		// Force kill
-		if err := task.Kill(); err != nil {
-			return err
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if !task.IsRunning() {
+				return nil
+			}
+		case <-timer.C:
+			// Graceful stop timed out, force kill
+			return task.Kill()
 		}
-		// Wait a bit more
-		time.Sleep(500 * time.Millisecond)
 	}
-
-	return nil
 }
 
 // Remove removes a completed task from the manager
@@ -163,8 +147,8 @@ func (m *Manager) Remove(id string) {
 	delete(m.tasks, id)
 }
 
-// Cleanup removes all completed tasks older than maxAge
-func (m *Manager) Cleanup(maxAge time.Duration) {
+// cleanup removes all completed tasks older than maxAge
+func (m *Manager) cleanup(maxAge time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

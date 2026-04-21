@@ -1,9 +1,9 @@
 package tool
 
-import "github.com/yanmxa/gencode/internal/provider"
+import "github.com/yanmxa/gencode/internal/core"
 
-// AgentToolSchema returns the schema for the Agent tool
-var AgentToolSchema = provider.ToolSchema{
+// agentToolSchema is the schema for the Agent tool.
+var agentToolSchema = core.ToolSchema{
 	Name: "Agent",
 	Description: `Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to it.
 
@@ -63,7 +63,7 @@ Usage notes:
 			"mode": map[string]any{
 				"type":        "string",
 				"description": "Permission mode for spawned agent.",
-				"enum":        []string{"acceptEdits", "bypassPermissions", "default", "dontAsk", "plan", "auto"},
+				"enum":        []string{"acceptEdits", "bypassPermissions", "default", "dontAsk", "auto"},
 			},
 			"isolation": map[string]any{
 				"type":        "string",
@@ -83,7 +83,7 @@ Usage notes:
 	},
 }
 
-var ContinueAgentToolSchema = provider.ToolSchema{
+var continueAgentToolSchema = core.ToolSchema{
 	Name: "ContinueAgent",
 	Description: `Continue a previously spawned subagent using its saved conversation state.
 
@@ -138,7 +138,7 @@ Usage notes:
 			"mode": map[string]any{
 				"type":        "string",
 				"description": "Permission mode for the continued agent.",
-				"enum":        []string{"acceptEdits", "bypassPermissions", "default", "dontAsk", "plan", "auto"},
+				"enum":        []string{"acceptEdits", "bypassPermissions", "default", "dontAsk", "auto"},
 			},
 			"isolation": map[string]any{
 				"type":        "string",
@@ -154,7 +154,7 @@ Usage notes:
 	},
 }
 
-var SendMessageToolSchema = provider.ToolSchema{
+var sendMessageToolSchema = core.ToolSchema{
 	Name: "SendMessage",
 	Description: `Send a follow-up message to an existing subagent worker.
 
@@ -174,7 +174,7 @@ Usage notes:
 		"properties": map[string]any{
 			"task_id": map[string]any{
 				"type":        "string",
-				"description": "Background task ID for the worker you want to message. Preferred when available.",
+				"description": "Background task ID for the worker you want to core. Preferred when available.",
 			},
 			"agent_id": map[string]any{
 				"type":        "string",
@@ -212,7 +212,7 @@ Usage notes:
 			"mode": map[string]any{
 				"type":        "string",
 				"description": "Permission mode for the resumed worker.",
-				"enum":        []string{"acceptEdits", "bypassPermissions", "default", "dontAsk", "plan", "auto"},
+				"enum":        []string{"acceptEdits", "bypassPermissions", "default", "dontAsk", "auto"},
 			},
 			"isolation": map[string]any{
 				"type":        "string",
@@ -228,8 +228,8 @@ Usage notes:
 	},
 }
 
-// SkillToolSchema returns the schema for the Skill tool
-var SkillToolSchema = provider.ToolSchema{
+// skillToolSchema is the schema for the Skill tool.
+var skillToolSchema = core.ToolSchema{
 	Name: "Skill",
 	Description: `Execute a skill within the main conversation.
 
@@ -270,55 +270,8 @@ Important:
 	},
 }
 
-// EnterPlanModeSchema returns the schema for EnterPlanMode tool
-var EnterPlanModeSchema = provider.ToolSchema{
-	Name: "EnterPlanMode",
-	Description: `Request to enter plan mode for tasks that need exploration before implementation. The user must approve entering plan mode.
-
-When to use:
-- The relevant architecture is still unknown after direct reading/search
-- Direct implementation would be risky because the change could affect existing behavior, data flow, or system structure in ways you cannot yet bound
-- You need focused exploration first to identify the correct implementation boundary before editing
-
-When NOT to use:
-- User already gave clear, specific instructions (use TaskCreate to track steps instead)
-- User provided a numbered list of tasks (just execute them)
-- Pure research or exploration (use Agent with Explore instead)
-- Simple fixes like typos, obvious bugs, or single functions with clear requirements
-- Straightforward multi-file changes where the approach is obvious
-- Tasks that are large only because they touch several files
-- Cases where you can safely proceed by reading the relevant files and executing step by step
-- Answering questions about the codebase`,
-	Parameters: map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"message": map[string]any{
-				"type":        "string",
-				"description": "Optional message explaining why plan mode is needed for this task.",
-			},
-		},
-		"required": []string{},
-	},
-}
-
-// ExitPlanModeSchema returns the schema for ExitPlanMode tool
-var ExitPlanModeSchema = provider.ToolSchema{
-	Name:        "ExitPlanMode",
-	Description: "Exit plan mode and submit your implementation plan for user approval. Call this when you have finished exploring the codebase and created a complete implementation plan.",
-	Parameters: map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"plan": map[string]any{
-				"type":        "string",
-				"description": "The complete implementation plan in Markdown format. Should include: Context, Implementation Steps (with file paths and line references), Critical Files, and Verification.",
-			},
-		},
-		"required": []string{"plan"},
-	},
-}
-
-// ToolSearchSchema defines the schema for the ToolSearch tool.
-var ToolSearchSchema = provider.ToolSchema{
+// toolSearchSchema defines the schema for the ToolSearch tool.
+var toolSearchSchema = core.ToolSchema{
 	Name: "ToolSearch",
 	Description: `Fetches full schema definitions for deferred tools so they can be called.
 
@@ -347,41 +300,3 @@ Query forms:
 	},
 }
 
-// PlanModeAgentSchema is an Agent tool schema for plan mode.
-// It omits run_in_background (foreground-only) and restricts to read-only agents.
-var PlanModeAgentSchema = provider.ToolSchema{
-	Name: "Agent",
-	Description: `Launch a subagent to research the codebase.
-
-Available agent types in plan mode:
-- Explore: Fast codebase exploration. Use to find files, search code, and answer questions. (Tools: Read, Glob, Grep, WebFetch, WebSearch)
-- Plan: Software architect for designing implementation plans. (Tools: Read, Glob, Grep, WebFetch, WebSearch)
-
-Usage notes:
-- Launch multiple agents by making multiple Agent calls in a single message
-- Always include a short description (3-5 word) summarizing what the agent will do
-- Provide each agent with specific questions, not just "explore X"`,
-	Parameters: map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"subagent_type": map[string]any{
-				"type":        "string",
-				"description": "The type of agent to spawn (Explore or Plan).",
-			},
-			"prompt": map[string]any{
-				"type":        "string",
-				"description": "The task for the agent to perform",
-			},
-			"description": map[string]any{
-				"type":        "string",
-				"description": "A short (3-5 word) description of the task",
-			},
-			"model": map[string]any{
-				"type":        "string",
-				"description": "Override model: sonnet, opus, haiku. If not specified, inherits from parent.",
-				"enum":        []string{"sonnet", "opus", "haiku"},
-			},
-		},
-		"required": []string{"subagent_type", "prompt"},
-	},
-}

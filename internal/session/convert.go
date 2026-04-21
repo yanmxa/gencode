@@ -1,19 +1,19 @@
 package session
 
 import (
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
-func ConvertToEntries(messages []message.ChatMessage) []Entry {
+func ConvertToEntries(messages []core.ChatMessage) []Entry {
 	entries := make([]Entry, 0, len(messages))
 	var prevUUID string
 
 	for _, msg := range messages {
-		if msg.Role == message.RoleNotice {
+		if msg.Role == core.RoleNotice {
 			continue
 		}
 
-		uuid := GenerateShortID()
+		uuid := generateShortID()
 
 		var parentUuid *string
 		if prevUUID != "" {
@@ -24,37 +24,37 @@ func ConvertToEntries(messages []message.ChatMessage) []Entry {
 		entry := Entry{
 			UUID:       uuid,
 			ParentUuid: parentUuid,
-			Version:    AppVersion,
+			Version:    GetAppVersion(),
 		}
 
 		switch msg.Role {
-		case message.RoleUser:
+		case core.RoleUser:
 			entry.Type = EntryUser
 			if msg.ToolResult != nil {
 				entry.Message = &EntryMessage{
 					Role:    "user",
-					Content: ToolResultToBlocks(msg.ToolResult),
+					Content: toolResultToBlocks(msg.ToolResult),
 				}
 			} else {
 				entry.Message = &EntryMessage{
 					Role:    "user",
-					Content: UserContentToBlocks(msg.Content, msg.DisplayContent, msg.Images),
+					Content: userContentToBlocks(msg.Content, msg.DisplayContent, msg.Images),
 				}
 			}
 
-		case message.RoleAssistant:
+		case core.RoleAssistant:
 			entry.Type = EntryAssistant
 			entry.Message = &EntryMessage{
 				Role:    "assistant",
-				Content: AssistantContentToBlocks(msg.Content, msg.Thinking, msg.ThinkingSignature, msg.ToolCalls),
+				Content: assistantContentToBlocks(msg.Content, msg.Thinking, msg.ThinkingSignature, msg.ToolCalls),
 			}
 
-		case message.RoleToolResult:
+		case core.RoleTool:
 			entry.Type = EntryUser
 			if msg.ToolResult != nil {
 				entry.Message = &EntryMessage{
 					Role:    "user",
-					Content: ToolResultToBlocks(msg.ToolResult),
+					Content: toolResultToBlocks(msg.ToolResult),
 				}
 			}
 
@@ -69,12 +69,12 @@ func ConvertToEntries(messages []message.ChatMessage) []Entry {
 	return entries
 }
 
-func ConvertFromEntries(entries []Entry) []message.ChatMessage {
+func ConvertFromEntries(entries []Entry) []core.ChatMessage {
 	coreMsgs := EntriesToMessages(entries)
-	messages := make([]message.ChatMessage, 0, len(coreMsgs))
+	messages := make([]core.ChatMessage, 0, len(coreMsgs))
 
 	for _, m := range coreMsgs {
-		chatMsg := message.ChatMessage{
+		chatMsg := core.ChatMessage{
 			Role:              m.Role,
 			Content:           m.Content,
 			DisplayContent:    m.DisplayContent,

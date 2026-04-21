@@ -15,9 +15,9 @@ var (
 	defaultVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]*)\}`)
 )
 
-// ExpandEnv expands environment variables in a string.
+// expandEnv expands environment variables in a string.
 // Supports ${VAR} and ${VAR:-default} syntax.
-func ExpandEnv(s string) string {
+func expandEnv(s string) string {
 	// First handle ${VAR:-default} patterns
 	result := defaultVarPattern.ReplaceAllStringFunc(s, func(match string) string {
 		parts := defaultVarPattern.FindStringSubmatch(match)
@@ -40,33 +40,33 @@ func ExpandEnv(s string) string {
 	})
 }
 
-// ExpandEnvSlice expands environment variables in each string of a slice.
-func ExpandEnvSlice(s []string) []string {
+// expandEnvSlice expands environment variables in each string of a slice.
+func expandEnvSlice(s []string) []string {
 	if s == nil {
 		return nil
 	}
 	result := make([]string, len(s))
 	for i, v := range s {
-		result[i] = ExpandEnv(v)
+		result[i] = expandEnv(v)
 	}
 	return result
 }
 
-// ExpandEnvMap expands environment variables in each value of a map.
-func ExpandEnvMap(m map[string]string) map[string]string {
+// expandEnvMap expands environment variables in each value of a map.
+func expandEnvMap(m map[string]string) map[string]string {
 	if m == nil {
 		return nil
 	}
 	result := make(map[string]string, len(m))
 	for k, v := range m {
-		result[k] = ExpandEnv(v)
+		result[k] = expandEnv(v)
 	}
 	return result
 }
 
-// BuildEnv creates an environment slice by merging the current environment
+// buildEnv creates an environment slice by merging the current environment
 // with additional variables from configEnv.
-func BuildEnv(configEnv map[string]string) []string {
+func buildEnv(configEnv map[string]string) []string {
 	env := os.Environ()
 	if len(configEnv) == 0 {
 		return env

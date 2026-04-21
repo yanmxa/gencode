@@ -5,51 +5,20 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/permission"
-	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
 // ---------------------------------------------------------------------------
-// Loop construction helpers
+// Client helpers
 // ---------------------------------------------------------------------------
 
-// NewTestLoop creates a runtime.Loop with a FakeClient, PermitAll permission,
-// and a temp cwd. Responses are queued in order.
-func NewTestLoop(t *testing.T, responses ...message.CompletionResponse) (*runtime.Loop, *client.FakeClient) {
-	t.Helper()
-	return NewTestLoopWithPermission(t, permission.PermitAll(), responses...)
-}
-
-// NewTestLoopWithPermission creates a Loop with a custom permission checker.
-func NewTestLoopWithPermission(t *testing.T, checker permission.Checker,
-	responses ...message.CompletionResponse,
-) (*runtime.Loop, *client.FakeClient) {
-	t.Helper()
-
-	fake := &client.FakeClient{Responses: responses}
-	loop := &runtime.Loop{
-		System:     &system.System{Cwd: t.TempDir(), UserInstructions: "test"},
-		Client:     NewTestClient(fake),
-		Tool:       &tool.Set{},
-		Permission: checker,
-	}
-	return loop, fake
-}
-
-// NewTestClient wraps a FakeClient in a client.Client ready for use in loops
+// NewTestClient wraps a FakeLLM in a llm.Client ready for use in loops
 // or compact calls. This avoids repeating the FakeProvider wiring in every test.
-func NewTestClient(fake *client.FakeClient) *client.Client {
-	return &client.Client{
-		Provider:  &FakeProvider{Client: fake},
-		Model:     "fake-model",
-		MaxTokens: 8192,
-	}
+func NewTestClient(fake *llm.FakeLLM) *llm.Client {
+	return llm.NewClient(&FakeProvider{Client: fake}, "fake-model", 8192)
 }
 
 // ---------------------------------------------------------------------------
@@ -57,38 +26,38 @@ func NewTestClient(fake *client.FakeClient) *client.Client {
 // ---------------------------------------------------------------------------
 
 // ToolCallResponse builds a CompletionResponse that triggers a single tool_use.
-func ToolCallResponse(toolName, toolID, input string) message.CompletionResponse {
-	return message.CompletionResponse{
+func ToolCallResponse(toolName, toolID, input string) llm.CompletionResponse {
+	return llm.CompletionResponse{
 		StopReason: "tool_use",
-		ToolCalls:  []message.ToolCall{{ID: toolID, Name: toolName, Input: input}},
-		Usage:      message.Usage{InputTokens: 10, OutputTokens: 5},
+		ToolCalls:  []core.ToolCall{{ID: toolID, Name: toolName, Input: input}},
+		Usage:      llm.Usage{InputTokens: 10, OutputTokens: 5},
 	}
 }
 
 // MultiToolCallResponse builds a CompletionResponse with multiple tool calls.
-func MultiToolCallResponse(calls ...message.ToolCall) message.CompletionResponse {
-	return message.CompletionResponse{
+func MultiToolCallResponse(calls ...core.ToolCall) llm.CompletionResponse {
+	return llm.CompletionResponse{
 		StopReason: "tool_use",
 		ToolCalls:  calls,
-		Usage:      message.Usage{InputTokens: 10, OutputTokens: 5},
+		Usage:      llm.Usage{InputTokens: 10, OutputTokens: 5},
 	}
 }
 
 // EndTurnResponse builds a simple end_turn response with default usage.
-func EndTurnResponse(content string) message.CompletionResponse {
-	return message.CompletionResponse{
+func EndTurnResponse(content string) llm.CompletionResponse {
+	return llm.CompletionResponse{
 		Content:    content,
 		StopReason: "end_turn",
-		Usage:      message.Usage{InputTokens: 10, OutputTokens: 5},
+		Usage:      llm.Usage{InputTokens: 10, OutputTokens: 5},
 	}
 }
 
 // EndTurnResponseWithUsage builds an end_turn response with custom token counts.
-func EndTurnResponseWithUsage(content string, input, output int) message.CompletionResponse {
-	return message.CompletionResponse{
+func EndTurnResponseWithUsage(content string, input, output int) llm.CompletionResponse {
+	return llm.CompletionResponse{
 		Content:    content,
 		StopReason: "end_turn",
-		Usage:      message.Usage{InputTokens: input, OutputTokens: output},
+		Usage:      llm.Usage{InputTokens: input, OutputTokens: output},
 	}
 }
 
@@ -101,7 +70,10 @@ func EndTurnResponseWithUsage(content string, input, output int) message.Complet
 func RegisterFakeTool(t *testing.T, name, result string) {
 	t.Helper()
 	tool.Register(&fakeTool{name: name, result: result})
-	t.Cleanup(func() { tool.DefaultRegistry = tool.NewRegistry() })
+	t.Cleanup(func() {
+		tool.Unregister(name)
+		tool.ResetService()
+	})
 }
 
 type fakeTool struct {
@@ -124,41 +96,41 @@ func (f *fakeTool) Execute(_ context.Context, _ map[string]any, _ string) toolre
 // Fake / mock providers
 // ---------------------------------------------------------------------------
 
-// FakeProvider wraps a FakeClient as a provider.LLMProvider.
-// Use this when the code under test expects a provider.LLMProvider and you
+// FakeProvider wraps a FakeClient as a llm.Provider.
+// Use this when the code under test expects a llm.Provider and you
 // want to control responses via FakeClient.
 type FakeProvider struct {
-	Client *client.FakeClient
+	Client *llm.FakeLLM
 }
 
-func (p *FakeProvider) Stream(ctx context.Context, opts provider.CompletionOptions) <-chan message.StreamChunk {
+func (p *FakeProvider) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan llm.StreamChunk {
 	return p.Client.Stream(ctx, opts.Messages, opts.Tools, opts.SystemPrompt)
 }
-func (p *FakeProvider) ListModels(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (p *FakeProvider) ListModels(_ context.Context) ([]llm.ModelInfo, error) { return nil, nil }
 func (p *FakeProvider) Name() string                                               { return p.Client.Name() }
 
-// MockProvider is a standalone provider.LLMProvider backed by a response queue.
+// MockProvider is a standalone llm.Provider backed by a response queue.
 // Unlike FakeProvider, it does not require a FakeClient — use this when the
 // code under test (e.g., agent.Executor) creates its own client internally.
 type MockProvider struct {
-	Responses []message.CompletionResponse
+	Responses []llm.CompletionResponse
 	callIdx   int
 }
 
-func (m *MockProvider) Stream(_ context.Context, _ provider.CompletionOptions) <-chan message.StreamChunk {
-	ch := make(chan message.StreamChunk, 1)
+func (m *MockProvider) Stream(_ context.Context, _ llm.CompletionOptions) <-chan llm.StreamChunk {
+	ch := make(chan llm.StreamChunk, 1)
 	go func() {
 		defer close(ch)
-		var resp message.CompletionResponse
+		var resp llm.CompletionResponse
 		if m.callIdx < len(m.Responses) {
 			resp = m.Responses[m.callIdx]
 			m.callIdx++
 		} else {
-			resp = message.CompletionResponse{Content: "no more responses", StopReason: "end_turn"}
+			resp = llm.CompletionResponse{Content: "no more responses", StopReason: "end_turn"}
 		}
-		ch <- message.StreamChunk{Type: message.ChunkTypeDone, Response: &resp}
+		ch <- llm.StreamChunk{Type: llm.ChunkTypeDone, Response: &resp}
 	}()
 	return ch
 }
-func (m *MockProvider) ListModels(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (m *MockProvider) ListModels(_ context.Context) ([]llm.ModelInfo, error) { return nil, nil }
 func (m *MockProvider) Name() string                                               { return "mock" }

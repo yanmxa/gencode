@@ -1,40 +1,43 @@
 package task
 
-import "sync"
+import (
+	"sync"
+)
 
-// HookObserver receives task lifecycle notifications without coupling the task
-// package to the hooks runtime.
-type HookObserver interface {
+// LifecycleHandler receives task lifecycle notifications. The app layer
+// installs a handler that fires hooks, updates the tracker, and publishes
+// events to the Hub.
+type LifecycleHandler interface {
 	TaskCreated(info TaskInfo)
 	TaskCompleted(info TaskInfo)
 }
 
-var taskHookObserver struct {
-	mu       sync.RWMutex
-	observer HookObserver
+var taskHandler struct {
+	mu      sync.RWMutex
+	handler LifecycleHandler
 }
 
-// SetHookObserver installs or clears the current task hook observer.
-func SetHookObserver(observer HookObserver) {
-	taskHookObserver.mu.Lock()
-	defer taskHookObserver.mu.Unlock()
-	taskHookObserver.observer = observer
+// SetLifecycleHandler installs or clears the task lifecycle handler.
+func SetLifecycleHandler(h LifecycleHandler) {
+	taskHandler.mu.Lock()
+	defer taskHandler.mu.Unlock()
+	taskHandler.handler = h
 }
 
 func notifyTaskCreated(info TaskInfo) {
-	taskHookObserver.mu.RLock()
-	observer := taskHookObserver.observer
-	taskHookObserver.mu.RUnlock()
-	if observer != nil {
-		observer.TaskCreated(info)
+	taskHandler.mu.RLock()
+	h := taskHandler.handler
+	taskHandler.mu.RUnlock()
+	if h != nil {
+		h.TaskCreated(info)
 	}
 }
 
 func notifyTaskCompleted(info TaskInfo) {
-	taskHookObserver.mu.RLock()
-	observer := taskHookObserver.observer
-	taskHookObserver.mu.RUnlock()
-	if observer != nil {
-		observer.TaskCompleted(info)
+	taskHandler.mu.RLock()
+	h := taskHandler.handler
+	taskHandler.mu.RUnlock()
+	if h != nil {
+		h.TaskCompleted(info)
 	}
 }

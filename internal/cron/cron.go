@@ -9,20 +9,20 @@ import (
 	"time"
 )
 
-// Field represents a parsed cron field with the set of valid values.
-type Field struct {
+// field represents a parsed cron field with the set of valid values.
+type field struct {
 	values map[int]bool // allowed values for this field
 }
 
-// Expression represents a parsed 5-field cron expression:
+// expression represents a parsed 5-field cron expression:
 // minute hour day-of-month month day-of-week
-type Expression struct {
+type expression struct {
 	Raw    string
-	Minute Field
-	Hour   Field
-	DOM    Field // day of month
-	Month  Field
-	DOW    Field // day of week (0=Sunday)
+	Minute field
+	Hour   field
+	DOM    field // day of month
+	Month  field
+	DOW    field // day of week (0=Sunday)
 }
 
 // fieldSpec defines the range for a cron field.
@@ -39,14 +39,14 @@ var specs = [5]fieldSpec{
 	{0, 6, map[string]int{"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}},                                                       // day of week
 }
 
-// Parse parses a standard 5-field cron expression.
-func Parse(expr string) (*Expression, error) {
+// parse parses a standard 5-field cron expression.
+func parse(expr string) (*expression, error) {
 	fields := strings.Fields(expr)
 	if len(fields) != 5 {
 		return nil, fmt.Errorf("cron: expected 5 fields, got %d", len(fields))
 	}
 
-	parsed := make([]Field, 5)
+	parsed := make([]field, 5)
 	for i, f := range fields {
 		p, err := parseField(f, specs[i])
 		if err != nil {
@@ -55,7 +55,7 @@ func Parse(expr string) (*Expression, error) {
 		parsed[i] = p
 	}
 
-	return &Expression{
+	return &expression{
 		Raw:    expr,
 		Minute: parsed[0],
 		Hour:   parsed[1],
@@ -66,10 +66,10 @@ func Parse(expr string) (*Expression, error) {
 }
 
 // parseField parses a single cron field (e.g., "*/5", "1,3,5", "1-10/2", "*").
-func parseField(field string, spec fieldSpec) (Field, error) {
-	f := Field{values: make(map[int]bool)}
+func parseField(raw string, spec fieldSpec) (field, error) {
+	f := field{values: make(map[int]bool)}
 
-	for _, part := range strings.Split(field, ",") {
+	for _, part := range strings.Split(raw, ",") {
 		if err := parsePart(part, spec, f.values); err != nil {
 			return f, err
 		}
@@ -135,9 +135,9 @@ func parsePart(part string, spec fieldSpec, values map[int]bool) error {
 	return nil
 }
 
-// NextAfter returns the next time the expression fires after the given time.
+// nextAfter returns the next time the expression fires after the given time.
 // It searches up to 4 years ahead to avoid infinite loops.
-func (e *Expression) NextAfter(after time.Time) time.Time {
+func (e *expression) nextAfter(after time.Time) time.Time {
 	// Start from the next minute
 	t := after.Truncate(time.Minute).Add(time.Minute)
 	deadline := after.Add(4 * 365 * 24 * time.Hour)

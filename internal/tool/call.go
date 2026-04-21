@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
 // PreparedToolCall is a parsed and validated tool call that can be reused
 // across permission checks, interactive handling, and execution.
 type PreparedToolCall struct {
-	Call   message.ToolCall
+	Call   core.ToolCall
 	Params map[string]any
 	Tool   Tool
 	IsMCP  bool
@@ -19,8 +19,8 @@ type PreparedToolCall struct {
 
 // PrepareToolCall parses tool input and resolves the call target against either
 // the built-in tool registry or the provided MCP executor.
-func PrepareToolCall(tc message.ToolCall, mcpExec MCPExecutor) (*PreparedToolCall, error) {
-	params, err := message.ParseToolInput(tc.Input)
+func PrepareToolCall(tc core.ToolCall, mcpExec MCPExecutor) (*PreparedToolCall, error) {
+	params, err := core.ParseToolInput(tc.Input)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing tool input: %w", err)
 	}

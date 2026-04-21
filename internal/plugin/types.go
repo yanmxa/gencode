@@ -3,7 +3,7 @@
 // installable and shareable units. Compatible with Claude Code plugin format.
 package plugin
 
-import "github.com/yanmxa/gencode/internal/config"
+import "github.com/yanmxa/gencode/internal/setting"
 
 // Scope represents where a plugin is installed.
 type Scope string
@@ -112,7 +112,7 @@ type HooksConfig struct {
 // HookMatcher represents a hook matcher with associated hook commands.
 type HookMatcher struct {
 	Matcher string       `json:"matcher,omitempty"`
-	Hooks   []config.HookCmd `json:"hooks"`
+	Hooks   []setting.HookCmd `json:"hooks"`
 }
 
 // MCPServerConfig represents an MCP server configuration from a plugin.

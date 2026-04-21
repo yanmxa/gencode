@@ -1,0 +1,133 @@
+package plugin
+
+import (
+	"context"
+	"sync"
+
+	"github.com/yanmxa/gencode/internal/setting"
+)
+
+// Service is the public contract for the plugin module.
+type Service interface {
+	// loading
+	Load(ctx context.Context, cwd string) error       // load plugins from standard dirs
+	LoadClaudePlugins(ctx context.Context) error       // load Claude Code plugins
+	LoadFromPath(ctx context.Context, path string) error // load plugin from path
+
+	// query
+	List() []*Plugin                     // all loaded plugins
+	Get(name string) (*Plugin, bool)     // lookup by name
+	GetEnabled() []*Plugin               // all enabled plugins
+	Count() int                          // total number of loaded plugins
+	EnabledCount() int                   // number of enabled plugins
+
+	// mutation
+	Enable(name string, scope Scope) error
+	Disable(name string, scope Scope) error
+
+	// installer
+	NewInstaller(cwd string) *Installer  // create plugin installer
+
+	// access
+	Registry() *Registry                 // return the underlying *Registry
+
+	// plugin root management
+	SetActivePluginRoot(path string)
+	ClearActivePluginRoot()
+	FindPluginRootForPath(path string) string
+
+	// cross-domain (consumed by other services at init)
+	AgentPaths() []PluginPath            // agent file paths from enabled plugins
+	SkillPaths() []PluginPath            // skill directory paths from enabled plugins
+	CommandPaths() []PluginPath          // command file paths from enabled plugins
+	MCPServers() []PluginMCPServer       // MCP servers from enabled plugins
+	PluginHooks() map[string][]setting.Hook // hook definitions from enabled plugins
+	PluginEnv() []string                 // environment variables for enabled plugins
+}
+
+// Compile-time check: *service implements Service.
+var _ Service = (*service)(nil)
+
+// Options holds all dependencies for initialization.
+type Options struct {
+	CWD string
+}
+
+// Initialize loads plugins into the default registry and sets the singleton Service.
+func Initialize(ctx context.Context, opts Options) error {
+	if err := defaultRegistry.Load(ctx, opts.CWD); err != nil {
+		return err
+	}
+	SetDefault(&service{registry: defaultRegistry})
+	return nil
+}
+
+// ── singleton ──────────────────────────────────────────────
+
+var (
+	mu      sync.RWMutex
+	instance Service
+)
+
+// Default returns the singleton Service instance.
+// Falls back to wrapping defaultRegistry if Initialize has not been called.
+func Default() Service {
+	mu.RLock()
+	s := instance
+	mu.RUnlock()
+	if s != nil {
+		return s
+	}
+	return &service{registry: defaultRegistry}
+}
+
+// SetDefault replaces the singleton instance. Intended for tests.
+func SetDefault(s Service) {
+	mu.Lock()
+	instance = s
+	mu.Unlock()
+}
+
+// ResetService clears the singleton instance. Intended for tests.
+func ResetService() {
+	mu.Lock()
+	instance = nil
+	mu.Unlock()
+}
+
+// WrapRegistry creates a Service from a *Registry. Used by tests.
+func WrapRegistry(reg *Registry) Service {
+	return &service{registry: reg}
+}
+
+// ── implementation ─────────────────────────────────────────
+
+// service wraps the Registry to satisfy the Service interface.
+type service struct {
+	registry *Registry
+}
+
+func (s *service) Load(ctx context.Context, cwd string) error       { return s.registry.Load(ctx, cwd) }
+func (s *service) LoadClaudePlugins(ctx context.Context) error       { return s.registry.LoadClaudePlugins(ctx) }
+func (s *service) LoadFromPath(ctx context.Context, path string) error { return s.registry.LoadFromPath(ctx, path) }
+func (s *service) NewInstaller(cwd string) *Installer                { return NewInstaller(s.registry, cwd) }
+func (s *service) List() []*Plugin                { return s.registry.List() }
+func (s *service) Get(name string) (*Plugin, bool) { return s.registry.Get(name) }
+func (s *service) GetEnabled() []*Plugin           { return s.registry.GetEnabled() }
+func (s *service) Count() int                      { return s.registry.Count() }
+func (s *service) EnabledCount() int               { return s.registry.EnabledCount() }
+
+func (s *service) Enable(name string, scope Scope) error  { return s.registry.Enable(name, scope) }
+func (s *service) Disable(name string, scope Scope) error { return s.registry.Disable(name, scope) }
+
+func (s *service) SetActivePluginRoot(path string)          { SetActivePluginRoot(path) }
+func (s *service) ClearActivePluginRoot()                   { ClearActivePluginRoot() }
+func (s *service) FindPluginRootForPath(path string) string { return FindPluginRootForPath(path) }
+
+func (s *service) AgentPaths() []PluginPath   { return GetPluginAgentPaths() }
+func (s *service) SkillPaths() []PluginPath   { return GetPluginSkillPaths() }
+func (s *service) CommandPaths() []PluginPath { return GetPluginCommandPaths() }
+func (s *service) MCPServers() []PluginMCPServer { return GetPluginMCPServers() }
+func (s *service) PluginHooks() map[string][]setting.Hook { return GetPluginHooks() }
+func (s *service) PluginEnv() []string { return PluginEnv() }
+func (s *service) Registry() *Registry { return s.registry }

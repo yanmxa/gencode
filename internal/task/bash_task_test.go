@@ -20,11 +20,12 @@ func TestBashTask_Complete(t *testing.T) {
 	// Complete the task
 	task.Complete(0, nil)
 
-	if task.Status != StatusCompleted {
-		t.Errorf("expected status 'completed', got '%s'", task.Status)
+	info := task.GetStatus()
+	if info.Status != StatusCompleted {
+		t.Errorf("expected status 'completed', got '%s'", info.Status)
 	}
-	if task.ExitCode != 0 {
-		t.Errorf("expected exit code 0, got %d", task.ExitCode)
+	if info.ExitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", info.ExitCode)
 	}
 }
 
@@ -40,11 +41,12 @@ func TestBashTask_Failed(t *testing.T) {
 	// Complete with non-zero exit code
 	task.Complete(1, nil)
 
-	if task.Status != StatusFailed {
-		t.Errorf("expected status 'failed', got '%s'", task.Status)
+	info := task.GetStatus()
+	if info.Status != StatusFailed {
+		t.Errorf("expected status 'failed', got '%s'", info.Status)
 	}
-	if task.ExitCode != 1 {
-		t.Errorf("expected exit code 1, got %d", task.ExitCode)
+	if info.ExitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", info.ExitCode)
 	}
 }
 
@@ -57,10 +59,11 @@ func TestBashTask_MarkKilled(t *testing.T) {
 
 	task := NewBashTask("kill-id", "sleep 100", "Long task", cmd, ctx, cancel)
 
-	task.MarkKilled()
+	task.markKilled()
 
-	if task.Status != StatusKilled {
-		t.Errorf("expected status 'killed', got '%s'", task.Status)
+	info := task.GetStatus()
+	if info.Status != StatusKilled {
+		t.Errorf("expected status 'killed', got '%s'", info.Status)
 	}
 }
 
@@ -216,14 +219,14 @@ func TestBashTask_StatusRunning(t *testing.T) {
 	task := NewBashTask("running-status-id", "echo test", "Running status task", cmd, ctx, cancel)
 
 	// Newly created task should be in Running state
-	if task.Status != StatusRunning {
-		t.Errorf("expected initial status %q, got %q", StatusRunning, task.Status)
-	}
-
-	// GetStatus should also show Running
 	info := task.GetStatus()
 	if info.Status != StatusRunning {
-		t.Errorf("GetStatus() expected %q, got %q", StatusRunning, info.Status)
+		t.Errorf("expected initial status %q, got %q", StatusRunning, info.Status)
+	}
+
+	// IsRunning should also confirm
+	if !task.IsRunning() {
+		t.Error("IsRunning() should be true for new task")
 	}
 }
 
@@ -235,12 +238,12 @@ func TestBashTask_AllStateTransitions(t *testing.T) {
 		cmd := exec.CommandContext(ctx, "echo", "test")
 		cmd.Start()
 		task := NewBashTask("t1", "echo test", "test", cmd, ctx, cancel)
-		if task.Status != StatusRunning {
-			t.Errorf("want %s, got %s", StatusRunning, task.Status)
+		if info := task.GetStatus(); info.Status != StatusRunning {
+			t.Errorf("want %s, got %s", StatusRunning, info.Status)
 		}
 		task.Complete(0, nil)
-		if task.Status != StatusCompleted {
-			t.Errorf("want %s, got %s", StatusCompleted, task.Status)
+		if info := task.GetStatus(); info.Status != StatusCompleted {
+			t.Errorf("want %s, got %s", StatusCompleted, info.Status)
 		}
 	})
 
@@ -252,8 +255,8 @@ func TestBashTask_AllStateTransitions(t *testing.T) {
 		cmd.Start()
 		task := NewBashTask("t2", "exit 1", "test", cmd, ctx, cancel)
 		task.Complete(2, nil)
-		if task.Status != StatusFailed {
-			t.Errorf("want %s, got %s", StatusFailed, task.Status)
+		if info := task.GetStatus(); info.Status != StatusFailed {
+			t.Errorf("want %s, got %s", StatusFailed, info.Status)
 		}
 	})
 
@@ -264,9 +267,9 @@ func TestBashTask_AllStateTransitions(t *testing.T) {
 		cmd := exec.CommandContext(ctx, "echo", "test")
 		cmd.Start()
 		task := NewBashTask("t3", "sleep 100", "test", cmd, ctx, cancel)
-		task.MarkKilled()
-		if task.Status != StatusKilled {
-			t.Errorf("want %s, got %s", StatusKilled, task.Status)
+		task.markKilled()
+		if info := task.GetStatus(); info.Status != StatusKilled {
+			t.Errorf("want %s, got %s", StatusKilled, info.Status)
 		}
 	})
 }

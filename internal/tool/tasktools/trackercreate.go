@@ -6,7 +6,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
-	"github.com/yanmxa/gencode/internal/tracker"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 // TrackerCreateTool creates a new tracked task
@@ -30,11 +30,11 @@ func (t *TrackerCreateTool) Execute(ctx context.Context, params map[string]any, 
 	activeForm := tool.GetString(params, "activeForm")
 	metadata, _ := params["metadata"].(map[string]any)
 
-	task := tracker.DefaultStore.Create(subject, description, activeForm, metadata)
+	task := tracker.Default().Create(subject, description, activeForm, metadata)
 
 	// Set dependencies if provided
 	if ids := parseStringSlice(params["addBlockedBy"]); len(ids) > 0 {
-		tracker.DefaultStore.Update(task.ID, tracker.WithAddBlockedBy(ids))
+		tracker.Default().Update(task.ID, tracker.WithAddBlockedBy(ids))
 	}
 
 	return toolresult.ToolResult{

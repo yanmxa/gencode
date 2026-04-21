@@ -35,7 +35,7 @@ func (t *CronCreateTool) Execute(ctx context.Context, params map[string]any, cwd
 
 	durable := tool.GetBool(params, "durable")
 
-	job, err := cron.DefaultStore.Create(cronExpr, prompt, recurring, durable)
+	job, err := cron.Default().Create(cronExpr, prompt, recurring, durable)
 	if err != nil {
 		return toolresult.NewErrorResult(t.Name(), err.Error())
 	}

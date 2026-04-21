@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestExpandEnv(t *testing.T) {
+func Test_expandEnv(t *testing.T) {
 	// Set up test environment variables
 	os.Setenv("TEST_VAR", "test_value")
 	defer os.Unsetenv("TEST_VAR")
@@ -54,22 +54,22 @@ func TestExpandEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ExpandEnv(tt.input)
+			got := expandEnv(tt.input)
 			if got != tt.expected {
-				t.Errorf("ExpandEnv(%q) = %q, want %q", tt.input, got, tt.expected)
+				t.Errorf("expandEnv(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}
 }
 
-func TestExpandEnvSlice(t *testing.T) {
+func Test_expandEnvSlice(t *testing.T) {
 	os.Setenv("TEST_VAR", "test_value")
 	defer os.Unsetenv("TEST_VAR")
 
 	input := []string{"${TEST_VAR}", "plain", "${TEST_VAR:-default}"}
 	expected := []string{"test_value", "plain", "test_value"}
 
-	got := ExpandEnvSlice(input)
+	got := expandEnvSlice(input)
 
 	if len(got) != len(expected) {
 		t.Fatalf("length mismatch: got %d, want %d", len(got), len(expected))
@@ -82,7 +82,7 @@ func TestExpandEnvSlice(t *testing.T) {
 	}
 }
 
-func TestExpandEnvMap(t *testing.T) {
+func Test_expandEnvMap(t *testing.T) {
 	os.Setenv("TEST_VAR", "test_value")
 	defer os.Unsetenv("TEST_VAR")
 
@@ -97,7 +97,7 @@ func TestExpandEnvMap(t *testing.T) {
 		"key3": "default",
 	}
 
-	got := ExpandEnvMap(input)
+	got := expandEnvMap(input)
 
 	for k, v := range expected {
 		if got[k] != v {
@@ -106,12 +106,12 @@ func TestExpandEnvMap(t *testing.T) {
 	}
 }
 
-func TestBuildEnv(t *testing.T) {
+func Test_buildEnv(t *testing.T) {
 	configEnv := map[string]string{
 		"MY_VAR": "my_value",
 	}
 
-	env := BuildEnv(configEnv)
+	env := buildEnv(configEnv)
 
 	// Check that MY_VAR is in the result
 	found := false
@@ -127,8 +127,8 @@ func TestBuildEnv(t *testing.T) {
 	}
 
 	// Check that empty config returns current env
-	envEmpty := BuildEnv(nil)
+	envEmpty := buildEnv(nil)
 	if len(envEmpty) == 0 {
-		t.Error("BuildEnv(nil) should return current environment")
+		t.Error("buildEnv(nil) should return current environment")
 	}
 }

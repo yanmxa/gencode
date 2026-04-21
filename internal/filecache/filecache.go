@@ -7,38 +7,38 @@ import (
 )
 
 const (
-	MaxEntries       = 20
-	RestoreMaxFiles  = 5
-	RestoreMaxPerFile = 5000
-	RestoreMaxTotal  = 50000
+	maxEntries       = 20
+	restoreMaxFiles  = 5
+	restoreMaxPerFile = 5000
+	restoreMaxTotal  = 50000
 )
 
-type Entry struct {
+type entry struct {
 	FilePath  string
 	Timestamp time.Time
 }
 
 type Cache struct {
 	mu      sync.Mutex
-	entries map[string]Entry
+	entries map[string]entry
 }
 
 func New() *Cache {
-	return &Cache{entries: make(map[string]Entry)}
+	return &Cache{entries: make(map[string]entry)}
 }
 
 func (c *Cache) Touch(filePath string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.entries[filePath] = Entry{FilePath: filePath, Timestamp: time.Now()}
+	c.entries[filePath] = entry{FilePath: filePath, Timestamp: time.Now()}
 	c.evict()
 }
 
-func (c *Cache) Recent(n int) []Entry {
+func (c *Cache) Recent(n int) []entry {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	entries := make([]Entry, 0, len(c.entries))
+	entries := make([]entry, 0, len(c.entries))
 	for _, e := range c.entries {
 		entries = append(entries, e)
 	}
@@ -51,30 +51,18 @@ func (c *Cache) Recent(n int) []Entry {
 	return entries
 }
 
-func (c *Cache) Clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.entries = make(map[string]Entry)
-}
-
-func (c *Cache) Len() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return len(c.entries)
-}
-
 func (c *Cache) evict() {
-	if len(c.entries) <= MaxEntries {
+	if len(c.entries) <= maxEntries {
 		return
 	}
-	entries := make([]Entry, 0, len(c.entries))
+	entries := make([]entry, 0, len(c.entries))
 	for _, e := range c.entries {
 		entries = append(entries, e)
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Timestamp.Before(entries[j].Timestamp)
 	})
-	for i := 0; i < len(entries)-MaxEntries; i++ {
+	for i := 0; i < len(entries)-maxEntries; i++ {
 		delete(c.entries, entries[i].FilePath)
 	}
 }

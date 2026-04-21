@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestParse(t *testing.T) {
+func Test_parse(t *testing.T) {
 	tests := []struct {
 		expr    string
 		wantErr bool
@@ -23,27 +23,27 @@ func TestParse(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		_, err := Parse(tt.expr)
+		_, err := parse(tt.expr)
 		if (err != nil) != tt.wantErr {
-			t.Errorf("Parse(%q) error = %v, wantErr %v", tt.expr, err, tt.wantErr)
+			t.Errorf("parse(%q) error = %v, wantErr %v", tt.expr, err, tt.wantErr)
 		}
 	}
 }
 
-func TestNextAfter(t *testing.T) {
+func TestNextAfter(t *testing.T) { //nolint:revive // test name matches method
 	// Every 5 minutes
-	expr, _ := Parse("*/5 * * * *")
+	expr, _ := parse("*/5 * * * *")
 	base := time.Date(2026, 3, 31, 10, 3, 0, 0, time.Local)
-	next := expr.NextAfter(base)
+	next := expr.nextAfter(base)
 	if next.Minute() != 5 {
 		t.Errorf("expected minute 5, got %d (time: %v)", next.Minute(), next)
 	}
 
 	// Specific time: 9:30 weekdays
-	expr2, _ := Parse("30 9 * * 1-5")
+	expr2, _ := parse("30 9 * * 1-5")
 	// Start on a Monday at 10:00
 	monday := time.Date(2026, 3, 30, 10, 0, 0, 0, time.Local) // Monday
-	next2 := expr2.NextAfter(monday)
+	next2 := expr2.nextAfter(monday)
 	// Should be Tuesday 9:30
 	if next2.Weekday() != time.Tuesday || next2.Hour() != 9 || next2.Minute() != 30 {
 		t.Errorf("expected Tue 9:30, got %v", next2)
@@ -124,9 +124,9 @@ func TestStoreTick(t *testing.T) {
 	}
 }
 
-func TestStoreMaxJobs(t *testing.T) {
+func TestStore_maxJobs(t *testing.T) {
 	store := NewStore()
-	for i := 0; i < MaxJobs; i++ {
+	for i := 0; i < maxJobs; i++ {
 		_, err := store.Create("*/5 * * * *", "job", true, false)
 		if err != nil {
 			t.Fatalf("Create %d failed: %v", i, err)
@@ -153,9 +153,9 @@ func TestCron_InvalidExpression_ReturnsError(t *testing.T) {
 
 	for _, tt := range invalidExpressions {
 		t.Run(tt.desc, func(t *testing.T) {
-			_, err := Parse(tt.expr)
+			_, err := parse(tt.expr)
 			if err == nil {
-				t.Errorf("Parse(%q) expected error for %s, got nil", tt.expr, tt.desc)
+				t.Errorf("parse(%q) expected error for %s, got nil", tt.expr, tt.desc)
 			}
 		})
 	}
@@ -331,13 +331,13 @@ func TestStoreTick_DurableRecurringPersistsUpdatedState(t *testing.T) {
 }
 
 func TestComputeNextFire_RecurringAddsDeterministicBoundedJitter(t *testing.T) {
-	expr, err := Parse("0 * * * *")
+	expr, err := parse("0 * * * *")
 	if err != nil {
-		t.Fatalf("Parse() failed: %v", err)
+		t.Fatalf("parse() failed: %v", err)
 	}
 
 	from := time.Date(2026, 4, 6, 10, 7, 0, 0, time.Local)
-	base := expr.NextAfter(from)
+	base := expr.nextAfter(from)
 	if base.Minute() != 0 || base.Hour() != 11 {
 		t.Fatalf("unexpected base time %v", base)
 	}
@@ -356,13 +356,13 @@ func TestComputeNextFire_RecurringAddsDeterministicBoundedJitter(t *testing.T) {
 }
 
 func TestComputeNextFire_OneShotDoesNotAddJitter(t *testing.T) {
-	expr, err := Parse("0 * * * *")
+	expr, err := parse("0 * * * *")
 	if err != nil {
-		t.Fatalf("Parse() failed: %v", err)
+		t.Fatalf("parse() failed: %v", err)
 	}
 
 	from := time.Date(2026, 4, 6, 10, 7, 0, 0, time.Local)
-	base := expr.NextAfter(from)
+	base := expr.nextAfter(from)
 	got := computeNextFire(expr, from, "job-123", false)
 	if !got.Equal(base) {
 		t.Fatalf("expected one-shot next fire to equal base, got base=%v next=%v", base, got)

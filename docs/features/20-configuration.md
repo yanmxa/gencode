@@ -39,12 +39,12 @@ Configuration is loaded from multiple files at different scopes. Higher-priority
 
 - **`/tools`**: shows which tools are disabled via `disabledTools`.
 - **Env vars**: injected into the Bash tool's environment automatically.
-- **Theme**: applied at startup; no restart needed when changed via `/provider` or similar commands.
+- **Theme**: applied at startup; no restart needed when changed via `/model` or similar commands.
 
 ## Automated Tests
 
 ```bash
-go test ./internal/config/... -v
+go test ./internal/setting/... -v
 ```
 
 Covered:

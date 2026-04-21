@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -42,9 +43,41 @@ func (t *WebFetchTool) Execute(ctx context.Context, params map[string]any, cwd s
 		format = f
 	}
 
-	// Create HTTP client with timeout
+	// Create HTTP client with SSRF protection, timeout, and redirect validation
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				host = addr
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			for _, ip := range ips {
+				if ip.IP.IsLoopback() || ip.IP.IsPrivate() || ip.IP.IsLinkLocalUnicast() || ip.IP.IsLinkLocalMulticast() {
+					return nil, fmt.Errorf("blocked: request to private/internal address %s", ip.IP)
+				}
+			}
+			dialAddr := addr
+			if port != "" {
+				dialAddr = net.JoinHostPort(host, port)
+			}
+			return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, dialAddr)
+		},
+	}
 	client := &http.Client{
-		Timeout: httpTimeout,
+		Transport: transport,
+		Timeout:   httpTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("redirect to non-HTTP scheme %q blocked", req.URL.Scheme)
+			}
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			return nil
+		},
 	}
 
 	// Create request
@@ -69,10 +102,14 @@ func (t *WebFetchTool) Execute(ctx context.Context, params map[string]any, cwd s
 	}
 
 	// Read body with size limit
-	limitedReader := io.LimitReader(resp.Body, maxResponseSize)
+	limitedReader := io.LimitReader(resp.Body, maxResponseSize+1)
 	body, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return toolresult.NewErrorResult(t.Name(), "failed to read response: "+err.Error())
+	}
+	sizeTruncated := len(body) > maxResponseSize
+	if sizeTruncated {
+		body = body[:maxResponseSize]
 	}
 
 	// Convert content based on format
@@ -90,7 +127,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, params map[string]any, cwd s
 
 	// Truncate if too long
 	const maxLines = 2000
-	truncated := false
+	truncated := sizeTruncated
 	lines := strings.Split(content, "\n")
 	if len(lines) > maxLines {
 		lines = lines[:maxLines]

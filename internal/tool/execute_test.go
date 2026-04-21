@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
@@ -38,57 +38,10 @@ func (e *testMCPExecutor) ExecuteMCP(ctx context.Context, name string, params ma
 	return toolresult.ToolResult{Success: true, Output: "mcp"}, nil
 }
 
-func TestExecutePreparedToolUsesExecuteApprovedWhenRequested(t *testing.T) {
-	Register(&testPermissionAwareTool{})
-
-	tc := message.ToolCall{ID: "tc1", Name: "TestPermissionAwareTool"}
-	result, err := ExecutePreparedTool(context.Background(), tc, map[string]any{}, "", true, nil)
-	if err != nil {
-		t.Fatalf("ExecutePreparedTool returned error: %v", err)
-	}
-	if result.Output != "approved" {
-		t.Fatalf("expected approved path, got %q", result.Output)
-	}
-}
-
-func TestExecutePreparedToolUsesExecuteByDefault(t *testing.T) {
-	tc := message.ToolCall{ID: "tc2", Name: "TestPermissionAwareTool"}
-	result, err := ExecutePreparedTool(context.Background(), tc, map[string]any{}, "", false, nil)
-	if err != nil {
-		t.Fatalf("ExecutePreparedTool returned error: %v", err)
-	}
-	if result.Output != "execute" {
-		t.Fatalf("expected execute path, got %q", result.Output)
-	}
-}
-
-func TestExecutePreparedToolRoutesMCPTools(t *testing.T) {
-	mcpExec := &testMCPExecutor{}
-	tc := message.ToolCall{ID: "tc3", Name: "mcp__test__tool"}
-	result, err := ExecutePreparedTool(context.Background(), tc, map[string]any{"x": "y"}, "", false, mcpExec)
-	if err != nil {
-		t.Fatalf("ExecutePreparedTool returned error: %v", err)
-	}
-	if !mcpExec.handled {
-		t.Fatal("expected MCP executor to be used")
-	}
-	if result.Output != "mcp" {
-		t.Fatalf("expected MCP output, got %q", result.Output)
-	}
-}
-
-func TestExecutePreparedToolReturnsUnknownToolError(t *testing.T) {
-	tc := message.ToolCall{ID: "tc4", Name: "DefinitelyUnknownTool"}
-	_, err := ExecutePreparedTool(context.Background(), tc, map[string]any{}, "", false, nil)
-	if err == nil {
-		t.Fatal("expected unknown tool error")
-	}
-}
-
 func TestPrepareToolCallParsesAndResolvesBuiltInTool(t *testing.T) {
 	Register(&testPermissionAwareTool{})
 
-	prepared, err := PrepareToolCall(message.ToolCall{
+	prepared, err := PrepareToolCall(core.ToolCall{
 		ID:    "tc5",
 		Name:  "TestPermissionAwareTool",
 		Input: `{"path":"x"}`,
@@ -107,7 +60,7 @@ func TestPrepareToolCallParsesAndResolvesBuiltInTool(t *testing.T) {
 func TestPrepareToolCallResolvesMCPTool(t *testing.T) {
 	mcpExec := &testMCPExecutor{}
 
-	prepared, err := PrepareToolCall(message.ToolCall{
+	prepared, err := PrepareToolCall(core.ToolCall{
 		ID:    "tc6",
 		Name:  "mcp__test__tool",
 		Input: `{"query":"ok"}`,

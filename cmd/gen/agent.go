@@ -9,13 +9,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yanmxa/gencode/internal/agent"
-	"github.com/yanmxa/gencode/internal/client"
-	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/system"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/core/system"
+	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/setting"
+	"github.com/yanmxa/gencode/internal/subagent"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -75,16 +73,16 @@ func runHeadlessAgent() error {
 	}()
 
 	// Initialize provider
-	store, _ := provider.NewStore()
+	store, _ := llm.NewStore()
 	if store == nil {
 		return fmt.Errorf("no provider store available")
 	}
 
 	currentModel := store.GetCurrentModel()
-	var llmProvider provider.LLMProvider
+	var llmProvider llm.Provider
 
 	if currentModel != nil {
-		p, err := provider.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod)
+		p, err := llm.GetProvider(ctx, currentModel.Provider, currentModel.AuthMethod)
 		if err != nil {
 			return fmt.Errorf("failed to connect provider: %w", err)
 		}
@@ -103,12 +101,12 @@ func runHeadlessAgent() error {
 	}
 
 	// Initialize agent registry
-	if err := agent.Initialize(cwd); err != nil {
+	if err := subagent.Initialize(subagent.Options{CWD: cwd}); err != nil {
 		return fmt.Errorf("failed to initialize agent registry: %w", err)
 	}
 
 	// Get agent configuration
-	agentCfg, ok := agent.DefaultRegistry.Get(agentRunOpts.agentType)
+	agentCfg, ok := subagent.Default().Get(agentRunOpts.agentType)
 	if !ok {
 		return fmt.Errorf("unknown agent type: %s", agentRunOpts.agentType)
 	}
@@ -119,68 +117,46 @@ func runHeadlessAgent() error {
 		toolSet.Allow = []string(agentCfg.Tools)
 	}
 
-	// Set up the loop
-	sys := &system.System{
+	sys := system.Build(system.Config{
 		Cwd:   cwd,
-		IsGit: config.IsGitRepo(cwd),
-	}
+		IsGit: setting.IsGitRepo(cwd),
+	})
 
-	loop := &runtime.Loop{
-		Client: &client.Client{
-			Provider:  llmProvider,
-			Model:     modelID,
-			MaxTokens: 16384,
-		},
-		System: sys,
-		Tool:   toolSet,
-	}
+	client := llm.NewClient(llmProvider, modelID, 16384)
 
-	// Add user prompt
-	loop.AddUser(agentRunOpts.prompt, nil)
+	schemas := toolSet.Tools()
+	tools := tool.AdaptToolRegistry(schemas, func() string { return cwd })
 
-	// Print status
-	fmt.Printf("Agent: %s\n", agentRunOpts.agentType)
-	fmt.Printf("Prompt: %s\n", agentRunOpts.prompt)
-	fmt.Println("---")
-
-	// Run turns
 	maxTurns := agentRunOpts.maxTurns
 	if maxTurns <= 0 {
 		maxTurns = 50
 	}
 
-	totalTurns := 0
-	for totalTurns < maxTurns {
-		if ctx.Err() != nil {
-			break
-		}
+	ag := core.NewAgent(core.Config{
+		LLM:      client,
+		System:   sys,
+		Tools:    tools,
+		CWD:      cwd,
+		MaxTurns: maxTurns,
+		OutboxBuf: -1,
+	})
 
-		// Run one turn
-		result, err := loop.Run(ctx, runtime.RunOptions{
-			MaxTurns: 1,
-			OnResponse: func(resp *message.CompletionResponse) {
-				if resp.Content != "" {
-					fmt.Println(resp.Content)
-				}
-			},
-			OnToolStart: func(tc message.ToolCall) bool {
-				fmt.Printf("[%s] %s\n", tc.Name, tc.ID)
-				return true
-			},
-		})
-		totalTurns++
+	ag.Append(ctx, core.UserMessage(agentRunOpts.prompt, nil))
 
-		if err != nil {
-			return fmt.Errorf("agent failed: %w", err)
-		}
+	fmt.Printf("Agent: %s\n", agentRunOpts.agentType)
+	fmt.Printf("Prompt: %s\n", agentRunOpts.prompt)
+	fmt.Println("---")
 
-		// Check for end_turn (agent completed its work)
-		if result.StopReason == "end_turn" {
-			break
-		}
+	result, err := ag.ThinkAct(ctx)
+	if err != nil {
+		return fmt.Errorf("agent failed: %w", err)
 	}
 
-	fmt.Printf("\n---\nDone: %d turns\n", totalTurns)
+	if result.Content != "" {
+		fmt.Println(result.Content)
+	}
+
+	fmt.Printf("\n---\nDone: %d turns, %d tool uses\n", result.Turns, result.ToolUses)
 	return nil
 }
 

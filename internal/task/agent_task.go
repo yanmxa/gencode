@@ -7,12 +7,6 @@ import (
 	"time"
 )
 
-// ProgressUpdate represents a progress update from the agent
-type ProgressUpdate struct {
-	Message string // Progress message (e.g., "Reading: file.go")
-	Done    bool   // True if task is complete
-}
-
 // AgentTask represents a background agent task
 // It implements the BackgroundTask interface
 type AgentTask struct {
@@ -32,9 +26,10 @@ type AgentTask struct {
 	ctx    context.Context    // Task context
 	cancel context.CancelFunc // Cancel function
 
-	mu          sync.RWMutex          // Protects mutable fields
-	output      bytes.Buffer          // Collected output from the agent
-	subscribers []chan ProgressUpdate // Output subscribers
+	mu       sync.RWMutex // Protects mutable fields
+	output   bytes.Buffer // Collected output from the agent
+	done     chan struct{} // Closed when task completes
+	doneOnce sync.Once    // Guards done channel close
 }
 
 // Verify AgentTask implements BackgroundTask
@@ -51,6 +46,7 @@ func NewAgentTask(id, agentName, description string, ctx context.Context, cancel
 		OutputFile:  initOutputFile(id),
 		ctx:         ctx,
 		cancel:      cancel,
+		done:        make(chan struct{}),
 	}
 	appendOutputFile(task.OutputFile, outputRecord{
 		Event:       "task.started",
@@ -67,7 +63,6 @@ func NewAgentTask(id, agentName, description string, ctx context.Context, cancel
 func (t *AgentTask) SetIdentity(agentType, sessionID string) {
 	t.mu.Lock()
 	changed := false
-	defer t.mu.Unlock()
 	if agentType != "" {
 		t.AgentType = agentType
 		changed = true
@@ -76,8 +71,11 @@ func (t *AgentTask) SetIdentity(agentType, sessionID string) {
 		t.SessionID = sessionID
 		changed = true
 	}
+	outputFile := t.OutputFile
+	t.mu.Unlock()
+
 	if changed {
-		appendOutputFile(t.OutputFile, outputRecord{
+		appendOutputFile(outputFile, outputRecord{
 			Event: "agent.identity",
 			Metadata: map[string]any{
 				"agent_type": agentType,
@@ -96,6 +94,13 @@ func (t *AgentTask) SetOutputFile(path string) {
 	}
 }
 
+// GetOutputFile returns the transcript/output path, safe for concurrent use.
+func (t *AgentTask) GetOutputFile() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.OutputFile
+}
+
 // GetID returns the unique task identifier
 func (t *AgentTask) GetID() string {
 	return t.ID
@@ -111,70 +116,38 @@ func (t *AgentTask) GetDescription() string {
 	return t.Description
 }
 
-// Subscribe returns a channel that receives progress updates
-// The channel is closed when the task completes
-func (t *AgentTask) Subscribe() <-chan ProgressUpdate {
-	ch := make(chan ProgressUpdate, 100)
-	t.mu.Lock()
-	t.subscribers = append(t.subscribers, ch)
-	t.mu.Unlock()
-	return ch
-}
+const maxOutputBufferSize = 512 * 1024 // 512KB in-memory cap; full output is in OutputFile
 
-// notifySubscribers sends a progress update to all subscribers (non-blocking)
-func (t *AgentTask) notifySubscribers(msg string, done bool) {
-	update := ProgressUpdate{Message: msg, Done: done}
-	for _, ch := range t.subscribers {
-		select {
-		case ch <- update:
-		default:
-			// Non-blocking: skip if channel is full
-		}
-	}
-}
-
-// closeSubscribers closes all subscriber channels
-func (t *AgentTask) closeSubscribers() {
-	for _, ch := range t.subscribers {
-		close(ch)
-	}
-	t.subscribers = nil
-}
-
-// AppendOutput appends data to the output buffer and notifies subscribers
+// AppendOutput appends data to the output buffer
 func (t *AgentTask) AppendOutput(data []byte) {
 	t.mu.Lock()
 	t.output.Write(data)
+	// Cap in-memory buffer to the tail to prevent unbounded growth
+	if t.output.Len() > maxOutputBufferSize {
+		b := t.output.Bytes()
+		tail := b[len(b)-maxOutputBufferSize:]
+		t.output.Reset()
+		t.output.Write(tail)
+	}
 	outputFile := t.OutputFile
-	subs := t.subscribers
 	t.mu.Unlock()
 
 	appendOutputFile(outputFile, outputRecord{
 		Event:   "task.output",
 		Content: string(data),
 	})
-
-	// Notify outside of lock
-	if len(subs) > 0 && len(data) > 0 {
-		t.notifySubscribers(string(data), false)
-	}
 }
 
-// AppendProgress appends a progress message and notifies subscribers
+// AppendProgress appends a progress message
 func (t *AgentTask) AppendProgress(msg string) {
 	t.mu.Lock()
 	outputFile := t.OutputFile
-	subs := t.subscribers
 	t.mu.Unlock()
 
 	appendOutputFile(outputFile, outputRecord{
 		Event:   "task.progress",
 		Content: msg,
 	})
-
-	if len(subs) > 0 {
-		t.notifySubscribers(msg, false)
-	}
 }
 
 // GetOutput returns the current output
@@ -184,9 +157,14 @@ func (t *AgentTask) GetOutput() string {
 	return t.output.String()
 }
 
-// Complete marks the task as completed and notifies subscribers
+// Complete marks the task as completed and notifies subscribers.
+// It is idempotent — a second call after completion is a no-op.
 func (t *AgentTask) Complete(err error) {
 	t.mu.Lock()
+	if t.Status != StatusRunning {
+		t.mu.Unlock()
+		return
+	}
 	t.EndTime = time.Now()
 
 	if err != nil {
@@ -195,12 +173,12 @@ func (t *AgentTask) Complete(err error) {
 	} else {
 		t.Status = StatusCompleted
 	}
-	subs := t.subscribers
 	outputFile := t.OutputFile
 	status := t.Status
 	errorText := t.Error
 	t.mu.Unlock()
 
+	// File I/O and done channel outside lock
 	appendOutputFile(outputFile, outputRecord{
 		Event:  "task.completed",
 		Status: string(status),
@@ -209,27 +187,25 @@ func (t *AgentTask) Complete(err error) {
 		},
 	})
 
-	// Notify completion and close channels
-	if len(subs) > 0 {
-		t.notifySubscribers("", true)
-		t.mu.Lock()
-		t.closeSubscribers()
-		t.mu.Unlock()
-	}
+	t.doneOnce.Do(func() { close(t.done) })
 	notifyTaskCompleted(t.GetStatus())
 }
 
-// MarkKilled marks the task as killed (internal use)
-func (t *AgentTask) MarkKilled() {
+// markKilled marks the task as killed (internal use).
+// Closes the done channel and subscriber channels so WaitForCompletion unblocks.
+func (t *AgentTask) markKilled() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	t.Status = StatusKilled
 	t.EndTime = time.Now()
-	appendOutputFile(t.OutputFile, outputRecord{
+	outputFile := t.OutputFile
+	t.mu.Unlock()
+
+	appendOutputFile(outputFile, outputRecord{
 		Event:  "task.completed",
 		Status: string(StatusKilled),
 	})
+
+	t.doneOnce.Do(func() { close(t.done) })
 }
 
 // IsRunning returns true if the task is still running
@@ -239,26 +215,14 @@ func (t *AgentTask) IsRunning() bool {
 	return t.Status == StatusRunning
 }
 
-// WaitForCompletion waits until the task completes or timeout
-// Returns true if completed, false if timeout
+// WaitForCompletion waits until the task completes or timeout.
+// Returns true if completed, false if timeout.
 func (t *AgentTask) WaitForCompletion(timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-
-	for {
-		t.mu.RLock()
-		status := t.Status
-		t.mu.RUnlock()
-
-		if status != StatusRunning {
-			return true // completed
-		}
-
-		if time.Now().After(deadline) {
-			return false // timeout
-		}
-
-		// Poll with small sleep
-		time.Sleep(100 * time.Millisecond)
+	select {
+	case <-t.done:
+		return true
+	case <-time.After(timeout):
+		return false
 	}
 }
 
@@ -275,7 +239,7 @@ func (t *AgentTask) Kill() error {
 	if t.cancel != nil {
 		t.cancel()
 	}
-	t.MarkKilled()
+	t.markKilled()
 	return nil
 }
 
@@ -315,7 +279,3 @@ func (t *AgentTask) GetContext() context.Context {
 	return t.ctx
 }
 
-// GetCancel returns the task's cancel function
-func (t *AgentTask) GetCancel() context.CancelFunc {
-	return t.cancel
-}

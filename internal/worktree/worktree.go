@@ -10,6 +10,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"go.uber.org/zap"
+
+	"github.com/yanmxa/gencode/internal/log"
 )
 
 const worktreeDir = "agent-worktrees"
@@ -26,8 +30,15 @@ type Result struct {
 func Create(baseCwd, slug string) (*Result, func(), error) {
 	if slug == "" {
 		b := make([]byte, 4)
-		rand.Read(b)
+		if _, err := rand.Read(b); err != nil {
+			return nil, nil, fmt.Errorf("generate worktree slug: %w", err)
+		}
 		slug = hex.EncodeToString(b)
+	}
+
+	// Prevent path traversal via crafted slug
+	if strings.ContainsAny(slug, "/\\") || strings.Contains(slug, "..") {
+		return nil, nil, fmt.Errorf("invalid worktree slug: must not contain path separators or '..'")
 	}
 
 	worktreePath := filepath.Join(baseCwd, ".git", worktreeDir, slug)
@@ -38,8 +49,14 @@ func Create(baseCwd, slug string) (*Result, func(), error) {
 		return nil, nil, fmt.Errorf("git worktree add failed: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
-	cleanup := func() { Remove(baseCwd, worktreePath) }
-	notifyWorktreeCreated(slug, worktreePath)
+	cleanup := func() {
+		if err := Remove(baseCwd, worktreePath); err != nil {
+			log.Logger().Warn("worktree cleanup failed",
+				zap.String("path", worktreePath),
+				zap.Error(err))
+		}
+	}
+	fireWorktreeCreated(slug, worktreePath)
 
 	return &Result{Path: worktreePath}, cleanup, nil
 }
@@ -51,7 +68,7 @@ func Remove(baseCwd, worktreePath string) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git worktree remove failed: %s: %w", strings.TrimSpace(string(out)), err)
 	}
-	notifyWorktreeRemoved(worktreePath)
+	fireWorktreeRemoved(worktreePath)
 	return nil
 }
 

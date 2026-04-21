@@ -242,12 +242,12 @@ When loading config, native GenCode hooks take precedence per event. Claude-comp
 ## Automated Tests
 
 ```bash
-go test ./internal/hooks ./internal/app ./internal/tool ./internal/worktree ./internal/plugin ./internal/mcp ./tests/integration/hooks ./tests/integration/plugin
+go test ./internal/hook ./internal/app/... ./internal/tool ./internal/worktree ./internal/plugin ./internal/mcp ./tests/integration/hooks ./tests/integration/plugin
 ```
 
 Current automated coverage is split across engine tests, app-runtime tests, observer wiring tests, and integration tests.
 
-### Engine Coverage (`internal/hooks/hooks_test.go`)
+### Engine Coverage (`internal/hook/hooks_test.go`)
 
 ```
 TestEngineNoHooks                               — no configured hooks is a no-op

@@ -48,9 +48,16 @@ func NewSSETransport(config SSEConfig) *SSETransport {
 
 // Start initializes the SSE transport
 func (t *SSETransport) Start(ctx context.Context) error {
+	t.mu.Lock()
+	if t.alive {
+		t.mu.Unlock()
+		return fmt.Errorf("SSE transport already started")
+	}
+	t.mu.Unlock()
+
 	// Expand environment variables in config
-	t.baseURL = ExpandEnv(t.config.URL)
-	t.config.Headers = ExpandEnvMap(t.config.Headers)
+	t.baseURL = expandEnv(t.config.URL)
+	t.config.Headers = expandEnvMap(t.config.Headers)
 
 	// Validate URL
 	if t.baseURL == "" {
@@ -75,11 +82,13 @@ func (t *SSETransport) Start(ctx context.Context) error {
 
 	resp, err := t.client.Do(req)
 	if err != nil {
+		cancel()
 		return fmt.Errorf("failed to connect to SSE endpoint: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
+		cancel()
 		return fmt.Errorf("SSE connection failed with status %d", resp.StatusCode)
 	}
 
@@ -147,17 +156,22 @@ func (t *SSETransport) handleSSEEvent(_, data string) {
 		return
 	}
 
+	// Snapshot the handler under lock to avoid racing with SetNotificationHandler.
+	t.mu.Lock()
+	handler := t.notifyHandler
+	t.mu.Unlock()
+
 	// Try to parse as JSON-RPC response
 	var resp JSONRPCResponse
 	if err := json.Unmarshal([]byte(data), &resp); err != nil {
 		// Try as notification
-		ParseAndDispatchNotification([]byte(data), t.notifyHandler)
+		parseAndDispatchNotification([]byte(data), handler)
 		return
 	}
 
 	// Check if this is a response (has ID) or notification
 	if resp.ID == 0 && resp.Result == nil && resp.Error == nil {
-		ParseAndDispatchNotification([]byte(data), t.notifyHandler)
+		parseAndDispatchNotification([]byte(data), handler)
 		return
 	}
 

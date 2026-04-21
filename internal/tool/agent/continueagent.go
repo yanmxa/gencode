@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
@@ -24,7 +23,7 @@ const IconContinueAgent = tool.IconAgent
 
 // ContinueAgentTool resumes a previously spawned worker from saved session state.
 type ContinueAgentTool struct {
-	Executor tool.AgentExecutor
+	executor tool.AgentExecutor
 }
 
 func NewContinueAgentTool() *ContinueAgentTool {
@@ -40,7 +39,7 @@ func (t *ContinueAgentTool) Icon() string { return IconContinueAgent }
 func (t *ContinueAgentTool) RequiresPermission() bool { return true }
 
 func (t *ContinueAgentTool) SetExecutor(executor tool.AgentExecutor) {
-	t.Executor = executor
+	t.executor = executor
 }
 
 func (t *ContinueAgentTool) PreparePermission(ctx context.Context, params map[string]any, cwd string) (*perm.PermissionRequest, error) {
@@ -48,7 +47,7 @@ func (t *ContinueAgentTool) PreparePermission(ctx context.Context, params map[st
 	if err != nil {
 		return nil, err
 	}
-	if t.Executor == nil {
+	if t.executor == nil {
 		return nil, fmt.Errorf("agent executor not configured")
 	}
 
@@ -56,14 +55,13 @@ func (t *ContinueAgentTool) PreparePermission(ctx context.Context, params map[st
 	if err != nil {
 		return nil, err
 	}
-	resolvedTaskID := resolveLiveTaskID(target)
-	if resolvedTaskID != "" {
-		if err := ensureContinuationTaskStopped(resolvedTaskID, "ContinueAgent"); err != nil {
+	if target.taskID != "" {
+		if err := ensureContinuationTaskStopped(target.taskID, "ContinueAgent"); err != nil {
 			return nil, err
 		}
 	}
 
-	config, ok := t.Executor.GetAgentConfig(target.agentType)
+	config, ok := t.executor.GetAgentConfig(target.agentType)
 	if !ok {
 		return nil, fmt.Errorf("unknown agent type: %s", target.agentType)
 	}
@@ -76,7 +74,7 @@ func (t *ContinueAgentTool) PreparePermission(ctx context.Context, params map[st
 	runBackground := tool.GetBool(params, "run_in_background")
 	effectiveModel := tool.GetString(params, "model")
 	if effectiveModel == "" {
-		effectiveModel = t.Executor.GetParentModelID()
+		effectiveModel = t.executor.GetParentModelID()
 	}
 	if effectiveModel == "" {
 		effectiveModel = "claude-sonnet-4-20250514"
@@ -126,7 +124,7 @@ func (t *ContinueAgentTool) execute(ctx context.Context, params map[string]any, 
 	}
 	ctx = tool.WithAgentDepth(ctx, currentDepth+1)
 
-	if t.Executor == nil {
+	if t.executor == nil {
 		return toolresult.NewErrorResult(t.Name(), "agent executor not configured")
 	}
 
@@ -139,9 +137,8 @@ func (t *ContinueAgentTool) execute(ctx context.Context, params map[string]any, 
 	if err != nil {
 		return toolresult.NewErrorResult(t.Name(), err.Error())
 	}
-	resolvedTaskID := resolveLiveTaskID(target)
-	if resolvedTaskID != "" {
-		if err := ensureContinuationTaskStopped(resolvedTaskID, t.Name()); err != nil {
+	if target.taskID != "" {
+		if err := ensureContinuationTaskStopped(target.taskID, t.Name()); err != nil {
 			return toolresult.NewErrorResult(t.Name(), err.Error())
 		}
 	}
@@ -168,7 +165,7 @@ func (t *ContinueAgentTool) execute(ctx context.Context, params map[string]any, 
 	req := tool.AgentExecRequest{
 		Agent:       target.agentType,
 		Name:        agentName,
-		Prompt:      composeContinuationPrompt(prompt, orchestration.DefaultStore.DrainPendingMessages(resolvedTaskID, target.agentID)),
+		Prompt:      prompt,
 		Description: description,
 		Background:  tool.GetBool(params, "run_in_background"),
 		Model:       tool.GetString(params, "model"),
@@ -181,7 +178,7 @@ func (t *ContinueAgentTool) execute(ctx context.Context, params map[string]any, 
 	}
 
 	if req.Background {
-		taskInfo, err := t.Executor.RunBackground(req)
+		taskInfo, err := t.executor.RunBackground(req)
 		if err != nil {
 			return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("failed to continue background agent: %v", err))
 		}
@@ -210,7 +207,7 @@ func (t *ContinueAgentTool) execute(ctx context.Context, params map[string]any, 
 		}
 	}
 
-	result, err := t.Executor.Run(ctx, req)
+	result, err := t.executor.Run(ctx, req)
 	if err != nil {
 		return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("agent continuation failed: %v", err))
 	}
@@ -264,7 +261,7 @@ func resolveContinuationTarget(params map[string]any) (continuedAgentTarget, err
 		return target, nil
 	}
 
-	bgTask, found := task.DefaultManager.Get(taskID)
+	bgTask, found := task.Default().Get(taskID)
 	if !found {
 		return continuedAgentTarget{}, fmt.Errorf("task not found: %s", taskID)
 	}
@@ -289,36 +286,14 @@ func resolveContinuationTarget(params map[string]any) (continuedAgentTarget, err
 }
 
 func ensureContinuationTaskStopped(taskID, toolName string) error {
-	bgTask, found := task.DefaultManager.Get(taskID)
+	bgTask, found := task.Default().Get(taskID)
 	if !found {
 		return fmt.Errorf("task not found: %s", taskID)
 	}
 	if bgTask.IsRunning() {
-		return fmt.Errorf("task %s is still running; %s requires a stopped worker. Use SendMessage(task_id=%q, message=...) to queue a follow-up or wait for completion", taskID, toolName, taskID)
+		return fmt.Errorf("task %s is still running; %s requires a stopped worker — wait for completion first", taskID, toolName)
 	}
 	return nil
-}
-
-func composeContinuationPrompt(prompt string, pendingMessages []string) string {
-	prompt = strings.TrimSpace(prompt)
-	if len(pendingMessages) == 0 {
-		return prompt
-	}
-
-	var b strings.Builder
-	b.WriteString("Queued follow-up messages captured while this worker was still running:\n")
-	for i, message := range pendingMessages {
-		message = strings.TrimSpace(message)
-		if message == "" {
-			continue
-		}
-		fmt.Fprintf(&b, "%d. %s\n", i+1, message)
-	}
-	if prompt != "" {
-		b.WriteString("\nLatest instruction:\n")
-		b.WriteString(prompt)
-	}
-	return strings.TrimSpace(b.String())
 }
 
 func formatForegroundAgentResult(agentType string, result *tool.AgentExecResult, duration time.Duration) string {
@@ -333,7 +308,7 @@ func formatForegroundAgentResult(agentType string, result *tool.AgentExecResult,
 
 	var outputBuilder strings.Builder
 	fmt.Fprintf(&outputBuilder, "Agent: %s\nModel: %s\nTurns: %d\nToolUses: %d\nTokens: %d\nDuration: %s\n",
-		displayName, result.Model, result.TurnCount, result.ToolUses, result.TotalTokens, tool.FormatDuration(agentDuration))
+		displayName, result.Model, result.TurnCount, result.ToolUses, result.TotalTokens, toolresult.FormatDuration(agentDuration))
 	if result.AgentID != "" {
 		fmt.Fprintf(&outputBuilder, "AgentID: %s\n", result.AgentID)
 	}

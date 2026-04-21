@@ -104,16 +104,16 @@ GenCode stores configuration in `~/.gen/`:
 
 ## 📊 Benchmark: GenCode vs Claude Code
 
-Compared with [Claude Code](https://claude.ai/code) v2.1.96 on Apple Silicon, same model (`claude-sonnet-4-20250514`):
+Compared with [Claude Code](https://claude.ai/code) v2.1.112 on Apple Silicon, same model (`claude-sonnet-4-6`):
 
 | Metric | GenCode | Claude Code | Advantage |
 |--------|---------|-------------|-----------|
-| Download size | 12 MB | 62 MB (+ Node.js 112 MB) | **5x smaller** |
-| Disk footprint | 38 MB | 174 MB | **4.6x smaller** |
-| Startup time | ~0.02s | ~0.18s | **9x faster** |
-| Startup memory | ~33 MB | ~185 MB | **5.6x less** |
-| Simple task | ~5.2s / 39 MB | ~11.9s / 282 MB | **2.3x faster, 7.2x less memory** |
-| Tool-use task | ~3.6s / 40 MB | ~14.6s / 281 MB | **4.1x faster, 7.1x less memory** |
+| Download size | 12 MB | 63 MB (+ Node.js 112 MB) | **5x smaller** |
+| Disk footprint | 38 MB | 175 MB | **4.6x smaller** |
+| Startup time | ~0.01s | ~0.20s | **20x faster** |
+| Startup memory | ~32 MB | ~189 MB | **5.8x less** |
+| Simple task | ~2.4s / 39 MB | ~10.4s / 286 MB | **4.3x faster, 7.3x less memory** |
+| Tool-use task | ~3.3s / 39 MB | ~26.0s / 285 MB | **7.9x faster, 7.2x less memory** |
 
 Both tools have comparable features (hooks, skills, plugins, session, MCP, etc.). The performance gap comes from Go's native compilation vs Node.js V8/JIT/GC runtime overhead.
 

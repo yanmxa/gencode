@@ -3,10 +3,9 @@ package agent
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/message"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
@@ -17,7 +16,7 @@ const backgroundLaunchSuffix = "\n\nThe agent is working in the background. You 
 // AgentTool spawns subagents to handle complex tasks.
 // It implements PermissionAwareTool to require user confirmation.
 type AgentTool struct {
-	Executor tool.AgentExecutor
+	executor tool.AgentExecutor
 }
 
 // NewAgentTool creates a new AgentTool
@@ -36,7 +35,7 @@ func (t *AgentTool) RequiresPermission() bool {
 
 // SetExecutor sets the agent executor
 func (t *AgentTool) SetExecutor(executor tool.AgentExecutor) {
-	t.Executor = executor
+	t.executor = executor
 }
 
 // PreparePermission prepares a permission request with agent metadata
@@ -60,12 +59,12 @@ func (t *AgentTool) PreparePermission(ctx context.Context, params map[string]any
 	requestModel := tool.GetString(params, "model")
 
 	// Check if executor is configured
-	if t.Executor == nil {
+	if t.executor == nil {
 		return nil, fmt.Errorf("agent executor not configured")
 	}
 
 	// Get agent config
-	config, ok := t.Executor.GetAgentConfig(agentType)
+	config, ok := t.executor.GetAgentConfig(agentType)
 	if !ok {
 		return nil, fmt.Errorf("unknown agent type: %s", agentType)
 	}
@@ -73,7 +72,7 @@ func (t *AgentTool) PreparePermission(ctx context.Context, params map[string]any
 	// Determine effective model (priority: request > parent > fallback)
 	effectiveModel := requestModel
 	if effectiveModel == "" {
-		effectiveModel = t.Executor.GetParentModelID()
+		effectiveModel = t.executor.GetParentModelID()
 	}
 	if effectiveModel == "" {
 		effectiveModel = "claude-sonnet-4-20250514" // fallback
@@ -158,7 +157,7 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 	maxTurns := tool.GetInt(params, "max_turns", 0)
 
 	// Check executor
-	if t.Executor == nil {
+	if t.executor == nil {
 		return toolresult.NewErrorResult(t.Name(), "agent executor not configured")
 	}
 
@@ -168,7 +167,7 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 	}
 
 	// Resolve parent messages for fork
-	var parentMessages []message.Message
+	var parentMessages []core.Message
 	if fork {
 		if getter, ok := params["_messagesGetter"].(tool.MessagesGetter); ok {
 			parentMessages = getter()
@@ -198,7 +197,7 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 
 	// Handle background execution
 	if runBackground {
-		taskInfo, err := t.Executor.RunBackground(req)
+		taskInfo, err := t.executor.RunBackground(req)
 		if err != nil {
 			return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("failed to start background agent: %v", err))
 		}
@@ -228,7 +227,7 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 	}
 
 	// Foreground execution
-	result, err := t.Executor.Run(ctx, req)
+	result, err := t.executor.Run(ctx, req)
 	if err != nil {
 		return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("agent execution failed: %v", err))
 	}
@@ -251,41 +250,10 @@ func (t *AgentTool) execute(ctx context.Context, params map[string]any, cwd stri
 		}
 	}
 
-	// Format output with structured metadata for TUI rendering
-	displayName := result.AgentName
-	if displayName == "" {
-		displayName = agentType
-	}
-	agentDuration := result.Duration
-	if agentDuration == 0 {
-		agentDuration = duration
-	}
-	var outputBuilder strings.Builder
-	fmt.Fprintf(&outputBuilder, "Agent: %s\nModel: %s\nTurns: %d\nToolUses: %d\nTokens: %d\nDuration: %s\n",
-		displayName, result.Model, result.TurnCount, result.ToolUses, result.TotalTokens, tool.FormatDuration(agentDuration))
-	if result.AgentID != "" {
-		fmt.Fprintf(&outputBuilder, "AgentID: %s\n", result.AgentID)
-	}
-
-	// Include process count as metadata, then process lines + response after blank line
-	if len(result.Progress) > 0 {
-		fmt.Fprintf(&outputBuilder, "Process: %d\n", len(result.Progress))
-	}
-	outputBuilder.WriteString("\n")
-	if len(result.Progress) > 0 {
-		for _, p := range result.Progress {
-			outputBuilder.WriteString(p)
-			outputBuilder.WriteString("\n")
-		}
-	}
-	if result.Content != "" {
-		outputBuilder.WriteString(result.Content)
-	}
-
 	hookResponse := buildAgentHookResponse(result, agentType, prompt)
 	return toolresult.ToolResult{
 		Success:      true,
-		Output:       outputBuilder.String(),
+		Output:       formatForegroundAgentResult(agentType, result, duration),
 		HookResponse: hookResponse,
 		Metadata: toolresult.ResultMetadata{
 			Title:    t.Name(),

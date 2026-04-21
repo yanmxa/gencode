@@ -1,0 +1,223 @@
+package core
+
+import (
+	"context"
+)
+
+// Agent is the core abstraction — an autonomous entity that reasons and acts.
+//
+// Three capabilities, nothing more:
+//  1. System  — WHO it is (composable, mutable identity)
+//  2. Tools   — WHAT it can do (the single action primitive)
+//  3. Inbox/Outbox — HOW it communicates (Go channels)
+//
+// Hooks are app-layer only (hook.Engine), not part of the agent core.
+//
+// Lifecycle control:
+//   - Graceful stop: send Message{Signal: SigStop} to Inbox
+//   - Immediate stop: cancel the context passed to Run
+type Agent interface {
+	ID() string
+	System() System
+	Tools() Tools
+
+	// Inbox is the write channel — external world sends messages to the agent.
+	// Messages are integrated into the conversation at turn boundaries.
+	//
+	// Ownership: caller owns the channel and must close it when done sending.
+	// Sending to Inbox after Run() returns may block indefinitely.
+	Inbox() chan<- Message
+
+	// Outbox is the read channel — agent emits events to the external world.
+	// Events include streaming chunks, tool execution status, and turn results.
+	//
+	// Ownership: agent owns the channel and closes it when Run() returns.
+	// Outbox is single-consumer; for multiple consumers, build a fan-out on top.
+	Outbox() <-chan Event
+
+	// Messages returns a snapshot of the conversation history.
+	// The returned slice is a shallow copy — do not mutate Message fields
+	// that contain maps, slices, or pointers (Meta, ToolCalls, ToolResult).
+	Messages() []Message
+
+	// SetMessages replaces the conversation history.
+	// Used by compaction (shrink context) and session restore (load saved state).
+	// The provided slice is shallow-copied; same mutation caveats as Messages().
+	SetMessages(msgs []Message)
+
+	// Append adds a message to the conversation and fires the OnMessage hook.
+	// This is the unified entry point for both paths:
+	//   Run path:   inbox → ingest (Append internally)
+	//   Direct path: caller → Append → ThinkAct
+	Append(ctx context.Context, msg Message)
+
+	// ThinkAct runs one full inference-action cycle: PreInfer → LLM stream →
+	// tool execution → repeat until end_turn. Returns the result directly.
+	//
+	// This is the agent's atomic operation. Two callers drive it differently:
+	//   Run():   loop { waitForInput → ThinkAct }, emits TurnEvent to Outbox
+	//   Direct:  Append(msg) → ThinkAct(ctx), returns *Result synchronously
+	ThinkAct(ctx context.Context) (*Result, error)
+
+	// Run starts the agent's main loop. Blocks until context cancellation or SigStop.
+	//
+	// The run loop has three phases per cycle:
+	//
+	//   Phase 1 — WAIT (blocking):
+	//     Block on Inbox until a message arrives. This is the idle state.
+	//     On SigStop or ctx.Done(): fire OnStop hooks and return.
+	//
+	//   Phase 2 — DRAIN (non-blocking):
+	//     Drain any additional messages that accumulated in Inbox.
+	//     All drained messages are appended to the conversation.
+	//
+	//   Phase 3 — THINK + ACT (inference loop):
+	//     Loop: LLM inference → tool execution → LLM inference → ...
+	//     Between each turn, non-blocking drain of Inbox for new messages.
+	//     Emit streaming chunks and tool results to Outbox.
+	//     Loop until LLM returns end_turn.
+	//     Then go back to Phase 1 (wait for next message).
+	//
+	// Signals (SigStop) are checked at every phase boundary.
+	Run(ctx context.Context) error
+}
+
+// Config holds construction parameters for an agent.
+//
+// Required fields: LLM, System, Tools. NewAgent panics if any is nil.
+// Optional fields: ID, CWD, MaxTurns, InboxBuf, OutboxBuf, CompactFunc.
+//
+// Permission is a tool-layer concern — use tool.WithPermission to wrap Tools
+// before passing them to NewAgent. See docs/permission.md.
+type Config struct {
+	ID                string
+	LLM               LLM    // required: inference backend
+	System             System // required: system prompt layers
+	Tools              Tools  // required: available tools (wrap with tool.WithPermission for permission)
+	AgentType          string // optional: agent type identifier for hook events
+	Color              string // optional: display color for TUI (e.g. "#ff6600", "blue")
+	CompactFunc        func(ctx context.Context, msgs []Message) (string, error) // optional: summarize messages for compaction
+	CWD                string
+	MaxTurns           int // max LLM inference rounds per cycle, 0 = unlimited
+	MaxOutputRecovery  int // max retries on truncated output, 0 = use default (3)
+	InboxBuf           int // inbox channel buffer size, default 16
+	OutboxBuf          int // outbox channel buffer size, default 64; -1 = no outbox (subagent path)
+}
+
+// NewAgent creates an agent from config.
+//
+// Panics if LLM, System, or Tools is nil — these are required capabilities.
+// Inbox is owned by the caller (caller closes when done sending).
+// Outbox is owned by the agent (closed when Run returns).
+func NewAgent(cfg Config) Agent {
+	if cfg.LLM == nil {
+		panic("core.NewAgent: LLM is required")
+	}
+	if cfg.System == nil {
+		panic("core.NewAgent: System is required")
+	}
+	if cfg.Tools == nil {
+		panic("core.NewAgent: Tools is required")
+	}
+	if cfg.InboxBuf <= 0 {
+		cfg.InboxBuf = 16
+	}
+	if cfg.OutboxBuf == 0 {
+		cfg.OutboxBuf = 64
+	}
+
+	var outbox chan Event
+	if cfg.OutboxBuf > 0 {
+		outbox = make(chan Event, cfg.OutboxBuf)
+	}
+
+	return &agent{
+		id:                cfg.ID,
+		agentType:         cfg.AgentType,
+		color:             cfg.Color,
+		system:            cfg.System,
+		tools:             cfg.Tools,
+		compactFunc:       cfg.CompactFunc,
+		llm:               cfg.LLM,
+		cwd:               cfg.CWD,
+		maxTurns:          cfg.MaxTurns,
+		maxOutputRecovery: cfg.MaxOutputRecovery,
+		inbox:             make(chan Message, cfg.InboxBuf),
+		outbox:            outbox,
+	}
+}
+
+// Result represents the outcome of one completed turn (end_turn).
+// Emitted to Outbox as Event{Type: OnTurn, Data: result}.
+type Result struct {
+	Content    string     // final text output of this turn
+	Messages   []Message  // full conversation history
+	Turns      int        // LLM inference rounds in this cycle
+	ToolUses   int        // tool calls in this cycle
+	TokensIn   int        // input tokens consumed
+	TokensOut  int        // output tokens produced
+	StopReason StopReason // why the loop stopped
+	StopDetail string     // human-readable detail (e.g. hook block reason)
+}
+
+
+// EventType identifies an agent lifecycle event.
+type EventType string
+
+// Agent lifecycle events — emitted to the Outbox for TUI rendering.
+const (
+	OnStart   EventType = "AgentStart" // agent begins
+	OnStop    EventType = "AgentStop"  // agent ends (error or nil in Data)
+	PreInfer  EventType = "PreInfer"   // before LLM call
+	PostInfer EventType = "PostInfer"  // after LLM response (*InferResponse in Data)
+	OnChunk   EventType = "Chunk"      // streaming chunk (Chunk in Data)
+	PreTool   EventType = "PreTool"    // before tool execution (ToolCall in Data)
+	PostTool  EventType = "PostTool"   // after tool execution (ToolResult in Data)
+	OnMessage EventType = "Message"    // message received on inbox (Message in Data)
+	OnTurn    EventType = "Turn"       // think+act cycle completed (Result in Data)
+	OnCompact EventType = "Compact"   // conversation compacted (CompactInfo in Data)
+)
+
+// Event carries context for an agent lifecycle point.
+// Emitted to Outbox for TUI observation.
+type Event struct {
+	Type   EventType // which event
+	Source string    // who triggered (agent ID, tool name, "user")
+	Data   any       // payload — type depends on EventType (see above)
+}
+
+// Event.Data type helpers — reduce boilerplate in handlers.
+
+func (e Event) ToolCall() (ToolCall, bool)         { tc, ok := e.Data.(ToolCall); return tc, ok }
+func (e Event) ToolResult() (ToolResult, bool)     { tr, ok := e.Data.(ToolResult); return tr, ok }
+func (e Event) Message() (Message, bool)           { m, ok := e.Data.(Message); return m, ok }
+func (e Event) Result() (Result, bool)             { r, ok := e.Data.(Result); return r, ok }
+func (e Event) Response() (*InferResponse, bool)   { r, ok := e.Data.(*InferResponse); return r, ok }
+func (e Event) Chunk() (Chunk, bool)               { c, ok := e.Data.(Chunk); return c, ok }
+func (e Event) Error() (error, bool)               { err, ok := e.Data.(error); return err, ok }
+func (e Event) CompactInfo() (CompactInfo, bool)   { ci, ok := e.Data.(CompactInfo); return ci, ok }
+
+// CompactInfo carries compaction details for the OnCompact event.
+type CompactInfo struct {
+	Summary       string
+	OriginalCount int
+}
+
+// Typed event constructors — enforce correct Data types at construction.
+
+func StartEvent(agentID string) Event { return Event{Type: OnStart, Source: agentID} }
+func StopEvent(agentID string, err error) Event {
+	return Event{Type: OnStop, Source: agentID, Data: err}
+}
+func ChunkEvent(agentID string, c Chunk) Event { return Event{Type: OnChunk, Source: agentID, Data: c} }
+func MessageEvent(msg Message) Event           { return Event{Type: OnMessage, Source: msg.From, Data: msg} }
+func TurnEvent(agentID string, r Result) Event { return Event{Type: OnTurn, Source: agentID, Data: r} }
+func PreInferEvent(agentID string) Event       { return Event{Type: PreInfer, Source: agentID} }
+func PostInferEvent(agentID string, r *InferResponse) Event {
+	return Event{Type: PostInfer, Source: agentID, Data: r}
+}
+func PreToolEvent(tc ToolCall) Event    { return Event{Type: PreTool, Source: tc.Name, Data: tc} }
+func PostToolEvent(tr ToolResult) Event { return Event{Type: PostTool, Source: tr.ToolName, Data: tr} }
+func CompactEvent(agentID string, info CompactInfo) Event {
+	return Event{Type: OnCompact, Source: agentID, Data: info}
+}

@@ -263,11 +263,13 @@ func (c *Client) listToolsLocked(ctx context.Context) ([]MCPTool, error) {
 	return result.Tools, nil
 }
 
-// GetCachedTools returns the cached tools without making an API call
+// GetCachedTools returns a copy of the cached tools without making an API call.
 func (c *Client) GetCachedTools() []MCPTool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.tools
+	out := make([]MCPTool, len(c.tools))
+	copy(out, c.tools)
+	return out
 }
 
 // getTransport returns the transport if connected, or an error
@@ -333,11 +335,13 @@ func (c *Client) listResourcesLocked(ctx context.Context) ([]MCPResource, error)
 	return result.Resources, nil
 }
 
-// GetCachedResources returns the cached resources without making an API call
+// GetCachedResources returns a copy of the cached resources without making an API call.
 func (c *Client) GetCachedResources() []MCPResource {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.resources
+	out := make([]MCPResource, len(c.resources))
+	copy(out, c.resources)
+	return out
 }
 
 // ReadResource reads a resource from the MCP server
@@ -389,11 +393,13 @@ func (c *Client) listPromptsLocked(ctx context.Context) ([]MCPPrompt, error) {
 	return result.Prompts, nil
 }
 
-// GetCachedPrompts returns the cached prompts without making an API call
+// GetCachedPrompts returns a copy of the cached prompts without making an API call.
 func (c *Client) GetCachedPrompts() []MCPPrompt {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.prompts
+	out := make([]MCPPrompt, len(c.prompts))
+	copy(out, c.prompts)
+	return out
 }
 
 // GetPrompt retrieves a specific prompt with the given arguments

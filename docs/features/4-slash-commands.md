@@ -1,4 +1,4 @@
-# Feature 4: Slash Commands (19 Commands)
+# Feature 4: Slash Commands (20 Commands)
 
 ## Overview
 
@@ -6,8 +6,7 @@ Slash commands are typed directly in the TUI input box. They trigger local UI ac
 
 | Command | Function |
 |---------|----------|
-| `/provider` | Switch LLM provider |
-| `/model` | List and select a model |
+| `/model` | Select model and manage provider connections |
 | `/clear` | Clear chat history |
 | `/fork` | Fork the current session |
 | `/resume` | Resume a previous session |
@@ -23,13 +22,15 @@ Slash commands are typed directly in the TUI input box. They trigger local UI ac
 | `/memory` | View / edit memory files |
 | `/mcp` | Manage MCP servers |
 | `/plugin` | Manage plugins |
+| `/reload-plugins` | Reload plugins and refresh plugin-backed components |
 | `/think` | Cycle thinking level (off / normal / high / ultra) |
 | `/loop` | Schedule recurring or one-shot prompts and manage loop jobs |
+| `/search` | Select search engine for web search |
 
 ## UI Interactions
 
 - Commands are matched against the registry as the user types; a suggestion dropdown appears.
-- Selector commands (`/provider`, `/model`, `/skills`, etc.) open a scrollable picker overlay.
+- Selector commands (`/model`, `/skills`, `/search`, etc.) open a scrollable picker overlay.
 - `/clear` immediately resets the visible conversation.
 - `/think` cycles through levels and updates the status bar indicator.
 - `/loop` has a dedicated feature document: see [Feature 21](./21-loop.md).
@@ -37,14 +38,13 @@ Slash commands are typed directly in the TUI input box. They trigger local UI ac
 ## Automated Tests
 
 ```bash
-go test ./internal/app/command/... -v
-go test ./internal/app/memory/... -v
+go test ./internal/command/... -v
 ```
 
 Covered:
 
 ```
-TestHandlerRegistryMatchesBuiltinCommands — all 19 commands registered
+TestHandlerRegistryMatchesBuiltinCommands — all 20 commands registered
 TestExecuteCommandExit                    — /exit returns quit command
 TestExecuteCommandUnknown                 — unknown commands show error message
 TestHandleInitCommand                     — /init creates .gen/GEN.md file
@@ -74,12 +74,12 @@ func TestSlashThink_CyclesLevels(t *testing.T) {
     // /think must cycle off → normal → high → ultra → off
 }
 
-func TestSlashProvider_SwitchesPersists(t *testing.T) {
-    // /provider selection must switch provider and persist across turns
-}
-
 func TestSlashModel_SwitchesModel(t *testing.T) {
     // /model selection must change active model immediately
+}
+
+func TestSlashSearch_SwitchesEngine(t *testing.T) {
+    // /search selection must change active search engine
 }
 
 func TestSlashTokenlimit_ShowsUsage(t *testing.T) {
@@ -114,7 +114,7 @@ sleep 2
 tmux send-keys -t t_cmds '/help' Enter
 sleep 2
 tmux capture-pane -t t_cmds -p
-# Expected: all 19 commands listed
+# Expected: all 20 commands listed
 
 # Test 2: /clear
 tmux send-keys -t t_cmds 'hello' Enter
@@ -130,17 +130,18 @@ sleep 1
 tmux capture-pane -t t_cmds -p
 # Expected: thinking level options (off / normal / high / ultra)
 
-# Test 4: /provider
-tmux send-keys -t t_cmds '/provider' Enter
-sleep 1
-tmux capture-pane -t t_cmds -p
-# Expected: provider selector titled "Select Provider"
-
-# Test 5: /model
+# Test 4: /model (tabbed picker for models and providers)
 tmux send-keys -t t_cmds '/model' Enter
 sleep 1
 tmux capture-pane -t t_cmds -p
-# Expected: model list for current provider
+# Expected: tabbed picker with Models and Providers tabs
+
+# Test 5: /search
+tmux send-keys -t t_cmds Escape
+tmux send-keys -t t_cmds '/search' Enter
+sleep 1
+tmux capture-pane -t t_cmds -p
+# Expected: search engine selector
 
 # Test 6: /tokenlimit
 tmux send-keys -t t_cmds '/tokenlimit' Enter
@@ -167,10 +168,10 @@ ls /tmp/init_test/.gen/
 tmux send-keys -t t_cmds C-c
 tmux send-keys -t t_cmds 'gen' Enter
 sleep 2
-tmux send-keys -t t_cmds '/pro'
+tmux send-keys -t t_cmds '/mod'
 sleep 1
 tmux capture-pane -t t_cmds -p
-# Expected: suggestion dropdown shows /provider as match
+# Expected: suggestion dropdown shows /model as match
 
 # Test 10: /fork
 tmux send-keys -t t_cmds C-c

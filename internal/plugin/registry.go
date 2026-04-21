@@ -251,10 +251,15 @@ func (r *Registry) saveEnabledState(name string, enabled bool, scope Scope) erro
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
+	tmp := settingsPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
-	notifyConfigChanged(scopeConfigSource(scope), settingsPath)
+	if err := os.Rename(tmp, settingsPath); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	fireConfigChanged(scopeConfigSource(scope), settingsPath)
 	return nil
 }
 
@@ -388,15 +393,6 @@ func (r *Registry) GetAllHooks() map[string][]HookMatcher {
 	return result
 }
 
-// DefaultRegistry is the global plugin registry.
-var DefaultRegistry = NewRegistry()
+// defaultRegistry is the package-level plugin registry.
+var defaultRegistry = NewRegistry()
 
-// Load loads plugins into the default registry.
-func Load(ctx context.Context, cwd string) error {
-	return DefaultRegistry.Load(ctx, cwd)
-}
-
-// LoadFromDir loads a single plugin from path into the default registry.
-func LoadFromDir(ctx context.Context, path string) error {
-	return DefaultRegistry.LoadFromPath(ctx, path)
-}

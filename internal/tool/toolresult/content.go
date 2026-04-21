@@ -17,17 +17,3 @@ type ContentLine struct {
 	Type   LineType // Line type
 	File   string   // File path (for grep results)
 }
-
-// TruncateText truncates text to maxLen with ellipsis
-func TruncateText(text string, maxLen int) string {
-	if len(text) <= maxLen {
-		return text
-	}
-	if maxLen <= 3 {
-		return "..."
-	}
-	return text[:maxLen-3] + "..."
-}
-
-// MaxLineLength is the maximum length of a content line
-const MaxLineLength = 500

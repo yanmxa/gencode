@@ -40,6 +40,18 @@ func (r *Registry) RegisterAlias(alias string, tool Tool) {
 	r.tools[strings.ToLower(alias)] = tool
 }
 
+// Unregister removes a tool by name. Returns true if the tool existed.
+func (r *Registry) Unregister(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := strings.ToLower(name)
+	_, ok := r.tools[key]
+	if ok {
+		delete(r.tools, key)
+	}
+	return ok
+}
+
 // Get retrieves a tool by name
 func (r *Registry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
@@ -68,20 +80,35 @@ func (r *Registry) Execute(ctx context.Context, name string, params map[string]a
 	return tool.Execute(ctx, params, cwd)
 }
 
-// DefaultRegistry is the global default tool registry
-var DefaultRegistry = NewRegistry()
+// ResetFetched clears all fetched deferred tools (delegates to package-level).
+func (r *Registry) ResetFetched() { ResetFetched() }
 
-// Register adds a tool to the default registry
+// FormatDeferredToolsPrompt returns the deferred tools system prompt section.
+func (r *Registry) FormatDeferredToolsPrompt() string { return FormatDeferredToolsPrompt() }
+
+// PopSideEffect retrieves and removes the side effect for a tool call.
+func (r *Registry) PopSideEffect(toolCallID string) any { return PopSideEffect(toolCallID) }
+
+// defaultRegistry is the package-level tool registry, populated at init time.
+var defaultRegistry = NewRegistry()
+
+// Register adds a tool to the default registry.
+// Called by tool subpackages during init().
 func Register(tool Tool) {
-	DefaultRegistry.Register(tool)
+	defaultRegistry.Register(tool)
 }
 
-// Get retrieves a tool from the default registry
+// Unregister removes a tool from the default registry. Intended for test cleanup.
+func Unregister(name string) {
+	defaultRegistry.Unregister(name)
+}
+
+// Get retrieves a tool from the default registry.
 func Get(name string) (Tool, bool) {
-	return DefaultRegistry.Get(name)
+	return defaultRegistry.Get(name)
 }
 
-// Execute runs a tool from the default registry
+// Execute runs a tool from the default registry.
 func Execute(ctx context.Context, name string, params map[string]any, cwd string) toolresult.ToolResult {
-	return DefaultRegistry.Execute(ctx, name, params, cwd)
+	return defaultRegistry.Execute(ctx, name, params, cwd)
 }

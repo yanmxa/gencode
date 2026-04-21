@@ -11,21 +11,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// InstalledPluginsData represents the installed_plugins.json structure.
-type InstalledPluginsData struct {
+// installedPluginsData represents the installed_plugins.json structure.
+type installedPluginsData struct {
 	Version int                        `json:"version"`
-	Plugins map[string][]PluginInstall `json:"plugins"`
+	Plugins map[string][]pluginInstall `json:"plugins"`
 }
 
-// PluginInstall represents a single plugin installation.
-type PluginInstall struct {
+// pluginInstall represents a single plugin installation.
+type pluginInstall struct {
 	Scope       string `json:"scope"`       // "user" or "project"
 	InstallPath string `json:"installPath"` // Full path to plugin
 	Version     string `json:"version"`
 }
 
 // Loader handles loading skills from multiple directories.
-type Loader struct {
+type loader struct {
 	cwd             string       // Current working directory for project-level skills
 	additionalPaths []searchPath // Additional paths from plugins
 }
@@ -37,16 +37,16 @@ type searchPath struct {
 	namespace string // Default namespace for skills in this path (from plugin dir)
 }
 
-// NewLoader creates a new skill loader.
-func NewLoader(cwd string) *Loader {
-	return &Loader{
+// newLoader creates a new skill loader.
+func newLoader(cwd string) *loader {
+	return &loader{
 		cwd: cwd,
 	}
 }
 
-// AddPluginPath adds a plugin skill path to the loader.
+// addPluginPath adds a plugin skill path to the loader.
 // Plugin paths are searched after user-level but before project-level skills.
-func (l *Loader) AddPluginPath(path, namespace string, isProjectScope bool) {
+func (l *loader) addPluginPath(path, namespace string, isProjectScope bool) {
 	scope := ScopeUserPlugin
 	if isProjectScope {
 		scope = ScopeProjectPlugin
@@ -58,21 +58,9 @@ func (l *Loader) AddPluginPath(path, namespace string, isProjectScope bool) {
 	})
 }
 
-// AddPluginPaths adds multiple plugin skill paths to the loader.
-func (l *Loader) AddPluginPaths(paths []struct {
-	Path      string
-	Namespace string
-	IsProject bool
-},
-) {
-	for _, p := range paths {
-		l.AddPluginPath(p.Path, p.Namespace, p.IsProject)
-	}
-}
-
 // getSearchPaths returns skill directories in priority order (lowest to highest).
 // Note: .claude/plugins/ loading is removed - plugins are handled by the plugin system.
-func (l *Loader) getSearchPaths() []searchPath {
+func (l *loader) getSearchPaths() []searchPath {
 	homeDir, _ := os.UserHomeDir()
 	var paths []searchPath
 
@@ -145,7 +133,7 @@ func (l *Loader) getSearchPaths() []searchPath {
 
 // getPluginPaths discovers plugin skill directories from installed_plugins.json.
 // Plugin skills inherit namespace from their plugin name (before @).
-func (l *Loader) getPluginPaths(pluginsDir string, scope SkillScope) []searchPath {
+func (l *loader) getPluginPaths(pluginsDir string, scope SkillScope) []searchPath {
 	var paths []searchPath
 
 	// Read installed_plugins.json
@@ -155,7 +143,7 @@ func (l *Loader) getPluginPaths(pluginsDir string, scope SkillScope) []searchPat
 		return paths // File doesn't exist
 	}
 
-	var config InstalledPluginsData
+	var config installedPluginsData
 	if err := json.Unmarshal(data, &config); err != nil {
 		return paths // Invalid JSON
 	}
@@ -189,9 +177,9 @@ func (l *Loader) getPluginPaths(pluginsDir string, scope SkillScope) []searchPat
 	return paths
 }
 
-// LoadAll loads all skills from all directories.
+// loadAll loads all skills from all directories.
 // Higher priority scopes override lower priority ones with the same name.
-func (l *Loader) LoadAll() (map[string]*Skill, error) {
+func (l *loader) loadAll() (map[string]*Skill, error) {
 	skills := make(map[string]*Skill)
 
 	for _, sp := range l.getSearchPaths() {
@@ -243,7 +231,7 @@ func (l *Loader) LoadAll() (map[string]*Skill, error) {
 
 // loadSkillFile loads a skill from a file path.
 // Only parses frontmatter for metadata; instructions are lazy-loaded.
-func (l *Loader) loadSkillFile(path string, scope SkillScope, defaultNamespace string) (*Skill, error) {
+func (l *loader) loadSkillFile(path string, scope SkillScope, defaultNamespace string) (*Skill, error) {
 	fm, _, err := markdown.ParseFrontmatterFile(path)
 	if err != nil {
 		return nil, err

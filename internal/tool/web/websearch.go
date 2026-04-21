@@ -6,13 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/provider/search"
+	"github.com/yanmxa/gencode/internal/search"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
-// WebSearchTool searches the web for information
+// WebSearchTool searches the web for information.
 type WebSearchTool struct{}
 
 func (t *WebSearchTool) Name() string        { return "WebSearch" }
@@ -46,20 +45,7 @@ func (t *WebSearchTool) Execute(ctx context.Context, params map[string]any, cwd 
 		}
 	}
 
-	// Get the configured search provider from store
-	var searchProvider search.Provider
-	store, err := provider.NewStore()
-	if err == nil {
-		providerName := store.GetSearchProvider()
-		if providerName != "" {
-			searchProvider = search.CreateProvider(search.ProviderName(providerName))
-		}
-	}
-
-	// Use default provider if none configured
-	if searchProvider == nil {
-		searchProvider = search.GetDefaultProvider()
-	}
+	searchProvider := search.Preferred()
 
 	// Execute search
 	opts := search.SearchOptions{

@@ -10,8 +10,12 @@ import (
 	"sync"
 )
 
-// DefaultRegistry is the global skill registry instance.
-var DefaultRegistry *Registry
+// NewRegistry creates an empty skill registry.
+func NewRegistry() *Registry {
+	return &Registry{
+		skills: make(map[string]*Skill),
+	}
+}
 
 // Registry manages loaded skills and their states.
 type Registry struct {
@@ -28,8 +32,8 @@ type Store struct {
 	states map[string]SkillState
 }
 
-// StoreData is the JSON structure for skills.json.
-type StoreData struct {
+// storeData is the JSON structure for skills.json.
+type storeData struct {
 	Skills map[string]SkillState `json:"skills"`
 }
 
@@ -67,7 +71,7 @@ func (s *Store) load() {
 		return // File doesn't exist or can't be read
 	}
 
-	var storeData StoreData
+	var storeData storeData
 	if err := json.Unmarshal(data, &storeData); err != nil {
 		return
 	}
@@ -85,7 +89,7 @@ func (s *Store) save() error {
 		return err
 	}
 
-	storeData := StoreData{
+	storeData := storeData{
 		Skills: s.states,
 	}
 
@@ -94,7 +98,15 @@ func (s *Store) save() error {
 		return err
 	}
 
-	return os.WriteFile(s.path, data, 0o644)
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, s.path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // GetState returns the persisted state for a skill.
@@ -111,48 +123,6 @@ func (s *Store) SetState(name string, state SkillState) error {
 
 // Initialize loads all skills and applies persisted states.
 // This should be called at application startup.
-func Initialize(cwd string) error {
-	loader := NewLoader(cwd)
-
-	skills, err := loader.LoadAll()
-	if err != nil {
-		return err
-	}
-
-	userStore, err := NewUserStore()
-	if err != nil {
-		return err
-	}
-
-	projectStore, err := NewProjectStore(cwd)
-	if err != nil {
-		return err
-	}
-
-	registry := &Registry{
-		skills:       skills,
-		userStore:    userStore,
-		projectStore: projectStore,
-		cwd:          cwd,
-	}
-
-	// Apply persisted states (project overrides user)
-	for _, skill := range skills {
-		fullName := skill.FullName()
-		// First apply user-level state
-		if state, ok := userStore.GetState(fullName); ok {
-			skill.State = state
-		}
-		// Then apply project-level state (higher priority)
-		if state, ok := projectStore.GetState(fullName); ok {
-			skill.State = state
-		}
-	}
-
-	DefaultRegistry = registry
-	return nil
-}
-
 // Get returns a skill by name.
 func (r *Registry) Get(name string) (*Skill, bool) {
 	r.mu.RLock()
@@ -267,12 +237,19 @@ func (r *Registry) SetState(name string, state SkillState, userLevel bool) error
 	return r.projectStore.SetState(skill.FullName(), state)
 }
 
-// GetStatesAt returns skill states from the specified level.
+// GetStatesAt returns a copy of skill states from the specified level.
 func (r *Registry) GetStatesAt(userLevel bool) map[string]SkillState {
+	var src map[string]SkillState
 	if userLevel {
-		return r.userStore.states
+		src = r.userStore.states
+	} else {
+		src = r.projectStore.states
 	}
-	return r.projectStore.states
+	result := make(map[string]SkillState, len(src))
+	for k, v := range src {
+		result[k] = v
+	}
+	return result
 }
 
 // GetSkillsSection generates the available skills section for the system prompt.
@@ -369,9 +346,9 @@ func (r *Registry) AddPluginSkills(paths []struct {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	loader := NewLoader(r.cwd)
+	loader := newLoader(r.cwd)
 	for _, p := range paths {
-		loader.AddPluginPath(p.Path, p.Namespace, p.IsProject)
+		loader.addPluginPath(p.Path, p.Namespace, p.IsProject)
 	}
 
 	// Only walk the additional plugin paths, not all paths
@@ -415,6 +392,52 @@ func (r *Registry) Count() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.skills)
+}
+
+// IsEnabled returns true if the named skill exists and is enabled or active.
+func (r *Registry) IsEnabled(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	skill, ok := r.skills[name]
+	if !ok {
+		return false
+	}
+	return skill.IsEnabled()
+}
+
+// SetEnabled sets the enabled state for a skill and persists it.
+// When enabled is true the skill moves to StateEnable; when false it moves to StateDisable.
+func (r *Registry) SetEnabled(name string, enabled bool, userLevel bool) error {
+	state := StateEnable
+	if !enabled {
+		state = StateDisable
+	}
+	return r.SetState(name, state, userLevel)
+}
+
+// GetDisabledAt returns a map of skill names that are disabled at the given level.
+func (r *Registry) GetDisabledAt(userLevel bool) map[string]bool {
+	states := r.GetStatesAt(userLevel)
+	result := make(map[string]bool)
+	for name, state := range states {
+		if state == StateDisable {
+			result[name] = true
+		}
+	}
+	return result
+}
+
+// PromptSection returns the rendered skills section for the system prompt.
+// This is an alias for GetSkillsSection to satisfy the Service interface.
+func (r *Registry) PromptSection() string {
+	return r.GetSkillsSection()
+}
+
+// Registry returns the concrete *Registry receiver.
+// This satisfies the Service interface, allowing callers to access
+// Registry-specific methods that are not part of the Service contract.
+func (r *Registry) Registry() *Registry {
+	return r
 }
 
 // NewRegistryForTest creates a Registry with pre-populated skills and stores.

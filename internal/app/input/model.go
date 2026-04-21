@@ -4,51 +4,70 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/ui/suggest"
+	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/app/kit/history"
+	"github.com/yanmxa/gencode/internal/app/kit/suggest"
+	"github.com/yanmxa/gencode/internal/core"
+	coremcp "github.com/yanmxa/gencode/internal/mcp"
+	coreplugin "github.com/yanmxa/gencode/internal/plugin"
+	coresetting "github.com/yanmxa/gencode/internal/setting"
+	coreskill "github.com/yanmxa/gencode/internal/skill"
 )
 
-// PastedChunk holds a collapsed multi-line paste block.
 type PastedChunk struct {
 	Text      string // the full pasted text
 	LineCount int    // total line count
 }
 
-// Model holds all input-related state: textarea, history, suggestions, and images.
-type Model struct {
-	Textarea       textarea.Model
-	History        []string
-	HistoryIdx     int
-	TempInput      string
-	Suggestions    suggest.State
-	LastCtrlO      time.Time
-	Images         ImageState
-	TerminalHeight int
-	PastedChunks   []PastedChunk
+type HistoryNav struct {
+	Items   []string
+	Index   int    // -1 = not navigating
+	Stashed string // stashed textarea input while navigating
 }
 
-// PendingImage holds an inline image token and its provider payload.
+type Model struct {
+	Textarea         textarea.Model
+	History          HistoryNav
+	PromptSuggestion PromptSuggestionState
+	Suggestions      suggest.State
+	LastCtrlO        time.Time
+	Images           ImageState
+	TerminalHeight   int
+	PastedChunks     []PastedChunk
+	Queue            Queue
+
+	// Selectors / overlays
+	Approval ApprovalModel
+	Agent    AgentSelector
+	Search   SearchSelector
+	Skill    SkillState
+	Session  SessionState
+	Memory   MemoryState
+	MCP      MCPState
+	Plugin   PluginSelector
+	Provider ProviderState
+	Tool     ToolSelector
+}
+
 type PendingImage struct {
 	ID   int
-	Data message.ImageData
+	Data core.Image
 }
 
-// ImageSelection tracks the currently selected inline image token.
 type ImageSelection struct {
 	Active       bool
 	PendingIdx   int
 	CursorAbsPos int
 }
 
-// ImageState holds state for pending inline image tokens.
 type ImageState struct {
 	Pending   []PendingImage
 	NextID    int
 	Selection ImageSelection
 }
 
-// RemoveAt removes the image at the given index and adjusts selection state.
 func (img *ImageState) RemoveAt(idx int) {
 	if idx < 0 || idx >= len(img.Pending) {
 		return
@@ -65,4 +84,54 @@ func (img *ImageState) RemoveAt(idx int) {
 	if img.Selection.PendingIdx > idx {
 		img.Selection.PendingIdx--
 	}
+}
+
+type SelectorDeps struct {
+	AgentRegistry  AgentRegistry
+	SkillRegistry  *coreskill.Registry
+	MCPRegistry    *coremcp.Registry
+	PluginRegistry *coreplugin.Registry
+	Setting        coresetting.Service
+	LoadDisabled   func(userLevel bool) map[string]bool
+	UpdateDisabled func(disabled map[string]bool, userLevel bool) error
+}
+
+func New(cwd string, width int, matchFunc suggest.Matcher, deps SelectorDeps) Model {
+	suggestions := suggest.NewState(matchFunc)
+	suggestions.SetCwd(cwd)
+	return Model{
+		Textarea:    newTextarea(width),
+		History:     HistoryNav{Items: history.Load(cwd), Index: -1},
+		Suggestions: suggestions,
+		Queue:       NewQueue(),
+
+		Approval: NewApproval(),
+		Agent:    NewAgentSelector(deps.AgentRegistry),
+		Search:   NewSearchSelector(deps.Setting),
+		Skill:    SkillState{Selector: NewSkillSelector(deps.SkillRegistry)},
+		Session:  SessionState{Selector: NewSessionSelector()},
+		Memory:   MemoryState{Selector: NewMemorySelector()},
+		MCP:      MCPState{Selector: NewMCPSelector(deps.MCPRegistry)},
+		Plugin:   NewPluginSelector(deps.PluginRegistry),
+		Provider: ProviderState{Selector: NewProviderSelector()},
+		Tool:     NewToolSelector(deps.LoadDisabled, deps.UpdateDisabled),
+	}
+}
+
+func newTextarea(width int) textarea.Model {
+	ta := textarea.New()
+	ta.Placeholder = ""
+	ta.Focus()
+	ta.Prompt = ""
+	ta.CharLimit = 0
+	ta.SetWidth(width)
+	ta.SetHeight(minTextareaHeight)
+	ta.ShowLineNumbers = false
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ta.FocusedStyle.Base = lipgloss.NewStyle()
+	ta.FocusedStyle.Prompt = lipgloss.NewStyle()
+	ta.BlurredStyle.Base = lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
+	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
+	ta.KeyMap.InsertNewline.SetEnabled(true)
+	return ta
 }

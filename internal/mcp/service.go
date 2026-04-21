@@ -1,0 +1,149 @@
+package mcp
+
+import (
+	"context"
+	"sync"
+
+	"github.com/yanmxa/gencode/internal/core"
+)
+
+// Service is the public contract for the mcp module.
+type Service interface {
+	// connection
+	ListServers() []Server                          // all configured servers with status
+	Connect(ctx context.Context, name string) error // connect to a named server
+	ConnectAll(ctx context.Context) []error          // connect to all configured servers
+	Disconnect(name string) error                   // disconnect from a named server
+	Reconnect(ctx context.Context, name string) error // disconnect then reconnect
+
+	// tools
+	ListTools() []core.ToolSchema // tool schemas from all connected servers
+	NewCaller() *Caller           // create execution caller
+
+	// config
+	EditConfig(name string) (*EditInfo, error) // prepare config for editing
+	SaveConfig(info *EditInfo) error           // save edited config
+
+	// registry access (backward compat)
+	Registry() *Registry // underlying registry for callers that need it directly
+}
+
+// Compile-time check: *service implements Service.
+var _ Service = (*service)(nil)
+
+// Options holds all dependencies for initialization.
+type Options struct {
+	CWD           string
+	PluginServers func() []PluginServer
+}
+
+// Initialize creates and configures the MCP registry singleton.
+func Initialize(opts Options) error {
+	reg, err := NewRegistry(opts.CWD)
+	if err != nil {
+		return err
+	}
+	if opts.PluginServers != nil {
+		reg.PluginServers = opts.PluginServers
+		reg.configs = reg.mergePluginMCPConfigs(reg.configs)
+	}
+	SetDefault(&service{reg: reg})
+	return nil
+}
+
+// ── singleton ──────────────────────────────────────────────
+
+var (
+	mu      sync.RWMutex
+	instance Service
+)
+
+// Default returns the singleton Service instance.
+// Panics if Initialize has not been called.
+func Default() Service {
+	mu.RLock()
+	s := instance
+	mu.RUnlock()
+	if s == nil {
+		panic("mcp: not initialized")
+	}
+	return s
+}
+
+// DefaultIfInit returns the singleton Service instance, or nil if not yet
+// initialized. Useful for nil-guards that used to check DefaultRegistry == nil.
+func DefaultIfInit() Service {
+	mu.RLock()
+	s := instance
+	mu.RUnlock()
+	return s
+}
+
+// SetDefault replaces the singleton instance. Intended for tests.
+func SetDefault(s Service) {
+	mu.Lock()
+	instance = s
+	mu.Unlock()
+}
+
+// ResetService clears the singleton instance. Intended for tests.
+func ResetService() {
+	mu.Lock()
+	instance = nil
+	mu.Unlock()
+}
+
+// WrapRegistry creates a Service from a *Registry. Used by tests.
+func WrapRegistry(reg *Registry) Service {
+	return &service{reg: reg}
+}
+
+// ── implementation ─────────────────────────────────────────
+
+// service wraps the legacy Registry to satisfy the Service interface.
+type service struct {
+	reg *Registry
+}
+
+func (s *service) ListServers() []Server {
+	return s.reg.List()
+}
+
+func (s *service) Connect(ctx context.Context, name string) error {
+	return s.reg.Connect(ctx, name)
+}
+
+func (s *service) ConnectAll(ctx context.Context) []error {
+	return s.reg.ConnectAll(ctx)
+}
+
+func (s *service) Disconnect(name string) error {
+	return s.reg.Disconnect(name)
+}
+
+func (s *service) Reconnect(ctx context.Context, name string) error {
+	if err := s.reg.Disconnect(name); err != nil {
+		return err
+	}
+	return s.reg.Connect(ctx, name)
+}
+
+func (s *service) ListTools() []core.ToolSchema {
+	return s.reg.GetToolSchemas()
+}
+
+func (s *service) NewCaller() *Caller {
+	return NewCaller(s.reg)
+}
+
+func (s *service) EditConfig(name string) (*EditInfo, error) {
+	return PrepareServerEdit(s.reg, name)
+}
+
+func (s *service) SaveConfig(info *EditInfo) error {
+	return ApplyServerEdit(s.reg, info)
+}
+
+func (s *service) Registry() *Registry {
+	return s.reg
+}

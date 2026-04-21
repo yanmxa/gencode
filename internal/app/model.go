@@ -1,321 +1,971 @@
-// Core data types, message commit pipeline, and LLM loop configuration.
+// Root model: struct definition, construction, message pipeline, session
+// persistence, conv.Runtime event handlers, deps builders, and internal helpers.
 package app
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"go.uber.org/zap"
 
-	"strings"
-
-	"github.com/yanmxa/gencode/internal/app/agentui"
-	appapproval "github.com/yanmxa/gencode/internal/app/approval"
-	appconv "github.com/yanmxa/gencode/internal/app/conversation"
-	appinput "github.com/yanmxa/gencode/internal/app/input"
-	"github.com/yanmxa/gencode/internal/app/mcpui"
-	appmemory "github.com/yanmxa/gencode/internal/app/memory"
-	appmode "github.com/yanmxa/gencode/internal/app/mode"
-	appoutput "github.com/yanmxa/gencode/internal/app/output"
-	"github.com/yanmxa/gencode/internal/app/pluginui"
-	"github.com/yanmxa/gencode/internal/app/providerui"
-	appqueue "github.com/yanmxa/gencode/internal/app/queue"
-	"github.com/yanmxa/gencode/internal/app/searchui"
-	"github.com/yanmxa/gencode/internal/app/sessionui"
-	"github.com/yanmxa/gencode/internal/app/skillui"
-	"github.com/yanmxa/gencode/internal/app/toolui"
-	"github.com/yanmxa/gencode/internal/config"
+	"github.com/yanmxa/gencode/internal/app/conv"
+	"github.com/yanmxa/gencode/internal/app/hub"
+	"github.com/yanmxa/gencode/internal/app/input"
+	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/app/trigger"
+	"github.com/yanmxa/gencode/internal/command"
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/filecache"
-	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/provider"
-	"github.com/yanmxa/gencode/internal/runtime"
-	"github.com/yanmxa/gencode/internal/tool/tasktools"
-	"github.com/yanmxa/gencode/internal/tracker"
+	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/mcp"
+	"github.com/yanmxa/gencode/internal/plugin"
+	"github.com/yanmxa/gencode/internal/session"
+	"github.com/yanmxa/gencode/internal/setting"
+	"github.com/yanmxa/gencode/internal/skill"
+	"github.com/yanmxa/gencode/internal/subagent"
+	"github.com/yanmxa/gencode/internal/task"
+	"github.com/yanmxa/gencode/internal/task/tracker"
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
-const (
-	defaultWidth = 80
+const defaultWidth = 80
 
-	// taskReminderThreshold is the number of LLM turns without any Task* tool use
-	// before a reminder is injected into the system prompt.
-	taskReminderThreshold = 5
-)
+// ============================================================
+// Model struct
+// ============================================================
 
 type model struct {
-	// IO
-	input  appinput.Model
-	output appoutput.Model
-
-	// Terminal
-	width  int
-	height int
-	ready  bool
-	cwd    string
-
-	// Conversation
-	conv appconv.Model
-
-	// Domain — each feature owns all its state
-	provider providerui.State
-	session  sessionui.State
-	skill    skillui.State
-	memory   appmemory.State
-	mode     appmode.State
-	tool     toolui.State
-	mcp      mcpui.State
-	plugin   pluginui.State
-	agent    agentui.State
-	search   searchui.State
-	approval *appapproval.Model
-
-	// Input queue — buffers user messages submitted while the LLM is busy
-	inputQueue     appqueue.Queue
-	queueSelectIdx int    // -1 = no selection, 0+ = selected queue item index
-	queueTempInput string // stashed input when navigating into queue
-
-	// Cron scheduler
-	cronQueue []string // queued cron prompts waiting for idle REPL
-
-	// Max-output-tokens recovery counter (reset on new user input)
-	maxOutputRecoveryCount int
-
-	// UI toggles
-	showTasks     bool   // Ctrl+T toggles task list visibility
-	isGit         bool   // cached: whether cwd is a git repository
-	initialPrompt string // initial prompt from CLI args
-	hookStatus    string // temporary active hook status shown in status bar
-
-	// Config and Infra
-	settings          *config.Settings
-	hookEngine        *hooks.Engine
-	fileWatcher       *fileWatcher
-	asyncHookQueue    *asyncHookQueue
-	taskNotifications *taskNotificationQueue
-	loop              *runtime.Loop
-	runtime           conversationRuntime
-	promptSuggestion  promptSuggestionState
-	fileCache         *filecache.Cache
+	// ── Sub-models (one per event source / concern) ─────────────
+	userInput   input.Model   // Source 1: user keyboard input
+	eventHub    *hub.Hub      // Source 2: inter-agent event routing (pure pub/sub)
+	mainEvents  chan hub.Event // TUI turn-boundary buffer: batches async events (task completions, agent messages) for priority-ordered drain
+	systemInput trigger.Model // Source 3: system events (cron/hooks/watcher)
+	conv        conv.Model    // Agent Outbox: conversation + output rendering
+	env         env           // Shared app state: provider, session, permission, plan, config
+	services    services      // Domain service singletons, injected at construction
 }
 
-// --- Constructor and Init ---
-func newModel(opts config.RunOptions) (model, error) {
-	cwd, _ := os.Getwd()
-	infra, err := initializeModelInfra(cwd)
-	if err != nil {
-		return model{}, err
+var (
+	_ conv.Runtime          = (*model)(nil)
+	_ input.SubmitRuntime   = (*model)(nil)
+	_ input.ApprovalRuntime = (*model)(nil)
+)
+
+func (m *model) Init() tea.Cmd {
+	cmds := []tea.Cmd{
+		textarea.Blink,
+		m.userInput.MCP.Selector.AutoConnect(),
+		trigger.TriggerCronTickNow(),
+		trigger.StartCronTicker(),
+		trigger.StartAsyncHookTicker(),
 	}
-	m := newBaseModel(cwd, infra)
-	if m.hookEngine != nil && m.asyncHookQueue != nil {
-		queue := m.asyncHookQueue
-		m.hookEngine.SetAsyncHookCallback(func(result hooks.AsyncHookResult) {
-			reason := result.BlockReason
-			if reason == "" {
-				reason = "asynchronous hook requested a rewake"
-			}
-			queue.Push(asyncHookRewake{
-				Notice:             fmt.Sprintf("Async hook blocked: %s", reason),
-				Context:            []string{formatAsyncHookContinuationContext(result, reason)},
-				ContinuationPrompt: "A background policy hook reported a blocking condition. Re-evaluate the plan and choose a safer next step.",
-			})
-		})
-	}
-
-	m.ensureMemoryContextLoaded()
-	m.reconfigureAgentTool()
-	if err := m.applyRunOptions(opts); err != nil {
-		return model{}, err
-	}
-	m.initializeTaskStorageFromEnv()
-	m.initTaskStorage()
-
-	return m, nil
-}
-
-// lastAssistantContent returns the text content of the most recent assistant message.
-func (m *model) lastAssistantContent() string {
-	return message.LastAssistantChatContent(m.conv.Messages)
-}
-
-// fireSessionEnd fires the SessionEnd hook synchronously before quitting.
-// Uses Execute (not ExecuteAsync) to ensure the hook completes before the process exits.
-func (m *model) fireSessionEnd(reason string) {
-	if m.hookEngine != nil {
-		m.hookEngine.Execute(context.Background(), hooks.SessionEnd, hooks.HookInput{
-			Reason: reason,
-		})
-		if m.fileWatcher != nil {
-			m.fileWatcher.Stop()
-		}
-		m.hookEngine.ClearSessionHooks()
-	}
-}
-
-func (m model) Init() tea.Cmd {
-	if m.hookEngine != nil {
-		m.hookEngine.ExecuteAsync(hooks.Setup, hooks.HookInput{
-			Trigger: "init",
-		})
-		source := "startup"
-		if m.session.CurrentID != "" {
-			source = "resume"
-		}
-		outcome := m.hookEngine.Execute(context.Background(), hooks.SessionStart, hooks.HookInput{
-			Source: source,
-			Model:  m.getModelID(),
-		})
-		m.applyRuntimeHookOutcome(outcome)
-		if outcome.AdditionalContext != "" {
-			m.conv.Append(message.ChatMessage{
-				Role:    message.RoleUser,
-				Content: outcome.AdditionalContext,
-			})
-		}
-	}
-
-	cmds := []tea.Cmd{textarea.Blink, m.output.Spinner.Tick, mcpui.AutoConnect(), triggerCronTickNow(), startCronTicker(), startAsyncHookTicker(), startTaskNotificationTicker()}
-	if m.initialPrompt != "" {
-		prompt := m.initialPrompt
-		m.initialPrompt = ""
+	if m.env.InitialPrompt != "" {
+		prompt := m.env.InitialPrompt
 		cmds = append(cmds, func() tea.Msg { return initialPromptMsg(prompt) })
 	}
 	return tea.Batch(cmds...)
 }
 
-// --- Message commit pipeline ---
+// ============================================================
+// Model construction
+// ============================================================
 
-func (m *model) commitMessages() []tea.Cmd {
-	return m.commitMessagesWithCheck(true)
+func newModel(opts setting.RunOptions) (*model, error) {
+	base := newBaseModel()
+	m := &base
+
+	m.eventHub.Register("main", func(e hub.Event) { m.mainEvents <- e })
+
+	// Wire task completion: closure captures hub + hooks + tracker directly.
+	var hookEngine *hook.Engine
+	if m.services.Hook != nil {
+		hookEngine = m.services.Hook.Engine()
+	}
+	m.wireTaskLifecycle(hookEngine)
+
+	m.configureAsyncHookCallback()
+	m.ensureMemoryContextLoaded()
+	m.ReconfigureAgentTool()
+	m.InitTaskStorage()
+	if err := m.applyRunOptions(opts); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func newBaseModel() model {
+	svc := newServices()
+	return model{
+		userInput: input.New(appCwd, defaultWidth, commandSuggestionMatcher(svc.Command), input.SelectorDeps{
+			AgentRegistry:  &agentRegistryAdapter{svc.Subagent.Registry()},
+			SkillRegistry:  svc.Skill.Registry(),
+			MCPRegistry:    svc.MCP.Registry(),
+			PluginRegistry: svc.Plugin.Registry(),
+			Setting:        svc.Setting,
+			LoadDisabled:   svc.Setting.GetDisabledToolsAt,
+			UpdateDisabled: svc.Setting.UpdateDisabledToolsAt,
+		}),
+		conv:        conv.NewModel(defaultWidth),
+		eventHub:    hub.New(),
+		mainEvents:  make(chan hub.Event, 64),
+		systemInput: trigger.New(),
+		env:      newEnv(svc.LLM, appCwd, svc.Setting.IsGitRepo(appCwd)),
+		services: svc,
+	}
+}
+
+func (m *model) applyRunOptions(opts setting.RunOptions) error {
+	if opts.PluginDir != "" {
+		ctx := context.Background()
+		if err := m.services.Plugin.LoadFromPath(ctx, opts.PluginDir); err != nil {
+			return fmt.Errorf("failed to load plugins from %s: %w", opts.PluginDir, err)
+		}
+		if err := m.ReloadPluginBackedState(); err != nil {
+			return err
+		}
+	}
+
+	if opts.Prompt != "" {
+		m.env.InitialPrompt = opts.Prompt
+	}
+
+	if opts.Continue {
+		if err := m.applyContinueOption(); err != nil {
+			return err
+		}
+	}
+
+	if opts.Resume {
+		if err := m.applyResumeOption(opts.ResumeID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *model) ReloadPluginBackedState() error {
+	skill.Initialize(skill.Options{CWD: m.env.CWD})
+	command.Initialize(command.Options{
+		CWD:              m.env.CWD,
+		DynamicProviders: []func() []command.Info{skillCommandInfos},
+		PluginCommandPaths: pluginCommandPaths,
+	})
+	subagent.Initialize(subagent.Options{CWD: m.env.CWD, PluginAgentPaths: pluginAgentPaths})
+	mcp.Initialize(mcp.Options{CWD: m.env.CWD, PluginServers: pluginMCPServers})
+	setting.Initialize(setting.Options{CWD: m.env.CWD})
+
+	m.services.refreshAfterReload()
+
+	if m.services.Hook != nil {
+		plugin.MergePluginHooksIntoSettings(m.services.Setting.Snapshot())
+	}
+	m.syncSettingsToHookEngine()
+	m.ReconfigureAgentTool()
+
+	return nil
+}
+
+func (m *model) applyContinueOption() error {
+	if err := m.services.Session.EnsureStore(m.env.CWD); err != nil {
+		return fmt.Errorf("failed to initialize session store: %w", err)
+	}
+
+	sess, err := m.services.Session.LoadLatest()
+	if err != nil {
+		return fmt.Errorf("no previous session to continue: %w", err)
+	}
+
+	m.restoreSessionData(sess)
+	return nil
+}
+
+func (m *model) applyResumeOption(resumeID string) error {
+	if err := m.services.Session.EnsureStore(m.env.CWD); err != nil {
+		return fmt.Errorf("failed to initialize session store: %w", err)
+	}
+
+	if resumeID != "" {
+		sess, err := m.services.Session.Load(resumeID)
+		if err != nil {
+			return fmt.Errorf("failed to load session %s: %w", resumeID, err)
+		}
+		m.restoreSessionData(sess)
+		return nil
+	}
+
+	m.userInput.Session.PendingSelector = true
+	return nil
+}
+
+func (m *model) BuildCompactRequest(focus, trigger string) conv.CompactRequest {
+	var hookEngine *hook.Engine
+	if m.services.Hook != nil {
+		hookEngine = m.services.Hook.Engine()
+	}
+	return conv.CompactRequest{
+		Ctx:        context.Background(),
+		Client:     m.buildLLMClient(),
+		Messages:   m.conv.ConvertToProvider(),
+		Focus:      focus,
+		HookEngine: hookEngine,
+		Trigger:    trigger,
+	}
+}
+
+func (m *model) ensureMemoryContextLoaded() {
+	if m.env.CachedUserInstructions != "" || m.env.CachedProjectInstructions != "" {
+		return
+	}
+	m.refreshMemoryContext(m.env.CWD, "session_start")
+}
+
+// ============================================================
+// Message commit pipeline
+// ============================================================
+
+func (m *model) CommitMessages() []tea.Cmd {
+	return m.renderAndCommit(true)
 }
 
 func (m *model) commitAllMessages() []tea.Cmd {
-	return m.commitMessagesWithCheck(false)
+	return m.renderAndCommit(false)
 }
 
-func (m *model) commitMessagesWithCheck(checkReady bool) []tea.Cmd {
-	var printCmds []tea.Cmd
+func (m *model) renderAndCommit(checkReady bool) []tea.Cmd {
+	var parts []string
 	lastIdx := len(m.conv.Messages) - 1
+	params := m.messageRenderParams()
 
 	for i := m.conv.CommittedCount; i < len(m.conv.Messages); i++ {
 		msg := m.conv.Messages[i]
 
 		if checkReady {
-			if i == lastIdx && msg.Role == message.RoleAssistant && m.conv.Stream.Active {
+			if i == lastIdx && msg.Role == core.RoleAssistant && m.conv.Stream.Active {
 				break
 			}
-			if msg.Role == message.RoleAssistant && len(msg.ToolCalls) > 0 && !m.conv.HasAllToolResults(i) {
+			if msg.Role == core.RoleAssistant && len(msg.ToolCalls) > 0 && !m.conv.HasAllToolResults(i) {
 				break
 			}
 		}
 
-		if rendered := m.renderSingleMessage(i); rendered != "" {
-			printCmds = append(printCmds, tea.Println(rendered))
+		if rendered := conv.RenderSingleMessage(params, i); rendered != "" {
+			parts = append(parts, rendered)
 		}
 		m.conv.CommittedCount = i + 1
 	}
 
-	// Wrap in tea.Sequence to preserve message ordering.
-	// tea.Batch runs commands concurrently, which can scramble the display
-	// order when multiple messages are committed at once (e.g., session restore).
-	if len(printCmds) > 1 {
-		return []tea.Cmd{tea.Sequence(printCmds...)}
+	if len(parts) == 0 {
+		return nil
 	}
-	return printCmds
+	return []tea.Cmd{tea.Println(strings.Join(parts, "\n"))}
 }
 
-// --- Message conversion and LLM loop configuration ---
+// ============================================================
+// Session persistence
+// ============================================================
 
-// reconfigureAgentTool updates the agent tool with the current session/provider state.
-func (m *model) reconfigureAgentTool() {
-	if m.provider.LLM != nil {
-		m.ensureMemoryContextLoaded()
-		configureAgentTool(m.provider.LLM, m.cwd, m.getModelID(), m.hookEngine, m.session.Store, m.session.CurrentID,
-			m.agentToolOpts()...)
+func (m *model) InitTaskStorage() {
+	m.initTaskStorage(m.services.Session.ID())
+}
+
+func (m *model) PersistSession() error {
+	if err := m.services.Session.EnsureStore(m.env.CWD); err != nil {
+		return err
+	}
+	if len(m.conv.Messages) == 0 {
+		return nil
+	}
+
+	entries := session.ConvertToEntries(m.conv.Messages)
+
+	var providerName, modelID string
+	if m.env.CurrentModel != nil {
+		providerName = string(m.env.CurrentModel.Provider)
+		modelID = m.env.CurrentModel.ModelID
+	}
+
+	sess := &session.Snapshot{
+		Metadata: session.SessionMetadata{
+			ID:         m.services.Session.ID(),
+			Provider:   providerName,
+			Model:      modelID,
+			Cwd:        m.env.CWD,
+			LastPrompt: session.ExtractLastUserText(entries),
+			Mode:       m.env.SessionMode(),
+		},
+		Entries: entries,
+		Tasks:   m.services.Tracker.Export(),
+	}
+
+	if sess.Metadata.Title == "" || sess.Metadata.ID == "" {
+		sess.Metadata.Title = session.GenerateTitle(sess.Entries)
+	}
+
+	if err := m.services.Session.Save(sess); err != nil {
+		return err
+	}
+
+	m.services.Session.SetID(sess.Metadata.ID)
+	m.initTaskStorage(m.services.Session.ID())
+
+	if m.services.Hook != nil {
+		m.services.Hook.SetTranscriptPath(m.services.Session.GetStore().SessionPath(sess.Metadata.ID))
+	}
+	m.ReconfigureAgentTool()
+
+	return nil
+}
+
+type persistSessionDoneMsg struct{ err error }
+
+// Only safe when the session ID is already established (i.e. not the first save).
+func (m *model) persistSessionCmd() tea.Cmd {
+	if err := m.services.Session.EnsureStore(m.env.CWD); err != nil {
+		log.Logger().Warn("failed to ensure session store for async persist", zap.Error(err))
+		return nil
+	}
+	if len(m.conv.Messages) == 0 {
+		return nil
+	}
+
+	entries := session.ConvertToEntries(m.conv.Messages)
+
+	var providerName, modelID string
+	if m.env.CurrentModel != nil {
+		providerName = string(m.env.CurrentModel.Provider)
+		modelID = m.env.CurrentModel.ModelID
+	}
+
+	sess := &session.Snapshot{
+		Metadata: session.SessionMetadata{
+			ID:         m.services.Session.ID(),
+			Provider:   providerName,
+			Model:      modelID,
+			Cwd:        m.env.CWD,
+			LastPrompt: session.ExtractLastUserText(entries),
+			Mode:       m.env.SessionMode(),
+		},
+		Entries: entries,
+		Tasks:   m.services.Tracker.Export(),
+	}
+
+	if sess.Metadata.Title == "" {
+		sess.Metadata.Title = session.GenerateTitle(sess.Entries)
+	}
+
+	store := m.services.Session.GetStore()
+	return func() tea.Msg {
+		if store == nil {
+			return persistSessionDoneMsg{err: fmt.Errorf("no session store")}
+		}
+		return persistSessionDoneMsg{err: store.Save(sess)}
 	}
 }
 
-func (m *model) agentToolOpts() []agentToolOption {
-	opts := []agentToolOption{
-		withAgentContext(m.memory.CachedUser, m.memory.CachedProject, m.isGit),
+func (m *model) loadSessionByID(id string) error {
+	if err := m.services.Session.EnsureStore(m.env.CWD); err != nil {
+		return err
 	}
-	if m.mcp.Registry != nil {
-		opts = append(opts, withAgentMCP(m.mcp.Registry.GetToolSchemas, m.mcp.Registry))
+
+	sess, err := m.services.Session.Load(id)
+	if err != nil {
+		return err
 	}
-	return opts
+
+	m.services.Tracker.SetStorageDir("")
+	m.restoreSessionData(sess)
+
+	if len(sess.Tasks) == 0 {
+		m.services.Tracker.Reset()
+	}
+	m.services.Tool.ResetFetched()
+
+	m.env.InputTokens = 0
+	m.env.OutputTokens = 0
+
+	return nil
 }
 
-func (m *model) configureLoop(extra []string) {
-	m.ensureMemoryContextLoaded()
-	m.loop.Client = m.buildLoopClient()
-	m.loop.System = m.buildLoopSystem(extra, m.loop.Client)
-	m.loop.Tool = m.buildLoopToolSet()
-	m.loop.Permission = nil
-	m.loop.Hooks = m.hookEngine
+func (m *model) restoreSessionData(sess *session.Snapshot) {
+	m.conv.Messages = session.ConvertFromEntries(sess.Entries)
+	m.services.Session.SetID(sess.Metadata.ID)
+
+	m.initTaskStorage(m.services.Session.ID())
+
+	if len(sess.Tasks) > 0 {
+		m.services.Tracker.Import(sess.Tasks)
+	}
 }
 
-func (m *model) ensureMemoryContextLoaded() {
-	if m.memory.CachedUser != "" || m.memory.CachedProject != "" {
+func (m *model) initTaskStorage(sessionID string) {
+	if m.services.Tracker.GetStorageDir() != "" {
 		return
 	}
-	m.refreshMemoryContext("session_start")
-}
 
-// effectiveThinkingLevel returns the higher of the persistent level and the per-turn override.
-func (m *model) effectiveThinkingLevel() provider.ThinkingLevel {
-	return max(m.provider.ThinkingLevel, m.provider.ThinkingOverride)
-}
-
-// buildTaskReminder returns a task reminder string if tasks exist and haven't
-// been updated for taskReminderThreshold turns. Returns empty string otherwise.
-func (m *model) buildTaskReminder() string {
-	if m.conv.TurnsSinceLastTaskTool < taskReminderThreshold {
-		return ""
-	}
-	tasks := tracker.DefaultStore.List()
-	if len(tasks) == 0 {
-		return ""
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Logger().Warn("failed to get home directory for task storage", zap.Error(err))
+		return
 	}
 
-	// Check if all tasks are completed
-	allDone := true
-	for _, t := range tasks {
-		if t.Status != tracker.StatusCompleted {
-			allDone = false
-			break
+	taskListID := os.Getenv("GEN_TASK_LIST_ID")
+	if taskListID != "" {
+		dir := filepath.Join(homeDir, ".gen", "tasks", taskListID)
+		m.services.Tracker.SetStorageDir(dir)
+		_ = m.services.Task.SetOutputDir(filepath.Join(dir, "outputs"))
+		return
+	}
+
+	if sessionID == "" {
+		return
+	}
+	dir := filepath.Join(homeDir, ".gen", "tasks", sessionID)
+	m.services.Tracker.SetStorageDir(dir)
+	_ = m.services.Task.SetOutputDir(filepath.Join(dir, "outputs"))
+}
+
+// ============================================================
+// conv.Runtime — agent outbox event handlers
+// ============================================================
+
+func (m *model) SetTokenCounts(in, out int) {
+	m.env.InputTokens = in
+	m.env.OutputTokens = out
+}
+
+func (m *model) HasRunningTasks() bool { return m.services.Tracker.HasInProgress() }
+
+func (m *model) ProcessToolResult(tr core.ToolResult) *core.ToolResult {
+	sideEffect := m.services.Tool.PopSideEffect(tr.ToolCallID)
+	if sideEffect != nil {
+		m.applyToolSideEffects(tr.ToolName, sideEffect)
+	}
+	m.firePostToolHook(tr, sideEffect)
+
+	result := &core.ToolResult{
+		ToolCallID: tr.ToolCallID,
+		ToolName:   tr.ToolName,
+		Content:    tr.Content,
+		IsError:    tr.IsError,
+	}
+	m.persistOverflow(result)
+	return result
+}
+
+func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
+	m.env.ClearThinkingOverride()
+	if m.services.Tracker.AllDone() {
+		m.services.Tracker.Reset()
+	}
+	log.QueueLog("ProcessTurnEnd: starting queueLen=%d", m.userInput.Queue.Len())
+	commitCmds := m.CommitMessages()
+
+	if cmd, found := m.drainTurnQueues(); found {
+		log.QueueLog("ProcessTurnEnd: drained queued message, skipping hooks")
+		if cmd != nil {
+			commitCmds = append(commitCmds, cmd)
+		}
+		commitCmds = append(commitCmds, m.ContinueOutbox())
+		return tea.Batch(commitCmds...)
+	}
+
+	log.QueueLog("ProcessTurnEnd: firing idle hooks async")
+	commitCmds = append(commitCmds, m.fireIdleHooksCmd(result), m.ContinueOutbox())
+	return tea.Batch(commitCmds...)
+}
+
+func (m *model) ProcessAgentStop(err error) tea.Cmd {
+	if err != nil {
+		m.conv.AddNotice(fmt.Sprintf("Agent error: %v", err))
+		m.fireStopFailureHook(core.LastAssistantChatContent(m.conv.Messages), err)
+	}
+	commitCmds := m.CommitMessages()
+	m.StopAgentSession()
+	return tea.Batch(commitCmds...)
+}
+
+func (m *model) HandleAgentCompact(info core.CompactInfo) tea.Cmd {
+	scrollbackCmds := m.commitAllMessages()
+	boundaryStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
+	boundary := boundaryStyle.Render(fmt.Sprintf("✻ Conversation compacted — %d messages summarized (scroll up for history)", info.OriginalCount))
+
+	m.conv.Clear()
+	m.env.ResetTokens()
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: core.FormatCompactSummary(info.Summary)})
+
+	if m.services.Hook != nil {
+		m.services.Hook.ExecuteAsync(hook.PostCompact, hook.HookInput{Trigger: "auto"})
+	}
+
+	scrollPart := tea.Sequence(append(scrollbackCmds, tea.Println(boundary), tea.ClearScreen)...)
+	return tea.Batch(scrollPart, m.ContinueOutbox())
+}
+
+// HandleCompactResult handles manual /compact results.
+// Stops the agent so the next user message restarts it with compacted messages.
+func (m *model) HandleCompactResult(msg conv.CompactResultMsg) tea.Cmd {
+	if msg.Error != nil {
+		m.conv.Compact.Complete(fmt.Sprintf("Compaction could not be completed: %v", msg.Error), true)
+		return tea.Batch(m.CommitMessages()...)
+	}
+	m.conv.Compact.Complete(fmt.Sprintf("Condensed %d earlier messages.", msg.OriginalCount), false)
+	scrollbackCmds := m.commitAllMessages()
+	boundaryStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
+	boundary := boundaryStyle.Render(fmt.Sprintf("✻ Conversation compacted — %d messages summarized (scroll up for history)", msg.OriginalCount))
+
+	m.conv.Clear()
+	m.env.ResetTokens()
+	m.StopAgentSession()
+
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: core.FormatCompactSummary(msg.Summary)})
+
+	var restoredFiles []filecache.RestoredFile
+	if m.env.FileCache != nil {
+		restoredFiles, _ = m.env.FileCache.RestoreRecent()
+		if len(restoredFiles) > 0 {
+			restoredContext := filecache.FormatRestoredFiles(restoredFiles)
+			m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: restoredContext})
+			m.conv.AddNotice(fmt.Sprintf("Restored %d recently accessed file(s) for context.", len(restoredFiles)))
 		}
 	}
-	if allDone {
-		return ""
+	if m.services.Hook != nil {
+		m.services.Hook.ExecuteAsync(hook.PostCompact, hook.HookInput{Trigger: msg.Trigger})
 	}
 
-	// Build reminder with current task list
-	var sb strings.Builder
-	sb.WriteString("<task-reminder>\n")
-	sb.WriteString("You have active tasks that haven't been updated recently. Consider updating task status:\n")
-	for _, t := range tasks {
-		sb.WriteString(fmt.Sprintf("  %s #%s: %s [%s]\n", tasktools.TaskIcon(t), t.ID, t.Subject, t.Status))
-	}
-	sb.WriteString("Use TaskUpdate to mark tasks as in_progress when starting or completed when done.\n")
-	sb.WriteString("</task-reminder>")
-	return sb.String()
+	scrollPart := tea.Sequence(append(scrollbackCmds, tea.Println(boundary), tea.ClearScreen)...)
+	return tea.Batch(scrollPart, tea.Batch(m.CommitMessages()...))
 }
 
-func (m model) getModelID() string {
-	if m.provider.CurrentModel != nil {
-		return m.provider.CurrentModel.ModelID
+func (m *model) HandleTokenLimitResult(msg kit.TokenLimitResultMsg) tea.Cmd {
+	m.userInput.Provider.FetchingLimits = false
+	var content string
+	if msg.Error != nil {
+		content = "Error: " + msg.Error.Error()
+	} else {
+		content = msg.Result
 	}
-	return "claude-sonnet-4-20250514"
+	m.conv.AddNotice(content)
+	return tea.Batch(m.CommitMessages()...)
 }
 
-func formatAsyncHookContinuationContext(result hooks.AsyncHookResult, reason string) string {
-	return fmt.Sprintf(
-		"<background-hook-result>\nstatus: blocked\nevent: %s\nhook_type: %s\nhook_source: %s\nhook_name: %s\nreason: %s\ninstruction: Re-evaluate the plan before any further model or tool action.\n</background-hook-result>",
-		result.Event,
-		result.HookType,
-		result.HookSource,
-		result.HookName,
-		reason,
-	)
+// ============================================================
+// Internal: tool side effects and context changes
+// ============================================================
+
+func (m *model) applyToolSideEffects(toolName string, sideEffect any) {
+	resp, ok := sideEffect.(map[string]any)
+	if !ok {
+		return
+	}
+	m.trackAgentLaunch(toolName, resp)
+	switch toolName {
+	case "Bash":
+		if newCwd := kit.MapString(resp, "cwd"); newCwd != "" {
+			m.changeCwd(newCwd)
+		}
+	case tool.ToolEnterWorktree:
+		if worktreePath := kit.MapString(resp, "worktreePath"); worktreePath != "" {
+			m.changeCwd(worktreePath)
+		}
+	case tool.ToolExitWorktree:
+		if restoredPath := kit.MapString(resp, "restoredPath"); restoredPath != "" {
+			m.changeCwd(restoredPath)
+		}
+	case "Write", "Edit":
+		if filePath := kit.MapString(resp, "filePath"); filePath != "" {
+			m.fireFileChanged(filePath, toolName)
+			if m.env.FileCache != nil {
+				m.env.FileCache.Touch(filePath)
+			}
+		}
+	case "Read":
+		if fileData, ok := resp["file"].(map[string]any); ok {
+			if filePath := kit.MapString(fileData, "filePath"); filePath != "" && m.env.FileCache != nil {
+				m.env.FileCache.Touch(filePath)
+			}
+		}
+	}
+}
+
+func (m *model) trackAgentLaunch(toolName string, resp map[string]any) {
+	if !tool.IsAgentToolName(toolName) {
+		return
+	}
+	bg, ok := resp["backgroundTask"].(map[string]any)
+	if !ok {
+		return
+	}
+	launch := tracker.BackgroundTaskLaunch{
+		TaskID:      kit.MapString(bg, "taskId"),
+		AgentName:   kit.MapString(bg, "agentName"),
+		AgentType:   kit.MapString(bg, "agentType"),
+		Description: kit.MapString(bg, "description"),
+	}
+	if launch.TaskID == "" {
+		return
+	}
+	tracker.TrackWorker(m.services.Tracker, launch)
+}
+
+func (m *model) persistOverflow(result *core.ToolResult) {
+	const overflowThreshold = 100_000
+	const previewSize = 10_000
+
+	if len(result.Content) <= overflowThreshold {
+		return
+	}
+	cutoff := min(previewSize, len(result.Content))
+	for cutoff > 0 && !utf8.RuneStart(result.Content[cutoff]) {
+		cutoff--
+	}
+	preview := result.Content[:cutoff]
+	persisted := false
+	if err := m.services.Session.EnsureStore(m.env.CWD); err == nil && m.services.Session.ID() != "" {
+		if err := m.services.Session.GetStore().PersistToolResult(m.services.Session.ID(), result.ToolCallID, result.Content); err == nil {
+			persisted = true
+		}
+	}
+	if persisted {
+		result.Content = fmt.Sprintf("%s\n\n[Full output persisted to blobs/tool-result/%s/%s]", preview, m.services.Session.ID(), result.ToolCallID)
+	} else {
+		result.Content = fmt.Sprintf("%s\n\n[Output truncated from %d bytes — full content not persisted]", preview, len(result.Content))
+	}
+}
+
+func (m *model) changeCwd(newCwd string) {
+	if newCwd == "" || newCwd == m.env.CWD {
+		return
+	}
+	oldCwd := m.env.CWD
+	m.env.CWD = newCwd
+	m.env.IsGit = m.services.Setting.IsGitRepo(newCwd)
+	m.userInput.HandleCwdChange(newCwd)
+	m.env.ClearCachedInstructions()
+	m.refreshMemoryContext(newCwd, "cwd_changed")
+	m.ReloadProjectContext(newCwd)
+	m.ReconfigureAgentTool()
+	if m.services.Hook != nil {
+		m.services.Hook.SetCwd(newCwd)
+		m.services.Hook.ExecuteAsync(hook.CwdChanged, hook.HookInput{OldCwd: oldCwd, NewCwd: newCwd})
+	}
+}
+
+func (m *model) fireFileChanged(filePath, source string) {
+	if m.services.Hook == nil || filePath == "" {
+		return
+	}
+	m.services.Hook.ExecuteAsync(hook.FileChanged, hook.HookInput{FilePath: filePath, Source: source, Event: "change"})
+}
+
+func (m *model) ReloadProjectContext(cwd string) {
+	initExtensions(cwd)
+	setting.Initialize(setting.Options{CWD: cwd})
+	m.services.refreshAfterReload()
+	if m.services.Hook != nil {
+		plugin.MergePluginHooksIntoSettings(m.services.Setting.Snapshot())
+	}
+	m.syncSettingsToHookEngine()
+}
+
+func (m *model) applyStartupHookOutcome(outcome hook.HookOutcome) {
+	if outcome.InitialUserMessage != "" && m.env.InitialPrompt == "" && len(m.conv.Messages) == 0 {
+		m.env.InitialPrompt = outcome.InitialUserMessage
+	}
+	if len(outcome.WatchPaths) == 0 {
+		return
+	}
+	if m.systemInput.FileWatcher == nil {
+		m.systemInput.FileWatcher = trigger.NewFileWatcher(m.services.Hook.Engine(), func(outcome hook.HookOutcome) {
+			if m.systemInput.AsyncHookQueue != nil && outcome.InitialUserMessage != "" {
+				m.systemInput.AsyncHookQueue.Push(trigger.AsyncHookRewake{Notice: "File watcher hook triggered", Context: []string{outcome.InitialUserMessage}})
+			}
+		})
+	}
+	m.systemInput.FileWatcher.SetPaths(outcome.WatchPaths)
+}
+
+// ============================================================
+// Internal: turn lifecycle and queue drain
+// ============================================================
+
+func (m *model) handleStopHookResult(msg stopHookResultMsg) tea.Cmd {
+	if msg.Blocked {
+		log.QueueLog("handleStopHookResult: hooks BLOCKED reason=%q", msg.Reason)
+		blockMsg := "Stop hook blocked: " + msg.Reason
+		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: blockMsg})
+		return m.sendToAgent(blockMsg, nil)
+	}
+	log.QueueLog("handleStopHookResult: hooks done, persisting")
+	var cmds []tea.Cmd
+	if m.services.Session.ID() != "" {
+		cmds = append(cmds, m.persistSessionCmd())
+	} else {
+		if err := m.PersistSession(); err != nil {
+			log.Logger().Warn("failed to save session", zap.Error(err))
+		}
+	}
+	if cmd := input.StartPromptSuggestion(m.promptSuggestionDeps()); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	if msg.Result.StopReason != "" && msg.Result.StopReason != core.StopEndTurn {
+		m.conv.AddNotice(fmt.Sprintf("Agent stopped: %s", msg.Result.StopReason))
+		if msg.Result.StopDetail != "" {
+			m.conv.AddNotice(msg.Result.StopDetail)
+		}
+	}
+	if len(cmds) > 0 {
+		return tea.Batch(cmds...)
+	}
+	return nil
+}
+
+func (m *model) drainTurnQueues() (tea.Cmd, bool) {
+	// Drain ONE user message per call so each gets its own agent response.
+	// The agent's inner loop also drains one inbox message at a time,
+	// producing one TurnEvent per queued message.
+	if item, ok := m.userInput.Queue.Dequeue(); ok {
+		remaining := m.userInput.Queue.Len()
+		log.QueueLog("drainTurnQueues: dequeued %q sentToInbox=%v remaining=%d", truncate(item.Content, 60), item.SentToInbox, remaining)
+		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: item.Content, Images: item.Images})
+		if !item.SentToInbox {
+			log.QueueLog("drainTurnQueues: sending to inbox (was not sent)")
+			m.services.Agent.Send(item.Content, item.Images)
+		}
+		return nil, true
+	}
+
+	if len(m.systemInput.CronQueue) > 0 {
+		prompt := m.systemInput.CronQueue[0]
+		m.systemInput.CronQueue = m.systemInput.CronQueue[1:]
+		return m.injectCronPrompt(prompt), true
+	}
+
+	if m.systemInput.AsyncHookQueue != nil {
+		if item, ok := m.systemInput.AsyncHookQueue.Pop(); ok {
+			return m.injectAsyncHookContinuation(item), true
+		}
+	}
+
+	if events := drainEvents(m.mainEvents, maxEventsPerDrain); len(events) > 0 {
+		msgs := eventsToMessages(events)
+		return m.injectNotification(hub.Merge(msgs)), true
+	}
+
+	return nil, false
+}
+
+func (m *model) injectNotification(msg hub.Message) tea.Cmd {
+	if msg.Notice != "" {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: msg.Notice})
+	}
+	if m.env.LLMProvider == nil {
+		if msg.Notice == "" {
+			m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "A background task completed, but no provider is connected."})
+		}
+		return tea.Batch(m.CommitMessages()...)
+	}
+	if msg.Content == "" {
+		return tea.Batch(m.CommitMessages()...)
+	}
+	return m.sendToAgent(msg.Content, nil)
+}
+
+func (m *model) wireTaskLifecycle(hookEngine *hook.Engine) {
+	trackerSvc := m.services.Tracker
+	eventHub := m.eventHub
+
+	fireHook := func(event hook.EventType, info task.TaskInfo) {
+		if hookEngine == nil {
+			return
+		}
+		subject := hub.TaskSubject(info)
+		hookEngine.ExecuteAsync(event, hook.HookInput{
+			TaskID:          info.ID,
+			TaskSubject:     subject,
+			TaskDescription: info.Description,
+		})
+	}
+
+	task.SetLifecycleHandler(taskLifecycleFunc{
+		onCreated: func(info task.TaskInfo) {
+			fireHook(hook.TaskCreated, info)
+		},
+		onCompleted: func(info task.TaskInfo) {
+			fireHook(hook.TaskCompleted, info)
+			tracker.CompleteWorker(trackerSvc, info)
+
+			subject := hub.TaskSubject(info)
+			msg, ok := hub.TaskMessage(info, subject)
+			if !ok {
+				return
+			}
+			eventHub.Publish(hub.Event{
+				Type:    "task.completed",
+				Source:  fmt.Sprintf("agent:%s", info.ID),
+				Target:  "main",
+				Subject: msg.Notice,
+				Data:    msg.Content,
+			})
+		},
+	})
+}
+
+type taskLifecycleFunc struct {
+	onCreated   func(task.TaskInfo)
+	onCompleted func(task.TaskInfo)
+}
+
+func (f taskLifecycleFunc) TaskCreated(info task.TaskInfo)   { f.onCreated(info) }
+func (f taskLifecycleFunc) TaskCompleted(info task.TaskInfo) { f.onCompleted(info) }
+
+const maxEventsPerDrain = 8
+
+func drainEvents(ch <-chan hub.Event, max int) []hub.Event {
+	var out []hub.Event
+	for range max {
+		select {
+		case e := <-ch:
+			out = append(out, e)
+		default:
+			return out
+		}
+	}
+	return out
+}
+
+func eventsToMessages(events []hub.Event) []hub.Message {
+	msgs := make([]hub.Message, len(events))
+	for i, e := range events {
+		msgs[i] = hub.Message{Notice: e.Subject, Content: e.Data}
+	}
+	return msgs
+}
+
+func (m *model) injectCronPrompt(prompt string) tea.Cmd {
+	if m.env.LLMProvider == nil {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: fmt.Sprintf("Cron fired but no provider connected: %s", prompt)})
+		return tea.Batch(m.CommitMessages()...)
+	}
+	m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Scheduled task fired"})
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: prompt})
+	return m.sendToAgent(prompt, nil)
+}
+
+func (m *model) injectAsyncHookContinuation(item trigger.AsyncHookRewake) tea.Cmd {
+	if item.Notice != "" {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: item.Notice})
+	}
+	if len(item.Context) == 0 {
+		return tea.Batch(m.CommitMessages()...)
+	}
+	if m.env.LLMProvider == nil {
+		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Async hook requested a follow-up, but no provider is connected."})
+		return tea.Batch(m.CommitMessages()...)
+	}
+	for _, ctx := range item.Context {
+		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: ctx})
+	}
+	return m.sendToAgent(item.ContinuationPrompt, nil)
+}
+
+// ============================================================
+// Deps builders and interface adapters
+// ============================================================
+
+func (m *model) promptSuggestionDeps() input.PromptSuggestionDeps {
+	return input.PromptSuggestionDeps{
+		Input:        &m.userInput,
+		Conversation: &m.conv.ConversationModel,
+		HasProvider:  m.env.LLMProvider != nil,
+		BuildClient:  m.buildLLMClient,
+	}
+}
+
+func (m *model) overlayDeps() input.OverlayDeps {
+	return input.OverlayDeps{
+		State:             &m.userInput,
+		Conv:              &m.conv.ConversationModel,
+		Cwd:               m.env.CWD,
+		CommitMessages:    m.CommitMessages,
+		CommitAllMessages: m.commitAllMessages,
+		SwitchProvider: func(p llm.Provider) {
+			m.StopAgentSession()
+			m.switchProvider(p)
+			m.ReconfigureAgentTool()
+		},
+		SetCurrentModel: func(info *llm.CurrentModelInfo) {
+			m.env.CurrentModel = info
+		},
+		ClearCachedInstructions: m.env.ClearCachedInstructions,
+		RefreshMemoryContext:    m.refreshMemoryContext,
+		FireFileChanged:         m.fireFileChanged,
+		ReloadPluginState:       m.ReloadPluginBackedState,
+		LoadSession:             m.loadSessionByID,
+	}
+}
+
+func (m *model) triggerDeps() trigger.Deps {
+	return trigger.Deps{
+		StreamActive: m.conv.Stream.Active,
+		Cron:         m.services.Cron,
+		InjectCron:   m.injectCronPrompt,
+		InjectHook:   m.injectAsyncHookContinuation,
+		AppendNotice: func(text string) {
+			if text != "" {
+				m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: text})
+			}
+		},
+	}
+}
+
+func (m *model) StartExternalEditor(path string) tea.Cmd {
+	return kit.StartExternalEditor(path, func(err error) tea.Msg {
+		return input.MemoryEditorFinishedMsg{Err: err}
+	})
+}
+
+func (m *model) SpinnerTickCmd() tea.Cmd { return m.conv.Spinner.Tick }
+func (m *model) ResetCronQueue()         { m.systemInput.CronQueue = nil }
+
+func (m *model) forkSession() (string, error) {
+	if m.services.Session.ID() == "" {
+		return "", fmt.Errorf("no active session to fork")
+	}
+	forked, err := m.services.Session.Fork(m.services.Session.ID())
+	if err != nil {
+		return "", err
+	}
+	originalID := forked.Metadata.ParentSessionID
+	m.services.Session.SetID(forked.Metadata.ID)
+	m.services.Tracker.SetStorageDir("")
+	return originalID, nil
+}
+
+func (m *model) FireSessionEnd(reason string) {
+	if m.services.Hook != nil {
+		m.services.Hook.Execute(context.Background(), hook.SessionEnd, hook.HookInput{
+			Reason: reason,
+		})
+		m.services.Hook.ClearSessionHooks()
+	}
+	if m.systemInput.FileWatcher != nil {
+		m.systemInput.FileWatcher.Stop()
+	}
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }

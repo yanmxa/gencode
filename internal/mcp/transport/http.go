@@ -46,8 +46,8 @@ func NewHTTPTransport(config HTTPConfig) *HTTPTransport {
 // Start initializes the HTTP transport
 func (t *HTTPTransport) Start(ctx context.Context) error {
 	// Expand environment variables in config
-	t.baseURL = ExpandEnv(t.config.URL)
-	t.config.Headers = ExpandEnvMap(t.config.Headers)
+	t.baseURL = expandEnv(t.config.URL)
+	t.config.Headers = expandEnvMap(t.config.Headers)
 
 	// Validate URL
 	if t.baseURL == "" {
@@ -196,7 +196,7 @@ func (t *HTTPTransport) parseSSEResponse(r io.Reader, requestID uint64) (*JSONRP
 				handler := t.notifyHandler
 				t.mu.Unlock()
 				if handler != nil {
-					ParseAndDispatchNotification([]byte(data), handler)
+					parseAndDispatchNotification([]byte(data), handler)
 				}
 			}
 			data = ""

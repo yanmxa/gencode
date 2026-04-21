@@ -37,7 +37,7 @@ The terminal UI is built with Bubble Tea. It handles keyboard input, real-time s
 ## Automated Tests
 
 ```bash
-go test ./internal/app/render/... -v
+go test ./internal/app/conv/... -v
 go test ./internal/app/input/... -v
 go test ./internal/app/... -v
 ```

@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/orchestration"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
 )
@@ -56,8 +55,8 @@ func (s *stubContinueAgentExecutor) GetParentModelID() string {
 }
 
 func TestContinueAgentTool_ResolvesTaskIDToResumeID(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	task.Initialize(task.Options{})
+	t.Cleanup(task.ResetService)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -65,14 +64,14 @@ func TestContinueAgentTool_ResolvesTaskIDToResumeID(t *testing.T) {
 	agentTask := task.NewAgentTask("task-agent-continue", "Explore Worker", "Initial task", ctx, cancel)
 	agentTask.SetIdentity("Explore", "agent-session-123")
 	agentTask.Complete(nil)
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("task-agent-continue")
+	task.Default().RegisterTask(agentTask)
+	defer task.Default().Remove("task-agent-continue")
 
 	executor := &stubContinueAgentExecutor{}
-	tool := NewContinueAgentTool()
-	tool.SetExecutor(executor)
+	toolInst := NewContinueAgentTool()
+	toolInst.SetExecutor(executor)
 
-	result := tool.Execute(context.Background(), map[string]any{
+	result := toolInst.Execute(context.Background(), map[string]any{
 		"task_id":     "task-agent-continue",
 		"prompt":      "Keep going",
 		"description": "Continue audit",
@@ -93,14 +92,11 @@ func TestContinueAgentTool_ResolvesTaskIDToResumeID(t *testing.T) {
 }
 
 func TestContinueAgentTool_BackgroundContinuation(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
-
 	executor := &stubContinueAgentExecutor{}
-	tool := NewContinueAgentTool()
-	tool.SetExecutor(executor)
+	toolInst := NewContinueAgentTool()
+	toolInst.SetExecutor(executor)
 
-	result := tool.Execute(context.Background(), map[string]any{
+	result := toolInst.Execute(context.Background(), map[string]any{
 		"agent_id":          "agent-session-777",
 		"subagent_type":     "Explore",
 		"prompt":            "Retry with narrower scope",
@@ -123,13 +119,10 @@ func TestContinueAgentTool_BackgroundContinuation(t *testing.T) {
 }
 
 func TestContinueAgentTool_RequiresAgentTypeForDirectAgentID(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
+	toolInst := NewContinueAgentTool()
+	toolInst.SetExecutor(&stubContinueAgentExecutor{})
 
-	tool := NewContinueAgentTool()
-	tool.SetExecutor(&stubContinueAgentExecutor{})
-
-	result := tool.Execute(context.Background(), map[string]any{
+	result := toolInst.Execute(context.Background(), map[string]any{
 		"agent_id": "agent-session-999",
 		"prompt":   "Continue",
 	}, ".")
@@ -139,47 +132,5 @@ func TestContinueAgentTool_RequiresAgentTypeForDirectAgentID(t *testing.T) {
 	}
 	if !strings.Contains(result.Error, "subagent_type is required") {
 		t.Fatalf("unexpected error: %s", result.Error)
-	}
-}
-
-func TestContinueAgentTool_DrainsQueuedMessages(t *testing.T) {
-	orchestration.DefaultStore.Reset()
-	t.Cleanup(orchestration.DefaultStore.Reset)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	agentTask := task.NewAgentTask("task-agent-continue-queued", "Explore Worker", "Initial task", ctx, cancel)
-	agentTask.SetIdentity("Explore", "agent-session-queued")
-	agentTask.Complete(nil)
-	task.DefaultManager.RegisterTask(agentTask)
-	defer task.DefaultManager.Remove("task-agent-continue-queued")
-
-	orchestration.DefaultStore.RecordLaunch(orchestration.Launch{
-		TaskID:    "task-agent-continue-queued",
-		AgentID:   "agent-session-queued",
-		AgentType: "Explore",
-		Running:   false,
-		Status:    string(task.StatusCompleted),
-	})
-	orchestration.DefaultStore.QueuePendingMessage("task-agent-continue-queued", "Review the failing edge case")
-
-	executor := &stubContinueAgentExecutor{}
-	tool := NewContinueAgentTool()
-	tool.SetExecutor(executor)
-
-	result := tool.Execute(context.Background(), map[string]any{
-		"task_id": "task-agent-continue-queued",
-		"prompt":  "Finalize the summary",
-	}, ".")
-
-	if !result.Success {
-		t.Fatalf("expected success, got error: %s", result.Error)
-	}
-	if !strings.Contains(executor.lastRun.Prompt, "Review the failing edge case") {
-		t.Fatalf("expected queued message in prompt, got %q", executor.lastRun.Prompt)
-	}
-	if !strings.Contains(executor.lastRun.Prompt, "Finalize the summary") {
-		t.Fatalf("expected latest prompt in prompt, got %q", executor.lastRun.Prompt)
 	}
 }

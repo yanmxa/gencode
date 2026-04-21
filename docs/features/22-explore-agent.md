@@ -43,8 +43,7 @@ This feature exists to document the contract that was previously split across th
 ## Automated Tests
 
 ```bash
-go test ./internal/agent -run TestPlanAgentsExposeOnlyReadOnlyTools -count=1
-go test ./internal/app -run "TestPlanModeAgentExecutionStartsContinuationWithoutHanging|TestHasAllToolResultsAllowsInterleavedNotices|TestAsyncHookTickDoesNotInjectWhileToolExecutionPending|TestCronTickDoesNotDrainQueueWhileToolExecutionPending" -count=1
+go test ./internal/subagent -run TestPlanAgentsExposeOnlyReadOnlyTools -count=1
 go test ./internal/tool -run TestPlanMode_AgentSchema_IsForegroundAndRestricted -count=1
 ```
 

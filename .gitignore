@@ -17,6 +17,9 @@ gen_*
 # OS
 .DS_Store
 
+# Dependencies
+vendor/
+
 # Local config
 .gen/*
 !.gen/skills/
@@ -24,3 +27,4 @@ gen_*
 .mcp.json
 CLAUDE.md
 CLAUDE.local.md
+.autodev/

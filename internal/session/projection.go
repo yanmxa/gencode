@@ -3,7 +3,7 @@ package session
 import (
 	"time"
 
-	"github.com/yanmxa/gencode/internal/transcript"
+	"github.com/yanmxa/gencode/internal/session/transcript"
 )
 
 func EntriesToNodes(entries []Entry, sessionID, defaultCwd string, createdAt time.Time, gitBranch string) []transcript.Node {
@@ -16,7 +16,7 @@ func EntriesToNodes(entries []Entry, sessionID, defaultCwd string, createdAt tim
 			continue
 		}
 		if entry.UUID == "" {
-			entry.UUID = GenerateShortID()
+			entry.UUID = generateShortID()
 		}
 		parentID := derefString(entry.ParentUuid)
 		if parentID == "" && prevID != "" {

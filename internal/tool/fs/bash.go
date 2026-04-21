@@ -9,10 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/plugin"
 	"github.com/yanmxa/gencode/internal/task"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/perm"
@@ -245,6 +246,7 @@ func (t *BashTool) executeBackground(ctx context.Context, command, description, 
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		stdout.Close()
 		cancel()
 		return toolresult.ToolResult{
 			Success: false,
@@ -270,25 +272,28 @@ func (t *BashTool) executeBackground(ctx context.Context, command, description, 
 	}
 
 	// Register with task manager
-	bgTask := task.DefaultManager.Create(cmd, command, description, taskCtx, cancel)
+	bgTask := task.Default().CreateBashTask(cmd, command, description, taskCtx, cancel)
 
 	// Start goroutine to collect output and wait for completion
 	go func() {
 		defer cancel()
 
 		// Read stdout and stderr concurrently
-		var stdoutBuf bytes.Buffer
+		var stdoutBuf, stderrBuf bytes.Buffer
+		var wg sync.WaitGroup
+		wg.Add(2)
 		go func() {
+			defer wg.Done()
 			_, _ = io.Copy(&stdoutBuf, stdout)
 		}()
-
-		var stderrBuf bytes.Buffer
 		go func() {
+			defer wg.Done()
 			_, _ = io.Copy(&stderrBuf, stderr)
 		}()
 
-		// Wait for command to complete
+		// Wait for command to complete, then wait for pipe drains
 		err := cmd.Wait()
+		wg.Wait()
 
 		// Combine output
 		output := stdoutBuf.String()
@@ -361,10 +366,20 @@ func readTrackedCwd(path, fallback string) string {
 	return newCwd
 }
 
-// bashEnv returns the environment for bash child processes:
-// the current process env plus plugin root variables.
+var extraEnvProvider atomic.Value // stores func() []string
+
+// SetEnvProvider registers a provider of additional environment variables
+// for Bash child processes (e.g., plugin-injected variables).
+func SetEnvProvider(fn func() []string) {
+	extraEnvProvider.Store(fn)
+}
+
 func bashEnv() []string {
-	return append(os.Environ(), plugin.PluginEnv()...)
+	env := os.Environ()
+	if fn, ok := extraEnvProvider.Load().(func() []string); ok && fn != nil {
+		env = append(env, fn()...)
+	}
+	return env
 }
 
 func init() {

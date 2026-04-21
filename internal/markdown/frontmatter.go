@@ -3,6 +3,7 @@ package markdown
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
 )
@@ -52,6 +53,10 @@ func ParseFrontmatterFile(path string) (frontmatter, body string, err error) {
 
 	if err := scanner.Err(); err != nil {
 		return "", "", err
+	}
+
+	if inFrontmatter {
+		return "", "", fmt.Errorf("unclosed frontmatter: missing closing '---' delimiter")
 	}
 
 	return fmBuilder.String(), strings.TrimSpace(bodyBuilder.String()), nil

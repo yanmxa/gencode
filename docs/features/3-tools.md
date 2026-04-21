@@ -37,8 +37,7 @@ Tools run in parallel when the LLM returns multiple calls at once (TUI layer). W
 
 ```bash
 go test ./internal/tool/... -v
-go test ./internal/app/tool/... -v
-go test ./internal/config/... -v -run TestBashAST
+go test ./internal/setting/... -v -run TestBashAST
 go test ./internal/task/... -v
 ```
 

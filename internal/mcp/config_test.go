@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/yanmxa/gencode/internal/plugin"
 )
 
 func TestConfigLoader_SaveAndLoad(t *testing.T) {
@@ -158,7 +156,7 @@ func TestServerConfig_GetType(t *testing.T) {
 	}
 }
 
-func TestParseMCPToolName(t *testing.T) {
+func Test_parseMCPToolName(t *testing.T) {
 	tests := []struct {
 		name       string
 		input      string
@@ -199,16 +197,16 @@ func TestParseMCPToolName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server, tool, ok := ParseMCPToolName(tt.input)
+			server, tool, ok := parseMCPToolName(tt.input)
 			if ok != tt.wantOk {
-				t.Errorf("ParseMCPToolName() ok = %v, want %v", ok, tt.wantOk)
+				t.Errorf("parseMCPToolName() ok = %v, want %v", ok, tt.wantOk)
 			}
 			if ok {
 				if server != tt.wantServer {
-					t.Errorf("ParseMCPToolName() server = %v, want %v", server, tt.wantServer)
+					t.Errorf("parseMCPToolName() server = %v, want %v", server, tt.wantServer)
 				}
 				if tool != tt.wantTool {
-					t.Errorf("ParseMCPToolName() tool = %v, want %v", tool, tt.wantTool)
+					t.Errorf("parseMCPToolName() tool = %v, want %v", tool, tt.wantTool)
 				}
 			}
 		})
@@ -324,24 +322,17 @@ func TestConfigLoader_RemoveServerFromAll_RemovesEveryScope(t *testing.T) {
 }
 
 func TestNewRegistry_IncludesPluginServers(t *testing.T) {
-	prevRegistry := plugin.DefaultRegistry
-	plugin.DefaultRegistry = plugin.NewRegistry()
-	t.Cleanup(func() { plugin.DefaultRegistry = prevRegistry })
-
-	plugin.DefaultRegistry.Register(&plugin.Plugin{
-		Manifest: plugin.Manifest{Name: "demo"},
-		Enabled:  true,
-		Components: plugin.Components{
-			MCP: map[string]plugin.MCPServerConfig{
-				"db": {Command: "echo"},
-			},
-		},
-	})
-
 	reg, err := NewRegistry(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewRegistry() error = %v", err)
 	}
+
+	reg.PluginServers = func() []PluginServer {
+		return []PluginServer{
+			{Name: "demo:db", Command: "echo"},
+		}
+	}
+	reg.configs = reg.mergePluginMCPConfigs(reg.configs)
 
 	cfg, ok := reg.GetConfig("demo:db")
 	if !ok {

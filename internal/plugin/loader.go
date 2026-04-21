@@ -291,14 +291,3 @@ func GetInstalledPluginsFile(cwd string, scope Scope) string {
 	}
 	return ""
 }
-
-// GetEnabledPluginsFromSettings returns enabled plugin names from settings.
-func GetEnabledPluginsFromSettings(enabledPlugins map[string]bool) []string {
-	var enabled []string
-	for name, isEnabled := range enabledPlugins {
-		if isEnabled {
-			enabled = append(enabled, name)
-		}
-	}
-	return enabled
-}

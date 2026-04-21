@@ -1,4 +1,4 @@
-# Feature 5: Provider / LLM System
+# Feature 5: Model & LLM System
 
 ## Overview
 
@@ -23,8 +23,8 @@ Supports multiple LLM providers. The active provider and model are shown in the 
 
 ## UI Interactions
 
-- **`/provider`**: opens a picker overlay; arrow keys to navigate, Enter to select.
-- **`/model`**: shows models for the current provider; selection takes effect immediately.
+- **`/model`**: opens a tabbed picker overlay with Models and Providers tabs; arrow keys to navigate, Tab to switch, Enter to select.
+- **`/search`**: opens a picker to select the search engine for web search.
 - **`/think`**: cycles thinking level; status bar updates with the current level.
 - **Streaming**: tokens appear in real time; a spinner indicates active streaming.
 - **Thinking blocks**: `<thinking>` content is rendered in a collapsible block above the answer.
@@ -32,11 +32,11 @@ Supports multiple LLM providers. The active provider and model are shown in the 
 ## Automated Tests
 
 ```bash
-go test ./internal/provider/anthropic/... -v
-go test ./internal/provider/moonshot/... -v
-go test ./internal/provider/stream/... -v
+go test ./internal/llm/anthropic/... -v
+go test ./internal/llm/moonshot/... -v
+go test ./internal/llm/stream/... -v
 go test ./internal/core/... -v
-go test ./internal/client/... -v
+go test ./internal/llm/... -v
 ```
 
 Covered:
@@ -106,11 +106,11 @@ func TestProvider_StreamChunk_OrderPreserved(t *testing.T) {
 }
 
 func TestProvider_SwitchMidConversation(t *testing.T) {
-    // Switching provider mid-conversation must use new provider for next turn
+    // Switching provider mid-conversation via /model must use new provider for next turn
 }
 
 func TestProvider_ModelSwitch_TakesEffectImmediately(t *testing.T) {
-    // Model switch must apply to the next LLM call
+    // Model switch via /model must apply to the next LLM call
 }
 
 func TestProvider_ThinkingLevel_Persistence(t *testing.T) {
@@ -129,17 +129,18 @@ tmux new-session -d -s t_prov -x 220 -y 60
 tmux send-keys -t t_prov 'gen' Enter
 sleep 2
 
-# Test 1: Switch provider
-tmux send-keys -t t_prov '/provider' Enter
-sleep 1
-tmux capture-pane -t t_prov -p
-# Expected: provider selector titled "Select Provider"
-
-# Test 2: Switch model
+# Test 1: Switch model (Models tab)
 tmux send-keys -t t_prov '/model' Enter
 sleep 1
 tmux capture-pane -t t_prov -p
-# Expected: model list for current provider
+# Expected: tabbed picker with Models tab showing available models
+
+# Test 2: Switch provider (Providers tab)
+# Press Tab to switch to Providers tab within /model overlay
+tmux send-keys -t t_prov Tab
+sleep 1
+tmux capture-pane -t t_prov -p
+# Expected: Providers tab showing available providers
 
 # Test 3: Enable thinking
 tmux send-keys -t t_prov '/think' Enter
@@ -164,10 +165,10 @@ sleep 3
 tmux capture-pane -t t_prov -p
 # Expected: tokens streaming progressively; spinner visible during streaming
 
-# Test 7: Model switch takes effect
+# Test 7: Model switch takes effect via /model
 tmux send-keys -t t_prov '/model' Enter
 sleep 1
-# Select a different model
+# Select a different model from the Models tab
 tmux send-keys -t t_prov Enter
 sleep 1
 tmux capture-pane -t t_prov -p | tail -3

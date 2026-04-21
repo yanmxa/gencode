@@ -21,7 +21,7 @@ func GenerateDiff(filePath, oldContent, newContent string) *DiffMetadata {
 	diffStr := fmt.Sprint(unifiedDiff)
 
 	// Parse the diff into structured lines
-	lines := ParseDiffLines(diffStr)
+	lines := parseDiffLines(diffStr)
 
 	// Count additions and removals
 	addedCount := 0
@@ -49,8 +49,8 @@ func GenerateDiff(filePath, oldContent, newContent string) *DiffMetadata {
 // hunkHeaderRegex matches @@ -1,3 +1,4 @@ style headers
 var hunkHeaderRegex = regexp.MustCompile(`^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@`)
 
-// ParseDiffLines parses unified diff text into structured DiffLine slices
-func ParseDiffLines(unifiedDiff string) []DiffLine {
+// parseDiffLines parses unified diff text into structured DiffLine slices
+func parseDiffLines(unifiedDiff string) []DiffLine {
 	if unifiedDiff == "" {
 		return nil
 	}
@@ -147,36 +147,6 @@ func ParseDiffLines(unifiedDiff string) []DiffLine {
 	}
 
 	return lines
-}
-
-// GenerateNewFileDiff creates a DiffMetadata for a new file (all lines are additions)
-func GenerateNewFileDiff(filePath, content string) *DiffMetadata {
-	lines := strings.Split(content, "\n")
-	diffLines := make([]DiffLine, 0, len(lines)+1)
-
-	// Add hunk header
-	diffLines = append(diffLines, DiffLine{
-		Type:    DiffLineHunk,
-		Content: fmt.Sprintf("@@ -0,0 +1,%d @@", len(lines)),
-	})
-
-	// All lines are additions
-	for i, line := range lines {
-		diffLines = append(diffLines, DiffLine{
-			Type:      DiffLineAdded,
-			Content:   line,
-			NewLineNo: i + 1,
-		})
-	}
-
-	return &DiffMetadata{
-		OldContent:   "",
-		NewContent:   content,
-		Lines:        diffLines,
-		IsNewFile:    true,
-		AddedCount:   len(lines),
-		RemovedCount: 0,
-	}
 }
 
 // GeneratePreview creates a DiffMetadata for content preview (used by Write tool)

@@ -13,7 +13,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/mcp/transport"
-	"github.com/yanmxa/gencode/internal/provider"
+	"github.com/yanmxa/gencode/internal/core"
 )
 
 // ---------------------------------------------------------------------------
@@ -671,42 +671,8 @@ func TestRegistry_EndToEnd_ToolSchemas(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ParseMCPToolName + IsMCPTool (registry utilities)
+// IsMCPTool (registry utility)
 // ---------------------------------------------------------------------------
-
-func TestParseMCPToolName(t *testing.T) {
-	tests := []struct {
-		name       string
-		input      string
-		wantServer string
-		wantTool   string
-		wantOk     bool
-	}{
-		{"valid", "mcp__filesystem__read_file", "filesystem", "read_file", true},
-		{"valid with dashes", "mcp__my-srv__my-tool", "my-srv", "my-tool", true},
-		{"not mcp", "Read", "", "", false},
-		{"single underscore prefix", "mcp_server__tool", "", "", false},
-		{"missing tool", "mcp__server", "", "", false},
-		{"empty server", "mcp____tool", "", "", false},
-		{"empty tool", "mcp__server__", "", "", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server, tool, ok := mcp.ParseMCPToolName(tt.input)
-			if ok != tt.wantOk {
-				t.Fatalf("ok = %v, want %v", ok, tt.wantOk)
-			}
-			if ok {
-				if server != tt.wantServer {
-					t.Errorf("server = %q, want %q", server, tt.wantServer)
-				}
-				if tool != tt.wantTool {
-					t.Errorf("tool = %q, want %q", tool, tt.wantTool)
-				}
-			}
-		})
-	}
-}
 
 func TestIsMCPTool(t *testing.T) {
 	if !mcp.IsMCPTool("mcp__srv__tool") {
@@ -1131,7 +1097,7 @@ func TestRealMCP_Registry_EndToEnd(t *testing.T) {
 	defer registry.DisconnectAll()
 
 	// Tool schemas — wait for async tool list to populate
-	var schemas []provider.ToolSchema
+	var schemas []core.ToolSchema
 	for range 20 {
 		schemas = registry.GetToolSchemas()
 		if len(schemas) > 0 {

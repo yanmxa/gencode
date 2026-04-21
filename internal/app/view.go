@@ -1,5 +1,4 @@
 // Bubble Tea View: composes the terminal UI from active content, input area, and status bar.
-// Also includes message rendering: thin model-method wrappers that delegate to the render package.
 package app
 
 import (
@@ -7,26 +6,24 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/yanmxa/gencode/internal/app/render"
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/tool"
-	"github.com/yanmxa/gencode/internal/tracker"
-	"github.com/yanmxa/gencode/internal/ui/theme"
+	"github.com/yanmxa/gencode/internal/app/conv"
+	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
-var ghostTextStyle = lipgloss.NewStyle().Foreground(theme.CurrentTheme.TextDim)
+var ghostTextStyle = lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
 
-func (m model) View() string {
-	if !m.ready {
+func (m *model) View() string {
+	if !m.env.Ready {
 		return "\n  Loading..."
 	}
 
-	// Render full-screen selectors if any are active
+	// Render full-screen selectors if any are active.
 	if selectorView := m.renderOverlaySelector(); selectorView != "" {
 		return selectorView
 	}
 
-	separator := render.SeparatorStyle.Render(strings.Repeat("─", m.width))
+	separator := conv.SeparatorStyle.Render(strings.Repeat("─", m.env.Width))
 	trackerView := m.renderTrackerList()
 	trackerPrefix := ""
 	if trackerView != "" {
@@ -37,56 +34,12 @@ func (m model) View() string {
 		return modalView
 	}
 
-	activeContent := m.renderActiveContent()
-
-	prompt := render.InputPromptStyle.Render("❯ ")
-	textareaView := m.input.RenderTextarea()
-
-	var inputView string
-	if m.promptSuggestion.text != "" && m.input.Textarea.Value() == "" &&
-		!m.conv.Stream.Active && !m.input.Suggestions.IsVisible() {
-		inputView = prompt + ghostTextStyle.Render(m.promptSuggestion.text)
-	} else {
-		inputView = prompt + textareaView
-	}
-
-	var parts []string
-
-	if activeContent != "" {
-		parts = append(parts, activeContent)
-	}
-
-	if trackerView != "" {
-		parts = append(parts, strings.TrimSuffix(trackerView, "\n"))
-	}
-
-	if m.provider.FetchingLimits {
-		spinnerView := render.ThinkingStyle.Render(m.output.Spinner.View() + " Fetching token limits...")
-		parts = append(parts, spinnerView)
-	}
-
-	if compactView := render.RenderCompactStatus(
-		m.width,
-		m.output.Spinner.View(),
-		m.conv.Compact.Active,
-		m.conv.Compact.Focus,
-		m.conv.Compact.Phase,
-		m.conv.Compact.LastResult,
-		m.conv.Compact.LastError,
-	); compactView != "" {
-		parts = append(parts, compactView)
-	}
-
-	chatSection := strings.Join(parts, "\n")
-
+	activeContent := conv.RenderActiveContent(m.messageRenderParams())
+	inputView := m.renderInputView()
+	chatSection := m.renderChatSection(activeContent, trackerView)
 	statusLine := m.renderModeStatus()
-	suggestions := m.input.Suggestions.Render(m.width)
-
-	topSeparator := separator
-
-	tokenWarning := render.RenderTokenWarning(m.provider.InputTokens, m.getEffectiveInputLimit(), m.conv.Compact.WarningSuppressed)
-
-	// Render queued inputs preview
+	suggestions := m.userInput.Suggestions.Render(m.env.Width)
+	tokenWarning := conv.RenderTokenWarning(m.env.InputTokens, kit.GetEffectiveInputLimit(m.services.LLM.Store(), m.env.CurrentModel), m.conv.Compact.WarningSuppressed)
 	queuePreview := m.renderQueuePreview()
 
 	var view strings.Builder
@@ -98,7 +51,7 @@ func (m model) View() string {
 		view.WriteString(tokenWarning)
 	}
 	view.WriteString("\n")
-	view.WriteString(topSeparator)
+	view.WriteString(separator)
 	if queuePreview != "" {
 		view.WriteString("\n")
 		view.WriteString(queuePreview)
@@ -121,324 +74,124 @@ func (m model) View() string {
 	return view.String()
 }
 
-// renderTrackerList renders a compact task list above the input area.
-// Returns empty string when task display is toggled off via Ctrl+T.
-func (m model) renderTrackerList() string {
-	if !m.showTasks {
-		return ""
-	}
-	return render.RenderTrackerList(render.TrackerListParams{
-		StreamActive: m.conv.Stream.Active,
-		Width:        m.width,
-		SpinnerView:  m.output.Spinner.View(),
-	})
-}
-
-func (m model) renderWelcome() string {
-	return render.RenderWelcome()
-}
-
-func (m model) renderModeStatus() string {
-	modelName := m.provider.StatusMessage
-	if m.hookStatus != "" {
-		modelName = m.hookStatus
-	}
-	return render.RenderModeStatus(render.OperationModeParams{
-		Mode:          int(m.mode.Operation),
-		InputTokens:   m.provider.InputTokens,
-		InputLimit:    m.getEffectiveInputLimit(),
-		ModelName:     modelName,
-		Width:         m.width,
-		ThinkingLevel: m.effectiveThinkingLevel(),
-		QueueCount:    m.inputQueue.Len(),
-	})
-}
-
-func (m model) renderQueuePreview() string {
-	items := m.inputQueue.Items()
-	if len(items) == 0 {
-		return ""
-	}
-	return strings.TrimSuffix(render.RenderQueuePreview(items, m.queueSelectIdx, m.width), "\n")
-}
-
-// buildSkipIndices returns a set of message indices that should be skipped during rendering.
-// Tool result messages are skipped when they are rendered inline with their tool calls.
-func (m model) buildSkipIndices(startIdx int) map[int]bool {
-	skipIndices := make(map[int]bool)
-	for i := startIdx; i < len(m.conv.Messages); i++ {
-		msg := m.conv.Messages[i]
-		if msg.Role != message.RoleAssistant || len(msg.ToolCalls) == 0 {
-			continue
+func (m *model) renderOverlaySelector() string {
+	for _, s := range m.overlaySelectors() {
+		if s.IsActive() {
+			return s.Render()
 		}
-		// Mark subsequent tool result messages that match these tool calls
-		for j := i + 1; j < len(m.conv.Messages); j++ {
-			if m.conv.Messages[j].Role == message.RoleNotice {
-				continue
-			}
-			if m.conv.Messages[j].ToolResult == nil {
-				break
-			}
-			for _, tc := range msg.ToolCalls {
-				if tc.ID == m.conv.Messages[j].ToolResult.ToolCallID {
-					skipIndices[j] = true
-					break
-				}
-			}
-		}
-	}
-	return skipIndices
-}
-
-// renderPlanForScrollback renders the plan title + markdown content as a styled
-// string for pushing into terminal scrollback via tea.Println.
-func (m model) renderPlanForScrollback(req *tool.PlanRequest) string {
-	if req == nil {
-		return ""
-	}
-	return render.RenderPlanForScrollback(req.Plan, m.output.MDRenderer)
-}
-
-// renderSingleMessage renders one message at the given index for committing to scrollback.
-// It handles the skip logic for inline tool results.
-// The trailing newline is trimmed because tea.Println adds its own.
-func (m model) renderSingleMessage(idx int) string {
-	if idx < 0 || idx >= len(m.conv.Messages) {
-		return ""
-	}
-
-	// Skip tool results that are rendered inline with their tool calls
-	if m.conv.Messages[idx].ToolResult != nil && m.isToolResultInlined(idx) {
-		return ""
-	}
-
-	return strings.TrimRight(m.renderMessageAt(idx, false), "\n")
-}
-
-// renderActiveContent renders all uncommitted messages for the managed region.
-// This includes: assistant messages waiting for tool results, partial tool results,
-// streaming assistant message, and pending tool spinner.
-func (m model) renderActiveContent() string {
-	if m.conv.CommittedCount >= len(m.conv.Messages) {
-		return m.renderPendingToolSpinner(false)
-	}
-	return m.renderMessageRange(m.conv.CommittedCount, len(m.conv.Messages), true)
-}
-
-// isToolResultInlined checks if the tool result at idx was rendered inline with its tool call.
-func (m model) isToolResultInlined(idx int) bool {
-	msg := m.conv.Messages[idx]
-	if msg.ToolResult == nil {
-		return false
-	}
-	toolCallID := msg.ToolResult.ToolCallID
-
-	// Look backwards for the assistant message that has the matching tool call
-	for j := idx - 1; j >= 0; j-- {
-		prev := m.conv.Messages[j]
-		if prev.Role == message.RoleNotice {
-			continue
-		}
-		if prev.Role == message.RoleAssistant && len(prev.ToolCalls) > 0 {
-			for _, tc := range prev.ToolCalls {
-				if tc.ID == toolCallID {
-					return true
-				}
-			}
-			// Found an assistant message with tool calls but no match - stop searching
-			break
-		}
-		// Skip over other tool result messages in the sequence
-		if prev.ToolResult != nil {
-			continue
-		}
-		// Non-tool-result, non-assistant message breaks the chain
-		break
-	}
-	return false
-}
-
-// renderMessageAt renders a single message at the given index.
-func (m model) renderMessageAt(idx int, isStreaming bool) string {
-	msg := m.conv.Messages[idx]
-	var sb strings.Builder
-
-	if msg.ToolResult == nil {
-		sb.WriteString("\n")
-	}
-
-	switch msg.Role {
-	case message.RoleUser:
-		if msg.ToolResult != nil {
-			sb.WriteString(m.renderToolResult(msg))
-		} else {
-			sb.WriteString(m.renderUserMessage(msg))
-		}
-	case message.RoleNotice:
-		sb.WriteString(render.RenderSystemMessage(msg.Content))
-	case message.RoleAssistant:
-		sb.WriteString(m.renderAssistantMessage(msg, idx, isStreaming))
-	}
-
-	return sb.String()
-}
-
-// renderMessageRange renders messages from startIdx to endIdx with skip logic and spinner.
-func (m model) renderMessageRange(startIdx, endIdx int, includeSpinner bool) string {
-	skipIndices := m.buildSkipIndices(startIdx)
-	var sb strings.Builder
-
-	lastIdx := endIdx - 1
-	isLastStreaming := m.conv.Stream.Active && lastIdx >= 0 && m.conv.Messages[lastIdx].Role == message.RoleAssistant
-
-	for i := startIdx; i < endIdx; i++ {
-		if skipIndices[i] {
-			continue
-		}
-		isStreaming := i == lastIdx && isLastStreaming
-		sb.WriteString(m.renderMessageAt(i, isStreaming))
-	}
-
-	if includeSpinner {
-		sb.WriteString(m.renderPendingToolSpinner(startIdx < endIdx))
-	}
-
-	return sb.String()
-}
-
-func (m model) renderUserMessage(msg message.ChatMessage) string {
-	return render.RenderUserMessage(msg.Content, msg.DisplayContent, msg.Images, m.output.MDRenderer, m.width)
-}
-
-func (m model) renderToolResult(msg message.ChatMessage) string {
-	return m.renderToolResultInline(msg)
-}
-
-func (m model) renderAssistantMessage(msg message.ChatMessage, idx int, isLast bool) string {
-	// Render the base assistant message (thinking + content)
-	base := render.RenderAssistantMessage(render.AssistantParams{
-		Content:       msg.Content,
-		Thinking:      msg.Thinking,
-		ToolCalls:     msg.ToolCalls,
-		StreamActive:  m.conv.Stream.Active,
-		IsLast:        isLast,
-		SpinnerView:   m.output.Spinner.View(),
-		MDRenderer:    m.output.MDRenderer,
-		Width:         m.width,
-		ExecutingTool: m.getExecutingToolName(),
-	})
-
-	if len(msg.ToolCalls) == 0 {
-		return base
-	}
-
-	// Render tool calls with result map
-	var sb strings.Builder
-	sb.WriteString(base)
-
-	if msg.Content != "" {
-		sb.WriteString("\n")
-	}
-
-	// Build result map from subsequent messages
-	resultMap := make(map[string]render.ToolResultData)
-	for j := idx + 1; j < len(m.conv.Messages); j++ {
-		nextMsg := m.conv.Messages[j]
-		if nextMsg.Role == message.RoleNotice {
-			continue
-		}
-		if nextMsg.ToolResult == nil {
-			break
-		}
-		resultMap[nextMsg.ToolResult.ToolCallID] = render.ToolResultData{
-			ToolName: nextMsg.ToolName,
-			Content:  nextMsg.ToolResult.Content,
-			Error:    nextMsg.ToolResult.Content,
-			IsError:  nextMsg.ToolResult.IsError,
-			Expanded: nextMsg.Expanded,
-		}
-	}
-
-	// Build parallel results done map
-	parallelDone := make(map[int]bool)
-	for k := range m.tool.ParallelResults {
-		parallelDone[k] = true
-	}
-
-	sb.WriteString(render.RenderToolCalls(render.ToolCallsParams{
-		ToolCalls:         msg.ToolCalls,
-		ToolCallsExpanded: msg.ToolCallsExpanded,
-		ResultMap:         resultMap,
-		ParallelMode:      m.tool.Parallel,
-		ParallelResults:   parallelDone,
-		TaskProgress:      m.output.TaskProgress,
-		PendingCalls:      m.tool.PendingCalls,
-		CurrentIdx:        m.tool.CurrentIdx,
-		SpinnerView:       m.output.Spinner.View(),
-		TaskOwnerMap:      m.buildTaskOwnerMap(),
-		MDRenderer:        m.output.MDRenderer,
-		Width:             m.width,
-	}))
-
-	return sb.String()
-}
-
-// renderToolResultInline renders a tool result inline (without leading newline).
-func (m model) renderToolResultInline(msg message.ChatMessage) string {
-	return render.RenderToolResultInline(render.ToolResultData{
-		ToolName: msg.ToolName,
-		Content:  msg.ToolResult.Content,
-		Error:    msg.ToolResult.Content,
-		IsError:  msg.ToolResult.IsError,
-		Expanded: msg.Expanded,
-	}, m.output.MDRenderer)
-}
-
-func (m model) renderPendingToolSpinner(suppressAgentLabel bool) string {
-	interactivePromptActive := m.mode.Question.IsActive() || (m.mode.PlanApproval != nil && m.mode.PlanApproval.IsActive())
-
-	return render.RenderPendingToolSpinner(render.PendingToolSpinnerParams{
-		InteractivePromptActive: interactivePromptActive,
-		ParallelMode:            m.tool.Parallel,
-		HasParallelTaskTools:    m.hasParallelTaskTools(),
-		BuildingTool:            m.conv.Stream.BuildingTool,
-		PendingCalls:            m.tool.PendingCalls,
-		CurrentIdx:              m.tool.CurrentIdx,
-		TaskProgress:            m.output.TaskProgress,
-		SpinnerView:             m.output.Spinner.View(),
-		Width:                   m.width,
-		SuppressAgentLabel:      suppressAgentLabel,
-	})
-}
-
-func (m model) hasPendingToolExecution() bool {
-	return m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls)
-}
-
-// getExecutingToolName returns the name of the tool currently being executed, or "".
-func (m model) getExecutingToolName() string {
-	if m.conv.Stream.BuildingTool != "" {
-		return m.conv.Stream.BuildingTool
-	}
-	if m.tool.PendingCalls != nil && m.tool.CurrentIdx < len(m.tool.PendingCalls) {
-		return m.tool.PendingCalls[m.tool.CurrentIdx].Name
 	}
 	return ""
 }
 
-// hasParallelTaskTools returns true if any pending tool call is an Agent tool.
-func (m model) hasParallelTaskTools() bool {
-	for _, tc := range m.tool.PendingCalls {
-		if tool.IsAgentToolName(tc.Name) {
-			return true
-		}
+func (m *model) renderActiveModal(separator, trackerPrefix string) string {
+	switch {
+	case m.userInput.Approval.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.userInput.Approval.Render())
+	case m.conv.Modal.Question.IsActive():
+		return separatorWrapped(trackerPrefix, separator, m.conv.Modal.Question.Render())
+	default:
+		return ""
 	}
-	return false
 }
 
-// buildTaskOwnerMap builds a map of task ID → owner name for TaskGet display.
-func (m model) buildTaskOwnerMap() map[string]string {
-	tasks := tracker.DefaultStore.List()
+func separatorWrapped(trackerPrefix, separator, content string) string {
+	return trackerPrefix + separator + "\n" + content
+}
+
+func (m model) renderInputView() string {
+	prompt := conv.InputPromptStyle.Render("❯ ")
+	if m.userInput.PromptSuggestion.Text != "" && m.userInput.Textarea.Value() == "" &&
+		!m.conv.Stream.Active && !m.userInput.Suggestions.IsVisible() {
+		return prompt + ghostTextStyle.Render(m.userInput.PromptSuggestion.Text)
+	}
+	return prompt + m.userInput.RenderTextarea()
+}
+
+func (m model) renderChatSection(activeContent, trackerView string) string {
+	var parts []string
+
+	if activeContent != "" {
+		parts = append(parts, activeContent)
+	}
+
+	if trackerView != "" {
+		parts = append(parts, strings.TrimSuffix(trackerView, "\n"))
+	}
+
+	if m.userInput.Provider.FetchingLimits {
+		spinnerView := conv.ThinkingStyle.Render(m.conv.Spinner.View() + " Fetching token limits...")
+		parts = append(parts, spinnerView)
+	}
+
+	if compactView := conv.RenderCompactStatus(m.env.Width, m.conv.Spinner.View(), m.conv.Compact); compactView != "" {
+		parts = append(parts, compactView)
+	}
+
+	return strings.Join(parts, "\n")
+}
+
+func (m model) renderTrackerList() string {
+	if !m.conv.ShowTasks {
+		return ""
+	}
+	tasks := m.services.Tracker.List()
+	return conv.RenderTrackerList(conv.TrackerListParams{
+		Tasks:        tasks,
+		AllDone:      m.services.Tracker.AllDone(),
+		StreamActive: m.conv.Stream.Active,
+		Width:        m.env.Width,
+		SpinnerView:  m.conv.Spinner.View(),
+		Blockers: m.services.Tracker.OpenBlockers,
+	})
+}
+
+func (m model) renderModeStatus() string {
+	modelName := m.env.GetModelID()
+	if m.services.Hook != nil {
+		if status := m.services.Hook.CurrentStatusMessage(); status != "" {
+			modelName = status
+		}
+	}
+	return conv.RenderModeStatus(conv.OperationModeParams{
+		Mode:          conv.OperationMode(m.env.OperationMode),
+		InputTokens:   m.env.InputTokens,
+		OutputTokens:  m.env.OutputTokens,
+		InputLimit:    kit.GetEffectiveInputLimit(m.services.LLM.Store(), m.env.CurrentModel),
+		ModelName:     modelName,
+		Width:         m.env.Width,
+		ThinkingLevel: m.env.EffectiveThinkingLevel(),
+		QueueCount:    m.userInput.Queue.Len(),
+	})
+}
+
+func (m model) renderQueuePreview() string {
+	items := m.userInput.Queue.Items()
+	if len(items) == 0 {
+		return ""
+	}
+	previews := make([]conv.QueuePreviewItem, len(items))
+	for i, item := range items {
+		previews[i] = conv.QueuePreviewItem{Content: item.Content, HasImages: len(item.Images) > 0}
+	}
+	return strings.TrimSuffix(conv.RenderQueuePreview(previews, m.userInput.Queue.SelectIdx, m.env.Width), "\n")
+}
+
+func (m model) messageRenderParams() conv.MessageRenderParams {
+	return conv.MessageRenderParams{
+		Messages:                m.conv.Messages,
+		CommittedCount:          m.conv.CommittedCount,
+		StreamActive:            m.conv.Stream.Active,
+		BuildingTool:            m.conv.Stream.BuildingTool,
+		Width:                   m.env.Width,
+		MDRenderer:              m.conv.MDRenderer,
+		SpinnerView:             m.conv.Spinner.View(),
+		TaskProgress:            m.conv.TaskProgress,
+		TaskOwnerMap:            buildTaskOwnerMap(m.services.Tracker.List()),
+		InteractivePromptActive: m.conv.Modal.Question != nil && m.conv.Modal.Question.IsActive(),
+	}
+}
+
+func buildTaskOwnerMap(tasks []*tracker.Task) map[string]string {
 	if len(tasks) == 0 {
 		return nil
 	}
@@ -453,3 +206,4 @@ func (m model) buildTaskOwnerMap() map[string]string {
 	}
 	return ownerMap
 }
+

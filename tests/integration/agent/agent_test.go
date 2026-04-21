@@ -1,4 +1,4 @@
-package agent_test
+package subagent_test
 
 import (
 	"context"
@@ -8,26 +8,29 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yanmxa/gencode/internal/agent"
-	"github.com/yanmxa/gencode/internal/config"
-	"github.com/yanmxa/gencode/internal/hooks"
-	"github.com/yanmxa/gencode/internal/message"
-	"github.com/yanmxa/gencode/internal/permission"
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/setting"
+	"github.com/yanmxa/gencode/internal/subagent"
+	"github.com/yanmxa/gencode/internal/task"
+	"github.com/yanmxa/gencode/internal/tool/perm"
+	_ "github.com/yanmxa/gencode/internal/tool/registry"
 	"github.com/yanmxa/gencode/tests/integration/testutil"
 )
 
 func TestAgent_ExploreAgent(t *testing.T) {
 	mp := &testutil.MockProvider{
-		Responses: []message.CompletionResponse{
+		Responses: []llm.CompletionResponse{
 			{
 				Content: "Explored the codebase", StopReason: "end_turn",
-				Usage: message.Usage{InputTokens: 50, OutputTokens: 25},
+				Usage: llm.Usage{InputTokens: 50, OutputTokens: 25},
 			},
 		},
 	}
 
-	executor := agent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
-	result, err := executor.Run(context.Background(), agent.AgentRequest{
+	executor := subagent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
+	result, err := executor.Run(context.Background(), subagent.AgentRequest{
 		Agent:       "Explore",
 		Prompt:      "Find all Go files",
 		Description: "explore codebase",
@@ -49,9 +52,9 @@ func TestAgent_ExploreAgent(t *testing.T) {
 
 func TestAgent_UnknownAgent(t *testing.T) {
 	mp := &testutil.MockProvider{}
-	executor := agent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
+	executor := subagent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
 
-	_, err := executor.Run(context.Background(), agent.AgentRequest{
+	_, err := executor.Run(context.Background(), subagent.AgentRequest{
 		Agent:  "NonExistent",
 		Prompt: "do something",
 	})
@@ -62,20 +65,20 @@ func TestAgent_UnknownAgent(t *testing.T) {
 
 func TestAgent_MaxTurnsRespected(t *testing.T) {
 	// LLM always returns tool calls to force hitting max turns
-	responses := make([]message.CompletionResponse, 10)
+	responses := make([]llm.CompletionResponse, 10)
 	for i := range responses {
-		responses[i] = message.CompletionResponse{
+		responses[i] = llm.CompletionResponse{
 			StopReason: "tool_use",
-			ToolCalls:  []message.ToolCall{{ID: "tc", Name: "UnknownTool", Input: "{}"}},
-			Usage:      message.Usage{InputTokens: 1, OutputTokens: 1},
+			ToolCalls:  []core.ToolCall{{ID: "tc", Name: "UnknownTool", Input: "{}"}},
+			Usage:      llm.Usage{InputTokens: 1, OutputTokens: 1},
 		}
 	}
 
-	executor := agent.NewExecutor(
+	executor := subagent.NewExecutor(
 		&testutil.MockProvider{Responses: responses},
 		t.TempDir(), "fake-model", nil,
 	)
-	result, err := executor.Run(context.Background(), agent.AgentRequest{
+	result, err := executor.Run(context.Background(), subagent.AgentRequest{
 		Agent:    "Explore",
 		Prompt:   "keep going",
 		MaxTurns: 2,
@@ -106,18 +109,18 @@ func TestAgent_ModelResolution(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mp := &testutil.MockProvider{
-				Responses: []message.CompletionResponse{
+				Responses: []llm.CompletionResponse{
 					{Content: "ok", StopReason: "end_turn"},
 				},
 			}
-			executor := agent.NewExecutor(mp, t.TempDir(), tt.parentModel, nil)
+			executor := subagent.NewExecutor(mp, t.TempDir(), tt.parentModel, nil)
 
 			if tt.parentModel != "" && executor.GetParentModelID() != tt.parentModel {
 				t.Errorf("parent model mismatch: got %q, want %q",
 					executor.GetParentModelID(), tt.parentModel)
 			}
 
-			_, err := executor.Run(context.Background(), agent.AgentRequest{
+			_, err := executor.Run(context.Background(), subagent.AgentRequest{
 				Agent:  "Explore",
 				Prompt: "test",
 				Model:  tt.reqModel,
@@ -134,14 +137,12 @@ func TestAgent_ModelResolution(t *testing.T) {
 // The built-in "Explore" agent has PermissionPlan, so its permission checker
 // should reject Write/Edit calls.
 func TestAgent_PlanPermissionMode_BlocksWrites(t *testing.T) {
-	// Verify via the permission package directly: PermissionPlan maps to ReadOnly()
-	// which rejects any non-read-only tool.
-	checker := permission.ReadOnly()
+	checker := perm.ReadOnly()
 
 	writeTools := []string{"Write", "Edit", "NotebookEdit", "Bash"}
 	for _, tool := range writeTools {
 		decision := checker.Check(tool, nil)
-		if decision != permission.Reject {
+		if decision != perm.Reject {
 			t.Errorf("tool %q: expected Reject in plan mode, got %v", tool, decision)
 		}
 	}
@@ -149,7 +150,7 @@ func TestAgent_PlanPermissionMode_BlocksWrites(t *testing.T) {
 	readTools := []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"}
 	for _, tool := range readTools {
 		decision := checker.Check(tool, nil)
-		if decision != permission.Permit {
+		if decision != perm.Permit {
 			t.Errorf("tool %q: expected Permit in plan mode, got %v", tool, decision)
 		}
 	}
@@ -158,26 +159,26 @@ func TestAgent_PlanPermissionMode_BlocksWrites(t *testing.T) {
 	// call queued. The tool call should be rejected (not executed), and the agent
 	// should still complete because the LLM gets the error result and ends turn.
 	mp := &testutil.MockProvider{
-		Responses: []message.CompletionResponse{
+		Responses: []llm.CompletionResponse{
 			// First response: LLM tries to write a file
 			{
 				StopReason: "tool_use",
-				ToolCalls: []message.ToolCall{
+				ToolCalls: []core.ToolCall{
 					{ID: "tc1", Name: "Write", Input: `{"file_path":"/tmp/x.txt","content":"hello"}`},
 				},
-				Usage: message.Usage{InputTokens: 20, OutputTokens: 10},
+				Usage: llm.Usage{InputTokens: 20, OutputTokens: 10},
 			},
 			// Second response: LLM acknowledges the error and ends
 			{
 				Content:    "Cannot write files in plan mode",
 				StopReason: "end_turn",
-				Usage:      message.Usage{InputTokens: 30, OutputTokens: 15},
+				Usage:      llm.Usage{InputTokens: 30, OutputTokens: 15},
 			},
 		},
 	}
 
-	executor := agent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
-	result, err := executor.Run(context.Background(), agent.AgentRequest{
+	executor := subagent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
+	result, err := executor.Run(context.Background(), subagent.AgentRequest{
 		Agent:  "Explore", // built-in, PermissionPlan
 		Prompt: "try to write a file",
 	})
@@ -205,20 +206,20 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 
 	// Build a settings object with SubagentStart and SubagentStop hooks.
 	// Each hook writes to a temp file so we can verify it fired.
-	settings := &config.Settings{
-		Hooks: map[string][]config.Hook{
-			string(hooks.SubagentStart): {
+	settings := &setting.Settings{
+		Hooks: map[string][]setting.Hook{
+			string(hook.SubagentStart): {
 				{
 					Matcher: "",
-					Hooks: []config.HookCmd{
+					Hooks: []setting.HookCmd{
 						{Type: "command", Command: "touch " + startFile, Async: false},
 					},
 				},
 			},
-			string(hooks.SubagentStop): {
+			string(hook.SubagentStop): {
 				{
 					Matcher: "",
-					Hooks: []config.HookCmd{
+					Hooks: []setting.HookCmd{
 						{Type: "command", Command: "touch " + stopFile, Async: false},
 					},
 				},
@@ -226,20 +227,20 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 		},
 	}
 
-	engine := hooks.NewEngine(settings, "test-session-id", tmpDir, "")
+	engine := hook.NewEngine(settings, "test-session-id", tmpDir, "")
 
 	mp := &testutil.MockProvider{
-		Responses: []message.CompletionResponse{
+		Responses: []llm.CompletionResponse{
 			{
 				Content:    "done",
 				StopReason: "end_turn",
-				Usage:      message.Usage{InputTokens: 10, OutputTokens: 5},
+				Usage:      llm.Usage{InputTokens: 10, OutputTokens: 5},
 			},
 		},
 	}
 
-	executor := agent.NewExecutor(mp, tmpDir, "fake-model", engine)
-	_, err := executor.Run(context.Background(), agent.AgentRequest{
+	executor := subagent.NewExecutor(mp, tmpDir, "fake-model", engine)
+	_, err := executor.Run(context.Background(), subagent.AgentRequest{
 		Agent:  "Explore",
 		Prompt: "test hooks",
 	})
@@ -266,17 +267,20 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 }
 
 func TestAgent_BackgroundExecution(t *testing.T) {
+	task.Initialize(task.Options{})
+	t.Cleanup(task.ResetService)
+
 	mp := &testutil.MockProvider{
-		Responses: []message.CompletionResponse{
+		Responses: []llm.CompletionResponse{
 			{
 				Content: "background result", StopReason: "end_turn",
-				Usage: message.Usage{InputTokens: 10, OutputTokens: 5},
+				Usage: llm.Usage{InputTokens: 10, OutputTokens: 5},
 			},
 		},
 	}
 
-	executor := agent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
-	agentTask, err := executor.RunBackground(agent.AgentRequest{
+	executor := subagent.NewExecutor(mp, t.TempDir(), "fake-model", nil)
+	agentTask, err := executor.RunBackground(subagent.AgentRequest{
 		Agent:       "Explore",
 		Prompt:      "background task",
 		Description: "bg test",
@@ -305,10 +309,10 @@ func TestAgent_OnProgressReceivesToolUpdates(t *testing.T) {
 	}
 
 	mp := &testutil.MockProvider{
-		Responses: []message.CompletionResponse{
+		Responses: []llm.CompletionResponse{
 			{
 				StopReason: "tool_use",
-				ToolCalls: []message.ToolCall{
+				ToolCalls: []core.ToolCall{
 					{
 						ID:    "tc1",
 						Name:  "Read",
@@ -323,9 +327,9 @@ func TestAgent_OnProgressReceivesToolUpdates(t *testing.T) {
 		},
 	}
 
-	executor := agent.NewExecutor(mp, tmpDir, "fake-model", nil)
+	executor := subagent.NewExecutor(mp, tmpDir, "fake-model", nil)
 	var progress []string
-	result, err := executor.Run(context.Background(), agent.AgentRequest{
+	result, err := executor.Run(context.Background(), subagent.AgentRequest{
 		Agent:  "Explore",
 		Prompt: "inspect the readme",
 		OnProgress: func(msg string) {
