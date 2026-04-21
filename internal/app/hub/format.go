@@ -68,10 +68,7 @@ func Merge(items []Message) Message {
 	}
 
 	notices := make([]string, 0, min(len(items), 3))
-	for i, item := range items {
-		if i >= 3 {
-			break
-		}
+	for _, item := range items[:min(len(items), 3)] {
 		if item.Notice != "" {
 			notices = append(notices, item.Notice)
 		}

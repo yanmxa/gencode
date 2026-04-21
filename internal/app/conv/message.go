@@ -55,6 +55,7 @@ func RenderWelcome() string {
 type OperationModeParams struct {
 	Mode          OperationMode
 	InputTokens   int
+	OutputTokens  int
 	InputLimit    int
 	ModelName     string
 	Width         int
@@ -64,34 +65,53 @@ type OperationModeParams struct {
 
 // RenderModeStatus renders the combined mode status line.
 func RenderModeStatus(params OperationModeParams) string {
-	parts := make([]string, 0, 4)
+	var leftParts []string
 
 	if modeStatus := RenderOperationModeIndicator(params.Mode); modeStatus != "" {
-		parts = append(parts, modeStatus)
+		leftParts = append(leftParts, modeStatus)
 	}
 
 	if thinkingStatus := RenderThinkingIndicator(params.ThinkingLevel); thinkingStatus != "" {
-		parts = append(parts, thinkingStatus)
+		leftParts = append(leftParts, thinkingStatus)
 	}
 
-	if tokenUsage := renderTokenUsage(params.InputTokens, params.InputLimit); tokenUsage != "" {
-		parts = append(parts, tokenUsage)
+	if tokenWarning := renderTokenWarningInline(params.InputTokens, params.InputLimit); tokenWarning != "" {
+		leftParts = append(leftParts, tokenWarning)
 	}
 
 	if queueBadge := renderQueueBadge(params.QueueCount); queueBadge != "" {
-		parts = append(parts, queueBadge)
+		leftParts = append(leftParts, queueBadge)
 	}
 
-	left := strings.Join(parts, "  ")
+	left := strings.Join(leftParts, "  ")
 
-	if params.ModelName == "" || params.Width <= 0 {
+	right := renderModelWithTokens(params.ModelName, params.InputTokens, params.OutputTokens, params.InputLimit)
+	if right == "" || params.Width <= 0 {
 		return left
 	}
 
-	modelStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
-	right := modelStyle.Render(params.ModelName)
 	gap := max(2, params.Width-lipgloss.Width(left)-lipgloss.Width(right)-1)
 	return left + strings.Repeat(" ", gap) + right
+}
+
+// renderModelWithTokens renders the model name with token usage on the right side.
+func renderModelWithTokens(modelName string, inputTokens, outputTokens, inputLimit int) string {
+	if modelName == "" {
+		return ""
+	}
+	muted := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
+
+	if inputTokens == 0 && outputTokens == 0 {
+		return muted.Render(modelName)
+	}
+
+	in := kit.FormatTokenCount(inputTokens)
+	out := kit.FormatTokenCount(outputTokens)
+	if inputLimit > 0 {
+		pct := float64(inputTokens) / float64(inputLimit) * 100
+		return muted.Render(fmt.Sprintf("%s  ↑%s ↓%s (%.0f%%)", modelName, in, out, pct))
+	}
+	return muted.Render(fmt.Sprintf("%s  ↑%s ↓%s", modelName, in, out))
 }
 
 // RenderOperationModeIndicator returns the mode status indicator for auto-accept or bypass mode.
@@ -143,8 +163,8 @@ func RenderThinkingIndicator(level llm.ThinkingLevel) string {
 	return "  " + style.Render(icon+label)
 }
 
-// renderTokenUsage returns token usage indicator.
-func renderTokenUsage(inputTokens, inputLimit int) string {
+// renderTokenWarningInline returns a warning when context usage exceeds 50%.
+func renderTokenWarningInline(inputTokens, inputLimit int) string {
 	if inputLimit == 0 || inputTokens == 0 {
 		return ""
 	}

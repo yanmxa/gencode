@@ -55,9 +55,8 @@ func (t *ContinueAgentTool) PreparePermission(ctx context.Context, params map[st
 	if err != nil {
 		return nil, err
 	}
-	resolvedTaskID := resolveLiveTaskID(target)
-	if resolvedTaskID != "" {
-		if err := ensureContinuationTaskStopped(resolvedTaskID, "ContinueAgent"); err != nil {
+	if target.taskID != "" {
+		if err := ensureContinuationTaskStopped(target.taskID, "ContinueAgent"); err != nil {
 			return nil, err
 		}
 	}
@@ -138,9 +137,8 @@ func (t *ContinueAgentTool) execute(ctx context.Context, params map[string]any, 
 	if err != nil {
 		return toolresult.NewErrorResult(t.Name(), err.Error())
 	}
-	resolvedTaskID := resolveLiveTaskID(target)
-	if resolvedTaskID != "" {
-		if err := ensureContinuationTaskStopped(resolvedTaskID, t.Name()); err != nil {
+	if target.taskID != "" {
+		if err := ensureContinuationTaskStopped(target.taskID, t.Name()); err != nil {
 			return toolresult.NewErrorResult(t.Name(), err.Error())
 		}
 	}

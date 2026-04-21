@@ -42,28 +42,13 @@ func GetToolSchemas() []core.ToolSchema {
 func GetToolSchemasWithMCP(mcpToolsGetter func() []core.ToolSchema) []core.ToolSchema {
 	tools := make([]core.ToolSchema, 0, 20)
 	tools = append(tools, baseToolSchemas()...)
-
-	// Add Skill tool
 	tools = append(tools, skillToolSchema)
-
-	// Add Agent tool
-	tools = append(tools, agentToolSchema)
-	tools = append(tools, continueAgentToolSchema)
-	tools = append(tools, sendMessageToolSchema)
-
-	// Add ToolSearch (always available — enables progressive disclosure)
+	tools = append(tools, agentToolSchema, continueAgentToolSchema, sendMessageToolSchema)
 	tools = append(tools, toolSearchSchema)
-
-	// Add Tracker tools
 	tools = append(tools, trackerToolSchemas...)
-
-	// Add Cron tools
 	tools = append(tools, cronToolSchemas...)
-
-	// Add Worktree tools
 	tools = append(tools, worktreeToolSchemas...)
 
-	// Add MCP tools if getter is provided
 	if mcpToolsGetter != nil {
 		tools = append(tools, mcpToolsGetter()...)
 	}

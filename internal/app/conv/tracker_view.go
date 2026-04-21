@@ -87,6 +87,7 @@ func renderTask(t *tracker.Task, width int, spinnerView string, blockers func(st
 		return line + "\n"
 
 	default:
+		line := indent + trackerPendingStyle.Render("○") + " " + idStr + trackerPendingStyle.Render(subject)
 		if blockers != nil {
 			if bl := blockers(t.ID); len(bl) > 0 {
 				blockerRefs := make([]string, len(bl))
@@ -94,11 +95,10 @@ func renderTask(t *tracker.Task, width int, spinnerView string, blockers func(st
 					blockerRefs[i] = "#" + b
 				}
 				blockedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error)
-				suffix := " " + blockedStyle.Render("← "+strings.Join(blockerRefs, ", "))
-				return indent + trackerPendingStyle.Render("○") + " " + idStr + trackerPendingStyle.Render(subject) + suffix + "\n"
+				line += " " + blockedStyle.Render("← "+strings.Join(blockerRefs, ", "))
 			}
 		}
-		return indent + trackerPendingStyle.Render("○") + " " + idStr + trackerPendingStyle.Render(subject) + "\n"
+		return line + "\n"
 	}
 }
 

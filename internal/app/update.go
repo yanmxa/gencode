@@ -631,9 +631,21 @@ func (m *model) HandleSkillInvocation() tea.Cmd {
 		m.userInput.Skill.ClearPending()
 		return tea.Batch(m.CommitMessages()...)
 	}
+
+	startCmd, err := m.ensureAgentSession()
+	if err != nil {
+		m.conv.AddNotice("Failed to start agent: " + err.Error())
+		m.userInput.Skill.ClearPending()
+		return tea.Batch(m.CommitMessages()...)
+	}
+
 	userMsg := m.userInput.Skill.ConsumeInvocation()
 	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: userMsg})
-	return m.sendToAgent(userMsg, nil)
+	sendCmd := m.sendToAgent(userMsg, nil)
+	if startCmd != nil {
+		return tea.Batch(startCmd, sendCmd)
+	}
+	return sendCmd
 }
 
 func (m *model) pasteImageFromClipboard() (tea.Cmd, bool) {

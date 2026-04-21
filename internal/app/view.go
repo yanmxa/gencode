@@ -146,7 +146,7 @@ func (m model) renderTrackerList() string {
 }
 
 func (m model) renderModeStatus() string {
-	modelName := m.userInput.Provider.StatusMessage
+	modelName := m.env.GetModelID()
 	if m.services.Hook != nil {
 		if status := m.services.Hook.CurrentStatusMessage(); status != "" {
 			modelName = status
@@ -155,6 +155,7 @@ func (m model) renderModeStatus() string {
 	return conv.RenderModeStatus(conv.OperationModeParams{
 		Mode:          conv.OperationMode(m.env.OperationMode),
 		InputTokens:   m.env.InputTokens,
+		OutputTokens:  m.env.OutputTokens,
 		InputLimit:    kit.GetEffectiveInputLimit(m.services.LLM.Store(), m.env.CurrentModel),
 		ModelName:     modelName,
 		Width:         m.env.Width,

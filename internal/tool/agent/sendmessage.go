@@ -43,7 +43,7 @@ func (t *SendMessageTool) PreparePermission(ctx context.Context, params map[stri
 		return nil, fmt.Errorf("agent executor not configured")
 	}
 
-	target, err := resolveContinuationTargetForMessage(normalized)
+	target, err := resolveContinuationTarget(normalized)
 	if err != nil {
 		return nil, err
 	}
@@ -126,20 +126,19 @@ func (t *SendMessageTool) execute(ctx context.Context, params map[string]any, cw
 		return toolresult.NewErrorResult(t.Name(), "message is required")
 	}
 
-	target, err := resolveContinuationTargetForMessage(normalized)
+	target, err := resolveContinuationTarget(normalized)
 	if err != nil {
 		return toolresult.NewErrorResult(t.Name(), err.Error())
 	}
-	resolvedTaskID := resolveLiveTaskID(target)
-	if resolvedTaskID != "" {
-		running, err := isContinuationTaskRunning(resolvedTaskID)
+	if target.taskID != "" {
+		running, err := isContinuationTaskRunning(target.taskID)
 		if err != nil {
 			return toolresult.NewErrorResult(t.Name(), err.Error())
 		}
 		if running {
-			return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("task %s is still running; wait for completion before sending a message", resolvedTaskID))
+			return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("task %s is still running; wait for completion before sending a message", target.taskID))
 		}
-		if err := ensureContinuationTaskReady(resolvedTaskID); err != nil {
+		if err := ensureContinuationTaskReady(target.taskID); err != nil {
 			return toolresult.NewErrorResult(t.Name(), err.Error())
 		}
 	}
@@ -251,9 +250,7 @@ func normalizeSendMessageParams(params map[string]any) map[string]any {
 	return normalized
 }
 
-func resolveContinuationTargetForMessage(params map[string]any) (continuedAgentTarget, error) {
-	return resolveContinuationTarget(params)
-}
+
 
 func ensureContinuationTaskExists(taskID string) error {
 	bgTask, found := task.Default().Get(taskID)
@@ -291,13 +288,6 @@ func isContinuationTaskRunning(taskID string) (bool, error) {
 		return false, fmt.Errorf("task not found: %s", taskID)
 	}
 	return bgTask.IsRunning(), nil
-}
-
-func resolveLiveTaskID(target continuedAgentTarget) string {
-	if target.taskID != "" {
-		return target.taskID
-	}
-	return ""
 }
 
 func init() {
