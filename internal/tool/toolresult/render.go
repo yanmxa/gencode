@@ -32,6 +32,9 @@ func NewErrorResult(title, errorMsg string) ToolResult {
 // FormatForLLM returns a plain text representation of the result for LLM consumption
 func (r ToolResult) FormatForLLM() string {
 	if !r.Success {
+		if r.Output != "" {
+			return r.Output + "\nError: " + r.Error
+		}
 		return "Error: " + r.Error
 	}
 

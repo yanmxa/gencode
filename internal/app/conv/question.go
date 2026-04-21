@@ -139,8 +139,21 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 		return nil, nil
 
 	case tea.KeySpace:
+		if curOption == len(currentQ.Options) {
+			p.showingCustom = true
+			p.customInput.Focus()
+			p.restoreCustomInput()
+			return nil, nil
+		}
 		if currentQ.MultiSelect {
 			p.toggleSelection()
+		} else {
+			cur := p.selected[p.currentQuestion]
+			if len(cur) == 1 && cur[0] == curOption {
+				p.selected[p.currentQuestion] = nil
+			} else {
+				p.selected[p.currentQuestion] = []int{curOption}
+			}
 		}
 		return nil, nil
 
@@ -473,11 +486,7 @@ func (p *QuestionPrompt) Render() string {
 	if len(p.request.Questions) > 1 {
 		hints = append(hints, "\u2190/\u2192 switch question")
 	}
-	hints = append(hints, "\u2191/\u2193 navigate")
-	if isMulti {
-		hints = append(hints, "Space toggle")
-	}
-	hints = append(hints, "Enter confirm", "Esc cancel")
+	hints = append(hints, "\u2191/\u2193 navigate", "Space toggle", "Enter confirm", "Esc cancel")
 
 	footer := " " + strings.Join(hints, " \u00B7 ")
 	sb.WriteString(getQuestionFooterStyle().Render(footer))

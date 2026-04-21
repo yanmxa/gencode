@@ -340,58 +340,44 @@ var taskStopToolSchema = core.ToolSchema{
 
 var askUserQuestionToolSchema = core.ToolSchema{
 	Name: "AskUserQuestion",
-	Description: `Ask the user questions to gather preferences, clarify requirements, or get decisions on implementation choices. Use when you need user input to proceed.`,
+	Description: `Ask the user a question with predefined choices. An 'Other' option with free-text input is always appended automatically.
+
+Single question (most common):
+  {"question": "Which version?", "options": ["v1.0", "v2.0", "v3.0"]}
+
+Multiple questions (rare):
+  {"questions": [{"question": "Q1?", "options": ["A","B"]}, {"question": "Q2?", "options": ["X","Y"]}]}`,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
+			"question": map[string]any{
+				"type":        "string",
+				"description": "The question text (for single question)",
+			},
+			"options": map[string]any{
+				"type":        "array",
+				"description": "2-4 short choice labels (for single question)",
+				"minItems":    2,
+				"maxItems":    4,
+				"items":       map[string]any{"type": "string"},
+			},
 			"questions": map[string]any{
 				"type":        "array",
-				"description": "Questions to ask the user (1-4 questions)",
-				"minItems":    1,
-				"maxItems":    4,
+				"description": "For multiple questions. Array of {question, options} objects (max 4).",
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"question": map[string]any{
-							"type":        "string",
-							"description": "The complete question to ask the user",
-						},
-						"header": map[string]any{
-							"type":        "string",
-							"maxLength":   12,
-							"description": "Very short label displayed as a chip/tag (max 12 chars)",
-						},
+						"question": map[string]any{"type": "string"},
 						"options": map[string]any{
-							"type":        "array",
-							"description": "The available choices (2-4 options). 'Other' option is added automatically.",
-							"minItems":    2,
-							"maxItems":    4,
-							"items": map[string]any{
-								"type": "object",
-								"properties": map[string]any{
-									"label": map[string]any{
-										"type":        "string",
-										"description": "The display text for this option (1-5 words)",
-									},
-									"description": map[string]any{
-										"type":        "string",
-										"description": "Explanation of what this option means",
-									},
-								},
-								"required": []string{"label", "description"},
-							},
-						},
-						"multiSelect": map[string]any{
-							"type":        "boolean",
-							"default":     false,
-							"description": "Set to true to allow multiple options to be selected",
+							"type":  "array",
+							"items": map[string]any{"type": "string"},
 						},
 					},
-					"required": []string{"question", "header", "options", "multiSelect"},
+					"required": []string{"question", "options"},
 				},
 			},
 		},
-		"required": []string{"questions"},
+		"required": []string{},
 	},
 }
 

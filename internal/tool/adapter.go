@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/tool/toolresult"
 )
 
 // sideEffects stores HookResponse values keyed by tool call ID.
@@ -23,6 +24,22 @@ func PopSideEffect(toolCallID string) any {
 	return val
 }
 
+// InteractionFunc handles interactive tool requests (e.g. AskUserQuestion).
+// The TUI layer provides this via ProgressHub.Ask().
+type InteractionFunc func(ctx context.Context, req *QuestionRequest) (*QuestionResponse, error)
+
+// AdaptOption configures tool adaptation behavior.
+type AdaptOption func(*adaptConfig)
+
+type adaptConfig struct {
+	askFn InteractionFunc
+}
+
+// WithInteraction sets the handler for interactive tools.
+func WithInteraction(fn InteractionFunc) AdaptOption {
+	return func(c *adaptConfig) { c.askFn = fn }
+}
+
 // AdaptTool wraps a legacy Tool as a core.Tool with a dynamic CWD resolver.
 func AdaptTool(t Tool, schema core.ToolSchema, cwd func() string) core.Tool {
 	return &toolAdapter{inner: t, schema: schema, cwd: cwd}
@@ -30,7 +47,12 @@ func AdaptTool(t Tool, schema core.ToolSchema, cwd func() string) core.Tool {
 
 // AdaptToolRegistry wraps all tools from the global registry as core.Tools.
 // The schema list maps tool names to their JSON schemas.
-func AdaptToolRegistry(schemas []core.ToolSchema, cwd func() string) core.Tools {
+func AdaptToolRegistry(schemas []core.ToolSchema, cwd func() string, opts ...AdaptOption) core.Tools {
+	var cfg adaptConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+
 	schemaByName := make(map[string]core.ToolSchema, len(schemas))
 	for _, s := range schemas {
 		if s.Name != "" {
@@ -41,7 +63,7 @@ func AdaptToolRegistry(schemas []core.ToolSchema, cwd func() string) core.Tools 
 	var adapted []core.Tool
 	for name, schema := range schemaByName {
 		if t, ok := Get(name); ok {
-			adapted = append(adapted, AdaptTool(t, schema, cwd))
+			adapted = append(adapted, &toolAdapter{inner: t, schema: schema, cwd: cwd, askFn: cfg.askFn})
 		}
 	}
 	return core.NewTools(adapted...)
@@ -52,6 +74,7 @@ type toolAdapter struct {
 	inner  Tool
 	schema core.ToolSchema
 	cwd    func() string
+	askFn  InteractionFunc
 }
 
 func (a *toolAdapter) Name() string            { return a.inner.Name() }
@@ -64,10 +87,25 @@ func (a *toolAdapter) Execute(ctx context.Context, input map[string]any) (string
 		cwd = a.cwd()
 	}
 
-	result := a.inner.Execute(ctx, input, cwd)
+	var result toolresult.ToolResult
+	if it, ok := a.inner.(InteractiveTool); ok && it.RequiresInteraction() && a.askFn != nil {
+		request, err := it.PrepareInteraction(ctx, input, cwd)
+		if err != nil {
+			return "", err
+		}
+		qr, ok := request.(*QuestionRequest)
+		if !ok {
+			return "", fmt.Errorf("unexpected interaction type")
+		}
+		resp, err := a.askFn(ctx, qr)
+		if err != nil {
+			return "", err
+		}
+		result = it.ExecuteWithResponse(ctx, input, resp, cwd)
+	} else {
+		result = a.inner.Execute(ctx, input, cwd)
+	}
 
-	// Capture side effects (HookResponse) for the TUI to retrieve later.
-	// The tool call ID comes from the context, injected by core.Agent.execTools().
 	if result.HookResponse != nil {
 		if callID := core.ToolCallIDFromContext(ctx); callID != "" {
 			sideEffects.Store(callID, result.HookResponse)

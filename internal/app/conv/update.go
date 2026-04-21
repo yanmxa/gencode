@@ -227,11 +227,14 @@ func (m *OutputModel) HandleProgress(msg ProgressUpdateMsg) tea.Cmd {
 }
 
 func (m *OutputModel) HandleProgressTick(hasRunningTasks bool) tea.Cmd {
-	if hasRunningTasks {
-		if m.ProgressHub == nil {
-			return m.Spinner.Tick
+	if m.ProgressHub != nil {
+		if hasRunningTasks {
+			return tea.Batch(m.Spinner.Tick, m.ProgressHub.Check())
 		}
-		return tea.Batch(m.Spinner.Tick, m.ProgressHub.Check())
+		return m.ProgressHub.Check()
+	}
+	if hasRunningTasks {
+		return m.Spinner.Tick
 	}
 	return nil
 }

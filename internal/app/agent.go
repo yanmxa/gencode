@@ -3,6 +3,8 @@
 package app
 
 import (
+	"context"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/yanmxa/gencode/internal/agent"
@@ -57,6 +59,10 @@ func (m *model) buildAgentParams() agent.BuildParams {
 		DisabledTools: m.services.Setting.DisabledTools(),
 		MCPTools:      mcpTools,
 
+		InteractionFunc: func(ctx context.Context, req *tool.QuestionRequest) (*tool.QuestionResponse, error) {
+			return m.conv.ProgressHub.Ask(ctx, 0, req)
+		},
+
 		PermissionDecider: func(name string, args map[string]any) agent.PermDecisionResult {
 			decision := m.services.Setting.HasPermissionToUseTool(name, args, m.env.SessionPermissions)
 			switch decision.Behavior {
@@ -98,10 +104,14 @@ func (m *model) ensureAgentSession() (tea.Cmd, error) {
 		return nil, err
 	}
 
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		conv.DrainAgentOutbox(m.services.Agent.Outbox()),
 		conv.PollPermBridge(m.services.Agent.PermissionBridge()),
-	), nil
+	}
+	if m.conv.ProgressHub != nil {
+		cmds = append(cmds, m.conv.ProgressHub.Check())
+	}
+	return tea.Batch(cmds...), nil
 }
 
 func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {
@@ -148,16 +158,29 @@ func (m *model) HandlePermBridge(req *conv.PermBridgeRequest) tea.Cmd {
 	if req == nil {
 		return nil
 	}
-	m.userInput.Approval.Show(&perm.PermissionRequest{
-		ToolName:    req.ToolName,
-		Description: req.Description,
-	}, m.env.Width, m.env.Height)
+
+	permReq := m.preparePermissionRequest(req)
+	m.userInput.Approval.Show(permReq, m.env.Width, m.env.Height)
 	return nil
 }
 
 // ============================================================
 // Agent tool configuration
 // ============================================================
+
+func (m *model) preparePermissionRequest(req *conv.PermBridgeRequest) *perm.PermissionRequest {
+	if resolved, ok := tool.Get(req.ToolName); ok {
+		if pat, ok := resolved.(tool.PermissionAwareTool); ok {
+			if rich, err := pat.PreparePermission(context.Background(), req.Input, m.env.CWD); err == nil && rich != nil {
+				return rich
+			}
+		}
+	}
+	return &perm.PermissionRequest{
+		ToolName:    req.ToolName,
+		Description: req.Description,
+	}
+}
 
 func (m *model) ReconfigureAgentTool() {
 	if m.env.LLMProvider == nil {

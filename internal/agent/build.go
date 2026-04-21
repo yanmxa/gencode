@@ -34,6 +34,7 @@ type BuildParams struct {
 	MCPTools      []core.Tool
 
 	PermissionDecider PermDecisionFunc
+	InteractionFunc   tool.InteractionFunc
 }
 
 func buildAgent(p BuildParams) (core.Agent, *PermissionBridge, error) {
@@ -66,7 +67,11 @@ func buildAgent(p BuildParams) (core.Agent, *PermissionBridge, error) {
 	schemas := (&tool.Set{
 		Disabled: p.DisabledTools,
 	}).Tools()
-	tools := tool.AdaptToolRegistry(schemas, cwdFunc)
+	var adaptOpts []tool.AdaptOption
+	if p.InteractionFunc != nil {
+		adaptOpts = append(adaptOpts, tool.WithInteraction(p.InteractionFunc))
+	}
+	tools := tool.AdaptToolRegistry(schemas, cwdFunc, adaptOpts...)
 	for _, t := range p.MCPTools {
 		tools.Add(t)
 	}

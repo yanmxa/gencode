@@ -36,43 +36,84 @@ func (t *AskUserQuestionTool) RequiresInteraction() bool {
 	return true
 }
 
-// PrepareInteraction parses parameters and returns a QuestionRequest
-func (t *AskUserQuestionTool) PrepareInteraction(ctx context.Context, params map[string]any, cwd string) (any, error) {
-	questionsRaw, ok := params["questions"]
-	if !ok {
-		return nil, fmt.Errorf("missing required parameter: questions")
+// inputQuestion is the simplified per-question structure from the LLM.
+type inputQuestion struct {
+	Question string   `json:"question"`
+	Options  []string `json:"options"`
+}
+
+// parseInput normalizes any format the LLM might send into []inputQuestion.
+// Supported formats:
+//
+//	{"question": "...", "options": ["a","b"]}
+//	{"options": ["a","b"]}                       (question defaults to "Please choose:")
+//	{"questions": [{"question":"...", "options":["a","b"]}, ...]}
+func parseInput(params map[string]any) ([]inputQuestion, error) {
+	if questionsRaw, ok := params["questions"]; ok {
+		data, err := json.Marshal(questionsRaw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid questions format: %w", err)
+		}
+		var input []inputQuestion
+		if err := json.Unmarshal(data, &input); err != nil {
+			return nil, fmt.Errorf("questions must be an array of {question, options}: %w", err)
+		}
+		return input, nil
 	}
 
-	// Convert to JSON and back to properly parse the structure
-	questionsJSON, err := json.Marshal(questionsRaw)
+	optsRaw, hasOpts := params["options"]
+	if !hasOpts {
+		return nil, fmt.Errorf("missing required parameter: options (or questions)")
+	}
+	data, err := json.Marshal(optsRaw)
 	if err != nil {
-		return nil, fmt.Errorf("invalid questions format: %w", err)
+		return nil, fmt.Errorf("invalid options format: %w", err)
+	}
+	var opts []string
+	if err := json.Unmarshal(data, &opts); err != nil {
+		return nil, fmt.Errorf("options must be an array of strings: %w", err)
+	}
+	q, _ := params["question"].(string)
+	if q == "" {
+		q = "Please choose:"
+	}
+	return []inputQuestion{{Question: q, Options: opts}}, nil
+}
+
+// PrepareInteraction parses questions and returns a QuestionRequest
+func (t *AskUserQuestionTool) PrepareInteraction(ctx context.Context, params map[string]any, cwd string) (any, error) {
+	input, err := parseInput(params)
+	if err != nil {
+		return nil, err
 	}
 
-	var questions []tool.Question
-	if err := json.Unmarshal(questionsJSON, &questions); err != nil {
-		return nil, fmt.Errorf("failed to parse questions: %w", err)
+	if len(input) == 0 || len(input) > 4 {
+		return nil, fmt.Errorf("must have 1-4 questions, got %d", len(input))
 	}
 
-	// Validate questions
-	if len(questions) == 0 || len(questions) > 4 {
-		return nil, fmt.Errorf("questions must have 1-4 items, got %d", len(questions))
-	}
-
-	for i, q := range questions {
+	questions := make([]tool.Question, len(input))
+	for i, q := range input {
 		if q.Question == "" {
 			return nil, fmt.Errorf("question[%d]: question text is required", i)
-		}
-		if len(q.Header) > 12 {
-			return nil, fmt.Errorf("question[%d]: header must be at most 12 characters", i)
 		}
 		if len(q.Options) < 2 || len(q.Options) > 4 {
 			return nil, fmt.Errorf("question[%d]: must have 2-4 options, got %d", i, len(q.Options))
 		}
-		for j, opt := range q.Options {
-			if opt.Label == "" {
-				return nil, fmt.Errorf("question[%d].options[%d]: label is required", i, j)
+		opts := make([]tool.QuestionOption, len(q.Options))
+		for j, label := range q.Options {
+			if label == "" {
+				return nil, fmt.Errorf("question[%d].options[%d]: label must not be empty", i, j)
 			}
+			opts[j] = tool.QuestionOption{Label: label}
+		}
+		header := fmt.Sprintf("Q%d", i+1)
+		if len(input) == 1 {
+			header = "Choose"
+		}
+		questions[i] = tool.Question{
+			Question: q.Question,
+			Header:   header,
+			Options:  opts,
 		}
 	}
 
@@ -102,37 +143,40 @@ func (t *AskUserQuestionTool) ExecuteWithResponse(ctx context.Context, params ma
 		}
 	}
 
-	// Format answers for the LLM
-	var sb strings.Builder
-	sb.WriteString("User responses:\n")
+	input, _ := parseInput(params)
 
-	// Get original questions for context
-	questionsJSON, err := json.Marshal(params["questions"])
-	if err != nil {
-		return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("failed to marshal questions: %v", err))
-	}
-	var questions []tool.Question
-	if err := json.Unmarshal(questionsJSON, &questions); err != nil {
-		return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("failed to unmarshal questions: %v", err))
-	}
-
-	for i, q := range questions {
-		answers := resp.Answers[i]
-		if len(answers) == 0 {
-			continue
+	var parts []string
+	for i, answers := range resp.Answers {
+		if i >= len(input) {
+			break
 		}
-
-		sb.WriteString(fmt.Sprintf("\n%s: ", q.Header))
-		sb.WriteString(strings.Join(answers, ", "))
+		sel := strings.Join(answers, ", ")
+		if sel == "" {
+			sel = "(no selection)"
+		}
+		parts = append(parts, fmt.Sprintf("%s → %s", input[i].Question, sel))
 	}
 
+	if len(parts) == 0 {
+		return toolresult.ToolResult{
+			Success:  true,
+			Output:   "User did not select any option.",
+			Metadata: toolresult.ResultMetadata{Title: "AskUserQuestion", Icon: "❓", Subtitle: "No selection"},
+		}
+	}
+
+	output := "User responses:\n" + strings.Join(parts, "\n")
+	subtitle := strings.Join(parts, "; ")
+	if len(subtitle) > 60 {
+		subtitle = subtitle[:57] + "..."
+	}
 	return toolresult.ToolResult{
 		Success: true,
-		Output:  sb.String(),
+		Output:  output,
 		Metadata: toolresult.ResultMetadata{
 			Title:    "AskUserQuestion",
 			Icon:     "❓",
-			Subtitle: fmt.Sprintf("%d answers", len(resp.Answers)),
+			Subtitle: subtitle,
 		},
 	}
 }
