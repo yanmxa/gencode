@@ -44,7 +44,9 @@ func (e *Executor) resumeFromSession(ag core.Agent, ctx context.Context, agentID
 	}
 
 	ag.SetMessages(prevMessages)
-	ag.Append(ctx, core.UserMessage(newPrompt, nil))
+	if newPrompt != "" {
+		ag.Append(ctx, core.UserMessage(newPrompt, nil))
+	}
 
 	log.Logger().Info("Resumed agent from previous session",
 		zap.String("agentID", agentID),

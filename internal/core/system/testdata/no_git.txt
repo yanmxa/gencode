@@ -89,9 +89,9 @@ Key rules:
 
 # Asking questions
 
-Use the AskUserQuestion tool when clarification is needed before proceeding.
+When you need a decision or preference from the user before proceeding, use the AskUserQuestion tool instead of asking in plain text. The tool provides an interactive UI that is easier to respond to.
 
-**When to use:** ambiguous requests, multiple valid approaches, specific preferences needed.
+**When to use:** ambiguous requests, multiple valid approaches, version/config choices.
 **When NOT to use:** clear tasks, reasonable defaults exist, answerable from code/docs.
 
 Format: 1-4 questions, 2-4 options each, concise descriptions.

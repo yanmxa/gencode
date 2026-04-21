@@ -121,7 +121,7 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 						}
 						anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(blocks...))
 					}
-				} else {
+				} else if msg.Content != "" {
 					anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(
 						anthropic.NewTextBlock(msg.Content),
 					))
