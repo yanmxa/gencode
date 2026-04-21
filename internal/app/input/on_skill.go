@@ -51,18 +51,22 @@ type SkillState struct {
 }
 
 // ConsumeInvocation extracts the pending skill invocation, activating any
-// pending instructions and clearing pending state. Returns the user message.
-func (s *SkillState) ConsumeInvocation() string {
-	userMsg := s.PendingArgs
-	if userMsg == "" {
-		userMsg = "Execute the skill."
+// pending instructions and clearing pending state.
+// Returns (displayMsg, fullMsg): displayMsg is shown in chat UI,
+// fullMsg includes skill instructions and is sent to the LLM.
+func (s *SkillState) ConsumeInvocation() (displayMsg, fullMsg string) {
+	displayMsg = s.PendingArgs
+	if displayMsg == "" {
+		displayMsg = "Execute the skill."
 	}
+	fullMsg = displayMsg
 	if s.PendingInstructions != "" {
 		s.ActiveInvocation = s.PendingInstructions
+		fullMsg = s.PendingInstructions + "\n\n" + displayMsg
 		s.PendingInstructions = ""
 	}
 	s.PendingArgs = ""
-	return userMsg
+	return displayMsg, fullMsg
 }
 
 // ClearPending resets pending skill state without activating.

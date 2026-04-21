@@ -196,9 +196,20 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		if m.userInput.Textarea.Value() != "" {
 			m.userInput.Reset()
 			m.userInput.History.Index = -1
+			m.userInput.LastCtrlC = time.Time{}
 			return nil, true
 		}
-		return m.QuitWithCancel()
+		if m.conv.Stream.Active {
+			m.userInput.LastCtrlC = time.Time{}
+			return m.handleStreamCancel(), true
+		}
+		now := time.Now()
+		if !m.userInput.LastCtrlC.IsZero() && now.Sub(m.userInput.LastCtrlC) < 1*time.Second {
+			return m.QuitWithCancel()
+		}
+		m.userInput.LastCtrlC = now
+		_, cmd, _ := m.executeCommand(context.Background(), "/clear")
+		return cmd, true
 
 	case tea.KeyCtrlD:
 		if m.userInput.Textarea.Value() != "" {
@@ -548,10 +559,14 @@ func (m *model) cycleOperationMode() {
 func (m *model) updateMode(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case conv.ProgressQuestionMsg:
-		return m.handleQuestionRequest(conv.QuestionRequestMsg{
+		cmd := m.handleQuestionRequest(conv.QuestionRequestMsg{
 			Request: msg.Request,
 			Reply:   msg.Reply,
-		}), true
+		})
+		if m.conv.ProgressHub != nil {
+			cmd = tea.Batch(cmd, m.conv.ProgressHub.Check())
+		}
+		return cmd, true
 	case conv.QuestionRequestMsg:
 		return m.handleQuestionRequest(msg), true
 	}
@@ -592,6 +607,8 @@ func (m *model) handleQuestionResponse(msg conv.QuestionResponseMsg) tea.Cmd {
 func (m *model) handleStreamCancel() tea.Cmd {
 	m.services.Agent.Stop()
 	m.conv.Stream.Stop()
+	m.conv.ProgressHub.DrainPendingQuestions()
+	m.conv.Modal.Question.Hide()
 	m.env.ClearThinkingOverride()
 	m.cancelPendingToolCalls()
 	m.conv.MarkLastInterrupted()
@@ -639,9 +656,9 @@ func (m *model) HandleSkillInvocation() tea.Cmd {
 		return tea.Batch(m.CommitMessages()...)
 	}
 
-	userMsg := m.userInput.Skill.ConsumeInvocation()
-	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: userMsg})
-	sendCmd := m.sendToAgent(userMsg, nil)
+	displayMsg, fullMsg := m.userInput.Skill.ConsumeInvocation()
+	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: fullMsg, DisplayContent: displayMsg})
+	sendCmd := m.sendToAgent(fullMsg, nil)
 	if startCmd != nil {
 		return tea.Batch(startCmd, sendCmd)
 	}

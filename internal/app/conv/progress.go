@@ -90,6 +90,25 @@ func (h *ProgressHub) Check() tea.Cmd {
 	})
 }
 
+// DrainPendingQuestions cancels any pending questions left in the channel.
+// Called when the agent stops to prevent orphaned questions from appearing later.
+func (h *ProgressHub) DrainPendingQuestions() {
+	if h == nil {
+		return
+	}
+	for {
+		select {
+		case q := <-h.qch:
+			select {
+			case q.Reply <- &tool.QuestionResponse{Cancelled: true}:
+			default:
+			}
+		default:
+			return
+		}
+	}
+}
+
 // Drain pulls all pending updates into taskProgress.
 func (h *ProgressHub) Drain(taskProgress map[int][]string) map[int][]string {
 	for {

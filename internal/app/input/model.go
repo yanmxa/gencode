@@ -33,6 +33,7 @@ type Model struct {
 	PromptSuggestion PromptSuggestionState
 	Suggestions      suggest.State
 	LastCtrlO        time.Time
+	LastCtrlC        time.Time
 	Images           ImageState
 	TerminalHeight   int
 	PastedChunks     []PastedChunk

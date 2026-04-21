@@ -312,13 +312,13 @@ func RenderUserMessage(content, displayContent string, images []core.Image, mdRe
 			imgParts = append(imgParts, PendingImageStyle.Render(fmt.Sprintf("[Image #%d]", i+1)))
 		}
 		imageLabel := strings.Join(imgParts, " ")
-		if content != "" {
-			sb.WriteString(prompt + imageLabel + " " + userMsgStyle.Render(content) + "\n")
+		if displayContent != "" {
+			sb.WriteString(prompt + imageLabel + " " + userMsgStyle.Render(displayContent) + "\n")
 		} else {
 			sb.WriteString(prompt + imageLabel + "\n")
 		}
-	} else if content != "" {
-		sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, prompt, userMsgStyle.Render(content)) + "\n")
+	} else if displayContent != "" {
+		sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, prompt, userMsgStyle.Render(displayContent)) + "\n")
 	}
 
 	return sb.String()
