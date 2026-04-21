@@ -74,7 +74,7 @@ func (m *model) configureAsyncHookCallback() {
 
 func (m *model) fireStartupHooks() {
 	outcome := m.executeStartupHooks(context.Background())
-	m.applyRuntimeHookOutcome(outcome)
+	m.applyStartupHookOutcome(outcome)
 	if outcome.AdditionalContext != "" {
 		m.conv.Append(core.ChatMessage{
 			Role:    core.RoleUser,

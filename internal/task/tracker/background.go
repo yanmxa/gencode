@@ -1,8 +1,9 @@
-package hub
+package tracker
 
 import (
+	"strings"
+
 	"github.com/yanmxa/gencode/internal/task"
-	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 const (
@@ -19,13 +20,13 @@ type BackgroundTaskLaunch struct {
 }
 
 // TrackWorker creates or updates a tracker entry for a running background task.
-func TrackWorker(svc tracker.Service, launch BackgroundTaskLaunch) {
+func TrackWorker(svc Service, launch BackgroundTaskLaunch) {
 	if existing := svc.FindByMetadata(metaTaskID, launch.TaskID); existing != nil {
 		_ = svc.Update(existing.ID,
-			tracker.WithSubject(workerSubject(launch)),
-			tracker.WithDescription(launch.Description),
-			tracker.WithStatus(tracker.StatusInProgress),
-			tracker.WithMetadata(map[string]any{
+			WithSubject(workerSubject(launch)),
+			WithDescription(launch.Description),
+			WithStatus(StatusInProgress),
+			WithMetadata(map[string]any{
 				metaTaskID:       launch.TaskID,
 				metaStatusDetail: string(task.StatusRunning),
 			}),
@@ -42,15 +43,15 @@ func TrackWorker(svc tracker.Service, launch BackgroundTaskLaunch) {
 			metaStatusDetail: string(task.StatusRunning),
 		},
 	)
-	opts := []tracker.UpdateOption{tracker.WithStatus(tracker.StatusInProgress)}
+	opts := []UpdateOption{WithStatus(StatusInProgress)}
 	if launch.AgentType != "" {
-		opts = append(opts, tracker.WithOwner(launch.AgentType))
+		opts = append(opts, WithOwner(launch.AgentType))
 	}
 	_ = svc.Update(entry.ID, opts...)
 }
 
 // CompleteWorker marks a tracker entry as completed.
-func CompleteWorker(svc tracker.Service, info task.TaskInfo) {
+func CompleteWorker(svc Service, info task.TaskInfo) {
 	entry := svc.FindByMetadata(metaTaskID, info.ID)
 	if entry == nil {
 		return
@@ -72,10 +73,10 @@ func CompleteWorker(svc tracker.Service, info task.TaskInfo) {
 	}
 
 	_ = svc.Update(entry.ID,
-		tracker.WithSubject(subject),
-		tracker.WithDescription(info.Description),
-		tracker.WithStatus(tracker.StatusCompleted),
-		tracker.WithMetadata(map[string]any{
+		WithSubject(subject),
+		WithDescription(info.Description),
+		WithStatus(StatusCompleted),
+		WithMetadata(map[string]any{
 			metaTaskID:       info.ID,
 			metaStatusDetail: statusDetail,
 		}),
@@ -83,11 +84,18 @@ func CompleteWorker(svc tracker.Service, info task.TaskInfo) {
 }
 
 func workerSubject(launch BackgroundTaskLaunch) string {
-	if s := joinNameDesc(launch.AgentName, launch.Description); s != "" {
-		return s
-	}
-	if launch.AgentType != "" {
+	name := strings.TrimSpace(launch.AgentName)
+	desc := strings.TrimSpace(launch.Description)
+	switch {
+	case name != "" && desc != "" && !strings.EqualFold(name, desc):
+		return name + ": " + desc
+	case desc != "":
+		return desc
+	case name != "":
+		return name
+	case launch.AgentType != "":
 		return launch.AgentType
+	default:
+		return launch.TaskID
 	}
-	return launch.TaskID
 }

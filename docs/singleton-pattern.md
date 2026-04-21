@@ -107,15 +107,16 @@ type service struct {
 │  type model struct {                                             │
 │      // sub-models                                               │
 │      userInput   input.Model                                     │
-│      agentInput  hub.Model                                       │
+│      eventHub *hub.Hub                                           │
+│      events   chan hub.Event                                     │
 │      systemInput trigger.Model                                   │
 │      conv        conv.Model                                      │
 │                                                                  │
 │      // services (injected, interface-typed)                     │
-│      services    Services                                        │
+│      services    services                                        │
 │                                                                  │
 │      // app-local state only                                     │
-│      env         Env                                             │
+│      env         env                                             │
 │  }                                                               │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -127,39 +128,39 @@ type service struct {
 ```go
 // app/services.go
 
-type Services struct {
+type services struct {
     Setting       setting.Service
     LLM           llm.Service
     Tool          tool.Service
-    Plugin        plugin.Service
     Hook          hook.Service
     Session       session.Service
     Skill         skill.Service
     Subagent      subagent.Service
-    MCP           mcp.Service
     Command       command.Service
     Task          task.Service
+    Tracker       tracker.Service
     Cron          cron.Service
-    Orchestration orchestration.Service
+    MCP           mcp.Service
+    Plugin        plugin.Service
     Agent         agent.Service
 }
 
-func newServices() Services {
-    return Services{
-        Setting:       setting.Default(),
-        LLM:           llm.Default(),
-        Tool:          tool.Default(),
-        Plugin:        plugin.Default(),
-        Hook:          hook.Default(),
-        Session:       session.Default(),
-        Skill:         skill.Default(),
-        Subagent:      subagent.Default(),
-        MCP:           mcp.Default(),
-        Command:       command.Default(),
-        Task:          task.Default(),
-        Cron:          cron.Default(),
-        Orchestration: orchestration.Default(),
-        Agent:         agent.Default(),
+func newServices() services {
+    return services{
+        Setting:  setting.Default(),
+        LLM:      llm.Default(),
+        Tool:     tool.Default(),
+        Hook:     hook.DefaultIfInit(),
+        Session:  session.Default(),
+        Skill:    skill.Default(),
+        Subagent: subagent.Default(),
+        Command:  command.Default(),
+        Task:     task.Default(),
+        Tracker:  tracker.Default(),
+        Cron:     cron.Default(),
+        MCP:      mcp.Default(),
+        Plugin:   plugin.Default(),
+        Agent:    agent.Default(),
     }
 }
 ```
@@ -170,11 +171,13 @@ func newServices() Services {
 // app/model.go
 
 func newModel(opts setting.RunOptions) (*model, error) {
-    m := &model{
-        services: newServices(),
-        env:      newEnv(),
-        cwd:      appCwd,
-    }
+    base := newBaseModel()
+    m := &base
+
+    m.events = make(chan hub.Event, 64)
+    m.eventHub.Register("main", func(e hub.Event) { m.events <- e })
+    m.wireTaskLifecycle(hookEngine)
+    // ...
     return m, nil
 }
 ```
@@ -190,22 +193,24 @@ m.services.Agent.Start(messages)
 m.services.Agent.Send(content, images)
 ```
 
-### Env after refactor
+### env
 
 Only app-local TUI state remains:
 
 ```go
-type Env struct {
-    OperationMode      setting.OperationMode
-    SessionPermissions *setting.SessionPermissions
-    PlanEnabled        bool
-    PlanTask           string
-    PlanStore          *plan.Store
-    InputTokens        int
-    OutputTokens       int
-    ThinkingLevel      llm.ThinkingLevel
-    ThinkingOverride   llm.ThinkingLevel
-    FileCache          *filecache.Cache
+type env struct {
+    CWD, InitialPrompt   string
+    IsGit, Ready         bool
+    Width, Height        int
+    LLMProvider          llm.Provider
+    CurrentModel         *llm.CurrentModelInfo
+    InputTokens          int
+    OutputTokens         int
+    ThinkingLevel        llm.ThinkingLevel
+    ThinkingOverride     llm.ThinkingLevel
+    OperationMode        setting.OperationMode
+    SessionPermissions   *setting.SessionPermissions
+    FileCache            *filecache.Cache
     CachedUserInstructions    string
     CachedProjectInstructions string
 }
@@ -336,22 +341,31 @@ type Service interface {
     // execution
     Execute(ctx context.Context, event EventType, input HookInput) HookOutcome
     ExecuteAsync(event EventType, input HookInput)
-    FilterToolCalls(ctx context.Context, calls []ToolCallInput) FilterToolCallsResult
+    FilterToolCalls(ctx context.Context, calls []core.ToolCall, agentID, agentType string) FilterToolCallsResult
 
     // query
-    HasHooks(event EventType) bool       // whether any hooks registered for event
-    StopHookActive() bool                // whether a Stop hook is currently running
+    HasHooks(event EventType) bool
+    StopHookActive() *bool
+    CurrentStatusMessage() string
 
-    // reconfigure (after session/provider change)
-    SetSettings(s *setting.Settings)
-    SetCompleter(c LLMCompleter, modelID string)
-    SetSession(sessionID, transcriptPath string)
+    // reconfigure
+    SetSettings(settings *setting.Settings)
+    SetLLMCompleter(fn LLMCompleter, model string)
+    SetTranscriptPath(path string)
     SetCwd(cwd string)
+    SetPermissionMode(mode string)
+    SetPromptCallback(cb PromptCallback)
+    SetAsyncHookCallback(cb AsyncHookCallback)
+    SetEnvProvider(fn func() []string)
 
     // session-scoped hooks
-    AddSessionHook(event EventType, matcher string, fn FunctionHookCallback) string
-    RemoveSessionHook(event EventType, hookID string) bool
+    AddSessionFunctionHook(event EventType, matcher string, hook FunctionHook) string
+    AddRuntimeFunctionHook(event EventType, matcher string, hook FunctionHook) string
     ClearSessionHooks()
+
+    // lifecycle
+    Wait()
+    Engine() *Engine
 }
 ```
 
@@ -461,10 +475,12 @@ type Service interface {
     Stop(id string) error                // graceful stop
     Kill(id string) error                // force kill
 
-    // observer
-    SetLifecycleHandler(obs LifecycleHandler)
+    // output
+    SetOutputDir(dir string) error
 }
 ```
+
+`SetLifecycleHandler(obs LifecycleHandler)` is a package-level function, not a Service method — it's infrastructure wiring called once at model construction.
 
 ### `cron.Service`
 

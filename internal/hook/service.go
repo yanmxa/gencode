@@ -38,9 +38,6 @@ type Service interface {
 	// lifecycle
 	Wait()
 
-	// Engine returns the underlying *Engine.
-	// This is needed by callers that require the concrete type
-	// (e.g. hub.InstallTaskObserver, subagent.NewExecutor, trigger.NewFileWatcher).
 	Engine() *Engine
 }
 

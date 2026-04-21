@@ -33,6 +33,7 @@ import (
 	"github.com/yanmxa/gencode/internal/skill"
 	"github.com/yanmxa/gencode/internal/subagent"
 	"github.com/yanmxa/gencode/internal/task"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
 )
 
@@ -45,8 +46,8 @@ const defaultWidth = 80
 type model struct {
 	// ── Sub-models (one per event source / concern) ─────────────
 	userInput   input.Model   // Source 1: user keyboard input
-	eventHub    *hub.EventHub // Source 2: inter-agent events via delivery functions
-	eventInbox  *hub.Inbox    // Buffered events from background producers
+	eventHub    *hub.Hub      // Source 2: inter-agent event routing (pure pub/sub)
+	mainEvents  chan hub.Event // TUI turn-boundary buffer: batches async events (task completions, agent messages) for priority-ordered drain
 	systemInput trigger.Model // Source 3: system events (cron/hooks/watcher)
 	conv        conv.Model    // Agent Outbox: conversation + output rendering
 	env         env           // Shared app state: provider, session, permission, plan, config
@@ -82,17 +83,14 @@ func newModel(opts setting.RunOptions) (*model, error) {
 	base := newBaseModel()
 	m := &base
 
-	// Wire EventHub: "main" subscriber buffers events for turn-boundary drain.
-	m.eventHub.Register("main", func(e hub.Event) {
-		m.eventInbox.Push(e)
-	})
+	m.eventHub.Register("main", func(e hub.Event) { m.mainEvents <- e })
 
 	// Wire task completion: closure captures hub + hooks + tracker directly.
 	var hookEngine *hook.Engine
 	if m.services.Hook != nil {
 		hookEngine = m.services.Hook.Engine()
 	}
-	m.registerAgentTaskToEventHub(hookEngine)
+	m.wireTaskLifecycle(hookEngine)
 
 	m.configureAsyncHookCallback()
 	m.ensureMemoryContextLoaded()
@@ -118,7 +116,7 @@ func newBaseModel() model {
 		}),
 		conv:        conv.NewModel(defaultWidth),
 		eventHub:    hub.New(),
-		eventInbox:  &hub.Inbox{},
+		mainEvents:  make(chan hub.Event, 64),
 		systemInput: trigger.New(),
 		env:      newEnv(svc.LLM, appCwd, svc.Setting.IsGitRepo(appCwd)),
 		services: svc,
@@ -569,7 +567,7 @@ func (m *model) applyToolSideEffects(toolName string, sideEffect any) {
 	if !ok {
 		return
 	}
-	m.syncBackgroundTaskTrackerFromAgent(toolName, resp)
+	m.trackAgentLaunch(toolName, resp)
 	switch toolName {
 	case "Bash":
 		if newCwd := kit.MapString(resp, "cwd"); newCwd != "" {
@@ -599,7 +597,7 @@ func (m *model) applyToolSideEffects(toolName string, sideEffect any) {
 	}
 }
 
-func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[string]any) {
+func (m *model) trackAgentLaunch(toolName string, resp map[string]any) {
 	if !tool.IsAgentToolName(toolName) {
 		return
 	}
@@ -607,7 +605,7 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 	if !ok {
 		return
 	}
-	launch := hub.BackgroundTaskLaunch{
+	launch := tracker.BackgroundTaskLaunch{
 		TaskID:      kit.MapString(bg, "taskId"),
 		AgentName:   kit.MapString(bg, "agentName"),
 		AgentType:   kit.MapString(bg, "agentType"),
@@ -616,7 +614,7 @@ func (m *model) syncBackgroundTaskTrackerFromAgent(toolName string, resp map[str
 	if launch.TaskID == "" {
 		return
 	}
-	hub.TrackWorker(m.services.Tracker, launch)
+	tracker.TrackWorker(m.services.Tracker, launch)
 }
 
 func (m *model) persistOverflow(result *core.ToolResult) {
@@ -679,7 +677,7 @@ func (m *model) ReloadProjectContext(cwd string) {
 	m.syncSettingsToHookEngine()
 }
 
-func (m *model) applyRuntimeHookOutcome(outcome hook.HookOutcome) {
+func (m *model) applyStartupHookOutcome(outcome hook.HookOutcome) {
 	if outcome.InitialUserMessage != "" && m.env.InitialPrompt == "" && len(m.conv.Messages) == 0 {
 		m.env.InitialPrompt = outcome.InitialUserMessage
 	}
@@ -758,7 +756,7 @@ func (m *model) drainTurnQueues() (tea.Cmd, bool) {
 		}
 	}
 
-	if events := m.eventInbox.Drain(maxEventsPerDrain); len(events) > 0 {
+	if events := drainEvents(m.mainEvents, maxEventsPerDrain); len(events) > 0 {
 		msgs := eventsToMessages(events)
 		return m.injectNotification(hub.Merge(msgs)), true
 	}
@@ -782,7 +780,7 @@ func (m *model) injectNotification(msg hub.Message) tea.Cmd {
 	return m.sendToAgent(msg.Content, nil)
 }
 
-func (m *model) registerAgentTaskToEventHub(hookEngine *hook.Engine) {
+func (m *model) wireTaskLifecycle(hookEngine *hook.Engine) {
 	trackerSvc := m.services.Tracker
 	eventHub := m.eventHub
 
@@ -798,13 +796,13 @@ func (m *model) registerAgentTaskToEventHub(hookEngine *hook.Engine) {
 		})
 	}
 
-	task.SetLifecycleHandler(taskObserverFunc{
+	task.SetLifecycleHandler(taskLifecycleFunc{
 		onCreated: func(info task.TaskInfo) {
 			fireHook(hook.TaskCreated, info)
 		},
 		onCompleted: func(info task.TaskInfo) {
 			fireHook(hook.TaskCompleted, info)
-			hub.CompleteWorker(trackerSvc, info)
+			tracker.CompleteWorker(trackerSvc, info)
 
 			subject := hub.TaskSubject(info)
 			msg, ok := hub.TaskMessage(info, subject)
@@ -822,15 +820,28 @@ func (m *model) registerAgentTaskToEventHub(hookEngine *hook.Engine) {
 	})
 }
 
-type taskObserverFunc struct {
+type taskLifecycleFunc struct {
 	onCreated   func(task.TaskInfo)
 	onCompleted func(task.TaskInfo)
 }
 
-func (f taskObserverFunc) TaskCreated(info task.TaskInfo)   { f.onCreated(info) }
-func (f taskObserverFunc) TaskCompleted(info task.TaskInfo) { f.onCompleted(info) }
+func (f taskLifecycleFunc) TaskCreated(info task.TaskInfo)   { f.onCreated(info) }
+func (f taskLifecycleFunc) TaskCompleted(info task.TaskInfo) { f.onCompleted(info) }
 
 const maxEventsPerDrain = 8
+
+func drainEvents(ch <-chan hub.Event, max int) []hub.Event {
+	var out []hub.Event
+	for range max {
+		select {
+		case e := <-ch:
+			out = append(out, e)
+		default:
+			return out
+		}
+	}
+	return out
+}
 
 func eventsToMessages(events []hub.Event) []hub.Message {
 	msgs := make([]hub.Message, len(events))

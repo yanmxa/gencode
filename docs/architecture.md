@@ -92,7 +92,7 @@ Three input sources feed the Agent Inbox. The Outbox outputs events that mutate 
 
 **Three input paths** — all converge at the Inbox via `sendToAgent()`:
 - **Source 1 (User)**: submit / command / modal response → if agent busy, queued until OnTurn drains
-- **Source 2 (Agents)**: background agent completion via EventHub → `program.Send()` / SendMessage / self-inject (hook blocked)
+- **Source 2 (Agents)**: background agent completion via Hub → `hub.Publish()` → consumer channel / SendMessage / self-inject (hook blocked)
 - **Source 3 (System)**: cron tick / async hook callback / file watcher
 
 **Output path**: Outbox → TUI observes events for rendering. PermReq bridges back to Source 1 (approval → user decision → unblock agent).
@@ -185,7 +185,8 @@ Root implements each sub-model's Runtime via adapter methods on `*model` in `mod
 type model struct {
     // Sub-models (one per event source / concern)
     userInput   input.Model      // Source 1: user keyboard → textarea, selectors, approval
-    agentInput  hub.Model        // Source 2: background agent events via EventHub delivery
+    eventHub *hub.Hub            // Source 2: pure pub/sub event routing
+    events   chan hub.Event      // Buffered channel, consumer-owned, drained at turn boundaries
     systemInput trigger.Model    // Source 3: cron / async hook / file watcher → event queue
     conv        conv.Model       // Agent Outbox: outbox events → conversation state → chat render
     env         env              // App-local TUI state: provider, permissions, plan, cache, cwd
@@ -198,18 +199,18 @@ type model struct {
 ```go
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     switch msg := msg.(type) {
-    case tea.KeyMsg:                 return m, m.input.HandleKey(msg)
-    case input.SubmitMsg:            return m, m.handleSubmit(msg)     // cross-cutting: input → agent
-    case input.CommandMsg:           return m, m.dispatchCommand(msg)  // cross-cutting: input → effect
-    case conv.PermissionRequestMsg:  return m, m.input.ShowApproval(msg.Req)
-    case input.ApprovalResponseMsg:  return m, m.conv.ResolvePermission(msg)
-    case conv.OutboxMsg:             return m, m.conv.HandleOutbox(msg)
-    case hub.EventMsg:               return m, m.handleHubEvent(msg)
-    case trigger.TickMsg:            return m, m.trigger.HandleTick(msg)
+    case tea.KeyMsg:                 return m, m.handleKeypress(msg)
+    case stopHookResultMsg:          return m, m.handleStopHookResult(msg)
     // ...
     }
+    if cmd, handled := m.routeFeatureUpdate(msg); handled {
+        return m, cmd
+    }
+    return m, m.updateTextarea(msg)
 }
 ```
+
+Inter-agent events don't arrive via `tea.Msg`. The Hub routes events to the main subscriber's delivery function, which pushes to a Go channel. The channel is drained at turn boundaries in `drainTurnQueues()`.
 
 Cross-cutting coordination is **msg routing**, not business logic. Each `case` is 1-2 lines — take a msg from one sub-model, hand it to another.
 
@@ -283,15 +284,15 @@ internal/app/
 │   ├── on_tool_selector.go  [M,U,V] ToolSelector
 │   └── on_token_limits.go       [C] Token limit fetch Cmd
 │
-│  ── hub/ ── Source 2: Inter-Agent Events (EventHub) ───────────────────────
-│  EventHub: map[string]func(Event) — delivery function pattern, ~20 lines.
-│  Producers call hub.Publish(Event{Target: id}). Hub routes to subscriber's
-│  delivery function. Main agent: program.Send(e). Background agents: agent.Inbox().
-│  No channels, no bridge goroutines inside the hub.
+│  ── hub/ ── Source 2: Inter-Agent Events ──────────────────────────────────
+│  Hub: pure pub/sub — map[string]func(Event), ~30 lines. Producers call
+│  Publish(). Hub routes to subscriber's delivery function. Main subscriber
+│  pushes to a Go channel (consumer-owned), drained at turn boundaries.
 │
 ├── hub/
-│   ├── hub.go                [M] EventHub{subs}, Register(), Unregister(), Publish()
-│   └── format.go             [M] FormatNotification(), MergeEvents()
+│   ├── hub.go                [M] Hub{subs}, Register(), Unregister(), Publish()
+│   ├── format.go             [M] Message, TaskMessage(), Merge(), TaskSubject()
+│   └── tracker.go            [M] TrackWorker(), CompleteWorker() — background task tracker
 │
 │  ── trigger/ ── Source 3: System Events ───────────────────────────────────
 │  Event: cron tick | async hook callback | file watcher

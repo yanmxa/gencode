@@ -255,13 +255,13 @@ change, and why — don't say "try again."
 ```
 Worker completes
     │
-    ├── LifecycleHandler
+    ├── LifecycleHandler (wireTaskLifecycle closure)
     │     ├─ fire TaskCompleted hook (async)
-    │     ├─ update tracker (worker + batch)
-    │     └─ push notification to queue
+    │     ├─ tracker.CompleteWorker (update tracker)
+    │     └─ eventHub.Publish → m.events <- e (consumer channel)
     │
     ▼
-NotificationQueue ──── TUI polls 500ms ──── idle? ──── inject as user msg
+m.events ──── drainTurnQueues (at turn boundary) ──── inject as user msg
                                                             │
                                                             ▼
                                                     Coordinator reacts
