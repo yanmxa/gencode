@@ -11,35 +11,46 @@
   </p>
 </p>
 
-An open-source AI coding assistant for the terminal. Multi-provider support, flexible context management, compatible with [Claude Code](https://claude.ai/code) extensions and plugins.
+An open-source AI coding assistant for the terminal built with Go. Multi-provider LLM support, event-driven multi-agent orchestration, and full compatibility with [Claude Code](https://claude.ai/code) extensions, plugins, and project instructions.
 
-## ✨ Features
+## Features
 
-- **Multi-provider** — Anthropic, OpenAI, Gemini, Moonshot, etc. — switch with `/provider`
-- **Tools** — Built-in (Edit, Bash, WebSearch, etc.) + [MCP](https://modelcontextprotocol.io), dynamic enable/disable for context control
-- **Skills** — Model visibility control (off/command/aware), [Claude Code](https://claude.ai/code) compatible
-- **Subagents** — Dedicated LLM instances with isolated context and tools, background execution support
-- **Plugins** — Bundle skills/agents/hooks/MCP, marketplace install, [Claude Code](https://claude.ai/code) compatible
-- **Session** — Persist, resume, search, auto-cleanup, with context compact
-- **Others** — Plan mode, task management, hooks, etc.
+- **Multi-provider** — Anthropic, OpenAI, Google, Moonshot, Alibaba — switch with `/model`
+- **Tools & MCP** — Built-in tools (Edit, Bash, Glob, Grep, WebSearch, etc.) + [MCP](https://modelcontextprotocol.io) integration
+- **Skills, Subagents & Plugins** — [Claude Code](https://claude.ai/code) compatible format, marketplace install
+- **Event-driven multi-agent** — Parallel agent execution with decoupled event-based coordination
+- **Hooks** — Lifecycle extensibility via shell, LLM, agent, or HTTP hooks
+- **Session** — Auto-persist, resume, fork, auto-compact
+- **Performance** — Minimal context injection, fast response, low token consumption
+- **Other** — Prompt prediction, configurable thinking effort, scheduled loops, permission control, etc.
 
 ### Providers
 
-| Provider | Models | Auth | Environment Variables |
-|:---------|:-------|:-----|:----------------------|
-| **Anthropic** | Claude Opus 4.6, Sonnet 4.6 | API Key / [Vertex AI](https://code.claude.com/docs/en/google-vertex-ai) | `ANTHROPIC_API_KEY` |
-| **OpenAI** | GPT-5.2, GPT-5, o3, o4-mini, Codex | API Key | `OPENAI_API_KEY` |
-| **Google** | Gemini 3 Pro/Flash, 2.5 Pro/Flash | API Key | `GOOGLE_API_KEY` |
-| **Moonshot** | Kimi K2.5, K2 Thinking | API Key | `MOONSHOT_API_KEY` |
-| **Alibaba** | Qwen3.5 Plus, Qwen3 Max/Plus/Flash, QwQ, Qwen Coder, DeepSeek-V3/R1 | API Key | `DASHSCOPE_API_KEY`, `DASHSCOPE_BASE_URL` (optional) |
+| Provider | Models | Environment Variables |
+|:---------|:-------|:----------------------|
+| **Anthropic** | Claude Opus 4.6, Sonnet 4.6 | `ANTHROPIC_API_KEY` or [Vertex AI](https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude) |
+| **OpenAI** | GPT-5.2, GPT-5, o3, o4-mini, Codex | `OPENAI_API_KEY` |
+| **Google** | Gemini 3 Pro/Flash, 2.5 Pro/Flash | `GOOGLE_API_KEY` |
+| **Moonshot** | Kimi K2.5, K2 Thinking | `MOONSHOT_API_KEY` |
+| **Alibaba** | Qwen3.5 Plus, Qwen3 Max/Plus/Flash, QwQ, DeepSeek-V3/R1 | `DASHSCOPE_API_KEY` |
 
-## 🚀 Installation
+### Agent Architecture
+
+Every agent — main conversation or subagent — is a `core.Agent` with three capabilities: **System** (identity), **Tools** (actions), **Inbox/Outbox** (communication).
+
+```
+User ──Inbox──▶ [ core.Agent: LLM ⇄ Tools ] ──Outbox──▶ TUI
+```
+
+The same abstraction scales from single-agent to multi-agent. The LLM spawns subagents as needed — **foreground** (synchronous) or **background** (parallel). Background agents communicate results through a hub-based pub/sub event system, merged into the parent conversation at turn boundaries. Agents can optionally run in isolated git worktrees to prevent file conflicts.
+
+## Installation
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yanmxa/gencode/main/install.sh | bash
 ```
 
-Re-run the same command to upgrade. To uninstall:
+Re-run to upgrade. To uninstall:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yanmxa/gencode/main/install.sh | bash -s uninstall
@@ -65,7 +76,7 @@ mkdir -p ~/.local/bin && mv gen ~/.local/bin/
 
 </details>
 
-## 📖 Usage
+## Usage
 
 ```bash
 # Interactive mode
@@ -83,26 +94,60 @@ gen --resume          # Select from list
 ### Quick Start
 
 1. Run `gen` to start interactive mode
-2. Use `/provider` to connect to an LLM provider
-3. Use `/model` to select a model
-4. Start chatting!
+2. Use `/model` to connect a provider and select a model
+3. Start chatting!
 
+### Commands
 
-## 🔧 Configuration
+| Command | Description |
+|:--------|:------------|
+| `/model` | Select model and manage provider connections |
+| `/tools` | Manage available tools (enable/disable) |
+| `/skills` | Manage skills (enable/disable/activate) |
+| `/agents` | Manage available agents (enable/disable) |
+| `/mcp` | Manage MCP servers (add/edit/remove/connect) |
+| `/plugin` | Manage plugins (install/marketplace/enable/disable) |
+| `/compact` | Summarize conversation to reduce context size |
+| `/think` | Toggle thinking level (off/think/think+/ultrathink) |
+| `/search` | Select search engine for web search |
+| `/loop` | Schedule recurring or one-shot prompts |
+| `/resume` | Resume a previous session |
+| `/fork` | Fork current conversation into a new session |
+| `/clear` | Clear chat history |
+| `/init` | Initialize project instruction files (GEN.md) |
+| `/memory` | View and manage memory files |
+| `/help` | Show all available commands |
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|:----|:-------|
+| `Shift+Tab` | Toggle permission mode (normal / accept edits / bypass) |
+| `Ctrl+O` | Expand/collapse tool call details |
+| `Ctrl+C` | Cancel current operation |
+| `Ctrl+D` | Exit |
+
+## Configuration
 
 GenCode stores configuration in `~/.gen/`:
 
 ```
 ~/.gen/
 ├── providers.json    # Provider connections and current model
-├── settings.json     # User settings
+├── settings.json     # User settings (permissions, hooks, env)
 ├── skills.json       # Skill states
 ├── projects/         # Project-scoped session transcripts + indexes
-├── skills/           # Custom skills
-└── agents/           # Custom agents
+├── skills/           # Custom skill definitions
+├── agents/           # Custom agent definitions
+├── commands/         # Custom slash commands
+└── plugins/          # Installed plugins
 ```
 
-## 📊 Benchmark: GenCode vs Claude Code
+### Project Instructions
+
+Place a `GEN.md` (or `CLAUDE.md`) in your project root to provide project-specific instructions. These are automatically loaded into the system prompt. Project-level settings can also be placed in `.gen/settings.json`.
+
+## Benchmark: GenCode vs Claude Code
 
 Compared with [Claude Code](https://claude.ai/code) v2.1.112 on Apple Silicon, same model (`claude-sonnet-4-6`):
 
@@ -119,16 +164,16 @@ Both tools have comparable features (hooks, skills, plugins, session, MCP, etc.)
 
 See full details: [docs/benchmark-gencode-vs-claudecode.md](docs/benchmark-gencode-vs-claudecode.md)
 
-## 🔗 Related Projects
+## Related Projects
 
 - [Claude Code](https://claude.ai/code) — Anthropic's AI coding assistant
 - [Aider](https://github.com/paul-gauthier/aider) — AI pair programming in terminal
 - [Continue](https://github.com/continuedev/continue) — Open-source AI code assistant
 
-## 🤝 Contributing
+## Contributing
 
 Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-## 📄 License
+## License
 
 Apache License 2.0 - see [LICENSE](LICENSE) for details.
