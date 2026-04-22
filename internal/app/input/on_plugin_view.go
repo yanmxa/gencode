@@ -237,12 +237,8 @@ func (s *PluginSelector) renderInstalledList(sb *strings.Builder) {
 		line := fmt.Sprintf("%s %s", iconStyle.Render(icon), nameStr)
 
 		if p.Description != "" {
-			rawNameLen := len(p.Name)
-			if p.Marketplace != "" {
-				rawNameLen += 3 + len(p.Marketplace)
-			}
-			prefixLen := 6 + rawNameLen // cursor(2) + icon(1) + space(1) + padding(2)
-			maxDescLen := cw - prefixLen - 2
+			// 4 = PaddingLeft(2) + cursor(2) from RenderSelectableRow; 3 = " · " separator
+			maxDescLen := cw - lipgloss.Width(line) - 4 - 3
 			if maxDescLen > 20 {
 				desc := kit.TruncateText(p.Description, maxDescLen)
 				line += dimStyle.Render(" · " + desc)

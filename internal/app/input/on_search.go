@@ -170,18 +170,15 @@ func (s *SearchSelector) Render() string {
 	}
 
 	var sb strings.Builder
-
 	dimStyle := kit.DimStyle()
-	sepStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
-	cw := s.contentWidth()
-	sepWidth := cw - 8
 
-	sb.WriteString(sepStyle.Render(strings.Repeat("─", sepWidth)))
+	sb.WriteString(s.sepLine())
 	sb.WriteString("\n")
 
 	sb.WriteString(kit.SelectorTitleStyle().Render("Search Engine"))
 	sb.WriteString("\n\n")
 
+	var body strings.Builder
 	const nameCol = 20
 	for i, item := range s.items {
 		isSelected := i == s.selectedIdx
@@ -201,18 +198,21 @@ func (s *SearchSelector) Render() string {
 		}
 
 		line := kit.FormatAlignedRow(markerStyle.Render(marker), item.DisplayName, nameCol, envInfo)
-		sb.WriteString(kit.RenderSelectableRow(line, isSelected))
-		sb.WriteString("\n")
+		body.WriteString(kit.RenderSelectableRow(line, isSelected))
+		body.WriteString("\n")
 	}
+	sb.WriteString(s.renderViewport(body.String()))
 
 	sb.WriteString("\n")
-	sb.WriteString(sepStyle.Render(strings.Repeat("─", sepWidth)))
+	sb.WriteString(s.sepLine())
 	sb.WriteString("\n")
 	sb.WriteString(dimStyle.Render("↑/↓ navigate · Enter select · Esc cancel"))
 
 	content := sb.String()
+	cw := s.contentWidth()
 	box := lipgloss.NewStyle().
 		Width(cw).
+		Height(s.boxHeight()).
 		Padding(1, 2).
 		Render(content)
 
@@ -221,6 +221,38 @@ func (s *SearchSelector) Render() string {
 
 func (s *SearchSelector) contentWidth() int {
 	return max(60, s.width-6)
+}
+
+func (s *SearchSelector) boxHeight() int {
+	return max(18, s.height-4)
+}
+
+func (s *SearchSelector) bodyHeight() int {
+	return max(6, s.boxHeight()-10)
+}
+
+func (s *SearchSelector) renderViewport(content string) string {
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		lines = nil
+	}
+
+	visible := s.bodyHeight()
+	if visible <= 0 {
+		return ""
+	}
+
+	view := lines
+	for len(view) < visible {
+		view = append(view, "")
+	}
+
+	return strings.Join(view, "\n") + "\n"
+}
+
+func (s *SearchSelector) sepLine() string {
+	sepStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
+	return sepStyle.Render(strings.Repeat("─", s.contentWidth()-8))
 }
 
 // --- Search Runtime ---

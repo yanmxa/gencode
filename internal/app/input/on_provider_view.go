@@ -21,11 +21,8 @@ func (s *ProviderSelector) Render() string {
 
 	var sb strings.Builder
 
-	sepStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
-	sepWidth := s.contentWidth() - 8
-
 	// Separator above tabs
-	sb.WriteString(sepStyle.Render(strings.Repeat("─", sepWidth)))
+	sb.WriteString(s.sepLine())
 	sb.WriteString("\n")
 
 	// Tab header
@@ -36,16 +33,18 @@ func (s *ProviderSelector) Render() string {
 	sb.WriteString(s.renderSearchBox())
 	sb.WriteString("\n\n")
 
+	var body strings.Builder
 	if len(s.visibleItems) == 0 {
-		sb.WriteString(s.emptyFilterMsg())
-		sb.WriteString("\n")
+		body.WriteString(s.emptyFilterMsg())
+		body.WriteString("\n")
 	} else {
-		s.renderItemList(&sb)
+		s.renderItemList(&body)
 	}
+	sb.WriteString(s.renderViewport(body.String()))
 
 	// Separator before hints
 	sb.WriteString("\n")
-	sb.WriteString(sepStyle.Render(strings.Repeat("─", sepWidth)))
+	sb.WriteString(s.sepLine())
 	sb.WriteString("\n")
 	sb.WriteString(s.renderHints())
 
@@ -68,6 +67,35 @@ func (s *ProviderSelector) contentWidth() int {
 // boxHeight returns the fixed height for the panel, consistent across tabs.
 func (s *ProviderSelector) boxHeight() int {
 	return max(18, s.height-4)
+}
+
+// bodyHeight returns the fixed height for the scrollable content area.
+func (s *ProviderSelector) bodyHeight() int {
+	return max(6, s.boxHeight()-10)
+}
+
+func (s *ProviderSelector) renderViewport(content string) string {
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		lines = nil
+	}
+
+	visible := s.bodyHeight()
+	if visible <= 0 {
+		return ""
+	}
+
+	view := lines
+	for len(view) < visible {
+		view = append(view, "")
+	}
+
+	return strings.Join(view, "\n") + "\n"
+}
+
+func (s *ProviderSelector) sepLine() string {
+	sepStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
+	return sepStyle.Render(strings.Repeat("─", s.contentWidth()-8))
 }
 
 // emptyFilterMsg returns the "no matches" text for the current tab.
