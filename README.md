@@ -34,15 +34,6 @@ An open-source AI coding assistant for the terminal built with Go. Multi-provide
 | **Moonshot** | Kimi K2.5, K2 Thinking | `MOONSHOT_API_KEY` |
 | **Alibaba** | Qwen3.5 Plus, Qwen3 Max/Plus/Flash, QwQ, DeepSeek-V3/R1 | `DASHSCOPE_API_KEY` |
 
-### Agent Architecture
-
-Every agent — main conversation or subagent — is a `core.Agent` with three capabilities: **System** (identity), **Tools** (actions), **Inbox/Outbox** (communication).
-
-```
-User ──Inbox──▶ [ core.Agent: LLM ⇄ Tools ] ──Outbox──▶ TUI
-```
-
-The same abstraction scales from single-agent to multi-agent. The LLM spawns subagents as needed — **foreground** (synchronous) or **background** (parallel). Background agents communicate results through a hub-based pub/sub event system, merged into the parent conversation at turn boundaries. Agents can optionally run in isolated git worktrees to prevent file conflicts.
 
 ## Installation
 
@@ -99,33 +90,9 @@ gen --resume          # Select from list
 
 ### Commands
 
-| Command | Description |
-|:--------|:------------|
-| `/model` | Select model and manage provider connections |
-| `/tools` | Manage available tools (enable/disable) |
-| `/skills` | Manage skills (enable/disable/activate) |
-| `/agents` | Manage available agents (enable/disable) |
-| `/mcp` | Manage MCP servers (add/edit/remove/connect) |
-| `/plugin` | Manage plugins (install/marketplace/enable/disable) |
-| `/compact` | Summarize conversation to reduce context size |
-| `/think` | Toggle thinking level (off/think/think+/ultrathink) |
-| `/search` | Select search engine for web search |
-| `/loop` | Schedule recurring or one-shot prompts |
-| `/resume` | Resume a previous session |
-| `/fork` | Fork current conversation into a new session |
-| `/clear` | Clear chat history |
-| `/init` | Initialize project instruction files (GEN.md) |
-| `/memory` | View and manage memory files |
-| `/help` | Show all available commands |
+`/model` `/tools` `/skills` `/agents` `/mcp` `/plugin` `/compact` `/think` `/search` `/loop` `/resume` `/fork` `/clear` `/init` `/memory` — type `/help` for details.
 
-### Keyboard Shortcuts
-
-| Key | Action |
-|:----|:-------|
-| `Shift+Tab` | Toggle permission mode (normal / accept edits / bypass) |
-| `Ctrl+O` | Expand/collapse tool call details |
-| `Ctrl+C` | Cancel current operation |
-| `Ctrl+D` | Exit |
+Keyboard: `Shift+Tab` toggle permission mode, `Ctrl+O` expand tool details, `Ctrl+C` cancel, `Ctrl+D` exit.
 
 ## Configuration
 
