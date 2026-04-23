@@ -61,28 +61,28 @@ func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions
 		// Convert messages to Responses API input items
 		var inputItems responses.ResponseInputParam = make([]responses.ResponseInputItemUnionParam, 0, len(opts.Messages)+1)
 
-		for _, msg := range opts.Messages {
+		for _, msg := range openaicompat.SanitizeToolMessages(opts.Messages) {
+			if msg.ToolResult != nil {
+				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
+					OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+						CallID: msg.ToolResult.ToolCallID,
+						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+							OfString: openai.Opt(msg.ToolResult.Content),
+						},
+					},
+				})
+				continue
+			}
 			switch msg.Role {
 			case core.RoleUser:
-				if msg.ToolResult != nil {
-					inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
-						OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-							CallID: msg.ToolResult.ToolCallID,
-							Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
-								OfString: openai.Opt(msg.ToolResult.Content),
-							},
+				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
+					OfMessage: &responses.EasyInputMessageParam{
+						Role: responses.EasyInputMessageRoleUser,
+						Content: responses.EasyInputMessageContentUnionParam{
+							OfString: openai.Opt(msg.Content),
 						},
-					})
-				} else {
-					inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
-						OfMessage: &responses.EasyInputMessageParam{
-							Role: responses.EasyInputMessageRoleUser,
-							Content: responses.EasyInputMessageContentUnionParam{
-								OfString: openai.Opt(msg.Content),
-							},
-						},
-					})
-				}
+					},
+				})
 			case core.RoleAssistant:
 				if len(msg.ToolCalls) > 0 {
 					// Add text content as a message if present

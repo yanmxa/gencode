@@ -100,11 +100,11 @@ Usage notes:
 		"properties": map[string]any{
 			"task_id": map[string]any{
 				"type":        "string",
-				"description": "Background task ID for the worker you want to continue. Preferred when available.",
+				"description": "Background task ID for the worker you want to continue. Preferred when available. Provide either task_id, or agent_id with subagent_type.",
 			},
 			"agent_id": map[string]any{
 				"type":        "string",
-				"description": "Resumable agent/session ID to continue directly.",
+				"description": "Resumable agent/session ID to continue directly. When using agent_id, subagent_type is required.",
 			},
 			"subagent_type": map[string]any{
 				"type":        "string",
@@ -147,10 +147,6 @@ Usage notes:
 			},
 		},
 		"required": []string{"prompt"},
-		"anyOf": []map[string]any{
-			{"required": []string{"task_id"}},
-			{"required": []string{"agent_id", "subagent_type"}},
-		},
 	},
 }
 
@@ -174,11 +170,11 @@ Usage notes:
 		"properties": map[string]any{
 			"task_id": map[string]any{
 				"type":        "string",
-				"description": "Background task ID for the worker you want to core. Preferred when available.",
+				"description": "Background task ID for the worker you want to message. Preferred when available. Provide either task_id, or agent_id with subagent_type.",
 			},
 			"agent_id": map[string]any{
 				"type":        "string",
-				"description": "Resumable agent/session ID to continue directly.",
+				"description": "Resumable agent/session ID to continue directly. When using agent_id, subagent_type is required.",
 			},
 			"subagent_type": map[string]any{
 				"type":        "string",
@@ -221,10 +217,6 @@ Usage notes:
 			},
 		},
 		"required": []string{"message"},
-		"anyOf": []map[string]any{
-			{"required": []string{"task_id"}},
-			{"required": []string{"agent_id", "subagent_type"}},
-		},
 	},
 }
 

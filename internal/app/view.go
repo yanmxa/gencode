@@ -120,6 +120,9 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 
 	if m.userInput.Provider.FetchingLimits {
 		spinnerView := conv.ThinkingStyle.Render(m.conv.Spinner.View() + " Fetching token limits...")
+		if len(parts) > 0 {
+			spinnerView = "\n" + spinnerView
+		}
 		parts = append(parts, spinnerView)
 	}
 

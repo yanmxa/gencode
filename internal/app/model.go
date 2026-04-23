@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -485,7 +486,9 @@ func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 }
 
 func (m *model) ProcessAgentStop(err error) tea.Cmd {
-	if err != nil {
+	// /clear and manual stop cancel the active agent context; that is expected
+	// shutdown, not an agent failure the user needs to see.
+	if err != nil && !errors.Is(err, context.Canceled) {
 		m.conv.AddNotice(fmt.Sprintf("Agent error: %v", err))
 		m.fireStopFailureHook(core.LastAssistantChatContent(m.conv.Messages), err)
 	}

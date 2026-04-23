@@ -79,6 +79,8 @@ Format: 1-4 questions, 2-4 options each, concise descriptions.
 You have TaskCreate, TaskGet, TaskUpdate, TaskList tools to track multi-step work.
 The task list is displayed above the input area so the user can see progress in real time.
 
+Use task tools for complex tasks or work that needs several steps of progress tracking; for simple or single-step requests, proceed without them.
+
 Workflow: Create ALL tasks upfront → work in ID order (lowest first) → mark in_progress before starting → mark completed when done → TaskList at the end to confirm.
 
 Key rules:

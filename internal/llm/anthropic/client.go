@@ -85,18 +85,20 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 		// Convert messages to Anthropic format
 		anthropicMsgs := make([]anthropic.MessageParam, 0, len(sanitized))
 		for _, msg := range sanitized {
+			if msg.ToolResult != nil {
+				// Tool result message
+				anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(
+					anthropic.NewToolResultBlock(
+						ids.resolve(msg.ToolResult.ToolCallID),
+						msg.ToolResult.Content,
+						msg.ToolResult.IsError,
+					),
+				))
+				continue
+			}
 			switch msg.Role {
 			case core.RoleUser:
-				if msg.ToolResult != nil {
-					// Tool result message
-					anthropicMsgs = append(anthropicMsgs, anthropic.NewUserMessage(
-						anthropic.NewToolResultBlock(
-							ids.resolve(msg.ToolResult.ToolCallID),
-							msg.ToolResult.Content,
-							msg.ToolResult.IsError,
-						),
-					))
-				} else if len(msg.Images) > 0 {
+				if len(msg.Images) > 0 {
 					if parts := core.InterleavedContentParts(msg); parts != nil {
 						blocks := make([]anthropic.ContentBlockParamUnion, 0, len(parts))
 						for _, p := range parts {
@@ -338,7 +340,7 @@ func sanitizeToolResults(msgs []core.Message) []core.Message {
 	// First pass: collect all tool_result IDs for forward-reference checking.
 	allResultIDs := make(map[string]bool, len(msgs))
 	for _, msg := range msgs {
-		if msg.Role == core.RoleUser && msg.ToolResult != nil {
+		if msg.ToolResult != nil {
 			allResultIDs[msg.ToolResult.ToolCallID] = true
 		}
 	}
@@ -369,7 +371,7 @@ func sanitizeToolResults(msgs []core.Message) []core.Message {
 			}
 			result = append(result, msg)
 
-		case msg.Role == core.RoleUser && msg.ToolResult != nil:
+		case msg.ToolResult != nil:
 			if currentToolIDs != nil && currentToolIDs[msg.ToolResult.ToolCallID] {
 				result = append(result, msg)
 			}

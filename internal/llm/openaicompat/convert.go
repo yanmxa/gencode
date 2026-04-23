@@ -23,6 +23,7 @@ func ConvertMessages(
 	systemPrompt string,
 	convertAssistant func(msg core.Message) openai.ChatCompletionMessageParamUnion,
 ) []openai.ChatCompletionMessageParamUnion {
+	msgs = SanitizeToolMessages(msgs)
 	out := make([]openai.ChatCompletionMessageParamUnion, 0, len(msgs)+1)
 
 	if systemPrompt != "" {
@@ -30,6 +31,10 @@ func ConvertMessages(
 	}
 
 	for _, msg := range msgs {
+		if msg.ToolResult != nil {
+			out = append(out, convertToolResultMessage(msg))
+			continue
+		}
 		switch msg.Role {
 		case core.RoleUser:
 			out = append(out, convertUserMessage(msg))
@@ -46,10 +51,75 @@ func ConvertMessages(
 	return out
 }
 
+// SanitizeToolMessages ensures Chat Completions tool-call adjacency:
+// an assistant message with tool_calls must be followed immediately by tool
+// result messages for those calls. Interrupted runs and restored sessions can
+// leave orphaned tool calls/results in history; strip those before sending.
+func SanitizeToolMessages(msgs []core.Message) []core.Message {
+	result := make([]core.Message, 0, len(msgs))
+
+	for i := 0; i < len(msgs); i++ {
+		msg := msgs[i]
+
+		if msg.ToolResult != nil {
+			// Tool results are only valid immediately after their assistant call.
+			continue
+		}
+
+		if msg.Role != core.RoleAssistant || len(msg.ToolCalls) == 0 {
+			result = append(result, msg)
+			continue
+		}
+
+		j := i + 1
+		var followingResults []core.Message
+		for j < len(msgs) && msgs[j].ToolResult != nil {
+			followingResults = append(followingResults, msgs[j])
+			j++
+		}
+
+		resultIDs := make(map[string]bool, len(followingResults))
+		for _, r := range followingResults {
+			resultIDs[r.ToolResult.ToolCallID] = true
+		}
+
+		filteredCalls := make([]core.ToolCall, 0, len(msg.ToolCalls))
+		callIDs := make(map[string]bool, len(msg.ToolCalls))
+		for _, tc := range msg.ToolCalls {
+			if resultIDs[tc.ID] {
+				filteredCalls = append(filteredCalls, tc)
+				callIDs[tc.ID] = true
+			}
+		}
+
+		msg.ToolCalls = filteredCalls
+		if len(msg.ToolCalls) > 0 || msg.Content != "" || msg.Thinking != "" {
+			result = append(result, msg)
+		}
+
+		seenResults := make(map[string]bool, len(followingResults))
+		for _, r := range followingResults {
+			id := r.ToolResult.ToolCallID
+			if callIDs[id] && !seenResults[id] {
+				result = append(result, r)
+				seenResults[id] = true
+			}
+		}
+
+		i = j - 1
+	}
+
+	return result
+}
+
+func convertToolResultMessage(msg core.Message) openai.ChatCompletionMessageParamUnion {
+	return openai.ToolMessage(msg.ToolResult.Content, msg.ToolResult.ToolCallID)
+}
+
 // convertUserMessage converts a user-role message (text, images, or tool result).
 func convertUserMessage(msg core.Message) openai.ChatCompletionMessageParamUnion {
 	if msg.ToolResult != nil {
-		return openai.ToolMessage(msg.ToolResult.Content, msg.ToolResult.ToolCallID)
+		return convertToolResultMessage(msg)
 	}
 	if len(msg.Images) > 0 {
 		if parts := core.InterleavedContentParts(msg); parts != nil {

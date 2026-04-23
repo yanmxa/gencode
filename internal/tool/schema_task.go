@@ -11,7 +11,6 @@ var trackerToolSchemas = []core.ToolSchema{
 When to use:
 - Complex tasks requiring 3+ distinct steps
 - User provides multiple tasks at once
-- After receiving new instructions — capture requirements as tasks
 
 When NOT to use:
 - Single straightforward task or trivial fix
