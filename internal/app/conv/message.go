@@ -490,7 +490,7 @@ func RenderToolCalls(params ToolCallsParams) string {
 				sb.WriteString("\n")
 			}
 			if params.ToolCallsExpanded && !hasResult {
-				sb.WriteString(formatAgentDefinition(tc.Input))
+				sb.WriteString(formatAgentDefinition(tc.Input, params.Width))
 			}
 		} else if params.ToolCallsExpanded {
 			toolLine := renderToolLine(tc.Name, params.Width)

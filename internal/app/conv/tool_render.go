@@ -423,7 +423,11 @@ func renderTaskResultInline(data ToolResultData, mdRenderer *MDRenderer) string 
 	}
 
 	if data.ToolInput != "" {
-		sb.WriteString(formatAgentDefinition(data.ToolInput))
+		w := 80
+		if mdRenderer != nil {
+			w = mdRenderer.width
+		}
+		sb.WriteString(formatAgentDefinition(data.ToolInput, w))
 	}
 
 	body := ""
@@ -538,7 +542,7 @@ func splitByProcessCount(body string, processCount int) (process, response strin
 	return strings.TrimSpace(strings.Join(processLines, "\n")), strings.TrimSpace(rest)
 }
 
-func formatAgentDefinition(input string) string {
+func formatAgentDefinition(input string, width int) string {
 	var params map[string]any
 	if err := json.Unmarshal([]byte(input), &params); err != nil {
 		return ""
@@ -558,12 +562,40 @@ func formatAgentDefinition(input string) string {
 
 	if prompt, ok := params["prompt"].(string); ok && prompt != "" {
 		sb.WriteString(agentLabelStyle.Render("  ⎿  Prompt:") + "\n")
+		wrapWidth := width - lipgloss.Width(agentContentIndent)
 		for line := range strings.SplitSeq(prompt, "\n") {
-			sb.WriteString(toolResultExpandedStyle.Render(agentContentIndent+line) + "\n")
+			for _, wrapped := range wrapLine(line, wrapWidth) {
+				sb.WriteString(toolResultExpandedStyle.Render(agentContentIndent+wrapped) + "\n")
+			}
 		}
 	}
 
 	return sb.String()
+}
+
+func wrapLine(line string, width int) []string {
+	if width <= 0 || lipgloss.Width(line) <= width {
+		return []string{line}
+	}
+	words := strings.Fields(line)
+	if len(words) == 0 {
+		return []string{""}
+	}
+	var lines []string
+	current := words[0]
+	curWidth := lipgloss.Width(current)
+	for _, w := range words[1:] {
+		ww := lipgloss.Width(w)
+		if curWidth+1+ww > width {
+			lines = append(lines, current)
+			current = w
+			curWidth = ww
+		} else {
+			current += " " + w
+			curWidth += 1 + ww
+		}
+	}
+	return append(lines, current)
 }
 
 func buildDoneStats(toolUses, tokens int, duration, model string) string {

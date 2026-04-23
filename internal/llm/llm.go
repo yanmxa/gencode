@@ -58,7 +58,7 @@ func (l *Client) Infer(ctx context.Context, req core.InferRequest) (<-chan core.
 		Messages:      toProviderMessages(req.Messages),
 		Tools:         req.Tools,
 		SystemPrompt:  req.System,
-		MaxTokens:     maxTokens,
+		MaxTokens:     resolveMaxTokens(maxTokens, p, model),
 		ThinkingLevel: thinking,
 	}
 
@@ -217,6 +217,16 @@ func (l *Client) ResolveMaxTokens(ctx context.Context) int {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+func resolveMaxTokens(maxTokens int, p Provider, model string) int {
+	if maxTokens > 0 {
+		return maxTokens
+	}
+	if limit := outputLimitFromProvider(p, model); limit > 0 {
+		return limit
+	}
+	return defaultMaxTokens
+}
+
 // completionOpts builds CompletionOptions from the Client's current configuration.
 func (l *Client) completionOpts(msgs []core.Message, tools []ToolSchema, sysPrompt string) CompletionOptions {
 	l.mu.RLock()
@@ -226,17 +236,10 @@ func (l *Client) completionOpts(msgs []core.Message, tools []ToolSchema, sysProm
 	p := l.provider
 	l.mu.RUnlock()
 
-	if maxTokens <= 0 {
-		if limit := outputLimitFromProvider(p, model); limit > 0 {
-			maxTokens = limit
-		} else {
-			maxTokens = defaultMaxTokens
-		}
-	}
 	return CompletionOptions{
 		Model:         model,
 		Messages:      msgs,
-		MaxTokens:     maxTokens,
+		MaxTokens:     resolveMaxTokens(maxTokens, p, model),
 		Tools:         tools,
 		SystemPrompt:  sysPrompt,
 		ThinkingLevel: thinking,
