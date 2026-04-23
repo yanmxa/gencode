@@ -99,4 +99,3 @@ func (i *ImageInfo) ToProviderData() core.Image {
 		Size:      i.Size,
 	}
 }
-

@@ -90,7 +90,7 @@ func (m *model) fireIdleHooksCmd(result core.Result) tea.Cmd {
 		if hasStopHooks {
 			outcome := hookEngine.Execute(context.Background(), hook.Stop, hook.HookInput{
 				LastAssistantMessage: lastContent,
-				StopHookActive:      stopHookActive,
+				StopHookActive:       stopHookActive,
 			})
 			if outcome.ShouldBlock {
 				blocked = true

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/mcp/transport"
-	"github.com/yanmxa/gencode/internal/core"
 )
 
 // ---------------------------------------------------------------------------
@@ -798,6 +798,9 @@ func requireNpx(t *testing.T) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("skipping real MCP server test in short mode")
+	}
+	if os.Getenv("GENCODE_RUN_REAL_MCP") != "1" {
+		t.Skip("set GENCODE_RUN_REAL_MCP=1 to run real MCP server tests")
 	}
 	// Check npx is available
 	if _, err := exec.LookPath("npx"); err != nil {

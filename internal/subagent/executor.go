@@ -26,15 +26,15 @@ type Executor struct {
 	cwd                 string
 	parentModelID       string // Parent conversation's model ID (used when inheriting)
 	hooks               *hook.Engine
-	sessionStore        SubagentSessionStore        // Optional: when set, subagent sessions are persisted
-	parentSessionID     string                      // Parent session ID for linking subagent sessions
-	userInstructions    string                      // ~/.gen/GEN.md + rules
-	projectInstructions string                      // .gen/GEN.md + rules + local
-	isGit               bool                        // whether cwd is a git repository
-	skillsPrompt        string                      // available skills section for capable subagents
-	agentsPrompt        string                      // available agents section for capable subagents
+	sessionStore        SubagentSessionStore     // Optional: when set, subagent sessions are persisted
+	parentSessionID     string                   // Parent session ID for linking subagent sessions
+	userInstructions    string                   // ~/.gen/GEN.md + rules
+	projectInstructions string                   // .gen/GEN.md + rules + local
+	isGit               bool                     // whether cwd is a git repository
+	skillsPrompt        string                   // available skills section for capable subagents
+	agentsPrompt        string                   // available agents section for capable subagents
 	mcpGetter           func() []core.ToolSchema // MCP tool schemas from parent
-	mcpRegistry         *mcp.Registry               // MCP registry for tool execution
+	mcpRegistry         *mcp.Registry            // MCP registry for tool execution
 }
 
 type SubagentSessionStore interface {
@@ -280,7 +280,7 @@ func (e *Executor) buildAgent(ctx context.Context, rc *runConfig, agentCwd strin
 		Cwd:                 agentCwd,
 		IsGit:               e.isGit,
 		IsSubagent:          true,
-		UserInstructions: e.userInstructions,
+		UserInstructions:    e.userInstructions,
 		ProjectInstructions: e.projectInstructions,
 		Skills:              skillsPrompt,
 		Agents:              agentsPrompt,
@@ -321,7 +321,6 @@ func (e *Executor) buildAgent(ctx context.Context, rc *runConfig, agentCwd strin
 
 	return ag, cleanup, nil
 }
-
 
 func (e *Executor) loadConversation(ag core.Agent, ctx context.Context, req AgentRequest) error {
 	// Fork: inherit parent conversation context

@@ -14,7 +14,7 @@ var safeTools = map[string]bool{
 	"WebFetch": true, "WebSearch": true, "LSP": true,
 	"TaskCreate": true, "TaskGet": true, "TaskList": true, "TaskUpdate": true,
 	"AskUserQuestion": true,
-	"CronList": true, "ToolSearch": true,
+	"CronList":        true, "ToolSearch": true,
 }
 
 // PermissionBehavior represents the outcome of a permission check.
@@ -203,7 +203,6 @@ func (s *Settings) ResolveHookAllow(toolName string, args map[string]any, sessio
 func (s *Settings) CheckPermission(toolName string, args map[string]any, session *SessionPermissions) PermissionBehavior {
 	return s.HasPermissionToUseTool(toolName, args, session).Behavior
 }
-
 
 // BuildRule builds a rule string from a tool name and arguments.
 // Format: "Tool(args)"

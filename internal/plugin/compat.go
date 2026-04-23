@@ -88,4 +88,3 @@ func convertClaudePlugin(p *Plugin) {
 		p.Source = p.Name() + "@claude"
 	}
 }
-

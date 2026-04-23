@@ -14,10 +14,10 @@ import (
 
 	"google.golang.org/genai"
 
-	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	streamutil "github.com/yanmxa/gencode/internal/llm/stream"
+	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/secret"
 )
 

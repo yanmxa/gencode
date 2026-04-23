@@ -61,10 +61,10 @@ func NewTestAgent(t *testing.T, responses ...llm.CompletionResponse) (core.Agent
 	fakeLLM := &FakeLLM{Responses: responses}
 	cwd := t.TempDir()
 	return core.NewAgent(core.Config{
-		ID:       "test-agent",
-		LLM:      fakeLLM,
-		System:   core.NewSystem(),
-		Tools:    buildAllRegisteredTools(cwd),
+		ID:     "test-agent",
+		LLM:    fakeLLM,
+		System: core.NewSystem(),
+		Tools:  buildAllRegisteredTools(cwd),
 
 		CWD:      cwd,
 		MaxTurns: 100,
@@ -109,10 +109,10 @@ func NewTestAgentWithMaxTurns(t *testing.T, maxTurns int, responses ...llm.Compl
 	fakeLLM := &FakeLLM{Responses: responses}
 	cwd := t.TempDir()
 	return core.NewAgent(core.Config{
-		ID:       "test-agent",
-		LLM:      fakeLLM,
-		System:   core.NewSystem(),
-		Tools:    buildAllRegisteredTools(cwd),
+		ID:     "test-agent",
+		LLM:    fakeLLM,
+		System: core.NewSystem(),
+		Tools:  buildAllRegisteredTools(cwd),
 
 		CWD:      cwd,
 		MaxTurns: maxTurns,
@@ -135,7 +135,12 @@ func RunAgent(ctx context.Context, ag core.Agent, prompt string) (core.Result, e
 		agentErr = ag.Run(ctx)
 	}()
 
-	ag.Inbox() <- core.Message{Role: core.RoleUser, Content: prompt}
+	select {
+	case ag.Inbox() <- core.Message{Role: core.RoleUser, Content: prompt}:
+	case <-ctx.Done():
+		<-done
+		return core.Result{}, ctx.Err()
+	}
 
 	var result core.Result
 	var hasResult bool
@@ -145,7 +150,10 @@ func RunAgent(ctx context.Context, ag core.Agent, prompt string) (core.Result, e
 				result = r
 				hasResult = true
 			}
-			ag.Inbox() <- core.Message{Signal: core.SigStop}
+			select {
+			case ag.Inbox() <- core.Message{Signal: core.SigStop}:
+			case <-ctx.Done():
+			}
 		}
 	}
 

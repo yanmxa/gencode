@@ -75,7 +75,7 @@ func Initialize(opts Options) {
 // -- singleton ---------------------------------------------------------------
 
 var (
-	mu      sync.RWMutex
+	mu       sync.RWMutex
 	instance Service
 )
 

@@ -5,21 +5,21 @@ import "sync"
 // Service is the public contract for the skill module.
 type Service interface {
 	// query
-	List() []*Skill                                          // all loaded skills
-	Get(name string) (*Skill, bool)                          // lookup by name
-	IsEnabled(name string) bool                              // check if enabled
-	FindByPartialName(name string) *Skill                    // partial/suffix match
-	GetEnabled() []*Skill                                    // all enabled or active skills
-	GetActive() []*Skill                                     // all active skills (model-aware)
-	Count() int                                              // total number of loaded skills
+	List() []*Skill                       // all loaded skills
+	Get(name string) (*Skill, bool)       // lookup by name
+	IsEnabled(name string) bool           // check if enabled
+	FindByPartialName(name string) *Skill // partial/suffix match
+	GetEnabled() []*Skill                 // all enabled or active skills
+	GetActive() []*Skill                  // all active skills (model-aware)
+	Count() int                           // total number of loaded skills
 
 	// mutation
 	SetEnabled(name string, enabled bool, userLevel bool) error
 	GetDisabledAt(userLevel bool) map[string]bool
 
 	// system prompt
-	PromptSection() string                                   // rendered section for system prompt
-	GetSkillInvocationPrompt(name string) string             // full skill content for injection
+	PromptSection() string                       // rendered section for system prompt
+	GetSkillInvocationPrompt(name string) string // full skill content for injection
 
 	// plugin
 	AddPluginSkills(paths []struct {

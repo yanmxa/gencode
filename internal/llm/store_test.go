@@ -85,5 +85,3 @@ func TestStore_SetTokenLimitUpdatesCachedModelCopy(t *testing.T) {
 		t.Fatalf("expected previously returned cached slice to remain unchanged, got %#v", cachedBefore[0])
 	}
 }
-
-

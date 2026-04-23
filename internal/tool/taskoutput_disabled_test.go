@@ -24,4 +24,3 @@ func TestTaskOutputIsNotDeferredOrSearchable(t *testing.T) {
 		}
 	}
 }
-

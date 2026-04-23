@@ -99,8 +99,8 @@ type AgentExecResult struct {
 
 // AgentTaskInfo contains info about a background agent task.
 type AgentTaskInfo struct {
-	TaskID    string
-	AgentName string
+	TaskID     string
+	AgentName  string
 	OutputFile string
 }
 

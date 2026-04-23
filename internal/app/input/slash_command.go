@@ -94,9 +94,9 @@ func builtinCommandHandlers() map[string]commandHandler {
 		"fork":           (*CommandController).handleForkCommand,
 		"resume":         (*CommandController).handleResumeCommand,
 		"help":           (*CommandController).handleHelpCommand,
-		"glob":   (*CommandController).handleGlobCommand,
-		"tools":  (*CommandController).handleToolCommand,
-		"skills": (*CommandController).handleSkillCommand,
+		"glob":           (*CommandController).handleGlobCommand,
+		"tools":          (*CommandController).handleToolCommand,
+		"skills":         (*CommandController).handleSkillCommand,
 		"agents":         (*CommandController).handleAgentCommand,
 		"tokenlimit":     (*CommandController).handleTokenLimitCommand,
 		"compact":        (*CommandController).handleCompactCommand,
@@ -230,7 +230,6 @@ func (c CommandController) executeCustomCommand(pc *command.CustomCommand, args 
 	}
 	return ""
 }
-
 
 func (c *CommandController) handleHelpCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	var sb strings.Builder
@@ -625,4 +624,3 @@ func shouldPreserveCommandInConversation(inputText string) bool {
 	}
 	return false
 }
-

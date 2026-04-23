@@ -5,8 +5,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/hook"
+	"github.com/yanmxa/gencode/internal/setting"
 )
 
 func TestHooks_BlockToolCall(t *testing.T) {

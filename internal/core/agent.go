@@ -91,17 +91,17 @@ type Agent interface {
 // before passing them to NewAgent. See docs/permission.md.
 type Config struct {
 	ID                string
-	LLM               LLM    // required: inference backend
-	System             System // required: system prompt layers
-	Tools              Tools  // required: available tools (wrap with tool.WithPermission for permission)
-	AgentType          string // optional: agent type identifier for hook events
-	Color              string // optional: display color for TUI (e.g. "#ff6600", "blue")
-	CompactFunc        func(ctx context.Context, msgs []Message) (string, error) // optional: summarize messages for compaction
-	CWD                string
-	MaxTurns           int // max LLM inference rounds per cycle, 0 = unlimited
-	MaxOutputRecovery  int // max retries on truncated output, 0 = use default (3)
-	InboxBuf           int // inbox channel buffer size, default 16
-	OutboxBuf          int // outbox channel buffer size, default 64; -1 = no outbox (subagent path)
+	LLM               LLM                                                       // required: inference backend
+	System            System                                                    // required: system prompt layers
+	Tools             Tools                                                     // required: available tools (wrap with tool.WithPermission for permission)
+	AgentType         string                                                    // optional: agent type identifier for hook events
+	Color             string                                                    // optional: display color for TUI (e.g. "#ff6600", "blue")
+	CompactFunc       func(ctx context.Context, msgs []Message) (string, error) // optional: summarize messages for compaction
+	CWD               string
+	MaxTurns          int // max LLM inference rounds per cycle, 0 = unlimited
+	MaxOutputRecovery int // max retries on truncated output, 0 = use default (3)
+	InboxBuf          int // inbox channel buffer size, default 16
+	OutboxBuf         int // outbox channel buffer size, default 64; -1 = no outbox (subagent path)
 }
 
 // NewAgent creates an agent from config.
@@ -160,7 +160,6 @@ type Result struct {
 	StopDetail string     // human-readable detail (e.g. hook block reason)
 }
 
-
 // EventType identifies an agent lifecycle event.
 type EventType string
 
@@ -175,7 +174,7 @@ const (
 	PostTool  EventType = "PostTool"   // after tool execution (ToolResult in Data)
 	OnMessage EventType = "Message"    // message received on inbox (Message in Data)
 	OnTurn    EventType = "Turn"       // think+act cycle completed (Result in Data)
-	OnCompact EventType = "Compact"   // conversation compacted (CompactInfo in Data)
+	OnCompact EventType = "Compact"    // conversation compacted (CompactInfo in Data)
 )
 
 // Event carries context for an agent lifecycle point.
@@ -188,14 +187,14 @@ type Event struct {
 
 // Event.Data type helpers — reduce boilerplate in handlers.
 
-func (e Event) ToolCall() (ToolCall, bool)         { tc, ok := e.Data.(ToolCall); return tc, ok }
-func (e Event) ToolResult() (ToolResult, bool)     { tr, ok := e.Data.(ToolResult); return tr, ok }
-func (e Event) Message() (Message, bool)           { m, ok := e.Data.(Message); return m, ok }
-func (e Event) Result() (Result, bool)             { r, ok := e.Data.(Result); return r, ok }
-func (e Event) Response() (*InferResponse, bool)   { r, ok := e.Data.(*InferResponse); return r, ok }
-func (e Event) Chunk() (Chunk, bool)               { c, ok := e.Data.(Chunk); return c, ok }
-func (e Event) Error() (error, bool)               { err, ok := e.Data.(error); return err, ok }
-func (e Event) CompactInfo() (CompactInfo, bool)   { ci, ok := e.Data.(CompactInfo); return ci, ok }
+func (e Event) ToolCall() (ToolCall, bool)       { tc, ok := e.Data.(ToolCall); return tc, ok }
+func (e Event) ToolResult() (ToolResult, bool)   { tr, ok := e.Data.(ToolResult); return tr, ok }
+func (e Event) Message() (Message, bool)         { m, ok := e.Data.(Message); return m, ok }
+func (e Event) Result() (Result, bool)           { r, ok := e.Data.(Result); return r, ok }
+func (e Event) Response() (*InferResponse, bool) { r, ok := e.Data.(*InferResponse); return r, ok }
+func (e Event) Chunk() (Chunk, bool)             { c, ok := e.Data.(Chunk); return c, ok }
+func (e Event) Error() (error, bool)             { err, ok := e.Data.(error); return err, ok }
+func (e Event) CompactInfo() (CompactInfo, bool) { ci, ok := e.Data.(CompactInfo); return ci, ok }
 
 // CompactInfo carries compaction details for the OnCompact event.
 type CompactInfo struct {

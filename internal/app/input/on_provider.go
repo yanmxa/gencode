@@ -18,8 +18,8 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
-	"github.com/yanmxa/gencode/internal/secret"
 	"github.com/yanmxa/gencode/internal/log"
+	"github.com/yanmxa/gencode/internal/secret"
 )
 
 // ── State ──────────────────────────────────────────────────────────────────────

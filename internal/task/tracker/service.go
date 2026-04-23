@@ -38,7 +38,7 @@ type Options struct{}
 // ── singleton ──────────────────────────────────────────────
 
 var (
-	mu    sync.RWMutex
+	mu       sync.RWMutex
 	instance Service
 )
 
@@ -74,4 +74,3 @@ func ResetService() {
 	instance = nil
 	mu.Unlock()
 }
-

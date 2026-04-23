@@ -134,4 +134,3 @@ func (s *Setup) Fork(id string) (*Snapshot, error) {
 	}
 	return st.Fork(id)
 }
-

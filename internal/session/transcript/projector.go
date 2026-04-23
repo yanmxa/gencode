@@ -221,4 +221,3 @@ func materializeActiveChain(messageMap map[string]Node, order []string, boundary
 	}
 	return out
 }
-

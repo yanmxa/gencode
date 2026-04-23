@@ -26,10 +26,10 @@ type AgentTask struct {
 	ctx    context.Context    // Task context
 	cancel context.CancelFunc // Cancel function
 
-	mu       sync.RWMutex // Protects mutable fields
-	output   bytes.Buffer // Collected output from the agent
+	mu       sync.RWMutex  // Protects mutable fields
+	output   bytes.Buffer  // Collected output from the agent
 	done     chan struct{} // Closed when task completes
-	doneOnce sync.Once    // Guards done channel close
+	doneOnce sync.Once     // Guards done channel close
 }
 
 // Verify AgentTask implements BackgroundTask
@@ -278,4 +278,3 @@ func (t *AgentTask) UpdateProgress(turnCount, tokenUsage int) {
 func (t *AgentTask) GetContext() context.Context {
 	return t.ctx
 }
-

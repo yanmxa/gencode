@@ -10,10 +10,10 @@ import (
 // Service is the public contract for the mcp module.
 type Service interface {
 	// connection
-	ListServers() []Server                          // all configured servers with status
-	Connect(ctx context.Context, name string) error // connect to a named server
-	ConnectAll(ctx context.Context) []error          // connect to all configured servers
-	Disconnect(name string) error                   // disconnect from a named server
+	ListServers() []Server                            // all configured servers with status
+	Connect(ctx context.Context, name string) error   // connect to a named server
+	ConnectAll(ctx context.Context) []error           // connect to all configured servers
+	Disconnect(name string) error                     // disconnect from a named server
 	Reconnect(ctx context.Context, name string) error // disconnect then reconnect
 
 	// tools
@@ -54,7 +54,7 @@ func Initialize(opts Options) error {
 // ── singleton ──────────────────────────────────────────────
 
 var (
-	mu      sync.RWMutex
+	mu       sync.RWMutex
 	instance Service
 )
 

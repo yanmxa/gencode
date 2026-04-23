@@ -56,9 +56,9 @@ type PatchOp struct {
 }
 
 type SystemRecord struct {
-	Provider      string `json:"provider,omitempty"`
-	Model         string `json:"model,omitempty"`
-	ParentID      string `json:"parentId,omitempty"`
+	Provider   string `json:"provider,omitempty"`
+	Model      string `json:"model,omitempty"`
+	ParentID   string `json:"parentId,omitempty"`
 	BoundaryID string `json:"boundaryId,omitempty"`
 }
 

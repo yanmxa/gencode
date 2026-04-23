@@ -13,12 +13,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25.6'
+      - name: Install format tools
+        run: make install-format-tools
+      - name: Format check
+        run: make format-check
       - name: Build
-        run: go build ./...
+        run: make build-all
       - name: Unit tests
         run: go test ./internal/...
       - name: Integration tests
         run: go test ./tests/integration/...
       - name: Vet
-        run: go vet ./...
+        run: make lint

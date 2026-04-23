@@ -72,10 +72,10 @@ func ParseCommand(input string) (cmd string, args string, isCmd bool) {
 type commandScope int
 
 const (
-	scopeUser         commandScope = iota // ~/.gen/commands/
-	scopeUserPlugin                       // ~/.gen/plugins/*/commands/
-	scopeProjectPlugin                    // .gen/plugins/*/commands/
-	scopeProject                          // .gen/commands/
+	scopeUser          commandScope = iota // ~/.gen/commands/
+	scopeUserPlugin                        // ~/.gen/plugins/*/commands/
+	scopeProjectPlugin                     // .gen/plugins/*/commands/
+	scopeProject                           // .gen/commands/
 )
 
 // CustomCommand represents a user-defined slash command from

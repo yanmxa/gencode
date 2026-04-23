@@ -11,14 +11,14 @@ import (
 // Service is the public contract for the subagent module.
 type Service interface {
 	// query
-	ListConfigs() []*AgentConfig                          // all agent type definitions
-	Get(name string) (*AgentConfig, bool)                 // lookup by name
-	IsEnabled(name string) bool                           // check if enabled
-	GetDisabledAt(userLevel bool) map[string]bool         // disabled agents at level
+	ListConfigs() []*AgentConfig                  // all agent type definitions
+	Get(name string) (*AgentConfig, bool)         // lookup by name
+	IsEnabled(name string) bool                   // check if enabled
+	GetDisabledAt(userLevel bool) map[string]bool // disabled agents at level
 
 	// mutation
 	SetEnabled(name string, enabled bool, userLevel bool) error
-	Register(config *AgentConfig)                         // add an agent configuration
+	Register(config *AgentConfig) // add an agent configuration
 
 	// factory
 	NewExecutor(provider llm.Provider, cwd string, parentModelID string, hookEngine *hook.Engine) *Executor
@@ -62,7 +62,7 @@ func Initialize(opts Options) error {
 // ── singleton ──────────────────────────────────────────────
 
 var (
-	mu      sync.RWMutex
+	mu       sync.RWMutex
 	instance Service
 )
 

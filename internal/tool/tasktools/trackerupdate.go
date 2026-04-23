@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/tool"
 	"github.com/yanmxa/gencode/internal/tool/toolresult"
-	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 // TrackerUpdateTool updates a task's status or details

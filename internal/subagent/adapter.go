@@ -85,8 +85,8 @@ func (a *ExecutorAdapter) RunBackground(req tool.AgentExecRequest) (tool.AgentTa
 	}
 
 	return tool.AgentTaskInfo{
-		TaskID:    agentTask.GetID(),
-		AgentName: agentTask.AgentName,
+		TaskID:     agentTask.GetID(),
+		AgentName:  agentTask.AgentName,
 		OutputFile: agentTask.GetOutputFile(),
 	}, nil
 }

@@ -66,4 +66,3 @@ func (q *AsyncHookQueue) Len() int {
 	defer q.mu.Unlock()
 	return len(q.items)
 }
-

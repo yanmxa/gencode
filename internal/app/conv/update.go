@@ -238,4 +238,3 @@ func (m *OutputModel) HandleProgressTick(hasRunningTasks bool) tea.Cmd {
 	}
 	return nil
 }
-

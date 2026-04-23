@@ -76,5 +76,3 @@ func (o CompletionOptions) LogRawTools() any { return o.Tools }
 
 // LogRawMessages returns the messages slice as any for JSON dev output.
 func (o CompletionOptions) LogRawMessages() any { return o.Messages }
-
-

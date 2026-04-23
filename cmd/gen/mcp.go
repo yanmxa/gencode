@@ -278,4 +278,3 @@ var mcpRemoveCmd = &cobra.Command{
 		return nil
 	},
 }
-

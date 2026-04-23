@@ -107,7 +107,7 @@ func (p *FakeProvider) Stream(ctx context.Context, opts llm.CompletionOptions) <
 	return p.Client.Stream(ctx, opts.Messages, opts.Tools, opts.SystemPrompt)
 }
 func (p *FakeProvider) ListModels(_ context.Context) ([]llm.ModelInfo, error) { return nil, nil }
-func (p *FakeProvider) Name() string                                               { return p.Client.Name() }
+func (p *FakeProvider) Name() string                                          { return p.Client.Name() }
 
 // MockProvider is a standalone llm.Provider backed by a response queue.
 // Unlike FakeProvider, it does not require a FakeClient — use this when the
@@ -133,4 +133,4 @@ func (m *MockProvider) Stream(_ context.Context, _ llm.CompletionOptions) <-chan
 	return ch
 }
 func (m *MockProvider) ListModels(_ context.Context) ([]llm.ModelInfo, error) { return nil, nil }
-func (m *MockProvider) Name() string                                               { return "mock" }
+func (m *MockProvider) Name() string                                          { return "mock" }

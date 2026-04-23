@@ -3,18 +3,16 @@
 package moonshot
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
-	"cmp"
 	"slices"
 
 	"github.com/openai/openai-go/v3"
 
-	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/llm/openaicompat"
-	streamutil "github.com/yanmxa/gencode/internal/llm/stream"
 )
 
 // Client implements the Provider interface for Moonshot AI using the OpenAI SDK.
@@ -45,88 +43,23 @@ func convertAssistant(msg core.Message) openai.ChatCompletionMessageParamUnion {
 
 // Stream sends a completion request and returns a channel of streaming chunks.
 func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan llm.StreamChunk {
-	ch := make(chan llm.StreamChunk)
-
-	go func() {
-		defer close(ch)
-
-		messages := openaicompat.ConvertMessages(opts.Messages, opts.SystemPrompt, convertAssistant)
-
-		params := openai.ChatCompletionNewParams{
-			Model:    opts.Model,
-			Messages: messages,
-		}
-
-		// Enable thinking mode only when explicitly requested.
-		// Unconditionally enabling thinking on non-thinking models (e.g. moonshot-v1-auto)
-		// causes API errors. The caller must set opts.ThinkingLevel for Kimi thinking models.
-		if opts.ThinkingLevel > llm.ThinkingOff {
-			params.SetExtraFields(map[string]any{
-				"thinking": map[string]any{"type": "enabled"},
-			})
-		}
-
-		if opts.MaxTokens > 0 {
-			params.MaxCompletionTokens = openai.Int(int64(opts.MaxTokens))
-		}
-		if opts.Temperature > 0 {
-			params.Temperature = openai.Float(opts.Temperature)
-		}
-		if len(opts.Tools) > 0 {
-			params.Tools = openaicompat.ConvertTools(opts.Tools)
-		}
-
-		log.LogRequestCtx(ctx, c.name, opts.Model, opts)
-
-		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
-		state := streamutil.NewState(c.name)
-		toolCalls := make(map[int]*core.ToolCall)
-
-		for stream.Next() {
-			chunk := stream.Current()
-			state.Count()
-
-			for _, choice := range chunk.Choices {
-				// Extract reasoning_content for Kimi thinking models
-				if content := openaicompat.ExtractReasoningContent(choice.Delta.RawJSON()); content != "" {
-					state.EmitThinking(ch, content)
-				}
-
-				if choice.Delta.Content != "" {
-					state.EmitText(ch, choice.Delta.Content)
-				}
-
-				for _, tc := range choice.Delta.ToolCalls {
-					idx := int(tc.Index)
-					if _, exists := toolCalls[idx]; !exists {
-						toolCalls[idx] = &core.ToolCall{ID: tc.ID, Name: tc.Function.Name}
-						state.EmitToolStart(ch, tc.ID, tc.Function.Name)
-					}
-					if tc.Function.Arguments != "" {
-						toolCalls[idx].Input += tc.Function.Arguments
-						state.EmitToolInput(ch, toolCalls[idx].ID, tc.Function.Arguments)
-					}
-				}
-
-				if choice.FinishReason != "" {
-					state.Response.StopReason = openaicompat.MapFinishReason(choice.FinishReason)
-				}
+	return openaicompat.StreamChatCompletions(ctx, openaicompat.ChatStreamConfig{
+		Client:           c.client,
+		ProviderName:     c.name,
+		Options:          opts,
+		ConvertAssistant: convertAssistant,
+		ConfigureParams: func(params *openai.ChatCompletionNewParams) {
+			// Enable thinking mode only when explicitly requested.
+			// Unconditionally enabling thinking on non-thinking models (e.g. moonshot-v1-auto)
+			// causes API errors. The caller must set opts.ThinkingLevel for Kimi thinking models.
+			if opts.ThinkingLevel > llm.ThinkingOff {
+				params.SetExtraFields(map[string]any{
+					"thinking": map[string]any{"type": "enabled"},
+				})
 			}
-
-			state.UpdateUsage(int(chunk.Usage.PromptTokens), int(chunk.Usage.CompletionTokens))
-		}
-
-		if err := stream.Err(); err != nil {
-			state.Fail(ch, err)
-			return
-		}
-
-		state.AddToolCallsSorted(toolCalls)
-		state.EnsureToolUseStopReason()
-		state.Finish(ctx, ch)
-	}()
-
-	return ch
+		},
+		ExtractReasoning: true,
+	})
 }
 
 // staticModels is the fallback list when the models API is unavailable.

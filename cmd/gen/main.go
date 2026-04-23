@@ -12,8 +12,8 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app"
 	"github.com/yanmxa/gencode/internal/log"
-	"github.com/yanmxa/gencode/internal/setting"
 	"github.com/yanmxa/gencode/internal/session"
+	"github.com/yanmxa/gencode/internal/setting"
 
 	// Import providers for registration
 	_ "github.com/yanmxa/gencode/internal/llm/alibaba"

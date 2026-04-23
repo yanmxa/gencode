@@ -66,4 +66,3 @@ func DrainAgentOutbox(outbox <-chan core.Event) tea.Cmd {
 func isTerminalEvent(ev core.Event) bool {
 	return ev.Type == core.OnTurn || ev.Type == core.OnStop || ev.Type == core.OnCompact
 }
-

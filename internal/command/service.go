@@ -29,9 +29,9 @@ type PluginCommandPath struct {
 
 // Options holds all dependencies for initialization.
 type Options struct {
-	CWD                  string
-	DynamicProviders     []func() []Info
-	PluginCommandPaths   func() []PluginCommandPath // injected plugin callback
+	CWD                string
+	DynamicProviders   []func() []Info
+	PluginCommandPaths func() []PluginCommandPath // injected plugin callback
 }
 
 var _ Service = (*service)(nil)

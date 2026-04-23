@@ -16,20 +16,19 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25.6'
+
+      - name: Install format tools
+        run: make install-format-tools
+
+      - name: Format check
+        run: make format-check
 
       - name: Build binaries
-        run: |
-          for os in darwin linux; do
-            for arch in amd64 arm64; do
-              GOOS=$os GOARCH=$arch go build -ldflags="-s -w" -o gen ./cmd/gen
-              tar -czvf gen_${os}_${arch}.tar.gz gen
-              rm gen
-            done
-          done
+        run: make release
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: gen_*.tar.gz
+          files: bin/gen_*.tar.gz
           generate_release_notes: true

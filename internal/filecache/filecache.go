@@ -7,10 +7,10 @@ import (
 )
 
 const (
-	maxEntries       = 20
-	restoreMaxFiles  = 5
+	maxEntries        = 20
+	restoreMaxFiles   = 5
 	restoreMaxPerFile = 5000
-	restoreMaxTotal  = 50000
+	restoreMaxTotal   = 50000
 )
 
 type entry struct {

@@ -148,10 +148,10 @@ func (t *ReadTool) Execute(ctx context.Context, params map[string]any, cwd strin
 		HookResponse: map[string]any{
 			"type": "text",
 			"file": map[string]any{
-				"filePath":  filePath,
-				"content":   contentForHook,
-				"numLines":  len(lines),
-				"startLine": startLine,
+				"filePath":   filePath,
+				"content":    contentForHook,
+				"numLines":   len(lines),
+				"startLine":  startLine,
 				"totalLines": lineNo,
 			},
 		},

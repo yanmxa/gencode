@@ -2,23 +2,34 @@ package input
 
 import (
 	"testing"
+
 	"github.com/yanmxa/gencode/internal/core"
 )
 
 func TestQueueEnqueueDequeue(t *testing.T) {
 	var q Queue
 	id := q.Enqueue("hello", nil)
-	if id != 1 { t.Fatalf("expected id 1, got %d", id) }
+	if id != 1 {
+		t.Fatalf("expected id 1, got %d", id)
+	}
 	item, ok := q.Dequeue()
-	if !ok || item.Content != "hello" { t.Fatalf("unexpected: %v, %v", item, ok) }
+	if !ok || item.Content != "hello" {
+		t.Fatalf("unexpected: %v, %v", item, ok)
+	}
 	_, ok = q.Dequeue()
-	if ok { t.Fatal("expected empty") }
+	if ok {
+		t.Fatal("expected empty")
+	}
 }
 
 func TestQueueMaxSize(t *testing.T) {
 	var q Queue
-	for i := 0; i < maxQueueSize; i++ { q.Enqueue("item", nil) }
-	if q.Enqueue("overflow", nil) != -1 { t.Fatal("expected -1") }
+	for i := 0; i < maxQueueSize; i++ {
+		q.Enqueue("item", nil)
+	}
+	if q.Enqueue("overflow", nil) != -1 {
+		t.Fatal("expected -1")
+	}
 }
 
 func TestQueueUpdateAtRemovesEmpty(t *testing.T) {
@@ -26,9 +37,13 @@ func TestQueueUpdateAtRemovesEmpty(t *testing.T) {
 	q.Enqueue("first", nil)
 	q.Enqueue("second", nil)
 	q.UpdateAt(0, "", nil)
-	if q.Len() != 1 { t.Fatalf("expected 1, got %d", q.Len()) }
+	if q.Len() != 1 {
+		t.Fatalf("expected 1, got %d", q.Len())
+	}
 	item, _ := q.At(0)
-	if item.Content != "second" { t.Fatalf("expected 'second', got %q", item.Content) }
+	if item.Content != "second" {
+		t.Fatalf("expected 'second', got %q", item.Content)
+	}
 }
 
 func TestQueueItems(t *testing.T) {
@@ -36,5 +51,7 @@ func TestQueueItems(t *testing.T) {
 	q.Enqueue("a", []core.Image{{FileName: "test.png"}})
 	q.Enqueue("b", nil)
 	items := q.Items()
-	if len(items) != 2 { t.Fatalf("expected 2, got %d", len(items)) }
+	if len(items) != 2 {
+		t.Fatalf("expected 2, got %d", len(items))
+	}
 }

@@ -165,12 +165,12 @@ func RenderCompactStatus(width int, spinnerView string, state CompactState) stri
 
 // CompactRequest holds all parameters needed to perform a conversation compaction.
 type CompactRequest struct {
-	Ctx      context.Context
-	Client   *llm.Client
-	Messages []core.Message
-	Focus    string
-	HookEngine     *hook.Engine
-	Trigger        string
+	Ctx        context.Context
+	Client     *llm.Client
+	Messages   []core.Message
+	Focus      string
+	HookEngine *hook.Engine
+	Trigger    string
 }
 
 func CompactCmd(req CompactRequest) tea.Cmd {

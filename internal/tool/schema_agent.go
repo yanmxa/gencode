@@ -299,4 +299,3 @@ Query forms:
 		"required": []string{"query"},
 	},
 }
-

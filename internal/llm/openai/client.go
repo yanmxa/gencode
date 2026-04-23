@@ -1,9 +1,9 @@
 package openai
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"cmp"
 	"slices"
 	"strings"
 
@@ -11,11 +11,11 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 
-	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/llm/openaicompat"
 	streamutil "github.com/yanmxa/gencode/internal/llm/stream"
+	"github.com/yanmxa/gencode/internal/log"
 )
 
 // Client implements the Provider interface using the OpenAI SDK
@@ -265,99 +265,18 @@ func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions
 
 // streamChatCompletions implements streaming via the Chat Completions API.
 func (c *Client) streamChatCompletions(ctx context.Context, opts llm.CompletionOptions) <-chan llm.StreamChunk {
-	ch := make(chan llm.StreamChunk)
-
-	go func() {
-		defer close(ch)
-
-		messages := openaicompat.ConvertMessages(opts.Messages, opts.SystemPrompt, openaicompat.DefaultAssistantMessage)
-
-		params := openai.ChatCompletionNewParams{
-			Model:    opts.Model,
-			Messages: messages,
-		}
-
-		if opts.MaxTokens > 0 {
-			params.MaxCompletionTokens = openai.Int(int64(opts.MaxTokens))
-		}
-
-		if opts.Temperature > 0 {
-			params.Temperature = openai.Float(opts.Temperature)
-		}
-
-		// Configure reasoning effort for o-series models
-		if effort := openaiReasoningEffort(opts.ThinkingLevel); effort != "" {
-			params.ReasoningEffort = effort
-		}
-
-		// Add tools if provided
-		if len(opts.Tools) > 0 {
-			params.Tools = openaicompat.ConvertTools(opts.Tools)
-		}
-
-		// Log request
-		log.LogRequestCtx(ctx, c.name, opts.Model, opts)
-
-		// Create streaming request
-		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
-
-		state := streamutil.NewState(c.name)
-
-		// Track tool calls
-		toolCalls := make(map[int]*core.ToolCall)
-
-		// Read stream events
-		for stream.Next() {
-			chunk := stream.Current()
-			state.Count()
-
-			for _, choice := range chunk.Choices {
-				// Handle text delta
-				if choice.Delta.Content != "" {
-					state.EmitText(ch, choice.Delta.Content)
-				}
-
-				// Handle tool calls
-				for _, tc := range choice.Delta.ToolCalls {
-					idx := int(tc.Index)
-
-					// Initialize new tool call
-					if _, exists := toolCalls[idx]; !exists {
-						toolCalls[idx] = &core.ToolCall{
-							ID:   tc.ID,
-							Name: tc.Function.Name,
-						}
-						state.EmitToolStart(ch, tc.ID, tc.Function.Name)
-					}
-
-					// Accumulate arguments
-					if tc.Function.Arguments != "" {
-						toolCalls[idx].Input += tc.Function.Arguments
-						state.EmitToolInput(ch, toolCalls[idx].ID, tc.Function.Arguments)
-					}
-				}
-
-				// Handle finish reason
-				if choice.FinishReason != "" {
-					state.Response.StopReason = openaicompat.MapFinishReason(choice.FinishReason)
-				}
+	return openaicompat.StreamChatCompletions(ctx, openaicompat.ChatStreamConfig{
+		Client:           c.client,
+		ProviderName:     c.name,
+		Options:          opts,
+		ConvertAssistant: openaicompat.DefaultAssistantMessage,
+		ConfigureParams: func(params *openai.ChatCompletionNewParams) {
+			// Configure reasoning effort for o-series models.
+			if effort := openaiReasoningEffort(opts.ThinkingLevel); effort != "" {
+				params.ReasoningEffort = effort
 			}
-
-			// Handle usage
-			state.UpdateUsage(int(chunk.Usage.PromptTokens), int(chunk.Usage.CompletionTokens))
-		}
-
-		if err := stream.Err(); err != nil {
-			state.Fail(ch, err)
-			return
-		}
-
-		state.AddToolCallsSorted(toolCalls)
-		state.EnsureToolUseStopReason()
-		state.Finish(ctx, ch)
-	}()
-
-	return ch
+		},
+	})
 }
 
 // ListModels returns the available models for OpenAI using the API

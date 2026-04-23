@@ -3,8 +3,8 @@ package session
 import (
 	"time"
 
-	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/session/transcript"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 func NormalizeMetadata(meta *SessionMetadata, entries []Entry, defaultCwd string, now time.Time) {

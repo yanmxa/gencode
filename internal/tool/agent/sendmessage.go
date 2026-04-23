@@ -250,8 +250,6 @@ func normalizeSendMessageParams(params map[string]any) map[string]any {
 	return normalized
 }
 
-
-
 func ensureContinuationTaskExists(taskID string) error {
 	bgTask, found := task.Default().Get(taskID)
 	if !found {

@@ -180,4 +180,3 @@ func (a *agentRegistryAdapter) SetEnabled(name string, enabled bool, userLevel b
 func skillCommandInfos() []command.Info {
 	return input.SkillCommandInfos()
 }
-

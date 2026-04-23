@@ -13,8 +13,8 @@ const (
 	// Deprecated aliases — kept for backward compatibility with cached model contexts.
 	ToolAgentOutput   = ToolTaskOutput
 	ToolAgentStop     = ToolTaskStop
-	ToolSkill      = "Skill"
-	ToolTaskCreate = "TaskCreate"
+	ToolSkill         = "Skill"
+	ToolTaskCreate    = "TaskCreate"
 	ToolTaskGet       = "TaskGet"
 	ToolTaskUpdate    = "TaskUpdate"
 	ToolTaskList      = "TaskList"

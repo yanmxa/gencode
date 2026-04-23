@@ -23,7 +23,7 @@ type BuildParams struct {
 	CWDFunc func() string // dynamic CWD for tool execution; falls back to CWD if nil
 	IsGit   bool
 
-	UserInstructions string
+	UserInstructions    string
 	ProjectInstructions string
 	SkillsPrompt        string
 	AgentsPrompt        string
@@ -50,7 +50,7 @@ func buildAgent(p BuildParams) (core.Agent, *PermissionBridge, error) {
 		ModelID:             client.ModelID(),
 		Cwd:                 p.CWD,
 		IsGit:               p.IsGit,
-		UserInstructions: p.UserInstructions,
+		UserInstructions:    p.UserInstructions,
 		ProjectInstructions: p.ProjectInstructions,
 		Skills:              p.SkillsPrompt,
 		Agents:              p.AgentsPrompt,

@@ -133,11 +133,11 @@ func runHeadlessAgent() error {
 	}
 
 	ag := core.NewAgent(core.Config{
-		LLM:      client,
-		System:   sys,
-		Tools:    tools,
-		CWD:      cwd,
-		MaxTurns: maxTurns,
+		LLM:       client,
+		System:    sys,
+		Tools:     tools,
+		CWD:       cwd,
+		MaxTurns:  maxTurns,
 		OutboxBuf: -1,
 	})
 
@@ -159,5 +159,3 @@ func runHeadlessAgent() error {
 	fmt.Printf("\n---\nDone: %d turns, %d tool uses\n", result.Turns, result.ToolUses)
 	return nil
 }
-
-

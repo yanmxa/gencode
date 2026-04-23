@@ -32,9 +32,9 @@ func (pt *permissionTools) Get(name string) core.Tool {
 	return &permissionTool{inner: t, check: pt.check}
 }
 
-func (pt *permissionTools) All() []core.Tool     { return pt.inner.All() }
-func (pt *permissionTools) Add(tool core.Tool)    { pt.inner.Add(tool) }
-func (pt *permissionTools) Remove(name string)    { pt.inner.Remove(name) }
+func (pt *permissionTools) All() []core.Tool           { return pt.inner.All() }
+func (pt *permissionTools) Add(tool core.Tool)         { pt.inner.Add(tool) }
+func (pt *permissionTools) Remove(name string)         { pt.inner.Remove(name) }
 func (pt *permissionTools) Schemas() []core.ToolSchema { return pt.inner.Schemas() }
 
 // permissionTool wraps a single core.Tool with permission checking.

@@ -21,38 +21,38 @@ import (
 // model at construction time. Model methods access services through this
 // struct instead of calling Default() package-level accessors directly.
 type services struct {
-	Setting       setting.Service
-	LLM           llm.Service
-	Tool          tool.Service
-	Hook          hook.Service
-	Session       session.Service
-	Skill         skill.Service
-	Subagent      subagent.Service
-	Command       command.Service
-	Task          task.Service
-	Tracker       tracker.Service
-	Cron          cron.Service
-	MCP mcp.Service
-	Plugin        plugin.Service
-	Agent         agent.Service
+	Setting  setting.Service
+	LLM      llm.Service
+	Tool     tool.Service
+	Hook     hook.Service
+	Session  session.Service
+	Skill    skill.Service
+	Subagent subagent.Service
+	Command  command.Service
+	Task     task.Service
+	Tracker  tracker.Service
+	Cron     cron.Service
+	MCP      mcp.Service
+	Plugin   plugin.Service
+	Agent    agent.Service
 }
 
 func newServices() services {
 	return services{
-		Setting:       setting.Default(),
-		LLM:           llm.Default(),
-		Tool:          tool.Default(),
-		Hook:          hook.DefaultIfInit(),
-		Session:       session.Default(),
-		Skill:         skill.Default(),
-		Subagent:      subagent.Default(),
-		Command:       command.Default(),
-		Task:          task.Default(),
-		Tracker:       tracker.Default(),
-		Cron:          cron.Default(),
-		MCP: mcp.Default(),
-		Plugin:        plugin.Default(),
-		Agent:         agent.Default(),
+		Setting:  setting.Default(),
+		LLM:      llm.Default(),
+		Tool:     tool.Default(),
+		Hook:     hook.DefaultIfInit(),
+		Session:  session.Default(),
+		Skill:    skill.Default(),
+		Subagent: subagent.Default(),
+		Command:  command.Default(),
+		Task:     task.Default(),
+		Tracker:  tracker.Default(),
+		Cron:     cron.Default(),
+		MCP:      mcp.Default(),
+		Plugin:   plugin.Default(),
+		Agent:    agent.Default(),
 	}
 }
 

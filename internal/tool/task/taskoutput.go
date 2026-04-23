@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	IconTaskOutput = ">"
+	IconTaskOutput              = ">"
 	recentLaunchPollingCooldown = 15 * time.Second
 )
 

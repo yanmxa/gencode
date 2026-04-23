@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/yanmxa/gencode/internal/core"
-	"github.com/yanmxa/gencode/internal/task/tracker"
 	"github.com/yanmxa/gencode/internal/session/transcript"
+	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
 type Store struct {

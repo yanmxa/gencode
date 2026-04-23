@@ -119,13 +119,13 @@ type CompletionResponse struct {
 
 // Logging accessors — satisfy duck-typed interfaces in the log package so
 // log does not need to import llm (foundation-layer contract).
-func (r CompletionResponse) LogStopReason() string  { return r.StopReason }
-func (r CompletionResponse) LogContent() string     { return r.Content }
-func (r CompletionResponse) LogThinking() string    { return r.Thinking }
-func (r CompletionResponse) LogInputTokens() int    { return r.Usage.InputTokens }
-func (r CompletionResponse) LogOutputTokens() int   { return r.Usage.OutputTokens }
-func (r CompletionResponse) LogRawToolCalls() any   { return r.ToolCalls }
-func (r CompletionResponse) LogRawUsage() any       { return r.Usage }
+func (r CompletionResponse) LogStopReason() string { return r.StopReason }
+func (r CompletionResponse) LogContent() string    { return r.Content }
+func (r CompletionResponse) LogThinking() string   { return r.Thinking }
+func (r CompletionResponse) LogInputTokens() int   { return r.Usage.InputTokens }
+func (r CompletionResponse) LogOutputTokens() int  { return r.Usage.OutputTokens }
+func (r CompletionResponse) LogRawToolCalls() any  { return r.ToolCalls }
+func (r CompletionResponse) LogRawUsage() any      { return r.Usage }
 
 func (r CompletionResponse) LogToolCallSummary(escaper func(string) string) string {
 	if len(r.ToolCalls) == 0 {

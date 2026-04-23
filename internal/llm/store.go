@@ -264,7 +264,6 @@ func (s *Store) GetCurrentModel() *CurrentModelInfo {
 	return s.data.Current
 }
 
-
 // GetSearchProvider returns the current search provider name
 func (s *Store) GetSearchProvider() string {
 	s.mu.RLock()
@@ -337,4 +336,3 @@ func (s *Store) GetTokenLimit(modelID string) (inputLimit, outputLimit int, ok b
 	}
 	return override.InputTokenLimit, override.OutputTokenLimit, true
 }
-

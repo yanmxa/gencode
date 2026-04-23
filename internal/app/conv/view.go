@@ -211,4 +211,3 @@ func renderPendingToolSpinnerFromParams(p MessageRenderParams, suppressAgentLabe
 		SuppressAgentLabel:      suppressAgentLabel,
 	})
 }
-

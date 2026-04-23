@@ -395,4 +395,3 @@ func (r *Registry) GetAllHooks() map[string][]HookMatcher {
 
 // defaultRegistry is the package-level plugin registry.
 var defaultRegistry = NewRegistry()
-

@@ -35,7 +35,7 @@ type Options struct{}
 // ── singleton ──────────────────────────────────────────────
 
 var (
-	mu      sync.RWMutex
+	mu       sync.RWMutex
 	instance Service
 )
 

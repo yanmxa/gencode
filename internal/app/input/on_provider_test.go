@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/llm"
 )
 
 func TestCancelClearsTransientState(t *testing.T) {
@@ -311,9 +311,9 @@ func TestNavigationSkipsProviderHeaders(t *testing.T) {
 	model1 := providerModelItem{ID: "m1", ProviderName: "openai"}
 	model2 := providerModelItem{ID: "m2", ProviderName: "anthropic"}
 	m.visibleItems = []providerListItem{
-		{Kind: providerItemProviderHeader}, // 0 - not selectable
+		{Kind: providerItemProviderHeader},        // 0 - not selectable
 		{Kind: providerItemModel, Model: &model1}, // 1
-		{Kind: providerItemProviderHeader}, // 2 - not selectable
+		{Kind: providerItemProviderHeader},        // 2 - not selectable
 		{Kind: providerItemModel, Model: &model2}, // 3
 	}
 	m.selectedIdx = 1

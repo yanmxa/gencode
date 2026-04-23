@@ -1,13 +1,14 @@
 package mode
 
 import (
-	"github.com/yanmxa/gencode/internal/tool"
 	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/yanmxa/gencode/internal/tool"
 )
 
 func runGitToolTest(t *testing.T, dir string, args ...string) {

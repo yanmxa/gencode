@@ -11,4 +11,3 @@ type MCPExecutor interface {
 	IsMCPTool(name string) bool
 	ExecuteMCP(ctx context.Context, name string, params map[string]any) (toolresult.ToolResult, error)
 }
-

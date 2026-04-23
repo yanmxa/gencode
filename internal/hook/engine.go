@@ -92,7 +92,6 @@ func (e *Engine) SetLLMCompleter(fn LLMCompleter, model string) {
 	e.hookModel = model
 }
 
-
 // SetAsyncHookCallback configures delivery of background asyncRewake hook results.
 func (e *Engine) SetAsyncHookCallback(cb AsyncHookCallback) {
 	e.mu.Lock()

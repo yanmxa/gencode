@@ -141,7 +141,7 @@ func (m model) renderTrackerList() string {
 		StreamActive: m.conv.Stream.Active,
 		Width:        m.env.Width,
 		SpinnerView:  m.conv.Spinner.View(),
-		Blockers: m.services.Tracker.OpenBlockers,
+		Blockers:     m.services.Tracker.OpenBlockers,
 	})
 }
 
@@ -206,4 +206,3 @@ func buildTaskOwnerMap(tasks []*tracker.Task) map[string]string {
 	}
 	return ownerMap
 }
-

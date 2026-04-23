@@ -187,9 +187,9 @@ func TestGlob_PatternMatching(t *testing.T) {
 	}
 
 	files := map[string]string{
-		filepath.Join(tmpDir, "a.go"):             "package main",
-		filepath.Join(tmpDir, "b.txt"):            "text",
-		filepath.Join(tmpDir, "sub", "c.go"):      "package sub",
+		filepath.Join(tmpDir, "a.go"):                "package main",
+		filepath.Join(tmpDir, "b.txt"):               "text",
+		filepath.Join(tmpDir, "sub", "c.go"):         "package sub",
 		filepath.Join(tmpDir, "sub", "deep", "d.go"): "package deep",
 		filepath.Join(tmpDir, "sub", "deep", "e.md"): "# doc",
 	}

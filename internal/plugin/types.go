@@ -111,7 +111,7 @@ type HooksConfig struct {
 
 // HookMatcher represents a hook matcher with associated hook commands.
 type HookMatcher struct {
-	Matcher string       `json:"matcher,omitempty"`
+	Matcher string            `json:"matcher,omitempty"`
 	Hooks   []setting.HookCmd `json:"hooks"`
 }
 

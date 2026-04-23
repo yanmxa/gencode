@@ -23,14 +23,14 @@ type BashTask struct {
 
 	cancel context.CancelFunc // Cancel function
 
-	mu       sync.RWMutex // Protects mutable fields below
-	status   TaskStatus   // Current status
-	endTime  time.Time    // When the task ended (if completed)
-	exitCode int          // Exit code (if completed)
-	errMsg   string       // Error message (if failed)
-	output   bytes.Buffer // Collected stdout/stderr
+	mu       sync.RWMutex  // Protects mutable fields below
+	status   TaskStatus    // Current status
+	endTime  time.Time     // When the task ended (if completed)
+	exitCode int           // Exit code (if completed)
+	errMsg   string        // Error message (if failed)
+	output   bytes.Buffer  // Collected stdout/stderr
 	done     chan struct{} // Closed when task completes
-	doneOnce sync.Once    // Guards done channel close
+	doneOnce sync.Once     // Guards done channel close
 }
 
 // Verify BashTask implements BackgroundTask

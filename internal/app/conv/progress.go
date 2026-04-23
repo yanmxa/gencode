@@ -238,4 +238,3 @@ func RenderPendingToolSpinner(params PendingToolSpinnerParams) string {
 	// no separate spinner line needed.
 	return ""
 }
-

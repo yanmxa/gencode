@@ -10,10 +10,10 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	streamutil "github.com/yanmxa/gencode/internal/llm/stream"
+	"github.com/yanmxa/gencode/internal/log"
 )
 
 // validToolIDPattern matches the Claude API requirement for tool_use IDs.

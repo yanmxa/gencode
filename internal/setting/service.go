@@ -62,8 +62,8 @@ func Initialize(opts Options) {
 // ── singleton ──────────────────────────────────────────────
 
 var (
-	mu    sync.RWMutex
-	instance  Service
+	mu       sync.RWMutex
+	instance Service
 )
 
 // Default returns the singleton Service instance.

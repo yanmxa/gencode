@@ -153,7 +153,6 @@ func interleavedUserContentToBlocks(content, displayContent string, images []cor
 	return blocks
 }
 
-
 func assistantContentToBlocks(content, thinking, thinkingSignature string, toolCalls []core.ToolCall) []ContentBlock {
 	var blocks []ContentBlock
 	if thinking != "" {
