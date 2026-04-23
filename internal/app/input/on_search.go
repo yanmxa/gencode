@@ -116,15 +116,7 @@ func (s *SearchSelector) Select() tea.Cmd {
 
 	selected := s.items[s.selectedIdx]
 	if !selected.Available {
-		if len(selected.EnvVars) > 0 {
-			s.apiKeyActive = true
-			s.apiKeyEnvVar = selected.EnvVars[0]
-			ti := textinput.New()
-			ti.Placeholder = selected.EnvVars[0]
-			ti.EchoMode = textinput.EchoPassword
-			ti.Focus()
-			s.apiKeyInput = ti
-		}
+		s.openAPIKeyInput()
 		return nil
 	}
 
@@ -178,9 +170,28 @@ func (s *SearchSelector) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		if s.selectedIdx > 0 {
 			s.selectedIdx--
 		}
+	case "e":
+		s.openAPIKeyInput()
 	}
 
 	return nil
+}
+
+func (s *SearchSelector) selectedHasEnvVars() bool {
+	return s.selectedIdx < len(s.items) && len(s.items[s.selectedIdx].EnvVars) > 0
+}
+
+func (s *SearchSelector) openAPIKeyInput() {
+	if !s.selectedHasEnvVars() {
+		return
+	}
+	s.apiKeyActive = true
+	s.apiKeyEnvVar = s.items[s.selectedIdx].EnvVars[0]
+	ti := textinput.New()
+	ti.Placeholder = s.apiKeyEnvVar
+	ti.EchoMode = textinput.EchoPassword
+	ti.Focus()
+	s.apiKeyInput = ti
 }
 
 func (s *SearchSelector) handleAPIKeyInput(key tea.KeyMsg) tea.Cmd {
@@ -190,13 +201,11 @@ func (s *SearchSelector) handleAPIKeyInput(key tea.KeyMsg) tea.Cmd {
 		if value == "" {
 			return nil
 		}
-		// Persist to secret store and set for current session
 		if store := secret.Default(); store != nil {
 			_ = store.Set(s.apiKeyEnvVar, value)
 		}
 		os.Setenv(s.apiKeyEnvVar, value)
 
-		// Mark provider as available
 		for i := range s.items {
 			for _, ev := range s.items[i].EnvVars {
 				if ev == s.apiKeyEnvVar {
@@ -276,7 +285,11 @@ func (s *SearchSelector) Render() string {
 	if s.apiKeyActive {
 		sb.WriteString(dimStyle.Render("Paste API key · Enter confirm · Esc cancel"))
 	} else {
-		sb.WriteString(dimStyle.Render("↑/↓ navigate · Enter select · Esc cancel"))
+		hint := "↑/↓ navigate · Enter select · Esc cancel"
+		if s.selectedHasEnvVars() {
+			hint = "↑/↓ navigate · Enter select · e edit key · Esc cancel"
+		}
+		sb.WriteString(dimStyle.Render(hint))
 	}
 
 	content := sb.String()
