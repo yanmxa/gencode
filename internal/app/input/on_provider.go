@@ -18,6 +18,7 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/secret"
 	"github.com/yanmxa/gencode/internal/log"
 )
 
@@ -418,7 +419,9 @@ func (s *ProviderSelector) handleAPIKeyInput(key tea.KeyMsg) tea.Cmd {
 		if value == "" {
 			return nil
 		}
-		// Set the env var for this session
+		if store := secret.Default(); store != nil {
+			_ = store.Set(s.apiKeyEnvVar, value)
+		}
 		os.Setenv(s.apiKeyEnvVar, value)
 		s.apiKeyActive = false
 
@@ -557,7 +560,7 @@ func (s *ProviderSelector) findAuthMethodIndex(item providerListItem) int {
 
 func providerIsEnvReady(envVars []string) bool {
 	for _, v := range envVars {
-		if v != "" && os.Getenv(v) != "" {
+		if v != "" && secret.Resolve(v) != "" {
 			return true
 		}
 	}

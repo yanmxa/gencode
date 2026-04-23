@@ -8,6 +8,7 @@ import (
 	"github.com/openai/openai-go/v3/option"
 
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/secret"
 )
 
 // APIKeyMeta is the metadata for Moonshot via API Key
@@ -27,7 +28,7 @@ func NewAPIKeyClient(ctx context.Context) (llm.Provider, error) {
 	}
 
 	client := openai.NewClient(
-		option.WithAPIKey(os.Getenv("MOONSHOT_API_KEY")),
+		option.WithAPIKey(secret.Resolve("MOONSHOT_API_KEY")),
 		option.WithBaseURL(baseURL),
 	)
 	return NewClient(client, "moonshot:api_key"), nil

@@ -7,11 +7,13 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/search"
+	"github.com/yanmxa/gencode/internal/secret"
 	"github.com/yanmxa/gencode/internal/setting"
 )
 
@@ -35,6 +37,10 @@ type SearchSelector struct {
 	height      int
 	store       *llm.Store
 	settingSvc  setting.Service
+
+	apiKeyActive bool
+	apiKeyEnvVar string
+	apiKeyInput  textinput.Model
 }
 
 func NewSearchSelector(settingSvc setting.Service) SearchSelector {
@@ -61,7 +67,7 @@ func (s *SearchSelector) Enter(store *llm.Store, width, height int) error {
 		available := !meta.RequiresAPIKey
 		if !available {
 			for _, envVar := range meta.EnvVars {
-				if os.Getenv(envVar) != "" {
+				if secret.Resolve(envVar) != "" {
 					available = true
 					break
 				}
@@ -110,6 +116,15 @@ func (s *SearchSelector) Select() tea.Cmd {
 
 	selected := s.items[s.selectedIdx]
 	if !selected.Available {
+		if len(selected.EnvVars) > 0 {
+			s.apiKeyActive = true
+			s.apiKeyEnvVar = selected.EnvVars[0]
+			ti := textinput.New()
+			ti.Placeholder = selected.EnvVars[0]
+			ti.EchoMode = textinput.EchoPassword
+			ti.Focus()
+			s.apiKeyInput = ti
+		}
 		return nil
 	}
 
@@ -130,6 +145,10 @@ func (s *SearchSelector) Select() tea.Cmd {
 }
 
 func (s *SearchSelector) HandleKeypress(key tea.KeyMsg) tea.Cmd {
+	if s.apiKeyActive {
+		return s.handleAPIKeyInput(key)
+	}
+
 	switch key.Type {
 	case tea.KeyUp, tea.KeyCtrlP:
 		if s.selectedIdx > 0 {
@@ -161,6 +180,46 @@ func (s *SearchSelector) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	return nil
+}
+
+func (s *SearchSelector) handleAPIKeyInput(key tea.KeyMsg) tea.Cmd {
+	switch key.Type {
+	case tea.KeyEnter:
+		value := strings.TrimSpace(s.apiKeyInput.Value())
+		if value == "" {
+			return nil
+		}
+		// Persist to secret store and set for current session
+		if store := secret.Default(); store != nil {
+			_ = store.Set(s.apiKeyEnvVar, value)
+		}
+		os.Setenv(s.apiKeyEnvVar, value)
+
+		// Mark provider as available
+		for i := range s.items {
+			for _, ev := range s.items[i].EnvVars {
+				if ev == s.apiKeyEnvVar {
+					s.items[i].Available = true
+				}
+			}
+		}
+		s.apiKeyActive = false
+		return s.Select()
+	case tea.KeyEsc:
+		s.apiKeyActive = false
+		return nil
+	default:
+		s.apiKeyInput, _ = s.apiKeyInput.Update(key)
+		return nil
+	}
+}
+
+func (s *SearchSelector) HandleUpdate(msg tea.Msg) tea.Cmd {
+	if !s.apiKeyActive {
+		return nil
+	}
+	s.apiKeyInput, _ = s.apiKeyInput.Update(msg)
 	return nil
 }
 
@@ -200,13 +259,25 @@ func (s *SearchSelector) Render() string {
 		line := kit.FormatAlignedRow(markerStyle.Render(marker), item.DisplayName, nameCol, envInfo)
 		body.WriteString(kit.RenderSelectableRow(line, isSelected))
 		body.WriteString("\n")
+
+		if s.apiKeyActive && isSelected {
+			label := dimStyle.Render(s.apiKeyEnvVar + ": ")
+			inputBg := lipgloss.AdaptiveColor{Dark: "#1E293B", Light: "#F1F5F9"}
+			boxStyle := lipgloss.NewStyle().Background(inputBg).Padding(0, 1)
+			body.WriteString("      " + boxStyle.Render(label+s.apiKeyInput.View()))
+			body.WriteString("\n")
+		}
 	}
 	sb.WriteString(s.renderViewport(body.String()))
 
 	sb.WriteString("\n")
 	sb.WriteString(s.sepLine())
 	sb.WriteString("\n")
-	sb.WriteString(dimStyle.Render("↑/↓ navigate · Enter select · Esc cancel"))
+	if s.apiKeyActive {
+		sb.WriteString(dimStyle.Render("Paste API key · Enter confirm · Esc cancel"))
+	} else {
+		sb.WriteString(dimStyle.Render("↑/↓ navigate · Enter select · Esc cancel"))
+	}
 
 	content := sb.String()
 	cw := s.contentWidth()

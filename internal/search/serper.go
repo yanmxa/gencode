@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 )
 
 const (
@@ -20,11 +19,14 @@ type SerperProvider struct {
 	apiKey string
 }
 
-// NewSerperProvider creates a new Serper provider
-func NewSerperProvider() *SerperProvider {
-	return &SerperProvider{
-		apiKey: os.Getenv(serperEnvKey),
+// NewSerperProvider creates a new Serper provider.
+// If apiKey is provided, it is used directly.
+func NewSerperProvider(apiKey ...string) *SerperProvider {
+	var key string
+	if len(apiKey) > 0 {
+		key = apiKey[0]
 	}
+	return &SerperProvider{apiKey: key}
 }
 
 func (p *SerperProvider) Name() ProviderName   { return ProviderSerper }

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 )
 
 const (
@@ -20,11 +19,14 @@ type BraveProvider struct {
 	apiKey string
 }
 
-// NewBraveProvider creates a new Brave provider
-func NewBraveProvider() *BraveProvider {
-	return &BraveProvider{
-		apiKey: os.Getenv(braveEnvKey),
+// NewBraveProvider creates a new Brave provider.
+// If apiKey is provided, it is used directly.
+func NewBraveProvider(apiKey ...string) *BraveProvider {
+	var key string
+	if len(apiKey) > 0 {
+		key = apiKey[0]
 	}
+	return &BraveProvider{apiKey: key}
 }
 
 func (p *BraveProvider) Name() ProviderName   { return ProviderBrave }

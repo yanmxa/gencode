@@ -8,6 +8,7 @@ import (
 	"github.com/openai/openai-go/v3/option"
 
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/secret"
 )
 
 // APIKeyMeta is the metadata for Qwen via API Key (DashScope)
@@ -27,7 +28,7 @@ func NewAPIKeyClient(ctx context.Context) (llm.Provider, error) {
 	}
 
 	client := openai.NewClient(
-		option.WithAPIKey(os.Getenv("DASHSCOPE_API_KEY")),
+		option.WithAPIKey(secret.Resolve("DASHSCOPE_API_KEY")),
 		option.WithBaseURL(baseURL),
 	)
 	return NewClient(client, "alibaba:api_key"), nil

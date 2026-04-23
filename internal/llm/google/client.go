@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	stdlog "log"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -19,6 +18,7 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/llm"
 	streamutil "github.com/yanmxa/gencode/internal/llm/stream"
+	"github.com/yanmxa/gencode/internal/secret"
 )
 
 // Client implements the Provider interface using the Google GenAI SDK
@@ -331,9 +331,9 @@ func (c *Client) fetchModels(ctx context.Context) ([]llm.ModelInfo, error) {
 
 // NewAPIKeyClient creates a new Google client using API Key authentication
 func NewAPIKeyClient(ctx context.Context) (llm.Provider, error) {
-	apiKey := os.Getenv("GOOGLE_API_KEY")
+	apiKey := secret.Resolve("GOOGLE_API_KEY")
 	if apiKey == "" {
-		apiKey = os.Getenv("GEMINI_API_KEY")
+		apiKey = secret.Resolve("GEMINI_API_KEY")
 	}
 
 	// The Google GenAI SDK warns via log.Printf when both GOOGLE_API_KEY and

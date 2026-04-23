@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/yanmxa/gencode/internal/secret"
 )
 
 func FuzzyMatch(str, pattern string) bool {
@@ -126,7 +128,7 @@ func RenderEnvVarStatus(envVar string) string {
 	if envVar == "" {
 		return ""
 	}
-	if os.Getenv(envVar) != "" {
+	if secret.Resolve(envVar) != "" {
 		return SelectorStatusReady().Render(envVar + " ✓")
 	}
 	return SelectorStatusNone().Render(envVar + " ✗")

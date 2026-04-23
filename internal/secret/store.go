@@ -1,0 +1,93 @@
+package secret
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"sync"
+)
+
+type Store struct {
+	mu   sync.RWMutex
+	path string
+	data map[string]string
+}
+
+var (
+	defaultStore *Store
+	defaultOnce  sync.Once
+)
+
+func Default() *Store {
+	defaultOnce.Do(func() {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return
+		}
+		configDir := filepath.Join(homeDir, ".gen")
+		_ = os.MkdirAll(configDir, 0o755)
+		defaultStore = &Store{
+			path: filepath.Join(configDir, "secrets.json"),
+			data: make(map[string]string),
+		}
+		_ = defaultStore.load()
+	})
+	return defaultStore
+}
+
+func (s *Store) load() error {
+	raw, err := os.ReadFile(s.path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	return json.Unmarshal(raw, &s.data)
+}
+
+func (s *Store) save() error {
+	raw, err := json.MarshalIndent(s.data, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.path)
+}
+
+func (s *Store) Set(key, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data[key] = value
+	return s.save()
+}
+
+func (s *Store) Get(key string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.data[key]
+}
+
+// ResolveEnv returns the value for an environment variable name,
+// checking os.Getenv first, then falling back to the stored value.
+func (s *Store) ResolveEnv(envVar string) string {
+	if v := os.Getenv(envVar); v != "" {
+		return v
+	}
+	return s.Get(envVar)
+}
+
+// Resolve is a standalone helper that uses the default store.
+func Resolve(envVar string) string {
+	if v := os.Getenv(envVar); v != "" {
+		return v
+	}
+	if s := Default(); s != nil {
+		return s.Get(envVar)
+	}
+	return ""
+}

@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/yanmxa/gencode/internal/secret"
 	"github.com/yanmxa/gencode/internal/setting"
 )
 
@@ -15,13 +16,14 @@ func Preferred() Provider {
 	return GetDefaultProvider()
 }
 
-// CreateProvider creates a search provider by name
+// CreateProvider creates a search provider by name.
+// API keys are resolved via os.Getenv first, then the persistent secret store.
 func CreateProvider(name ProviderName) Provider {
 	switch name {
 	case ProviderSerper:
-		return NewSerperProvider()
+		return NewSerperProvider(secret.Resolve(serperEnvKey))
 	case ProviderBrave:
-		return NewBraveProvider()
+		return NewBraveProvider(secret.Resolve(braveEnvKey))
 	case ProviderExa:
 		fallthrough
 	default:
