@@ -185,6 +185,8 @@ func (m model) messageRenderParams() conv.MessageRenderParams {
 		CommittedCount:          m.conv.CommittedCount,
 		StreamActive:            m.conv.Stream.Active,
 		BuildingTool:            m.conv.Stream.BuildingTool,
+		PendingCalls:            m.conv.Tool.PendingCalls,
+		CurrentIdx:              m.conv.Tool.CurrentIdx,
 		Width:                   m.env.Width,
 		MDRenderer:              m.conv.MDRenderer,
 		SpinnerView:             m.conv.Spinner.View(),

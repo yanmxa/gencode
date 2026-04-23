@@ -35,6 +35,9 @@ func StreamChatCompletions(ctx context.Context, cfg ChatStreamConfig) <-chan llm
 		params := openai.ChatCompletionNewParams{
 			Model:    opts.Model,
 			Messages: messages,
+			StreamOptions: openai.ChatCompletionStreamOptionsParam{
+				IncludeUsage: openai.Bool(true),
+			},
 		}
 		if opts.MaxTokens > 0 {
 			params.MaxCompletionTokens = openai.Int(int64(opts.MaxTokens))

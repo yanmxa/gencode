@@ -46,10 +46,12 @@ func handleAgentEvent(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	case core.OnTurn:
 		result, _ := ev.Result()
 		m.Stream.Stop()
+		m.Tool.ClearPending()
 		return rt.ProcessTurnEnd(result)
 	case core.OnStop:
 		err, _ := ev.Error()
 		m.Stream.Stop()
+		m.Tool.ClearPending()
 		return rt.ProcessAgentStop(err)
 	case core.OnCompact:
 		info, _ := ev.CompactInfo()
@@ -72,11 +74,13 @@ func handleAgentEventBatch(rt Runtime, m *Model, events []core.Event, closed boo
 		case core.OnTurn:
 			result, _ := ev.Result()
 			m.Stream.Stop()
+			m.Tool.ClearPending()
 			cmds = append(cmds, rt.ProcessTurnEnd(result))
 			needsContinue = false
 		case core.OnStop:
 			err, _ := ev.Error()
 			m.Stream.Stop()
+			m.Tool.ClearPending()
 			cmds = append(cmds, rt.ProcessAgentStop(err))
 			needsContinue = false
 		case core.OnCompact:
@@ -94,6 +98,7 @@ func handleAgentEventBatch(rt Runtime, m *Model, events []core.Event, closed boo
 
 	if closed {
 		m.Stream.Stop()
+		m.Tool.ClearPending()
 		cmds = append(cmds, rt.ProcessAgentStop(nil))
 		needsContinue = false
 	}
@@ -172,6 +177,7 @@ func applyPostInfer(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	}
 	if len(resp.ToolCalls) > 0 {
 		m.SetLastToolCalls(resp.ToolCalls)
+		m.Tool.Track(resp.ToolCalls)
 	}
 	m.Stream.BuildingTool = ""
 	return nil
@@ -180,6 +186,7 @@ func applyPostInfer(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 func applyPreTool(m *Model, ev core.Event) {
 	if tc, ok := ev.ToolCall(); ok {
 		m.Stream.BuildingTool = tc.Name
+		m.Tool.MarkCurrent(tc.ID)
 	}
 }
 
@@ -192,6 +199,7 @@ func applyPostTool(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	if tool.IsAgentToolName(tr.ToolName) {
 		m.TaskProgress = nil
 	}
+	m.Tool.MarkComplete(tr.ToolCallID)
 	result := rt.ProcessToolResult(tr)
 	m.Append(core.ChatMessage{
 		Role:       core.RoleUser,

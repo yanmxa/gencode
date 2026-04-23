@@ -42,10 +42,51 @@ func (t *ToolExecState) Reset() {
 	if t.Cancel != nil {
 		t.Cancel()
 	}
-	t.PendingCalls = nil
-	t.CurrentIdx = 0
+	t.ClearPending()
 	t.Ctx = nil
 	t.Cancel = nil
+}
+
+func (t *ToolExecState) Track(calls []core.ToolCall) {
+	if len(calls) == 0 {
+		t.ClearPending()
+		return
+	}
+	t.PendingCalls = append([]core.ToolCall(nil), calls...)
+	t.CurrentIdx = 0
+}
+
+func (t *ToolExecState) MarkCurrent(toolCallID string) {
+	for i, tc := range t.PendingCalls {
+		if tc.ID == toolCallID {
+			t.CurrentIdx = i
+			return
+		}
+	}
+}
+
+func (t *ToolExecState) MarkComplete(toolCallID string) {
+	completedIdx := -1
+	for i, tc := range t.PendingCalls {
+		if tc.ID == toolCallID {
+			completedIdx = i
+			break
+		}
+	}
+	if completedIdx == -1 {
+		return
+	}
+
+	if completedIdx >= len(t.PendingCalls)-1 {
+		t.ClearPending()
+		return
+	}
+	t.CurrentIdx = completedIdx + 1
+}
+
+func (t *ToolExecState) ClearPending() {
+	t.PendingCalls = nil
+	t.CurrentIdx = 0
 }
 
 // DrainPendingCalls cancels the current context and returns any remaining

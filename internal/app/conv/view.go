@@ -11,6 +11,8 @@ type MessageRenderParams struct {
 	CommittedCount          int
 	StreamActive            bool
 	BuildingTool            string
+	PendingCalls            []core.ToolCall
+	CurrentIdx              int
 	Width                   int
 	MDRenderer              *MDRenderer
 	SpinnerView             string
@@ -150,7 +152,10 @@ func renderAssistantWithTools(p MessageRenderParams, msg core.ChatMessage, idx i
 		ToolCalls:         msg.ToolCalls,
 		ToolCallsExpanded: msg.ToolCallsExpanded,
 		ResultMap:         resultMap,
+		ParallelMode:      len(p.PendingCalls) > 1,
 		TaskProgress:      p.TaskProgress,
+		PendingCalls:      p.PendingCalls,
+		CurrentIdx:        p.CurrentIdx,
 		SpinnerView:       p.SpinnerView,
 		TaskOwnerMap:      p.TaskOwnerMap,
 		MDRenderer:        p.MDRenderer,
@@ -205,6 +210,8 @@ func renderPendingToolSpinnerFromParams(p MessageRenderParams, suppressAgentLabe
 	return RenderPendingToolSpinner(PendingToolSpinnerParams{
 		InteractivePromptActive: p.InteractivePromptActive,
 		BuildingTool:            p.BuildingTool,
+		PendingCalls:            p.PendingCalls,
+		CurrentIdx:              p.CurrentIdx,
 		TaskProgress:            p.TaskProgress,
 		SpinnerView:             p.SpinnerView,
 		Width:                   p.Width,

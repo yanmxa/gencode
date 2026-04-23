@@ -1,0 +1,89 @@
+package openaicompat
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+
+	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/llm"
+)
+
+type streamCaptureTransport struct {
+	body []byte
+}
+
+func (t *streamCaptureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Body != nil {
+		body, _ := io.ReadAll(req.Body)
+		t.body = body
+	}
+
+	streamBody := strings.Join([]string{
+		`data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
+		`data: {"id":"1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}`,
+		`data: [DONE]`,
+		``,
+	}, "\n\n")
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(streamBody)),
+	}, nil
+}
+
+func TestStreamChatCompletionsRequestsAndReadsUsage(t *testing.T) {
+	transport := &streamCaptureTransport{}
+	client := openai.NewClient(
+		option.WithAPIKey("test"),
+		option.WithBaseURL("https://example.com/v1"),
+		option.WithHTTPClient(&http.Client{Transport: transport}),
+	)
+
+	ch := StreamChatCompletions(context.Background(), ChatStreamConfig{
+		Client:           client,
+		ProviderName:     "test",
+		ConvertAssistant: DefaultAssistantMessage,
+		Options: llm.CompletionOptions{
+			Model:    "gpt-test",
+			Messages: []core.Message{{Role: core.RoleUser, Content: "hi"}},
+		},
+	})
+
+	var done *llm.CompletionResponse
+	for chunk := range ch {
+		if chunk.Type == llm.ChunkTypeDone {
+			done = chunk.Response
+		}
+	}
+
+	if len(transport.body) == 0 {
+		t.Fatal("no request body captured")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(transport.body, &payload); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	streamOptions, ok := payload["stream_options"].(map[string]any)
+	if !ok {
+		t.Fatalf("stream_options missing from request: %s", string(transport.body))
+	}
+	if streamOptions["include_usage"] != true {
+		t.Fatalf("include_usage = %#v, want true", streamOptions["include_usage"])
+	}
+
+	if done == nil {
+		t.Fatal("missing done chunk")
+	}
+	if done.Usage.InputTokens != 11 || done.Usage.OutputTokens != 7 {
+		t.Fatalf("usage = in:%d out:%d, want in:11 out:7", done.Usage.InputTokens, done.Usage.OutputTokens)
+	}
+}

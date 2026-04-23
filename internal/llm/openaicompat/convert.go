@@ -6,6 +6,7 @@ package openaicompat
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/openai/openai-go/v3"
 
@@ -24,6 +25,7 @@ func ConvertMessages(
 	convertAssistant func(msg core.Message) openai.ChatCompletionMessageParamUnion,
 ) []openai.ChatCompletionMessageParamUnion {
 	msgs = SanitizeToolMessages(msgs)
+	msgs = DropEmptyMessages(msgs)
 	out := make([]openai.ChatCompletionMessageParamUnion, 0, len(msgs)+1)
 
 	if systemPrompt != "" {
@@ -110,6 +112,28 @@ func SanitizeToolMessages(msgs []core.Message) []core.Message {
 	}
 
 	return result
+}
+
+// DropEmptyMessages removes text-only messages that cannot carry provider
+// content. Some OpenAI-compatible providers reject empty user messages.
+func DropEmptyMessages(msgs []core.Message) []core.Message {
+	result := make([]core.Message, 0, len(msgs))
+	for _, msg := range msgs {
+		if messageHasProviderContent(msg) {
+			result = append(result, msg)
+		}
+	}
+	return result
+}
+
+func messageHasProviderContent(msg core.Message) bool {
+	if strings.TrimSpace(msg.Content) != "" || strings.TrimSpace(msg.Thinking) != "" {
+		return true
+	}
+	if len(msg.Images) > 0 || len(msg.ToolCalls) > 0 || msg.ToolResult != nil {
+		return true
+	}
+	return false
 }
 
 func convertToolResultMessage(msg core.Message) openai.ChatCompletionMessageParamUnion {

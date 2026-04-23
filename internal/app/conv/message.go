@@ -510,6 +510,9 @@ func RenderToolCalls(params ToolCallsParams) string {
 			}
 		} else {
 			icon := toolCallIcon(tc, params.PendingCalls, params.CurrentIdx, params.ParallelMode, params.ParallelResults, params.SpinnerView)
+			if _, hasResult := params.ResultMap[tc.ID]; hasResult {
+				icon = "●"
+			}
 			if tc.Name == tool.ToolTaskGet && params.TaskOwnerMap != nil {
 				args := extractTaskGetDisplay(tc.Input, params.TaskOwnerMap)
 				sb.WriteString(renderToolLineWithIcon(fmt.Sprintf("%s(%s)", tc.Name, args), params.Width, icon) + "\n")

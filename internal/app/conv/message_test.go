@@ -88,6 +88,22 @@ func Test_extractToolArgsPreservesFullCommand(t *testing.T) {
 	}
 }
 
+func TestRenderModeStatusShowsTokenUsageWithModel(t *testing.T) {
+	rendered := RenderModeStatus(OperationModeParams{
+		ModelName:    "gpt-test",
+		InputTokens:  1234,
+		OutputTokens: 56,
+		InputLimit:   10000,
+		Width:        100,
+	})
+
+	for _, want := range []string{"gpt-test", "↑1.2k", "↓56", "(12%)"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("RenderModeStatus() = %q, want %q", rendered, want)
+		}
+	}
+}
+
 func TestRenderToolCallsUsesEightyPercentWidth(t *testing.T) {
 	params := ToolCallsParams{
 		ToolCalls: []core.ToolCall{{
@@ -132,6 +148,55 @@ func TestRenderToolCallsShowsRunningStateForPendingBash(t *testing.T) {
 	}
 	if strings.Contains(rendered, "running...") {
 		t.Fatalf("RenderToolCalls() = %q, should not add extra running text", rendered)
+	}
+}
+
+func TestRenderActiveContentShowsRunningStateForPendingWebFetch(t *testing.T) {
+	call := core.ToolCall{
+		ID:    "tc-1",
+		Name:  "WebFetch",
+		Input: `{"url":"https://github.com/features/copilot/plans"}`,
+	}
+	params := MessageRenderParams{
+		Messages: []core.ChatMessage{{
+			Role:      core.RoleAssistant,
+			ToolCalls: []core.ToolCall{call},
+		}},
+		PendingCalls: []core.ToolCall{call},
+		CurrentIdx:   0,
+		SpinnerView:  "⋯",
+		Width:        100,
+	}
+
+	rendered := RenderActiveContent(params)
+	if !strings.Contains(rendered, "⋯ WebFetch(https://github.com/features/copilot/plans)") {
+		t.Fatalf("RenderActiveContent() = %q, want pending WebFetch spinner", rendered)
+	}
+}
+
+func TestRenderToolCallsShowsCompletedIconForResultEvenWhenPending(t *testing.T) {
+	call := core.ToolCall{
+		ID:    "tc-1",
+		Name:  "WebFetch",
+		Input: `{"url":"https://github.com/features/copilot/plans"}`,
+	}
+	params := ToolCallsParams{
+		ToolCalls:    []core.ToolCall{call},
+		PendingCalls: []core.ToolCall{call},
+		CurrentIdx:   0,
+		SpinnerView:  "⋯",
+		Width:        100,
+		ResultMap: map[string]ToolResultData{
+			"tc-1": {ToolName: "WebFetch", Content: "done"},
+		},
+	}
+
+	rendered := RenderToolCalls(params)
+	if !strings.Contains(rendered, "● WebFetch(https://github.com/features/copilot/plans)") {
+		t.Fatalf("RenderToolCalls() = %q, want completed WebFetch icon", rendered)
+	}
+	if strings.Contains(rendered, "⋯ WebFetch") {
+		t.Fatalf("RenderToolCalls() = %q, should not show spinner for completed result", rendered)
 	}
 }
 
