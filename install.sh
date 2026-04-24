@@ -64,9 +64,11 @@ get_download_url() {
             }
         }
         found && /"browser_download_url":/ {
-            match($0, /"browser_download_url":[[:space:]]*"([^"]+)"/, m)
-            if (m[1] != "") {
-                print m[1]
+            line=$0
+            sub(/^.*"browser_download_url":[[:space:]]*"/, "", line)
+            sub(/".*$/, "", line)
+            if (line != "") {
+                print line
                 exit
             }
         }
