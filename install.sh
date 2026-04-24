@@ -25,6 +25,12 @@ usage() {
     exit 0
 }
 
+normalize_version() {
+    local version="$1"
+    version="${version#v}"
+    echo "$version"
+}
+
 # Detect OS and architecture
 detect_platform() {
     OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -43,7 +49,28 @@ detect_platform() {
 }
 
 get_latest_version() {
-    curl -sL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/'
+    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/'
+}
+
+get_download_url() {
+    local version="$1"
+    local asset_name="gen_${OS}_${ARCH}.tar.gz"
+    local api_url="https://api.github.com/repos/${REPO}/releases/tags/v${version}"
+
+    curl -fsSL "$api_url" | awk -v asset="$asset_name" '
+        /"name":/ {
+            if ($0 ~ "\"" asset "\"") {
+                found=1
+            }
+        }
+        found && /"browser_download_url":/ {
+            match($0, /"browser_download_url":[[:space:]]*"([^"]+)"/, m)
+            if (m[1] != "") {
+                print m[1]
+                exit
+            }
+        }
+    '
 }
 
 do_install() {
@@ -56,6 +83,7 @@ do_install() {
     # Check if already installed
     if command -v "$BINARY" &>/dev/null; then
         CURRENT=$("$BINARY" version 2>/dev/null | awk '{print $3}' || echo "unknown")
+        CURRENT="$(normalize_version "$CURRENT")"
         if [ "$CURRENT" = "$VERSION" ]; then
             info "✓ gen v${VERSION} is already installed"
             return
@@ -66,11 +94,15 @@ do_install() {
     fi
 
     # Download and extract
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/v${VERSION}/gen_${OS}_${ARCH}.tar.gz"
+    DOWNLOAD_URL="$(get_download_url "$VERSION")"
+    [ -z "$DOWNLOAD_URL" ] && error "Release asset gen_${OS}_${ARCH}.tar.gz not found for v${VERSION}"
     TMP_DIR=$(mktemp -d)
     trap "rm -rf $TMP_DIR" EXIT
 
-    curl -sL "$DOWNLOAD_URL" -o "$TMP_DIR/gen.tar.gz" || error "Download failed"
+    curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/gen.tar.gz" || error "Download failed"
+    if ! tar -tzf "$TMP_DIR/gen.tar.gz" >/dev/null 2>&1; then
+        error "Downloaded asset is not a valid tar.gz archive"
+    fi
     tar -xzf "$TMP_DIR/gen.tar.gz" -C "$TMP_DIR" || error "Extract failed"
 
     # Install
