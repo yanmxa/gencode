@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.15.2] - 2026-04-24
+
+### Changed
+
+- CI: Use current changelog section as release notes instead of full changelog
+- Build: Add `release-push` make target to streamline version publishing
+
+### Fixed
+
+- Correct v1.15.1 release notes to show only current version section
+
 ## [v1.15.1] - 2026-04-24
 
 ### Fixed
