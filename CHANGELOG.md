@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.15.1] - 2026-04-24
+
+### Fixed
+
+- Hide queue badges and queue preview entries for items already sent to inbox
+- Keep queue selection focused on the last pending item and exit selection if an item is no longer pending
+- Preserve assistant tool-call rendering while tool results are still arriving
+- Summarize repeated tool calls in conversation text instead of printing duplicate lines
+- Attach `CHANGELOG.md` to GitHub release artifacts
+
+### Tests
+
+- Add coverage for pending queue filtering, hidden queue badge behavior, and aggregated tool-call text output
+
+[Full Changelog](https://github.com/yanmxa/gencode/compare/v1.15.0...v1.15.1)
+
 ## [v1.15.0] - 2026-04-24
 
 ### Added
