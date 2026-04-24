@@ -27,8 +27,28 @@ jobs:
       - name: Build binaries
         run: make release
 
+      - name: Extract release notes
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          tag = os.environ["TAG_NAME"]
+          text = Path("CHANGELOG.md").read_text()
+          pattern = rf'(?ms)^## \[{re.escape(tag)}\].*?(?=^## \[|\Z)'
+          match = re.search(pattern, text)
+          if not match:
+              raise SystemExit(f"release notes section not found for {tag}")
+          Path("release-notes.md").write_text(match.group(0).strip() + "\n")
+          PY
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: bin/gen_*.tar.gz CHANGELOG.md
-          generate_release_notes: true
+          files: |
+            bin/gen_*.tar.gz
+            CHANGELOG.md
+          body_path: release-notes.md
