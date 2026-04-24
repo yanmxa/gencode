@@ -255,9 +255,6 @@ func (m *model) renderAndCommit(checkReady bool) []tea.Cmd {
 			if i == lastIdx && msg.Role == core.RoleAssistant && m.conv.Stream.Active {
 				break
 			}
-			if msg.Role == core.RoleAssistant && len(msg.ToolCalls) > 0 && !m.conv.HasAllToolResults(i) {
-				break
-			}
 		}
 
 		if rendered := conv.RenderSingleMessage(params, i); rendered != "" {

@@ -169,12 +169,13 @@ func (m model) renderModeStatus() string {
 		ConversationCost: m.env.ConversationCost,
 		Width:            m.env.Width,
 		ThinkingLevel:    m.env.EffectiveThinkingLevel(),
-		QueueCount:       m.userInput.Queue.Len(),
+		QueueCount:       m.userInput.Queue.PendingCount(),
 	})
 }
 
 func (m model) renderQueuePreview() string {
-	items := m.userInput.Queue.Items()
+	rawItems := m.userInput.Queue.Items()
+	items := m.userInput.Queue.PendingItems()
 	if len(items) == 0 {
 		return ""
 	}
@@ -182,7 +183,23 @@ func (m model) renderQueuePreview() string {
 	for i, item := range items {
 		previews[i] = conv.QueuePreviewItem{Content: item.Content, HasImages: len(item.Images) > 0}
 	}
-	return strings.TrimSuffix(conv.RenderQueuePreview(previews, m.userInput.Queue.SelectIdx, m.env.Width), "\n")
+
+	selectedIdx := -1
+	if m.userInput.Queue.SelectIdx >= 0 {
+		pendingSeen := 0
+		for i, item := range rawItems {
+			if item.SentToInbox {
+				continue
+			}
+			if i == m.userInput.Queue.SelectIdx {
+				selectedIdx = pendingSeen
+				break
+			}
+			pendingSeen++
+		}
+	}
+
+	return strings.TrimSuffix(conv.RenderQueuePreview(previews, selectedIdx, m.env.Width), "\n")
 }
 
 func (m model) messageRenderParams() conv.MessageRenderParams {

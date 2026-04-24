@@ -60,7 +60,36 @@ func (q *Queue) Items() []QueueItem {
 	return out
 }
 
+func (q *Queue) PendingItems() []QueueItem {
+	out := make([]QueueItem, 0, len(q.items))
+	for _, item := range q.items {
+		if !item.SentToInbox {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
 func (q *Queue) Len() int { return len(q.items) }
+
+func (q *Queue) PendingCount() int {
+	count := 0
+	for _, item := range q.items {
+		if !item.SentToInbox {
+			count++
+		}
+	}
+	return count
+}
+
+func (q *Queue) LastPendingIndex() int {
+	for i := len(q.items) - 1; i >= 0; i-- {
+		if !q.items[i].SentToInbox {
+			return i
+		}
+	}
+	return -1
+}
 
 func (q *Queue) UpdateAt(idx int, content string, images []core.Image) bool {
 	if idx < 0 || idx >= len(q.items) {
@@ -129,7 +158,11 @@ func (m *Model) HandleQueueSelectKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 // Stashes current input and loads the last queue item into the textarea.
 func (m *Model) EnterQueueSelection() {
 	m.Queue.Stashed = m.Textarea.Value()
-	m.Queue.SelectIdx = m.Queue.Len() - 1
+	m.Queue.SelectIdx = m.Queue.LastPendingIndex()
+	if m.Queue.SelectIdx < 0 {
+		m.Queue.Stashed = ""
+		return
+	}
 	m.LoadQueueItemIntoTextarea()
 }
 
@@ -161,6 +194,10 @@ func (m *Model) SaveCurrentQueueEdit() {
 func (m *Model) LoadQueueItemIntoTextarea() {
 	item, ok := m.Queue.At(m.Queue.SelectIdx)
 	if !ok {
+		return
+	}
+	if item.SentToInbox {
+		m.ExitQueueSelection()
 		return
 	}
 	m.Textarea.SetValue(item.Content)

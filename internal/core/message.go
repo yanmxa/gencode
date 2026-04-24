@@ -163,9 +163,23 @@ func BuildConversationText(msgs []Message) string {
 				fmt.Fprintf(&sb, "Assistant: %s\n\n", msg.Content)
 			}
 			if len(msg.ToolCalls) > 0 {
+				counts := make(map[string]int, len(msg.ToolCalls))
+				order := make([]string, 0, len(msg.ToolCalls))
 				for _, tc := range msg.ToolCalls {
-					fmt.Fprintf(&sb, "[Tool Call: %s]\n", tc.Name)
+					if counts[tc.Name] == 0 {
+						order = append(order, tc.Name)
+					}
+					counts[tc.Name]++
 				}
+				parts := make([]string, 0, len(order))
+				for _, name := range order {
+					if counts[name] == 1 {
+						parts = append(parts, name)
+					} else {
+						parts = append(parts, fmt.Sprintf("%s × %d", name, counts[name]))
+					}
+				}
+				fmt.Fprintf(&sb, "[Tool Calls: %s]\n", strings.Join(parts, ", "))
 				sb.WriteString("\n")
 			}
 		}

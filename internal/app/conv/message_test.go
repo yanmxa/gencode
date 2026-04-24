@@ -123,6 +123,17 @@ func TestRenderTurnUsageSummaryShowsPerTurnTokens(t *testing.T) {
 	}
 }
 
+func TestRenderModeStatusHidesQueueBadgeWhenNoPendingItems(t *testing.T) {
+	rendered := RenderModeStatus(OperationModeParams{
+		ModelName:  "gpt-test",
+		QueueCount: 0,
+		Width:      80,
+	})
+	if strings.Contains(rendered, "queued") {
+		t.Fatalf("RenderModeStatus() = %q, should not show queue badge", rendered)
+	}
+}
+
 func TestRenderToolCallsUsesEightyPercentWidth(t *testing.T) {
 	params := ToolCallsParams{
 		ToolCalls: []core.ToolCall{{

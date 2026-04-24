@@ -55,3 +55,24 @@ func TestQueueItems(t *testing.T) {
 		t.Fatalf("expected 2, got %d", len(items))
 	}
 }
+
+func TestQueuePendingItemsExcludeSentToInbox(t *testing.T) {
+	var q Queue
+	q.Enqueue("a", nil)
+	q.Enqueue("b", nil)
+	q.MarkSentToInbox(1)
+
+	items := q.PendingItems()
+	if len(items) != 1 {
+		t.Fatalf("expected 1 pending item, got %d", len(items))
+	}
+	if items[0].Content != "a" {
+		t.Fatalf("expected pending item 'a', got %q", items[0].Content)
+	}
+	if q.PendingCount() != 1 {
+		t.Fatalf("expected pending count 1, got %d", q.PendingCount())
+	}
+	if q.LastPendingIndex() != 0 {
+		t.Fatalf("expected last pending index 0, got %d", q.LastPendingIndex())
+	}
+}
