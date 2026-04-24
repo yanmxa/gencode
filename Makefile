@@ -6,7 +6,7 @@ LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 GOFILES := $(shell find . -path './vendor' -prune -o -path './.git' -prune -o -name '*.go' -print)
 GOIMPORTS_VERSION := v0.43.0
 
-.PHONY: build build-all install clean release test format format-check lint install-format-tools check-format-tools
+.PHONY: build build-all install clean release release-push test format format-check lint install-format-tools check-format-tools
 
 build: format
 	@mkdir -p $(BINDIR)
@@ -66,3 +66,12 @@ release: format
 	cd $(BINDIR) && cp $(BINARY)_darwin_arm64 $(BINARY) && tar -czf $(BINARY)_darwin_arm64.tar.gz $(BINARY) && rm $(BINARY)
 	cd $(BINDIR) && cp $(BINARY)_linux_amd64 $(BINARY) && tar -czf $(BINARY)_linux_amd64.tar.gz $(BINARY) && rm $(BINARY)
 	cd $(BINDIR) && cp $(BINARY)_linux_arm64 $(BINARY) && tar -czf $(BINARY)_linux_arm64.tar.gz $(BINARY) && rm $(BINARY)
+
+release-push:
+	@test -n "$(VERSION)" || { echo "VERSION is required, e.g. make release-push VERSION=v1.15.2"; exit 1; }
+	@case "$(VERSION)" in v*) tag="$(VERSION)" ;; *) tag="v$(VERSION)" ;; esac; \
+	git diff --quiet || { echo "working tree is not clean"; exit 1; }; \
+	git diff --cached --quiet || { echo "index has staged changes"; exit 1; }; \
+	git rev-parse --verify "$$tag" >/dev/null 2>&1 && { echo "tag $$tag already exists"; exit 1; }; \
+	grep -q "^## \[$$tag\]" CHANGELOG.md || { echo "CHANGELOG.md is missing section $$tag"; exit 1; }; \
+	git push origin main && git tag "$$tag" && git push origin "$$tag"
