@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 
 	"github.com/openai/openai-go/v3"
@@ -62,19 +63,11 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 	})
 }
 
-// staticModels is the fallback list when the models API is unavailable.
-var staticModels = []llm.ModelInfo{
-	{ID: "moonshot-v1-auto", Name: "moonshot-v1-auto", DisplayName: "Moonshot V1 Auto"},
-	{ID: "moonshot-v1-128k", Name: "moonshot-v1-128k", DisplayName: "Moonshot V1 128K"},
-	{ID: "kimi-k2-0711-preview", Name: "kimi-k2-0711-preview", DisplayName: "Kimi K2 0711 Preview"},
-	{ID: "kimi-k2-0905-preview", Name: "kimi-k2-0905-preview", DisplayName: "Kimi K2 0905 Preview"},
-}
-
 // ListModels returns the available models for Moonshot AI using the API.
 func (c *Client) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
 	page, err := c.client.Models.List(ctx)
 	if err != nil {
-		return staticModels, nil // graceful fallback to static list
+		return nil, err
 	}
 
 	models := make([]llm.ModelInfo, 0, len(page.Data))
@@ -94,7 +87,7 @@ func (c *Client) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
 	}
 
 	if len(models) == 0 {
-		return staticModels, nil
+		return nil, fmt.Errorf("moonshot returned no models")
 	}
 
 	slices.SortFunc(models, func(a, b llm.ModelInfo) int { return cmp.Compare(a.ID, b.ID) })

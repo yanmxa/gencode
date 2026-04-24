@@ -40,6 +40,18 @@ func (t *streamCaptureTransport) RoundTrip(req *http.Request) (*http.Response, e
 	}, nil
 }
 
+type authErrorTransport struct{}
+
+func (t *authErrorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusUnauthorized,
+		Status:     "401 Unauthorized",
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"message":"Invalid Authentication","type":"invalid_authentication_error"}`)),
+		Request:    req,
+	}, nil
+}
+
 func TestStreamChatCompletionsRequestsAndReadsUsage(t *testing.T) {
 	transport := &streamCaptureTransport{}
 	client := openai.NewClient(
@@ -85,5 +97,45 @@ func TestStreamChatCompletionsRequestsAndReadsUsage(t *testing.T) {
 	}
 	if done.Usage.InputTokens != 11 || done.Usage.OutputTokens != 7 {
 		t.Fatalf("usage = in:%d out:%d, want in:11 out:7", done.Usage.InputTokens, done.Usage.OutputTokens)
+	}
+}
+
+func TestStreamChatCompletionsNormalizesAuthError(t *testing.T) {
+	client := openai.NewClient(
+		option.WithAPIKey("test"),
+		option.WithBaseURL("https://api.moonshot.cn/v1"),
+		option.WithHTTPClient(&http.Client{Transport: &authErrorTransport{}}),
+	)
+
+	ch := StreamChatCompletions(context.Background(), ChatStreamConfig{
+		Client:           client,
+		ProviderName:     "moonshot:api_key",
+		ConvertAssistant: DefaultAssistantMessage,
+		Options: llm.CompletionOptions{
+			Model:    "kimi-k2.6",
+			Messages: []core.Message{{Role: core.RoleUser, Content: "hi"}},
+		},
+	})
+
+	var got error
+	for chunk := range ch {
+		if chunk.Type == llm.ChunkTypeError {
+			got = chunk.Error
+			break
+		}
+	}
+
+	if got == nil {
+		t.Fatal("expected auth error chunk")
+	}
+	msg := got.Error()
+	if !strings.Contains(msg, "Moonshot authentication failed") {
+		t.Fatalf("error %q missing provider guidance", msg)
+	}
+	if !strings.Contains(msg, "MOONSHOT_API_KEY") {
+		t.Fatalf("error %q missing env var guidance", msg)
+	}
+	if !strings.Contains(msg, "/model") {
+		t.Fatalf("error %q missing reconnect guidance", msg)
 	}
 }

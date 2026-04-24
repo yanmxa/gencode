@@ -53,14 +53,15 @@ func RenderWelcome() string {
 
 // OperationModeParams holds the parameters needed for rendering mode status.
 type OperationModeParams struct {
-	Mode          OperationMode
-	InputTokens   int
-	OutputTokens  int
-	InputLimit    int
-	ModelName     string
-	Width         int
-	ThinkingLevel llm.ThinkingLevel
-	QueueCount    int
+	Mode             OperationMode
+	InputTokens      int
+	OutputTokens     int
+	InputLimit       int
+	ModelName        string
+	ConversationCost llm.Money
+	Width            int
+	ThinkingLevel    llm.ThinkingLevel
+	QueueCount       int
 }
 
 // RenderModeStatus renders the combined mode status line.
@@ -85,7 +86,7 @@ func RenderModeStatus(params OperationModeParams) string {
 
 	left := strings.Join(leftParts, "  ")
 
-	right := renderModelWithTokens(params.ModelName, params.InputTokens, params.OutputTokens, params.InputLimit)
+	right := renderModelWithTokens(params.ModelName, params.InputTokens, params.InputLimit, params.ConversationCost)
 	if right == "" || params.Width <= 0 {
 		return left
 	}
@@ -95,23 +96,44 @@ func RenderModeStatus(params OperationModeParams) string {
 }
 
 // renderModelWithTokens renders the model name with token usage on the right side.
-func renderModelWithTokens(modelName string, inputTokens, outputTokens, inputLimit int) string {
+func renderModelWithTokens(modelName string, inputTokens, inputLimit int, conversationCost llm.Money) string {
 	if modelName == "" {
 		return ""
 	}
 	muted := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
+	parts := []string{modelName}
 
-	if inputTokens == 0 && outputTokens == 0 {
-		return muted.Render(modelName)
+	if inputTokens == 0 {
+		if !conversationCost.IsZero() {
+			parts = append(parts, kit.FormatMoney(conversationCost))
+		}
+		return muted.Render(strings.Join(parts, " · "))
 	}
 
-	in := kit.FormatTokenCount(inputTokens)
-	out := kit.FormatTokenCount(outputTokens)
 	if inputLimit > 0 {
 		pct := float64(inputTokens) / float64(inputLimit) * 100
-		return muted.Render(fmt.Sprintf("%s  ↑%s ↓%s (%.0f%%)", modelName, in, out, pct))
+		parts = append(parts, fmt.Sprintf("%.0f%% ctx", pct))
 	}
-	return muted.Render(fmt.Sprintf("%s  ↑%s ↓%s", modelName, in, out))
+	if !conversationCost.IsZero() {
+		parts = append(parts, kit.FormatMoney(conversationCost))
+	}
+	return muted.Render(strings.Join(parts, " · "))
+}
+
+func RenderTurnUsageSummary(inputTokens, outputTokens, width int) string {
+	if inputTokens == 0 && outputTokens == 0 {
+		return ""
+	}
+
+	summary := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted).Render(
+		fmt.Sprintf("↑%s ↓%s", kit.FormatTokenCount(inputTokens), kit.FormatTokenCount(outputTokens)),
+	)
+	if width <= 0 {
+		return summary
+	}
+
+	gap := max(0, width-lipgloss.Width(summary))
+	return strings.Repeat(" ", gap) + summary
 }
 
 // RenderOperationModeIndicator returns the mode status indicator for auto-accept or bypass mode.

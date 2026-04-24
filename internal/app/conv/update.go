@@ -170,7 +170,7 @@ func applyPostInfer(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	rt.SetTokenCounts(resp.TokensIn, resp.TokensOut)
+	rt.SetTokenUsage(resp)
 	m.Compact.WarningSuppressed = false
 	if resp.ThinkingSignature != "" {
 		m.SetLastThinkingSignature(resp.ThinkingSignature)

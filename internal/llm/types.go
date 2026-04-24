@@ -17,6 +17,7 @@ const (
 	Google    Name = "google"
 	Moonshot  Name = "moonshot"
 	Alibaba   Name = "alibaba"
+	MinMax    Name = "minmax"
 )
 
 // AuthMethod represents an authentication method for an LLM provider.

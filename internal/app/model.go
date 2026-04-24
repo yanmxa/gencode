@@ -26,6 +26,7 @@ import (
 	"github.com/yanmxa/gencode/internal/filecache"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/llm"
+	"github.com/yanmxa/gencode/internal/llm/minmax"
 	"github.com/yanmxa/gencode/internal/log"
 	"github.com/yanmxa/gencode/internal/mcp"
 	"github.com/yanmxa/gencode/internal/plugin"
@@ -439,9 +440,28 @@ func (m *model) initTaskStorage(sessionID string) {
 // conv.Runtime — agent outbox event handlers
 // ============================================================
 
-func (m *model) SetTokenCounts(in, out int) {
-	m.env.InputTokens = in
-	m.env.OutputTokens = out
+func (m *model) SetTokenUsage(resp *core.InferResponse) {
+	if resp == nil {
+		return
+	}
+
+	m.env.InputTokens = resp.TokensIn
+	m.env.OutputTokens = resp.TokensOut
+
+	if m.env.CurrentModel != nil {
+		switch m.env.CurrentModel.Provider {
+		case llm.MinMax:
+			cost, ok := minmax.EstimateCost(m.env.CurrentModel.ModelID, llm.Usage{
+				InputTokens:              resp.TokensIn,
+				OutputTokens:             resp.TokensOut,
+				CacheCreationInputTokens: resp.CacheCreateTokens,
+				CacheReadInputTokens:     resp.CacheReadTokens,
+			})
+			if ok {
+				m.env.ConversationCost = m.env.ConversationCost.Add(cost)
+			}
+		}
+	}
 }
 
 func (m *model) HasRunningTasks() bool { return m.services.Tracker.HasInProgress() }

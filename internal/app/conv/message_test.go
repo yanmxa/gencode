@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/core"
+	"github.com/yanmxa/gencode/internal/llm"
 )
 
 func Test_extractIntField(t *testing.T) {
@@ -90,16 +91,34 @@ func Test_extractToolArgsPreservesFullCommand(t *testing.T) {
 
 func TestRenderModeStatusShowsTokenUsageWithModel(t *testing.T) {
 	rendered := RenderModeStatus(OperationModeParams{
-		ModelName:    "gpt-test",
-		InputTokens:  1234,
-		OutputTokens: 56,
-		InputLimit:   10000,
-		Width:        100,
+		ModelName:        "gpt-test",
+		InputTokens:      1234,
+		OutputTokens:     56,
+		InputLimit:       10000,
+		ConversationCost: llm.Money{Amount: 0.1234, Currency: llm.CurrencyCNY},
+		Width:            100,
 	})
 
-	for _, want := range []string{"gpt-test", "↑1.2k", "↓56", "(12%)"} {
+	for _, want := range []string{"gpt-test", "12% ctx", "¥0.123"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("RenderModeStatus() = %q, want %q", rendered, want)
+		}
+	}
+	for _, unwanted := range []string{"↑1.2k", "↓56"} {
+		if strings.Contains(rendered, unwanted) {
+			t.Fatalf("RenderModeStatus() = %q, should not contain per-turn usage %q", rendered, unwanted)
+		}
+	}
+	if !strings.Contains(rendered, " · ") {
+		t.Fatalf("RenderModeStatus() = %q, want segmented display", rendered)
+	}
+}
+
+func TestRenderTurnUsageSummaryShowsPerTurnTokens(t *testing.T) {
+	rendered := RenderTurnUsageSummary(1234, 56, 80)
+	for _, want := range []string{"↑1.2k", "↓56"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("RenderTurnUsageSummary() = %q, want %q", rendered, want)
 		}
 	}
 }

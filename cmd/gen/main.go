@@ -19,6 +19,7 @@ import (
 	_ "github.com/yanmxa/gencode/internal/llm/alibaba"
 	_ "github.com/yanmxa/gencode/internal/llm/anthropic"
 	_ "github.com/yanmxa/gencode/internal/llm/google"
+	_ "github.com/yanmxa/gencode/internal/llm/minmax"
 	_ "github.com/yanmxa/gencode/internal/llm/moonshot"
 	_ "github.com/yanmxa/gencode/internal/llm/openai"
 )

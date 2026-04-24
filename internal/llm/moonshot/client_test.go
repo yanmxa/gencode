@@ -37,6 +37,18 @@ func (t *captureTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return resp, nil
 }
 
+type modelsErrorTransport struct{}
+
+func (t *modelsErrorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusUnauthorized,
+		Status:     "401 Unauthorized",
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"message":"Invalid Authentication","type":"invalid_authentication_error"}`)),
+		Request:    req,
+	}, nil
+}
+
 func TestMoonshotAssistantMessagesIncludeReasoningContent(t *testing.T) {
 	transport := &captureTransport{}
 	client := openai.NewClient(
@@ -88,5 +100,26 @@ func TestMoonshotAssistantMessagesIncludeReasoningContent(t *testing.T) {
 		if _, ok := msg["reasoning_content"]; !ok {
 			t.Fatalf("assistant message missing reasoning_content at index %d", i)
 		}
+	}
+}
+
+func TestMoonshotListModelsReturnsErrorOnAPIFailure(t *testing.T) {
+	client := openai.NewClient(
+		option.WithAPIKey("test"),
+		option.WithBaseURL("https://example.com/v1"),
+		option.WithHTTPClient(&http.Client{Transport: &modelsErrorTransport{}}),
+	)
+
+	c := NewClient(client, "moonshot:test")
+
+	models, err := c.ListModels(context.Background())
+	if err == nil {
+		t.Fatal("expected ListModels to fail")
+	}
+	if len(models) != 0 {
+		t.Fatalf("expected no fallback models, got %d", len(models))
+	}
+	if !strings.Contains(err.Error(), "401") {
+		t.Fatalf("expected auth error, got %v", err)
 	}
 }

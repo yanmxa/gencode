@@ -2,6 +2,8 @@ package input
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,6 +11,20 @@ import (
 	"github.com/yanmxa/gencode/internal/app/kit"
 	"github.com/yanmxa/gencode/internal/llm"
 )
+
+type connectFailProvider struct{}
+
+func (p *connectFailProvider) Stream(context.Context, llm.CompletionOptions) <-chan llm.StreamChunk {
+	ch := make(chan llm.StreamChunk)
+	close(ch)
+	return ch
+}
+
+func (p *connectFailProvider) ListModels(context.Context) ([]llm.ModelInfo, error) {
+	return nil, fmt.Errorf("boom")
+}
+
+func (p *connectFailProvider) Name() string { return "test-connect-fail" }
 
 func TestCancelClearsTransientState(t *testing.T) {
 	m := NewProviderSelector()
@@ -258,6 +274,52 @@ func TestSetModelPersistsSelection(t *testing.T) {
 	current := store.GetCurrentModel()
 	if current == nil || current.ModelID != "gpt-5" || current.Provider != llm.OpenAI || current.AuthMethod != llm.AuthAPIKey {
 		t.Fatalf("unexpected current model after SetModel: %#v", current)
+	}
+}
+
+func TestConnectAuthMethodFailsWhenModelsCannotBeLoaded(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	providerName := llm.Name(strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-")))
+	envVar := "TEST_CONNECT_FAIL_KEY"
+	t.Setenv(envVar, "test")
+	llm.Register(llm.Meta{
+		Provider:    providerName,
+		AuthMethod:  llm.AuthAPIKey,
+		EnvVars:     []string{envVar},
+		DisplayName: "Test Connect Fail",
+	}, func(context.Context) (llm.Provider, error) {
+		return &connectFailProvider{}, nil
+	})
+	t.Cleanup(func() {
+		llm.Unregister(providerName, llm.AuthAPIKey)
+	})
+
+	m := NewProviderSelector()
+	cmd := m.connectAuthMethod(providerAuthMethodItem{
+		Provider:   providerName,
+		AuthMethod: llm.AuthAPIKey,
+		EnvVars:    []string{envVar},
+	}, 0)
+	if cmd == nil {
+		t.Fatal("expected connectAuthMethod command")
+	}
+	msg, ok := cmd().(ProviderConnectResultMsg)
+	if !ok {
+		t.Fatalf("unexpected message type %T", cmd())
+	}
+	if msg.Success {
+		t.Fatalf("expected failed connect result, got %+v", msg)
+	}
+	if !strings.Contains(msg.Message, "failed to load models") {
+		t.Fatalf("unexpected error: %v", msg.Message)
+	}
+
+	store, storeErr := llm.NewStore()
+	if storeErr != nil {
+		t.Fatalf("NewStore() error = %v", storeErr)
+	}
+	if store.IsConnected(providerName, llm.AuthAPIKey) {
+		t.Fatal("provider should not be persisted as connected when model loading fails")
 	}
 }
 

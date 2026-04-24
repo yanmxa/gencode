@@ -93,7 +93,7 @@ func StreamChatCompletions(ctx context.Context, cfg ChatStreamConfig) <-chan llm
 		}
 
 		if err := stream.Err(); err != nil {
-			state.Fail(ch, err)
+			state.Fail(ch, NormalizeAPIError(cfg.ProviderName, err))
 			return
 		}
 

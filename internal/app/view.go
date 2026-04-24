@@ -37,6 +37,7 @@ func (m *model) View() string {
 	activeContent := conv.RenderActiveContent(m.messageRenderParams())
 	inputView := m.renderInputView()
 	chatSection := m.renderChatSection(activeContent, trackerView)
+	turnUsage := conv.RenderTurnUsageSummary(m.env.InputTokens, m.env.OutputTokens, m.env.Width)
 	statusLine := m.renderModeStatus()
 	suggestions := m.userInput.Suggestions.Render(m.env.Width)
 	tokenWarning := conv.RenderTokenWarning(m.env.InputTokens, kit.GetEffectiveInputLimit(m.services.LLM.Store(), m.env.CurrentModel), m.conv.Compact.WarningSuppressed)
@@ -49,6 +50,10 @@ func (m *model) View() string {
 	if tokenWarning != "" {
 		view.WriteString("\n")
 		view.WriteString(tokenWarning)
+	}
+	if turnUsage != "" {
+		view.WriteString("\n")
+		view.WriteString(turnUsage)
 	}
 	view.WriteString("\n")
 	view.WriteString(separator)
@@ -156,14 +161,15 @@ func (m model) renderModeStatus() string {
 		}
 	}
 	return conv.RenderModeStatus(conv.OperationModeParams{
-		Mode:          conv.OperationMode(m.env.OperationMode),
-		InputTokens:   m.env.InputTokens,
-		OutputTokens:  m.env.OutputTokens,
-		InputLimit:    kit.GetEffectiveInputLimit(m.services.LLM.Store(), m.env.CurrentModel),
-		ModelName:     modelName,
-		Width:         m.env.Width,
-		ThinkingLevel: m.env.EffectiveThinkingLevel(),
-		QueueCount:    m.userInput.Queue.Len(),
+		Mode:             conv.OperationMode(m.env.OperationMode),
+		InputTokens:      m.env.InputTokens,
+		OutputTokens:     m.env.OutputTokens,
+		InputLimit:       kit.GetEffectiveInputLimit(m.services.LLM.Store(), m.env.CurrentModel),
+		ModelName:        modelName,
+		ConversationCost: m.env.ConversationCost,
+		Width:            m.env.Width,
+		ThinkingLevel:    m.env.EffectiveThinkingLevel(),
+		QueueCount:       m.userInput.Queue.Len(),
 	})
 }
 

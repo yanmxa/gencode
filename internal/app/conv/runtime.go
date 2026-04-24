@@ -19,7 +19,7 @@ type AgentOutboxMsg struct {
 type Runtime interface {
 	CommitMessages() []tea.Cmd
 	ContinueOutbox() tea.Cmd
-	SetTokenCounts(in, out int)
+	SetTokenUsage(resp *core.InferResponse)
 	ProcessToolResult(tr core.ToolResult) *core.ToolResult
 	ProcessTurnEnd(result core.Result) tea.Cmd
 	ProcessAgentStop(err error) tea.Cmd

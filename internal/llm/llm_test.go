@@ -189,6 +189,24 @@ func TestOutputLimitFromProviderListModelsError(t *testing.T) {
 	}
 }
 
+func TestAddUsageIncludesCacheTokens(t *testing.T) {
+	l := &Client{}
+	l.AddUsage(Usage{
+		InputTokens:              10,
+		OutputTokens:             5,
+		CacheCreationInputTokens: 7,
+		CacheReadInputTokens:     3,
+	})
+
+	got := l.Tokens()
+	if got.InputTokens != 10 || got.OutputTokens != 5 {
+		t.Fatalf("unexpected base usage: %+v", got)
+	}
+	if got.CacheCreationInputTokens != 7 || got.CacheReadInputTokens != 3 {
+		t.Fatalf("unexpected cache usage: %+v", got)
+	}
+}
+
 // --- FakeLLM tests ---
 
 func TestFakeLLMSend(t *testing.T) {

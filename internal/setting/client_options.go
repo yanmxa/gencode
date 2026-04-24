@@ -21,6 +21,8 @@ func DefaultModel(providerName string, authMethod string) string {
 		return "moonshot-v1-auto"
 	case "alibaba":
 		return "qwen-plus"
+	case "minmax":
+		return "MiniMax-M2.7"
 	default:
 		return "claude-sonnet-4-20250514"
 	}

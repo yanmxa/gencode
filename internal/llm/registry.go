@@ -29,6 +29,11 @@ func Register(meta Meta, factory Factory) {
 	globalRegistry.Register(meta, factory)
 }
 
+// Unregister removes a provider/auth-method entry from the global registry.
+func Unregister(provider Name, authMethod AuthMethod) {
+	globalRegistry.Unregister(provider, authMethod)
+}
+
 // Register registers a provider with its metadata and factory
 func (r *Registry) Register(meta Meta, factory Factory) {
 	r.mu.Lock()
@@ -37,6 +42,13 @@ func (r *Registry) Register(meta Meta, factory Factory) {
 		meta:    meta,
 		factory: factory,
 	}
+}
+
+// Unregister removes a provider/auth-method entry from the registry.
+func (r *Registry) Unregister(provider Name, authMethod AuthMethod) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.entries, makeProviderKey(provider, authMethod))
 }
 
 // GetProvider returns a provider instance for the given provider and auth method

@@ -251,7 +251,7 @@ func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions
 		}
 
 		if err := stream.Err(); err != nil {
-			state.Fail(ch, err)
+			state.Fail(ch, openaicompat.NormalizeAPIError(c.name, err))
 			return
 		}
 

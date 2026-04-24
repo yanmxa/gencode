@@ -13,9 +13,11 @@ const defaultMaxTokens = 8192
 
 // TokenUsage tracks token consumption for a conversation.
 type TokenUsage struct {
-	InputTokens  int
-	OutputTokens int
-	TotalTokens  int
+	InputTokens              int
+	OutputTokens             int
+	CacheCreationInputTokens int
+	CacheReadInputTokens     int
+	TotalTokens              int
 }
 
 // Client adapts a Provider to core.LLM.
@@ -148,6 +150,8 @@ func (l *Client) AddUsage(usage Usage) {
 	l.mu.Lock()
 	l.tokens.InputTokens += usage.InputTokens
 	l.tokens.OutputTokens += usage.OutputTokens
+	l.tokens.CacheCreationInputTokens += usage.CacheCreationInputTokens
+	l.tokens.CacheReadInputTokens += usage.CacheReadInputTokens
 	l.tokens.TotalTokens = l.tokens.InputTokens + l.tokens.OutputTokens
 	l.mu.Unlock()
 }
@@ -325,5 +329,7 @@ func toInferResponse(r *CompletionResponse) *core.InferResponse {
 		StopReason:        core.StopReason(r.StopReason),
 		TokensIn:          r.Usage.InputTokens,
 		TokensOut:         r.Usage.OutputTokens,
+		CacheCreateTokens: r.Usage.CacheCreationInputTokens,
+		CacheReadTokens:   r.Usage.CacheReadInputTokens,
 	}
 }

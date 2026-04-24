@@ -24,6 +24,7 @@ type env struct {
 	CurrentModel     *llm.CurrentModelInfo
 	InputTokens      int
 	OutputTokens     int
+	ConversationCost llm.Money
 	ThinkingLevel    llm.ThinkingLevel
 	ThinkingOverride llm.ThinkingLevel
 
@@ -153,4 +154,5 @@ func (m *env) ClearThinkingOverride() {
 func (m *env) ResetTokens() {
 	m.InputTokens = 0
 	m.OutputTokens = 0
+	m.ConversationCost = llm.Money{}
 }

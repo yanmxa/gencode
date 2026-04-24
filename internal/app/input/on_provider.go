@@ -583,6 +583,7 @@ var providerOrder = []llm.Name{
 	llm.Anthropic,
 	llm.OpenAI,
 	llm.Google,
+	llm.MinMax,
 	llm.Moonshot,
 	llm.Alibaba,
 }
@@ -592,6 +593,7 @@ var providerDisplayNames = map[llm.Name]string{
 	llm.Anthropic: "Anthropic",
 	llm.OpenAI:    "OpenAI",
 	llm.Google:    "Google",
+	llm.MinMax:    "MiniMax",
 	llm.Moonshot:  "Moonshot",
 	llm.Alibaba:   "Alibaba",
 }
@@ -979,7 +981,7 @@ func (s *ProviderSelector) refreshAuthMethod(item providerAuthMethodItem, authId
 			return ProviderConnectResultMsg{
 				AuthIdx: authIdx,
 				Success: false,
-				Message: "Failed: " + err.Error(),
+				Message: fmt.Sprintf("failed to load models for %s: %s", item.Provider, err.Error()),
 			}
 		}
 
@@ -990,11 +992,19 @@ func (s *ProviderSelector) refreshAuthMethod(item providerAuthMethodItem, authId
 			_ = store.CacheModels(item.Provider, item.AuthMethod, models)
 		}
 
+		if err != nil && len(models) == 0 {
+			return ProviderConnectResultMsg{
+				AuthIdx: authIdx,
+				Success: false,
+				Message: fmt.Sprintf("failed to load models for %s: %s", item.Provider, err.Error()),
+			}
+		}
+
 		if err != nil {
 			return ProviderConnectResultMsg{
 				AuthIdx:   authIdx,
 				Success:   true,
-				Message:   fmt.Sprintf("⚠ %d models (static)", len(models)),
+				Message:   fmt.Sprintf("⚠ %d models loaded with refresh warning", len(models)),
 				NewStatus: llm.StatusConnected,
 			}
 		}
@@ -1016,56 +1026,19 @@ func (s *ProviderSelector) connectAuthMethod(item providerAuthMethodItem, authId
 
 	return func() tea.Msg {
 		ctx := context.Background()
-
-		meta, ok := llm.GetMeta(item.Provider, item.AuthMethod)
-		if !ok {
-			return ProviderConnectResultMsg{
-				AuthIdx: authIdx,
-				Success: false,
-				Message: "Provider not found",
-			}
-		}
-
-		if !llm.IsReady(meta) {
-			return ProviderConnectResultMsg{
-				AuthIdx: authIdx,
-				Success: false,
-				Message: "Missing env vars",
-			}
-		}
-
-		llmProvider, err := llm.GetProvider(ctx, item.Provider, item.AuthMethod)
+		result, err := s.ConnectProvider(ctx, item.Provider, item.AuthMethod)
 		if err != nil {
 			return ProviderConnectResultMsg{
 				AuthIdx: authIdx,
 				Success: false,
-				Message: "Failed: " + err.Error(),
-			}
-		}
-
-		models, err := llmProvider.ListModels(ctx)
-
-		store, _ := llm.NewStore()
-		if store != nil {
-			if len(models) > 0 {
-				_ = store.CacheModels(item.Provider, item.AuthMethod, models)
-			}
-			_ = store.Connect(item.Provider, item.AuthMethod)
-		}
-
-		if err != nil {
-			return ProviderConnectResultMsg{
-				AuthIdx:   authIdx,
-				Success:   true,
-				Message:   fmt.Sprintf("⚠ %d models loaded (static)", len(models)),
-				NewStatus: llm.StatusConnected,
+				Message: err.Error(),
 			}
 		}
 
 		return ProviderConnectResultMsg{
 			AuthIdx:   authIdx,
 			Success:   true,
-			Message:   fmt.Sprintf("✓ %d models loaded", len(models)),
+			Message:   result,
 			NewStatus: llm.StatusConnected,
 		}
 	}
@@ -1119,6 +1092,9 @@ func (s *ProviderSelector) ConnectProvider(ctx context.Context, p llm.Name, auth
 	}
 
 	models, listErr := llmProvider.ListModels(ctx)
+	if listErr != nil && len(models) == 0 {
+		return "", fmt.Errorf("failed to load models for %s: %w", meta.DisplayName, listErr)
+	}
 	if len(models) > 0 {
 		_ = s.store.CacheModels(p, authMethod, models)
 	}
@@ -1128,7 +1104,7 @@ func (s *ProviderSelector) ConnectProvider(ctx context.Context, p llm.Name, auth
 	}
 
 	if listErr != nil {
-		return fmt.Sprintf("Connected to %s via %s (⚠ %d static models)", meta.DisplayName, authMethod, len(models)), nil
+		return fmt.Sprintf("Connected to %s via %s (%d models; refresh warning: %v)", meta.DisplayName, authMethod, len(models), listErr), nil
 	}
 
 	return fmt.Sprintf("Connected to %s via %s (%d models)", meta.DisplayName, authMethod, len(models)), nil

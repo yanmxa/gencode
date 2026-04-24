@@ -31,6 +31,8 @@ type InferResponse struct {
 	StopReason        StopReason
 	TokensIn          int
 	TokensOut         int
+	CacheCreateTokens int
+	CacheReadTokens   int
 }
 
 // Chunk is one piece of a streaming LLM response.

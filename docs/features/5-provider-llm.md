@@ -9,6 +9,7 @@ Supports multiple LLM providers. The active provider and model are shown in the 
 | Anthropic | API Key, Vertex AI, Amazon Bedrock |
 | OpenAI | API Key |
 | Google | API Key |
+| MiniMax | API Key |
 | Moonshot | API Key |
 | Alibaba | API Key |
 
