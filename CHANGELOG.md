@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.15.5] - 2026-04-26
+
+### Changed
+
+- Remove the timer model render
+
 ## [v1.15.4] - 2026-04-25
 
 ### Added
