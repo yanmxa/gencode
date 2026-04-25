@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -79,9 +78,7 @@ func handleProviderModelSelected(deps OverlayDeps, state *ProviderState, msg Pro
 	})
 	ctx := context.Background()
 	providerRefreshConnection(deps, state, ctx, llm.Name(msg.ProviderName), msg.AuthMethod)
-
-	token := state.SetStatusMessage(msg.ModelID)
-	return kit.StatusTimer(5*time.Second, token)
+	return nil
 }
 
 func providerRefreshConnection(deps OverlayDeps, state *ProviderState, ctx context.Context, providerName llm.Name, authMethod llm.AuthMethod) {
