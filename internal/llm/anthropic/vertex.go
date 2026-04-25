@@ -20,75 +20,19 @@ var VertexMeta = llm.Meta{
 
 // vertexModels is the static list of Claude models available on Vertex AI.
 //
-// Source: https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude
+// Source:
+// - https://docs.anthropic.com/en/docs/about-claude/models/overview
+// - https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude
 //
-//	https://platform.claude.com/docs/en/docs/about-claude/models
-//
-// Last updated: 2026-02-23
-//
-// Note: Vertex AI does not provide a Models API, so we use a static list.
-// TODO: Switch to dynamic fetching once upstream issue is resolved:
-//
-//	https://github.com/anthropics/anthropic-sdk-go/issues/270
+// Note: Vertex AI does not provide a stable Anthropic Models API, so we use a
+// static list and refresh it when Anthropic/Vertex documentation changes.
 var vertexModels = []llm.ModelInfo{
-	// Current generation
-	{
-		ID:               "claude-opus-4-6",
-		Name:             "Claude Opus 4.6",
-		DisplayName:      "Claude Opus 4.6 (Most Intelligent)",
-		InputTokenLimit:  1000000, // 1M (preview)
-		OutputTokenLimit: 128000,
-	},
-	{
-		ID:               "claude-sonnet-4-6",
-		Name:             "Claude Sonnet 4.6",
-		DisplayName:      "Claude Sonnet 4.6 (Speed & Intelligence)",
-		InputTokenLimit:  1000000, // 1M (preview)
-		OutputTokenLimit: 128000,
-	},
-	{
-		ID:               "claude-haiku-4-5",
-		Name:             "Claude Haiku 4.5",
-		DisplayName:      "Claude Haiku 4.5 (Fast)",
-		InputTokenLimit:  200000,
-		OutputTokenLimit: 64000,
-	},
-	// Legacy models
-	{
-		ID:               "claude-sonnet-4-5",
-		Name:             "Claude Sonnet 4.5",
-		DisplayName:      "Claude Sonnet 4.5",
-		InputTokenLimit:  200000, // 1M (preview)
-		OutputTokenLimit: 64000,
-	},
-	{
-		ID:               "claude-opus-4-5",
-		Name:             "Claude Opus 4.5",
-		DisplayName:      "Claude Opus 4.5",
-		InputTokenLimit:  200000,
-		OutputTokenLimit: 64000,
-	},
-	{
-		ID:               "claude-opus-4-1",
-		Name:             "Claude Opus 4.1",
-		DisplayName:      "Claude Opus 4.1",
-		InputTokenLimit:  200000,
-		OutputTokenLimit: 32000,
-	},
-	{
-		ID:               "claude-sonnet-4",
-		Name:             "Claude Sonnet 4",
-		DisplayName:      "Claude Sonnet 4",
-		InputTokenLimit:  200000, // 1M (preview)
-		OutputTokenLimit: 64000,
-	},
-	{
-		ID:               "claude-opus-4",
-		Name:             "Claude Opus 4",
-		DisplayName:      "Claude Opus 4",
-		InputTokenLimit:  200000,
-		OutputTokenLimit: 32000,
-	},
+	newVertexModel("claude-opus-4-1@20250805", "Claude Opus 4.1", "Claude Opus 4.1 (Most Capable)"),
+	newVertexModel("claude-opus-4@20250514", "Claude Opus 4", "Claude Opus 4"),
+	newVertexModel("claude-sonnet-4@20250514", "Claude Sonnet 4", "Claude Sonnet 4"),
+	newVertexModel("claude-3-7-sonnet@20250219", "Claude Sonnet 3.7", "Claude Sonnet 3.7"),
+	newVertexModel("claude-3-5-haiku@20241022", "Claude Haiku 3.5", "Claude Haiku 3.5 (Fast)"),
+	newVertexModel("claude-3-haiku@20240307", "Claude Haiku 3", "Claude Haiku 3"),
 }
 
 // VertexClient wraps the standard Client with Vertex-specific behavior
@@ -138,4 +82,14 @@ var _ llm.Provider = (*VertexClient)(nil)
 // init registers the Vertex AI provider
 func init() {
 	llm.Register(VertexMeta, NewVertexClient)
+}
+
+func newVertexModel(id, name, displayName string) llm.ModelInfo {
+	info, ok := CatalogModel(id)
+	if !ok {
+		return llm.ModelInfo{ID: id, Name: name, DisplayName: displayName}
+	}
+	info.Name = name
+	info.DisplayName = displayName
+	return info
 }

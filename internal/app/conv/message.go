@@ -61,6 +61,7 @@ type OperationModeParams struct {
 	ConversationCost llm.Money
 	Width            int
 	ThinkingLevel    llm.ThinkingLevel
+	ShowThinking     bool
 	QueueCount       int
 }
 
@@ -72,8 +73,10 @@ func RenderModeStatus(params OperationModeParams) string {
 		leftParts = append(leftParts, modeStatus)
 	}
 
-	if thinkingStatus := RenderThinkingIndicator(params.ThinkingLevel); thinkingStatus != "" {
-		leftParts = append(leftParts, thinkingStatus)
+	if params.ShowThinking {
+		if thinkingStatus := RenderThinkingIndicator(params.ThinkingLevel); thinkingStatus != "" {
+			leftParts = append(leftParts, thinkingStatus)
+		}
 	}
 
 	if tokenWarning := renderTokenWarningInline(params.InputTokens, params.InputLimit); tokenWarning != "" {

@@ -37,21 +37,13 @@ func (c *Client) Name() string {
 	return c.name
 }
 
-// isResponsesModel returns true if the model uses the Responses API instead of Chat Completions.
-func isResponsesModel(model string) bool {
-	return strings.Contains(model, "codex")
-}
-
 // Stream sends a completion request and returns a channel of streaming chunks.
-// It routes to the Responses API for codex models and Chat Completions for all others.
+// OpenAI is implemented via the Responses API only.
 func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan llm.StreamChunk {
-	if isResponsesModel(opts.Model) {
-		return c.streamResponses(ctx, opts)
-	}
-	return c.streamChatCompletions(ctx, opts)
+	return c.streamResponses(ctx, opts)
 }
 
-// streamResponses implements streaming via the Responses API for codex models.
+// streamResponses implements streaming via the Responses API.
 func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions) <-chan llm.StreamChunk {
 	ch := make(chan llm.StreamChunk)
 
@@ -61,7 +53,7 @@ func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions
 		// Convert messages to Responses API input items
 		var inputItems responses.ResponseInputParam = make([]responses.ResponseInputItemUnionParam, 0, len(opts.Messages)+1)
 
-		for _, msg := range openaicompat.SanitizeToolMessages(opts.Messages) {
+		for _, msg := range openaicompat.DropEmptyMessages(openaicompat.SanitizeToolMessages(opts.Messages)) {
 			if msg.ToolResult != nil {
 				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
 					OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
@@ -76,24 +68,14 @@ func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions
 			switch msg.Role {
 			case core.RoleUser:
 				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
-					OfMessage: &responses.EasyInputMessageParam{
-						Role: responses.EasyInputMessageRoleUser,
-						Content: responses.EasyInputMessageContentUnionParam{
-							OfString: openai.Opt(msg.Content),
-						},
-					},
+					OfMessage: responseMessageParam(responses.EasyInputMessageRoleUser, msg),
 				})
 			case core.RoleAssistant:
 				if len(msg.ToolCalls) > 0 {
 					// Add text content as a message if present
-					if msg.Content != "" {
+					if messageHasResponseContent(msg) {
 						inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
-							OfMessage: &responses.EasyInputMessageParam{
-								Role: responses.EasyInputMessageRoleAssistant,
-								Content: responses.EasyInputMessageContentUnionParam{
-									OfString: openai.Opt(msg.Content),
-								},
-							},
+							OfMessage: responseMessageParam(responses.EasyInputMessageRoleAssistant, msg),
 						})
 					}
 					// Add each tool call as a separate function_call input item
@@ -107,23 +89,19 @@ func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions
 						})
 					}
 				} else {
+					if !messageHasResponseContent(msg) {
+						continue
+					}
 					inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
-						OfMessage: &responses.EasyInputMessageParam{
-							Role: responses.EasyInputMessageRoleAssistant,
-							Content: responses.EasyInputMessageContentUnionParam{
-								OfString: openai.Opt(msg.Content),
-							},
-						},
+						OfMessage: responseMessageParam(responses.EasyInputMessageRoleAssistant, msg),
 					})
 				}
 			default: // system messages
+				if !messageHasResponseContent(msg) {
+					continue
+				}
 				inputItems = append(inputItems, responses.ResponseInputItemUnionParam{
-					OfMessage: &responses.EasyInputMessageParam{
-						Role: responses.EasyInputMessageRoleSystem,
-						Content: responses.EasyInputMessageContentUnionParam{
-							OfString: openai.Opt(msg.Content),
-						},
-					},
+					OfMessage: responseMessageParam(responses.EasyInputMessageRoleSystem, msg),
 				})
 			}
 		}
@@ -148,11 +126,10 @@ func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions
 			params.Temperature = openai.Opt(opts.Temperature)
 		}
 
-		// Configure reasoning effort for o-series models
-		if effort := openaiReasoningEffort(opts.ThinkingLevel); effort != "" {
-			params.Reasoning = shared.ReasoningParam{
-				Effort: effort,
-			}
+		// OpenAI maps the canonical Claude-style think levels onto model-specific
+		// reasoning effort values.
+		if reasoning, ok := openaiReasoningConfig(opts.Model, opts.ThinkingLevel, true); ok {
+			params.Reasoning = reasoning
 		}
 
 		// Add tools if provided
@@ -195,6 +172,17 @@ func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions
 			case "response.output_text.delta":
 				delta := event.AsResponseOutputTextDelta()
 				state.EmitText(ch, delta.Delta)
+
+			case "response.reasoning_summary_text.delta":
+				delta := event.AsResponseReasoningSummaryTextDelta()
+				state.EmitThinking(ch, delta.Delta)
+
+			case "response.reasoning_text.delta":
+				// Prefer reasoning summaries when requested; raw reasoning text is a fallback.
+				if !openaiReasoningSummaryEnabled(opts.ThinkingLevel) {
+					delta := event.AsResponseReasoningTextDelta()
+					state.EmitThinking(ch, delta.Delta)
+				}
 
 			case "response.output_item.added":
 				itemEvent := event.AsResponseOutputItemAdded()
@@ -263,22 +251,6 @@ func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions
 	return ch
 }
 
-// streamChatCompletions implements streaming via the Chat Completions API.
-func (c *Client) streamChatCompletions(ctx context.Context, opts llm.CompletionOptions) <-chan llm.StreamChunk {
-	return openaicompat.StreamChatCompletions(ctx, openaicompat.ChatStreamConfig{
-		Client:           c.client,
-		ProviderName:     c.name,
-		Options:          opts,
-		ConvertAssistant: openaicompat.DefaultAssistantMessage,
-		ConfigureParams: func(params *openai.ChatCompletionNewParams) {
-			// Configure reasoning effort for o-series models.
-			if effort := openaiReasoningEffort(opts.ThinkingLevel); effort != "" {
-				params.ReasoningEffort = effort
-			}
-		},
-	})
-}
-
 // ListModels returns the available models for OpenAI using the API
 func (c *Client) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
 	// Use OpenAI API to dynamically fetch models
@@ -309,11 +281,7 @@ func (c *Client) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
 			continue
 		}
 
-		models = append(models, llm.ModelInfo{
-			ID:          id,
-			Name:        id,
-			DisplayName: id,
-		})
+		models = append(models, openAIModelInfo(id))
 	}
 
 	slices.SortFunc(models, func(a, b llm.ModelInfo) int { return cmp.Compare(a.ID, b.ID) })
@@ -321,16 +289,80 @@ func (c *Client) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
 	return models, nil
 }
 
-// openaiReasoningEffort maps ThinkingLevel to OpenAI's ReasoningEffort.
-// Returns empty string for ThinkingOff (no change to default).
-func openaiReasoningEffort(level llm.ThinkingLevel) shared.ReasoningEffort {
+func openaiReasoningConfig(model string, level llm.ThinkingLevel, includeSummary bool) (shared.ReasoningParam, bool) {
+	profile, ok := openAIReasoningProfile(model)
+	if !ok {
+		return shared.ReasoningParam{}, false
+	}
+	effort := openaiReasoningEffort(profile, level)
+	params := shared.ReasoningParam{Effort: effort}
+	if includeSummary && profile.summary && openaiReasoningSummaryEnabled(level) {
+		params.Summary = shared.ReasoningSummaryAuto
+	}
+	return params, true
+}
+
+func openaiReasoningSummaryEnabled(level llm.ThinkingLevel) bool {
+	return level > llm.ThinkingOff
+}
+
+func responseMessageParam(role responses.EasyInputMessageRole, msg core.Message) *responses.EasyInputMessageParam {
+	param := &responses.EasyInputMessageParam{Role: role}
+	if len(msg.Images) == 0 {
+		param.Content = responses.EasyInputMessageContentUnionParam{
+			OfString: openai.Opt(msg.Content),
+		}
+		return param
+	}
+
+	content := make(responses.ResponseInputMessageContentListParam, 0, len(msg.Images)+1)
+	if parts := core.InterleavedContentParts(msg); parts != nil {
+		for _, p := range parts {
+			switch p.Type {
+			case core.ContentPartText:
+				content = append(content, responses.ResponseInputContentParamOfInputText(p.Text))
+			case core.ContentPartImage:
+				content = append(content, responseImageContentPart(p.Image.MediaType, p.Image.Data))
+			}
+		}
+	} else {
+		for _, img := range msg.Images {
+			content = append(content, responseImageContentPart(img.MediaType, img.Data))
+		}
+		if msg.Content != "" {
+			content = append(content, responses.ResponseInputContentParamOfInputText(msg.Content))
+		}
+	}
+	param.Content = responses.EasyInputMessageContentUnionParam{
+		OfInputItemContentList: content,
+	}
+	return param
+}
+
+func responseImageContentPart(mediaType, data string) responses.ResponseInputContentUnionParam {
+	part := responses.ResponseInputContentParamOfInputImage(responses.ResponseInputImageDetailAuto)
+	if part.OfInputImage != nil {
+		part.OfInputImage.ImageURL = openai.String(fmt.Sprintf("data:%s;base64,%s", mediaType, data))
+	}
+	return part
+}
+
+func messageHasResponseContent(msg core.Message) bool {
+	return strings.TrimSpace(msg.Content) != "" || len(msg.Images) > 0
+}
+
+// openaiReasoningEffort maps ThinkingLevel to OpenAI reasoning effort values
+// using the resolved model capabilities.
+func openaiReasoningEffort(profile reasoningProfile, level llm.ThinkingLevel) shared.ReasoningEffort {
 	switch level {
+	case llm.ThinkingOff:
+		return profile.off
 	case llm.ThinkingNormal:
-		return shared.ReasoningEffortMedium
+		return profile.normal
 	case llm.ThinkingHigh:
-		return shared.ReasoningEffortHigh
+		return profile.high
 	case llm.ThinkingUltra:
-		return shared.ReasoningEffortXhigh
+		return profile.ultra
 	default:
 		return ""
 	}

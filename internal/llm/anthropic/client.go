@@ -75,7 +75,7 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 
 		// Sanitizer for cross-provider tool ID compatibility (lazy, single-pass)
 		var ids toolIDSanitizer
-		thinkingBudget := int64(opts.ThinkingLevel.BudgetTokens())
+		thinkingBudget := int64(anthropicThinkingBudget(opts.Model, opts.ThinkingLevel))
 
 		// Remove orphaned tool_result blocks whose tool_use_id doesn't match
 		// any tool_use in the nearest preceding assistant core. This guards
@@ -274,14 +274,8 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 	return ch
 }
 
-// defaultModels is the fallback static model list
-var defaultModels = []llm.ModelInfo{
-	{ID: "claude-opus-4-5@20251101", Name: "Claude Opus 4.5", DisplayName: "Claude Opus 4.5 (Most Capable)"},
-	{ID: "claude-sonnet-4-6-20250514", Name: "Claude Sonnet 4.6", DisplayName: "Claude Sonnet 4.6 (Latest)"},
-	{ID: "claude-sonnet-4-5@20250929", Name: "Claude Sonnet 4.5", DisplayName: "Claude Sonnet 4.5 (Balanced)"},
-	{ID: "claude-sonnet-4-20250514", Name: "Claude Sonnet 4", DisplayName: "Claude Sonnet 4"},
-	{ID: "claude-haiku-3-5@20241022", Name: "Claude Haiku 3.5", DisplayName: "Claude Haiku 3.5 (Fast)"},
-}
+// defaultModels is the fallback static model list.
+var defaultModels = StaticModels()
 
 // ListModels returns available models using the Anthropic Models API,
 // falling back to a static list if the API call fails.
@@ -311,6 +305,14 @@ func (c *Client) fetchModels(ctx context.Context) ([]llm.ModelInfo, error) {
 	var models []llm.ModelInfo
 	for pager.Next() {
 		m := pager.Current()
+		if info, ok := CatalogModel(m.ID); ok {
+			if m.DisplayName != "" {
+				info.Name = m.DisplayName
+				info.DisplayName = m.DisplayName
+			}
+			models = append(models, info)
+			continue
+		}
 		models = append(models, llm.ModelInfo{
 			ID:          m.ID,
 			Name:        m.DisplayName,
@@ -383,6 +385,13 @@ func sanitizeToolResults(msgs []core.Message) []core.Message {
 	}
 
 	return result
+}
+
+func anthropicThinkingBudget(model string, level llm.ThinkingLevel) int {
+	if !supportsThinkingModel(model) {
+		return 0
+	}
+	return level.BudgetTokens()
 }
 
 // mergeConsecutiveMessages combines consecutive messages with the same role

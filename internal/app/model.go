@@ -442,8 +442,8 @@ func (m *model) SetTokenUsage(resp *core.InferResponse) {
 		return
 	}
 
-	m.env.InputTokens = resp.TokensIn
-	m.env.OutputTokens = resp.TokensOut
+	m.env.InputTokens += resp.TokensIn
+	m.env.OutputTokens += resp.TokensOut
 
 	if m.env.CurrentModel != nil {
 		switch m.env.CurrentModel.Provider {

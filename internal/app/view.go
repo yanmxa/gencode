@@ -8,6 +8,7 @@ import (
 
 	"github.com/yanmxa/gencode/internal/app/conv"
 	"github.com/yanmxa/gencode/internal/app/kit"
+	"github.com/yanmxa/gencode/internal/llm"
 	"github.com/yanmxa/gencode/internal/task/tracker"
 )
 
@@ -169,6 +170,7 @@ func (m model) renderModeStatus() string {
 		ConversationCost: m.env.ConversationCost,
 		Width:            m.env.Width,
 		ThinkingLevel:    m.env.EffectiveThinkingLevel(),
+		ShowThinking:     m.env.CurrentModel == nil || m.env.CurrentModel.Provider != llm.OpenAI,
 		QueueCount:       m.userInput.Queue.PendingCount(),
 	})
 }
