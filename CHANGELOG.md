@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.15.3] - 2026-04-25
+
+### Changed
+
+- Remove thinking-level handling and related model configuration
+- Refactor Anthropic and OpenAI client implementations with improved catalog support
+- Add catalog tests for Anthropic and OpenAI providers
+
+### Fixed
+
+- Correct Vertex AI integration for Anthropic models
+
 ## [v1.15.2] - 2026-04-24
 
 ### Changed
