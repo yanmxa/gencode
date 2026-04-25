@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	glog "github.com/yanmxa/gencode/internal/log"
 )
 
 // agent is the default Agent implementation.
@@ -70,7 +72,7 @@ func (a *agent) Run(ctx context.Context) error {
 	}()
 
 	for {
-		debugLog("agent.Run: waitForInput blocking...")
+		glog.QueueLog("agent.Run: waitForInput blocking...")
 		if err := a.waitForInput(ctx); err != nil {
 			if err == errStopped {
 				return nil
@@ -78,17 +80,17 @@ func (a *agent) Run(ctx context.Context) error {
 			runErr = err
 			return err
 		}
-		debugLog("agent.Run: waitForInput received message")
+		glog.QueueLog("agent.Run: waitForInput received message")
 
 		for {
-			debugLog("agent.Run: starting ThinkAct")
+			glog.QueueLog("agent.Run: starting ThinkAct")
 			result, err := a.ThinkAct(ctx)
 			if result != nil {
-				debugLog("agent.Run: ThinkAct done, emitting TurnEvent")
+				glog.QueueLog("agent.Run: ThinkAct done, emitting TurnEvent")
 				a.emit(ctx, TurnEvent(a.id, *result))
 			}
 			if err != nil {
-				debugLog("agent.Run: ThinkAct error: %v", err)
+				glog.QueueLog("agent.Run: ThinkAct error: %v", err)
 				if err == errStopped {
 					return nil
 				}
@@ -104,7 +106,7 @@ func (a *agent) Run(ctx context.Context) error {
 				runErr = drainErr
 				return drainErr
 			}
-			debugLog("agent.Run: post-ThinkAct drain n=%d", n)
+			glog.QueueLog("agent.Run: post-ThinkAct drain n=%d", n)
 			if n == 0 {
 				break
 			}
@@ -156,7 +158,7 @@ func (a *agent) ingest(ctx context.Context, msg Message) {
 // ThinkAct runs one full inference-action cycle until end_turn.
 // Returns the result directly — the caller decides whether to emit TurnEvent.
 func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
-	var turns, toolUses, tokensIn, tokensOut int
+	var turns, toolUses, tokensIn, tokensOut, lastInputTokens, lastPromptTextLen int
 	var maxOutputRecoveryCount int
 
 	makeResult := func(content string, stop StopReason, detail string) *Result {
@@ -184,9 +186,13 @@ func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 			}
 		}
 
-		// Pre-infer compaction: if context exceeds 95% of limit, compact before inference
-		if a.compactFunc != nil && tokensIn > 0 {
-			if limit := a.llm.InputLimit(); limit > 0 && NeedsCompaction(tokensIn, limit) {
+		currentPromptTextLen := len(BuildConversationText(a.snapshot()))
+
+		// Pre-infer compaction: estimate the next prompt size from the latest
+		// known prompt-token count and current conversation growth.
+		if a.compactFunc != nil && lastInputTokens > 0 {
+			estimatedInputTokens := estimatePromptTokens(lastInputTokens, lastPromptTextLen, currentPromptTextLen)
+			if limit := a.llm.InputLimit(); limit > 0 && NeedsCompaction(estimatedInputTokens, limit) {
 				if a.compact(ctx) {
 					continue
 				}
@@ -205,6 +211,8 @@ func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 		}
 
 		turns++
+		lastInputTokens = resp.TokensIn
+		lastPromptTextLen = currentPromptTextLen
 		tokensIn += resp.TokensIn
 		tokensOut += resp.TokensOut
 
@@ -238,6 +246,20 @@ func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 		// Execute tool calls
 		toolUses += a.execTools(ctx, resp.ToolCalls)
 	}
+}
+
+func estimatePromptTokens(lastInputTokens, lastPromptTextLen, currentPromptTextLen int) int {
+	if lastInputTokens <= 0 {
+		return 0
+	}
+	if lastPromptTextLen <= 0 || currentPromptTextLen <= 0 {
+		return lastInputTokens
+	}
+	estimated := (lastInputTokens * currentPromptTextLen) / lastPromptTextLen
+	if estimated < lastInputTokens {
+		return lastInputTokens
+	}
+	return estimated
 }
 
 // execTools runs tool calls in three phases:

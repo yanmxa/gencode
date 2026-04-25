@@ -31,11 +31,14 @@ type ProviderState struct {
 	FetchingLimits bool
 	Selector       ProviderSelector
 	StatusMessage  string // Temporary status shown in status bar
+	statusToken    int64
 }
 
 // SetStatusMessage sets the temporary status message displayed in the status bar.
-func (s *ProviderState) SetStatusMessage(msg string) {
+func (s *ProviderState) SetStatusMessage(msg string) int64 {
+	s.statusToken++
 	s.StatusMessage = msg
+	return s.statusToken
 }
 
 // ProviderStatusExpiredMsg is an alias for kit.StatusExpiredMsg.
@@ -54,7 +57,9 @@ func UpdateProvider(deps OverlayDeps, state *ProviderState, msg tea.Msg) (tea.Cm
 		state.Selector.HandleModelsLoaded(msg)
 		return nil, true
 	case ProviderStatusExpiredMsg:
-		state.StatusMessage = ""
+		if msg.Token == state.statusToken {
+			state.StatusMessage = ""
+		}
 		return nil, true
 	}
 	return nil, false
@@ -75,8 +80,8 @@ func handleProviderModelSelected(deps OverlayDeps, state *ProviderState, msg Pro
 	ctx := context.Background()
 	providerRefreshConnection(deps, state, ctx, llm.Name(msg.ProviderName), msg.AuthMethod)
 
-	state.StatusMessage = msg.ModelID
-	return kit.StatusTimer(5 * time.Second)
+	token := state.SetStatusMessage(msg.ModelID)
+	return kit.StatusTimer(5*time.Second, token)
 }
 
 func providerRefreshConnection(deps OverlayDeps, state *ProviderState, ctx context.Context, providerName llm.Name, authMethod llm.AuthMethod) {

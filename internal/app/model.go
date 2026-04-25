@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -437,13 +438,30 @@ func (m *model) initTaskStorage(sessionID string) {
 // conv.Runtime — agent outbox event handlers
 // ============================================================
 
+func (m *model) BeginInferTurn() {
+	if m.env.turnUsageActive {
+		return
+	}
+	m.env.TurnInputTokens = 0
+	m.env.TurnOutputTokens = 0
+	m.env.turnUsageActive = true
+}
+
 func (m *model) SetTokenUsage(resp *core.InferResponse) {
 	if resp == nil {
 		return
 	}
 
-	m.env.InputTokens += resp.TokensIn
-	m.env.OutputTokens += resp.TokensOut
+	if m.userInput.Provider.StatusMessage == "compacted" {
+		m.userInput.Provider.StatusMessage = ""
+	}
+
+	// Bottom-right context usage reflects the latest prompt/output, not a
+	// lifetime sum across the whole session.
+	m.env.InputTokens = resp.TokensIn
+	m.env.OutputTokens = resp.TokensOut
+	m.env.TurnInputTokens += resp.TokensIn
+	m.env.TurnOutputTokens += resp.TokensOut
 
 	if m.env.CurrentModel != nil {
 		switch m.env.CurrentModel.Provider {
@@ -482,6 +500,7 @@ func (m *model) ProcessToolResult(tr core.ToolResult) *core.ToolResult {
 
 func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 	m.env.ClearThinkingOverride()
+	m.env.turnUsageActive = false
 	if m.services.Tracker.AllDone() {
 		m.services.Tracker.Reset()
 	}
@@ -503,6 +522,7 @@ func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
 }
 
 func (m *model) ProcessAgentStop(err error) tea.Cmd {
+	m.env.turnUsageActive = false
 	// /clear and manual stop cancel the active agent context; that is expected
 	// shutdown, not an agent failure the user needs to see.
 	if err != nil && !errors.Is(err, context.Canceled) {
@@ -522,7 +542,8 @@ func (m *model) HandleAgentCompact(info core.CompactInfo) tea.Cmd {
 	boundary := boundaryStyle.Render(fmt.Sprintf("✻ Conversation compacted — %d messages summarized (scroll up for history)", info.OriginalCount))
 
 	m.conv.Clear()
-	m.env.ResetTokens()
+	m.env.ResetContextDisplay()
+	token := m.userInput.Provider.SetStatusMessage("compacted")
 	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: core.FormatCompactSummary(info.Summary)})
 
 	if m.services.Hook != nil {
@@ -530,7 +551,7 @@ func (m *model) HandleAgentCompact(info core.CompactInfo) tea.Cmd {
 	}
 
 	scrollPart := tea.Sequence(append(scrollbackCmds, tea.Println(boundary), tea.ClearScreen)...)
-	return tea.Batch(scrollPart, m.ContinueOutbox())
+	return tea.Batch(scrollPart, m.ContinueOutbox(), kit.StatusTimer(3*time.Second, token))
 }
 
 // HandleCompactResult handles manual /compact results.
@@ -547,6 +568,7 @@ func (m *model) HandleCompactResult(msg conv.CompactResultMsg) tea.Cmd {
 
 	m.conv.Clear()
 	m.env.ResetTokens()
+	token := m.userInput.Provider.SetStatusMessage("compacted")
 	m.StopAgentSession()
 
 	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: core.FormatCompactSummary(msg.Summary)})
@@ -565,7 +587,7 @@ func (m *model) HandleCompactResult(msg conv.CompactResultMsg) tea.Cmd {
 	}
 
 	scrollPart := tea.Sequence(append(scrollbackCmds, tea.Println(boundary), tea.ClearScreen)...)
-	return tea.Batch(scrollPart, tea.Batch(m.CommitMessages()...))
+	return tea.Batch(scrollPart, tea.Batch(m.CommitMessages()...), kit.StatusTimer(3*time.Second, token))
 }
 
 func (m *model) HandleTokenLimitResult(msg kit.TokenLimitResultMsg) tea.Cmd {

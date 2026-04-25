@@ -438,8 +438,8 @@ func (c *CommandController) handleThinkCommand(_ context.Context, args string) (
 	default:
 		return "Usage: /think [off|think|think+|ultra]\n\nLevels:\n  off        — No extended thinking\n  think      — Moderate thinking budget\n  think+     — Extended thinking budget\n  ultra      — Maximum thinking budget\n\nWithout arguments, cycles to the next level.", nil, nil
 	}
-	c.deps.Input.Provider.StatusMessage = fmt.Sprintf("thinking: %s", c.deps.GetThinkingLevel().String())
-	return "", kit.StatusTimer(3 * time.Second), nil
+	token := c.deps.Input.Provider.SetStatusMessage(fmt.Sprintf("thinking: %s", c.deps.GetThinkingLevel().String()))
+	return "", kit.StatusTimer(3*time.Second, token), nil
 }
 
 func (c *CommandController) handleLoopCommand(_ context.Context, args string) (string, tea.Cmd, error) {

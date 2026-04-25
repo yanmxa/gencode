@@ -179,6 +179,24 @@ func TestSelectModelReturnsSelectionMessage(t *testing.T) {
 	}
 }
 
+func TestProviderStatusExpiryIgnoresStaleTimer(t *testing.T) {
+	state := &ProviderState{}
+	first := state.SetStatusMessage("thinking: think")
+	second := state.SetStatusMessage("compacted")
+
+	if cmd, handled := UpdateProvider(OverlayDeps{}, state, ProviderStatusExpiredMsg{Token: first}); !handled || cmd != nil {
+		t.Fatalf("UpdateProvider() handled=%v cmd=%v, want handled=true cmd=nil", handled, cmd)
+	}
+	if state.StatusMessage != "compacted" {
+		t.Fatalf("StatusMessage = %q, want newer status to survive stale timer", state.StatusMessage)
+	}
+
+	UpdateProvider(OverlayDeps{}, state, ProviderStatusExpiredMsg{Token: second})
+	if state.StatusMessage != "" {
+		t.Fatalf("StatusMessage = %q, want empty after current timer expires", state.StatusMessage)
+	}
+}
+
 func newProviderTestStore(t *testing.T) *llm.Store {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())

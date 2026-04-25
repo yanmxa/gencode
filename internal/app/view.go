@@ -38,19 +38,14 @@ func (m *model) View() string {
 	activeContent := conv.RenderActiveContent(m.messageRenderParams())
 	inputView := m.renderInputView()
 	chatSection := m.renderChatSection(activeContent, trackerView)
-	turnUsage := conv.RenderTurnUsageSummary(m.env.InputTokens, m.env.OutputTokens, m.env.Width)
+	turnUsage := conv.RenderTurnUsageSummary(m.env.TurnInputTokens, m.env.TurnOutputTokens, m.env.Width)
 	statusLine := m.renderModeStatus()
 	suggestions := m.userInput.Suggestions.Render(m.env.Width)
-	tokenWarning := conv.RenderTokenWarning(m.env.InputTokens, kit.GetEffectiveInputLimit(m.services.LLM.Store(), m.env.CurrentModel), m.conv.Compact.WarningSuppressed)
 	queuePreview := m.renderQueuePreview()
 
 	var view strings.Builder
 	if chatSection != "" {
 		view.WriteString(chatSection)
-	}
-	if tokenWarning != "" {
-		view.WriteString("\n")
-		view.WriteString(tokenWarning)
 	}
 	if turnUsage != "" {
 		view.WriteString("\n")
@@ -167,6 +162,7 @@ func (m model) renderModeStatus() string {
 		OutputTokens:     m.env.OutputTokens,
 		InputLimit:       kit.GetEffectiveInputLimit(m.services.LLM.Store(), m.env.CurrentModel),
 		ModelName:        modelName,
+		StatusMessage:    m.userInput.Provider.StatusMessage,
 		ConversationCost: m.env.ConversationCost,
 		Width:            m.env.Width,
 		ThinkingLevel:    m.env.EffectiveThinkingLevel(),

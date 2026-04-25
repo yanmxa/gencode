@@ -15,6 +15,9 @@ var (
 // QueueLog writes a timestamped debug line to ./gen_debug.log in the working directory.
 // Always active (no env var needed). Safe for concurrent use.
 func QueueLog(format string, args ...any) {
+	if os.Getenv("GEN_DEBUG") != "1" {
+		return
+	}
 	queueLogOnce.Do(func() {
 		f, err := os.OpenFile("gen_debug.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {

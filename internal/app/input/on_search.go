@@ -345,8 +345,8 @@ func UpdateSearch(deps OverlayDeps, state *SearchSelector, msg tea.Msg) (tea.Cmd
 	switch msg := msg.(type) {
 	case SearchSelectedMsg:
 		state.Cancel()
-		deps.State.Provider.SetStatusMessage(fmt.Sprintf("Search engine: %s", msg.Provider))
-		return kit.StatusTimer(3 * time.Second), true
+		token := deps.State.Provider.SetStatusMessage(fmt.Sprintf("Search engine: %s", msg.Provider))
+		return kit.StatusTimer(3*time.Second, token), true
 	}
 	return nil, false
 }

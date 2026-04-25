@@ -20,10 +20,20 @@ type env struct {
 	InitialPrompt string
 
 	// ── Provider (mutable — changes via SwitchProvider) ─────────
-	LLMProvider      llm.Provider
-	CurrentModel     *llm.CurrentModelInfo
-	InputTokens      int
-	OutputTokens     int
+	LLMProvider  llm.Provider
+	CurrentModel *llm.CurrentModelInfo
+	// InputTokens / OutputTokens track the latest infer call only.
+	// They back the bottom-right context display, so they reflect the most
+	// recent prompt/output size rather than a turn or session aggregate.
+	InputTokens  int
+	OutputTokens int
+	// TurnInputTokens / TurnOutputTokens track the current agent turn.
+	// A "turn" here means the whole think-act cycle, which may include multiple
+	// LLM calls around tool use. These totals are reset at the first infer of a
+	// new turn and then accumulated after each infer in that turn.
+	TurnInputTokens  int
+	TurnOutputTokens int
+	turnUsageActive  bool
 	ConversationCost llm.Money
 	ThinkingLevel    llm.ThinkingLevel
 	ThinkingOverride llm.ThinkingLevel
@@ -151,8 +161,15 @@ func (m *env) ClearThinkingOverride() {
 	m.ThinkingOverride = llm.ThinkingOff
 }
 
-func (m *env) ResetTokens() {
+func (m *env) ResetContextDisplay() {
 	m.InputTokens = 0
 	m.OutputTokens = 0
 	m.ConversationCost = llm.Money{}
+}
+
+func (m *env) ResetTokens() {
+	m.ResetContextDisplay()
+	m.TurnInputTokens = 0
+	m.TurnOutputTokens = 0
+	m.turnUsageActive = false
 }

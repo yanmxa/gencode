@@ -99,7 +99,7 @@ func TestRenderModeStatusShowsTokenUsageWithModel(t *testing.T) {
 		Width:            100,
 	})
 
-	for _, want := range []string{"gpt-test", "12% ctx", "¥0.123"} {
+	for _, want := range []string{"gpt-test", "1.2k/10.0k (12%)", "¥0.123"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("RenderModeStatus() = %q, want %q", rendered, want)
 		}
@@ -111,6 +111,43 @@ func TestRenderModeStatusShowsTokenUsageWithModel(t *testing.T) {
 	}
 	if !strings.Contains(rendered, " · ") {
 		t.Fatalf("RenderModeStatus() = %q, want segmented display", rendered)
+	}
+}
+
+func TestRenderModeStatusKeepsContextDisplayOnRightOnly(t *testing.T) {
+	rendered := RenderModeStatus(OperationModeParams{
+		ModelName:     "kimi-k2.6",
+		InputTokens:   301800,
+		InputLimit:    262100,
+		ThinkingLevel: llm.ThinkingHigh,
+		ShowThinking:  true,
+		Width:         120,
+	})
+
+	if !strings.Contains(rendered, "kimi-k2.6") {
+		t.Fatalf("RenderModeStatus() = %q, want model name", rendered)
+	}
+	if !strings.Contains(rendered, "301.8k/262.1k (115%)") {
+		t.Fatalf("RenderModeStatus() = %q, want unified context display on the right", rendered)
+	}
+	if !strings.Contains(rendered, "auto-compact") {
+		t.Fatalf("RenderModeStatus() = %q, want auto-compact hint", rendered)
+	}
+	if strings.Count(rendered, "115%") != 1 {
+		t.Fatalf("RenderModeStatus() = %q, should only show context percentage once", rendered)
+	}
+}
+
+func TestRenderModeStatusShowsTemporaryStatusMessage(t *testing.T) {
+	rendered := RenderModeStatus(OperationModeParams{
+		ModelName:     "kimi-k2.6",
+		StatusMessage: "compacted",
+		Width:         80,
+	})
+	for _, want := range []string{"kimi-k2.6", "compacted"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("RenderModeStatus() = %q, want %q", rendered, want)
+		}
 	}
 }
 

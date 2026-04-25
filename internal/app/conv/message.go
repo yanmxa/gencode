@@ -58,6 +58,7 @@ type OperationModeParams struct {
 	OutputTokens     int
 	InputLimit       int
 	ModelName        string
+	StatusMessage    string
 	ConversationCost llm.Money
 	Width            int
 	ThinkingLevel    llm.ThinkingLevel
@@ -79,17 +80,13 @@ func RenderModeStatus(params OperationModeParams) string {
 		}
 	}
 
-	if tokenWarning := renderTokenWarningInline(params.InputTokens, params.InputLimit); tokenWarning != "" {
-		leftParts = append(leftParts, tokenWarning)
-	}
-
 	if queueBadge := renderQueueBadge(params.QueueCount); queueBadge != "" {
 		leftParts = append(leftParts, queueBadge)
 	}
 
 	left := strings.Join(leftParts, "  ")
 
-	right := renderModelWithTokens(params.ModelName, params.InputTokens, params.InputLimit, params.ConversationCost)
+	right := renderModelWithTokens(params.ModelName, params.StatusMessage, params.InputTokens, params.InputLimit, params.ConversationCost)
 	if right == "" || params.Width <= 0 {
 		return left
 	}
@@ -99,12 +96,15 @@ func RenderModeStatus(params OperationModeParams) string {
 }
 
 // renderModelWithTokens renders the model name with token usage on the right side.
-func renderModelWithTokens(modelName string, inputTokens, inputLimit int, conversationCost llm.Money) string {
+func renderModelWithTokens(modelName, statusMessage string, inputTokens, inputLimit int, conversationCost llm.Money) string {
 	if modelName == "" {
 		return ""
 	}
 	muted := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 	parts := []string{modelName}
+	if statusMessage != "" {
+		parts = append(parts, statusMessage)
+	}
 
 	if inputTokens == 0 {
 		if !conversationCost.IsZero() {
@@ -115,7 +115,11 @@ func renderModelWithTokens(modelName string, inputTokens, inputLimit int, conver
 
 	if inputLimit > 0 {
 		pct := float64(inputTokens) / float64(inputLimit) * 100
-		parts = append(parts, fmt.Sprintf("%.0f%% ctx", pct))
+		ctxSegment := fmt.Sprintf("%s/%s (%.0f%%)", kit.FormatTokenCount(inputTokens), kit.FormatTokenCount(inputLimit), pct)
+		if hint := compactStatusHint(pct); hint != "" {
+			ctxSegment += " · " + hint
+		}
+		parts = append(parts, ctxSegment)
 	}
 	if !conversationCost.IsZero() {
 		parts = append(parts, kit.FormatMoney(conversationCost))
@@ -137,6 +141,17 @@ func RenderTurnUsageSummary(inputTokens, outputTokens, width int) string {
 
 	gap := max(0, width-lipgloss.Width(summary))
 	return strings.Repeat(" ", gap) + summary
+}
+
+func compactStatusHint(percent float64) string {
+	switch {
+	case percent >= autoCompactThreshold:
+		return "auto-compact"
+	case percent >= 85:
+		return fmt.Sprintf("compact at %d%%", autoCompactThreshold)
+	default:
+		return ""
+	}
 }
 
 // RenderOperationModeIndicator returns the mode status indicator for auto-accept or bypass mode.
@@ -186,29 +201,6 @@ func RenderThinkingIndicator(level llm.ThinkingLevel) string {
 
 	style := lipgloss.NewStyle().Foreground(color)
 	return "  " + style.Render(icon+label)
-}
-
-// renderTokenWarningInline returns a warning when context usage exceeds 50%.
-func renderTokenWarningInline(inputTokens, inputLimit int) string {
-	if inputLimit == 0 || inputTokens == 0 {
-		return ""
-	}
-
-	percent := float64(inputTokens) / float64(inputLimit) * 100
-	if percent < 50 {
-		return ""
-	}
-
-	color, hint := tokenUsageColorAndHint(percent)
-	style := lipgloss.NewStyle().Foreground(color)
-
-	used := kit.FormatTokenCount(inputTokens)
-	limit := kit.FormatTokenCount(inputLimit)
-	indicator := style.Render(fmt.Sprintf("⚡ %s/%s (%.0f%%)", used, limit, percent))
-	if hint != "" {
-		indicator += style.Render(hint)
-	}
-	return indicator
 }
 
 // toolResultIcon returns the icon for tool results based on error state.

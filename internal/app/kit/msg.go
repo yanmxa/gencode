@@ -10,11 +10,13 @@ import (
 type DismissedMsg struct{}
 
 // StatusExpiredMsg signals that a temporary status message should be cleared.
-type StatusExpiredMsg struct{}
+type StatusExpiredMsg struct {
+	Token int64
+}
 
 // StatusTimer returns a tea.Cmd that clears the status message after the given duration.
-func StatusTimer(d time.Duration) tea.Cmd {
+func StatusTimer(d time.Duration, token int64) tea.Cmd {
 	return tea.Tick(d, func(time.Time) tea.Msg {
-		return StatusExpiredMsg{}
+		return StatusExpiredMsg{Token: token}
 	})
 }
