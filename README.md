@@ -15,7 +15,7 @@ An open-source AI coding assistant for the terminal built with Go. Multi-provide
 
 ## Features
 
-- **Multi-provider** — Anthropic, OpenAI, Google, Moonshot, Alibaba — switch with `/model`
+- **Multi-provider** — Anthropic, OpenAI, Google, Moonshot, Alibaba, MiniMax — switch with `/model`
 - **Tools & MCP** — Built-in tools (Edit, Bash, Glob, Grep, WebSearch, etc.) + [MCP](https://modelcontextprotocol.io) integration
 - **Skills, Subagents & Plugins** — [Claude Code](https://claude.ai/code) compatible format, marketplace install
 - **Event-driven multi-agent** — Parallel agent execution with decoupled event-based coordination
@@ -33,6 +33,7 @@ An open-source AI coding assistant for the terminal built with Go. Multi-provide
 | **Google** | Gemini 3 Pro/Flash, 2.5 Pro/Flash | `GOOGLE_API_KEY` |
 | **Moonshot** | Kimi K2.5, K2 Thinking | `MOONSHOT_API_KEY` |
 | **Alibaba** | Qwen3.5 Plus, Qwen3 Max/Plus/Flash, QwQ, DeepSeek-V3/R1 | `DASHSCOPE_API_KEY` |
+| **MiniMax** | M2.7, M2.7 Highspeed, M2.5, M2.5 Highspeed, M2.1, M2.1 Highspeed, M2 | `MINIMAX_API_KEY` |
 
 
 ## Installation

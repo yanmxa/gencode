@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.15.4] - 2026-04-25
+
+### Added
+
+- **MiniMax LLM Provider**: Add MiniMax provider with M2.7, M2.7 Highspeed, M2.5, M2.5 Highspeed, M2.1, M2.1 Highspeed, M2 models
+
+### Changed
+
+- Update README with MiniMax provider information
+
 ## [v1.15.3] - 2026-04-25
 
 ### Changed
