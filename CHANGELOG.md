@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.15.6] - 2026-04-29
+
+### Changed
+
+- Update release metadata
+
+### Fixed
+
+- Add min and max item constraints to ask-user-question schemas
+
 ## [v1.15.5] - 2026-04-26
 
 ### Changed
