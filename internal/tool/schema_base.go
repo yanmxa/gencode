@@ -356,28 +356,33 @@ Multiple questions (rare):
 			},
 			"options": map[string]any{
 				"type":        "array",
-				"description": "2-4 short choice labels (for single question)",
+				"description": "2-8 short choice labels (for single question)",
 				"minItems":    2,
-				"maxItems":    4,
+				"maxItems":    8,
 				"items":       map[string]any{"type": "string"},
 			},
 			"questions": map[string]any{
 				"type":        "array",
-				"description": "For multiple questions. Array of {question, options} objects (max 4).",
+				"description": "For multiple questions. Array of {question, options} objects (max 8).",
+				"minItems":    1,
+				"maxItems":    8,
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"question": map[string]any{"type": "string"},
 						"options": map[string]any{
-							"type":  "array",
-							"items": map[string]any{"type": "string"},
+							"type":     "array",
+							"minItems": 2,
+							"maxItems": 8,
+							"items":    map[string]any{"type": "string"},
 						},
 					},
 					"required": []string{"question", "options"},
 				},
 			},
 		},
-		"required": []string{},
+		"minProperties": 1,
+		"required":      []string{},
 	},
 }
 

@@ -15,6 +15,11 @@ type AskUserQuestionTool struct {
 	requestCounter int
 }
 
+const (
+	maxAskUserQuestions = 8
+	maxAskUserOptions   = 8
+)
+
 // NewAskUserQuestionTool creates a new AskUserQuestionTool
 func NewAskUserQuestionTool() *AskUserQuestionTool {
 	return &AskUserQuestionTool{}
@@ -87,8 +92,8 @@ func (t *AskUserQuestionTool) PrepareInteraction(ctx context.Context, params map
 		return nil, err
 	}
 
-	if len(input) == 0 || len(input) > 4 {
-		return nil, fmt.Errorf("must have 1-4 questions, got %d", len(input))
+	if len(input) == 0 || len(input) > maxAskUserQuestions {
+		return nil, fmt.Errorf("must have 1-%d questions, got %d", maxAskUserQuestions, len(input))
 	}
 
 	questions := make([]tool.Question, len(input))
@@ -96,8 +101,8 @@ func (t *AskUserQuestionTool) PrepareInteraction(ctx context.Context, params map
 		if q.Question == "" {
 			return nil, fmt.Errorf("question[%d]: question text is required", i)
 		}
-		if len(q.Options) < 2 || len(q.Options) > 4 {
-			return nil, fmt.Errorf("question[%d]: must have 2-4 options, got %d", i, len(q.Options))
+		if len(q.Options) < 2 || len(q.Options) > maxAskUserOptions {
+			return nil, fmt.Errorf("question[%d]: must have 2-%d options, got %d", i, maxAskUserOptions, len(q.Options))
 		}
 		opts := make([]tool.QuestionOption, len(q.Options))
 		for j, label := range q.Options {

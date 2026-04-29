@@ -138,6 +138,22 @@ func TestMergeConsecutiveMessages_Single(t *testing.T) {
 	}
 }
 
+func TestToolSchemaExtraFieldsPreservesTopLevelConstraints(t *testing.T) {
+	extras := toolSchemaExtraFields(map[string]any{
+		"type":          "object",
+		"properties":    map[string]any{"question": map[string]any{"type": "string"}},
+		"required":      []string{},
+		"minProperties": 1,
+	})
+
+	if _, ok := extras["type"]; ok {
+		t.Fatalf("type should not be duplicated in extra fields: %#v", extras)
+	}
+	if got, ok := extras["minProperties"].(int); !ok || got != 1 {
+		t.Fatalf("expected minProperties to be preserved, got %#v", extras["minProperties"])
+	}
+}
+
 func TestSanitizeToolResults_OrphanedToolResult(t *testing.T) {
 	msgs := []core.Message{
 		{Role: core.RoleAssistant, Content: "hi", ToolCalls: []core.ToolCall{{ID: "tc_1", Name: "Read"}}},

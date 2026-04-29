@@ -5,4 +5,4 @@ When you need a decision or preference from the user before proceeding, use the 
 **When to use:** ambiguous requests, multiple valid approaches.
 **When NOT to use:** clear tasks, reasonable defaults exist, answerable from code/docs.
 
-Format: 1-4 questions, 2-4 options each, concise descriptions.
+Format: 1-8 questions, 2-8 options each, concise descriptions.

@@ -427,6 +427,7 @@ func convertAnthropicTools(tools []llm.ToolSchema) []anthropic.ToolUnionParam {
 				schema.Properties = properties
 			}
 			schema.Required = anyStrings(props["required"])
+			schema.ExtraFields = toolSchemaExtraFields(props)
 		}
 		result = append(result, anthropic.ToolUnionParam{
 			OfTool: &anthropic.ToolParam{
@@ -437,6 +438,22 @@ func convertAnthropicTools(tools []llm.ToolSchema) []anthropic.ToolUnionParam {
 		})
 	}
 	return result
+}
+
+func toolSchemaExtraFields(schema map[string]any) map[string]any {
+	extras := make(map[string]any)
+	for k, v := range schema {
+		switch k {
+		case "type", "properties", "required":
+			continue
+		default:
+			extras[k] = v
+		}
+	}
+	if len(extras) == 0 {
+		return nil
+	}
+	return extras
 }
 
 // anyStrings converts a "required" JSON Schema value to []string.

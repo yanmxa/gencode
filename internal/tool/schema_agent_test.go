@@ -18,3 +18,29 @@ func TestBuiltInToolSchemasAreOpenAICompatibleObjects(t *testing.T) {
 		}
 	}
 }
+
+func TestAskUserQuestionSchemaRejectsEmptyQuestionsShape(t *testing.T) {
+	params := askUserQuestionToolSchema.Parameters.(map[string]any)
+	if got, ok := params["minProperties"].(int); !ok || got != 1 {
+		t.Fatalf("AskUserQuestion must require at least one input property, got %#v", params["minProperties"])
+	}
+
+	properties := params["properties"].(map[string]any)
+	questions := properties["questions"].(map[string]any)
+	if got, ok := questions["minItems"].(int); !ok || got != 1 {
+		t.Fatalf("AskUserQuestion questions must require at least one item, got %#v", questions["minItems"])
+	}
+	if got, ok := questions["maxItems"].(int); !ok || got != 8 {
+		t.Fatalf("AskUserQuestion questions must allow at most eight items, got %#v", questions["maxItems"])
+	}
+
+	item := questions["items"].(map[string]any)
+	itemProps := item["properties"].(map[string]any)
+	options := itemProps["options"].(map[string]any)
+	if got, ok := options["minItems"].(int); !ok || got != 2 {
+		t.Fatalf("AskUserQuestion nested options must require at least two items, got %#v", options["minItems"])
+	}
+	if got, ok := options["maxItems"].(int); !ok || got != 8 {
+		t.Fatalf("AskUserQuestion nested options must allow at most eight items, got %#v", options["maxItems"])
+	}
+}
