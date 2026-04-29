@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/yanmxa/gencode/internal/core"
@@ -24,6 +26,22 @@ func TestSetTokenUsageTracksLatestTurnUsage(t *testing.T) {
 	}
 	if m.env.TurnInputTokens != 1600 || m.env.TurnOutputTokens != 105 {
 		t.Fatalf("accumulated turn totals = in:%d out:%d, want in:1600 out:105", m.env.TurnInputTokens, m.env.TurnOutputTokens)
+	}
+}
+
+func TestResumeCommandForSessionRequiresPersistedTranscript(t *testing.T) {
+	transcriptPath := filepath.Join(t.TempDir(), "session.jsonl")
+
+	if got := resumeCommandForSession("session-1", transcriptPath); got != "" {
+		t.Fatalf("resumeCommandForSession() = %q, want empty command for missing transcript", got)
+	}
+
+	if err := os.WriteFile(transcriptPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	if got := resumeCommandForSession("session-1", transcriptPath); got != "gen -r session-1" {
+		t.Fatalf("resumeCommandForSession() = %q, want gen -r session-1", got)
 	}
 }
 

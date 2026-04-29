@@ -111,6 +111,10 @@ func (e *Executor) Run(ctx context.Context, req AgentRequest) (*AgentResult, err
 	e.fireSubagentStart(run.req, run.hookID)
 
 	result, err := e.executePreparedRun(ctx, run)
+	if err != nil && shouldRetryWithParentModel(err, run.cfg.modelID, e.parentModelID) {
+		run.cfg.modelID = e.parentModelID
+		result, err = e.executePreparedRun(ctx, run)
+	}
 	if err != nil {
 		cancelled := e.buildCancelledAgentResult(run, result)
 		if cancelled != nil {
@@ -386,6 +390,14 @@ func (e *Executor) resolveModelID(requestModel string) string {
 		return resolveModelAlias(requestModel)
 	}
 	return e.parentModelID
+}
+
+func shouldRetryWithParentModel(err error, modelID, parentModelID string) bool {
+	if err == nil || parentModelID == "" || modelID == "" || modelID == parentModelID {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "model_not_found") || strings.Contains(msg, "model not found") || strings.Contains(msg, "model_not_exist")
 }
 
 // agentPermission maps PermissionMode to a perm.Checker.

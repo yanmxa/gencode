@@ -4,6 +4,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -84,13 +85,25 @@ func (m *model) fireStartupHooks() {
 }
 
 func printExitMessage(m *model) {
-	if sessionID := m.services.Session.ID(); sessionID != "" {
+	sessionID := m.services.Session.ID()
+	command := resumeCommandForSession(sessionID, m.services.Session.TranscriptPath())
+	if command != "" {
 		dim := kit.DimStyle()
 		fmt.Println()
 		fmt.Println(dim.Render("Resume this session with:"))
-		fmt.Println(dim.Render("gen -r " + sessionID))
+		fmt.Println(dim.Render(command))
 		fmt.Println()
 	}
+}
+
+func resumeCommandForSession(sessionID, transcriptPath string) string {
+	if sessionID == "" || transcriptPath == "" {
+		return ""
+	}
+	if _, err := os.Stat(transcriptPath); err != nil {
+		return ""
+	}
+	return "gen -r " + sessionID
 }
 
 func formatAsyncHookContinuationContext(result hook.AsyncHookResult, reason string) string {

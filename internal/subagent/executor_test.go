@@ -71,6 +71,29 @@ func TestPrepareRunConfigRespectsOverrides(t *testing.T) {
 	}
 }
 
+func TestShouldRetryWithParentModelOnlyForMissingDifferentModel(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		modelID     string
+		parentModel string
+		want        bool
+	}{
+		{name: "openai model not found", err: errors.New(`infer: POST "https://api.openai.com/v1/responses": 400 Bad Request {"code":"model_not_found"}`), modelID: "claude-sonnet-4-20250514", parentModel: "gpt-5.5", want: true},
+		{name: "same model", err: errors.New("model_not_found"), modelID: "gpt-5.5", parentModel: "gpt-5.5", want: false},
+		{name: "no parent", err: errors.New("model_not_found"), modelID: "missing-model", parentModel: "", want: false},
+		{name: "other error", err: errors.New("authentication failed"), modelID: "missing-model", parentModel: "gpt-5.5", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldRetryWithParentModel(tt.err, tt.modelID, tt.parentModel); got != tt.want {
+				t.Fatalf("shouldRetryWithParentModel() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildCancelledAgentResultUsesPreparedRunMetadata(t *testing.T) {
 	executor := &Executor{}
 	run := &preparedRun{

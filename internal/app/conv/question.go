@@ -79,6 +79,15 @@ func (p *QuestionPrompt) restoreCustomInput() {
 	}
 }
 
+func customOptionIndex(q tool.Question) int {
+	for i, opt := range q.Options {
+		if strings.EqualFold(strings.TrimSpace(opt.Label), "other") {
+			return i
+		}
+	}
+	return len(q.Options)
+}
+
 // HandleKeypress handles keyboard input for the question prompt.
 func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionResponseMsg) {
 	if !p.active || p.request == nil {
@@ -101,7 +110,11 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 	}
 
 	currentQ := p.request.Questions[p.currentQuestion]
-	numOptions := len(currentQ.Options) + 1
+	customIdx := customOptionIndex(currentQ)
+	numOptions := len(currentQ.Options)
+	if customIdx == len(currentQ.Options) {
+		numOptions++
+	}
 	curOption := p.selectedOption[p.currentQuestion]
 
 	switch msg.Type {
@@ -139,7 +152,7 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 		return nil, nil
 
 	case tea.KeySpace:
-		if curOption == len(currentQ.Options) {
+		if curOption == customIdx {
 			p.showingCustom = true
 			p.customInput.Focus()
 			p.restoreCustomInput()
@@ -158,7 +171,7 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 		return nil, nil
 
 	case tea.KeyEnter:
-		if curOption == len(currentQ.Options) {
+		if curOption == customIdx {
 			p.showingCustom = true
 			p.customInput.Focus()
 			p.restoreCustomInput()
@@ -183,12 +196,12 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 	}
 
 	key := msg.String()
-	if key >= "1" && key <= "4" {
+	if len(key) == 1 && key >= "1" && key <= "9" {
 		optionIdx := int(key[0] - '1')
 		if optionIdx < numOptions {
 			p.selectedOption[p.currentQuestion] = optionIdx
 
-			if optionIdx == len(currentQ.Options) {
+			if optionIdx == customIdx {
 				p.showingCustom = true
 				p.customInput.Focus()
 				p.restoreCustomInput()
@@ -352,10 +365,6 @@ func (p *QuestionPrompt) Render() string {
 
 	currentQ := p.request.Questions[p.currentQuestion]
 
-	solidSep := strings.Repeat("\u2500", contentWidth)
-	sb.WriteString(getQuestionSeparatorStyle().Render(solidSep))
-	sb.WriteString("\n")
-
 	if len(p.request.Questions) > 1 {
 		sb.WriteString(" ")
 		for i, q := range p.request.Questions {
@@ -397,6 +406,7 @@ func (p *QuestionPrompt) Render() string {
 
 	isMulti := currentQ.MultiSelect
 	curOption := p.selectedOption[p.currentQuestion]
+	customIdx := customOptionIndex(currentQ)
 	selectedSet := make(map[int]bool)
 	for _, idx := range p.selected[p.currentQuestion] {
 		selectedSet[idx] = true
@@ -433,35 +443,43 @@ func (p *QuestionPrompt) Render() string {
 		optLine := fmt.Sprintf("%s%s %d. %s", cursor, prefix, i+1, opt.Label)
 		sb.WriteString(optStyle.Render(optLine))
 
-		if opt.Description != "" {
+		if i == customIdx {
+			desc := opt.Description
+			if desc == "" {
+				desc = "Type custom response"
+			}
+			sb.WriteString(" - ")
+			sb.WriteString(getQuestionDescStyle().Render(desc))
+		} else if opt.Description != "" {
 			sb.WriteString(" - ")
 			sb.WriteString(getQuestionDescStyle().Render(opt.Description))
 		}
 		sb.WriteString("\n")
 	}
 
-	otherIdx := len(currentQ.Options)
-	isOtherHighlighted := curOption == otherIdx
+	if customIdx == len(currentQ.Options) {
+		isOtherHighlighted := curOption == customIdx
 
-	otherCursor := "   "
-	if isOtherHighlighted {
-		otherCursor = " \u276F "
+		otherCursor := "   "
+		if isOtherHighlighted {
+			otherCursor = " \u276F "
+		}
+
+		otherStyle := getQuestionUnselectedStyle()
+		if isOtherHighlighted {
+			otherStyle = getQuestionSelectedStyle()
+		}
+
+		otherPrefix := "( )"
+		if isMulti {
+			otherPrefix = "[ ]"
+		}
+
+		sb.WriteString(otherStyle.Render(fmt.Sprintf("%s%s %d. Other", otherCursor, otherPrefix, customIdx+1)))
+		sb.WriteString(" - ")
+		sb.WriteString(getQuestionDescStyle().Render("Type custom response"))
+		sb.WriteString("\n")
 	}
-
-	otherStyle := getQuestionUnselectedStyle()
-	if isOtherHighlighted {
-		otherStyle = getQuestionSelectedStyle()
-	}
-
-	otherPrefix := "( )"
-	if isMulti {
-		otherPrefix = "[ ]"
-	}
-
-	sb.WriteString(otherStyle.Render(fmt.Sprintf("%s%s %d. Other", otherCursor, otherPrefix, otherIdx+1)))
-	sb.WriteString(" - ")
-	sb.WriteString(getQuestionDescStyle().Render("Type custom response"))
-	sb.WriteString("\n")
 
 	if p.showingCustom {
 		sb.WriteString("\n")
@@ -478,8 +496,6 @@ func (p *QuestionPrompt) Render() string {
 		}
 	}
 
-	dottedSep := strings.Repeat("\u254C", contentWidth)
-	sb.WriteString(getQuestionSeparatorStyle().Render(dottedSep))
 	sb.WriteString("\n")
 
 	var hints []string
@@ -490,6 +506,10 @@ func (p *QuestionPrompt) Render() string {
 
 	footer := " " + strings.Join(hints, " \u00B7 ")
 	sb.WriteString(getQuestionFooterStyle().Render(footer))
+	sb.WriteString("\n")
+
+	solidSep := strings.Repeat("\u2500", contentWidth)
+	sb.WriteString(getQuestionSeparatorStyle().Render(solidSep))
 
 	return sb.String()
 }
