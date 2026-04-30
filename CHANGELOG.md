@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.15.7] - 2026-04-30
+
+### Fixed
+
+- Update conversation message handling
+
+### Changed
+
+- Bind effort with keyboard ctrl+t
+
 ## [v1.15.6] - 2026-04-29
 
 ### Changed

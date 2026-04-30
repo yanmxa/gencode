@@ -24,7 +24,7 @@ import (
 	_ "github.com/yanmxa/gencode/internal/llm/openai"
 )
 
-var version = "1.15.6"
+var version = "1.15.7"
 
 // cliOpts holds all CLI flag values in one place.
 var cliOpts struct {
