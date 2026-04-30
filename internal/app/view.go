@@ -151,6 +151,12 @@ func (m model) renderTrackerList() string {
 
 func (m model) renderModeStatus() string {
 	modelName := m.env.GetModelID()
+	thinkingEffort := m.env.EffectiveThinkingEffort()
+	showThinking := true
+	if m.env.CurrentModel != nil && m.env.CurrentModel.Provider == llm.OpenAI && thinkingEffort != "" {
+		modelName += " (" + thinkingEffort + ")"
+		showThinking = false
+	}
 	if m.services.Hook != nil {
 		if status := m.services.Hook.CurrentStatusMessage(); status != "" {
 			modelName = status
@@ -165,35 +171,31 @@ func (m model) renderModeStatus() string {
 		StatusMessage:    m.userInput.Provider.StatusMessage,
 		ConversationCost: m.env.ConversationCost,
 		Width:            m.env.Width,
-		ThinkingLevel:    m.env.EffectiveThinkingLevel(),
-		ShowThinking:     m.env.CurrentModel == nil || m.env.CurrentModel.Provider != llm.OpenAI,
+		ThinkingEffort:   thinkingEffort,
+		ShowThinking:     showThinking,
 		QueueCount:       m.userInput.Queue.PendingCount(),
+		WaitingCount:     m.userInput.Queue.WaitingCount(),
 	})
 }
 
 func (m model) renderQueuePreview() string {
 	rawItems := m.userInput.Queue.Items()
-	items := m.userInput.Queue.PendingItems()
-	if len(items) == 0 {
+	if len(rawItems) == 0 {
 		return ""
 	}
-	previews := make([]conv.QueuePreviewItem, len(items))
-	for i, item := range items {
-		previews[i] = conv.QueuePreviewItem{Content: item.Content, HasImages: len(item.Images) > 0}
+	previews := make([]conv.QueuePreviewItem, len(rawItems))
+	for i, item := range rawItems {
+		previews[i] = conv.QueuePreviewItem{
+			Content:   item.Content,
+			HasImages: len(item.Images) > 0,
+			Waiting:   item.SentToInbox,
+		}
 	}
 
 	selectedIdx := -1
 	if m.userInput.Queue.SelectIdx >= 0 {
-		pendingSeen := 0
-		for i, item := range rawItems {
-			if item.SentToInbox {
-				continue
-			}
-			if i == m.userInput.Queue.SelectIdx {
-				selectedIdx = pendingSeen
-				break
-			}
-			pendingSeen++
+		if item, ok := m.userInput.Queue.At(m.userInput.Queue.SelectIdx); ok && !item.SentToInbox {
+			selectedIdx = m.userInput.Queue.SelectIdx
 		}
 	}
 

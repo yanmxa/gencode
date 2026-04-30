@@ -116,12 +116,12 @@ func TestRenderModeStatusShowsTokenUsageWithModel(t *testing.T) {
 
 func TestRenderModeStatusKeepsContextDisplayOnRightOnly(t *testing.T) {
 	rendered := RenderModeStatus(OperationModeParams{
-		ModelName:     "kimi-k2.6",
-		InputTokens:   301800,
-		InputLimit:    262100,
-		ThinkingLevel: llm.ThinkingHigh,
-		ShowThinking:  true,
-		Width:         120,
+		ModelName:      "kimi-k2.6",
+		InputTokens:    301800,
+		InputLimit:     262100,
+		ThinkingEffort: "think+",
+		ShowThinking:   true,
+		Width:          120,
 	})
 
 	if !strings.Contains(rendered, "kimi-k2.6") {
@@ -168,6 +168,33 @@ func TestRenderModeStatusHidesQueueBadgeWhenNoPendingItems(t *testing.T) {
 	})
 	if strings.Contains(rendered, "queued") {
 		t.Fatalf("RenderModeStatus() = %q, should not show queue badge", rendered)
+	}
+}
+
+func TestRenderModeStatusShowsWaitingBadge(t *testing.T) {
+	rendered := stripANSI(RenderModeStatus(OperationModeParams{
+		ModelName:    "gpt-test",
+		WaitingCount: 1,
+		Width:        80,
+	}))
+	if !strings.Contains(rendered, "[1 waiting]") {
+		t.Fatalf("RenderModeStatus() = %q, want waiting badge", rendered)
+	}
+	if strings.Contains(rendered, "queued") {
+		t.Fatalf("RenderModeStatus() = %q, should not show queued badge for waiting input", rendered)
+	}
+}
+
+func TestRenderQueuePreviewShowsWaitingItems(t *testing.T) {
+	rendered := stripANSI(RenderQueuePreview([]QueuePreviewItem{{
+		Content: "Codex review 建议如何运行?",
+		Waiting: true,
+	}}, -1, 80))
+
+	for _, want := range []string{"waiting", "Codex review"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("RenderQueuePreview() = %q, want %q", rendered, want)
+		}
 	}
 }
 

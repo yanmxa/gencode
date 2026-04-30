@@ -40,10 +40,10 @@ func (m *model) buildAgentParams() agent.BuildParams {
 	}
 
 	return agent.BuildParams{
-		Provider:      m.env.LLMProvider,
-		ModelID:       m.env.GetModelID(),
-		MaxTokens:     kit.GetMaxTokens(m.services.LLM.Store(), m.env.CurrentModel, setting.DefaultMaxTokens),
-		ThinkingLevel: m.env.EffectiveThinkingLevel(),
+		Provider:       m.env.LLMProvider,
+		ModelID:        m.env.GetModelID(),
+		MaxTokens:      kit.GetMaxTokens(m.services.LLM.Store(), m.env.CurrentModel, setting.DefaultMaxTokens),
+		ThinkingEffort: m.env.EffectiveThinkingEffort(),
 
 		CWD:     m.env.CWD,
 		CWDFunc: func() string { return m.env.CWD },
@@ -219,6 +219,6 @@ func (m *model) ReconfigureAgentTool() {
 
 func (m *model) buildLLMClient() *llm.Client {
 	c := llm.NewClient(m.env.LLMProvider, m.env.GetModelID(), kit.GetMaxTokens(m.services.LLM.Store(), m.env.CurrentModel, setting.DefaultMaxTokens))
-	c.SetThinking(m.env.EffectiveThinkingLevel())
+	c.SetThinkingEffort(m.env.EffectiveThinkingEffort())
 	return c
 }

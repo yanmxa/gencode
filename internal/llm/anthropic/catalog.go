@@ -6,6 +6,15 @@ import (
 	"github.com/yanmxa/gencode/internal/llm"
 )
 
+const (
+	ThinkingOff    = "off"
+	ThinkingNormal = "think"
+	ThinkingHigh   = "think+"
+	ThinkingUltra  = "ultrathink"
+)
+
+var thinkingEfforts = []string{ThinkingOff, ThinkingNormal, ThinkingHigh, ThinkingUltra}
+
 type catalogEntry struct {
 	match            func(string) bool
 	info             llm.ModelInfo
@@ -41,6 +50,20 @@ var anthropicCatalog = []catalogEntry{
 		match: matchAnyPrefix("claude-3-haiku"),
 		info:  newModelInfo("claude-3-haiku-20240307", "Claude Haiku 3", "Claude Haiku 3", 200000),
 	},
+}
+
+func (c *Client) ThinkingEfforts(model string) []string {
+	if !supportsThinkingModel(model) {
+		return nil
+	}
+	return thinkingEfforts
+}
+
+func (c *Client) DefaultThinkingEffort(model string) string {
+	if !supportsThinkingModel(model) {
+		return ""
+	}
+	return ThinkingOff
 }
 
 func CatalogModel(modelID string) (llm.ModelInfo, bool) {

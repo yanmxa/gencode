@@ -61,9 +61,10 @@ type OperationModeParams struct {
 	StatusMessage    string
 	ConversationCost llm.Money
 	Width            int
-	ThinkingLevel    llm.ThinkingLevel
+	ThinkingEffort   string
 	ShowThinking     bool
 	QueueCount       int
+	WaitingCount     int
 }
 
 // RenderModeStatus renders the combined mode status line.
@@ -75,13 +76,16 @@ func RenderModeStatus(params OperationModeParams) string {
 	}
 
 	if params.ShowThinking {
-		if thinkingStatus := RenderThinkingIndicator(params.ThinkingLevel); thinkingStatus != "" {
+		if thinkingStatus := RenderThinkingIndicator(params.ThinkingEffort); thinkingStatus != "" {
 			leftParts = append(leftParts, thinkingStatus)
 		}
 	}
 
 	if queueBadge := renderQueueBadge(params.QueueCount); queueBadge != "" {
 		leftParts = append(leftParts, queueBadge)
+	}
+	if waitingBadge := renderWaitingBadge(params.WaitingCount); waitingBadge != "" {
+		leftParts = append(leftParts, waitingBadge)
 	}
 
 	left := strings.Join(leftParts, "  ")
@@ -177,30 +181,12 @@ func RenderOperationModeIndicator(mode OperationMode) string {
 	return "  " + style.Render(icon+label) + hint
 }
 
-// RenderThinkingIndicator returns a styled indicator for the current thinking level.
-func RenderThinkingIndicator(level llm.ThinkingLevel) string {
-	var icon, label string
-	var color lipgloss.TerminalColor
-
-	switch level {
-	case llm.ThinkingNormal:
-		icon = "✦"
-		label = " think"
-		color = kit.CurrentTheme.Accent
-	case llm.ThinkingHigh:
-		icon = "✦✦"
-		label = " think+"
-		color = kit.CurrentTheme.Primary
-	case llm.ThinkingUltra:
-		icon = "✦✦✦"
-		label = " ultrathink"
-		color = kit.CurrentTheme.AI
-	default:
+func RenderThinkingIndicator(effort string) string {
+	if effort == "" || effort == "off" || effort == "none" {
 		return ""
 	}
-
-	style := lipgloss.NewStyle().Foreground(color)
-	return "  " + style.Render(icon+label)
+	style := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Accent)
+	return "  " + style.Render("✦ "+effort)
 }
 
 // toolResultIcon returns the icon for tool results based on error state.
@@ -592,6 +578,7 @@ func stripMarkdownHeading(line string) string {
 type QueuePreviewItem struct {
 	Content   string
 	HasImages bool
+	Waiting   bool
 }
 
 var (
@@ -610,6 +597,10 @@ var (
 					Foreground(kit.CurrentTheme.Text)
 
 	queueOverflowStyle = lipgloss.NewStyle().
+				Foreground(kit.CurrentTheme.Muted).
+				Italic(true)
+
+	queueWaitingStyle = lipgloss.NewStyle().
 				Foreground(kit.CurrentTheme.Muted).
 				Italic(true)
 )
@@ -637,6 +628,9 @@ func RenderQueuePreview(items []QueuePreviewItem, selectedIdx, width int) string
 		content := truncateQueueContent(item.Content, width-8)
 		if item.HasImages {
 			content = PendingImageStyle.Render("[Image] ") + content
+		}
+		if item.Waiting {
+			content = queueWaitingStyle.Render("waiting ") + content
 		}
 
 		if isSelected {
@@ -669,6 +663,13 @@ func renderQueueBadge(count int) string {
 		return ""
 	}
 	return queueBadgeStyle.Render(fmt.Sprintf(" [%d queued]", count))
+}
+
+func renderWaitingBadge(count int) string {
+	if count == 0 {
+		return ""
+	}
+	return queueWaitingStyle.Render(fmt.Sprintf(" [%d waiting]", count))
 }
 
 func truncateQueueContent(s string, maxLen int) string {

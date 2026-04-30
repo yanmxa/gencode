@@ -20,7 +20,7 @@ tools:
   - Grep
 skills: []
 system-prompt: ""
-max-turns: 50
+max-turns: 100
 mcp-servers: []
 ---
 ```

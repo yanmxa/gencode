@@ -42,48 +42,74 @@ func (m Meta) Key() string {
 	return string(m.Provider) + ":" + string(m.AuthMethod)
 }
 
-// ThinkingLevel controls extended thinking / reasoning effort.
-type ThinkingLevel int
-
-const (
-	ThinkingOff    ThinkingLevel = iota // No extended thinking
-	ThinkingNormal                      // Default thinking (moderate budget)
-	ThinkingHigh                        // Extended thinking (larger budget)
-	ThinkingUltra                       // Maximum thinking budget
-)
-
-// String returns a human-readable label for the thinking level.
-func (t ThinkingLevel) String() string {
-	switch t {
-	case ThinkingNormal:
-		return "think"
-	case ThinkingHigh:
-		return "think+"
-	case ThinkingUltra:
-		return "ultrathink"
-	default:
-		return "off"
-	}
+// ThinkingEffortProvider is implemented by providers that expose native thinking
+// or reasoning effort values.
+type ThinkingEffortProvider interface {
+	ThinkingEfforts(model string) []string
+	DefaultThinkingEffort(model string) string
 }
 
-// Next cycles to the next thinking level.
-func (t ThinkingLevel) Next() ThinkingLevel {
-	return (t + 1) % 4
+func ThinkingEfforts(p Provider, model string) []string {
+	ep, ok := p.(ThinkingEffortProvider)
+	if !ok {
+		return nil
+	}
+	efforts := ep.ThinkingEfforts(model)
+	if len(efforts) == 0 {
+		return nil
+	}
+	out := make([]string, len(efforts))
+	copy(out, efforts)
+	return out
 }
 
-// BudgetTokens returns the token budget for this thinking level.
-// Returns 0 for ThinkingOff.
-func (t ThinkingLevel) BudgetTokens() int {
-	switch t {
-	case ThinkingNormal:
-		return 5000
-	case ThinkingHigh:
-		return 32000
-	case ThinkingUltra:
-		return 128000
-	default:
-		return 0
+func DefaultThinkingEffort(p Provider, model string) string {
+	ep, ok := p.(ThinkingEffortProvider)
+	if !ok {
+		return ""
 	}
+	return normalizeThinkingEffort(ep.DefaultThinkingEffort(model), ep.ThinkingEfforts(model))
+}
+
+func ResolveThinkingEffort(p Provider, model, selected string) string {
+	efforts := ThinkingEfforts(p, model)
+	if len(efforts) == 0 {
+		return ""
+	}
+	if effort := normalizeThinkingEffort(selected, efforts); effort != "" {
+		return effort
+	}
+	return DefaultThinkingEffort(p, model)
+}
+
+func NextThinkingEffort(p Provider, model, current string) (string, bool) {
+	efforts := ThinkingEfforts(p, model)
+	if len(efforts) == 0 {
+		return "", false
+	}
+	current = normalizeThinkingEffort(current, efforts)
+	if current == "" {
+		current = DefaultThinkingEffort(p, model)
+	}
+	for i, effort := range efforts {
+		if effort == current {
+			return efforts[(i+1)%len(efforts)], true
+		}
+	}
+	return efforts[0], true
+}
+
+func normalizeThinkingEffort(effort string, efforts []string) string {
+	effort = strings.TrimSpace(strings.ToLower(effort))
+	if effort == "" {
+		return ""
+	}
+	for _, allowed := range efforts {
+		if strings.EqualFold(effort, allowed) {
+			return allowed
+		}
+	}
+	return ""
 }
 
 // ModelInfo represents information about an available model
@@ -97,13 +123,13 @@ type ModelInfo struct {
 
 // CompletionOptions contains options for a completion request
 type CompletionOptions struct {
-	Model         string
-	Messages      []core.Message
-	MaxTokens     int
-	Temperature   float64
-	Tools         []ToolSchema
-	SystemPrompt  string
-	ThinkingLevel ThinkingLevel
+	Model          string
+	Messages       []core.Message
+	MaxTokens      int
+	Temperature    float64
+	Tools          []ToolSchema
+	SystemPrompt   string
+	ThinkingEffort string
 }
 
 // --- Completion Response Types ---

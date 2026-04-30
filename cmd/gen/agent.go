@@ -28,7 +28,7 @@ func init() {
 	agentRunCmd.Flags().StringVar(&agentRunOpts.agentType, "type", "", "Agent type to run")
 	agentRunCmd.Flags().StringVar(&agentRunOpts.prompt, "prompt", "", "Task prompt")
 	agentRunCmd.Flags().StringVar(&agentRunOpts.model, "model", "", "Model override")
-	agentRunCmd.Flags().IntVar(&agentRunOpts.maxTurns, "max-turns", 50, "Maximum conversation turns")
+	agentRunCmd.Flags().IntVar(&agentRunOpts.maxTurns, "max-turns", 100, "Maximum conversation turns")
 
 	agentCmd.AddCommand(agentRunCmd)
 	rootCmd.AddCommand(agentCmd)
@@ -129,7 +129,7 @@ func runHeadlessAgent() error {
 
 	maxTurns := agentRunOpts.maxTurns
 	if maxTurns <= 0 {
-		maxTurns = 50
+		maxTurns = 100
 	}
 
 	ag := core.NewAgent(core.Config{

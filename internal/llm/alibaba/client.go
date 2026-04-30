@@ -47,6 +47,33 @@ func makeAssistantConverter(thinking bool) func(core.Message) openai.ChatComplet
 	}
 }
 
+func thinkingBudget(effort string) int {
+	switch effort {
+	case "think":
+		return 5000
+	case "think+":
+		return 32000
+	case "ultrathink":
+		return 128000
+	default:
+		return 0
+	}
+}
+
+func (c *Client) ThinkingEfforts(model string) []string {
+	if !isThinkingModel(model) {
+		return nil
+	}
+	return []string{"off", "think", "think+", "ultrathink"}
+}
+
+func (c *Client) DefaultThinkingEffort(model string) string {
+	if !isThinkingModel(model) {
+		return ""
+	}
+	return "off"
+}
+
 // Stream sends a completion request and returns a channel of streaming chunks.
 func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan llm.StreamChunk {
 	thinking := isThinkingModel(opts.Model)
@@ -60,7 +87,7 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 				return
 			}
 			extraFields := map[string]any{"enable_thinking": true}
-			if budget := opts.ThinkingLevel.BudgetTokens(); budget > 0 {
+			if budget := thinkingBudget(opts.ThinkingEffort); budget > 0 {
 				extraFields["thinking_budget"] = budget
 			}
 			params.SetExtraFields(extraFields)

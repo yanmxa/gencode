@@ -169,10 +169,10 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 		}
 
 		// Configure thinking
-		if opts.ThinkingLevel > llm.ThinkingOff {
+		if budget := googleThinkingBudget(opts.ThinkingEffort); budget != nil {
 			config.ThinkingConfig = &genai.ThinkingConfig{
 				IncludeThoughts: true,
-				ThinkingBudget:  googleThinkingBudget(opts.ThinkingLevel),
+				ThinkingBudget:  budget,
 			}
 		}
 
@@ -352,14 +352,28 @@ func NewAPIKeyClient(ctx context.Context) (llm.Provider, error) {
 	return NewClient(client, "google:api_key"), nil
 }
 
-// googleThinkingBudget returns a pointer to the thinking budget for the given level.
-func googleThinkingBudget(level llm.ThinkingLevel) *int32 {
-	b := level.BudgetTokens()
-	if b == 0 {
+func googleThinkingBudget(effort string) *int32 {
+	var b int
+	switch effort {
+	case "think":
+		b = 5000
+	case "think+":
+		b = 32000
+	case "ultrathink":
+		b = 128000
+	default:
 		return nil
 	}
 	budget := int32(b)
 	return &budget
+}
+
+func (c *Client) ThinkingEfforts(model string) []string {
+	return []string{"off", "think", "think+", "ultrathink"}
+}
+
+func (c *Client) DefaultThinkingEffort(model string) string {
+	return "off"
 }
 
 // Ensure Client implements Provider

@@ -126,10 +126,11 @@ func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions
 			params.Temperature = openai.Opt(opts.Temperature)
 		}
 
-		// OpenAI maps the canonical Claude-style think levels onto model-specific
-		// reasoning effort values.
-		if reasoning, ok := openaiReasoningConfig(opts.Model, opts.ThinkingLevel, true); ok {
-			params.Reasoning = reasoning
+		if opts.ThinkingEffort != "" {
+			params.Reasoning = shared.ReasoningParam{
+				Effort:  shared.ReasoningEffort(opts.ThinkingEffort),
+				Summary: shared.ReasoningSummaryAuto,
+			}
 		}
 
 		// Add tools if provided
@@ -178,11 +179,8 @@ func (c *Client) streamResponses(ctx context.Context, opts llm.CompletionOptions
 				state.EmitThinking(ch, delta.Delta)
 
 			case "response.reasoning_text.delta":
-				// Prefer reasoning summaries when requested; raw reasoning text is a fallback.
-				if !openaiReasoningSummaryEnabled(opts.ThinkingLevel) {
-					delta := event.AsResponseReasoningTextDelta()
-					state.EmitThinking(ch, delta.Delta)
-				}
+				delta := event.AsResponseReasoningTextDelta()
+				state.EmitThinking(ch, delta.Delta)
 
 			case "response.output_item.added":
 				itemEvent := event.AsResponseOutputItemAdded()
@@ -289,23 +287,6 @@ func (c *Client) ListModels(ctx context.Context) ([]llm.ModelInfo, error) {
 	return models, nil
 }
 
-func openaiReasoningConfig(model string, level llm.ThinkingLevel, includeSummary bool) (shared.ReasoningParam, bool) {
-	profile, ok := openAIReasoningProfile(model)
-	if !ok {
-		return shared.ReasoningParam{}, false
-	}
-	effort := openaiReasoningEffort(profile, level)
-	params := shared.ReasoningParam{Effort: effort}
-	if includeSummary && profile.summary && openaiReasoningSummaryEnabled(level) {
-		params.Summary = shared.ReasoningSummaryAuto
-	}
-	return params, true
-}
-
-func openaiReasoningSummaryEnabled(level llm.ThinkingLevel) bool {
-	return level > llm.ThinkingOff
-}
-
 func responseMessageParam(role responses.EasyInputMessageRole, msg core.Message) *responses.EasyInputMessageParam {
 	param := &responses.EasyInputMessageParam{Role: role}
 	if len(msg.Images) == 0 {
@@ -349,23 +330,6 @@ func responseImageContentPart(mediaType, data string) responses.ResponseInputCon
 
 func messageHasResponseContent(msg core.Message) bool {
 	return strings.TrimSpace(msg.Content) != "" || len(msg.Images) > 0
-}
-
-// openaiReasoningEffort maps ThinkingLevel to OpenAI reasoning effort values
-// using the resolved model capabilities.
-func openaiReasoningEffort(profile reasoningProfile, level llm.ThinkingLevel) shared.ReasoningEffort {
-	switch level {
-	case llm.ThinkingOff:
-		return profile.off
-	case llm.ThinkingNormal:
-		return profile.normal
-	case llm.ThinkingHigh:
-		return profile.high
-	case llm.ThinkingUltra:
-		return profile.ultra
-	default:
-		return ""
-	}
 }
 
 // Ensure Client implements Provider

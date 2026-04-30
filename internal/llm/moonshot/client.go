@@ -35,6 +35,14 @@ func (c *Client) Name() string {
 	return c.name
 }
 
+func (c *Client) ThinkingEfforts(model string) []string {
+	return []string{"none", "low", "medium", "high", "xhigh"}
+}
+
+func (c *Client) DefaultThinkingEffort(model string) string {
+	return "medium"
+}
+
 // convertAssistant converts an assistant message for Moonshot.
 // Moonshot requires reasoning_content on all assistant messages when thinking
 // is enabled — we always include the field (empty string if no thinking content).
@@ -50,10 +58,7 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 		Options:          opts,
 		ConvertAssistant: convertAssistant,
 		ConfigureParams: func(params *openai.ChatCompletionNewParams) {
-			// Enable thinking mode only when explicitly requested.
-			// Unconditionally enabling thinking on non-thinking models (e.g. moonshot-v1-auto)
-			// causes API errors. The caller must set opts.ThinkingLevel for Kimi thinking models.
-			if opts.ThinkingLevel > llm.ThinkingOff {
+			if opts.ThinkingEffort != "" && opts.ThinkingEffort != "off" && opts.ThinkingEffort != "none" {
 				params.SetExtraFields(map[string]any{
 					"thinking": map[string]any{"type": "enabled"},
 				})

@@ -52,13 +52,13 @@ type CommandDeps struct {
 	Command command.Service
 
 	// State getters (values that may change during command execution)
-	GetSessionID     func() string
-	GetSessionStore  func() *session.Store
-	GetThinkingLevel func() llm.ThinkingLevel
+	GetSessionID      func() string
+	GetSessionStore   func() *session.Store
+	GetThinkingEffort func() string
 
 	// Mutation callbacks
 	ResetTokens        func()
-	SetThinkingLevel   func(llm.ThinkingLevel)
+	SetThinkingEffort  func(string)
 	EnsureSessionStore func(cwd string) error
 	ForkSession        func() (originalSessionID string, err error)
 	ResetFetched       func()
@@ -423,23 +423,47 @@ func (c *CommandController) handleAgentCommand(_ context.Context, _ string) (str
 }
 
 func (c *CommandController) handleThinkCommand(_ context.Context, args string) (string, tea.Cmd, error) {
-	args = strings.TrimSpace(strings.ToLower(args))
-	switch args {
-	case "off", "0":
-		c.deps.SetThinkingLevel(llm.ThinkingOff)
-	case "", "toggle":
-		c.deps.SetThinkingLevel(c.deps.GetThinkingLevel().Next())
-	case "think", "normal", "1":
-		c.deps.SetThinkingLevel(llm.ThinkingNormal)
-	case "think+", "high", "2":
-		c.deps.SetThinkingLevel(llm.ThinkingHigh)
-	case "ultra", "ultrathink", "max", "3":
-		c.deps.SetThinkingLevel(llm.ThinkingUltra)
-	default:
-		return "Usage: /think [off|think|think+|ultra]\n\nLevels:\n  off        — No extended thinking\n  think      — Moderate thinking budget\n  think+     — Extended thinking budget\n  ultra      — Maximum thinking budget\n\nWithout arguments, cycles to the next level.", nil, nil
+	model := ""
+	if c.deps.CurrentModel != nil {
+		model = c.deps.CurrentModel.ModelID
 	}
-	token := c.deps.Input.Provider.SetStatusMessage(fmt.Sprintf("thinking: %s", c.deps.GetThinkingLevel().String()))
+	efforts := llm.ThinkingEfforts(c.deps.LLMProvider, model)
+	if len(efforts) == 0 {
+		return "Current provider does not support thinking effort.", nil, nil
+	}
+
+	arg := strings.TrimSpace(strings.ToLower(args))
+	var effort string
+	if arg == "" || arg == "toggle" {
+		next, _ := llm.NextThinkingEffort(c.deps.LLMProvider, model, c.deps.GetThinkingEffort())
+		effort = next
+	} else {
+		if arg == "off" && !containsThinkingEffort(efforts, "off") && containsThinkingEffort(efforts, "none") {
+			arg = "none"
+		}
+		for _, allowed := range efforts {
+			if strings.EqualFold(arg, allowed) {
+				effort = allowed
+				break
+			}
+		}
+		if effort == "" {
+			return fmt.Sprintf("Usage: /think [%s]\n\nWithout arguments, cycles to the next effort.", strings.Join(efforts, "|")), nil, nil
+		}
+	}
+
+	c.deps.SetThinkingEffort(effort)
+	token := c.deps.Input.Provider.SetStatusMessage(fmt.Sprintf("thinking: %s", effort))
 	return "", kit.StatusTimer(3*time.Second, token), nil
+}
+
+func containsThinkingEffort(efforts []string, effort string) bool {
+	for _, allowed := range efforts {
+		if strings.EqualFold(allowed, effort) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *CommandController) handleLoopCommand(_ context.Context, args string) (string, tea.Cmd, error) {

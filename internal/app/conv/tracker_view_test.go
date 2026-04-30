@@ -23,6 +23,9 @@ func TestRenderTrackerListShowsTaskStatus(t *testing.T) {
 	})
 	_ = tracker.Default().Update(failed.ID, tracker.WithStatus(tracker.StatusCompleted))
 
+	completed := tracker.Default().Create("Ship feature", "", "", nil)
+	_ = tracker.Default().Update(completed.ID, tracker.WithStatus(tracker.StatusCompleted))
+
 	pending := tracker.Default().Create("Write tests", "", "", nil)
 	_ = tracker.Default().Update(pending.ID, tracker.WithStatus(tracker.StatusPending))
 
@@ -36,9 +39,14 @@ func TestRenderTrackerListShowsTaskStatus(t *testing.T) {
 	})
 
 	for _, want := range []string{
+		"•",
 		"Fix auth module",
+		"!",
 		"Fix payment module",
 		"[failed]",
+		"●",
+		"Ship feature",
+		"○",
 		"Write tests",
 	} {
 		if !strings.Contains(view, want) {

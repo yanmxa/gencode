@@ -59,38 +59,31 @@ func drain(ch <-chan llm.StreamChunk) []llm.StreamChunk {
 	return chunks
 }
 
-func TestOpenAIReasoningEffort(t *testing.T) {
-	tests := []struct {
-		name  string
-		model string
-		level llm.ThinkingLevel
-		want  string
-	}{
-		{name: "off on gpt-5.1 defaults to high", model: "gpt-5.1", level: llm.ThinkingOff, want: "high"},
-		{name: "off on gpt-5 defaults to high", model: "gpt-5", level: llm.ThinkingOff, want: "high"},
-		{name: "off on gpt-5.4 maps to none", model: "gpt-5.4", level: llm.ThinkingOff, want: "none"},
-		{name: "off on gpt-5.5 maps to none", model: "gpt-5.5-2026-04-23", level: llm.ThinkingOff, want: "none"},
-		{name: "off on o-series defaults to high", model: "o4-mini", level: llm.ThinkingOff, want: "high"},
-		{name: "normal on o-series defaults to high", model: "o4-mini", level: llm.ThinkingNormal, want: "high"},
-		{name: "high on o-series defaults to high", model: "o4-mini", level: llm.ThinkingHigh, want: "high"},
-		{name: "ultra on gpt-5 maps to high", model: "gpt-5", level: llm.ThinkingUltra, want: "high"},
-		{name: "ultra on gpt-5.4 maps to xhigh", model: "gpt-5.4", level: llm.ThinkingUltra, want: "xhigh"},
-		{name: "off on codex defaults to high", model: "gpt-5.1-codex", level: llm.ThinkingOff, want: "high"},
-		{name: "ultra on codex defaults to high", model: "gpt-5.1-codex-max", level: llm.ThinkingUltra, want: "high"},
-		{name: "gpt-5-pro collapses to high", model: "gpt-5-pro", level: llm.ThinkingOff, want: "high"},
-		{name: "non reasoning models stay unset", model: "gpt-4.1", level: llm.ThinkingHigh, want: ""},
+func TestOpenAIThinkingEfforts(t *testing.T) {
+	client := newTestClient(&captureStreamingTransport{})
+	got := client.ThinkingEfforts("gpt-5.5")
+	want := []string{"none", "low", "medium", "high", "xhigh"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("ThinkingEfforts() = %#v, want %#v", got, want)
+	}
+	if client.DefaultThinkingEffort("gpt-5.5") != "medium" {
+		t.Fatalf("expected default effort medium")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			profile, ok := openAIReasoningProfile(tt.model)
-			if !ok && tt.want != "" {
-				t.Fatalf("openAIReasoningProfile(%q) not found", tt.model)
-			}
-			if got := string(openaiReasoningEffort(profile, tt.level)); got != tt.want {
-				t.Fatalf("openaiReasoningEffort(%q, %v) = %q, want %q", tt.model, tt.level, got, tt.want)
-			}
-		})
+	got = client.ThinkingEfforts("gpt-5")
+	want = []string{"high"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("ThinkingEfforts(gpt-5) = %#v, want %#v", got, want)
+	}
+	if client.DefaultThinkingEffort("gpt-5") != "high" {
+		t.Fatalf("expected default effort high")
+	}
+
+	if got := client.ThinkingEfforts("gpt-4.1"); len(got) != 0 {
+		t.Fatalf("ThinkingEfforts(gpt-4.1) = %#v, want nil", got)
+	}
+	if got := client.DefaultThinkingEffort("gpt-4.1"); got != "" {
+		t.Fatalf("DefaultThinkingEffort(gpt-4.1) = %q, want empty", got)
 	}
 }
 
@@ -99,9 +92,9 @@ func TestStreamUsesResponsesAPIForGpt54(t *testing.T) {
 	client := newTestClient(transport)
 
 	drain(client.Stream(context.Background(), llm.CompletionOptions{
-		Model:         "gpt-5.4",
-		Messages:      []core.Message{{Role: core.RoleUser, Content: "hi"}},
-		ThinkingLevel: llm.ThinkingOff,
+		Model:          "gpt-5.4",
+		Messages:       []core.Message{{Role: core.RoleUser, Content: "hi"}},
+		ThinkingEffort: "none",
 	}))
 
 	if transport.path != "/v1/responses" {
@@ -127,9 +120,9 @@ func TestStreamResponsesIncludesReasoningSummaryAndEmitsThinking(t *testing.T) {
 	client := newTestClient(transport)
 
 	chunks := drain(client.Stream(context.Background(), llm.CompletionOptions{
-		Model:         "gpt-5.4",
-		Messages:      []core.Message{{Role: core.RoleUser, Content: "hi"}},
-		ThinkingLevel: llm.ThinkingUltra,
+		Model:          "gpt-5.4",
+		Messages:       []core.Message{{Role: core.RoleUser, Content: "hi"}},
+		ThinkingEffort: "xhigh",
 	}))
 
 	if transport.path != "/v1/responses" {

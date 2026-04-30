@@ -499,7 +499,6 @@ func (m *model) ProcessToolResult(tr core.ToolResult) *core.ToolResult {
 }
 
 func (m *model) ProcessTurnEnd(result core.Result) tea.Cmd {
-	m.env.ClearThinkingOverride()
 	m.env.turnUsageActive = false
 	if m.services.Tracker.AllDone() {
 		m.services.Tracker.Reset()

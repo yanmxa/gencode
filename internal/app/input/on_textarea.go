@@ -51,6 +51,14 @@ func (m *Model) maxTextareaHeight() int {
 func (m *Model) UpdateHeight() {
 	content := m.Textarea.Value()
 	lines := strings.Count(content, "\n") + 1
+	width := m.Textarea.Width()
+	if width <= 0 {
+		width = 1
+	}
+	for _, line := range strings.Split(content, "\n") {
+		lineWidth := max(len([]rune(line)), 1)
+		lines += (lineWidth - 1) / width
+	}
 
 	newHeight := max(min(lines, m.maxTextareaHeight()), minTextareaHeight)
 

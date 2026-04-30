@@ -160,15 +160,15 @@ func TestCompletionOptsDefaultMaxTokens(t *testing.T) {
 	}
 }
 
-func TestCompletionOptsIncludesThinkingLevel(t *testing.T) {
+func TestCompletionOptsIncludesThinkingEffort(t *testing.T) {
 	l := &Client{
-		provider:      &mockLLMProvider{},
-		model:         "m",
-		thinkingLevel: ThinkingHigh,
+		provider:       &mockLLMProvider{},
+		model:          "m",
+		thinkingEffort: "high",
 	}
 	opts := l.completionOpts(nil, nil, "system")
-	if opts.ThinkingLevel != ThinkingHigh {
-		t.Fatalf("expected thinking level %v, got %v", ThinkingHigh, opts.ThinkingLevel)
+	if opts.ThinkingEffort != "high" {
+		t.Fatalf("expected thinking effort high, got %q", opts.ThinkingEffort)
 	}
 	if opts.SystemPrompt != "system" {
 		t.Fatalf("expected system prompt to be preserved, got %q", opts.SystemPrompt)

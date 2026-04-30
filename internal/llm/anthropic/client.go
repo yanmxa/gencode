@@ -75,7 +75,7 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 
 		// Sanitizer for cross-provider tool ID compatibility (lazy, single-pass)
 		var ids toolIDSanitizer
-		thinkingBudget := int64(anthropicThinkingBudget(opts.Model, opts.ThinkingLevel))
+		thinkingBudget := int64(anthropicThinkingBudget(opts.Model, opts.ThinkingEffort))
 
 		// Remove orphaned tool_result blocks whose tool_use_id doesn't match
 		// any tool_use in the nearest preceding assistant core. This guards
@@ -387,11 +387,20 @@ func sanitizeToolResults(msgs []core.Message) []core.Message {
 	return result
 }
 
-func anthropicThinkingBudget(model string, level llm.ThinkingLevel) int {
+func anthropicThinkingBudget(model, effort string) int {
 	if !supportsThinkingModel(model) {
 		return 0
 	}
-	return level.BudgetTokens()
+	switch effort {
+	case ThinkingNormal:
+		return 5000
+	case ThinkingHigh:
+		return 32000
+	case ThinkingUltra:
+		return 128000
+	default:
+		return 0
+	}
 }
 
 // mergeConsecutiveMessages combines consecutive messages with the same role

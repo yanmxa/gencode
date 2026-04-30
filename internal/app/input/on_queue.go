@@ -82,6 +82,16 @@ func (q *Queue) PendingCount() int {
 	return count
 }
 
+func (q *Queue) WaitingCount() int {
+	count := 0
+	for _, item := range q.items {
+		if item.SentToInbox {
+			count++
+		}
+	}
+	return count
+}
+
 func (q *Queue) LastPendingIndex() int {
 	for i := len(q.items) - 1; i >= 0; i-- {
 		if !q.items[i].SentToInbox {

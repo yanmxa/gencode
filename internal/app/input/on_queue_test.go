@@ -72,6 +72,9 @@ func TestQueuePendingItemsExcludeSentToInbox(t *testing.T) {
 	if q.PendingCount() != 1 {
 		t.Fatalf("expected pending count 1, got %d", q.PendingCount())
 	}
+	if q.WaitingCount() != 1 {
+		t.Fatalf("expected waiting count 1, got %d", q.WaitingCount())
+	}
 	if q.LastPendingIndex() != 0 {
 		t.Fatalf("expected last pending index 0, got %d", q.LastPendingIndex())
 	}

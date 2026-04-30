@@ -73,7 +73,7 @@ func renderTask(t *tracker.Task, width int, spinnerView string, blockers func(st
 			failedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error)
 			return indent + failedStyle.Render("!") + " " + idStr + failedStyle.Render(subject) + " " + mutedStyle.Render("["+statusDetail+"]") + "\n"
 		}
-		return indent + trackerCompletedStyle.Render("✓") + " " + idStr + trackerCompletedStyle.Render(subject) + "\n"
+		return indent + trackerCompletedStyle.Render("●") + " " + idStr + trackerCompletedStyle.Render(subject) + "\n"
 
 	case tracker.StatusInProgress:
 		displayText := subject

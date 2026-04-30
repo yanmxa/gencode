@@ -233,6 +233,20 @@ func TestPlanAgentsExposeOnlyReadOnlyTools(t *testing.T) {
 	}
 }
 
+func TestBuiltinAgentsDefaultTo100Turns(t *testing.T) {
+	for _, agentName := range []string{"Explore", "Plan", "general-purpose", "code-simplifier", "code-reviewer"} {
+		t.Run(agentName, func(t *testing.T) {
+			cfg, ok := defaultRegistry.Get(agentName)
+			if !ok {
+				t.Fatalf("agent %q not found", agentName)
+			}
+			if cfg.MaxTurns != defaultMaxTurns {
+				t.Fatalf("expected %q max turns to default to %d, got %d", agentName, defaultMaxTurns, cfg.MaxTurns)
+			}
+		})
+	}
+}
+
 func TestPersistSubagentSessionUsesSessionStore(t *testing.T) {
 	store := &stubSubagentSessionStore{}
 	executor := &Executor{

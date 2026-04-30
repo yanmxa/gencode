@@ -1,10 +1,6 @@
 package anthropic
 
-import (
-	"testing"
-
-	"github.com/yanmxa/gencode/internal/llm"
-)
+import "testing"
 
 func TestCatalogModelThinkingSupport(t *testing.T) {
 	tests := []struct {
@@ -52,20 +48,20 @@ func TestCatalogModelThinkingSupport(t *testing.T) {
 
 func TestAnthropicThinkingBudget(t *testing.T) {
 	tests := []struct {
-		model string
-		level llm.ThinkingLevel
-		want  int
+		model  string
+		effort string
+		want   int
 	}{
-		{model: "claude-opus-4-1-20250805", level: llm.ThinkingNormal, want: 5000},
-		{model: "claude-sonnet-4@20250514", level: llm.ThinkingUltra, want: 128000},
-		{model: "claude-3-5-haiku-20241022", level: llm.ThinkingUltra, want: 0},
-		{model: "unknown-model", level: llm.ThinkingHigh, want: 0},
+		{model: "claude-opus-4-1-20250805", effort: ThinkingNormal, want: 5000},
+		{model: "claude-sonnet-4@20250514", effort: ThinkingUltra, want: 128000},
+		{model: "claude-3-5-haiku-20241022", effort: ThinkingUltra, want: 0},
+		{model: "unknown-model", effort: ThinkingHigh, want: 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.model, func(t *testing.T) {
-			if got := anthropicThinkingBudget(tt.model, tt.level); got != tt.want {
-				t.Fatalf("anthropicThinkingBudget(%q, %v) = %d, want %d", tt.model, tt.level, got, tt.want)
+			if got := anthropicThinkingBudget(tt.model, tt.effort); got != tt.want {
+				t.Fatalf("anthropicThinkingBudget(%q, %q) = %d, want %d", tt.model, tt.effort, got, tt.want)
 			}
 		})
 	}

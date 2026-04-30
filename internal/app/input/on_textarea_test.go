@@ -6,6 +6,21 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 )
 
+func TestUpdateHeightUsesExplicitAndWrappedLines(t *testing.T) {
+	m := New("", 10, nil, SelectorDeps{})
+	m.Textarea.SetValue("first\nsecond")
+	m.UpdateHeight()
+	if got := m.Textarea.Height(); got != 2 {
+		t.Fatalf("height for explicit multiline input = %d, want 2", got)
+	}
+
+	m.Textarea.SetValue("12345678901")
+	m.UpdateHeight()
+	if got := m.Textarea.Height(); got != 2 {
+		t.Fatalf("height for wrapped input = %d, want 2", got)
+	}
+}
+
 func Test_imageRefPattern(t *testing.T) {
 	tests := []struct {
 		input    string

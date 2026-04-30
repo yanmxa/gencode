@@ -35,8 +35,7 @@ type env struct {
 	TurnOutputTokens int
 	turnUsageActive  bool
 	ConversationCost llm.Money
-	ThinkingLevel    llm.ThinkingLevel
-	ThinkingOverride llm.ThinkingLevel
+	ThinkingEffort   string
 
 	// ── Permission (mutable — changes per mode cycle) ───────────
 	OperationMode      setting.OperationMode
@@ -70,8 +69,8 @@ func (m *env) GetModelID() string {
 	return "claude-sonnet-4-20250514"
 }
 
-func (m *env) EffectiveThinkingLevel() llm.ThinkingLevel {
-	return max(m.ThinkingLevel, m.ThinkingOverride)
+func (m *env) EffectiveThinkingEffort() string {
+	return llm.ResolveThinkingEffort(m.LLMProvider, m.GetModelID(), m.ThinkingEffort)
 }
 
 func (m *env) OperationModeName() string {
@@ -113,12 +112,16 @@ func (m *env) EnableAutoAcceptMode(cwd string) {
 
 func (m *env) DetectThinkingKeywords(input string) {
 	lower := strings.ToLower(input)
+	efforts := llm.ThinkingEfforts(m.LLMProvider, m.GetModelID())
+	if len(efforts) == 0 {
+		return
+	}
 
 	if strings.Contains(lower, "ultrathink") ||
 		strings.Contains(lower, "think really hard") ||
 		strings.Contains(lower, "think super hard") ||
 		strings.Contains(lower, "maximum thinking") {
-		m.ThinkingOverride = llm.ThinkingUltra
+		m.ThinkingEffort = efforts[len(efforts)-1]
 		return
 	}
 
@@ -126,7 +129,9 @@ func (m *env) DetectThinkingKeywords(input string) {
 		strings.Contains(lower, "think hard") ||
 		strings.Contains(lower, "think deeply") ||
 		strings.Contains(lower, "think carefully") {
-		m.ThinkingOverride = llm.ThinkingHigh
+		if len(efforts) >= 2 {
+			m.ThinkingEffort = efforts[len(efforts)-2]
+		}
 		return
 	}
 }
@@ -155,10 +160,6 @@ func (m *env) SessionMode() string {
 	default:
 		return "normal"
 	}
-}
-
-func (m *env) ClearThinkingOverride() {
-	m.ThinkingOverride = llm.ThinkingOff
 }
 
 func (m *env) ResetContextDisplay() {

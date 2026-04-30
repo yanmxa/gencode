@@ -41,7 +41,7 @@ func builtinCommands() []Info {
 		{Name: "mcp", Description: "Manage MCP servers (add/edit/remove/connect/list)"},
 		{Name: "plugin", Description: "Manage plugins (list/install/marketplace/enable/disable/info)"},
 		{Name: "reload-plugins", Description: "Reload plugins and refresh plugin-backed skills, agents, MCP, and hooks"},
-		{Name: "think", Description: "Toggle thinking level (off/think/think+/ultrathink)"},
+		{Name: "think", Description: "Toggle provider-native thinking effort"},
 		{Name: "loop", Description: "Schedule recurring or one-shot prompts and manage loop jobs"},
 		{Name: "search", Description: "Select search engine for web search"},
 	}

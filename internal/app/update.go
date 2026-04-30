@@ -17,7 +17,6 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/image"
-	"github.com/yanmxa/gencode/internal/llm"
 	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/log"
@@ -469,12 +468,12 @@ func (m *model) commandDeps() input.CommandDeps {
 		Cron:    m.services.Cron,
 		ToolSvc: m.services.Tool,
 
-		GetSessionID:     func() string { return m.services.Session.ID() },
-		GetSessionStore:  func() *session.Store { return m.services.Session.GetStore() },
-		GetThinkingLevel: func() llm.ThinkingLevel { return m.env.ThinkingLevel },
+		GetSessionID:      func() string { return m.services.Session.ID() },
+		GetSessionStore:   func() *session.Store { return m.services.Session.GetStore() },
+		GetThinkingEffort: func() string { return m.env.EffectiveThinkingEffort() },
 
 		ResetTokens:        m.env.ResetTokens,
-		SetThinkingLevel:   func(level llm.ThinkingLevel) { m.env.ThinkingLevel = level },
+		SetThinkingEffort:  func(effort string) { m.env.ThinkingEffort = effort },
 		EnsureSessionStore: func(cwd string) error { return m.services.Session.EnsureStore(cwd) },
 		ForkSession:        m.forkSession,
 		ResetFetched:       m.services.Tool.ResetFetched,
@@ -609,7 +608,6 @@ func (m *model) handleStreamCancel() tea.Cmd {
 	m.conv.Stream.Stop()
 	m.conv.ProgressHub.DrainPendingQuestions()
 	m.conv.Modal.Question.Hide()
-	m.env.ClearThinkingOverride()
 	m.cancelPendingToolCalls()
 	m.conv.MarkLastInterrupted()
 

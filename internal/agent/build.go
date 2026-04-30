@@ -14,10 +14,10 @@ import (
 // BuildParams contains all values needed to construct a core.Agent.
 // The app layer assembles this from env, services, and workspace state.
 type BuildParams struct {
-	Provider      llm.Provider
-	ModelID       string
-	MaxTokens     int
-	ThinkingLevel llm.ThinkingLevel
+	Provider       llm.Provider
+	ModelID        string
+	MaxTokens      int
+	ThinkingEffort string
 
 	CWD     string
 	CWDFunc func() string // dynamic CWD for tool execution; falls back to CWD if nil
@@ -43,7 +43,7 @@ func buildAgent(p BuildParams) (core.Agent, *PermissionBridge, error) {
 	}
 
 	client := llm.NewClient(p.Provider, p.ModelID, p.MaxTokens)
-	client.SetThinking(p.ThinkingLevel)
+	client.SetThinkingEffort(p.ThinkingEffort)
 
 	sys := system.Build(system.Config{
 		ProviderName:        client.Name(),

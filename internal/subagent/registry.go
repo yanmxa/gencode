@@ -125,7 +125,7 @@ Good for reducing complexity, removing duplication, improving naming, and tighte
 		DisallowedTools: ToolList{"Agent", "ContinueAgent", "SendMessage",
 			"EnterWorktree", "ExitWorktree",
 			"CronCreate", "CronDelete", "CronList"},
-		MaxTurns: 50,
+		MaxTurns: 100,
 		Source:   "built-in",
 	}
 
@@ -139,7 +139,7 @@ Returns a structured review with findings and recommendations.`,
 		Model:          "inherit",
 		PermissionMode: PermissionPlan,
 		Tools:          ToolList{"Read", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"},
-		MaxTurns:       50,
+		MaxTurns:       100,
 		Source:         "built-in",
 	}
 }

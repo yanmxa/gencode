@@ -3,46 +3,37 @@ package openai
 import (
 	"strings"
 
-	"github.com/openai/openai-go/v3/shared"
 	"github.com/yanmxa/gencode/internal/llm"
 )
 
-type reasoningProfile struct {
-	off     shared.ReasoningEffort
-	normal  shared.ReasoningEffort
-	high    shared.ReasoningEffort
-	ultra   shared.ReasoningEffort
-	summary bool
+var reasoningEfforts = []string{"none", "low", "medium", "high", "xhigh"}
+var highOnlyReasoningEfforts = []string{"high"}
+
+func (c *Client) ThinkingEfforts(model string) []string {
+	return openAIThinkingEfforts(model)
 }
 
-func openAIReasoningProfile(modelID string) (reasoningProfile, bool) {
-	model := normalizeModelID(modelID)
-	switch {
-	case strings.HasPrefix(model, "gpt-5-pro"):
-		return highOnlyProfile(), true
-	case strings.HasPrefix(model, "gpt-5.5"),
-		strings.HasPrefix(model, "gpt-5.4"),
-		strings.HasPrefix(model, "gpt-6"):
-		return reasoningProfile{
-			off:     shared.ReasoningEffortNone,
-			normal:  shared.ReasoningEffortLow,
-			high:    shared.ReasoningEffortMedium,
-			ultra:   shared.ReasoningEffortXhigh,
-			summary: true,
-		}, true
-	case strings.HasPrefix(model, "gpt-5"),
-		strings.HasPrefix(model, "o1"),
-		strings.HasPrefix(model, "o3"),
-		strings.HasPrefix(model, "o4"),
-		strings.Contains(model, "codex"):
-		return highOnlyProfile(), true
+func (c *Client) DefaultThinkingEffort(model string) string {
+	switch efforts := openAIThinkingEfforts(model); len(efforts) {
+	case 0:
+		return ""
+	case 1:
+		return efforts[0]
 	default:
-		return reasoningProfile{}, false
+		return "medium"
 	}
 }
 
-func normalizeModelID(modelID string) string {
-	return strings.ToLower(strings.TrimSpace(modelID))
+func openAIThinkingEfforts(model string) []string {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	switch {
+	case strings.HasPrefix(normalized, "gpt-5.5"), strings.HasPrefix(normalized, "gpt-5.4"), strings.HasPrefix(normalized, "gpt-6"):
+		return reasoningEfforts
+	case strings.HasPrefix(normalized, "gpt-5"), strings.HasPrefix(normalized, "o1"), strings.HasPrefix(normalized, "o3"), strings.HasPrefix(normalized, "o4"), strings.Contains(normalized, "codex"):
+		return highOnlyReasoningEfforts
+	default:
+		return nil
+	}
 }
 
 func openAIModelInfo(modelID string) llm.ModelInfo {
@@ -50,15 +41,5 @@ func openAIModelInfo(modelID string) llm.ModelInfo {
 		ID:          modelID,
 		Name:        modelID,
 		DisplayName: modelID,
-	}
-}
-
-func highOnlyProfile() reasoningProfile {
-	return reasoningProfile{
-		off:     shared.ReasoningEffortHigh,
-		normal:  shared.ReasoningEffortHigh,
-		high:    shared.ReasoningEffortHigh,
-		ultra:   shared.ReasoningEffortHigh,
-		summary: true,
 	}
 }

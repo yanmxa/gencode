@@ -28,12 +28,12 @@ type TokenUsage struct {
 // SetThinking can be called while the agent is running.
 // Changes take effect on the next Infer/Stream call.
 type Client struct {
-	mu            sync.RWMutex
-	provider      Provider
-	model         string
-	maxTokens     int
-	thinkingLevel ThinkingLevel
-	tokens        TokenUsage
+	mu             sync.RWMutex
+	provider       Provider
+	model          string
+	maxTokens      int
+	thinkingEffort string
+	tokens         TokenUsage
 }
 
 // NewClient wraps an existing provider as a core.LLM with streaming and
@@ -52,16 +52,16 @@ func (l *Client) Infer(ctx context.Context, req core.InferRequest) (<-chan core.
 	p := l.provider
 	model := l.model
 	maxTokens := l.maxTokens
-	thinking := l.thinkingLevel
+	thinking := l.thinkingEffort
 	l.mu.RUnlock()
 
 	opts := CompletionOptions{
-		Model:         model,
-		Messages:      toProviderMessages(req.Messages),
-		Tools:         req.Tools,
-		SystemPrompt:  req.System,
-		MaxTokens:     resolveMaxTokens(maxTokens, p, model),
-		ThinkingLevel: thinking,
+		Model:          model,
+		Messages:       toProviderMessages(req.Messages),
+		Tools:          req.Tools,
+		SystemPrompt:   req.System,
+		MaxTokens:      resolveMaxTokens(maxTokens, p, model),
+		ThinkingEffort: thinking,
 	}
 
 	srcCh := p.Stream(ctx, opts)
@@ -91,18 +91,18 @@ func (l *Client) Infer(ctx context.Context, req core.InferRequest) (<-chan core.
 // Configuration
 // ---------------------------------------------------------------------------
 
-// SetThinking changes the thinking/reasoning level.
-func (l *Client) SetThinking(level ThinkingLevel) {
+// SetThinkingEffort changes the native thinking/reasoning effort value.
+func (l *Client) SetThinkingEffort(effort string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.thinkingLevel = level
+	l.thinkingEffort = effort
 }
 
-// ThinkingLevel returns the current thinking/reasoning level.
-func (l *Client) ThinkingLevel() ThinkingLevel {
+// ThinkingEffort returns the current native thinking/reasoning effort value.
+func (l *Client) ThinkingEffort() string {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	return l.thinkingLevel
+	return l.thinkingEffort
 }
 
 // ---------------------------------------------------------------------------
@@ -124,13 +124,15 @@ func (l *Client) Complete(ctx context.Context,
 	l.mu.RLock()
 	model := l.model
 	p := l.provider
+	thinking := l.thinkingEffort
 	l.mu.RUnlock()
 
 	return Complete(ctx, p, CompletionOptions{
-		Model:        model,
-		SystemPrompt: sysPrompt,
-		Messages:     msgs,
-		MaxTokens:    maxTokens,
+		Model:          model,
+		SystemPrompt:   sysPrompt,
+		Messages:       msgs,
+		MaxTokens:      maxTokens,
+		ThinkingEffort: thinking,
 	})
 }
 
@@ -236,17 +238,17 @@ func (l *Client) completionOpts(msgs []core.Message, tools []ToolSchema, sysProm
 	l.mu.RLock()
 	model := l.model
 	maxTokens := l.maxTokens
-	thinking := l.thinkingLevel
+	thinking := l.thinkingEffort
 	p := l.provider
 	l.mu.RUnlock()
 
 	return CompletionOptions{
-		Model:         model,
-		Messages:      msgs,
-		MaxTokens:     resolveMaxTokens(maxTokens, p, model),
-		Tools:         tools,
-		SystemPrompt:  sysPrompt,
-		ThinkingLevel: thinking,
+		Model:          model,
+		Messages:       msgs,
+		MaxTokens:      resolveMaxTokens(maxTokens, p, model),
+		Tools:          tools,
+		SystemPrompt:   sysPrompt,
+		ThinkingEffort: thinking,
 	}
 }
 
