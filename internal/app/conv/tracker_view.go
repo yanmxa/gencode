@@ -34,61 +34,84 @@ func RenderTrackerList(params TrackerListParams) string {
 		return ""
 	}
 
-	completed := 0
-	for _, t := range params.Tasks {
-		if t.Status == tracker.StatusCompleted {
-			completed++
-		}
-	}
+	counts := countTaskStatuses(params.Tasks)
+	completed := counts.done + counts.failed
 
 	var sb strings.Builder
 	headerStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim).Bold(true)
 	mutedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
-	sb.WriteString("  " + headerStyle.Render("Tasks") + " " + mutedStyle.Render(fmt.Sprintf("(%d/%d)", completed, len(params.Tasks))) + "\n")
+	pct := 0
+	if len(params.Tasks) > 0 {
+		pct = completed * 100 / len(params.Tasks)
+	}
+	sb.WriteString("  " + headerStyle.Render("Tasks") + " " + mutedStyle.Render(fmt.Sprintf("(%d%%)", pct)))
+	sb.WriteString("\n")
+
+	idWidth := taskIDWidth(params.Tasks)
+
+	sorted := make([]*tracker.Task, 0, len(params.Tasks))
+	var active []*tracker.Task
+	var rest []*tracker.Task
+	for _, t := range params.Tasks {
+		if t.Status == tracker.StatusInProgress {
+			active = append(active, t)
+		} else {
+			rest = append(rest, t)
+		}
+	}
+	sorted = append(sorted, active...)
+	sorted = append(sorted, rest...)
 
 	rendered := 0
-	for _, t := range params.Tasks {
+	for _, t := range sorted {
 		if rendered >= maxVisibleTasks && t.Status != tracker.StatusInProgress {
 			continue
 		}
-		sb.WriteString(renderTask(t, params.Width, params.SpinnerView, params.Blockers))
+		sb.WriteString(renderTask(t, params.Width, idWidth, params.Blockers))
 		rendered++
 	}
 
 	return sb.String()
 }
 
-func renderTask(t *tracker.Task, width int, _ string, blockers func(string) []string) string {
+func renderTask(t *tracker.Task, width, idWidth int, blockers func(string) []string) string {
 	indent := "  "
-	idTag := fmt.Sprintf("#%s ", t.ID)
-	maxTextLen := width - len(indent) - len(idTag) - 6
+	idTag := fmt.Sprintf("%-*s", idWidth, "#"+t.ID)
+	maxTextLen := width - len(indent) - idWidth - 8
+	if maxTextLen < 12 {
+		maxTextLen = 12
+	}
 	subject := kit.TruncateText(t.Subject, maxTextLen)
 	mutedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
-	idStr := mutedStyle.Render(idTag)
 	statusDetail := kit.MapString(t.Metadata, "background_status_detail")
 
 	switch t.Status {
 	case tracker.StatusCompleted:
 		if statusDetail == "failed" || statusDetail == "killed" {
 			failedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error)
-			return indent + failedStyle.Render("!") + " " + idStr + failedStyle.Render(subject) + " " + mutedStyle.Render("["+statusDetail+"]") + "\n"
+			return renderTaskLine(indent, failedStyle.Render("!"), idTag, subject, mutedStyle.Render("["+statusDetail+"]"))
 		}
-		return indent + trackerCompletedStyle.Render("●") + " " + idStr + trackerCompletedStyle.Render(subject) + "\n"
+		return renderTaskLine(indent, trackerCompletedStyle.Render("●"), idTag, subject, "")
 
 	case tracker.StatusInProgress:
 		displayText := subject
 		if t.ActiveForm != "" {
 			displayText = kit.TruncateText(t.ActiveForm, maxTextLen)
 		}
-		activeIcon := trackerInProgressStyle.Blink(true).Render("●")
-		line := indent + activeIcon + " " + idStr + trackerInProgressStyle.Render(displayText)
-		if elapsed := formatElapsedTime(t.StatusChangedAt); elapsed != "" {
-			line += " " + mutedStyle.Render(elapsed)
+		activeIcon := "●"
+		activeStyle := trackerInProgressStyle
+		if time.Now().UnixNano()/500000000%2 == 0 {
+			activeIcon = "◌"
+			activeStyle = lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
 		}
-		return line + "\n"
+		detail := ""
+		if elapsed := formatElapsedTime(t.StatusChangedAt); elapsed != "" {
+			detail = mutedStyle.Render(elapsed)
+		}
+		return renderTaskLine(indent, activeStyle.Render(activeIcon), idTag, displayText, detail)
 
 	default:
-		line := indent + trackerPendingStyle.Render("○") + " " + idStr + trackerPendingStyle.Render(subject)
+		detail := ""
 		if blockers != nil {
 			if bl := blockers(t.ID); len(bl) > 0 {
 				blockerRefs := make([]string, len(bl))
@@ -96,11 +119,76 @@ func renderTask(t *tracker.Task, width int, _ string, blockers func(string) []st
 					blockerRefs[i] = "#" + b
 				}
 				blockedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error)
-				line += " " + blockedStyle.Render("← "+strings.Join(blockerRefs, ", "))
+				detail = blockedStyle.Render("← " + strings.Join(blockerRefs, ", "))
 			}
 		}
-		return line + "\n"
+		return renderTaskLine(indent, trackerPendingStyle.Render("○"), idTag, subject, detail)
 	}
+}
+
+func renderTaskLine(indent, icon, id, subject, detail string) string {
+	line := indent + icon + "  " + id + "  " + subject
+	if detail != "" {
+		line += "  " + detail
+	}
+	return line + "\n"
+}
+
+type taskStatusCounts struct {
+	done   int
+	active int
+	todo   int
+	failed int
+}
+
+func countTaskStatuses(tasks []*tracker.Task) taskStatusCounts {
+	var counts taskStatusCounts
+	for _, t := range tasks {
+		statusDetail := kit.MapString(t.Metadata, "background_status_detail")
+		switch {
+		case t.Status == tracker.StatusCompleted && (statusDetail == "failed" || statusDetail == "killed"):
+			counts.failed++
+		case t.Status == tracker.StatusCompleted:
+			counts.done++
+		case t.Status == tracker.StatusInProgress:
+			counts.active++
+		default:
+			counts.todo++
+		}
+	}
+	return counts
+}
+
+func renderTaskStatusSummary(counts taskStatusCounts) string {
+	parts := make([]string, 0, 4)
+	successStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success).Bold(true)
+	activeStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Primary).Bold(true)
+	pendingStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Muted)
+	failedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error).Bold(true)
+
+	if counts.done > 0 {
+		parts = append(parts, successStyle.Render(fmt.Sprintf("● %d done", counts.done)))
+	}
+	if counts.active > 0 {
+		parts = append(parts, activeStyle.Render(fmt.Sprintf("● %d active", counts.active)))
+	}
+	if counts.todo > 0 {
+		parts = append(parts, pendingStyle.Render(fmt.Sprintf("○ %d todo", counts.todo)))
+	}
+	if counts.failed > 0 {
+		parts = append(parts, failedStyle.Render(fmt.Sprintf("! %d failed", counts.failed)))
+	}
+	return strings.Join(parts, "  ")
+}
+
+func taskIDWidth(tasks []*tracker.Task) int {
+	width := 2
+	for _, t := range tasks {
+		if n := len("#" + t.ID); n > width {
+			width = n
+		}
+	}
+	return width
 }
 
 func formatElapsedTime(since time.Time) string {

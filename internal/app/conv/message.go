@@ -279,8 +279,7 @@ var (
 				Bold(true)
 
 	trackerCompletedStyle = lipgloss.NewStyle().
-				Foreground(kit.CurrentTheme.TextDisabled).
-				Strikethrough(true)
+				Foreground(kit.CurrentTheme.Success)
 
 	PendingImageStyle = lipgloss.NewStyle().
 				Foreground(kit.CurrentTheme.Primary)

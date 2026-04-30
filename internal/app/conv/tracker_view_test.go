@@ -37,8 +37,11 @@ func TestRenderTrackerListShowsTaskStatus(t *testing.T) {
 		SpinnerView:  "•",
 		Blockers:     tracker.Default().OpenBlockers,
 	})
+	plain := stripANSI(view)
 
 	for _, want := range []string{
+		"Tasks",
+		"(50%)",
 		"●",
 		"Fix auth module",
 		"!",
@@ -49,8 +52,25 @@ func TestRenderTrackerListShowsTaskStatus(t *testing.T) {
 		"○",
 		"Write tests",
 	} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("rendered tracker list missing %q:\n%s", want, view)
+		if !strings.Contains(plain, want) {
+			t.Fatalf("rendered tracker list missing %q:\n%s", want, plain)
 		}
+	}
+}
+
+func TestRenderTaskAnimatesInProgressItem(t *testing.T) {
+	task := &tracker.Task{ID: "1", Subject: "Fix auth module", Status: tracker.StatusInProgress}
+
+	onFrame := stripANSI(renderTask(task, 80, 2, "◐", nil))
+	offFrame := stripANSI(renderTask(task, 80, 2, "◓", nil))
+
+	if onFrame == offFrame {
+		t.Fatalf("in-progress task should change across frames:\n%s", onFrame)
+	}
+	if !strings.Contains(onFrame, "●") {
+		t.Fatalf("on frame = %q, want solid active icon", onFrame)
+	}
+	if !strings.Contains(offFrame, "◌") {
+		t.Fatalf("off frame = %q, want dim active icon", offFrame)
 	}
 }
