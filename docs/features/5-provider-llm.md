@@ -68,7 +68,7 @@ UI behavior:
 
 - `/think`: open or cycle the current reasoning effort using the provider's ordered effort list.
 - `ctrl+t`: cycle to the next reasoning effort without opening a command.
-- `ctrl+shift+t` or `alt+t`: cycle to the previous reasoning effort if supported by the terminal/key handling layer.
+- Previous-effort cycling is not currently bound to a default shortcut.
 - If the provider returns no efforts, `/think` and shortcuts should no-op and show a short message such as `reasoning is not supported by this provider`.
 - When switching provider or model, if the current effort is unsupported by the new provider, reset to that provider's default effort.
 - Status bar should show the active reasoning effort when supported:
@@ -83,7 +83,7 @@ UI behavior:
 - **`/model`**: opens a tabbed picker overlay with Models and Providers tabs; arrow keys to navigate, Tab to switch, Enter to select.
 - **`/search`**: opens a picker to select the search engine for web search.
 - **`/think`**: cycles or selects reasoning/thinking effort; validates against the active provider's supported efforts.
-- **Thinking shortcut**: `ctrl+t` cycles to the next reasoning effort without opening a command; `ctrl+shift+t` or `alt+t` cycles to the previous effort if supported by the terminal/key handling layer.
+- **Thinking shortcut**: `ctrl+t` cycles to the next reasoning effort without opening a command.
 - **Status bar reasoning display**: shows the active effort when supported, for example `gpt-5.5 (medium)` for OpenAI-compatible providers or `claude-sonnet-4 ✦ think+` for Anthropic-compatible providers.
 - **Streaming**: tokens appear in real time; a spinner indicates active streaming.
 - **Thinking blocks**: `<thinking>` content is rendered in a collapsible block above the answer.

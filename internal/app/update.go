@@ -17,6 +17,7 @@ import (
 	"github.com/yanmxa/gencode/internal/core"
 	"github.com/yanmxa/gencode/internal/hook"
 	"github.com/yanmxa/gencode/internal/image"
+	"github.com/yanmxa/gencode/internal/llm"
 	"go.uber.org/zap"
 
 	"github.com/yanmxa/gencode/internal/log"
@@ -167,8 +168,13 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 
 	case tea.KeyCtrlT:
-		m.conv.ShowTasks = !m.conv.ShowTasks
-		return nil, true
+		return m.cycleThinkingEffort(), true
+
+	case tea.KeyRunes:
+		if msg.Alt && len(msg.Runes) == 1 && (msg.Runes[0] == 't' || msg.Runes[0] == 'T') {
+			m.conv.ShowTasks = !m.conv.ShowTasks
+			return nil, true
+		}
 
 	case tea.KeyCtrlO:
 		return m.handleCtrlO(), true
@@ -261,6 +267,23 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	}
 
 	return nil, false
+}
+
+func (m *model) cycleThinkingEffort() tea.Cmd {
+	current := m.env.EffectiveThinkingEffort()
+	next, ok := llm.NextThinkingEffort(m.env.LLMProvider, m.env.GetModelID(), current)
+	if !ok {
+		token := m.userInput.Provider.SetStatusMessage("reasoning is not supported by this provider")
+		return kit.StatusTimer(3*time.Second, token)
+	}
+
+	m.env.ThinkingEffort = next
+	status := "thinking: " + next
+	if current != "" && current == next {
+		status += " (only supported)"
+	}
+	token := m.userInput.Provider.SetStatusMessage(status)
+	return kit.StatusTimer(3*time.Second, token)
 }
 
 func (m *model) delegateToActiveModal(msg tea.KeyMsg) (bool, tea.Cmd) {

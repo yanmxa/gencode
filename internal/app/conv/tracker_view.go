@@ -58,7 +58,7 @@ func RenderTrackerList(params TrackerListParams) string {
 	return sb.String()
 }
 
-func renderTask(t *tracker.Task, width int, spinnerView string, blockers func(string) []string) string {
+func renderTask(t *tracker.Task, width int, _ string, blockers func(string) []string) string {
 	indent := "  "
 	idTag := fmt.Sprintf("#%s ", t.ID)
 	maxTextLen := width - len(indent) - len(idTag) - 6
@@ -80,7 +80,8 @@ func renderTask(t *tracker.Task, width int, spinnerView string, blockers func(st
 		if t.ActiveForm != "" {
 			displayText = kit.TruncateText(t.ActiveForm, maxTextLen)
 		}
-		line := indent + trackerInProgressStyle.Render(spinnerView) + " " + idStr + trackerInProgressStyle.Render(displayText)
+		activeIcon := trackerInProgressStyle.Blink(true).Render("●")
+		line := indent + activeIcon + " " + idStr + trackerInProgressStyle.Render(displayText)
 		if elapsed := formatElapsedTime(t.StatusChangedAt); elapsed != "" {
 			line += " " + mutedStyle.Render(elapsed)
 		}

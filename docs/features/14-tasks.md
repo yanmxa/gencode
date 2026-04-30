@@ -15,7 +15,7 @@ The task system runs shell commands or agents in the background while the user c
 
 **Fields per task:** ID, Type, Description, Status, StartTime, EndTime, Duration, Output, Error, ExitCode (Bash), AgentName, TurnCount, TokenUsage (Agent)
 
-**Keyboard shortcut:** `Ctrl+T` toggles the task panel at the bottom of the TUI.
+**Keyboard shortcut:** `Alt+T` toggles the task panel at the bottom of the TUI.
 
 **Tool interface:**
 
@@ -30,7 +30,7 @@ The task system runs shell commands or agents in the background while the user c
 
 ## UI Interactions
 
-- **Task panel** (`Ctrl+T`): shows all tasks with status badges (Running / Completed / Failed / Killed).
+- **Task panel** (`Alt+T`): shows all tasks with status badges (Running / Completed / Failed / Killed).
 - **Task creation**: LLM calls `TaskCreate`; the task ID is shown in the response.
 - **Status-first output**: `TaskOutput` is non-blocking by default so background work stays asynchronous. Set `block=true` only when you intentionally want to wait in the current turn.
 - **Stop**: `TaskStop` sends SIGKILL; status updates to Killed.
@@ -130,12 +130,12 @@ sleep 3
 tmux capture-pane -t t_task -p
 # Expected: task shown with "Running" status
 
-# Test 3: Toggle task panel (Ctrl+T)
-tmux send-keys -t t_task C-t
+# Test 3: Toggle task panel (Alt+T)
+tmux send-keys -t t_task M-t
 sleep 1
 tmux capture-pane -t t_task -p
 # Expected: task panel appears at the bottom with status badge
-tmux send-keys -t t_task C-t
+tmux send-keys -t t_task M-t
 sleep 1
 tmux capture-pane -t t_task -p
 # Expected: task panel hidden again

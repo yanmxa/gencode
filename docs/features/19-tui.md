@@ -12,7 +12,7 @@ The terminal UI is built with Bubble Tea. It handles keyboard input, real-time s
 | Output area | Markdown with syntax highlighting |
 | Status bar | Token counts, provider/model, permission mode |
 | Progress spinner | Active during streaming |
-| Task panel | `Ctrl+T` toggles a bottom task list |
+| Task panel | `Alt+T` toggles a bottom task list |
 
 **Keyboard shortcuts:**
 
@@ -21,7 +21,8 @@ The terminal UI is built with Bubble Tea. It handles keyboard input, real-time s
 | `Enter` | Submit message |
 | `Alt+Enter` | Insert newline |
 | `↑` / `↓` | Navigate input history |
-| `Ctrl+T` | Toggle task panel |
+| `Ctrl+T` | Cycle thinking/reasoning effort |
+| `Alt+T` | Toggle task panel |
 | `Esc` | Cancel active stream |
 | `Ctrl+C` | Exit |
 
@@ -122,7 +123,7 @@ func TestStatusBar_TokenCounts(t *testing.T) {
 }
 
 func TestTaskPanel_Toggle(t *testing.T) {
-    // Ctrl+T must toggle task panel visibility
+    // Alt+T must toggle task panel visibility
 }
 ```
 
@@ -154,10 +155,10 @@ tmux capture-pane -t t_tui -p
 # Expected: previous input appears in the input box
 
 # Task panel toggle
-tmux send-keys -t t_tui C-t
+tmux send-keys -t t_tui M-t
 sleep 0.3
 tmux capture-pane -t t_tui -p
-# Expected: task panel shown; Ctrl+T again hides it
+# Expected: task panel shown; Alt+T again hides it
 
 # Interrupt streaming
 tmux send-keys -t t_tui 'write a 1000-word essay about mountains' Enter

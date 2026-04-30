@@ -49,7 +49,7 @@ gen agent run --type AgentName --prompt "task"
 - **`/agents`**: picker to enable/disable agents.
 - **Agent tool call**: TUI shows `SubagentStart` notification; progress indicator runs while the agent is active.
 - **Agent output**: streamed back to the parent conversation as a tool result.
-- **Background agents**: tracked in the task panel (Ctrl+T).
+- **Background agents**: tracked in the task panel (Alt+T).
 - **Single background subagent**: one agent can be launched independently, return a task ID immediately, and continue running while the main thread handles new prompts.
 
 ## Automated Tests

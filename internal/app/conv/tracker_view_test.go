@@ -39,7 +39,7 @@ func TestRenderTrackerListShowsTaskStatus(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		"•",
+		"●",
 		"Fix auth module",
 		"!",
 		"Fix payment module",
