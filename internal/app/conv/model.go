@@ -42,7 +42,7 @@ func (m *OutputModel) ResizeMDRenderer(width int) {
 // counter. The spinner's own frame index is unexported and wraps at the frame
 // count, so liveness animations can't read it; Frame advances once per real
 // frame the spinner consumes, and animations divide it by their own cadence —
-// agentBlinkTicks, trackerPulseTicks — to derive their phase.
+// agentBlinkTicks, planPulseTicks — to derive their phase.
 type FrameClock struct {
 	spinner spinner.Model
 	frame   int

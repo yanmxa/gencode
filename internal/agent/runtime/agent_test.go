@@ -1,10 +1,12 @@
-package core
+package agentruntime
 
 import (
 	"context"
 	"strings"
 	"testing"
 	"time"
+
+	. "github.com/genai-io/san/internal/core"
 )
 
 // Compaction must record the synthetic summary as a normal message.appended
@@ -13,7 +15,7 @@ import (
 // the summarized-away history at the summary).
 func TestCompactRecordsSummaryAppendAndBoundary(t *testing.T) {
 	var captured []Event
-	ag := NewAgent(Config{
+	ag := New(Config{
 		ID:     "test",
 		LLM:    newBlockingLLM(1),
 		System: NewSystem(),
@@ -99,7 +101,7 @@ func TestEstimatePromptTokensNeverDropsBelowLastKnownPromptSize(t *testing.T) {
 // turn — otherwise the lone summary would trigger a spurious inference.
 func TestIngestSigCompactAppliesInPlaceWithoutStartingTurn(t *testing.T) {
 	var captured []Event
-	ag := NewAgent(Config{
+	ag := New(Config{
 		ID:      "test",
 		LLM:     newBlockingLLM(1),
 		System:  NewSystem(),
@@ -186,7 +188,7 @@ func (b *blockingLLM) Infer(ctx context.Context, _ InferRequest) (<-chan Chunk, 
 
 func TestInterruptCurrentTurnReturnsToWaitInsteadOfEndingRun(t *testing.T) {
 	llm := newBlockingLLM(4)
-	ag := NewAgent(Config{
+	ag := New(Config{
 		ID:     "test",
 		LLM:    llm,
 		System: NewSystem(),
@@ -259,7 +261,7 @@ func TestInterruptCurrentTurnReturnsToWaitInsteadOfEndingRun(t *testing.T) {
 // ThinkAct the user already asked not to run.
 func TestInterruptBetweenTurnsIsLatched(t *testing.T) {
 	llm := newBlockingLLM(4)
-	ag := NewAgent(Config{
+	ag := New(Config{
 		ID:     "test",
 		LLM:    llm,
 		System: NewSystem(),

@@ -1,4 +1,4 @@
-// Package env provides a single place to define environment variables that are
+// This file defines environment variables that are
 // exported to child processes (Bash tool, hooks, MCP servers, etc.).
 //
 // Every SAN_* variable is also emitted as a CLAUDE_* alias (so Claude Code

@@ -316,7 +316,7 @@ func TestRenderActiveContentShowsRunningStateForPendingWebFetch(t *testing.T) {
 		Input: `{"url":"https://github.com/features/copilot/plans"}`,
 	}
 	params := RenderContext{
-		Messages: []core.ChatMessage{{
+		Messages: []ChatMessage{{
 			Role:      core.RoleAssistant,
 			ToolCalls: []core.ToolCall{call},
 		}},

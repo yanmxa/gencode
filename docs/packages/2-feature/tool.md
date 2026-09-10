@@ -13,7 +13,8 @@ permission gate, side-effect plumbing, and per-call dispatch.
 Every built-in tool (Bash, Read, Edit, Write, Grep, Glob, WebFetch, …)
 registers into this package's singleton at init time. The agent loop calls
 `Execute(name, params, cwd)` to dispatch; the registry resolves the tool,
-runs the permission check (`internal/setting`), invokes the tool, and
+runs the permission check (`internal/permission` with settings supplied by
+`internal/setting`), invokes the tool, and
 returns a `toolresult.ToolResult` with stdout, error, side-effect handle,
 and audit metadata.
 
@@ -78,6 +79,6 @@ internal/tool/taskoutput_disabled_test.go — TaskOutput tool gating.
 
 - Code: `internal/tool/`
 - Primitive: [`packages/core.md`](../3-core/core.md) (`Tool` and `Tools` interfaces)
-- Permission gate: [`packages/setting.md`](setting.md), [`concepts/permission-model.md`](../../concepts/permission-model.md)
+- Permission gate: [`packages/permission.md`](permission.md), [`concepts/permission-model.md`](../../concepts/permission-model.md)
 - MCP-registered tools: [`packages/mcp.md`](mcp.md)
 - Layer: `feature`

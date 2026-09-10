@@ -9,12 +9,15 @@ type Options struct {
 }
 
 // Initialize creates the package-level *Manager and configures it.
-func Initialize(opts Options) {
+func Initialize(opts Options) error {
 	m := NewManager()
 	if opts.OutputDir != "" {
-		m.SetOutputDir(opts.OutputDir)
+		if err := m.SetOutputDir(opts.OutputDir); err != nil {
+			return err
+		}
 	}
 	defaultManager = m
+	return nil
 }
 
 // Default returns the package-level *Manager.
@@ -22,9 +25,9 @@ func Default() *Manager {
 	return defaultManager
 }
 
-// SetDefaultTracker replaces the package-level *Manager. Intended for
+// SetDefaultManager replaces the package-level *Manager. Intended for
 // tests. A nil argument restores a fresh empty *Manager.
-func SetDefaultTracker(m *Manager) {
+func SetDefaultManager(m *Manager) {
 	if m == nil {
 		defaultManager = NewManager()
 		return
@@ -32,15 +35,10 @@ func SetDefaultTracker(m *Manager) {
 	defaultManager = m
 }
 
-// ResetDefaultTracker restores a fresh empty *Manager. Intended for
+// ResetDefaultManager restores a fresh empty *Manager. Intended for
 // tests.
-func ResetDefaultTracker() {
+func ResetDefaultManager() {
 	defaultManager = NewManager()
 }
 
 var defaultManager = NewManager()
-
-// SetOutputDir on *Manager delegates to the package-level setOutputDir.
-func (m *Manager) SetOutputDir(dir string) error {
-	return setOutputDir(dir)
-}

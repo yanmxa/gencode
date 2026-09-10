@@ -12,7 +12,7 @@ import (
 // → RenderMessageAt → renderAssistantWithTools.
 type RenderContext struct {
 	// ── Conversation state ──────────────────────────────────────
-	Messages       []core.ChatMessage
+	Messages       []ChatMessage
 	CommittedCount int
 	// InlinedResults precomputes which ToolResult messages will be
 	// drawn inline with their owning assistant (not as standalone
@@ -71,7 +71,7 @@ type inlinedToolResults struct {
 // inlining map. Exported because the model builds it inside
 // messageRenderParams; everything else in this package reads
 // RenderContext.InlinedResults.
-func PrecomputeInlinedResults(messages []core.ChatMessage) inlinedToolResults {
+func PrecomputeInlinedResults(messages []ChatMessage) inlinedToolResults {
 	p := inlinedToolResults{
 		resultOwner:         make(map[int]int),
 		resultsForAssistant: make(map[int]map[string]ToolResultData),
@@ -178,7 +178,7 @@ func RenderMessageAt(p RenderContext, idx int, isStreaming bool) string {
 	return sb.String()
 }
 
-func renderAssistantWithTools(p RenderContext, msg core.ChatMessage, idx int, isLast bool) string {
+func renderAssistantWithTools(p RenderContext, msg ChatMessage, idx int, isLast bool) string {
 	base := RenderAssistantMessage(AssistantParams{
 		Content:              msg.Content,
 		Thinking:             msg.Thinking,

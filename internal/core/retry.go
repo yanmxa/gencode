@@ -26,8 +26,8 @@ const (
 
 // RetryableError marks a stream error that the turn loop may retry. The llm
 // layer attaches it via classification (429/5xx/network), so core can decide
-// to retry without importing llm; core's own stall/truncation sentinels
-// implement it directly.
+// to retry without importing llm; the agent runtime's stall/truncation
+// sentinels implement it directly.
 //
 // RetryAfter is a server-provided floor (e.g. a 429 Retry-After header), or 0
 // when there is no hint.
@@ -35,19 +35,6 @@ type RetryableError interface {
 	error
 	RetryAfter() time.Duration
 }
-
-// streamIncomplete is a core-originated retryable failure: the stream either
-// ended without a terminal Done chunk (truncated) or went silent past the idle
-// deadline (stalled). Neither carries a server hint, so RetryAfter is 0.
-type streamIncomplete struct{ reason string }
-
-func (e streamIncomplete) Error() string             { return "stream " + e.reason }
-func (e streamIncomplete) RetryAfter() time.Duration { return 0 }
-
-var (
-	errStreamStalled   = streamIncomplete{"stalled (no data within idle timeout)"}
-	errStreamTruncated = streamIncomplete{"closed before completion"}
-)
 
 // backoffDelay returns the pre-sleep delay for a 1-based attempt: exponential
 // (base·2^(n-1)) capped at retryMaxDelay, full-jittered by frac (in [0,1)),

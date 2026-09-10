@@ -1,5 +1,5 @@
-// Package config provides multi-level settings management for San.
-// Data are loaded from multiple sources with the following priority (lowest to highest):
+// Settings are loaded from multiple sources with the following priority
+// (lowest to highest):
 //  1. ~/.claude/settings.json (Claude user level - compatibility)
 //  2. ~/.san/settings.json (San user level)
 //  3. .claude/settings.json (Claude project level - compatibility)
@@ -16,9 +16,9 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/genai-io/san/internal/confdir"
+	permissionpolicy "github.com/genai-io/san/internal/permission"
 )
 
 // Data represents the complete San configuration.
@@ -174,14 +174,10 @@ func (s *Data) ShowContextBar() bool {
 	return s != nil && s.ContextBar != nil && *s.ContextBar
 }
 
-// PermissionSettings defines permission rules for tool execution.
-// Rule format: "Tool(pattern)" — e.g. "Bash(npm:*)", "Read(**/.env)".
-type PermissionSettings struct {
-	DefaultMode string   `json:"defaultMode,omitempty"`
-	Allow       []string `json:"allow,omitempty"`
-	Deny        []string `json:"deny,omitempty"`
-	Ask         []string `json:"ask,omitempty"`
-}
+// PermissionSettings is the persisted permission rule set. It is aliased here
+// so the settings JSON contract remains stable while policy lives in
+// internal/permission.
+type PermissionSettings = permissionpolicy.PermissionSettings
 
 // Hook defines an event hook configuration.
 type Hook struct {
@@ -197,6 +193,7 @@ type HookCmd struct {
 	If             string            `json:"if,omitempty"`
 	Shell          string            `json:"shell,omitempty"`
 	Model          string            `json:"model,omitempty"`
+	Interactive    bool              `json:"interactive,omitempty"` // keep stdin open for line-based prompt/response hooks
 	Async          bool              `json:"async,omitempty"`
 	AsyncRewake    bool              `json:"asyncRewake,omitempty"`
 	Timeout        int               `json:"timeout,omitempty"`
@@ -206,148 +203,25 @@ type HookCmd struct {
 	AllowedEnvVars []string          `json:"allowedEnvVars,omitempty"`
 }
 
-// SessionPermissions tracks runtime permission state for the current session.
-type SessionPermissions struct {
-	Mode            OperationMode // Active permission mode (Normal, BypassPermissions, DontAsk, etc.)
-	AllowAllEdits   bool
-	AllowAllWrites  bool
-	AllowAllBash    bool
-	AllowAllSkills  bool
-	AllowAllTasks   bool
-	AllowedTools    map[string]bool
-	AllowedPatterns map[string]bool
-	Denials         DenialTracking // Tracks denial frequency for fallback
-
-	// WorkingDirectories restricts Edit/Write operations to these directories.
-	// When non-empty, file edits outside these dirs always prompt (bypass-immune).
-	// Set automatically when entering AutoAccept mode.
-	WorkingDirectories []string
-
-	// ShouldAvoidPrompts is set for headless/async subagents that cannot
-	// show interactive dialogs. When true, ask → deny automatically.
-	ShouldAvoidPrompts bool
-}
+type SessionPermissions = permissionpolicy.SessionPermissions
+type DenialTracking = permissionpolicy.DenialTracking
 
 func NewSessionPermissions() *SessionPermissions {
-	return &SessionPermissions{
-		AllowedTools:    make(map[string]bool),
-		AllowedPatterns: make(map[string]bool),
-	}
+	return permissionpolicy.NewSessionPermissions()
 }
 
-func (sp *SessionPermissions) AllowTool(toolName string) {
-	if sp.AllowedTools == nil {
-		sp.AllowedTools = make(map[string]bool)
-	}
-	sp.AllowedTools[toolName] = true
-}
-
-func (sp *SessionPermissions) AllowPattern(pattern string) {
-	if sp.AllowedPatterns == nil {
-		sp.AllowedPatterns = make(map[string]bool)
-	}
-	sp.AllowedPatterns[pattern] = true
-}
-
-func (sp *SessionPermissions) IsToolAllowed(toolName string) bool {
-	if sp.AllowedTools[toolName] {
-		return true
-	}
-	switch toolName {
-	case "Edit":
-		return sp.AllowAllEdits
-	case "Write":
-		return sp.AllowAllWrites
-	case "Bash":
-		return sp.AllowAllBash
-	case "Skill":
-		return sp.AllowAllSkills
-	case "Agent":
-		return sp.AllowAllTasks
-	}
-	return false
-}
-
-// AddWorkingDirectory adds a directory to the allowed working directories list.
-func (sp *SessionPermissions) AddWorkingDirectory(dir string) {
-	// Avoid duplicates
-	for _, d := range sp.WorkingDirectories {
-		if d == dir {
-			return
-		}
-	}
-	sp.WorkingDirectories = append(sp.WorkingDirectories, dir)
-}
-
-// OperationMode defines the current operation mode.
-type OperationMode int
+type OperationMode = permissionpolicy.OperationMode
 
 const (
-	ModeNormal            OperationMode = iota
-	ModeAutoAccept                      // auto-approve edits/writes
-	ModeBypassPermissions               // allow all (bypass-immune checks still apply)
-	ModeDontAsk                         // convert ask → deny (never prompt)
-	ModeReadOnly                        // safe tools only; everything else denied (subagent explore)
+	ModeNormal            = permissionpolicy.ModeNormal
+	ModeAutoAccept        = permissionpolicy.ModeAutoAccept
+	ModeBypassPermissions = permissionpolicy.ModeBypassPermissions
+	ModeDontAsk           = permissionpolicy.ModeDontAsk
+	ModeReadOnly          = permissionpolicy.ModeReadOnly
 )
 
-// allModes lists the modes that the user can cycle through with the mode toggle.
-// BypassPermissions and DontAsk are entered explicitly, not via cycling.
-var cycleModes = []OperationMode{ModeNormal, ModeAutoAccept}
-var cycleModesWithBypass = []OperationMode{ModeNormal, ModeAutoAccept, ModeBypassPermissions}
-
-func (m OperationMode) String() string {
-	switch m {
-	case ModeAutoAccept:
-		return "accept edits"
-	case ModeBypassPermissions:
-		return "bypass permissions"
-	case ModeDontAsk:
-		return "don't ask"
-	case ModeReadOnly:
-		return "read-only"
-	default:
-		return "normal"
-	}
-}
-
 func OperationModeFromString(mode string) OperationMode {
-	mode = strings.TrimSpace(mode)
-	switch mode {
-	case "acceptEdits", "accept-edits", "autoAccept", "auto-accept":
-		return ModeAutoAccept
-	case "bypassPermissions", "bypass-permissions", "bypass":
-		return ModeBypassPermissions
-	case "dontAsk", "dont-ask":
-		return ModeDontAsk
-	default:
-		return ModeNormal
-	}
-}
-
-func (m OperationMode) Next() OperationMode {
-	for i, mode := range cycleModes {
-		if mode == m {
-			return cycleModes[(i+1)%len(cycleModes)]
-		}
-	}
-	// If current mode is not in the cycle list (e.g. BypassPermissions),
-	// return to normal.
-	return ModeNormal
-}
-
-// NextWithBypass cycles to the next operation mode.
-// When enabled is true, BypassPermissions is included in the cycle.
-func (m OperationMode) NextWithBypass(enabled bool) OperationMode {
-	modes := cycleModes
-	if enabled {
-		modes = cycleModesWithBypass
-	}
-	for i, mode := range modes {
-		if mode == m {
-			return modes[(i+1)%len(modes)]
-		}
-	}
-	return ModeNormal
+	return permissionpolicy.OperationModeFromString(mode)
 }
 
 func NewData() *Data {

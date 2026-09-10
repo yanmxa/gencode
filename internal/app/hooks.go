@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/genai-io/san/internal/app/conv"
 	"github.com/genai-io/san/internal/core"
 	"github.com/genai-io/san/internal/core/system"
 	"github.com/genai-io/san/internal/hook"
@@ -70,7 +71,7 @@ type stopHookResultMsg struct {
 func (m *model) fireIdleHooksCmd(result core.Result) tea.Cmd {
 	hookEngine := m.services.Hook
 
-	lastContent := core.LastAssistantChatContent(m.conv.Messages)
+	lastContent := conv.LastAssistantContent(m.conv.Messages)
 	hasStopHooks := hookEngine.HasHooks(hook.Stop)
 	stopHookActive := hookEngine.StopHookActive()
 

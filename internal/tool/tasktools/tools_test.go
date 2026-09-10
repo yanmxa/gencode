@@ -14,12 +14,12 @@ func useTestTrackerStore(t *testing.T) *todo.Store {
 	if err := store.SetStorageDir(t.TempDir()); err != nil {
 		t.Fatalf("SetStorageDir(): %v", err)
 	}
-	todo.SetDefault(store)
-	t.Cleanup(func() { todo.SetDefault(store) })
+	todo.SetDefaultStore(store)
+	t.Cleanup(func() { todo.SetDefaultStore(store) })
 	return store
 }
 
-func TestTrackerGetTool_ShowsOwnerAndOpenBlockers(t *testing.T) {
+func TestTaskGetTool_ShowsOwnerAndOpenBlockers(t *testing.T) {
 	store := useTestTrackerStore(t)
 
 	blocker := store.Create("Blocker", "finish first", "blocking", nil)
@@ -28,7 +28,7 @@ func TestTrackerGetTool_ShowsOwnerAndOpenBlockers(t *testing.T) {
 		t.Fatalf("Update(blocked): %v", err)
 	}
 
-	result := (&TrackerGetTool{}).Execute(context.Background(), map[string]any{
+	result := (&TaskGetTool{}).Execute(context.Background(), map[string]any{
 		"taskId": blocked.ID,
 	}, "")
 
@@ -43,13 +43,13 @@ func TestTrackerGetTool_ShowsOwnerAndOpenBlockers(t *testing.T) {
 	}
 }
 
-func TestTrackerUpdateTool_ParsesJSONBlockedByAndPersistsFields(t *testing.T) {
+func TestTaskUpdateTool_ParsesJSONBlockedByAndPersistsFields(t *testing.T) {
 	store := useTestTrackerStore(t)
 
 	blocker := store.Create("Blocker", "must finish first", "blocking", nil)
 	task := store.Create("Implement", "write tests", "writing", nil)
 
-	result := (&TrackerUpdateTool{}).Execute(context.Background(), map[string]any{
+	result := (&TaskUpdateTool{}).Execute(context.Background(), map[string]any{
 		"taskId":       task.ID,
 		"status":       todo.StatusInProgress,
 		"owner":        "Plan",

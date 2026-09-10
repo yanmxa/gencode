@@ -7,7 +7,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/genai-io/san/internal/log"
-	"github.com/genai-io/san/internal/todo"
 )
 
 type StartCommand struct {
@@ -115,7 +114,7 @@ func PatchTitle(title string) PatchOp       { return mustPatch(PatchPathTitle, t
 func PatchLastPrompt(prompt string) PatchOp { return mustPatch(PatchPathLastPrompt, prompt) }
 func PatchTag(tag string) PatchOp           { return mustPatch(PatchPathTag, tag) }
 func PatchMode(mode string) PatchOp         { return mustPatch(PatchPathMode, mode) }
-func PatchTasks(tasks []todo.Task) PatchOp {
+func PatchTasks(tasks []PlanTaskView) PatchOp {
 	return mustPatch(PatchPathTasks, tasks)
 }
 func PatchWorktree(worktree *WorktreeState) PatchOp { return mustPatch(PatchPathWorktree, worktree) }
@@ -139,7 +138,7 @@ func StateOpsDiff(prev, next State) []PatchOp {
 		ops = append(ops, PatchMode(next.Mode))
 	}
 	if !tasksEqual(prev.Tasks, next.Tasks) {
-		ops = append(ops, PatchTasks(TrackerTasksFromView(next.Tasks)))
+		ops = append(ops, PatchTasks(next.Tasks))
 	}
 	if !worktreeEqual(prev.Worktree, next.Worktree) {
 		ops = append(ops, PatchWorktree(next.Worktree))
@@ -147,7 +146,7 @@ func StateOpsDiff(prev, next State) []PatchOp {
 	return ops
 }
 
-func tasksEqual(a, b []TrackerTaskView) bool {
+func tasksEqual(a, b []PlanTaskView) bool {
 	if len(a) != len(b) {
 		return false
 	}

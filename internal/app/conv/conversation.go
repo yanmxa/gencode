@@ -15,22 +15,23 @@ func (s *StreamState) Stop() {
 }
 
 type ConversationModel struct {
-	Messages       []core.ChatMessage
-	CommittedCount int
-	Stream         StreamState
-	Compact        CompactState
-	Modal          ModalState
-	Tool           ToolExecState
+	Messages              []ChatMessage
+	CommittedCount        int
+	Stream                StreamState
+	Compact               CompactState
+	Modal                 ModalState
+	Tool                  ToolExecState
+	pendingToolMessageIDs map[string]string
 }
 
 func NewConversation() ConversationModel {
 	return ConversationModel{
-		Messages: []core.ChatMessage{},
+		Messages: []ChatMessage{},
 		Modal:    NewModalState(),
 	}
 }
 
-func (m *ConversationModel) Append(msg core.ChatMessage) {
+func (m *ConversationModel) Append(msg ChatMessage) ChatMessage {
 	// Stamp an ID once at append time so subsequent transcript saves can
 	// dedupe by it. Without this, every save assigns a fresh UUID and the
 	// append-only persistence path re-writes the entire history each turn.
@@ -38,15 +39,59 @@ func (m *ConversationModel) Append(msg core.ChatMessage) {
 		msg.ID = core.NewMessageID()
 	}
 	m.Messages = append(m.Messages, msg)
+	return msg
 }
 
 func (m *ConversationModel) Clear() {
-	m.Messages = []core.ChatMessage{}
+	m.Messages = []ChatMessage{}
 	m.CommittedCount = 0
+	m.pendingToolMessageIDs = nil
+}
+
+// ApplyAgentAppend reconciles the TUI projection with the canonical message
+// appended by the agent. User messages already carry the same ID from the
+// input boundary. Assistant rows start as streaming placeholders, and tool
+// result rows are created by the following PostTool event, so those two paths
+// need the authoritative ID supplied by OnAppend.
+func (m *ConversationModel) ApplyAgentAppend(msg core.Message) {
+	if msg.ID == "" {
+		return
+	}
+	for i := range m.Messages {
+		if m.Messages[i].ID == msg.ID {
+			return
+		}
+	}
+
+	if msg.Role == core.RoleAssistant {
+		for i := len(m.Messages) - 1; i >= 0; i-- {
+			if m.Messages[i].Role == core.RoleAssistant {
+				m.Messages[i].ID = msg.ID
+				return
+			}
+		}
+		return
+	}
+	if msg.ToolResult == nil || msg.ToolResult.ToolCallID == "" {
+		return
+	}
+	if m.pendingToolMessageIDs == nil {
+		m.pendingToolMessageIDs = make(map[string]string)
+	}
+	m.pendingToolMessageIDs[msg.ToolResult.ToolCallID] = msg.ID
+}
+
+func (m *ConversationModel) takeToolMessageID(toolCallID string) string {
+	if m.pendingToolMessageIDs == nil {
+		return ""
+	}
+	id := m.pendingToolMessageIDs[toolCallID]
+	delete(m.pendingToolMessageIDs, toolCallID)
+	return id
 }
 
 func (m *ConversationModel) AddNotice(content string) {
-	m.Messages = append(m.Messages, core.ChatMessage{Role: core.RoleNotice, Content: content})
+	m.Messages = append(m.Messages, ChatMessage{Role: core.RoleNotice, Content: content})
 }
 
 func (m *ConversationModel) AppendToLast(text, thinking string) {
@@ -99,7 +144,7 @@ func (m *ConversationModel) AppendErrorToLast(err error) {
 
 func (m *ConversationModel) AppendCancelledToolResults(calls []core.ToolCall, contentFn func(core.ToolCall) string) {
 	for _, tc := range calls {
-		m.Append(core.ChatMessage{
+		m.Append(ChatMessage{
 			Role: core.RoleUser,
 			ToolResult: &core.ToolResult{
 				ToolCallID: tc.ID,

@@ -9,9 +9,9 @@ import (
 	"github.com/genai-io/san/internal/llm"
 )
 
-func flushTestModel(msg core.ChatMessage) *model {
+func flushTestModel(msg conv.ChatMessage) *model {
 	m := &model{env: env{Width: 80}, conv: conv.NewModel(80)}
-	m.conv.Messages = []core.ChatMessage{msg}
+	m.conv.Messages = []conv.ChatMessage{msg}
 	return m
 }
 
@@ -62,7 +62,7 @@ func TestTakeWelcomeBannerFreezesAndClears(t *testing.T) {
 // scrollback mid-stream, before any content arrives — reasoning no longer waits
 // for the whole block to finish.
 func TestFlushStreamingBlocksCommitsThinkingParagraph(t *testing.T) {
-	m := flushTestModel(core.ChatMessage{
+	m := flushTestModel(conv.ChatMessage{
 		Role:     core.RoleAssistant,
 		Thinking: "first paragraph of reasoning\n\n",
 	})
@@ -82,7 +82,7 @@ func TestFlushStreamingBlocksCommitsThinkingParagraph(t *testing.T) {
 // The still-streaming trailing paragraph (no terminating blank line) stays in
 // the live view until it completes — exactly like content's trailing block.
 func TestFlushStreamingBlocksHoldsIncompleteThinking(t *testing.T) {
-	m := flushTestModel(core.ChatMessage{
+	m := flushTestModel(conv.ChatMessage{
 		Role:     core.RoleAssistant,
 		Thinking: "still streaming this paragraph",
 	})
@@ -98,7 +98,7 @@ func TestFlushStreamingBlocksHoldsIncompleteThinking(t *testing.T) {
 // When content starts — the reliable "reasoning done" signal — thinking's
 // trailing paragraph is flushed too, so nothing reasoning-side lingers.
 func TestFlushStreamingBlocksFlushesTrailingThinkingOnContent(t *testing.T) {
-	m := flushTestModel(core.ChatMessage{
+	m := flushTestModel(conv.ChatMessage{
 		Role:     core.RoleAssistant,
 		Thinking: "reasoning with no trailing blank line",
 		Content:  "Here",

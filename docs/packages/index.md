@@ -46,14 +46,17 @@ visible right next to its original. Every page follows [`TEMPLATE.md`](TEMPLATE.
 | [`inspector`](2-feature/inspector.md) | Local web UI for transcript replay; SSE live-tail. |
 | [`llm`](2-feature/llm.md) | Provider registry, model store, `Client` factory implementing `core.LLM`. |
 | [`mcp`](2-feature/mcp.md) | MCP client + transport + `Caller` for external tool servers. |
+| [`permission`](2-feature/permission.md) | Permission modes, rules, Bash safety analysis, and decisions. |
 | [`plugin`](2-feature/plugin.md) | Plugin loader / installer / marketplace; pushes contributions to other feature packages. |
 | [`reminder`](2-feature/reminder.md) | `<system-reminder>` queue with provider re-emission. |
 | [`search`](2-feature/search.md) | Pluggable web search backends behind a small `Provider` interface. |
 | [`session`](2-feature/session.md) | Transcript persistence, resume, fork, projection. |
-| [`setting`](2-feature/setting.md) | Settings loader + central permission decision gate. |
+| [`setting`](2-feature/setting.md) | Settings loading, merging, persistence, and policy adapters. |
 | [`skill`](2-feature/skill.md) | Skill loader, state store, active-skills block consumed by the `skills-directory` reminder. |
 | [`subagent`](2-feature/subagent.md) | Subagent registry + `Executor` that spawns background `core.Agent` instances. |
+| [`selflearn`](2-feature/selflearn.md) | Session-scoped background review and restricted memory/skill updates. |
 | [`task`](2-feature/task.md) | Background task manager (bash and agent tasks). |
+| [`todo`](2-feature/todo.md) | Agent-visible plan items and blocker state; separate from running background tasks. |
 | [`tool`](2-feature/tool.md) | Tool registry, schemas, permission gate, side-effect store. |
 | [`worktree`](2-feature/worktree.md) | Thin wrapper over `git worktree add/remove` for subagent isolation. |
 

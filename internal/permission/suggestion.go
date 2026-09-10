@@ -1,4 +1,4 @@
-package setting
+package permission
 
 import (
 	"path/filepath"

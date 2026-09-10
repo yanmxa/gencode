@@ -12,9 +12,9 @@ assignment for each package.
 | --- | --- | --- |
 | `cmd` | `cmd/*` | Process entrypoints, flag parsing, service wiring. |
 | `app` | `internal/app` and its subpackages | TUI shell, model composition, event routing. |
-| `feature` | Business-domain packages: agent, session, hook, skill, plugin, mcp, command, tool, subagent, task, cron, identity, inspector, llm, search, worktree, setting, reminder, image | Cohesive product capabilities with their own state and lifecycle. |
+| `feature` | Business-domain packages: agent, session, hook, skill, plugin, mcp, command, tool, subagent, task, todo, cron, persona, permission, selflearn, inspector, llm, search, worktree, setting, reminder, image | Cohesive product capabilities with their own state and lifecycle. |
 | `core` | `internal/core` | Stable contracts shared across feature packages. |
-| `infrastructure` | `log`, `secret`, `filecache`, `markdown` | Stateless helpers usable by any layer above. |
+| `infrastructure` | `confdir`, `filecache`, `log`, `markdown`, `proc`, `secret` | Stateless helpers usable by any layer above. |
 
 `internal/image` is provisionally classified as `feature` because it
 currently produces `core.Image` values directly. The pure-infra

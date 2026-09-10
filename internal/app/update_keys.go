@@ -6,7 +6,6 @@
 package app
 
 import (
-	"context"
 	"strings"
 	"time"
 
@@ -115,7 +114,7 @@ func (m *model) handleTextareaShortcut(msg tea.KeyMsg) (tea.Cmd, bool) {
 			return m.QuitWithCancel()
 		}
 		m.userInput.LastCtrlC = now
-		_, cmd, _ := m.executeCommand(context.Background(), "/clear")
+		_, cmd, _ := m.executeCommand(m.Context(), "/clear")
 		return cmd, true
 
 	case "ctrl+d":
@@ -125,7 +124,7 @@ func (m *model) handleTextareaShortcut(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return m.QuitWithCancel()
 
 	case "ctrl+l":
-		_, cmd, _ := m.executeCommand(context.Background(), "/clear")
+		_, cmd, _ := m.executeCommand(m.Context(), "/clear")
 		return cmd, true
 
 	case "esc":

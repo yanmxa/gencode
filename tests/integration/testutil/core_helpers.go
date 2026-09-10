@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	agentruntime "github.com/genai-io/san/internal/agent/runtime"
 	"github.com/genai-io/san/internal/core"
 	"github.com/genai-io/san/internal/llm"
 	"github.com/genai-io/san/internal/tool"
@@ -82,7 +83,7 @@ func NewTestAgent(t *testing.T, responses ...llm.CompletionResponse) (core.Agent
 	t.Helper()
 	fakeLLM := &FakeLLM{Responses: responses}
 	cwd := t.TempDir()
-	return core.NewAgent(core.Config{
+	return agentruntime.New(agentruntime.Config{
 		ID:     "test-agent",
 		LLM:    fakeLLM,
 		System: core.NewSystem(),
@@ -115,7 +116,7 @@ func NewTestAgentWithPermission(t *testing.T, permFn perm.PermissionFunc, respon
 	fakeLLM := &FakeLLM{Responses: responses}
 	cwd := t.TempDir()
 	tools := tool.WithPermission(buildAllRegisteredTools(cwd), permFn)
-	return core.NewAgent(core.Config{
+	return agentruntime.New(agentruntime.Config{
 		ID:       "test-agent",
 		LLM:      fakeLLM,
 		System:   core.NewSystem(),
@@ -130,7 +131,7 @@ func NewTestAgentWithMaxSteps(t *testing.T, maxSteps int, responses ...llm.Compl
 	t.Helper()
 	fakeLLM := &FakeLLM{Responses: responses}
 	cwd := t.TempDir()
-	return core.NewAgent(core.Config{
+	return agentruntime.New(agentruntime.Config{
 		ID:     "test-agent",
 		LLM:    fakeLLM,
 		System: core.NewSystem(),

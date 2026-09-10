@@ -7,6 +7,7 @@ package app
 import (
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/genai-io/san/internal/app/conv"
 	"github.com/genai-io/san/internal/app/input"
 	"github.com/genai-io/san/internal/core"
 	"github.com/genai-io/san/internal/image"
@@ -64,7 +65,7 @@ func (m *model) cancelPendingToolCalls() {
 func (m *model) pasteImageFromClipboard() (tea.Cmd, bool) {
 	imgData, err := image.ReadClipboard()
 	if err != nil {
-		m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Image paste error: " + err.Error()})
+		m.conv.Append(conv.ChatMessage{Role: core.RoleNotice, Content: "Image paste error: " + err.Error()})
 		return tea.Batch(m.CommitMessages()...), true
 	}
 	if imgData == nil {
@@ -84,5 +85,8 @@ func (m *model) QuitWithCancel() (tea.Cmd, bool) {
 		m.conv.Tool.Cancel()
 	}
 	m.FireSessionEnd("prompt_input_exit")
+	if m.cancel != nil {
+		m.cancel()
+	}
 	return tea.Quit, true
 }

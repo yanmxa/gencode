@@ -12,11 +12,11 @@ GOIMPORTS_VERSION := v0.43.0
 
 .PHONY: build build-all install clean release release-push test cover format format-check lint install-format-tools check-format-tools
 
-build: format
+build:
 	@mkdir -p $(BINDIR)
 	go build $(LDFLAGS) -o $(BINDIR)/$(BINARY) $(SRCDIR)
 
-build-all: format
+build-all:
 	go build ./...
 
 install: build
@@ -98,7 +98,7 @@ serve-site:
 	@open http://localhost:8080 2>/dev/null || true
 	python3 -m http.server 8080 -d site/
 
-release: format
+release: format-check
 	@mkdir -p $(BINDIR)
 	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $(BINDIR)/$(BINARY)_darwin_amd64 $(SRCDIR)
 	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BINDIR)/$(BINARY)_darwin_arm64 $(SRCDIR)

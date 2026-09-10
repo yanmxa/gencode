@@ -10,7 +10,7 @@ import (
 
 func TestSendMessageTool_ResumesCompletedTask(t *testing.T) {
 	task.Initialize(task.Options{})
-	t.Cleanup(task.ResetDefaultTracker)
+	t.Cleanup(task.ResetDefaultManager)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -44,7 +44,7 @@ func TestSendMessageTool_ResumesCompletedTask(t *testing.T) {
 
 func TestSendMessageTool_RejectsRunningTask(t *testing.T) {
 	task.Initialize(task.Options{})
-	t.Cleanup(task.ResetDefaultTracker)
+	t.Cleanup(task.ResetDefaultManager)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

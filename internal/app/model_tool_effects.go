@@ -67,7 +67,7 @@ func (m *model) trackAgentLaunch(toolName string, resp map[string]any) {
 	if launch.TaskID == "" {
 		return
 	}
-	todo.TrackWorker(m.services.Tracker, launch)
+	todo.TrackWorker(m.services.Plan, launch)
 }
 
 func (m *model) persistOverflow(result *core.ToolResult) {

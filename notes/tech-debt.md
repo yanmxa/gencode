@@ -31,8 +31,8 @@ This file tracks structural follow-ups that are not tied to a single feature.
   ~~`agent` (11 methods)~~ — `*agent.Session` direct (foreground agent
   session lifecycle).
   ~~`setting` (14 methods)~~ — `*setting.Settings` direct (live,
-  mutex-protected handle over `*setting.Data`; also the permission
-  decision gate).
+  mutex-protected handle over `*setting.Data`). The permission engine now
+  lives in `internal/permission`; setting retains compatibility adapters.
 - **Escape-hatch methods on Service interfaces.** All resolved:
   ~~`MCP.Registry()`~~, ~~`Hook.Engine()`~~, ~~`Session.GetStore()`~~
   / ~~`Session.SetStore()`~~ — Service interfaces deleted in their
@@ -51,4 +51,3 @@ This file tracks structural follow-ups that are not tied to a single feature.
   `0001-layered-package-architecture.md`.
 - ~~Infrastructure packages (`log`, `secret`, `filecache`, `markdown`)
   have no `docs/packages/*.md` page.~~ Added all four.
-

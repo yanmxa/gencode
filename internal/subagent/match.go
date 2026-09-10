@@ -1,8 +1,6 @@
 package subagent
 
-import (
-	"github.com/genai-io/san/internal/setting"
-)
+import permissionpolicy "github.com/genai-io/san/internal/permission"
 
 // Matches reports whether any rule in the list matches the call. Bash
 // compound commands match if any subcommand matches. Use for deny / ask
@@ -16,7 +14,7 @@ func (t ToolList) Matches(name string, input map[string]any) bool {
 	if !t.HasPattern(name) {
 		return t.HasName(name)
 	}
-	rule := setting.BuildRule(name, input)
+	rule := permissionpolicy.BuildRule(name, input)
 	for _, r := range t {
 		if r.Name != name {
 			continue
@@ -24,7 +22,7 @@ func (t ToolList) Matches(name string, input map[string]any) bool {
 		if r.Pattern == "" {
 			return true
 		}
-		if setting.MatchesToolPattern(name, input, rule, r.Rule()) {
+		if permissionpolicy.MatchesToolPattern(name, input, rule, r.Rule()) {
 			return true
 		}
 	}
@@ -58,6 +56,6 @@ func (t ToolList) Allows(name string, input map[string]any) bool {
 	if hasBare {
 		return true
 	}
-	_, ok := setting.MatchAllowList(name, input, patterns)
+	_, ok := permissionpolicy.MatchAllowList(name, input, patterns)
 	return ok
 }

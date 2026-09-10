@@ -20,12 +20,12 @@ import (
 )
 
 func newModel(opts setting.RunOptions) (*model, error) {
-	base := newBaseModel()
+	base := newBaseModel(servicesFromDefaults())
 	m := &base
 
 	m.agentEventHub.Register("main", func(e hub.Event) { m.mainEvents <- e })
 
-	// Wire task completion: closure captures hub + hooks + tracker directly.
+	// Wire task completion: closure captures hub + hooks + plan store directly.
 	m.wireTaskLifecycle(m.services.Hook)
 
 	m.configureAsyncHookCallback()
@@ -41,14 +41,16 @@ func newModel(opts setting.RunOptions) (*model, error) {
 	return m, nil
 }
 
-func newBaseModel() model {
-	svc := newServices()
+func newBaseModel(svc services) model {
+	ctx, cancel := context.WithCancel(context.Background())
 	environment := newEnv(svc.LLM, appCwd, svc.Setting.IsGitRepo(appCwd))
 	if settings := svc.Setting.Snapshot(); settings != nil {
 		environment.ApplyDefaultPermissionMode(settings.Permissions.DefaultMode, appCwd, svc.Setting.AllowBypass())
 		environment.ShowContextBar = settings.ShowContextBar()
 	}
 	return model{
+		ctx:    ctx,
+		cancel: cancel,
 		userInput: input.New(appCwd, defaultWidth, commandSuggestionMatcher(svc.Command), input.SelectorDeps{
 			AgentRegistry:   &agentRegistryAdapter{svc.Subagent},
 			PersonaRegistry: svc.Persona,
@@ -70,8 +72,7 @@ func newBaseModel() model {
 
 func (m *model) applyRunOptions(opts setting.RunOptions) error {
 	if opts.PluginDir != "" {
-		ctx := context.Background()
-		if err := m.services.Plugin.LoadFromPath(ctx, opts.PluginDir); err != nil {
+		if err := m.services.Plugin.LoadFromPath(m.Context(), opts.PluginDir); err != nil {
 			return fmt.Errorf("failed to load plugins from %s: %w", opts.PluginDir, err)
 		}
 		if err := m.ReloadAfterPluginChange(); err != nil {
@@ -170,7 +171,7 @@ func (m *model) ensureMemoryContextLoaded() {
 }
 
 func (m *model) wireTaskLifecycle(hookEngine hook.Handler) {
-	trackerSvc := m.services.Tracker
+	planStore := m.services.Plan
 	agentEventHub := m.agentEventHub
 
 	fireHook := func(event hook.EventType, info task.TaskInfo) {
@@ -191,7 +192,7 @@ func (m *model) wireTaskLifecycle(hookEngine hook.Handler) {
 		},
 		onCompleted: func(info task.TaskInfo) {
 			fireHook(hook.TaskCompleted, info)
-			todo.CompleteWorker(trackerSvc, info)
+			todo.CompleteWorker(planStore, info)
 
 			subject := hub.TaskSubject(info)
 			msg, ok := hub.TaskMessage(info, subject)
@@ -217,7 +218,7 @@ func (f taskLifecycleFunc) TaskCreated(info task.TaskInfo)   { f.onCreated(info)
 func (f taskLifecycleFunc) TaskCompleted(info task.TaskInfo) { f.onCompleted(info) }
 
 func (m *model) FireSessionEnd(reason string) {
-	m.services.Hook.Execute(context.Background(), hook.SessionEnd, hook.HookInput{
+	m.services.Hook.Execute(m.Context(), hook.SessionEnd, hook.HookInput{
 		Reason: reason,
 	})
 	m.services.Hook.ClearSessionHooks()

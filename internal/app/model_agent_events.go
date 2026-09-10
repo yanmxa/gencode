@@ -13,6 +13,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/genai-io/san/internal/app/conv"
 	"github.com/genai-io/san/internal/app/input"
 	"github.com/genai-io/san/internal/core"
 	"github.com/genai-io/san/internal/llm"
@@ -62,7 +63,7 @@ func (m *model) OnTokenUsage(resp *core.InferResponse) {
 	}
 }
 
-func (m *model) HasRunningTasks() bool { return m.services.Tracker.HasInProgress() }
+func (m *model) HasRunningTasks() bool { return m.services.Plan.HasInProgress() }
 
 // OnAgentMessage observes the agent's MessageEvent echoes. Every path
 // that hands a user message to the agent appends to m.conv at the call site,
@@ -90,8 +91,8 @@ func (m *model) OnToolResult(tr core.ToolResult) *core.ToolResult {
 
 func (m *model) OnTurnEnd(result core.Result) tea.Cmd {
 	m.env.turnUsageActive = false
-	if m.services.Tracker.AllDone() {
-		m.services.Tracker.Reset()
+	if m.services.Plan.AllDone() {
+		m.services.Plan.Reset()
 	}
 	m.services.Agent.SetPluginRoot("")
 	// Forward to L1 self-learning. No-op when disabled; the reviewer gates
@@ -141,7 +142,7 @@ func (m *model) OnAgentStop(err error) tea.Cmd {
 	// shutdown, not an agent failure the user needs to see.
 	if err != nil && !errors.Is(err, context.Canceled) {
 		m.conv.AddNotice(fmt.Sprintf("Agent error: %v", err))
-		m.fireStopFailureHook(core.LastAssistantChatContent(m.conv.Messages), err)
+		m.fireStopFailureHook(conv.LastAssistantContent(m.conv.Messages), err)
 	}
 	m.conv.ProgressHub.DrainPendingQuestions()
 	m.conv.Modal.Question.Hide()

@@ -18,35 +18,36 @@ The TUI's task panel reads from this registry; the `TaskOutput` and
 
 ## Contract
 
-Background task manager. Tracks bash and subagent tasks for the TUI panel and the TaskOutput/TaskList tools. The package exposes `*Tracker` directly — no Service interface.
+Background task manager. Tracks bash and subagent tasks for the TUI panel and
+the TaskOutput/TaskList tools. The package exposes `*Manager` directly.
 
 ```go
 package task
 
-// Tracker is the opaque handle. Type exported; fields unexported.
-type Tracker struct { /* internal fields */ }
+type Manager struct { /* internal fields */ }
 
-func (m *Tracker) RegisterTask(t BackgroundTask)
-func (m *Tracker) CreateBashTask(cmd *exec.Cmd, command, description string, ctx context.Context, cancel context.CancelFunc) *BashTask
-func (m *Tracker) Get(id string) (BackgroundTask, bool)
-func (m *Tracker) List() []BackgroundTask
-func (m *Tracker) ListRunning() []BackgroundTask
-func (m *Tracker) Kill(id string) error
-func (m *Tracker) Remove(id string)
-func (m *Tracker) SetOutputDir(dir string) error
+func (m *Manager) CreateBashTask(...) *BashTask
+func (m *Manager) CreateAgentTask(...) *AgentTask
+func (m *Manager) RegisterTask(t BackgroundTask)
+func (m *Manager) Get(id string) (BackgroundTask, bool)
+func (m *Manager) List() []BackgroundTask
+func (m *Manager) ListRunning() []BackgroundTask
+func (m *Manager) Kill(id string) error
+func (m *Manager) Remove(id string)
+func (m *Manager) SetOutputDir(dir string) error
 
 // Package-level access
-func Initialize(opts Options)
-func Default() *Tracker
-func SetDefaultTracker(m *Tracker)  // test-only
-func ResetDefaultTracker()          // test-only
+func Initialize(opts Options) error
+func Default() *Manager
+func SetDefaultManager(m *Manager) // test-only
+func ResetDefaultManager()         // test-only
 ```
 
 
 ## Internals
 
-- `Tracker` (`manager.go`) — concrete implementation. Tracks active and
-  completed tasks under a mutex.
+- `Manager` (`manager.go`) — tracks active/completed tasks and owns its output
+  directory. Multiple managers do not redirect one another's files.
 - `BackgroundTask` (`types.go`) — interface implemented by `BashTask` and
   `AgentTask`.
 - `BashTask` (`bash_task.go`) — wraps `*exec.Cmd`, streams stdout/stderr
@@ -54,9 +55,8 @@ func ResetDefaultTracker()          // test-only
 - `AgentTask` (`agent_task.go`) — wraps a subagent invocation.
 - `output_store.go` — filesystem-backed per-task output files under
   `<output-dir>/<task-id>.log`.
-- `tracker/` (subpackage) — task state machine the session recorder
-  serializes into transcripts; surfaced by the `TaskCreate` /
-  `TaskUpdate` tools.
+- Agent planning items are a separate capability in `internal/todo`; they are
+  surfaced by the `TaskCreate` / `TaskUpdate` tools but are not background jobs.
 
 ## Lifecycle
 

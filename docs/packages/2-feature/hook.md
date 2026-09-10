@@ -118,6 +118,22 @@ methods don't earn an interface; TEMPLATE Rule 3.
 - Concurrency: all `Set*` methods are mutex-guarded reads/writes; hook
   execution reads under RLock.
 
+### Interactive command hooks
+
+Command hooks are non-interactive by default: San writes one JSON input value
+and closes stdin, so scripts that read until EOF complete deterministically.
+Set `"interactive": true` when a command uses the line-based prompt protocol:
+
+```json
+{"type":"command","command":"./confirm.sh","interactive":true}
+```
+
+An interactive script must read the initial input as one line, emit each
+`PromptRequest` as one JSON line, and read one `PromptResponse` line. Its stdin
+remains open until the script exits, the user cancels, or the hook timeout
+expires. Explicit mode selection avoids timing-based detection and prevents a
+slow process from losing its response channel.
+
 ## Tests
 
 ```

@@ -7,9 +7,11 @@ package app
 
 import (
 	"fmt"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/genai-io/san/internal/app/conv"
 	"github.com/genai-io/san/internal/app/hub"
 	"github.com/genai-io/san/internal/app/input"
 	"github.com/genai-io/san/internal/app/trigger"
@@ -23,8 +25,8 @@ func (m *model) handleStopHookResult(msg stopHookResultMsg) tea.Cmd {
 	if msg.Blocked {
 		log.QueueLog("handleStopHookResult: hooks BLOCKED reason=%q", msg.Reason)
 		blockMsg := "Stop hook blocked: " + msg.Reason
-		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: blockMsg})
-		return m.sendToAgent(blockMsg, nil)
+		userMsg := m.conv.Append(conv.ChatMessage{Role: core.RoleUser, Content: blockMsg})
+		return m.sendToAgent(userMsg.ToMessage())
 	}
 	log.QueueLog("handleStopHookResult: hooks done, persisting")
 	var cmds []tea.Cmd
@@ -55,9 +57,8 @@ func (m *model) drainTurnQueues() (tea.Cmd, bool) {
 		if m.imagesBlockedForModel(item.Images) {
 			return tea.Batch(m.CommitMessages()...), true
 		}
-		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: item.Content, Images: item.Images})
-		m.services.Agent.Send(item.Content, item.Images)
-		return nil, true
+		msg := m.conv.Append(conv.ChatMessage{Role: core.RoleUser, Content: item.Content, Images: item.Images})
+		return m.sendToAgent(msg.ToMessage()), true
 	}
 
 	if len(m.systemInput.CronQueue) > 0 {
@@ -96,7 +97,8 @@ func (m *model) injectNotification(msg hub.Message) tea.Cmd {
 	if msg.Content == "" {
 		return tea.Batch(m.CommitMessages()...)
 	}
-	return m.SubmitToAgent(msg.Content, nil)
+	userMsg := m.conv.Append(conv.ChatMessage{Role: core.RoleUser, Content: msg.Content})
+	return m.SubmitToAgent(userMsg.ToMessage())
 }
 
 func drainEvents(ch <-chan hub.Event, max int) []hub.Event {
@@ -163,8 +165,8 @@ func eventsToMessages(events []hub.Event) []hub.Message {
 // handles provider/agent state.
 func (m *model) injectCronPrompt(prompt string) tea.Cmd {
 	m.conv.AddNotice("Scheduled task fired")
-	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: prompt})
-	return m.SubmitToAgent(prompt, nil)
+	msg := m.conv.Append(conv.ChatMessage{Role: core.RoleUser, Content: prompt})
+	return m.SubmitToAgent(msg.ToMessage())
 }
 
 // injectAsyncHookContinuation surfaces an async hook's follow-up: the hook
@@ -174,11 +176,17 @@ func (m *model) injectAsyncHookContinuation(item trigger.AsyncHookRewake) tea.Cm
 	if item.Notice != "" {
 		m.conv.AddNotice(item.Notice)
 	}
-	if len(item.Context) == 0 {
+	parts := append([]string(nil), item.Context...)
+	if item.ContinuationPrompt != "" {
+		parts = append(parts, item.ContinuationPrompt)
+	}
+	if len(parts) == 0 {
 		return tea.Batch(m.CommitMessages()...)
 	}
-	for _, ctx := range item.Context {
-		m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: ctx})
-	}
-	return m.SubmitToAgent(item.ContinuationPrompt, nil)
+	// Keep the displayed and delivered input identical. Sending only the final
+	// continuation while merely rendering Context meant an already-running
+	// agent never received the hook's actual findings.
+	content := strings.Join(parts, "\n\n")
+	msg := m.conv.Append(conv.ChatMessage{Role: core.RoleUser, Content: content})
+	return m.SubmitToAgent(msg.ToMessage())
 }

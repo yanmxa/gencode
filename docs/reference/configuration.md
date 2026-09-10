@@ -44,7 +44,7 @@ Configuration is loaded from multiple files at different scopes. Higher-priority
 ## Automated Tests
 
 ```bash
-go test ./internal/setting/... -v
+go test ./internal/setting/... ./internal/permission/... -v
 ```
 
 Covered:

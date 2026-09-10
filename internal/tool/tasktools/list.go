@@ -10,14 +10,14 @@ import (
 	"github.com/genai-io/san/internal/tool/toolresult"
 )
 
-// TrackerListTool lists all tracked tasks
-type TrackerListTool struct{}
+// TaskListTool lists all plan tasks.
+type TaskListTool struct{}
 
-func (t *TrackerListTool) Name() string        { return "TaskList" }
-func (t *TrackerListTool) Description() string { return "List all tracked tasks" }
-func (t *TrackerListTool) Icon() string        { return "📋" }
+func (t *TaskListTool) Name() string        { return "TaskList" }
+func (t *TaskListTool) Description() string { return "List all tracked tasks" }
+func (t *TaskListTool) Icon() string        { return "📋" }
 
-func (t *TrackerListTool) Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
+func (t *TaskListTool) Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
 	// Reload from disk to pick up changes from other processes
 	todo.Default().ReloadFromDisk()
 
@@ -36,7 +36,7 @@ func (t *TrackerListTool) Execute(ctx context.Context, params map[string]any, cw
 	}
 
 	// Build compact output: one line per task with ID, status, owner.
-	// Subject is omitted — the full task list is visible in the tracker panel.
+	// Subject is omitted — the full task list is visible in the plan panel.
 	// LLM can use TaskGet(taskId) for full details.
 	var sb strings.Builder
 	completed := 0
@@ -80,5 +80,5 @@ func TaskIcon(task *todo.Task) string {
 }
 
 func init() {
-	tool.Register(&TrackerListTool{})
+	tool.Register(&TaskListTool{})
 }

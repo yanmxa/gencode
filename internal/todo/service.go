@@ -2,33 +2,6 @@ package todo
 
 import "sync"
 
-// Service is the public contract for the tracker module.
-type Service interface {
-	// CRUD
-	Create(subject, description, activeForm string, metadata map[string]any) *Task
-	Get(id string) (*Task, bool)
-	Update(id string, opts ...UpdateOption) error
-	Delete(id string) error
-	List() []*Task
-
-	// query
-	IsBlocked(id string) bool
-	OpenBlockers(id string) []string
-	HasInProgress() bool
-	AllDone() bool
-	FindByMetadata(key, want string) *Task
-
-	// persistence
-	SetStorageDir(dir string) error
-	GetStorageDir() string
-	ReloadFromDisk()
-	Export() []Task
-	Import(tasks []Task)
-
-	// lifecycle
-	Reset()
-}
-
 // Options holds all dependencies for initialization.
 type Options struct{}
 
@@ -36,7 +9,7 @@ type Options struct{}
 
 var (
 	mu       sync.RWMutex
-	instance Service
+	instance *Store
 )
 
 // Initialize creates a new Store and sets it as the singleton.
@@ -48,25 +21,25 @@ func Initialize(opts Options) {
 
 // Default returns the singleton Service instance.
 // Panics if not initialized.
-func Default() Service {
+func Default() *Store {
 	mu.RLock()
 	s := instance
 	mu.RUnlock()
 	if s == nil {
-		panic("tracker: not initialized")
+		panic("todo: not initialized")
 	}
 	return s
 }
 
-// SetDefault replaces the singleton instance. Intended for tests.
-func SetDefault(s Service) {
+// SetDefaultStore replaces the package default. Intended for tests.
+func SetDefaultStore(s *Store) {
 	mu.Lock()
 	instance = s
 	mu.Unlock()
 }
 
-// ResetService clears the singleton instance. Intended for tests.
-func ResetService() {
+// ResetDefaultStore clears the package default. Intended for tests.
+func ResetDefaultStore() {
 	mu.Lock()
 	instance = nil
 	mu.Unlock()

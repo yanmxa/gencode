@@ -43,20 +43,20 @@ func (m *model) viewString() string {
 	}
 
 	separator := conv.SeparatorStyle.Render(strings.Repeat("─", m.env.Width))
-	trackerView := m.renderTrackerList()
+	planView := m.renderPlanList()
 
 	if hasOverlay { // docked modal (Question / Approval)
-		trackerPrefix := ""
-		if trackerView != "" {
-			trackerPrefix = "\n" + strings.TrimSuffix(trackerView, "\n") + "\n"
+		planPrefix := ""
+		if planView != "" {
+			planPrefix = "\n" + strings.TrimSuffix(planView, "\n") + "\n"
 		}
-		return trackerPrefix + separator + "\n" + ov.Render()
+		return planPrefix + separator + "\n" + ov.Render()
 	}
-	return m.renderNormalView(separator, trackerView)
+	return m.renderNormalView(separator, planView)
 }
 
 // isDockedModal reports whether the active overlay docks above the input area
-// — rendered between separators with the task tracker still visible — rather
+// — rendered between separators with the plan task list still visible — rather
 // than taking over the full screen like the slash-command pickers do. Only
 // the Question and Approval modals dock.
 func isDockedModal(ov overlayPanel) bool {
@@ -78,7 +78,7 @@ func isDockedModal(ov overlayPanel) bool {
 // the space above the input area, its last lines (the latest content) are
 // shown and earlier lines scroll off — the full message lands in native
 // scrollback at turn end, which the terminal scrolls back through natively.
-func (m *model) renderNormalView(separator, trackerView string) string {
+func (m *model) renderNormalView(separator, planView string) string {
 	// Render the footer first so we can measure how many lines it consumes
 	// and cap the chat section to the remaining terminal height.
 	footer := m.renderFooter(separator)
@@ -91,7 +91,7 @@ func (m *model) renderNormalView(separator, trackerView string) string {
 	}
 
 	activeContent := conv.RenderActiveContent(m.messageRenderParams())
-	chatSection := m.renderChatSection(activeContent, trackerView)
+	chatSection := m.renderChatSection(activeContent, planView)
 
 	return tailLines(chatSection, maxContentHeight) + footer
 }
@@ -152,9 +152,9 @@ func (m model) renderInputView() string {
 }
 
 // renderChatSection assembles the active chat content (uncommitted messages,
-// tracker, transient spinners) into a single string. Height-limiting is
+// plan task list, transient spinners) into a single string. Height-limiting is
 // applied by the caller (tailLines).
-func (m model) renderChatSection(activeContent, trackerView string) string {
+func (m model) renderChatSection(activeContent, planView string) string {
 	var parts []string
 
 	if banner := m.liveWelcome(); banner != "" {
@@ -168,11 +168,11 @@ func (m model) renderChatSection(activeContent, trackerView string) string {
 		parts = append(parts, activeContent)
 	}
 
-	if trackerView != "" {
+	if planView != "" {
 		// Leading "\n" forces a blank line between the assistant content
-		// (often flushed to scrollback via tea.Println) and the tracker
+		// (often flushed to scrollback via tea.Println) and the plan task list
 		// block that anchors the bottom of the active view.
-		parts = append(parts, "\n"+strings.TrimSuffix(trackerView, "\n"))
+		parts = append(parts, "\n"+strings.TrimSuffix(planView, "\n"))
 	}
 
 	if m.userInput.Provider.FetchingLimits {
@@ -228,18 +228,18 @@ func (m model) renderSelfLearnLive() string {
 	return ""
 }
 
-func (m model) renderTrackerList() string {
+func (m model) renderPlanList() string {
 	if !m.conv.ShowTasks {
 		return ""
 	}
-	tasks := m.services.Tracker.List()
-	return conv.RenderTrackerList(conv.TrackerListParams{
+	tasks := m.services.Plan.List()
+	return conv.RenderPlanList(conv.PlanListParams{
 		Tasks:        tasks,
-		AllDone:      m.services.Tracker.AllDone(),
+		AllDone:      m.services.Plan.AllDone(),
 		StreamActive: m.conv.Stream.Active,
 		Width:        m.env.Width,
 		SpinnerView:  m.conv.Spinner.View(),
-		Blockers:     m.services.Tracker.OpenBlockers,
+		Blockers:     m.services.Plan.OpenBlockers,
 		Blink:        m.conv.Spinner.Frame(),
 	})
 }
@@ -314,7 +314,7 @@ func (m model) messageRenderParams() conv.RenderContext {
 		// Decorations
 		AgentColors:  m.agentColors(),
 		TaskProgress: m.conv.TaskProgress,
-		TaskOwnerMap: buildTaskOwnerMap(m.services.Tracker.List()),
+		TaskOwnerMap: buildTaskOwnerMap(m.services.Plan.List()),
 
 		// Modal interlock
 		InteractivePromptActive: m.conv.Modal.Question != nil && m.conv.Modal.Question.IsActive(),

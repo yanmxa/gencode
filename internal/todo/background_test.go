@@ -28,7 +28,7 @@ func TestTrackWorkerCreatesEntry(t *testing.T) {
 
 	tasks := Default().List()
 	if len(tasks) != 1 {
-		t.Fatalf("expected 1 tracker task, got %d", len(tasks))
+		t.Fatalf("expected 1 plan task, got %d", len(tasks))
 	}
 	if tasks[0].Status != StatusInProgress {
 		t.Fatalf("status = %q, want %q", tasks[0].Status, StatusInProgress)
@@ -57,7 +57,7 @@ func TestCompleteWorkerUpdatesStatus(t *testing.T) {
 
 	tasks := Default().List()
 	if len(tasks) != 1 {
-		t.Fatalf("expected 1 tracker task, got %d", len(tasks))
+		t.Fatalf("expected 1 plan task, got %d", len(tasks))
 	}
 	if tasks[0].Status != StatusCompleted {
 		t.Fatalf("status = %q, want %q", tasks[0].Status, StatusCompleted)

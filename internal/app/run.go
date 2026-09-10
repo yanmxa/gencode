@@ -39,6 +39,9 @@ func Run(opts setting.RunOptions) error {
 	if err != nil {
 		return err
 	}
+	if m.cancel != nil {
+		defer m.cancel()
+	}
 
 	// Fresh sessions show the splash live above the input from launch and freeze
 	// it into scrollback on the first commit, so it stays visible immediately
@@ -92,7 +95,7 @@ func (m *model) configureAsyncHookCallback() {
 }
 
 func (m *model) fireStartupHooks() {
-	outcome := m.executeStartupHooks(context.Background())
+	outcome := m.executeStartupHooks(m.Context())
 	m.applyStartupHookOutcome(outcome)
 	// Hook-injected context rides on the same harness channel as skills and
 	// memory: it gets queued for the first user message as a

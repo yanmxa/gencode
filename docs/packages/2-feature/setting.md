@@ -5,26 +5,24 @@ layer: feature
 
 # setting
 
-Data loader, merger, and the central permission decision gate.
+Settings data loader, merger, persistence, and live synchronized handle.
 Reads `~/.san/settings.json` and `<project>/.san/settings.json`, merges
-project-over-user with documented precedence, and decides allow / deny /
-ask for every tool call.
+project-over-user with documented precedence, and supplies permission rule
+configuration to `internal/permission`.
 
 ## Purpose
 
-Two concerns live here:
-
-1. **Configuration**: load and merge two-tier settings (user + project),
-   plus hooks, disabled tools, search provider, permission rules, env
-   vars, work directory, and Claude Code-compatible `.claude/` shims.
-2. **Permission decisions**: `HasPermissionToUseTool` is the
-   authoritative gate every tool call passes through. Decision sources
-   include explicit rules, suggestions from hooks, session-scoped
-   permissions, and bypass-mode policy.
+Load and merge two-tier settings (user + project), including hooks, disabled
+tools, search provider, permission rules, env vars, work directory, and Claude
+Code-compatible `.claude/` shims. Permission methods on `Data` and `Settings`
+are compatibility adapters to `permission.Policy`; policy itself is not owned
+here.
 
 ## Contract
 
-Data loader + central permission decision gate. *Settings wraps *Data under a mutex; methods are mutex-protected views. The package exposes `*Settings` directly — no Service interface.
+`Settings` wraps `Data` under a mutex; methods are synchronized views. The
+package exposes `*Settings` directly—there is no producer-side Service
+interface.
 
 ```go
 package setting
@@ -61,13 +59,10 @@ func ResetDefaultSettings()              // test-only
 - `loader.go` + `merger.go` — read the two tiers and combine them with
   documented precedence (project overrides user, except in a few flagged
   fields).
-- `permission.go` — the rule engine. Big file (19k); deserves to move out
-  to a `service/permission/` package per the split above.
-- `bash_ast.go` — bash command parsing for the granular Bash permission
-  rules (read-only matchers like `git status` allowed but `git push`
-  asked).
+- `permission.go` — thin compatibility adapters to `internal/permission`.
 - `workdir.go` — cwd resolution and git-root detection.
-- `security.go` — env var sanitization for hook/MCP subprocess execution.
+- Permission rules, Bash AST parsing, working-directory containment, and safety
+  checks live in `internal/permission`.
 
 ## Lifecycle
 
@@ -75,18 +70,16 @@ func ResetDefaultSettings()              // test-only
   cwd changes.
 - Reload: `Reload(cwd)` rebuilds settings under lock; the singleton swaps
   atomically.
-- Per-call: permission checks are mutex-protected reads against the
-  current snapshot.
+- Per-call: permission adapters take a mutex-protected snapshot and delegate to
+  `permission.Policy`.
 
 ## Tests
 
 ```
-internal/setting/permission_test.go      — large table of permission
-                                            scenarios.
 internal/setting/config_extra_test.go    — config merge semantics.
-internal/setting/bash_ast_test.go        — bash command parsing for
-                                            permission patterns.
-internal/setting/workdir_test.go         — cwd resolution.
+internal/permission/path_test.go         — cwd containment and symlink safety.
+internal/permission/policy_test.go       — permission decision scenarios.
+internal/permission/bash_ast_test.go     — Bash rule/security parsing.
 ```
 
 ## See Also
@@ -94,5 +87,6 @@ internal/setting/workdir_test.go         — cwd resolution.
 - Code: `internal/setting/`
 - Reference: [`reference/configuration.md`](../../reference/configuration.md)
 - Concepts: [`concepts/permission-model.md`](../../concepts/permission-model.md)
+- Permission policy: [`packages/permission.md`](permission.md)
 - Permission consumers: [`packages/tool.md`](tool.md), [`packages/hook.md`](hook.md)
 - Layer: `feature`

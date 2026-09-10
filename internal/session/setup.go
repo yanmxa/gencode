@@ -128,7 +128,7 @@ func (s *Setup) Fork(id string) (*Snapshot, error) {
 
 // NewRecorder binds a Recorder to the current session and transcript store.
 // Returns nil if the store is not initialized — callers can pass the nil
-// result through to core.Config.OnEvent safely because Recorder.OnAgentEvent
+// result through to runtime.Config.OnEvent safely because Recorder.OnAgentEvent
 // is nil-safe.
 //
 // Caches the result so subsequent callers (e.g. permission decision sites
@@ -193,7 +193,7 @@ func loadLeafIfExists(st *Store, sessionID string) string {
 // the fork in isolation), parented under the live main session via
 // agentID so the inspector can still associate them. Each fork should
 // call this once and pass the result as the fork agent's
-// core.Config.OnEvent. The recorder is not cached because there can be
+// runtime.Config.OnEvent. The recorder is not cached because there can be
 // many concurrent forks of different kinds.
 //
 // The fork session ID has the form

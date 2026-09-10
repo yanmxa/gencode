@@ -10,14 +10,14 @@ import (
 	"github.com/genai-io/san/internal/tool/toolresult"
 )
 
-// TrackerUpdateTool updates a task's status or details
-type TrackerUpdateTool struct{}
+// TaskUpdateTool updates a plan task's status or details.
+type TaskUpdateTool struct{}
 
-func (t *TrackerUpdateTool) Name() string        { return "TaskUpdate" }
-func (t *TrackerUpdateTool) Description() string { return "Update task status or details" }
-func (t *TrackerUpdateTool) Icon() string        { return "📋" }
+func (t *TaskUpdateTool) Name() string        { return "TaskUpdate" }
+func (t *TaskUpdateTool) Description() string { return "Update task status or details" }
+func (t *TaskUpdateTool) Icon() string        { return "📋" }
 
-func (t *TrackerUpdateTool) Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
+func (t *TaskUpdateTool) Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
 	taskID := tool.GetString(params, "taskId")
 	if taskID == "" {
 		return toolresult.NewErrorResult(t.Name(), "taskId is required")
@@ -134,5 +134,5 @@ func parseStringSlice(v any) []string {
 }
 
 func init() {
-	tool.Register(&TrackerUpdateTool{})
+	tool.Register(&TaskUpdateTool{})
 }

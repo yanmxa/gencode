@@ -17,7 +17,7 @@ import (
 // Recorder turns core.Agent lifecycle events into transcript records in
 // causal order — every message.appended lands before the inference.requested
 // that consumes it. One Recorder is bound to one (sessionID, agentID) pair;
-// OnAgentEvent is the core.Config.OnEvent callback.
+// OnAgentEvent is the runtime.Config.OnEvent callback.
 type Recorder struct {
 	fs          *transcript.FileStore
 	sessionID   string
@@ -152,7 +152,7 @@ func (r *Recorder) recordPermission(typ string, rec transcript.PermissionRecord)
 	})
 }
 
-// OnAgentEvent is the core.Config.OnEvent callback. It dispatches by event
+// OnAgentEvent is the runtime.Config.OnEvent callback. It dispatches by event
 // type and writes the corresponding transcript record. Errors are logged
 // rather than propagated — failing to record telemetry must not break the
 // running session.

@@ -24,7 +24,6 @@ import (
 	"github.com/genai-io/san/internal/session"
 	"github.com/genai-io/san/internal/setting"
 	"github.com/genai-io/san/internal/skill"
-	"github.com/genai-io/san/internal/todo"
 	"github.com/genai-io/san/internal/tool"
 )
 
@@ -55,7 +54,7 @@ type SlashCommandEnv struct {
 	Skill   *skill.Registry
 	Plugin  *plugin.Registry
 	MCP     *mcp.Registry
-	Tracker todo.Service
+	Plan    interface{ Reset() }
 	Cron    *cron.Scheduler
 	ToolSvc *tool.Registry
 	Command *command.Registry
@@ -70,7 +69,7 @@ type SlashCommandEnv struct {
 	// Model-level action callbacks. These compose multiple services or
 	// touch UI state on `m`, so commands invoke them via the model.
 	CommitMessages          func() []tea.Cmd
-	SubmitToAgent           func(content string, images []core.Image) tea.Cmd
+	SubmitToAgent           func(message core.Message) tea.Cmd
 	HandleSkillInvocation   func() tea.Cmd
 	StartExternalEditor     func(path string) tea.Cmd
 	ReloadAfterPluginChange func() error
@@ -174,7 +173,7 @@ func (c SlashCommandController) Execute(ctx context.Context, inputText string) (
 func (c SlashCommandController) HandleSubmit(inputText string) (tea.Cmd, bool) {
 	preserve := shouldPreserveCommandInConversation(inputText)
 	if preserve {
-		c.env.Conversation.Append(core.ChatMessage{Role: core.RoleUser, Content: inputText})
+		c.env.Conversation.Append(conv.ChatMessage{Role: core.RoleUser, Content: inputText})
 	}
 
 	result, cmd, isCmd := c.Execute(context.Background(), inputText)
@@ -290,7 +289,7 @@ func (c *SlashCommandController) handleClearCommand(_ context.Context, _ string)
 	c.env.Tool.Reset()
 	c.env.Conversation.Clear()
 	c.env.ResetTokens()
-	c.env.Tracker.Reset()
+	c.env.Plan.Reset()
 	c.env.ResetCronQueue()
 	// In inline mode the conversation is written to the terminal's native
 	// screen + scrollback; tea.ClearScreen only redraws the managed input frame
@@ -548,8 +547,8 @@ func (c *SlashCommandController) handleLoopCommand(_ context.Context, args strin
 		*c.env.Conversation = conv.NewConversation()
 	}
 	c.env.Conversation.AddNotice(fmt.Sprintf("Scheduled recurring task %s (%s, cron `%s`).%s Auto-expires after 7 days. Executing now.", job.ID, parsed.Human, parsed.Cron, parsed.Note))
-	c.env.Conversation.Append(core.ChatMessage{Role: core.RoleUser, Content: parsed.Prompt})
-	return "", c.env.SubmitToAgent(parsed.Prompt, nil), nil
+	msg := c.env.Conversation.Append(conv.ChatMessage{Role: core.RoleUser, Content: parsed.Prompt})
+	return "", c.env.SubmitToAgent(msg.ToMessage()), nil
 }
 
 func handleLoopAdminCommand(cronSvc *cron.Scheduler, args string) (string, bool, error) {

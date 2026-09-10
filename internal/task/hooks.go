@@ -5,7 +5,7 @@ import (
 )
 
 // LifecycleHandler receives task lifecycle notifications. The app layer
-// installs a handler that fires hooks, updates the tracker, and publishes
+// installs a handler that fires hooks, updates the plan, and publishes
 // events to the Hub.
 type LifecycleHandler interface {
 	TaskCreated(info TaskInfo)

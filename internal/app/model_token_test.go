@@ -124,7 +124,7 @@ func TestOnAgentMessageIsNoOpForUserEcho(t *testing.T) {
 	m := &model{
 		userInput: input.Model{Queue: input.NewQueue()},
 		conv:      conv.NewModel(80),
-		services:  services{Tracker: todo.NewStore()},
+		services:  services{Plan: todo.NewStore()},
 	}
 
 	_ = m.OnAgentMessage(core.UserMessage("anything", nil))

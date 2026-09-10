@@ -6,9 +6,8 @@ layer: core
 # core
 
 The agent primitive: the `Agent` interface, its surrounding `System` /
-`Tools` / `LLM` contracts, and the message/event types they exchange. No
-implementations live here — only the contracts every feature package
-shares.
+`Tools` / `LLM` contracts, and the message/event types they exchange. Agent
+runtime and TUI view state live outside this package.
 
 ## Purpose
 
@@ -42,7 +41,6 @@ type Agent interface {
     Run(ctx context.Context) error
 }
 
-func NewAgent(cfg Config) Agent  // returns interface — see Note below
 ```
 
 ### System
@@ -105,30 +103,21 @@ but a few items deserve flagging:
   the trade-off; don't split.
 - **Rule 1 — `System` has 6 methods, `Tools` has 6.** Same trade-off:
   observer + mutation + query on one type. Acceptable for now.
-- **Rule 5 (constructors return concrete types).** `NewAgent` returns
-  `Agent` (interface). The concrete `*agent` is unexported, so callers
-  *must* use the interface — there is no concrete type to return.
-  Acceptable: this is the *only* place an interface return is the right
-  call, because hiding the implementation is the whole point of the
-  primitive.
 
 `Tool` (4 methods) and `LLM` (2 methods) are model-citizen interfaces and
 need no changes.
 
 ## Internals
 
-There are no business-logic internals to document — implementations live
-in `internal/agent` (for `core.Agent`), `internal/core/system/` (for
-`System`), `internal/tool/` (for `Tool`/`Tools`), and
-`internal/llm/<provider>/` (for `LLM`).
-
-The single implementation file here is `agent_impl.go` (the `*agent`
-struct backing `NewAgent`) — kept inside `core` because the run loop is
-inseparable from the contract.
+The `core.Agent` implementation lives in `internal/agent/runtime`. TUI-only
+`ChatMessage` state lives in `internal/app/conv`. The root package retains the
+small default `System` and `Tools` collections because they directly implement
+the shared mutation/observer contracts; prompt catalog and assembly live in
+`internal/core/system/`, while tool execution adapters live in `internal/tool/`.
 
 ## Lifecycle
 
-`NewAgent` panics if `LLM`, `System`, or `Tools` is nil. After
+`runtime.New` panics if `LLM`, `System`, or `Tools` is nil. After
 construction, callers own the `Inbox` channel (must close when done
 sending) and read the `Outbox` until it closes (agent owns it).
 
@@ -138,8 +127,10 @@ received. After `Run` returns, sending to the inbox blocks indefinitely.
 ## Tests
 
 ```
-internal/core/agent_impl_test.go    — agent loop behavior, signals, drains.
-internal/core/message_test.go       — message value equality and copying.
+internal/core/message_test.go            — message and compaction values.
+internal/core/retry_test.go              — shared retry/backoff policy.
+internal/agent/runtime/agent_test.go     — agent loop behavior and signals.
+internal/agent/runtime/retry_test.go     — runtime stream retry behavior.
 ```
 
 ## See Also

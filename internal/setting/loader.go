@@ -12,6 +12,7 @@ import (
 
 	"github.com/genai-io/san/internal/confdir"
 	"github.com/genai-io/san/internal/log"
+	permissionpolicy "github.com/genai-io/san/internal/permission"
 )
 
 // Loader handles loading and merging settings from multiple sources.
@@ -377,7 +378,7 @@ func PersonaAt(cwd string, userLevel bool) string {
 // AddAllowRuleAt appends a permission allow rule to project settings rooted at
 // the provided cwd.
 func AddAllowRuleAt(toolName string, args map[string]any, cwd string) error {
-	return AddAllowRuleDirectlyAt(BuildRule(toolName, args), cwd)
+	return AddAllowRuleDirectlyAt(permissionpolicy.BuildRule(toolName, args), cwd)
 }
 
 // AddAllowRuleDirectlyAt appends a pre-built allow rule string to the project

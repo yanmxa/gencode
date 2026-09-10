@@ -6,7 +6,6 @@
 package app
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -21,7 +20,7 @@ import (
 
 func (m *model) BuildCompactRequest(focus, trigger string) conv.CompactRequest {
 	return conv.CompactRequest{
-		Ctx:          context.Background(),
+		Ctx:          m.Context(),
 		Client:       m.buildLLMClient(),
 		Messages:     m.conv.ConvertToProvider(),
 		SummaryFocus: focus,
@@ -47,7 +46,7 @@ func (m *model) OnCompacted(info core.CompactInfo) tea.Cmd {
 	// and it persists + seeds resume — but the UI renders it as a single system
 	// notice (see RenderMessageAt: IsCompactSummary), so the transcript shows
 	// one clean line instead of the raw summary markdown or a "❭" user turn.
-	m.conv.Append(core.ChatMessage{
+	m.conv.Append(conv.ChatMessage{
 		Role:           core.RoleUser,
 		Content:        core.FormatCompactSummary(info.Summary),
 		DisplayContent: fmt.Sprintf("≡ Conversation compacted — %d messages summarized (scroll up for history)", info.OriginalCount),

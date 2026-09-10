@@ -35,12 +35,13 @@ Agent, persistence, and orchestration:
 | Path | Layer | Responsibility |
 | --- | --- | --- |
 | `internal/agent` | `feature` | Agent construction, permission adapter, and session-facing setup. |
+| `internal/agent/runtime` | `feature` | Concrete `core.Agent` run loop, streaming, retry, compaction, and tool execution lifecycle. |
 | `internal/llm` | `feature` | LLM service, provider registry, provider setup, cost tracking, logging. |
 | `internal/tool` | `feature` | Built-in tool schemas, registry, adapters, permission checks, execution. |
 | `internal/session` | `feature` | Session metadata, transcript persistence, resume, projection, message conversion. |
 | `internal/session/transcript` | `feature` | Transcript records, filesystem store, projection, renderable views. |
 | `internal/task` | `feature` | Background task management, bash and agent task execution, output storage. |
-| `internal/todo` | `feature` | Agent to-do list state and background tracker service (lifted from `task/tracker`). |
+| `internal/todo` | `feature` | Agent plan state and background-task projection. |
 | `internal/subagent` | `feature` | Subagent registry, loading, matching, execution, storage, progress tools. |
 | `internal/cron` | `feature` | Cron definitions, storage, service, loop. |
 
@@ -54,17 +55,19 @@ Extension surfaces:
 | `internal/mcp` | `feature` | MCP config, client, registry, caller, hook integration. |
 | `internal/mcp/transport` | `feature` | MCP transport implementations. |
 | `internal/hook` | `feature` | Hook registry, matcher, engine, executors, store. |
+| `internal/permission` | `feature` | Permission modes, rule/Bash matching, suggestions, and bypass-immune safety policy. |
 
 Configuration and supporting capabilities:
 
 | Path | Layer | Responsibility |
 | --- | --- | --- |
-| `internal/setting` | `feature` | Settings loading, merge, permissions, operation mode, workdir, env. |
+| `internal/setting` | `feature` | Settings loading, merge, persistence, workdir, env, and adapters to permission policy. |
 | `internal/persona` | `feature` | Persona registry (system-prompt parts, skills, settings overlay), template, paths. |
 | `internal/search` | `feature` | Search provider implementations and factory. |
 | `internal/inspector` | `feature` | Transcript inspector server, replay, stream, embedded UI. |
 | `internal/worktree` | `feature` | Worktree operations and hook integration. |
 | `internal/reminder` | `feature` | Runtime reminder queue and provider integration. |
+| `internal/selflearn` | `feature` | Background review cadence, restricted review fork, and learned memory/skill writes. |
 | `internal/image` | `feature` | Image handling + `core.Image` adapter; provisional — see note in `dependency-rules.md`. |
 
 ## Infrastructure Helpers
@@ -76,6 +79,7 @@ Configuration and supporting capabilities:
 | `internal/filecache` | `infrastructure` | File restore/cache helpers. |
 | `internal/markdown` | `infrastructure` | Markdown frontmatter parsing. |
 | `internal/proc` | `infrastructure` | Cross-platform process-group / signal helpers (Unix/Windows variants). |
+| `internal/confdir` | `infrastructure` | User/project configuration directory resolution and path encoding helpers. |
 
 ## Ownership Rule
 

@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"github.com/genai-io/san/internal/core/system"
-	"github.com/genai-io/san/internal/skill"
-	"github.com/genai-io/san/internal/todo"
 	"github.com/genai-io/san/internal/tool"
 )
 
@@ -21,14 +19,15 @@ func (e *Executor) buildBrief(config *AgentConfig, permMode PermissionMode) syst
 	// Preloaded skills are static configuration on AgentConfig.Skills. We
 	// inline their bodies into CustomPrompt so they sit in the identity slot
 	// — they are part of "who this agent is", not a runtime invocation.
-	if len(config.Skills) > 0 && skill.DefaultIfInit() != nil {
+	skills := e.skills
+	if len(config.Skills) > 0 && skills != nil {
 		var sb strings.Builder
 		if custom != "" {
 			sb.WriteString(custom)
 			sb.WriteString("\n\n")
 		}
 		for _, name := range config.Skills {
-			body := skill.Default().GetSkillInvocationPrompt(name)
+			body := skills.GetSkillInvocationPrompt(name)
 			if body != "" {
 				sb.WriteString(body)
 				sb.WriteString("\n\n")
@@ -64,6 +63,14 @@ var toolProgressParams = map[string]string{
 
 // formatToolProgress creates a progress message for a tool call in ToolName(args) format.
 func formatToolProgress(toolName string, params map[string]any) string {
+	return formatToolProgressWithPlan(nil, toolName, params)
+}
+
+func (e *Executor) formatToolProgress(toolName string, params map[string]any) string {
+	return formatToolProgressWithPlan(e.plan, toolName, params)
+}
+
+func formatToolProgressWithPlan(plan PlanLookup, toolName string, params map[string]any) string {
 	if toolName == "Agent" {
 		if label := formatAgentProgress(params); label != "" {
 			return label
@@ -72,7 +79,7 @@ func formatToolProgress(toolName string, params map[string]any) string {
 	}
 
 	// Task tools: show "TaskXxx(#id subject)" by looking up subject from store
-	if label := formatTaskToolProgress(toolName, params); label != "" {
+	if label := formatTaskToolProgress(plan, toolName, params); label != "" {
 		return label
 	}
 
@@ -94,7 +101,7 @@ func formatToolProgress(toolName string, params map[string]any) string {
 }
 
 // formatTaskToolProgress formats task tool calls with "#id subject" display.
-func formatTaskToolProgress(toolName string, params map[string]any) string {
+func formatTaskToolProgress(plan PlanLookup, toolName string, params map[string]any) string {
 	switch toolName {
 	case "TaskCreate":
 		subject, _ := params["subject"].(string)
@@ -112,8 +119,10 @@ func formatTaskToolProgress(toolName string, params map[string]any) string {
 			return ""
 		}
 		subject := ""
-		if t, ok := todo.Default().Get(taskID); ok {
-			subject = t.Subject
+		if plan != nil {
+			if t, ok := plan.Get(taskID); ok {
+				subject = t.Subject
+			}
 		}
 		if subject != "" {
 			if len(subject) > 40 {

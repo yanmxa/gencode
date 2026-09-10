@@ -4,26 +4,19 @@ import (
 	"github.com/genai-io/san/internal/core"
 )
 
-// ConvertToEntries turns the conversation view-model into transcript entries.
-// Notices are display-only and dropped; the rest convert to wire Messages and
-// share messagesToEntries with every other writer, so the stable IDs stamped at
-// conv.Append time survive (the append-only save path dedupes by them).
-func ConvertToEntries(messages []core.ChatMessage) []Entry {
+// ConvertToEntries turns domain messages into transcript entries. Display-only
+// notices are dropped; stable IDs survive so the append-only store can dedupe.
+func ConvertToEntries(messages []core.Message) []Entry {
 	msgs := make([]core.Message, 0, len(messages))
 	for _, msg := range messages {
 		if msg.Role == core.RoleNotice {
 			continue
 		}
-		msgs = append(msgs, msg.ToMessage())
+		msgs = append(msgs, msg)
 	}
 	return messagesToEntries(msgs)
 }
 
-func ConvertFromEntries(entries []Entry) []core.ChatMessage {
-	coreMsgs := EntriesToMessages(entries)
-	messages := make([]core.ChatMessage, 0, len(coreMsgs))
-	for _, m := range coreMsgs {
-		messages = append(messages, m.ToChat())
-	}
-	return messages
+func ConvertFromEntries(entries []Entry) []core.Message {
+	return EntriesToMessages(entries)
 }

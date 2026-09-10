@@ -146,6 +146,12 @@ func applyAgentEvent(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 			return nil
 		}
 		return rt.OnAgentMessage(msg)
+	case core.OnAppend:
+		msg, ok := ev.Message()
+		if ok {
+			m.ApplyAgentAppend(msg)
+		}
+		return nil
 	case core.PreInfer:
 		return applyPreInfer(rt, m)
 	case core.OnChunk:
@@ -173,7 +179,7 @@ func applyPreInfer(rt Runtime, m *Model) tea.Cmd {
 	m.Stream.Active = true
 	m.Stream.BuildingTool = ""
 	commitCmds := rt.CommitMessages()
-	m.Append(core.ChatMessage{Role: core.RoleAssistant, Content: ""})
+	m.Append(ChatMessage{Role: core.RoleAssistant, Content: ""})
 	cmds := append(commitCmds, m.Spinner.Tick)
 	return tea.Batch(cmds...)
 }
@@ -265,7 +271,8 @@ func applyPostTool(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 		}
 	}
 	result := rt.OnToolResult(tr)
-	m.Append(core.ChatMessage{
+	m.Append(ChatMessage{
+		ID:         m.takeToolMessageID(tr.ToolCallID),
 		Role:       core.RoleUser,
 		ToolResult: result,
 	})

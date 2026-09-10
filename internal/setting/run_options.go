@@ -1,4 +1,4 @@
-// Package options defines configuration types shared across app and tui packages.
+// RunOptions defines startup configuration shared by the CLI and app shell.
 package setting
 
 // RunOptions contains all options for running the application.

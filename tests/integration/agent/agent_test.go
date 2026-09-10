@@ -12,6 +12,7 @@ import (
 	"github.com/genai-io/san/internal/core"
 	"github.com/genai-io/san/internal/hook"
 	"github.com/genai-io/san/internal/llm"
+	permissionpolicy "github.com/genai-io/san/internal/permission"
 	"github.com/genai-io/san/internal/setting"
 	"github.com/genai-io/san/internal/subagent"
 	"github.com/genai-io/san/internal/task"
@@ -141,7 +142,7 @@ func TestAgent_ModelResolution(t *testing.T) {
 func TestAgent_ExploreMode_BlocksWrites(t *testing.T) {
 	writeTools := []string{"Write", "Edit", "NotebookEdit", "Bash"}
 	for _, tool := range writeTools {
-		decision := setting.ModeDefault(tool, setting.ModeReadOnly).Behavior
+		decision := permissionpolicy.ModeDefault(tool, setting.ModeReadOnly).Behavior
 		if decision != perm.Reject {
 			t.Errorf("tool %q: expected Reject in explore mode, got %v", tool, decision)
 		}
@@ -149,7 +150,7 @@ func TestAgent_ExploreMode_BlocksWrites(t *testing.T) {
 
 	readTools := []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"}
 	for _, tool := range readTools {
-		decision := setting.ModeDefault(tool, setting.ModeReadOnly).Behavior
+		decision := permissionpolicy.ModeDefault(tool, setting.ModeReadOnly).Behavior
 		if decision != perm.Permit {
 			t.Errorf("tool %q: expected Permit in explore mode, got %v", tool, decision)
 		}
@@ -269,7 +270,7 @@ func TestAgent_SubagentHooks_Fire(t *testing.T) {
 
 func TestAgent_BackgroundExecution(t *testing.T) {
 	task.Initialize(task.Options{})
-	t.Cleanup(task.ResetDefaultTracker)
+	t.Cleanup(task.ResetDefaultManager)
 
 	mp := &testutil.MockProvider{
 		Responses: []llm.CompletionResponse{

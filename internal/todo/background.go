@@ -19,8 +19,14 @@ type BackgroundTaskLaunch struct {
 	Description string
 }
 
-// TrackWorker creates or updates a tracker entry for a running background task.
-func TrackWorker(svc Service, launch BackgroundTaskLaunch) {
+type workerStore interface {
+	Create(subject, description, activeForm string, metadata map[string]any) *Task
+	FindByMetadata(key, want string) *Task
+	Update(id string, opts ...UpdateOption) error
+}
+
+// TrackWorker creates or updates a plan entry for a running background task.
+func TrackWorker(svc workerStore, launch BackgroundTaskLaunch) {
 	if existing := svc.FindByMetadata(metaTaskID, launch.TaskID); existing != nil {
 		_ = svc.Update(existing.ID,
 			WithSubject(workerSubject(launch)),
@@ -50,8 +56,8 @@ func TrackWorker(svc Service, launch BackgroundTaskLaunch) {
 	_ = svc.Update(entry.ID, opts...)
 }
 
-// CompleteWorker marks a tracker entry as completed.
-func CompleteWorker(svc Service, info task.TaskInfo) {
+// CompleteWorker marks a plan entry as completed.
+func CompleteWorker(svc workerStore, info task.TaskInfo) {
 	entry := svc.FindByMetadata(metaTaskID, info.ID)
 	if entry == nil {
 		return

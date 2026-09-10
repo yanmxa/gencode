@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/genai-io/san/internal/app/conv"
 	"github.com/genai-io/san/internal/app/kit"
 	"github.com/genai-io/san/internal/confdir"
 	"github.com/genai-io/san/internal/core"
@@ -253,7 +254,7 @@ func handleMemorySelected(deps OverlayDeps, state *MemoryState, msg memorySelect
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		if err := CreateMemoryFile(filePath, msg.Level, deps.Cwd); err != nil {
-			deps.Conv.Append(core.ChatMessage{
+			deps.Conv.Append(conv.ChatMessage{
 				Role:    core.RoleNotice,
 				Content: fmt.Sprintf("Error: %v", err),
 			})
@@ -265,7 +266,7 @@ func handleMemorySelected(deps OverlayDeps, state *MemoryState, msg memorySelect
 
 	displayPath := FormatMemoryDisplayPath(filePath, msg.Level, deps.Cwd)
 
-	deps.Conv.Append(core.ChatMessage{
+	deps.Conv.Append(conv.ChatMessage{
 		Role:    core.RoleNotice,
 		Content: fmt.Sprintf("Opening %s memory: %s", msg.Level, displayPath),
 	})
@@ -289,7 +290,7 @@ func handleMemoryEditorFinished(deps OverlayDeps, state *MemoryState, msg Memory
 		deps.FireFileChanged(filePath, "memory_editor")
 	}
 
-	deps.Conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: content})
+	deps.Conv.Append(conv.ChatMessage{Role: core.RoleNotice, Content: content})
 	return tea.Batch(deps.CommitMessages()...)
 }
 

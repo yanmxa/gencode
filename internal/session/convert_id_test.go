@@ -6,11 +6,11 @@ import (
 	"github.com/genai-io/san/internal/core"
 )
 
-// P1 regression: ConvertToEntries must preserve the ChatMessage.ID across
+// P1 regression: ConvertToEntries must preserve the Message.ID across
 // successive calls. Without this, every save assigns a fresh UUID and the
 // append-only persistence path duplicates the entire history each turn.
 func Test_ConvertToEntries_preservesChatMessageID(t *testing.T) {
-	msgs := []core.ChatMessage{
+	msgs := []core.Message{
 		{ID: "fixed-1", Role: core.RoleUser, Content: "hello"},
 		{ID: "fixed-2", Role: core.RoleAssistant, Content: "hi"},
 	}
@@ -31,10 +31,10 @@ func Test_ConvertToEntries_preservesChatMessageID(t *testing.T) {
 	}
 }
 
-// ChatMessages without an ID still get a fresh UUID (back-compat for any
-// path that constructs ChatMessage without going through conv.Append).
+// Messages without an ID still get a fresh UUID for compatibility with older
+// callers that assembled transcript input directly.
 func Test_ConvertToEntries_fallsBackWhenIDMissing(t *testing.T) {
-	msgs := []core.ChatMessage{{Role: core.RoleUser, Content: "hello"}}
+	msgs := []core.Message{{Role: core.RoleUser, Content: "hello"}}
 	entries := ConvertToEntries(msgs)
 	if len(entries) != 1 || entries[0].UUID == "" {
 		t.Fatalf("expected fallback UUID, got %+v", entries)

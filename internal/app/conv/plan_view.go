@@ -13,14 +13,14 @@ import (
 
 const maxVisibleTasks = 8
 
-// trackerPulseTicks is the number of spinner frames per ●/◌ swap of an
+// planPulseTicks is the number of spinner frames per ●/◌ swap of an
 // in-progress task. At ~360ms per frame this gives a ~1.1s breathe — calmer
 // than the agent icon's faster blink (cf. agentBlinkTicks in tool_render.go),
-// suiting the tracker's quieter role.
-const trackerPulseTicks = 3
+// suiting the plan's quieter role.
+const planPulseTicks = 3
 
-// TrackerListParams holds the parameters for rendering a tracker list.
-type TrackerListParams struct {
+// PlanListParams holds the parameters for rendering a plan task list.
+type PlanListParams struct {
 	Tasks        []*todo.Task
 	AllDone      bool
 	StreamActive bool
@@ -28,13 +28,13 @@ type TrackerListParams struct {
 	SpinnerView  string
 	Blockers     func(taskID string) []string
 	// Blink is the shared frame-tick counter (see FrameClock.Frame) that
-	// drives the in-progress pulse via trackerPulseTicks.
+	// drives the in-progress pulse via planPulseTicks.
 	Blink int
 }
 
-// RenderTrackerList renders a compact task list above the input area.
+// RenderPlanList renders a compact plan task list above the input area.
 // Returns empty string when there are no tasks or all are completed and idle.
-func RenderTrackerList(params TrackerListParams) string {
+func RenderPlanList(params PlanListParams) string {
 	if len(params.Tasks) == 0 {
 		return ""
 	}
@@ -97,7 +97,7 @@ func renderTask(t *todo.Task, width, idWidth int, blockers func(string) []string
 			failedStyle := lipgloss.NewStyle().Foreground(kit.CurrentTheme.Error)
 			return renderTaskLine(indent, failedStyle.Render("!"), idTag, subject, mutedStyle.Render("["+statusDetail+"]"))
 		}
-		return renderTaskLine(indent, trackerCompletedStyle.Render("●"), idTag, subject, "")
+		return renderTaskLine(indent, planCompletedStyle.Render("●"), idTag, subject, "")
 
 	case todo.StatusInProgress:
 		displayText := subject
@@ -108,8 +108,8 @@ func renderTask(t *todo.Task, width, idWidth int, blockers func(string) []string
 		// rather than the wall clock, which only sampled on redraws and so
 		// flickered irregularly.
 		activeIcon := "●"
-		activeStyle := trackerInProgressStyle
-		if (blink/trackerPulseTicks)%2 == 1 {
+		activeStyle := planInProgressStyle
+		if (blink/planPulseTicks)%2 == 1 {
 			activeIcon = "◌"
 			activeStyle = mutedStyle
 		}
@@ -131,7 +131,7 @@ func renderTask(t *todo.Task, width, idWidth int, blockers func(string) []string
 				detail = blockedStyle.Render("← " + strings.Join(blockerRefs, ", "))
 			}
 		}
-		return renderTaskLine(indent, trackerPendingStyle.Render("○"), idTag, subject, detail)
+		return renderTaskLine(indent, planPendingStyle.Render("○"), idTag, subject, detail)
 	}
 }
 

@@ -188,11 +188,10 @@ func marshalPermInput(args map[string]any) json.RawMessage {
 // ============================================================
 
 // ensureAgentSession lazily starts the agent goroutine, preloading the
-// existing conversation. If pendingSend is non-empty and matches the
-// trailing user message in m.conv, it's dropped from the preload — the
-// caller is about to re-deliver it via sendToAgent and we'd otherwise see
-// the input twice. Pass "" when the caller hasn't yet appended the message.
-func (m *model) ensureAgentSession(pendingSend string) (tea.Cmd, error) {
+// existing conversation. If pendingMessageID matches the trailing user
+// message in m.conv, that exact message is dropped from the preload because
+// the caller is about to deliver it through the inbox.
+func (m *model) ensureAgentSession(pendingMessageID string) (tea.Cmd, error) {
 	if m.services.Agent.Active() {
 		return nil, nil
 	}
@@ -204,9 +203,9 @@ func (m *model) ensureAgentSession(pendingSend string) (tea.Cmd, error) {
 		for _, msg := range m.conv.ConvertToProvider() {
 			coreMessages = append(coreMessages, msg)
 		}
-		if pendingSend != "" && len(coreMessages) > 0 {
+		if pendingMessageID != "" && len(coreMessages) > 0 {
 			last := coreMessages[len(coreMessages)-1]
-			if last.Role == core.RoleUser && last.Content == pendingSend {
+			if last.Role == core.RoleUser && last.ID == pendingMessageID {
 				coreMessages = coreMessages[:len(coreMessages)-1]
 			}
 		}
@@ -218,9 +217,9 @@ func (m *model) ensureAgentSession(pendingSend string) (tea.Cmd, error) {
 
 	// Wire L1 self-learning *after* Agent.Start so the ReviewFunc can capture
 	// the live Agent + System for its fork. Builds nothing if both arms are
-	// off (§3.1 zero-overhead guarantee). pendingSend is forwarded so the
+	// off (§3.1 zero-overhead guarantee). pendingMessageID is forwarded so the
 	// reviewer's cadence seed skips the in-flight user turn.
-	m.wireSelfLearn(params, pendingSend)
+	m.wireSelfLearn(params, pendingMessageID)
 
 	cmds := []tea.Cmd{
 		conv.DrainAgentOutbox(m.services.Agent.Outbox()),
@@ -232,17 +231,18 @@ func (m *model) ensureAgentSession(pendingSend string) (tea.Cmd, error) {
 	return tea.Batch(cmds...), nil
 }
 
-func (m *model) sendToAgent(content string, images []core.Image) tea.Cmd {
+func (m *model) sendToAgent(msg core.Message) tea.Cmd {
 	if !m.services.Agent.Active() {
 		return nil
 	}
 	svc := m.services.Agent
-	content = m.attachPendingReminders(content)
+	msg.Content = m.attachPendingReminders(msg.Content)
 	return func() tea.Msg {
-		svc.Send(content, images)
-		return nil
+		return agentSendResultMsg{err: svc.Send(m.Context(), msg)}
 	}
 }
+
+type agentSendResultMsg struct{ err error }
 
 // attachPendingReminders drains the reminder queue and appends any pending
 // <system-reminder> blocks to the user message content. The harness uses this
@@ -377,7 +377,7 @@ func permDetail(req *perm.PermissionRequest) json.RawMessage {
 func (m *model) preparePermissionRequest(req *conv.PermBridgeRequest) *perm.PermissionRequest {
 	if resolved, ok := tool.Get(req.ToolName); ok {
 		if pat, ok := resolved.(tool.PermissionAwareTool); ok {
-			if rich, err := pat.PreparePermission(context.Background(), req.Input, m.env.CWD); err == nil && rich != nil {
+			if rich, err := pat.PreparePermission(m.Context(), req.Input, m.env.CWD); err == nil && rich != nil {
 				return rich
 			}
 		}
@@ -394,7 +394,18 @@ func (m *model) ReconfigureAgentTool() {
 	}
 	m.ensureMemoryContextLoaded()
 
-	executor := subagent.NewExecutor(m.env.LLMProvider, m.env.CWD, m.env.GetModelID(), m.services.Hook)
+	executor := subagent.NewExecutorWithDependencies(
+		m.env.LLMProvider,
+		m.env.CWD,
+		m.env.GetModelID(),
+		m.services.Hook,
+		subagent.ExecutorDependencies{
+			Agents:          m.services.Subagent,
+			BackgroundTasks: m.services.BackgroundTasks,
+			Plan:            m.services.Plan,
+			Skills:          m.services.Skill,
+		},
+	)
 	executor.SetResolver(llm.NewProviderPool(m.services.LLM.Store()))
 	if m.services.Session.GetStore() != nil && m.services.Session.ID() != "" {
 		executor.SetSessionStore(m.services.Session.GetStore(), m.services.Session.ID())

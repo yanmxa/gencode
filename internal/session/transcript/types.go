@@ -34,17 +34,18 @@ type State struct {
 	Tag        string
 	Mode       string
 
-	Tasks    []TrackerTaskView
+	Tasks    []PlanTaskView
 	Worktree *WorktreeState
 }
 
-type TrackerTaskView struct {
+type PlanTaskView struct {
 	ID              string
 	Subject         string
 	Description     string
 	ActiveForm      string
 	Status          string
 	Owner           string
+	Metadata        map[string]any
 	Blocks          []string
 	BlockedBy       []string
 	CreatedAt       time.Time

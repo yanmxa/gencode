@@ -5,11 +5,11 @@
 package app
 
 import (
-	"context"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/genai-io/san/internal/app/conv"
 	"github.com/genai-io/san/internal/app/input"
 	"github.com/genai-io/san/internal/core"
 	"github.com/genai-io/san/internal/llm"
@@ -70,7 +70,7 @@ func (m *model) dispatchSubmission(raw string) tea.Cmd {
 		return cmd
 	}
 
-	if blocked, reason := m.checkPromptHook(context.Background(), raw); blocked {
+	if blocked, reason := m.checkPromptHook(m.Context(), raw); blocked {
 		m.conv.AddNotice("Prompt blocked: " + reason)
 		m.userInput.Reset()
 		return tea.Batch(m.CommitMessages()...)
@@ -91,9 +91,9 @@ func (m *model) dispatchSubmission(raw string) tea.Cmd {
 	if m.imagesBlockedForModel(msg.Images) {
 		return tea.Batch(m.CommitMessages()...)
 	}
-	m.conv.Append(msg)
+	msg = m.conv.Append(msg)
 	m.userInput.Reset()
-	return m.SubmitToAgent(msg.Content, msg.Images)
+	return m.SubmitToAgent(msg.ToMessage())
 }
 
 // runSlashCommandIfMatched returns (cmd, true) if `raw` is a slash command
@@ -107,18 +107,18 @@ func (m *model) runSlashCommandIfMatched(raw string) (tea.Cmd, bool) {
 // buildUserMessage resolves image references in raw text into a ChatMessage
 // ready to append. Returns ok=false if image resolution failed (in which
 // case a notice has already been appended to conv).
-func (m *model) buildUserMessage(raw string) (core.ChatMessage, bool) {
+func (m *model) buildUserMessage(raw string) (conv.ChatMessage, bool) {
 	content, fileImages, err := input.ProcessImageRefs(m.env.CWD, raw)
 	if err != nil {
 		m.conv.AddNotice("Image error: " + err.Error())
-		return core.ChatMessage{}, false
+		return conv.ChatMessage{}, false
 	}
 	displayContent := content
 	content, inlineImages := m.userInput.ExtractInlineImages(content)
 	allImages := make([]core.Image, 0, len(inlineImages)+len(fileImages))
 	allImages = append(allImages, inlineImages...)
 	allImages = append(allImages, fileImages...)
-	return core.ChatMessage{
+	return conv.ChatMessage{
 		Role:           core.RoleUser,
 		Content:        content,
 		DisplayContent: displayContent,
@@ -155,24 +155,27 @@ func (m *model) drainInputQueueAfterCancel() tea.Cmd {
 // SubmitToAgent is the single exit point for "send this content to the
 // agent" — user Enter, slash command output, skill button, cron fire,
 // hook continuation, hub notification. Ensures the agent session is up,
-// pushes content+images onto its inbox, returns the outbox-poll cmd.
+// pushes the already-identified message onto its inbox, returns the outbox-poll cmd.
 // On no-provider or ensureAgentSession failure, posts a notice and
 // returns a commit cmd (the agent is not contacted).
-func (m *model) SubmitToAgent(content string, images []core.Image) tea.Cmd {
-	log.QueueLog("SubmitToAgent: %q", truncate(content, 60))
+func (m *model) SubmitToAgent(msg core.Message) tea.Cmd {
+	if msg.ID == "" {
+		msg.ID = core.NewMessageID()
+	}
+	log.QueueLog("SubmitToAgent: %q", truncate(msg.Content, 60))
 	if m.env.LLMProvider == nil {
 		return m.notifyNoProvider()
 	}
 
-	startCmd, err := m.ensureAgentSession(content)
+	startCmd, err := m.ensureAgentSession(msg.ID)
 	if err != nil {
 		m.conv.AddNotice("Failed to start agent: " + err.Error())
 		return tea.Batch(m.CommitMessages()...)
 	}
 
-	m.env.DetectThinkingKeywords(content)
+	m.env.DetectThinkingKeywords(msg.Content)
 
-	sendCmd := m.sendToAgent(content, images)
+	sendCmd := m.sendToAgent(msg)
 	if startCmd != nil {
 		return tea.Batch(startCmd, sendCmd)
 	}
@@ -195,9 +198,9 @@ func (m *model) HandleSkillInvocation() tea.Cmd {
 	if m.env.LLMProvider == nil {
 		return m.notifyNoProvider()
 	}
-	m.conv.Append(core.ChatMessage{Role: core.RoleUser, Content: fullMsg, DisplayContent: displayMsg})
+	msg := m.conv.Append(conv.ChatMessage{Role: core.RoleUser, Content: fullMsg, DisplayContent: displayMsg})
 	if pluginRoot != "" {
 		m.services.Agent.SetPluginRoot(pluginRoot)
 	}
-	return m.SubmitToAgent(fullMsg, nil)
+	return m.SubmitToAgent(msg.ToMessage())
 }

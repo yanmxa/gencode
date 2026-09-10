@@ -5,15 +5,18 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 )
 
 // Manager tracks background bash and subagent tasks.
 type Manager struct {
-	mu    sync.RWMutex
-	tasks map[string]BackgroundTask
+	mu        sync.RWMutex
+	tasks     map[string]BackgroundTask
+	outputDir string
 }
 
 // NewManager creates a new *Manager.
@@ -29,12 +32,46 @@ func (m *Manager) CreateBashTask(cmd *exec.Cmd, command, description string, ctx
 	defer m.mu.Unlock()
 
 	id := generateID()
-	task := NewBashTask(id, command, description, cmd, ctx, cancel)
+	outputFile := m.outputPathLocked(id)
+	task := newBashTask(id, command, description, cmd, ctx, cancel, outputFile)
 
 	m.tasks[id] = task
 	notifyTaskCreated(task.GetStatus())
 
 	return task
+}
+
+// CreateAgentTask creates and registers an agent-backed background task using
+// this manager's output store.
+func (m *Manager) CreateAgentTask(id, agentName, description string, ctx context.Context, cancel context.CancelFunc) *AgentTask {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	task := newAgentTask(id, agentName, description, ctx, cancel, m.outputPathLocked(id))
+	m.tasks[id] = task
+	notifyTaskCreated(task.GetStatus())
+	return task
+}
+
+// SetOutputDir changes only this manager's output store. Multiple managers can
+// therefore coexist without redirecting one another's task logs.
+func (m *Manager) SetOutputDir(dir string) error {
+	if dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	m.mu.Lock()
+	m.outputDir = dir
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *Manager) outputPathLocked(taskID string) string {
+	if m.outputDir == "" || taskID == "" {
+		return ""
+	}
+	return filepath.Join(m.outputDir, taskID+".log")
 }
 
 // RegisterTask registers an existing task (used for agent tasks)

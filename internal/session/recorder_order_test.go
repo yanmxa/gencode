@@ -98,10 +98,7 @@ func TestRecorderWritesMessageBeforeInference(t *testing.T) {
 }
 
 // When the recorder writes message.appended via OnAppend, a follow-up
-// Store.Save on the TUI path (OmitMessageWrites=true) must NOT add a second
-// copy of the same message under a different ID. Without this guard the
-// JSONL would balloon by ~2× and the active chain projection would see
-// duplicate messages.
+// Store.Save on the TUI path must reuse the same IDs and remain idempotent.
 func TestRecorderAndSaveDoNotDoubleWrite(t *testing.T) {
 	dir := t.TempDir()
 	store, err := NewStoreWithDir(dir)
@@ -127,15 +124,13 @@ func TestRecorderAndSaveDoNotDoubleWrite(t *testing.T) {
 		ID: "agent-m2", Role: core.RoleAssistant, Content: "hello",
 	}})
 
-	// TUI then calls Save with its own ChatMessage IDs. Without OmitMessageWrites,
-	// these would each spawn a second message.appended record.
+	// TUI then calls Save with the canonical IDs propagated from OnAppend.
 	snap := &Snapshot{
 		Metadata: SessionMetadata{ID: "sess-dup", Cwd: dir},
 		Entries: []Entry{
-			{UUID: "tui-m1", Type: EntryUser, Message: &EntryMessage{Role: "user", Content: []transcript.ContentBlock{{Type: "text", Text: "hi"}}}},
-			{UUID: "tui-m2", Type: EntryAssistant, Message: &EntryMessage{Role: "assistant", Content: []transcript.ContentBlock{{Type: "text", Text: "hello"}}}},
+			{UUID: "agent-m1", Type: EntryUser, Message: &EntryMessage{Role: "user", Content: []transcript.ContentBlock{{Type: "text", Text: "hi"}}}},
+			{UUID: "agent-m2", Type: EntryAssistant, Message: &EntryMessage{Role: "assistant", Content: []transcript.ContentBlock{{Type: "text", Text: "hello"}}}},
 		},
-		OmitMessageWrites: true,
 	}
 	if err := store.Save(snap); err != nil {
 		t.Fatalf("Save: %v", err)

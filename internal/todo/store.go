@@ -59,23 +59,32 @@ func (s *Store) SetStorageDir(dir string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	previousDir := s.storageDir
 	s.storageDir = dir
 	if dir == "" {
 		return nil
 	}
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
+		s.storageDir = previousDir
 		return fmt.Errorf("failed to create task storage dir: %w", err)
 	}
 
 	// Create lock file
 	lockPath := filepath.Join(dir, ".lock")
 	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
-		os.WriteFile(lockPath, nil, 0o644)
+		if err := os.WriteFile(lockPath, nil, 0o644); err != nil {
+			s.storageDir = previousDir
+			return fmt.Errorf("failed to create task storage lock: %w", err)
+		}
 	}
 
 	// Load existing tasks from disk
-	return s.loadFromDisk()
+	if err := s.loadFromDisk(); err != nil {
+		s.storageDir = previousDir
+		return err
+	}
+	return nil
 }
 
 // loadFromDisk reads all {id}.json files from storageDir into memory.
@@ -123,18 +132,18 @@ func (s *Store) persistTask(task *Task) {
 	}
 	data, err := json.MarshalIndent(task, "", "  ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "tracker: failed to marshal task %s: %v\n", task.ID, err)
+		fmt.Fprintf(os.Stderr, "todo: failed to marshal task %s: %v\n", task.ID, err)
 		return
 	}
 	path := filepath.Join(s.storageDir, task.ID+".json")
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "tracker: failed to write task %s: %v\n", task.ID, err)
+		fmt.Fprintf(os.Stderr, "todo: failed to write task %s: %v\n", task.ID, err)
 		return
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		os.Remove(tmp)
-		fmt.Fprintf(os.Stderr, "tracker: failed to rename task %s: %v\n", task.ID, err)
+		fmt.Fprintf(os.Stderr, "todo: failed to rename task %s: %v\n", task.ID, err)
 	}
 }
 

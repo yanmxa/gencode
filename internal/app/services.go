@@ -23,26 +23,26 @@ import (
 	"github.com/genai-io/san/internal/tool"
 )
 
-// services holds references to domain service singletons, injected into
-// model at construction time. Model methods access services through this
-// struct instead of calling Default() package-level accessors directly.
+// services is the explicit runtime graph consumed by model. Compatibility
+// singletons are resolved once at the composition boundary; model methods and
+// subagent executors receive concrete references instead of looking them up.
 type services struct {
-	Setting  *setting.Settings
-	LLM      *llm.Conn
-	Tool     *tool.Registry
-	Hook     *hook.Engine
-	Session  *session.Setup
-	Skill    *skill.Registry
-	Subagent *subagent.Registry
-	Command  *command.Registry
-	Task     *task.Manager
-	Tracker  todo.Service
-	Cron     *cron.Scheduler
-	MCP      *mcp.Registry
-	Plugin   *plugin.Registry
-	Agent    *agent.Session
-	Persona  *persona.Registry
-	Reminder *reminder.Service
+	Setting         *setting.Settings
+	LLM             *llm.Conn
+	Tool            *tool.Registry
+	Hook            *hook.Engine
+	Session         *session.Setup
+	Skill           *skill.Registry
+	Subagent        *subagent.Registry
+	Command         *command.Registry
+	BackgroundTasks *task.Manager
+	Plan            *todo.Store
+	Cron            *cron.Scheduler
+	MCP             *mcp.Registry
+	Plugin          *plugin.Registry
+	Agent           *agent.Session
+	Persona         *persona.Registry
+	Reminder        *reminder.Service
 
 	// SelfLearn groups the L1 self-learning state: the live per-session
 	// reviewer (nil when no arm is enabled — §3.1 zero-overhead guarantee)
@@ -87,24 +87,24 @@ type selfLearnSession struct {
 	live *atomic.Bool
 }
 
-func newServices() services {
+func servicesFromDefaults() services {
 	return services{
-		Setting:   setting.Default(),
-		LLM:       llm.Default(),
-		Tool:      tool.Default(),
-		Hook:      hook.DefaultEngine(),
-		Session:   session.Default(),
-		Skill:     skill.Default(),
-		Subagent:  subagent.Default(),
-		Command:   command.Default(),
-		Task:      task.Default(),
-		Tracker:   todo.Default(),
-		Cron:      cron.Default(),
-		MCP:       mcp.DefaultRegistry(),
-		Plugin:    plugin.Default(),
-		Agent:     agent.Default(),
-		Persona:   persona.Default(),
-		Reminder:  reminder.NewService(),
-		SelfLearn: SelfLearnServices{Indicator: NewSelfLearnIndicator()},
+		Setting:         setting.Default(),
+		LLM:             llm.Default(),
+		Tool:            tool.Default(),
+		Hook:            hook.DefaultEngine(),
+		Session:         session.Default(),
+		Skill:           skill.Default(),
+		Subagent:        subagent.Default(),
+		Command:         command.Default(),
+		BackgroundTasks: task.Default(),
+		Plan:            todo.Default(),
+		Cron:            cron.Default(),
+		MCP:             mcp.DefaultRegistry(),
+		Plugin:          plugin.Default(),
+		Agent:           agent.Default(),
+		Persona:         persona.Default(),
+		Reminder:        reminder.NewService(),
+		SelfLearn:       SelfLearnServices{Indicator: NewSelfLearnIndicator()},
 	}
 }

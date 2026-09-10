@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
-
-	"github.com/genai-io/san/internal/todo"
 )
 
 func TestProjectStartAndAppendMessages(t *testing.T) {
@@ -65,10 +63,10 @@ func TestProjectStatePatchLastWins(t *testing.T) {
 
 func TestProjectTasksAndWorktreePatches(t *testing.T) {
 	taskTime := time.Date(2026, 4, 6, 14, 10, 0, 0, time.UTC)
-	task := todo.Task{
+	task := PlanTaskView{
 		ID:              "1",
 		Subject:         "Refactor",
-		Status:          todo.StatusInProgress,
+		Status:          "in_progress",
 		CreatedAt:       taskTime,
 		UpdatedAt:       taskTime,
 		StatusChangedAt: taskTime,
@@ -76,7 +74,7 @@ func TestProjectTasksAndWorktreePatches(t *testing.T) {
 	wt := &WorktreeState{OriginalCwd: "/repo", WorktreePath: "/repo/.wt/1", WorktreeName: "fix-1"}
 	transcript, err := Project([]Record{
 		{SessionID: "tx-1", Time: time.Now(), Type: SessionStarted},
-		{SessionID: "tx-1", Time: time.Now(), Type: SessionStatePatched, State: &StateRecord{Ops: []PatchOp{PatchTasks([]todo.Task{task}), PatchWorktree(wt)}}},
+		{SessionID: "tx-1", Time: time.Now(), Type: SessionStatePatched, State: &StateRecord{Ops: []PatchOp{PatchTasks([]PlanTaskView{task}), PatchWorktree(wt)}}},
 	})
 	if err != nil {
 		t.Fatalf("Project(): %v", err)

@@ -7,18 +7,18 @@ import (
 	"sort"
 )
 
-// sha256Hex returns "sha256:" + lowercase hex of the SHA-256 sum of b.
+// SHA256Digest returns "sha256:" + lowercase hex of the SHA-256 sum of b.
 // The prefix makes algorithm choice explicit on the wire.
-func sha256Hex(b []byte) string {
+func SHA256Digest(b []byte) string {
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// toolsDigest canonicalizes a tool schema list (sort by Name, marshal each)
+// ToolsDigest canonicalizes a tool schema list (sort by Name, marshal each)
 // and returns its sha256. Stable across runs as long as schemas are stable.
-func toolsDigest(schemas []ToolSchema) string {
+func ToolsDigest(schemas []ToolSchema) string {
 	if len(schemas) == 0 {
-		return sha256Hex(nil)
+		return SHA256Digest(nil)
 	}
 	sorted := make([]ToolSchema, len(schemas))
 	copy(sorted, schemas)
@@ -35,12 +35,12 @@ func toolsDigest(schemas []ToolSchema) string {
 		}
 		b, _ = json.Marshal(names)
 	}
-	return sha256Hex(b)
+	return SHA256Digest(b)
 }
 
-// messageIDs extracts non-empty message IDs from the conversation snapshot,
+// MessageIDs extracts non-empty message IDs from the conversation snapshot,
 // in send order. Empty IDs (legacy data) are skipped rather than padded.
-func messageIDs(msgs []Message) []string {
+func MessageIDs(msgs []Message) []string {
 	out := make([]string, 0, len(msgs))
 	for _, m := range msgs {
 		if m.ID != "" {

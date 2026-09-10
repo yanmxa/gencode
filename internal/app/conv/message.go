@@ -88,14 +88,14 @@ var (
 	agentLabelStyle = lipgloss.NewStyle().
 			Foreground(kit.CurrentTheme.Success)
 
-	trackerPendingStyle = lipgloss.NewStyle().
+	planPendingStyle = lipgloss.NewStyle().
 				Foreground(kit.CurrentTheme.Muted)
 
-	trackerInProgressStyle = lipgloss.NewStyle().
+	planInProgressStyle = lipgloss.NewStyle().
 				Foreground(kit.CurrentTheme.Primary).
 				Bold(true)
 
-	trackerCompletedStyle = lipgloss.NewStyle().
+	planCompletedStyle = lipgloss.NewStyle().
 				Foreground(kit.CurrentTheme.Success)
 
 	PendingImageStyle = lipgloss.NewStyle().

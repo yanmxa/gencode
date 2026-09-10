@@ -11,7 +11,7 @@ import (
 
 func TestTaskOutputTool_StillRunning(t *testing.T) {
 	task.Initialize(task.Options{})
-	t.Cleanup(task.ResetDefaultTracker)
+	t.Cleanup(task.ResetDefaultManager)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -57,7 +57,7 @@ func TestTaskOutputTool_StillRunning(t *testing.T) {
 
 func TestTaskOutputTool_Completed(t *testing.T) {
 	task.Initialize(task.Options{})
-	t.Cleanup(task.ResetDefaultTracker)
+	t.Cleanup(task.ResetDefaultManager)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -105,7 +105,7 @@ func TestTaskOutputTool_Completed(t *testing.T) {
 
 func TestTaskOutputTool_NotFound(t *testing.T) {
 	task.Initialize(task.Options{})
-	t.Cleanup(task.ResetDefaultTracker)
+	t.Cleanup(task.ResetDefaultManager)
 
 	tool := &TaskOutputTool{}
 	result := tool.Execute(context.Background(), map[string]any{
@@ -124,7 +124,7 @@ func TestTaskOutputTool_NotFound(t *testing.T) {
 
 func TestTaskOutputTool_NonBlocking(t *testing.T) {
 	task.Initialize(task.Options{})
-	t.Cleanup(task.ResetDefaultTracker)
+	t.Cleanup(task.ResetDefaultManager)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -162,7 +162,7 @@ func TestTaskOutputTool_NonBlocking(t *testing.T) {
 
 func TestTaskOutputTool_DefaultsToNonBlocking(t *testing.T) {
 	task.Initialize(task.Options{})
-	t.Cleanup(task.ResetDefaultTracker)
+	t.Cleanup(task.ResetDefaultManager)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -195,7 +195,7 @@ func TestTaskOutputTool_DefaultsToNonBlocking(t *testing.T) {
 
 func TestTaskOutputTool_AllowsOlderRunningTaskInspection(t *testing.T) {
 	task.Initialize(task.Options{})
-	t.Cleanup(task.ResetDefaultTracker)
+	t.Cleanup(task.ResetDefaultManager)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

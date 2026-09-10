@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"time"
 )
 
 // Agent is the core abstraction — an autonomous entity that reasons and acts.
@@ -46,7 +45,7 @@ type Agent interface {
 	// The provided slice is shallow-copied; same mutation caveats as Messages().
 	SetMessages(msgs []Message)
 
-	// Append adds a message to the conversation and fires the OnMessage hook.
+	// Append adds a message to the conversation and emits OnAppend.
 	// This is the unified entry point for both paths:
 	//   Run path:   inbox → ingest (Append internally)
 	//   Direct path: caller → Append → ThinkAct
@@ -95,97 +94,6 @@ type Agent interface {
 	// closed and the interrupt is latched so the next iteration of the
 	// inner loop bails before starting an unwanted ThinkAct.
 	InterruptCurrentTurn() <-chan struct{}
-}
-
-// Config holds construction parameters for an agent.
-//
-// Required fields: LLM, System, Tools. NewAgent panics if any is nil.
-// Optional fields: ID, CWD, MaxSteps, InboxBuf, OutboxBuf, CompactFunc.
-//
-// Permission is a tool-layer concern — use tool.WithPermission to wrap Tools
-// before passing them to NewAgent. See docs/concepts/permission-model.md.
-type Config struct {
-	ID                      string
-	LLM                     LLM                                                       // required: inference backend
-	System                  System                                                    // required: system prompt layers
-	Tools                   Tools                                                     // required: available tools (wrap with tool.WithPermission for permission)
-	AgentType               string                                                    // optional: agent type identifier for hook events
-	CompactFunc             func(ctx context.Context, msgs []Message) (string, error) // optional: summarize messages for compaction
-	CWD                     string
-	MaxSteps                int           // max LLM inference steps per turn, 0 = unlimited
-	MaxOutputRecovery       int           // max retries on truncated output, 0 = use default (3)
-	MaxTurnRetries          int           // max retries per inference step on transient stream errors, 0 = use default (2)
-	StreamFirstChunkTimeout time.Duration // abort if no first chunk arrives within this long, 0 = use default (5m)
-	StreamIdleTimeout       time.Duration // abort a stream that goes silent between chunks for this long, 0 = use default (60s)
-	InboxBuf                int           // inbox channel buffer size, default 16
-	OutboxBuf               int           // outbox channel buffer size, default 64; -1 = no outbox (subagent path)
-	// OnEvent observes lifecycle events synchronously, even when OutboxBuf is -1.
-	OnEvent func(Event)
-}
-
-// NewAgent creates an agent from config.
-//
-// Panics if LLM, System, or Tools is nil — these are required capabilities.
-// Inbox is owned by the caller (caller closes when done sending).
-// Outbox is owned by the agent (closed when Run returns).
-func NewAgent(cfg Config) Agent {
-	if cfg.LLM == nil {
-		panic("core.NewAgent: LLM is required")
-	}
-	if cfg.System == nil {
-		panic("core.NewAgent: System is required")
-	}
-	if cfg.Tools == nil {
-		panic("core.NewAgent: Tools is required")
-	}
-	if cfg.InboxBuf <= 0 {
-		cfg.InboxBuf = 16
-	}
-	if cfg.OutboxBuf == 0 {
-		cfg.OutboxBuf = 64
-	}
-	if cfg.MaxTurnRetries <= 0 {
-		cfg.MaxTurnRetries = defaultMaxTurnRetries
-	}
-	if cfg.StreamFirstChunkTimeout <= 0 {
-		cfg.StreamFirstChunkTimeout = defaultFirstChunkTimeout
-	}
-	if cfg.StreamIdleTimeout <= 0 {
-		cfg.StreamIdleTimeout = defaultStreamIdleTimeout
-	}
-
-	var outbox chan Event
-	if cfg.OutboxBuf > 0 {
-		outbox = make(chan Event, cfg.OutboxBuf)
-	}
-
-	a := &agent{
-		id:                cfg.ID,
-		agentType:         cfg.AgentType,
-		system:            cfg.System,
-		tools:             cfg.Tools,
-		compactFunc:       cfg.CompactFunc,
-		llm:               cfg.LLM,
-		cwd:               cfg.CWD,
-		maxSteps:          cfg.MaxSteps,
-		maxOutputRecovery: cfg.MaxOutputRecovery,
-		maxTurnRetries:    cfg.MaxTurnRetries,
-		firstChunkTimeout: cfg.StreamFirstChunkTimeout,
-		idleTimeout:       cfg.StreamIdleTimeout,
-		inbox:             make(chan Message, cfg.InboxBuf),
-		outbox:            outbox,
-		onEvent:           cfg.OnEvent,
-	}
-	// Mirror system + tools mutations onto the event bus. Attach after
-	// construction so each registry replays its initial members back to the
-	// observer — the recorder sees a complete event chain from t0.
-	cfg.System.SetObserver(func(c SystemChange) {
-		a.emitTelemetry(SystemChangeEvent(a.id, c))
-	})
-	cfg.Tools.SetObserver(func(c ToolsChange) {
-		a.emitTelemetry(ToolsChangeEvent(a.id, c))
-	})
-	return a
 }
 
 // Result represents the outcome of one completed turn (end_turn).

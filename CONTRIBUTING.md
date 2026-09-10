@@ -40,7 +40,7 @@ tests/integration/ # Cross-package behavioral tests
 notes/             # Work-in-progress plans (not durable docs)
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for primitives and
+See [`docs/concepts/architecture.md`](docs/concepts/architecture.md) for primitives and
 the runtime model. See [`docs/reference/package-map.md`](docs/reference/package-map.md)
 and [`docs/reference/dependency-rules.md`](docs/reference/dependency-rules.md)
 for the full package list, layer assignment, and import rules. New

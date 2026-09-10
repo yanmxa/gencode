@@ -216,7 +216,7 @@ See full details: [docs/operations/benchmark.md](docs/operations/benchmark.md)
 ## Documentation
 
 - [Documentation Index](docs/index.md) — map of architecture, features, operations, and references
-- [Architecture](docs/architecture.md) — architecture entrypoint and reading order
+- [Architecture](docs/concepts/architecture.md) — architecture entrypoint and reading order
 - [Package Map](docs/reference/package-map.md) — package ownership and dependency boundaries
 - [System Prompt](docs/concepts/harness-channels.md) — Slot model, identity, skill/agent injection
 - [Subagents](docs/packages/subagent.md) · [Skills](docs/packages/skill.md) · [Plugins](docs/packages/plugin.md) · [MCP](docs/packages/mcp.md)

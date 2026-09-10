@@ -7,15 +7,19 @@ import (
 	"fmt"
 	"strings"
 
+	agentruntime "github.com/genai-io/san/internal/agent/runtime"
 	"github.com/genai-io/san/internal/core"
 	"github.com/genai-io/san/internal/core/system"
 	"github.com/genai-io/san/internal/hook"
 	"github.com/genai-io/san/internal/llm"
 	"github.com/genai-io/san/internal/log"
 	"github.com/genai-io/san/internal/mcp"
+	permissionpolicy "github.com/genai-io/san/internal/permission"
 	"github.com/genai-io/san/internal/reminder"
 	"github.com/genai-io/san/internal/setting"
+	"github.com/genai-io/san/internal/skill"
 	"github.com/genai-io/san/internal/task"
+	"github.com/genai-io/san/internal/todo"
 	"github.com/genai-io/san/internal/tool"
 	"github.com/genai-io/san/internal/tool/perm"
 	"github.com/genai-io/san/internal/worktree"
@@ -44,6 +48,33 @@ type Executor struct {
 	agentsPrompt    string               // available agents section for capable subagents
 	mcpTools        mcp.Tools            // tool schemas + execution
 	mcpServers      mcp.Servers          // connect/disconnect for per-subagent server sets
+	agents          AgentConfigRegistry
+	tasks           BackgroundTaskManager
+	plan            PlanLookup
+	skills          SkillLookup
+}
+
+type AgentConfigRegistry interface {
+	Get(name string) (*AgentConfig, bool)
+}
+
+type BackgroundTaskManager interface {
+	CreateAgentTask(id, agentName, description string, ctx context.Context, cancel context.CancelFunc) *task.AgentTask
+}
+
+type PlanLookup interface {
+	Get(id string) (*todo.Task, bool)
+}
+
+type SkillLookup interface {
+	GetSkillInvocationPrompt(name string) string
+}
+
+type ExecutorDependencies struct {
+	Agents          AgentConfigRegistry
+	BackgroundTasks BackgroundTaskManager
+	Plan            PlanLookup
+	Skills          SkillLookup
 }
 
 type SubagentSessionStore interface {
@@ -61,14 +92,29 @@ type runConfig struct {
 	permMode    PermissionMode
 }
 
-// NewExecutor creates a new agent executor. parentModelID is used for model
-// inheritance; hookEngine, when non-nil, fires subagent lifecycle hooks.
+// NewExecutor creates an executor from the package defaults. Composition roots
+// that already own the dependency graph should use NewExecutorWithDependencies.
 func NewExecutor(llmProvider llm.Provider, cwd string, parentModelID string, hookEngine hook.Handler) *Executor {
+	return NewExecutorWithDependencies(llmProvider, cwd, parentModelID, hookEngine, ExecutorDependencies{
+		Agents:          defaultRegistry,
+		BackgroundTasks: task.Default(),
+		Skills:          skill.DefaultIfInit(),
+	})
+}
+
+// NewExecutorWithDependencies constructs an executor whose collaborators are
+// explicit. Agents is required for all runs; BackgroundTasks is additionally
+// required for background runs. Plan and Skills are optional enrichments.
+func NewExecutorWithDependencies(llmProvider llm.Provider, cwd string, parentModelID string, hookEngine hook.Handler, deps ExecutorDependencies) *Executor {
 	return &Executor{
 		provider:      llmProvider,
 		cwd:           cwd,
 		parentModelID: parentModelID,
 		hooks:         hookEngine,
+		agents:        deps.Agents,
+		tasks:         deps.BackgroundTasks,
+		plan:          deps.Plan,
+		skills:        deps.Skills,
 	}
 }
 
@@ -146,7 +192,13 @@ func (e *Executor) Run(ctx context.Context, req tool.AgentExecRequest) (*AgentRe
 
 // RunBackground executes an agent in the background and returns the task.
 func (e *Executor) RunBackground(req tool.AgentExecRequest) (*task.AgentTask, error) {
-	config, ok := defaultRegistry.Get(req.Agent)
+	if e.agents == nil {
+		return nil, fmt.Errorf("agent registry not configured")
+	}
+	if e.tasks == nil {
+		return nil, fmt.Errorf("background task manager not configured")
+	}
+	config, ok := e.agents.Get(req.Agent)
 	if !ok {
 		return nil, fmt.Errorf("unknown agent type: %s", req.Agent)
 	}
@@ -154,7 +206,7 @@ func (e *Executor) RunBackground(req tool.AgentExecRequest) (*task.AgentTask, er
 	ctx, cancel := context.WithCancel(context.Background())
 	displayName := displayNameFor(config, req)
 
-	agentTask := task.NewAgentTask(
+	agentTask := e.tasks.CreateAgentTask(
 		generateShortID(),
 		displayName,
 		req.Description,
@@ -162,8 +214,6 @@ func (e *Executor) RunBackground(req tool.AgentExecRequest) (*task.AgentTask, er
 		cancel,
 	)
 	agentTask.SetIdentity(req.Agent, req.ResumeID)
-
-	task.Default().RegisterTask(agentTask)
 
 	req.OnProgress = func(msg string) {
 		agentTask.AppendProgress(msg)
@@ -217,7 +267,10 @@ func (e *Executor) prepareWorkspace(req tool.AgentExecRequest) (string, func(), 
 }
 
 func (e *Executor) prepareRunConfig(ctx context.Context, req tool.AgentExecRequest) (*runConfig, error) {
-	config, ok := defaultRegistry.Get(req.Agent)
+	if e.agents == nil {
+		return nil, fmt.Errorf("agent registry not configured")
+	}
+	config, ok := e.agents.Get(req.Agent)
 	if !ok {
 		return nil, fmt.Errorf("unknown agent type: %s", req.Agent)
 	}
@@ -324,7 +377,7 @@ func (e *Executor) buildAgent(ctx context.Context, rc *runConfig, agentCwd strin
 	permFn := subagentPermissionFunc(rc.permMode, rc.config.AllowTools, rc.config.DenyTools)
 	coreTools = tool.WithPermission(coreTools, permFn)
 
-	ag = core.NewAgent(core.Config{
+	ag = agentruntime.New(agentruntime.Config{
 		LLM:       llm.NewClient(rc.provider, rc.modelID, 0),
 		System:    sys,
 		Tools:     coreTools,
@@ -455,7 +508,7 @@ func shouldRetryWithParentModel(err error, modelID, parentModelID string) bool {
 }
 
 // operationMode maps a subagent PermissionMode to the setting.OperationMode that
-// drives the shared mode-default table (setting.ModeDefault). dontAsk folds to a
+// drives the shared mode-default table (permission.ModeDefault). dontAsk folds to a
 // read-only-style denial since subagents never prompt; auto aliases to
 // acceptEdits until the safety classifier ships.
 func operationMode(mode PermissionMode) setting.OperationMode {
@@ -503,7 +556,7 @@ func subagentPermissionFunc(mode PermissionMode, allowRules, denyRules ToolList)
 		if denyRules.Matches(name, input) {
 			return false, fmt.Sprintf("tool %s is blocked by deny_tools", name)
 		}
-		if reason := setting.BypassImmuneReason(name, input); reason != "" {
+		if reason := permissionpolicy.BypassImmuneReason(name, input); reason != "" {
 			return false, fmt.Sprintf("tool %s blocked: %s", name, reason)
 		}
 		if allowRules.Allows(name, input) {
@@ -514,7 +567,7 @@ func subagentPermissionFunc(mode PermissionMode, allowRules, denyRules ToolList)
 		if allowRules.HasName(name) {
 			return false, fmt.Sprintf("tool %s call is outside the allow_tools constraint", name)
 		}
-		switch setting.ModeDefault(name, opMode).Behavior {
+		switch permissionpolicy.ModeDefault(name, opMode).Behavior {
 		case perm.Permit:
 			return true, ""
 		case perm.Reject:

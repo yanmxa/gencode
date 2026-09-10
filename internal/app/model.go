@@ -22,6 +22,8 @@
 package app
 
 import (
+	"context"
+
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 
@@ -34,6 +36,9 @@ import (
 const defaultWidth = 80
 
 type model struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	// ── Sub-models (one per event source / concern) ─────────────
 	userInput         input.Model    // Source 1: user keyboard input
 	agentEventHub     *hub.Hub       // Source 2: inter-agent event routing (pure pub/sub)
@@ -51,6 +56,13 @@ type model struct {
 	// Set in Run for fresh sessions. See view.go (liveWelcome) and
 	// model_scrollback.go (takeWelcomeBanner).
 	welcomePending bool
+}
+
+func (m *model) Context() context.Context {
+	if m.ctx != nil {
+		return m.ctx
+	}
+	return context.Background()
 }
 
 var _ conv.Runtime = (*model)(nil)

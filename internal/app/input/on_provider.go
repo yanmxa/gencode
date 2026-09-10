@@ -14,6 +14,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"go.uber.org/zap"
 
+	"github.com/genai-io/san/internal/app/conv"
 	"github.com/genai-io/san/internal/app/kit"
 	"github.com/genai-io/san/internal/core"
 	"github.com/genai-io/san/internal/llm"
@@ -268,7 +269,7 @@ func UpdateProvider(deps OverlayDeps, state *ProviderState, msg tea.Msg) (tea.Cm
 func handleProviderModelSelected(deps OverlayDeps, state *ProviderState, msg providerModelSelectedMsg) tea.Cmd {
 	_, err := state.Selector.SetModel(msg.ModelID, msg.ProviderName, msg.AuthMethod)
 	if err != nil {
-		deps.Conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: "Error: " + err.Error()})
+		deps.Conv.Append(conv.ChatMessage{Role: core.RoleNotice, Content: "Error: " + err.Error()})
 		return tea.Batch(deps.CommitMessages()...)
 	}
 

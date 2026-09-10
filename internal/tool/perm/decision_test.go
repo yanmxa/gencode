@@ -36,4 +36,4 @@ func TestIsSafeTool(t *testing.T) {
 }
 
 // Mode-default policy (formerly the perm.Checker family) now lives in
-// setting.ModeDefault; its behavior is covered by setting and subagent tests.
+// permission.ModeDefault; its behavior is covered by permission and subagent tests.

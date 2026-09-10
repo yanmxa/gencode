@@ -7,7 +7,7 @@ import (
 	"github.com/genai-io/san/internal/todo"
 )
 
-func TestRenderTrackerListShowsTaskStatus(t *testing.T) {
+func TestRenderPlanListShowsTaskStatus(t *testing.T) {
 	todo.Initialize(todo.Options{})
 	t.Cleanup(func() { todo.Default().Reset() })
 
@@ -29,7 +29,7 @@ func TestRenderTrackerListShowsTaskStatus(t *testing.T) {
 	pending := todo.Default().Create("Write tests", "", "", nil)
 	_ = todo.Default().Update(pending.ID, todo.WithStatus(todo.StatusPending))
 
-	view := RenderTrackerList(TrackerListParams{
+	view := RenderPlanList(PlanListParams{
 		Tasks:        todo.Default().List(),
 		AllDone:      false,
 		StreamActive: true,
@@ -53,7 +53,7 @@ func TestRenderTrackerListShowsTaskStatus(t *testing.T) {
 		"Write tests",
 	} {
 		if !strings.Contains(plain, want) {
-			t.Fatalf("rendered tracker list missing %q:\n%s", want, plain)
+			t.Fatalf("rendered plan list missing %q:\n%s", want, plain)
 		}
 	}
 }
@@ -65,7 +65,7 @@ func TestRenderTaskAnimatesInProgressItem(t *testing.T) {
 	// full cadence is deterministic: advancing Blink across one period must show
 	// both the solid (●) and dim (◌) phases.
 	var hasSolid, hasDim bool
-	for blink := range 4 * trackerPulseTicks {
+	for blink := range 4 * planPulseTicks {
 		frame := stripANSI(renderTask(task, 80, 2, nil, blink))
 		if strings.Contains(frame, "●") {
 			hasSolid = true

@@ -36,28 +36,28 @@ var layerOf = map[string]string{
 
 	"internal/core": "core",
 
-	"internal/agent":     "feature",
-	"internal/command":   "feature",
-	"internal/cron":      "feature",
-	"internal/hook":      "feature",
-	"internal/identity":  "feature",
-	"internal/image":     "feature", // image loader; produces core.Image, so it sits above core (not infrastructure)
-	"internal/inspector": "feature",
-	"internal/llm":       "feature",
-	"internal/mcp":       "feature",
-	"internal/persona":   "feature",
-	"internal/plugin":    "feature",
-	"internal/reminder":  "feature",
-	"internal/search":    "feature",
-	"internal/selflearn": "feature",
-	"internal/session":   "feature",
-	"internal/setting":   "feature",
-	"internal/skill":     "feature",
-	"internal/subagent":  "feature",
-	"internal/task":      "feature",
-	"internal/todo":      "feature",
-	"internal/tool":      "feature",
-	"internal/worktree":  "feature",
+	"internal/agent":      "feature",
+	"internal/command":    "feature",
+	"internal/cron":       "feature",
+	"internal/hook":       "feature",
+	"internal/image":      "feature", // image loader; produces core.Image, so it sits above core (not infrastructure)
+	"internal/inspector":  "feature",
+	"internal/llm":        "feature",
+	"internal/mcp":        "feature",
+	"internal/persona":    "feature",
+	"internal/permission": "feature",
+	"internal/plugin":     "feature",
+	"internal/reminder":   "feature",
+	"internal/search":     "feature",
+	"internal/selflearn":  "feature",
+	"internal/session":    "feature",
+	"internal/setting":    "feature",
+	"internal/skill":      "feature",
+	"internal/subagent":   "feature",
+	"internal/task":       "feature",
+	"internal/todo":       "feature",
+	"internal/tool":       "feature",
+	"internal/worktree":   "feature",
 
 	"internal/confdir":   "infrastructure",
 	"internal/filecache": "infrastructure",
@@ -95,9 +95,13 @@ func main() {
 	for _, p := range pkgs {
 		fromRel, fromLayer, ok := lookupLayer(p.ImportPath)
 		if !ok {
-			continue // not one of ours, or unmapped
+			if strings.HasPrefix(p.ImportPath, repoModule+"/") {
+				unknown[strings.TrimPrefix(p.ImportPath, repoModule+"/")] = true
+			}
+			continue
 		}
-		for _, imp := range p.Imports {
+		imports := append(append(append([]string(nil), p.Imports...), p.TestImports...), p.XTestImports...)
+		for _, imp := range imports {
 			toRel, toLayer, ok := lookupLayer(imp)
 			if !ok {
 				if strings.HasPrefix(imp, repoModule+"/") {
@@ -148,13 +152,15 @@ func main() {
 
 // pkgInfo is the subset of `go list -json` output that we need.
 type pkgInfo struct {
-	ImportPath string
-	Imports    []string
+	ImportPath   string
+	Imports      []string
+	TestImports  []string
+	XTestImports []string
 }
 
 // loadPackages calls `go list -json ./internal/... ./cmd/...` and decodes the
-// concatenated JSON stream into a slice. Test packages are excluded via the
-// default behavior of `go list`; we don't enumerate test imports.
+// concatenated JSON stream into a slice. go list includes TestImports and
+// XTestImports on each package, which are checked alongside production edges.
 func loadPackages() ([]pkgInfo, error) {
 	cmd := exec.Command("go", "list", "-json", "./internal/...", "./cmd/...")
 	out, err := cmd.Output()

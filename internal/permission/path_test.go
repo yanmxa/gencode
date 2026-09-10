@@ -1,4 +1,4 @@
-package setting
+package permission
 
 import (
 	"runtime"
@@ -46,7 +46,7 @@ func Test_isInWorkingDirectory(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isInWorkingDirectory(tt.filePath, tt.workingDirs)
+			got := IsInWorkingDirectory(tt.filePath, tt.workingDirs)
 			if got != tt.want {
 				t.Errorf("isInWorkingDirectory(%q, %v) = %v, want %v", tt.filePath, tt.workingDirs, got, tt.want)
 			}
@@ -73,7 +73,7 @@ func TestNormalizeMacOSPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := normalizeMacOSPath(tt.input)
+			got := NormalizeMacOSPath(tt.input)
 			if got != tt.want {
 				t.Errorf("normalizeMacOSPath(%q) = %q, want %q", tt.input, got, tt.want)
 			}
@@ -97,7 +97,7 @@ func TestIsSubpath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isSubpath(tt.child, tt.parent)
+			got := IsSubpath(tt.child, tt.parent)
 			if got != tt.want {
 				t.Errorf("isSubpath(%q, %q) = %v, want %v", tt.child, tt.parent, got, tt.want)
 			}

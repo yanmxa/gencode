@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	agentruntime "github.com/genai-io/san/internal/agent/runtime"
 	"github.com/genai-io/san/internal/core"
 	"github.com/genai-io/san/internal/tool"
 	"github.com/genai-io/san/internal/tool/perm"
@@ -62,7 +63,7 @@ func RunReview(ctx context.Context, fc ForkConfig, kinds ReviewKind, snapshot []
 	tools := core.NewTools(newMemoryWriteTool(fc.Memory), newSkillManageTool(fc.Skills))
 	restricted := tool.WithPermission(tools, allowOnly(tools))
 
-	ag := core.NewAgent(core.Config{
+	ag := agentruntime.New(agentruntime.Config{
 		LLM:       fc.LLM,
 		System:    sys,
 		Tools:     restricted,

@@ -1,4 +1,4 @@
-package setting
+package permission
 
 import (
 	"testing"
@@ -106,7 +106,7 @@ func TestBuildRule(t *testing.T) {
 }
 
 func TestCheckPermission(t *testing.T) {
-	settings := &Data{
+	settings := &Policy{
 		Permissions: PermissionSettings{
 			Allow: []string{
 				"Bash(cd:*)",
@@ -225,7 +225,7 @@ func TestCheckPermission(t *testing.T) {
 }
 
 func TestBashAllowRulesRequireEverySubcommand(t *testing.T) {
-	settings := &Data{
+	settings := &Policy{
 		Permissions: PermissionSettings{
 			Allow: []string{"Bash(git:*)"},
 		},
@@ -252,18 +252,6 @@ func TestBashAllowRulesRequireEverySubcommand(t *testing.T) {
 	if got != perm.Permit {
 		t.Fatalf("fully covered compound command = %v, want Allow", got)
 	}
-}
-
-func TestLoaderLoad(t *testing.T) {
-	loader := NewLoader()
-	settings, err := loader.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if settings == nil {
-		t.Fatal("Load() returned nil settings")
-	}
-	// Just verify it loads without error - actual values depend on environment
 }
 
 func Test_isDestructiveCommand(t *testing.T) {
@@ -314,7 +302,7 @@ func Test_isDestructiveCommand(t *testing.T) {
 }
 
 func TestDenyRulesPriorityOverSession(t *testing.T) {
-	settings := &Data{
+	settings := &Policy{
 		Permissions: PermissionSettings{
 			Deny: []string{
 				"Read(**/.env)",
@@ -360,7 +348,7 @@ func TestDenyRulesPriorityOverSession(t *testing.T) {
 }
 
 func TestDestructiveCommandsRequireConfirmation(t *testing.T) {
-	settings := &Data{
+	settings := &Policy{
 		Permissions: PermissionSettings{},
 	}
 
@@ -436,7 +424,7 @@ func Test_isSensitivePath(t *testing.T) {
 }
 
 func TestSensitivePathsBypassImmune(t *testing.T) {
-	settings := &Data{
+	settings := &Policy{
 		Permissions: PermissionSettings{
 			Allow: []string{"Edit(**/*.json)"}, // Allow all JSON edits
 		},
@@ -541,7 +529,7 @@ func Test_checkBashSecurity(t *testing.T) {
 }
 
 func TestBashSecurityBypassImmune(t *testing.T) {
-	settings := &Data{}
+	settings := &Policy{}
 	session := &SessionPermissions{
 		AllowAllBash:    true,
 		AllowedTools:    make(map[string]bool),
@@ -572,7 +560,7 @@ func TestBashSecurityBypassImmune(t *testing.T) {
 }
 
 func TestCheckPermissionWithReason(t *testing.T) {
-	settings := &Data{
+	settings := &Policy{
 		Permissions: PermissionSettings{
 			Allow: []string{"Bash(git:*)"},
 			Deny:  []string{"Read(**/.env)"},
@@ -627,7 +615,7 @@ func TestCheckPermissionWithReason(t *testing.T) {
 }
 
 func TestCheckPermissionWithReason_WorkingDirectoryConstraint(t *testing.T) {
-	settings := &Data{}
+	settings := &Policy{}
 	session := &SessionPermissions{
 		AllowAllEdits:      true,
 		WorkingDirectories: []string{"/home/user/project"},
@@ -680,7 +668,7 @@ func TestDenialTracking(t *testing.T) {
 }
 
 func TestBypassPermissionsMode(t *testing.T) {
-	settings := &Data{}
+	settings := &Policy{}
 	session := &SessionPermissions{
 		Mode:            ModeBypassPermissions,
 		AllowedTools:    make(map[string]bool),
@@ -731,7 +719,7 @@ func TestBypassPermissionsMode(t *testing.T) {
 }
 
 func TestDontAskMode(t *testing.T) {
-	settings := &Data{}
+	settings := &Policy{}
 	session := &SessionPermissions{
 		Mode:            ModeDontAsk,
 		AllowedTools:    make(map[string]bool),
@@ -777,7 +765,7 @@ func TestDontAskMode(t *testing.T) {
 }
 
 func TestAcceptEditsModeAllowsEditsButPromptsBash(t *testing.T) {
-	settings := &Data{}
+	settings := &Policy{}
 	session := &SessionPermissions{
 		Mode:            ModeAutoAccept,
 		AllowedTools:    make(map[string]bool),
@@ -793,7 +781,7 @@ func TestAcceptEditsModeAllowsEditsButPromptsBash(t *testing.T) {
 }
 
 func TestHeadlessCoercesAskToDeny(t *testing.T) {
-	settings := &Data{}
+	settings := &Policy{}
 	session := &SessionPermissions{
 		ShouldAvoidPrompts: true,
 		AllowedTools:       make(map[string]bool),
@@ -812,7 +800,7 @@ func TestHeadlessCoercesAskToDeny(t *testing.T) {
 }
 
 func TestDenyRuleBlocksBypass(t *testing.T) {
-	settings := &Data{
+	settings := &Policy{
 		Permissions: PermissionSettings{
 			Deny: []string{"Read(**/.env)"},
 		},
@@ -831,7 +819,7 @@ func TestDenyRuleBlocksBypass(t *testing.T) {
 }
 
 func TestWorkingDirectoryConstraint(t *testing.T) {
-	settings := &Data{}
+	settings := &Policy{}
 	session := &SessionPermissions{
 		AllowAllEdits:      true,
 		AllowAllWrites:     true,
@@ -894,7 +882,7 @@ func TestWorkingDirectoryConstraint(t *testing.T) {
 }
 
 func TestSafeToolAllowlist(t *testing.T) {
-	settings := &Data{}
+	settings := &Policy{}
 
 	// All safe tools, including read-only ones. The canonical allowlist lives
 	// in perm.IsSafeTool (tool/perm); this asserts the gate honors it.
@@ -916,7 +904,7 @@ func TestSafeToolAllowlist(t *testing.T) {
 }
 
 func TestResolveHookAllow(t *testing.T) {
-	settings := &Data{
+	settings := &Policy{
 		Permissions: PermissionSettings{
 			Allow: []string{"Bash(git:*)"},
 			Deny:  []string{"Read(**/.env)"},

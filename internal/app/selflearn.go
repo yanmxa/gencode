@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/genai-io/san/internal/agent"
+	"github.com/genai-io/san/internal/app/conv"
 	"github.com/genai-io/san/internal/app/hub"
 	"github.com/genai-io/san/internal/app/input"
 	"github.com/genai-io/san/internal/app/kit"
@@ -44,10 +45,10 @@ const (
 // wireSelfLearn builds the L1 Reviewer for the running session when ≥1
 // arm is enabled. params is captured so the fork rebuilds an LLM client
 // with the same provider/model/max-tokens for prefix-cache parity
-// (§6 invariant #2). pendingSend is the user content the caller is about
+// (§6 invariant #2). pendingMessageID identifies the user turn the caller is about
 // to deliver — it is already in m.conv.Messages but has NOT been Observed
 // yet, so SeedTurns must exclude it to keep the cadence beat honest.
-func (m *model) wireSelfLearn(params agent.BuildParams, pendingSend string) {
+func (m *model) wireSelfLearn(params agent.BuildParams, pendingMessageID string) {
 	// Tear down first — ensureAgentSession can re-enter via an agent
 	// toggle (which calls Agent.Stop directly, bypassing StopAgentSession)
 	// and would otherwise overwrite reviewCancel un-called, leaking the
@@ -73,7 +74,7 @@ func (m *model) wireSelfLearn(params agent.BuildParams, pendingSend string) {
 	// in-flight fork unblocks immediately on /clear / quit instead of waiting
 	// up to forkDeadline for its independent timeout. reviewCancel + live are
 	// stored in the session struct once the reviewer is built (below).
-	reviewCtx, reviewCancel := context.WithCancel(context.Background())
+	reviewCtx, reviewCancel := context.WithCancel(m.Context())
 
 	// live gates the fork-goroutine write observers below. They capture this
 	// local so a write landing after teardown drops silently instead of racing
@@ -191,7 +192,7 @@ func (m *model) wireSelfLearn(params agent.BuildParams, pendingSend string) {
 	}
 
 	r := selflearn.New(cfg, review)
-	r.SeedTurns(countUserTurns(m.conv.Messages, pendingSend))
+	r.SeedTurns(countUserTurns(m.conv.Messages, pendingMessageID))
 	m.services.SelfLearn.session = &selfLearnSession{
 		reviewer: r,
 		cancel:   reviewCancel,
@@ -317,15 +318,15 @@ func memoryTopicName(file string) string {
 
 // countUserTurns counts user messages already Observed by the reviewer
 // so the memory arm resumes on the right cadence beat after session
-// restore (§6 invariant #8). A trailing pendingSend match is excluded —
+// restore (§6 invariant #8). A trailing pendingMessageID match is excluded —
 // the submit path Appends the message before ensureAgentSession runs, so
 // without this guard the seed double-counts the in-flight turn that
 // Observe is about to increment.
-func countUserTurns(msgs []core.ChatMessage, pendingSend string) int {
+func countUserTurns(msgs []conv.ChatMessage, pendingMessageID string) int {
 	end := len(msgs)
-	if pendingSend != "" && end > 0 {
+	if pendingMessageID != "" && end > 0 {
 		last := msgs[end-1]
-		if last.Role == core.RoleUser && last.Content == pendingSend {
+		if last.Role == core.RoleUser && last.ID == pendingMessageID {
 			end--
 		}
 	}

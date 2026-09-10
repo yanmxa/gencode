@@ -6,7 +6,7 @@ surfaces for skills, plugins, MCP servers, hooks, slash commands, and
 subagents.
 
 This page is the system-level overview. For per-package design see
-[`packages/`](packages/). For dependency rules and package-layer assignments
+[`packages/`](../packages/). For dependency rules and package-layer assignments
 see [`reference/dependency-rules.md`](../reference/dependency-rules.md) and
 [`reference/package-map.md`](../reference/package-map.md).
 
@@ -16,7 +16,7 @@ see [`reference/dependency-rules.md`](../reference/dependency-rules.md) and
    in `internal/core`; construction in `internal/agent`. Agents communicate
    only through messages, no shared mutable state.
 2. **Tools** — built-in capabilities the agent can call. Registered in
-   `internal/tool` and gated by `internal/setting` permissions.
+   `internal/tool` and gated by `internal/permission` policy.
 3. **Extensions** — skill, plugin, MCP server, hook, slash command, subagent.
    Four extension primitives; *plugin* is one *source* among many — see
    [`concepts/extension-model.md`](extension-model.md).
@@ -81,9 +81,9 @@ cmd  →  app  →  feature  →  core  →  infrastructure
 | --- | --- |
 | `cmd` | `cmd/*` |
 | `app` | `internal/app` and subpackages |
-| `feature` | Business-domain packages (agent, hook, skill, plugin, mcp, llm, tool, task, subagent, session, command, cron, persona, inspector, search, worktree, setting, reminder) |
+| `feature` | Business-domain packages (agent, hook, skill, plugin, mcp, llm, tool, task, todo, subagent, session, command, cron, persona, selflearn, inspector, search, worktree, setting, reminder, image) |
 | `core` | `internal/core` |
-| `infrastructure` | `internal/{log,secret,filecache,markdown,image}` |
+| `infrastructure` | `internal/{confdir,log,secret,filecache,markdown,proc}` |
 
 Full membership list and allowed-edge rules live in
 [`reference/dependency-rules.md`](../reference/dependency-rules.md) and
@@ -95,12 +95,12 @@ is added.
 
 | Want to understand… | Read |
 |---|---|
-| One specific package | [`packages/<name>.md`](packages/) |
-| A cross-cutting concept (extension model, prompt slots, permissions) | [`concepts/`](concepts/) |
-| A fact (slash command list, config field, env var, token limits) | [`reference/`](reference/) |
-| Why a decision was made | [`decisions/`](decisions/) |
-| How to accomplish a task | [`guides/`](guides/) |
-| Build, test, release the repo | [`operations/`](operations/) |
+| One specific package | [`packages/<name>.md`](../packages/) |
+| A cross-cutting concept (extension model, prompt slots, permissions) | [`concepts/`](./) |
+| A fact (slash command list, config field, env var, token limits) | [`reference/`](../reference/) |
+| Why a decision was made | [`decisions/`](../design/decisions/) |
+| How to accomplish a task | [`guides/`](../guides/) |
+| Build, test, release the repo | [`operations/`](../operations/) |
 
 ## Change Rule
 

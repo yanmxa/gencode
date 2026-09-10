@@ -8,6 +8,7 @@ package app
 import (
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/genai-io/san/internal/app/conv"
 	"github.com/genai-io/san/internal/app/input"
 	"github.com/genai-io/san/internal/app/kit"
 	"github.com/genai-io/san/internal/app/trigger"
@@ -63,7 +64,7 @@ func (m *model) triggerDeps() trigger.Deps {
 		InjectHook:   m.injectAsyncHookContinuation,
 		AppendNotice: func(text string) {
 			if text != "" {
-				m.conv.Append(core.ChatMessage{Role: core.RoleNotice, Content: text})
+				m.conv.Append(conv.ChatMessage{Role: core.RoleNotice, Content: text})
 			}
 		},
 	}

@@ -215,7 +215,7 @@ plugins-local/      # 本地插件（git-ignored）
 ## 文档
 
 - [文档索引](docs/index.md) —— 架构、特性、运维、参考资料的入口
-- [架构](docs/architecture.md) —— 架构入口与阅读顺序
+- [架构](docs/concepts/architecture.md) —— 架构入口与阅读顺序
 - [包结构图](docs/reference/package-map.md) —— 包归属与依赖边界
 - [系统 Prompt](docs/concepts/harness-channels.md) —— Slot 模型、identity、技能/agent 注入
 - [Subagents](docs/packages/subagent.md) · [Skills](docs/packages/skill.md) · [Plugins](docs/packages/plugin.md) · [MCP](docs/packages/mcp.md)

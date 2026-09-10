@@ -1,4 +1,4 @@
-package core
+package agentruntime
 
 import (
 	"context"
@@ -11,7 +11,18 @@ import (
 	"sync/atomic"
 	"time"
 
+	. "github.com/genai-io/san/internal/core"
 	glog "github.com/genai-io/san/internal/log"
+)
+
+type streamIncomplete struct{ reason string }
+
+func (e streamIncomplete) Error() string             { return "stream " + e.reason }
+func (e streamIncomplete) RetryAfter() time.Duration { return 0 }
+
+var (
+	errStreamStalled   = streamIncomplete{"stalled (no data within idle timeout)"}
+	errStreamTruncated = streamIncomplete{"closed before completion"}
 )
 
 // agent is the default Agent implementation.
@@ -288,7 +299,7 @@ func (a *agent) ingest(ctx context.Context, msg Message) bool {
 	}
 	a.emit(ctx, MessageEvent(a.id, msg))
 	if msg.Signal == "" {
-		a.append(msg)
+		a.append(ctx, msg)
 		return true
 	}
 	return false
@@ -377,7 +388,7 @@ func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 		tokensOut += resp.OutputTokens
 
 		a.emit(ctx, PostInferEvent(a.id, resp))
-		a.append(Message{
+		a.append(ctx, Message{
 			Role:    RoleAssistant,
 			Content: resp.Content, Thinking: resp.Thinking,
 			ThinkingSignature: resp.ThinkingSignature,
@@ -394,7 +405,7 @@ func (a *agent) ThinkAct(ctx context.Context) (*Result, error) {
 				return makeResult(resp.Content, StopMaxOutputRecoveryExhausted, ""), nil
 			}
 			maxOutputRecoveryCount++
-			a.append(Message{Role: RoleUser, Content: TruncatedResumePrompt})
+			a.append(ctx, Message{Role: RoleUser, Content: TruncatedResumePrompt})
 			continue
 		}
 
@@ -438,7 +449,7 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 		a.emit(ctx, PreToolEvent(tc))
 		t := a.tools.Get(tc.Name)
 		if t == nil {
-			a.appendResult(tc, fmt.Sprintf("unknown tool: %s", tc.Name), true)
+			a.appendResult(ctx, tc, fmt.Sprintf("unknown tool: %s", tc.Name), true)
 			continue
 		}
 		tasks = append(tasks, agentToolTask{tc, t})
@@ -476,14 +487,14 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 		}
 		r := results[i]
 		if r.err != nil {
-			a.appendResult(t.call, r.err.Error(), true)
+			a.appendResult(ctx, t.call, r.err.Error(), true)
 			a.emit(ctx, PostToolEvent(ToolResult{
 				ToolCallID: t.call.ID, ToolName: t.call.Name, Content: r.err.Error(), IsError: true,
 			}))
 			continue
 		}
 		toolUses++
-		a.appendResult(t.call, r.content, false)
+		a.appendResult(ctx, t.call, r.content, false)
 		a.emit(ctx, PostToolEvent(ToolResult{
 			ToolCallID: t.call.ID, ToolName: t.call.Name, Content: r.content,
 		}))
@@ -522,25 +533,6 @@ func isReadOnlyToolCall(name string) bool {
 	}
 }
 
-// CompactMaxTokens is the max output tokens for compaction LLM calls.
-const CompactMaxTokens = 4096
-
-// CompactSummaryPrefix marks a user message as the post-compaction summary.
-// The UI uses it to render that message as a system notice rather than a normal
-// user turn, while the model and session store keep the full text.
-const CompactSummaryPrefix = "Previous context:\n"
-
-// FormatCompactSummary formats a compaction summary for injection as a user message.
-func FormatCompactSummary(summary string) string {
-	return CompactSummaryPrefix + summary
-}
-
-// IsCompactSummary reports whether content is a post-compaction summary message
-// (produced by FormatCompactSummary).
-func IsCompactSummary(content string) bool {
-	return strings.HasPrefix(content, CompactSummaryPrefix)
-}
-
 // compact calls CompactFunc and replaces messages with the summary.
 // Returns true if compaction succeeded.
 func (a *agent) compact(ctx context.Context) bool {
@@ -568,7 +560,7 @@ func (a *agent) applyCompaction(ctx context.Context, summary string, originalCou
 	summaryMsg := UserMessage(FormatCompactSummary(summary), nil)
 	summaryMsg.ID = NewMessageID()
 	a.SetMessages([]Message{summaryMsg})
-	a.emitAppend(summaryMsg)
+	a.emit(ctx, AppendEvent(a.id, summaryMsg))
 	a.emit(ctx, CompactEvent(a.id, CompactInfo{
 		Summary:          summary,
 		OriginalCount:    originalCount,
@@ -587,25 +579,6 @@ func isPromptTooLong(err error) bool {
 		strings.Contains(msg, "prompt_too_long")
 }
 
-// --- context keys ---
-
-type contextKey string
-
-const toolCallIDKey contextKey = "tool_call_id"
-
-// WithToolCallID returns a context carrying the given tool call ID.
-func WithToolCallID(ctx context.Context, id string) context.Context {
-	return context.WithValue(ctx, toolCallIDKey, id)
-}
-
-// ToolCallIDFromContext extracts the tool call ID from the context.
-func ToolCallIDFromContext(ctx context.Context) string {
-	if id, ok := ctx.Value(toolCallIDKey).(string); ok {
-		return id
-	}
-	return ""
-}
-
 // --- internals ---
 
 // streamInfer calls the LLM, streams chunks to outbox, returns the final response.
@@ -618,9 +591,9 @@ func (a *agent) streamInfer(ctx context.Context) (*InferResponse, error) {
 	tools := a.tools.Schemas()
 
 	a.emit(ctx, PreInferEvent(a.id, InferenceContext{
-		SystemDigest: sha256Hex([]byte(sys)),
-		ToolsDigest:  toolsDigest(tools),
-		MessageIDs:   messageIDs(msgs),
+		SystemDigest: SHA256Digest([]byte(sys)),
+		ToolsDigest:  ToolsDigest(tools),
+		MessageIDs:   MessageIDs(msgs),
 	}))
 
 	// Per-inference child ctx so an idle stall can be torn down without
@@ -767,31 +740,17 @@ func (a *agent) drainInbox(ctx context.Context) (int, error) {
 //
 // Stamps an ID if msg.ID is empty so the OnAppend payload always carries a
 // stable identifier; downstream persistence dedupes on this ID.
-func (a *agent) append(msg Message) {
+func (a *agent) append(ctx context.Context, msg Message) {
 	if msg.ID == "" {
 		msg.ID = NewMessageID()
 	}
 	a.mu.Lock()
 	a.messages = append(a.messages, msg)
 	a.mu.Unlock()
-	// emit outside the lock — onEvent handlers may do I/O (transcript writes).
-	a.emitAppend(msg)
-}
-
-// emitAppend pushes an OnAppend event without a ctx (callers of append() may
-// not have one) and without blocking the outbox. The recorder listens via
-// onEvent which is invoked synchronously.
-func (a *agent) emitAppend(msg Message) {
-	if a.onEvent != nil {
-		a.onEvent(AppendEvent(a.id, msg))
-	}
-	if a.outbox == nil || a.closed.Load() {
-		return
-	}
-	select {
-	case a.outbox <- AppendEvent(a.id, msg):
-	default:
-	}
+	// Emit outside the lock — onEvent handlers may do I/O. Append is a
+	// state-bearing event, so it uses the reliable event path rather than the
+	// lossy telemetry path; the UI needs the canonical message ID.
+	a.emit(ctx, AppendEvent(a.id, msg))
 }
 
 func (a *agent) snapshot() []Message {
@@ -802,10 +761,10 @@ func (a *agent) snapshot() []Message {
 	return cp
 }
 
-func (a *agent) appendResult(tc ToolCall, content string, isError bool) {
+func (a *agent) appendResult(ctx context.Context, tc ToolCall, content string, isError bool) {
 	// A tool result rides on a RoleUser message — its content lives on
 	// ToolResult.Content, not on Message.Content. See the Role doc.
-	a.append(Message{
+	a.append(ctx, Message{
 		Role:       RoleUser,
 		ToolResult: &ToolResult{ToolCallID: tc.ID, ToolName: tc.Name, Content: content, IsError: isError},
 	})

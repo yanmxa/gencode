@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	permissionpolicy "github.com/genai-io/san/internal/permission"
 	"github.com/genai-io/san/internal/setting"
 )
 
@@ -88,13 +89,13 @@ func (e *Engine) matchesIfCondition(cmd setting.HookCmd, input HookInput) bool {
 	}
 	switch input.HookEventName {
 	case string(PreToolUse), string(PostToolUse), string(PostToolUseFailure), string(PermissionRequest), string(PermissionDenied):
-		rule := setting.BuildRule(input.ToolName, input.ToolInput)
-		if setting.MatchesToolPattern(input.ToolName, input.ToolInput, rule, cmd.If) {
+		rule := permissionpolicy.BuildRule(input.ToolName, input.ToolInput)
+		if permissionpolicy.MatchesToolPattern(input.ToolName, input.ToolInput, rule, cmd.If) {
 			return true
 		}
 		if input.ToolName == "Bash" {
 			if raw, ok := input.ToolInput["command"].(string); ok {
-				return setting.MatchRule("Bash("+strings.TrimSpace(raw)+")", cmd.If)
+				return permissionpolicy.MatchRule("Bash("+strings.TrimSpace(raw)+")", cmd.If)
 			}
 		}
 		return false

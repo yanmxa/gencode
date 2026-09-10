@@ -1,6 +1,6 @@
 # Permission Model
 
-Every tool call passes through one gate: `setting.HasPermissionToUseTool`.
+Every tool call passes through one policy engine: `permission.Policy`.
 This page documents the inputs, the decision pipeline, and how the
 foreground TUI, subagents, and plan-mode differ.
 
@@ -32,8 +32,8 @@ non-`ask` behavior wins:
    for any write-class tool.
 5. **Default** — `ask`.
 
-The pipeline lives in `internal/setting/permission.go`. Bash gets special
-treatment: `bash_ast.go` parses the command and matches per-argv patterns
+The pipeline lives in `internal/permission/policy.go`. Bash gets special
+treatment: `internal/permission/bash_ast.go` parses the command and matches per-argv patterns
 (`Bash(git status:*)` allows `git status -uall` but not `git push`).
 
 ## Single Bit of Difference: "Can We Prompt?"
@@ -80,13 +80,13 @@ mutation payload.
 
 ## Implementation Pointers
 
-- Decision gate: `internal/setting/permission.go` → `HasPermissionToUseTool`.
-- Rule parser + Bash AST: `internal/setting/bash_ast.go`.
+- Decision gate: `internal/permission/policy.go` → `Policy.HasPermissionToUseTool`.
+- Rule parser + Bash AST: `internal/permission/bash_ast.go`.
 - Approval modal flow: `internal/agent/permission.go` (`PermissionBridge`).
 - Subagent permission resolution: `internal/subagent/executor.go`.
 - Hook integration: `internal/hook/engine.go` → `getPermissionRequestOutcome`.
 
 ## See Also
 
-- Packages: [`setting`](../packages/2-feature/setting.md), [`tool`](../packages/2-feature/tool.md), [`agent`](../packages/2-feature/agent.md), [`subagent`](../packages/2-feature/subagent.md), [`hook`](../packages/2-feature/hook.md)
+- Packages: [`permission`](../packages/2-feature/permission.md), [`setting`](../packages/2-feature/setting.md), [`tool`](../packages/2-feature/tool.md), [`agent`](../packages/2-feature/agent.md), [`subagent`](../packages/2-feature/subagent.md), [`hook`](../packages/2-feature/hook.md)
 - Compatibility note for Claude Code rule files: [`reference/claude-permission-compat.md`](../reference/claude-permission-compat.md)

@@ -390,7 +390,7 @@ in [`internal/app/update_resize.go`](../../internal/app/update_resize.go):
 | User / assistant / notice rendering | [`internal/app/conv/message.go`](../../internal/app/conv/message.go) |
 | Markdown rendering | [`internal/app/conv/markdown.go`](../../internal/app/conv/markdown.go) |
 | Tool call / result rendering | [`internal/app/conv/tool_render.go`](../../internal/app/conv/tool_render.go) |
-| Compact / progress / tracker | [`internal/app/conv/compact.go`](../../internal/app/conv/compact.go), [`progress.go`](../../internal/app/conv/progress.go), [`tracker_view.go`](../../internal/app/conv/tracker_view.go) |
+| Compact / progress / plan | [`internal/app/conv/compact.go`](../../internal/app/conv/compact.go), [`progress.go`](../../internal/app/conv/progress.go), [`plan_view.go`](../../internal/app/conv/plan_view.go) |
 | `MDRenderer` lifecycle | [`internal/app/conv/model.go`](../../internal/app/conv/model.go) |
 | Scrollback commit | [`internal/app/model_scrollback.go`](../../internal/app/model_scrollback.go) |
 | Resize + reflow | [`internal/app/update_resize.go`](../../internal/app/update_resize.go) |

@@ -1,5 +1,5 @@
 // Session persistence and per-session task storage.
-// Save/load conversations + task snapshots to disk, wire the task tracker's
+// Save/load conversations + plan snapshots to disk, wire the plan store's
 // storage directory, fork a fresh session from the current one.
 package app
 
@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"go.uber.org/zap"
 
+	"github.com/genai-io/san/internal/app/conv"
 	"github.com/genai-io/san/internal/confdir"
 	"github.com/genai-io/san/internal/log"
 	"github.com/genai-io/san/internal/session"
@@ -90,7 +91,7 @@ func (m *model) buildSessionSnapshot() *session.Snapshot {
 		return nil
 	}
 
-	entries := session.ConvertToEntries(m.conv.Messages)
+	entries := session.ConvertToEntries(m.conv.ConvertToProvider())
 
 	var providerName, modelID string
 	if m.env.CurrentModel != nil {
@@ -107,9 +108,8 @@ func (m *model) buildSessionSnapshot() *session.Snapshot {
 			LastPrompt: session.ExtractLastUserText(entries),
 			Mode:       m.env.SessionMode(),
 		},
-		Entries:           entries,
-		Tasks:             m.services.Tracker.Export(),
-		OmitMessageWrites: m.services.Session.Recorder() != nil,
+		Entries: entries,
+		Tasks:   m.services.Plan.Export(),
 	}
 
 	if sess.Metadata.Title == "" {
@@ -129,11 +129,11 @@ func (m *model) loadSessionByID(id string) error {
 		return err
 	}
 
-	m.services.Tracker.SetStorageDir("")
+	m.services.Plan.SetStorageDir("")
 	m.restoreSessionData(sess)
 
 	if len(sess.Tasks) == 0 {
-		m.services.Tracker.Reset()
+		m.services.Plan.Reset()
 	}
 
 	m.env.InputTokens = 0
@@ -143,18 +143,19 @@ func (m *model) loadSessionByID(id string) error {
 }
 
 func (m *model) restoreSessionData(sess *session.Snapshot) {
-	m.conv.Messages = session.ConvertFromEntries(sess.Entries)
+	m.conv.Messages = conv.ChatMessagesFromCore(session.ConvertFromEntries(sess.Entries))
 	m.services.Session.SetID(sess.Metadata.ID)
 
 	m.initTaskStorage(m.services.Session.ID())
 
 	if len(sess.Tasks) > 0 {
-		m.services.Tracker.Import(sess.Tasks)
+		m.services.Plan.Import(sess.Tasks)
 	}
 }
 
 func (m *model) initTaskStorage(sessionID string) {
-	if m.services.Tracker.GetStorageDir() != "" {
+	if dir := m.services.Plan.GetStorageDir(); dir != "" {
+		m.configureBackgroundTaskOutput(dir)
 		return
 	}
 
@@ -167,8 +168,7 @@ func (m *model) initTaskStorage(sessionID string) {
 	taskListID := setting.Getenv("TASK_LIST_ID")
 	if taskListID != "" {
 		dir := filepath.Join(confdir.Dir(homeDir), "tasks", taskListID)
-		m.services.Tracker.SetStorageDir(dir)
-		_ = m.services.Task.SetOutputDir(filepath.Join(dir, "outputs"))
+		m.configureTaskStorage(dir)
 		return
 	}
 
@@ -176,8 +176,21 @@ func (m *model) initTaskStorage(sessionID string) {
 		return
 	}
 	dir := filepath.Join(confdir.Dir(homeDir), "tasks", sessionID)
-	m.services.Tracker.SetStorageDir(dir)
-	_ = m.services.Task.SetOutputDir(filepath.Join(dir, "outputs"))
+	m.configureTaskStorage(dir)
+}
+
+func (m *model) configureTaskStorage(dir string) {
+	if err := m.services.Plan.SetStorageDir(dir); err != nil {
+		log.Logger().Warn("failed to configure plan storage", zap.String("dir", dir), zap.Error(err))
+		return
+	}
+	m.configureBackgroundTaskOutput(dir)
+}
+
+func (m *model) configureBackgroundTaskOutput(planDir string) {
+	if err := m.services.BackgroundTasks.SetOutputDir(filepath.Join(planDir, "outputs")); err != nil {
+		log.Logger().Warn("failed to configure background task output", zap.String("dir", planDir), zap.Error(err))
+	}
 }
 
 func (m *model) forkSession() (string, error) {
@@ -190,6 +203,13 @@ func (m *model) forkSession() (string, error) {
 	}
 	originalID := forked.Metadata.ParentSessionID
 	m.services.Session.SetID(forked.Metadata.ID)
-	m.services.Tracker.SetStorageDir("")
+	if err := m.services.Plan.SetStorageDir(""); err != nil {
+		return "", fmt.Errorf("detach plan storage: %w", err)
+	}
+	if err := m.services.BackgroundTasks.SetOutputDir(""); err != nil {
+		return "", fmt.Errorf("detach background task output: %w", err)
+	}
+	m.initTaskStorage(forked.Metadata.ID)
+	m.services.Plan.Import(forked.Tasks)
 	return originalID, nil
 }

@@ -33,19 +33,6 @@ type Snapshot struct {
 	Metadata SessionMetadata
 	Entries  []Entry
 	Tasks    []todo.Task
-
-	// OmitMessageWrites skips the per-entry AppendMessage loop in Save. Used
-	// by the main TUI path where the agent's Recorder already persists every
-	// message in causal order via the OnAppend event — running Save's loop on
-	// top would write a second copy under a different ID (the TUI
-	// ChatMessage.ID, which doesn't match the agent's core.Message.ID).
-	//
-	// The subagent path leaves this false: its agent has no Recorder wired,
-	// so Save is the only writer for those messages.
-	//
-	// Entries are still used to derive title / lastPrompt / messageCount in
-	// NormalizeMetadata regardless of this flag.
-	OmitMessageWrites bool
 }
 
 func NewStore(cwd string) (*Store, error) {
@@ -191,22 +178,20 @@ func (s *Store) Save(sess *Snapshot) error {
 		return err
 	}
 
-	if !sess.OmitMessageWrites {
-		nodes := EntriesToNodes(sess.Entries, sess.Metadata.ID, sess.Metadata.Cwd, sess.Metadata.CreatedAt, gitBranch)
-		for _, n := range nodes {
-			if err := s.transcriptStore.AppendMessage(ctx, transcript.AppendMessageCommand{
-				SessionID:   id,
-				MessageID:   n.ID,
-				ParentID:    n.ParentID,
-				Time:        n.Time,
-				GitBranch:   n.GitBranch,
-				AgentID:     n.AgentID,
-				IsSidechain: n.IsSidechain,
-				Role:        n.Role,
-				Content:     n.Content,
-			}); err != nil {
-				return err
-			}
+	nodes := EntriesToNodes(sess.Entries, sess.Metadata.ID, sess.Metadata.Cwd, sess.Metadata.CreatedAt, gitBranch)
+	for _, n := range nodes {
+		if err := s.transcriptStore.AppendMessage(ctx, transcript.AppendMessageCommand{
+			SessionID:   id,
+			MessageID:   n.ID,
+			ParentID:    n.ParentID,
+			Time:        n.Time,
+			GitBranch:   n.GitBranch,
+			AgentID:     n.AgentID,
+			IsSidechain: n.IsSidechain,
+			Role:        n.Role,
+			Content:     n.Content,
+		}); err != nil {
+			return err
 		}
 	}
 
@@ -215,7 +200,7 @@ func (s *Store) Save(sess *Snapshot) error {
 		LastPrompt: sess.Metadata.LastPrompt,
 		Tag:        sess.Metadata.Tag,
 		Mode:       sess.Metadata.Mode,
-		Tasks:      transcript.TrackerTaskViewsFromTasks(sess.Tasks),
+		Tasks:      planTaskViewsFromTasks(sess.Tasks),
 	}
 	if s.lastEmittedState == nil {
 		s.lastEmittedState = make(map[string]transcript.State)
@@ -350,7 +335,7 @@ func (s *Store) loadSnapshot(ctx context.Context, sessionID string) (*Snapshot, 
 	sess := &Snapshot{
 		Metadata: transcript.MetadataFromTranscript(tx),
 		Entries:  EntriesFromNodes(tx.ID, tx.Messages),
-		Tasks:    transcript.TrackerTasksFromView(tx.State.Tasks),
+		Tasks:    planTasksFromViews(tx.State.Tasks),
 	}
 
 	if sess.Metadata.Title == "" {

@@ -9,14 +9,14 @@ import (
 	"github.com/genai-io/san/internal/tool/toolresult"
 )
 
-// TrackerCreateTool creates a new tracked task
-type TrackerCreateTool struct{}
+// TaskCreateTool creates a new plan task.
+type TaskCreateTool struct{}
 
-func (t *TrackerCreateTool) Name() string        { return "TaskCreate" }
-func (t *TrackerCreateTool) Description() string { return "Create a task to track progress" }
-func (t *TrackerCreateTool) Icon() string        { return "📋" }
+func (t *TaskCreateTool) Name() string        { return "TaskCreate" }
+func (t *TaskCreateTool) Description() string { return "Create a task to track progress" }
+func (t *TaskCreateTool) Icon() string        { return "📋" }
 
-func (t *TrackerCreateTool) Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
+func (t *TaskCreateTool) Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
 	subject := tool.GetString(params, "subject")
 	if subject == "" {
 		return toolresult.NewErrorResult(t.Name(), "subject is required")
@@ -49,5 +49,5 @@ func (t *TrackerCreateTool) Execute(ctx context.Context, params map[string]any, 
 }
 
 func init() {
-	tool.Register(&TrackerCreateTool{})
+	tool.Register(&TaskCreateTool{})
 }

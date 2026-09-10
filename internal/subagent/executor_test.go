@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	agentruntime "github.com/genai-io/san/internal/agent/runtime"
 	"github.com/genai-io/san/internal/core"
 	"github.com/genai-io/san/internal/llm"
 	"github.com/genai-io/san/internal/skill"
@@ -51,7 +52,7 @@ func (s *stubSubagentSessionStore) LoadSubagentMessages(agentID string) ([]core.
 }
 
 func TestPrepareRunConfigRespectsOverrides(t *testing.T) {
-	executor := &Executor{parentModelID: "parent-model"}
+	executor := &Executor{parentModelID: "parent-model", agents: defaultRegistry}
 
 	rc, err := executor.prepareRunConfig(context.Background(), tool.AgentExecRequest{
 		Agent:    "general-purpose",
@@ -82,7 +83,7 @@ func TestPrepareRunConfigRespectsOverrides(t *testing.T) {
 }
 
 func TestPrepareRunConfigDoesNotLowerBuiltinMaxSteps(t *testing.T) {
-	executor := &Executor{parentModelID: "parent-model"}
+	executor := &Executor{parentModelID: "parent-model", agents: defaultRegistry}
 
 	rc, err := executor.prepareRunConfig(context.Background(), tool.AgentExecRequest{
 		Agent:    "general-purpose",
@@ -330,7 +331,7 @@ Use conventional commits.
 		},
 	}, userStore, projectStore))
 
-	executor := &Executor{}
+	executor := &Executor{skills: skill.DefaultIfInit()}
 	brief := executor.buildBrief(&AgentConfig{
 		Name:         "Reviewer",
 		Description:  "Reviews code changes.",
@@ -574,7 +575,7 @@ func TestResumeFromSessionUsesSessionStore(t *testing.T) {
 	executor := &Executor{sessionStore: store}
 
 	// Create a minimal core.Agent for testing
-	ag := core.NewAgent(core.Config{
+	ag := agentruntime.New(agentruntime.Config{
 		LLM:    &stubLLM{},
 		System: &stubSystem{},
 		Tools:  core.NewTools(),
@@ -596,7 +597,7 @@ func TestResumeFromSessionUsesSessionStore(t *testing.T) {
 
 func TestResumeFromSessionRequiresSessionStore(t *testing.T) {
 	executor := &Executor{}
-	ag := core.NewAgent(core.Config{
+	ag := agentruntime.New(agentruntime.Config{
 		LLM:    &stubLLM{},
 		System: &stubSystem{},
 		Tools:  core.NewTools(),
@@ -611,7 +612,7 @@ func TestResumeFromSessionPropagatesLoadError(t *testing.T) {
 	executor := &Executor{
 		sessionStore: &stubSubagentSessionStore{loadErr: errors.New("boom")},
 	}
-	ag := core.NewAgent(core.Config{
+	ag := agentruntime.New(agentruntime.Config{
 		LLM:    &stubLLM{},
 		System: &stubSystem{},
 		Tools:  core.NewTools(),

@@ -39,7 +39,10 @@ func (e *Engine) executeCommand(ctx context.Context, hookCmd setting.HookCmd, in
 	cmd := buildShellCommand(ctx, hookCmd, cwd)
 	cmd.Stdin = bytes.NewReader(inputJSON)
 	cmd.Env = e.buildEnv(ctx, input)
-	proc.SetProcessGroup(cmd)
+	// Hooks exchange data through the configured stdin/stdout pipes, never the
+	// TUI's controlling terminal. Detaching also makes accidental tty prompts
+	// fail fast while retaining whole-process-group cancellation semantics.
+	proc.DetachSession(cmd)
 	cmd.Cancel = func() error {
 		_ = proc.TerminateGroup(cmd, syscall.SIGKILL)
 		return nil
@@ -95,7 +98,9 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd settin
 	cwd := e.getCwd()
 	cmd := buildShellCommand(ctx, hookCmd, cwd)
 	cmd.Env = e.buildEnv(ctx, input)
-	proc.SetProcessGroup(cmd)
+	// Interactive hooks are interactive at the JSON protocol level; they still
+	// must not inherit the TUI's controlling terminal.
+	proc.DetachSession(cmd)
 	cmd.Cancel = func() error {
 		_ = proc.TerminateGroup(cmd, syscall.SIGKILL)
 		return nil
@@ -125,22 +130,12 @@ func (e *Engine) executeCommandBidirectional(ctx context.Context, hookCmd settin
 		return outcome
 	}
 
-	// Auto-close stdin if the hook doesn't produce output quickly.
-	// Hooks using `cat` (reads until EOF) will deadlock without this.
-	// Interactive hooks (prompt-response) produce output before needing
-	// more stdin, so the timer is cancelled in time.
-	stdinTimer := time.AfterFunc(500*time.Millisecond, func() {
-		stdinPipe.Close()
-	})
-	defer stdinTimer.Stop()
-
 	scanner := bufio.NewScanner(stdoutPipe)
 	var finalOutput string
 	firstLine := true
 	promptCallback := e.getPromptCallback()
 
 	for scanner.Scan() {
-		stdinTimer.Stop()
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue

@@ -659,5 +659,5 @@ prompt cache behaviour).
 | `agent.Send` / outbox poll | [`internal/app/agent.go`](../../internal/app/agent.go) |
 | Cancel mid-stream | [`internal/app/update_input_effects.go`](../../internal/app/update_input_effects.go) |
 | `InterruptTurn` | [`internal/agent/session.go`](../../internal/agent/session.go) |
-| `turn` / `InterruptCurrentTurn` / Run loop | [`internal/core/agent_impl.go`](../../internal/core/agent_impl.go) |
+| `turn` / `InterruptCurrentTurn` / Run loop | [`internal/agent/runtime/agent.go`](../../internal/agent/runtime/agent.go) |
 | Bottom UI compose | [`internal/app/view.go`](../../internal/app/view.go) |

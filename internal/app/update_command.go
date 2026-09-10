@@ -29,7 +29,7 @@ func (m *model) slashCommandEnv() input.SlashCommandEnv {
 		Skill:   m.services.Skill,
 		Plugin:  m.services.Plugin,
 		MCP:     m.services.MCP,
-		Tracker: m.services.Tracker,
+		Plan:    m.services.Plan,
 		Cron:    m.services.Cron,
 		ToolSvc: m.services.Tool,
 

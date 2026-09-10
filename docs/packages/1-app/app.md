@@ -34,28 +34,28 @@ type model struct {
     systemInput trigger.Model    // Source 3: cron / async hook / file watcher
     conv        conv.Model       // agent outbox → conversation view
     env         env              // app-local TUI state
-    services    services         // 16 injected feature-layer service refs
+    services    services         // explicit feature-layer dependency graph
 }
 
-// services holds references to feature-layer service singletons.
-// See internal/app/services.go for the full list and per-field source.
+// services is the explicit runtime graph consumed by model.
 type services struct {
-    Setting   setting.Service
-    LLM       llm.Service
-    Tool      tool.Service
-    Hook      hook.Service
-    Session   session.Service
-    Skill     skill.Service
-    Subagent  subagent.Service
-    Command   command.Service
-    Task      task.Service
-    Tracker   tracker.Service
-    Cron      cron.Service
-    MCP       mcp.Service
-    Plugin    plugin.Service
-    Agent     agent.Service
-    Identity  *identity.Registry
-    Reminder  *reminder.Service
+    Setting         *setting.Settings
+    LLM             *llm.Conn
+    Tool            *tool.Registry
+    Hook            *hook.Engine
+    Session         *session.Setup
+    Skill           *skill.Registry
+    Subagent        *subagent.Registry
+    Command         *command.Registry
+    BackgroundTasks *task.Manager
+    Plan            *todo.Store
+    Cron             *cron.Scheduler
+    MCP              *mcp.Registry
+    Plugin           *plugin.Registry
+    Agent            *agent.Session
+    Persona          *persona.Registry
+    Reminder         *reminder.Service
+    SelfLearn        SelfLearnServices
 }
 ```
 
@@ -66,18 +66,16 @@ sub-model.
 
 ### Known Violations
 
-- **`services` snapshots 16 singletons via `Default()` at construction.**
-  The whole codebase's singleton problem manifests here. The right shape
-  is for `cmd/san` to construct each service explicitly and pass it in,
-  inverting the current pull-from-`Default()` model.
-- **Two `Default()` shapes coexist:** most services panic if not
-  initialized; `Hook` uses `DefaultIfInit()` (nil-tolerant). Two contracts
-  for one job — converge once construction moves to `cmd/`.
-- **`refreshAfterReload` re-snapshots 6 of the 16 services.** Implies
-  those services are *replaced* on plugin reload (their `Initialize`
-  builds a new instance and stores it in their singleton). Construction
-  injection would let reload edit the `services` struct in place
-  instead.
+- **The composition boundary is still inside `internal/app`.**
+  `servicesFromDefaults` resolves compatibility package defaults once and the
+  model/subagent paths use explicit references afterward. A later CLI/API
+  boundary cleanup can move construction into `cmd/san` and make `app.Run`
+  accept the completed graph.
+- **Project reload still replaces six registry instances.**
+  `reloadProjectServices` reinitializes settings, skills, commands, subagents,
+  MCP, and personas, then updates the graph. Stable long-lived handles would
+  make reload semantics simpler, but this is lower priority than removing
+  service locators from runtime paths (already done).
 
 ## Internals
 
@@ -106,7 +104,7 @@ Root files (no business logic; pure glue):
 | `update_input_effects.go` | Stream cancel, tool-call cancel, image paste, quit. |
 | `view.go` | `View()` — composes sub-model `View()` strings into terminal layout. |
 | `agent.go` | Agent session lifecycle helpers (`sendToAgent`, `ContinueOutbox`, `ReconfigureAgentTool`). |
-| `services.go` | The `services` struct + `newServices()` + `refreshAfterReload()`. |
+| `services.go` | The explicit `services` graph + `servicesFromDefaults()` compatibility boundary. |
 | `env.go` | `env` — app-local TUI state (provider snapshot, permissions, plan, cache). Pure state holder. |
 | `hooks.go` | Hook integration glue (LLM completer wiring). |
 | `init.go` | Global infrastructure init, plugin/mcp adapter wiring. |
@@ -125,23 +123,22 @@ Sub-model packages:
 ## Lifecycle
 
 - `cmd/san` calls `app.Run()` which builds the `tea.Program`,
-  `newServices()` snapshots all `Default()` references, the root model is
+  `servicesFromDefaults()` resolves package defaults once, the root model is
   constructed, and `tea.Program.Run()` enters the MVU loop.
 - Per turn: user submits → input subpackage → `sendToAgent()` → agent
   inbox → agent processes → outbox events → `conv` updates → re-render.
-- On `/plugin install`, `/model`, etc.: `ReloadPluginBackedState()`
-  re-initializes the affected services and calls `refreshAfterReload`.
+- On `/plugin install`, `/model`, etc.: `ReloadAfterPluginChange()` calls
+  `reloadProjectServices()` and re-wires dependent runtime adapters.
 
 ## Tests
 
-The `app` package itself has no unit tests — coverage is exercised
-end-to-end via integration tests (`tests/integration/`). Sub-model
-packages have their own tests:
+The `app` package and its sub-model packages have focused unit tests, backed by
+end-to-end integration tests under `tests/integration/`:
 
 ```
 internal/app/conv/message_test.go              — message rendering.
 internal/app/conv/markdown_test.go             — markdown renderer.
-internal/app/conv/tracker_view_test.go         — task tracker view.
+internal/app/conv/plan_view_test.go            — plan task view.
 internal/app/input/on_approval_test.go         — approval flow.
 internal/app/input/on_mcp_test.go              — MCP slash command.
 internal/app/input/on_plugin_test.go           — plugin slash command.

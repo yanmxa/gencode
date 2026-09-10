@@ -10,14 +10,14 @@ import (
 	"github.com/genai-io/san/internal/tool/toolresult"
 )
 
-// TrackerGetTool retrieves a task by ID
-type TrackerGetTool struct{}
+// TaskGetTool retrieves a plan task by ID.
+type TaskGetTool struct{}
 
-func (t *TrackerGetTool) Name() string        { return "TaskGet" }
-func (t *TrackerGetTool) Description() string { return "Retrieve task details by ID" }
-func (t *TrackerGetTool) Icon() string        { return "📋" }
+func (t *TaskGetTool) Name() string        { return "TaskGet" }
+func (t *TaskGetTool) Description() string { return "Retrieve task details by ID" }
+func (t *TaskGetTool) Icon() string        { return "📋" }
 
-func (t *TrackerGetTool) Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
+func (t *TaskGetTool) Execute(ctx context.Context, params map[string]any, cwd string) toolresult.ToolResult {
 	taskID := tool.GetString(params, "taskId")
 	if taskID == "" {
 		return toolresult.NewErrorResult(t.Name(), "taskId is required")
@@ -29,7 +29,7 @@ func (t *TrackerGetTool) Execute(ctx context.Context, params map[string]any, cwd
 	task, ok := todo.Default().Get(taskID)
 	if !ok {
 		// Fallback: background agent tasks use hex IDs from the task manager,
-		// stored as "background_task_id" metadata in tracker entries.
+		// stored as "background_task_id" metadata in plan entries.
 		task = todo.Default().FindByMetadata("background_task_id", taskID)
 		if task == nil {
 			return toolresult.NewErrorResult(t.Name(), fmt.Sprintf("task %s not found", taskID))
@@ -67,5 +67,5 @@ func (t *TrackerGetTool) Execute(ctx context.Context, params map[string]any, cwd
 }
 
 func init() {
-	tool.Register(&TrackerGetTool{})
+	tool.Register(&TaskGetTool{})
 }

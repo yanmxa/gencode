@@ -61,94 +61,6 @@ type Message struct {
 	Signal            Signal      `json:"-"`
 }
 
-// ChatMessage is the TUI view-model for one conversation entry: the same
-// content as Message plus transient display state (the expand/collapse
-// toggles). The app layer renders ChatMessages and converts them back to
-// Message before sending to the provider — see
-// conv.ConversationModel.ConvertToProvider.
-//
-// The tool's name lives on ToolResult.ToolName (the single source of truth),
-// not on the ChatMessage itself.
-type ChatMessage struct {
-	// ID is a stable per-message identifier assigned once at construction.
-	// The session.Save path uses it to dedupe appends, so it must not change
-	// across saves of the same message — empty IDs would trigger re-appends
-	// of the entire conversation on every persist.
-	ID                string
-	Role              Role
-	Content           string
-	DisplayContent    string
-	Thinking          string
-	ThinkingSignature string
-	Images            []Image
-	ToolCalls         []ToolCall
-	ToolResult        *ToolResult
-	ToolCallsExpanded bool // UI: the assistant's tool-call block is expanded
-	Expanded          bool // UI: the tool-result block is expanded
-
-	// Streaming-commit progress. While an assistant message streams, completed
-	// markdown blocks are flushed to native scrollback (tea.Println) as they
-	// finish, so the live view and the turn-end commit render only the
-	// not-yet-committed remainder. These track how much is already in
-	// scrollback. Non-zero only on the in-flight trailing message — reset to 0
-	// once it is fully committed, so a later full rebuild (resize reflow,
-	// compact reprint) renders it whole. Transient UI state, never persisted.
-	ContentCommittedLen  int  // bytes of Content already flushed to scrollback
-	ThinkingCommittedLen int  // bytes of Thinking already flushed to scrollback
-	BulletEmitted        bool // the "● " content marker has already been emitted
-	ThinkingEmitted      bool // the "✦ " thinking marker has already been emitted
-}
-
-// ResetStreamCommit clears the streaming-commit progress so the message renders
-// whole again — used once it is fully committed, or when a full rebuild reprints
-// scrollback from scratch.
-func (m *ChatMessage) ResetStreamCommit() {
-	m.ContentCommittedLen = 0
-	m.ThinkingCommittedLen = 0
-	m.BulletEmitted = false
-	m.ThinkingEmitted = false
-}
-
-// ToMessage returns the wire/agent Message underlying this view-model, dropping
-// the transient display state. The ToolResult is deep-copied so a provider can
-// consume the result without aliasing conv's copy. This is the single Chat →
-// Message field mapping — every converter (provider, transcript) routes through
-// it so a new field can never be forgotten in one path.
-func (c ChatMessage) ToMessage() Message {
-	msg := Message{
-		ID:                c.ID,
-		Role:              c.Role,
-		Content:           c.Content,
-		DisplayContent:    c.DisplayContent,
-		Images:            c.Images,
-		Thinking:          c.Thinking,
-		ThinkingSignature: c.ThinkingSignature,
-		ToolCalls:         c.ToolCalls,
-	}
-	if c.ToolResult != nil {
-		tr := *c.ToolResult
-		msg.ToolResult = &tr
-	}
-	return msg
-}
-
-// ToChat wraps a wire/agent Message as a fresh view-model with no display state
-// set (expand toggles collapsed, streaming offsets zero). The single Message →
-// Chat field mapping, mirroring ToMessage.
-func (m Message) ToChat() ChatMessage {
-	return ChatMessage{
-		ID:                m.ID,
-		Role:              m.Role,
-		Content:           m.Content,
-		DisplayContent:    m.DisplayContent,
-		Images:            m.Images,
-		Thinking:          m.Thinking,
-		ThinkingSignature: m.ThinkingSignature,
-		ToolCalls:         m.ToolCalls,
-		ToolResult:        m.ToolResult,
-	}
-}
-
 // Image represents an image attachment.
 type Image struct {
 	MediaType string `json:"media_type"`
@@ -335,22 +247,24 @@ func buildConversationText(msgs []Message, stripReminders bool) string {
 	return sb.String()
 }
 
-// LastAssistantChatContent returns the most recent non-empty assistant content from chat messages.
-func LastAssistantChatContent(msgs []ChatMessage) string {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == RoleAssistant && msgs[i].Content != "" {
-			return msgs[i].Content
-		}
-	}
-	return ""
-}
-
 // NeedsCompaction checks if token usage exceeds the threshold percentage of the input limit.
 func NeedsCompaction(inputTokens, inputLimit int) bool {
 	if inputLimit == 0 || inputTokens == 0 {
 		return false
 	}
 	return float64(inputTokens)/float64(inputLimit)*100 >= 95
+}
+
+const CompactMaxTokens = 4096
+
+const CompactSummaryPrefix = "Previous context:\n"
+
+func FormatCompactSummary(summary string) string {
+	return CompactSummaryPrefix + summary
+}
+
+func IsCompactSummary(content string) bool {
+	return strings.HasPrefix(content, CompactSummaryPrefix)
 }
 
 // --- Content Parts ---

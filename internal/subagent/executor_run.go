@@ -96,7 +96,7 @@ func (e *Executor) executePreparedRun(ctx context.Context, run *preparedRun) (*c
 		startMsg := fmt.Sprintf("Mode: %s · max %d steps", displayPermissionMode(run.cfg.permMode), run.cfg.maxSteps)
 		run.sendProgress(startMsg)
 		onToolExec = func(name string, params map[string]any) {
-			msg := formatToolProgress(name, params)
+			msg := e.formatToolProgress(name, params)
 			run.sendProgress(msg)
 		}
 	}

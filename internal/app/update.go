@@ -192,6 +192,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			log.Logger().Warn("async session persist failed", zap.Error(msg.err))
 		}
 		return m, nil
+	case agentSendResultMsg:
+		if msg.err == nil {
+			return m, nil
+		}
+		log.Logger().Warn("failed to send message to agent", zap.Error(msg.err))
+		m.conv.AddNotice("Failed to send message: " + msg.err.Error())
+		return m, tea.Batch(m.CommitMessages()...)
 	case conv.QuestionResponseMsg:
 		return m, m.handleQuestionResponse(msg)
 	case input.ApprovalResponseMsg:
@@ -237,7 +244,7 @@ func (m *model) needsSpinner() bool {
 	return m.conv.Stream.Active ||
 		m.conv.Compact.Active ||
 		m.userInput.Provider.FetchingLimits ||
-		m.services.Tracker.HasInProgress()
+		m.services.Plan.HasInProgress()
 }
 
 func (m *model) updateTextarea(msg tea.Msg) tea.Cmd {

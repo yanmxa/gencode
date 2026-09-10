@@ -755,7 +755,10 @@ func TestHooks_CurrentStatusMessageTracksActiveHook(t *testing.T) {
 
 	select {
 	case <-started:
-	case <-time.After(2 * time.Second):
+	// Race instrumentation plus concurrent package tests can make process
+	// startup much slower than the script's 100ms delay. Match the other async
+	// hook tests' CI budget so scheduler load is not mistaken for callback loss.
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for hook to start")
 	}
 
@@ -1167,7 +1170,7 @@ fi
 
 	settings := setting.NewData()
 	settings.Hooks["PreToolUse"] = []setting.Hook{
-		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath, Interactive: true}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1219,7 +1222,7 @@ fi
 
 	settings := setting.NewData()
 	settings.Hooks["PreToolUse"] = []setting.Hook{
-		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath, Interactive: true}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1253,7 +1256,7 @@ echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"
 
 	settings := setting.NewData()
 	settings.Hooks["PreToolUse"] = []setting.Hook{
-		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath, Interactive: true}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1298,7 +1301,7 @@ fi
 
 	settings := setting.NewData()
 	settings.Hooks["PreToolUse"] = []setting.Hook{
-		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath, Interactive: true}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")
@@ -1344,7 +1347,7 @@ echo "async_done" > `+markerFile+`
 
 	settings := setting.NewData()
 	settings.Hooks["PreToolUse"] = []setting.Hook{
-		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath}}},
+		{Hooks: []setting.HookCmd{{Type: "command", Command: scriptPath, Interactive: true}}},
 	}
 
 	engine := NewEngine(settings, "test-session", tmpDir, "")

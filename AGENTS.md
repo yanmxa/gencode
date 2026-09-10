@@ -13,7 +13,7 @@ this file. Do not mix the two.
 
 - Product overview: `README.md`
 - Documentation index: `docs/index.md`
-- Detailed architecture: `docs/architecture.md`
+- Detailed architecture: `docs/concepts/architecture.md`
 - Package map and ownership: `docs/reference/package-map.md`
 - Dependency rules: `docs/reference/dependency-rules.md`
 - Feature notes: `docs/packages/index.md`
@@ -30,7 +30,8 @@ this file. Do not mix the two.
 - `internal/session`: transcript persistence, projection, metadata, resume.
 - `internal/task`, `internal/subagent`, `internal/cron`: background work and orchestration.
 - `internal/command`, `internal/skill`, `internal/plugin`, `internal/mcp`, `internal/hook`: extension surfaces.
-- `internal/setting`, `internal/log`, `internal/secret`: configuration and infrastructure.
+- `internal/setting`, `internal/permission`: configuration and permission policy.
+- `internal/log`, `internal/secret`: infrastructure.
 - `docs`: durable explanations, design decisions, operations, and references.
 
 ## Rules

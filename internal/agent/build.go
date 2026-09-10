@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	agentruntime "github.com/genai-io/san/internal/agent/runtime"
 	"github.com/genai-io/san/internal/core"
 	"github.com/genai-io/san/internal/core/system"
 	"github.com/genai-io/san/internal/hook"
@@ -110,7 +111,7 @@ func buildAgent(p BuildParams) (core.Agent, *PermissionBridge, error) {
 		return summary, nil
 	}
 
-	ag = core.NewAgent(core.Config{
+	ag = agentruntime.New(agentruntime.Config{
 		ID:          "main",
 		LLM:         client,
 		System:      sys,
